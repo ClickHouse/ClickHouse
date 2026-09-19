@@ -1,0 +1,241 @@
+=== Buffer over Distributed, declared type differs ===
+-- buf_mismatch A
+header: __table1.A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+-- buf_mismatch B
+header: __table1.B
+rows: 200
+0
+10
+100
+110
+-- buf_mismatch A, B
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- buf_mismatch B, A
+header: __table1.B	__table1.A
+rows: 200
+0	0
+10	18446744073709551615
+100	18446744073709551606
+110	18446744073709551605
+-- buf_mismatch filtered
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- buf_mismatch expression
+header: __table1.A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+=== Buffer over Distributed, identical structure ===
+-- buf_matched A
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- buf_matched B
+header: __table1.B
+rows: 200
+0
+10
+100
+110
+=== Buffer over Distributed, order-preserving widening ===
+-- buf_widen A
+header: __table1.A
+rows: 20
+-1
+-2
+-3
+-4
+=== MaterializedView over a Distributed target ===
+-- mv1 A
+header: __table1.A
+rows: 20
+0
+18446744073709551607
+18446744073709551608
+18446744073709551609
+=== Merge over Distributed ===
+-- mrg A
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- mrg A, B
+header: __table1.A	__table1.B
+rows: 200
+-1	10
+-10	100
+-11	110
+-12	120
+-- mrg B, A
+header: __table1.B	__table1.A
+rows: 200
+0	0
+10	-1
+100	-10
+110	-11
+-- mrg filtered
+header: __table1.A	__table1.B
+rows: 200
+-1	10
+-10	100
+-11	110
+-12	120
+-- mrg, serialize_query_plan
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- mrg_mismatch A
+header: __table1.A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+-- mrg_mismatch B, A
+header: __table1.B	__table1.A
+rows: 200
+0	0
+10	18446744073709551615
+100	18446744073709551606
+110	18446744073709551605
+=== Distributed read without a wrapper ===
+-- dist A
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- dist A, B
+header: __table1.A	__table1.B
+rows: 200
+-1	10
+-10	100
+-11	110
+-12	120
+-- dist in a subquery
+header: __table1.A
+rows: 200
+-1
+-10
+-11
+-12
+-- dist over dist
+header: __table1.A
+rows: 400
+-1
+-10
+-11
+-12
+=== Subquery shipped to the shards ===
+-- global in
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- global in, Distributed subquery
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- in, prefer_global_in_and_join
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- in, distributed_product_mode=local
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+-- in, distributed_product_mode=global
+header: __table1.A	__table1.B
+rows: 200
+0	0
+18446744073709551517	990
+18446744073709551518	980
+18446744073709551519	970
+=== Plan serialization ===
+-- buf_mismatch, serialize_query_plan
+header: __table1.A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+-- dist over dist, serialize_query_plan
+header: __table1.A
+rows: 400
+-1
+-10
+-11
+-12
+-- mv1, serialize_query_plan
+header: __table1.A
+rows: 20
+0
+18446744073709551607
+18446744073709551608
+18446744073709551609
+=== Columns from outside the storage schema are left alone ===
+-- join, Distributed on the left
+header: __table1.A	__table2.v	__table2.v
+rows: 10
+-1	1	1
+-2	2	2
+-3	3	3
+-4	4	4
+-- join, cluster() on the left
+header: __table1.A	__table2.v	__table2.v
+rows: 10
+-1	1	1
+-2	2	2
+-3	3	3
+-4	4	4
+=== Without the analyzer ===
+-- buf_mismatch A
+header: A
+rows: 200
+0
+18446744073709551517
+18446744073709551518
+18446744073709551519
+-- dist A
+header: A
+rows: 200
+-1
+-10
+-11
+-12
