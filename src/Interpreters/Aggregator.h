@@ -164,6 +164,21 @@ public:
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
 
+        /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
+        /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
+        enum class HavingPrefilterOp : UInt8
+        {
+            Disabled,
+            Greater,
+            GreaterOrEqual,
+            Less,
+            LessOrEqual,
+            Equal,
+        };
+        HavingPrefilterOp having_prefilter_op = HavingPrefilterOp::Disabled;
+        UInt64 having_prefilter_threshold = 0;
+        size_t having_prefilter_count_index = 0;
+
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
@@ -1032,16 +1047,45 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
+    bool havingPrefilterKeeps(UInt64 count) const
+    {
+        switch (params.having_prefilter_op)
+        {
+            case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Disabled: return true;
+        }
+        return true;
+    }
+
+    /// `allow_having_prefilter` is sound only on a final conversion of a complete bucket; each caller establishes that.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        bool allow_having_prefilter = false) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        bool allow_having_prefilter = false) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1070,7 +1114,8 @@ private:
         Arena * arena,
         Arenas & aggregates_pools,
         bool use_compiled_functions,
-        bool return_single_block) const;
+        bool return_single_block,
+        bool allow_having_prefilter = false) const;
 
     template <typename Method, typename Table>
     Chunks

@@ -1,0 +1,104 @@
+--- applies ---
+plain bound	1
+mirrored bound	1
+mirrored greaterOrEquals	1
+mirrored lessOrEquals	1
+mirrored greater	1
+mirrored equals	1
+greaterOrEquals	1
+less	1
+lessOrEquals	1
+equals	1
+two count conjuncts	1
+deterministic within the query beside the bound	1
+count() not in the select list	1
+outer WHERE on a group key, merged	1
+computed output beside the aggregate	1
+side-effecting conjunct pushed below the aggregation	1
+--- refused ---
+setting off	0
+optimizations off	0
+count of an argument	0
+count distinct	0
+tautology > 0	0
+tautology >= 1	0
+fractional bound	0
+negative bound	0
+with totals	0
+with rollup	0
+with cube	0
+grouping sets	0
+no group by	0
+or of two bounds	0
+stateful conjunct	0
+stateful conjunct inside a lambda	0
+non-deterministic conjunct	0
+non-deterministic conjunct over the aggregate	0
+array join in having	0
+stateful outer condition, merged	0
+stateful outer condition across a projection, merged	0
+serialized plan	0
+--- results are unchanged ---
+10000	40000	4	4
+10000	40000	4	4
+10000	40000
+10000	40000
+10001	40005	1
+10001	40005	1
+10000	40000	0
+10000	40000	0
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000	10000	40000
+10000	40000	10000	40000
+0	0	0
+0	0	0
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+10000	40000
+--- the skipped-group count is exact for every operator, in both conversion paths ---
+10000	40000
+10000	40000
+20000	60000
+20000	60000
+20000	60000	20000
+20000	60000	20000
+10000	40000	10000	40000
+10000	40000	10000	40000
+10000	40000
+10000	40000
+05218hp_eq_general_off	0
+05218hp_eq_general_on	20000
+05218hp_ge_mirrored_off	0
+05218hp_ge_mirrored_on	20000
+05218hp_ge_simple_off	0
+05218hp_ge_simple_on	20000
+05218hp_le_general_off	0
+05218hp_le_general_on	10000
+05218hp_lt_simple_off	0
+05218hp_lt_simple_on	10000
+--- block boundaries above the filter are unchanged ---
+10000	256	44	191004
+10000	256	44	191004
+10000	30	341	1661899
+10000	30	341	1661899
+--- the group-by row limit still counts every group ---
+--- a throwing conjunct evaluated before the bound stops being reached ---
+10000
+10000
+10000
+10000
+10000
+10000
+--- independent per-partition aggregation is refused ---
+skip merging is set	1
+and the pre-filter is not	0

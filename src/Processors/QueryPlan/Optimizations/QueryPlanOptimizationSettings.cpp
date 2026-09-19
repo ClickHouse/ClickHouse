@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
+    extern const SettingsBool query_plan_aggregation_having_prefilter;
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
@@ -213,6 +214,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     enable_group_by_top_k_optimization
         = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
+    aggregation_having_prefilter
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 

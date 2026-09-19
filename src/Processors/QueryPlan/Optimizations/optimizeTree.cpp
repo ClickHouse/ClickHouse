@@ -874,6 +874,13 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
+
+    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
+    }
 }
 
 void addStepsToBuildSets(

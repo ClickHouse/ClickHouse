@@ -714,6 +714,25 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 }
 
+namespace
+{
+
+const char * havingPrefilterOpToString(Aggregator::Params::HavingPrefilterOp op)
+{
+    switch (op)
+    {
+        case Aggregator::Params::HavingPrefilterOp::Greater: return ">";
+        case Aggregator::Params::HavingPrefilterOp::GreaterOrEqual: return ">=";
+        case Aggregator::Params::HavingPrefilterOp::Less: return "<";
+        case Aggregator::Params::HavingPrefilterOp::LessOrEqual: return "<=";
+        case Aggregator::Params::HavingPrefilterOp::Equal: return "=";
+        case Aggregator::Params::HavingPrefilterOp::Disabled: return "disabled";
+    }
+    return "disabled";
+}
+
+}
+
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -731,6 +750,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
     if (params.bucket_top_k)
         settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
                      << '\n';
+
+    if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
+        settings.out << prefix << "HAVING pre-filter: count() " << havingPrefilterOpToString(params.having_prefilter_op) << ' '
+                     << params.having_prefilter_threshold << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -744,6 +767,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
         bucket_top_k_map->add("Limit", params.bucket_top_k);
         bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
         map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
+    if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
+    {
+        auto having_prefilter_map = std::make_unique<JSONBuilder::JSONMap>();
+        having_prefilter_map->add("Operator", havingPrefilterOpToString(params.having_prefilter_op));
+        having_prefilter_map->add("Threshold", params.having_prefilter_threshold);
+        map.add("HAVING Pre-filter", std::move(having_prefilter_map));
     }
     map.add("Skip merging", skip_merging);
 }

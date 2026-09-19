@@ -71,6 +71,7 @@ namespace ProfileEvents
     extern const Event OverflowAny;
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AggregationBucketTopKConversions;
+    extern const Event AggregationHavingPrefilterGroupsSkipped;
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
     extern const Event AdaptiveAggregationPressureStandDowns;
@@ -2661,6 +2662,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
         return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
 
+    /// A filled `topk_full_key_bytes` means dataflow statistics are measuring this conversion, and they need the untruncated output.
+    const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled
+        && topk_full_key_bytes == nullptr;
+
     auto result = convertToBlockImpl(
         method,
         method.data.impls[bucket],
@@ -2668,7 +2673,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
         *pools_for_output,
         final,
         method.data.impls[bucket].size(),
-        return_single_block);
+        return_single_block,
+        allow_having_prefilter);
     Chunk chunk = std::move(result[0]);
 
     return AggregatedChunk{std::move(chunk), bucket};
@@ -3352,7 +3358,8 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(
+    Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, bool) const
 {
     if (data.empty())
     {
@@ -3373,7 +3380,15 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & 
 template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(
+    Method & method,
+    Table & data,
+    Arena * arena,
+    Arenas & aggregates_pools,
+    bool final,
+    size_t rows,
+    bool return_single_block,
+    bool allow_having_prefilter) const
 {
     if (data.empty())
     {
@@ -3444,8 +3459,21 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         };
 
         init_out_cols();
-        auto fill_blocks = [&]<bool is_final>(const auto & key, auto & mapped)
+
+        /// Here the lone aggregate's state is the mapped value itself, so a rejected group has nothing to destroy.
+        size_t skipped = 0;
+
+        auto fill_blocks = [&]<bool is_final, bool prefilter>(const auto & key, auto & mapped)
         {
+            if constexpr (prefilter)
+            {
+                if (!havingPrefilterKeeps(getInlineCountState(mapped)))
+                {
+                    ++skipped;
+                    return;
+                }
+            }
+
             if (!out_cols.has_value())
                 init_out_cols();
 
@@ -3474,10 +3502,18 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             }
         };
 
-        if (final)
-            data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<true>(key, mapped); });
+        if (final && allow_having_prefilter)
+        {
+            chassert(params.having_prefilter_count_index == 0);
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<true, true>(key, mapped); });
+        }
+        else if (final)
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<true, false>(key, mapped); });
         else
-            data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<false>(key, mapped); });
+            data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<false, false>(key, mapped); });
+
+        if (skipped)
+            ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
 
         if (return_single_block)
         {
@@ -3501,7 +3537,8 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
 #if USE_EMBEDDED_COMPILER
         use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
 #endif
-        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, return_single_block);
+        res = convertToBlockImplFinal<Method>(
+            method, data, arena, aggregates_pools, use_compiled_functions, return_single_block, allow_having_prefilter);
     }
     else
     {
@@ -3748,7 +3785,8 @@ Chunks Aggregator::convertToBlockImplFinal(
     Arena * arena,
     Arenas & aggregates_pools,
     bool use_compiled_functions [[maybe_unused]],
-    bool return_single_block) const
+    bool return_single_block,
+    bool allow_having_prefilter) const
 {
     /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
     const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
@@ -3787,30 +3825,62 @@ Chunks Aggregator::convertToBlockImplFinal(
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
 
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
+    size_t skipped = 0;
+    size_t count_offset = 0;
+    std::vector<size_t> nontrivial_destructors;
+    if (allow_having_prefilter)
+    {
+        chassert(params.having_prefilter_count_index < params.aggregates_size);
+        count_offset = offsets_of_aggregate_states[params.having_prefilter_count_index];
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (!aggregate_functions[i]->hasTrivialDestructor())
+                nontrivial_destructors.push_back(i);
+    }
+
+    auto fill_block = [&]<bool prefilter>(const auto & key, auto & mapped)
+    {
+        if constexpr (prefilter)
         {
-            if (unlikely(!out_cols.has_value()))
-                init_out_cols();
-
-            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            IColumn::SerializationSettings serialization_settings{
-                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
-            places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
-
-            if (!return_single_block && places.size() >= max_block_size)
+            if (!havingPrefilterKeeps(getCountState(mapped + count_offset)))
             {
-                chunks.emplace_back(
-                    insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
-                places.clear();
-                out_cols.reset();
-                has_null_key_data = false;
+                ++skipped;
+                /// The conversion clears the bucket, so no later sweep will reach a rejected cell's states.
+                for (const auto i : nontrivial_destructors)
+                    aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
+                mapped = nullptr;
+                return;
             }
-        });
+        }
+
+        if (unlikely(!out_cols.has_value()))
+            init_out_cols();
+
+        const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+        IColumn::SerializationSettings serialization_settings{
+            .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+        method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
+        places.emplace_back(mapped);
+
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
+
+        if (!return_single_block && places.size() >= max_block_size)
+        {
+            chunks.emplace_back(
+                insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
+            places.clear();
+            out_cols.reset();
+            has_null_key_data = false;
+        }
+    };
+
+    if (allow_having_prefilter)
+        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<true>(key, mapped); });
+    else
+        data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
+
+    if (skipped)
+        ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
 
     if (return_single_block)
     {

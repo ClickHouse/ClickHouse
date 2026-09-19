@@ -1632,6 +1632,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_aggregation_bucket_top_k", trueOrFalseSetting},
+    {"query_plan_aggregation_having_prefilter", trueOrFalseSettingNoOracle},
     {"query_plan_convert_join_to_in", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
     {"query_plan_fuse_filter_into_array_join", trueOrFalseSetting},
