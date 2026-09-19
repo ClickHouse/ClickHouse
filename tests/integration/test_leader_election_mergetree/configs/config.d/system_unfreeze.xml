@@ -1,0 +1,3 @@
+<clickhouse>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
+</clickhouse>
