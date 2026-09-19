@@ -33,6 +33,15 @@ endif()
 
 add_dependencies(generate-source generate-contributors)
 
+add_custom_target(generate-changelog
+    ./StorageSystemChangelog.sh
+    SOURCES StorageSystemChangelog.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # BYPRODUCTS StorageSystemChangelog.generated.cpp
+)
+
+add_dependencies(generate-source generate-changelog)
+
 set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp")
 
 # Generate license data at configure time to avoid creating a build-time dependency
