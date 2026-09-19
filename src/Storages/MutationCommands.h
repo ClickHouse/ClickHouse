@@ -48,6 +48,7 @@ struct MutationCommand
         MATERIALIZE_TTL,
         REWRITE_PARTS,
         RENAME_COLUMN,
+        RENAME_INDEX,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,
         APPLY_PATCHES,
@@ -95,7 +96,7 @@ struct MutationCommand
     /// Open a mutating scope on the AST. See `MutableAst` for the semantics.
     MutableAst mutateAst() { return MutableAst(*this); }
 
-    /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
+    /// For MATERIALIZE/RENAME INDEX and PROJECTION and STATISTICS
     String index_name = {};
     String projection_name = {};
     std::vector<String> statistics_columns = {};
@@ -108,7 +109,7 @@ struct MutationCommand
     /// We need just clear column, not drop from metadata.
     bool clear = false;
 
-    /// Column rename_to
+    /// Column or index rename_to
     String rename_to = {};
 
     /// A version of mutation to which command corresponds.

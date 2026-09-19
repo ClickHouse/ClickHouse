@@ -1,0 +1,12 @@
+wide_index	new_index
+wide_count	101
+1
+wide_renamed_index	renamed_index
+wide_renamed_count	1
+1
+packed_indexes	['new_index','survivor']
+packed_count	1
+1
+compact_index	new_index
+compact_count	1
+1

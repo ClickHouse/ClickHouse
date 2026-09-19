@@ -37,6 +37,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column(Keyword::MODIFY_COLUMN);
     ParserKeyword s_alter_column(Keyword::ALTER_COLUMN);
     ParserKeyword s_rename_column(Keyword::RENAME_COLUMN);
+    ParserKeyword s_rename_index(Keyword::RENAME_INDEX);
     ParserKeyword s_comment_column(Keyword::COMMENT_COLUMN);
     ParserKeyword s_materialize_column(Keyword::MATERIALIZE_COLUMN);
 
@@ -251,6 +252,22 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::RENAME_COLUMN;
+            }
+            else if (s_rename_index.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command_index, expected))
+                    return false;
+
+                if (!s_to.ignore(pos, expected))
+                    return false;
+
+                if (!parser_name.parse(pos, command_rename_to, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::RENAME_INDEX;
             }
             else if (s_materialize_column.ignore(pos, expected))
             {
