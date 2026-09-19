@@ -225,6 +225,10 @@ TableZnodeInfo TableZnodeInfo::resolve(
     else if (info.expanded_uuid || replica_info.expanded_uuid)
         res.renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
 
+    /// A database rename keeps the table name, so only a re-expanded {database} makes it unsafe.
+    if (info.expanded_database || replica_info.expanded_database)
+        res.expanded_database_name = table_id.database_name;
+
     res.zookeeper_name = zkutil::extractZooKeeperName(res.full_path);
     res.path = zkutil::extractZooKeeperPath(res.full_path, /* check_starts_with_slash */ mode <= LoadingStrictnessLevel::CREATE, getLogger(table_id.getNameForLogs()));
     res.path_prefix_for_drop = res.path;
