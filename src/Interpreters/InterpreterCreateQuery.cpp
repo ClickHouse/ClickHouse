@@ -1470,6 +1470,8 @@ namespace
         {
             *ptr = nullptr;
         });
+        /// `children` still holds the old nodes, and `hasSecretParts` and friends walk them.
+        storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
@@ -1489,6 +1491,26 @@ namespace
         {
             setNullTableEngine(storage);
         }
+    }
+
+    /// The same for a table function, written in the query or inherited from `AS y`. Returns whether
+    /// it was replaced.
+    bool replaceExternalTableFunctionWithNullIfNeeded(ASTCreateQuery & create, bool enabled)
+    {
+        if (!enabled)
+            return false;
+
+        auto properties = TableFunctionFactory::instance().tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+        if (properties && properties->allow_readonly)
+            return false;
+
+        if (create.storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
+
+        create.set(create.storage, make_intrusive<ASTStorage>());
+        create.reset(create.as_table_function);
+        setNullTableEngine(*create.storage);
+        return true;
     }
 
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
@@ -1539,23 +1561,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
     {
-        if (getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null])
-        {
-            const auto & factory = TableFunctionFactory::instance();
-
-            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
-            if (properties && properties->allow_readonly)
-                return;
-            if (!create.storage)
-            {
-                auto storage_ast = make_intrusive<ASTStorage>();
-                create.set(create.storage, storage_ast);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.reset(create.as_table_function);
-            setNullTableEngine(*create.storage);
-        }
+        replaceExternalTableFunctionWithNullIfNeeded(
+            create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]);
         return;
     }
 
@@ -1616,11 +1623,23 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
+        /// Reading the definition needs `SHOW COLUMNS`. Check it first, so the error does not tell a
+        /// user who cannot see the table whether it has credentials.
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
+
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
+        /// Credentials are masked in `SHOW CREATE TABLE`, so copying them hands the source's data to
+        /// someone who cannot `SELECT` it. Everything else is already visible with `SHOW COLUMNS`.
+        auto check_access_to_inherited_definition = [&](const IAST & definition)
+        {
+            if (definition.hasSecretParts())
+                getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
+        };
 
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
@@ -1648,6 +1667,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             if (!create.storage)
             {
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
+                /// Replaced by `Null` just as a written one would be, and then nothing is inherited.
+                if (!replaceExternalTableFunctionWithNullIfNeeded(
+                        create, getContext()->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]))
+                    check_access_to_inherited_definition(*create.as_table_function);
                 return;
             }
         }
@@ -1665,6 +1688,20 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+        }
+
+        if (storage_def)
+        {
+            /// Judge what would actually be stored: settings written here win over the source's, and
+            /// an external engine may become `Null`.
+            auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
+            if (inherited->settings && create.storage && create.storage->settings)
+                for (const auto & change : create.storage->settings->changes)
+                    inherited->settings->changes.removeSetting(change.name);
+            replaceExternalEngineWithNullIfNeeded(
+                *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+
+            check_access_to_inherited_definition(*inherited);
         }
     }
 
@@ -3697,6 +3734,14 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// The worker materializes `AS src` in its own database, so pin ours like the UUIDs above.
+            /// We may not have the table here to tell whether it holds credentials, so ask for `SELECT`.
+            if (!create.as_table.empty())
+            {
+                create.as_database = getContext()->resolveDatabase(create.as_database);
+                getContext()->checkAccess(AccessType::SELECT, create.as_database, create.as_table);
+            }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
