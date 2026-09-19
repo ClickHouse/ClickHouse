@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Do not run in parallel: these tests create and drop WORKLOADs, which are global server-wide
--- state shared with other workload tests. (Multiple root workloads are now allowed, so a rootless
--- `CREATE WORKLOAD` no longer collides with another test's root; unique names still must not clash.)
+-- state shared with other workload tests. (Multiple root workloads are allowed, so a rootless
+-- `CREATE WORKLOAD` here does not collide with another test's root; unique names still must not clash.)
 --
 -- Test that negative Float64 values are rejected for workload settings.
 -- Fixes https://github.com/ClickHouse/ClickHouse/issues/101825:

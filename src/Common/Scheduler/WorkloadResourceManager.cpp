@@ -101,8 +101,8 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
-    // Note: multiple root workloads (workloads without a parent) are allowed. Each is attached as a
-    // child of this resource's implicit anonymous root workload (see setup()), not the scheduler.
+    // Multiple root workloads (workloads without a parent) are allowed: each attaches as a child of
+    // this resource's implicit anonymous root workload (see setup()), not directly to the scheduler.
 
     executeInSchedulerThread([&, this]
     {
@@ -192,11 +192,11 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             new_info.settings,
             getSharingMode(getUnit())))
         {
-            // A parentless workload is a child of the implicit root, so it must be detached from
-            // (and later reattached to) the implicit root — not skipped — otherwise a priority /
-            // precedence change would update its settings without re-positioning it among the
-            // implicit root's children. (The parent cannot change presence here; that is rejected
-            // above, so old and new parent are both empty or both the same explicit workload.)
+            // A parentless workload is a child of the implicit root, so it must be detached from and
+            // reattached to the implicit root (not skipped) so a priority/precedence change also
+            // re-positions it among the implicit root's children rather than only updating settings.
+            // (Parent presence cannot change here; that is rejected above, so old and new parent are
+            // both empty or both the same explicit workload.)
             if (!old_info.parent.empty())
                 node_for_workload[old_info.parent]->detachWorkloadChild(node);
             else

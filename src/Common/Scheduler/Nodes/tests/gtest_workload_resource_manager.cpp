@@ -351,9 +351,9 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
-// Multiple root workloads (workloads created without a parent). A second parentless workload used
-// to be rejected ("The second root is not allowed"); now each becomes a child of the resource's
-// implicit anonymous root workload, so several SQL roots coexist and are scheduled among each other.
+// Multiple root workloads (workloads created without a parent): each becomes a child of the
+// resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
+// among each other.
 TEST(SchedulerWorkloadResourceManager, MultipleRoots)
 {
     ResourceTest t;
@@ -393,10 +393,9 @@ TEST(SchedulerWorkloadResourceManager, MultipleRoots)
 }
 
 // Changing the priority of a parentless workload via CREATE OR REPLACE must re-position it among
-// the implicit root's children, not merely update its settings. Two equal-priority parentless
-// workloads share a single fair branch; giving one a distinct priority must introduce a priority
-// ("prio") policy node under the implicit root. Without the reattach the node would keep its old
-// position and no priority node would appear.
+// the implicit root's children, not merely update its settings: two equal-priority parentless
+// workloads share one fair branch, and giving one a distinct priority introduces a "prio" policy
+// node under the implicit root.
 TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
 {
     ResourceTest t;
@@ -2440,8 +2439,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
 }
 
 // Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
-// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child);
-// each still enforces its own limit independently.
+// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
+// and enforces its own limit independently.
 TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
 {
     ResourceTest t;

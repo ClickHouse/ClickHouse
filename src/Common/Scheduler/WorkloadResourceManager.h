@@ -243,12 +243,11 @@ private:
             // workload without an explicit parent becomes a child of it (see createNode()), so the
             // scheduler always has exactly one child and the otherwise-root workloads are scheduled
             // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
-            // settings mean a single-root hierarchy behaves exactly as before.
+            // settings make the implicit root transparent when there is a single root workload.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
             // Anonymous: an empty basename cannot collide with any user workload (workload names are
-            // never empty), so no name has to be reserved and no legacy reconciliation is needed.
-            // getPath() skips the empty segment, so system.scheduler paths are unchanged from before
-            // the implicit root existed (a single root still renders as "/all").
+            // never empty), so no workload name is reserved. getPath() skips the empty segment, so a
+            // workload directly under the implicit root renders as "/all", not "//all".
             implicit->basename = {};
             implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
@@ -273,9 +272,8 @@ private:
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
         /// Implicit anonymous root workload (empty basename): the scheduler's single child. Every workload without an
         /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
-        /// workloads form one hierarchy under it — scheduled with fairness/priorities by the normal
-        /// policy machinery instead of being multiple scheduler children. Default (unlimited)
-        /// settings, so a single-root hierarchy is unchanged.
+        /// workloads form one hierarchy under it, scheduled with fairness/priorities by the normal
+        /// policy machinery. Default (unlimited) settings make it transparent for a single root.
         WorkloadNodePtr implicit_root;
         VersionPtr current_version;
     };

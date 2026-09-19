@@ -6,7 +6,7 @@
 
 create resource 03588_res (write disk 03588_disk);
 
--- Two parentless workloads, each with a subtree. A second parentless workload used to fail with BAD_ARGUMENTS.
+-- Two parentless workloads, each with a subtree: both roots coexist in one forest.
 create workload 03588_a settings max_io_requests = 100 for 03588_res;
 create workload 03588_a1 in 03588_a settings weight = 1;
 create workload 03588_b settings max_io_requests = 200 for 03588_res;

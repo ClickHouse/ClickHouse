@@ -85,8 +85,7 @@ String ISchedulerNode::getPath() const
     while (ptr->parent)
     {
         // Skip anonymous nodes (empty basename, e.g. the implicit root workload) so they add no
-        // empty path segment: a hierarchy with a single root still renders as "/all", unchanged
-        // from before the implicit root was introduced.
+        // path segment: a workload directly under the implicit root renders as "/all", not "//all".
         if (!ptr->basename.empty())
             result = "/" + ptr->basename + result;
         ptr = ptr->parent;
