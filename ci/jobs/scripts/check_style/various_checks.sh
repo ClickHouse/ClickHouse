@@ -240,12 +240,13 @@ done
 # - 02125: curl sends mutations, part_log is checked for merges
 # - 03229: SYSTEM FLUSH ASYNC INSERT QUEUE synchronizes before FLUSH LOGS
 # - 03760: checks for absence of error in text_log
+# - 05227: curl deletes an object from the S3 endpoint, it does not send a query to ClickHouse
 curl_flush_logs_tests=( $(
     find $ROOT_PATH/tests/queries -iname '*.sh' |
         xargs grep -l -E 'CLICKHOUSE_CURL|curl ' |
         xargs grep -l -iE 'system\.(query_log|query_views_log|text_log|trace_log|asynchronous_insert_log|part_log)' |
         xargs grep -l -iE 'SYSTEM\s+FLUSH\s+LOGS' |
-        grep -vP '00956_sensitive_data_masking|02122_join_group_by_timeout|02125_many_mutations|03229_async_insert_alter|03760_keep_alive_insert_select' |
+        grep -vP '00956_sensitive_data_masking|02122_join_group_by_timeout|02125_many_mutations|03229_async_insert_alter|03760_keep_alive_insert_select|05227_query_cache_object_storage_repeated_read_object_deleted' |
         sort -u
 ) )
 for test_case in "${curl_flush_logs_tests[@]}"; do

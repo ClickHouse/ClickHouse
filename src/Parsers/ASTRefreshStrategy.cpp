@@ -59,6 +59,9 @@ void ASTRefreshStrategy::formatImpl(
         }
     }
 
+    if (if_changed)
+        ostr << " IF CHANGED";
+
     if (spread)
     {
         ostr << " RANDOMIZE FOR ";
@@ -89,6 +92,8 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("spread", spread);
     w.writeChild("settings", settings);
     w.writeChild("dependencies", dependencies);
+    if (if_changed)
+        w.writeBool("if_changed", true);
     if (isAppend())
         w.writeBool("append", true);
     if (isIncremental())
@@ -130,6 +135,7 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
                     "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
     }
+    if_changed = r.getBool("if_changed");
     const bool append = r.getBool("append");
     const bool incremental = r.getBool("incremental");
     mode = incremental ? RefreshMode::AppendIncremental : append ? RefreshMode::AppendFull : RefreshMode::Replace;
