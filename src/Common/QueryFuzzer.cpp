@@ -5858,22 +5858,31 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             with_union->union_mode
                 = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
+            if (with_union->union_mode != SelectUnionMode::UNION_ALL)
+                with_union->column_match_mode = SetOperationColumnMatchMode::Position;
         }
         auto & union_members = with_union->list_of_selects->children;
+        auto rebuild_union_operations = [&]
+        {
+            with_union->list_of_modes.assign(union_members.empty() ? 0 : union_members.size() - 1, with_union->union_mode);
+            if (with_union->column_match_mode == SetOperationColumnMatchMode::Name
+                && with_union->union_mode == SelectUnionMode::UNION_ALL)
+                with_union->list_of_column_match_modes.assign(union_members.empty() ? 0 : union_members.size() - 1, SetOperationColumnMatchMode::Name);
+            else
+                with_union->list_of_column_match_modes.clear();
+        };
         if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
         {
             /// Drop a random member from the UNION; rebuild modes to keep sizes in sync.
-            /// After normalization, list_of_modes may be stale (wrong size), so we
-            /// rebuild it entirely from union_mode rather than trying to erase one entry.
             union_members.erase(union_members.begin() + fuzz_rand() % union_members.size());
-            with_union->list_of_modes.assign(union_members.empty() ? 0 : union_members.size() - 1, with_union->union_mode);
+            rebuild_union_operations();
             with_union->is_normalized = false;
         }
         else if (!union_members.empty() && fuzz_rand() % 100 == 0)
         {
             /// Duplicate a random member; rebuild modes to keep sizes in sync.
             union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
-            with_union->list_of_modes.assign(union_members.size() - 1, with_union->union_mode);
+            rebuild_union_operations();
         }
         else if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
         {
@@ -5943,6 +5952,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
                 auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
                 union_query->union_mode = fuzz_rand() % 2 == 0 ? SelectUnionMode::UNION_ALL : SelectUnionMode::UNION_DISTINCT;
+                union_query->column_match_mode = SetOperationColumnMatchMode::Position;
                 union_query->list_of_modes.assign(1, union_query->union_mode);
                 union_query->is_normalized = false;
                 union_query->list_of_selects = list;

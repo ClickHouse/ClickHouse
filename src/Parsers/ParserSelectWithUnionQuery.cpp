@@ -6,6 +6,8 @@
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -36,6 +38,12 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         select_with_union_query->list_of_selects = list_node;
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
         select_with_union_query->list_of_modes = parser.getUnionModes();
+        select_with_union_query->list_of_column_match_modes = parser.getUnionColumnMatchModes();
+        if (std::all_of(
+                select_with_union_query->list_of_column_match_modes.begin(),
+                select_with_union_query->list_of_column_match_modes.end(),
+                [](auto mode) { return mode == SetOperationColumnMatchMode::Position; }))
+            select_with_union_query->list_of_column_match_modes.clear();
     }
 
     /// The query can be followed by a chain of pipe operators, e.g.: FROM t |> WHERE x |> LIMIT 1.

@@ -203,7 +203,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     if (select_lists.children.size() == 1)
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_data, aliases, context);
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
+    auto union_node = std::make_shared<UnionNode>(
+        Context::createCopy(context),
+        select_with_union_query_typed.union_mode,
+        select_with_union_query_typed.column_match_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
@@ -247,7 +250,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
+    auto union_node = std::make_shared<UnionNode>(
+        Context::createCopy(context), union_mode, SetOperationColumnMatchMode::Position);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
@@ -1016,25 +1020,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                     else if (auto * union_node = node->as<UnionNode>())
                     {
-                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
-                        /// we find the first QueryNode in case of nested UNIONs
-                        const auto & queries = union_node->getQueries().getNodes();
-                        QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
-                        while (current)
+                        if (union_node->hasNameMatchedUnion())
                         {
-                            if (auto * inner_query = current->as<QueryNode>())
+                            union_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                        }
+                        else
+                        {
+                            /// For positional UNIONs, keep the existing behavior: the output names
+                            /// come from the first query in the union.
+                            const auto & queries = union_node->getQueries().getNodes();
+                            QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
+                            while (current)
                             {
-                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
-                                break;
-                            }
-                            else if (auto * inner_union = current->as<UnionNode>())
-                            {
-                                const auto & inner_queries = inner_union->getQueries().getNodes();
-                                current = inner_queries.empty() ? nullptr : inner_queries[0];
-                            }
-                            else
-                            {
-                                break;
+                                if (auto * inner_query = current->as<QueryNode>())
+                                {
+                                    inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                    break;
+                                }
+                                else if (auto * inner_union = current->as<UnionNode>())
+                                {
+                                    const auto & inner_queries = inner_union->getQueries().getNodes();
+                                    current = inner_queries.empty() ? nullptr : inner_queries[0];
+                                }
+                                else
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
