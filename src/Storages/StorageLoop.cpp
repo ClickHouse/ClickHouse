@@ -1,5 +1,6 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Common/CurrentThread.h>
@@ -9,13 +10,14 @@ namespace DB
 {
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
-            StoragePtr inner_storage_,
+            const StorageID & inner_table_id_,
+            const StoragePtr & inner_storage_,
             ASTPtr inner_table_function_ast_)
             : IStorage(table_id_)
-            , inner_storage(std::move(inner_storage_))
+            , inner_table_id(inner_table_id_)
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        auto metadata_snapshot = inner_storage_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         setInMemoryMetadata(*metadata_snapshot);
     }
 
@@ -37,15 +39,24 @@ namespace DB
             const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
             ContextPtr context,
-            QueryProcessingStage::Enum processed_stage,
-            size_t max_block_size,
-            size_t num_streams)
+            QueryProcessingStage::Enum,
+            size_t,
+            size_t)
     {
         query_info.optimize_trivial_count = false;
 
+        if (!inner_table_function_ast)
+        {
+            /// Resolved on every read and not retained: a source dropped since this table was created
+            /// must fail here rather than be read through a handle that outlived it. The resolved
+            /// storage only has to survive this query, so the plan owns it.
+            auto inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, context);
+            query_plan.addStorageHolder(std::move(inner_storage));
+        }
+
         query_plan.addStep(std::make_unique<ReadFromLoopStep>(
-                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage,
-                inner_table_function_ast, max_block_size, num_streams
+                column_names, query_info, storage_snapshot, context, inner_table_id,
+                inner_table_function_ast
         ));
     }
 
@@ -55,7 +66,7 @@ namespace DB
         factory.registerStorage("Loop", [](const StorageFactory::Arguments & args)
         {
             StoragePtr inner_storage;
-            return std::make_shared<StorageLoop>(args.table_id, inner_storage);
+            return std::make_shared<StorageLoop>(args.table_id, StorageID::createEmpty(), inner_storage);
         },
         {},
         Documentation{

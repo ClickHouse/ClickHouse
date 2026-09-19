@@ -1,5 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -11,6 +13,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
@@ -19,7 +22,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -96,21 +98,15 @@ public:
             const SelectQueryInfo & query_info_,
             const StorageSnapshotPtr & storage_snapshot_,
             ContextPtr & context_,
-            QueryProcessingStage::Enum processed_stage_,
-            StoragePtr inner_storage_,
-            ASTPtr inner_table_function_ast_,
-            size_t max_block_size_,
-            size_t num_streams_)
+            const StorageID & inner_table_id_,
+            ASTPtr inner_table_function_ast_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
             , column_names(column_names_)
             , query_info(query_info_)
             , storage_snapshot(storage_snapshot_)
-            , processed_stage(processed_stage_)
             , context(context_)
-            , inner_storage(std::move(inner_storage_))
+            , inner_table_id(inner_table_id_)
             , inner_table_function_ast(std::move(inner_table_function_ast_))
-            , max_block_size(max_block_size_)
-            , num_streams(num_streams_)
     {
     }
 
@@ -122,39 +118,40 @@ public:
             return;
 
         QueryPlan plan;
+        inner_context = Context::createCopy(context);
 
-        if (DatabaseCatalog::instance().isTableExist(inner_storage->getStorageID(), context))
+        if (inner_table_function_ast)
         {
-            inner_context = Context::createCopy(context);
-            const auto & storage_id = inner_storage->getStorageID();
-            buildSelectQueryPlan(
-                plan, column_names, query_info, inner_context,
-                storage_id.database_name, storage_id.table_name);
-        }
-        else if (inner_table_function_ast)
-        {
-            inner_context = Context::createCopy(context);
             buildSelectQueryPlan(
                 plan, column_names, query_info, inner_context,
                 {}, {}, inner_table_function_ast);
         }
         else
         {
-            const auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(context, false);
-            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(metadata_snapshot, context);
-            inner_storage->read(
-                    plan,
-                    column_names,
-                    inner_storage_snapshot,
-                    query_info,
-                    context,
-                    processed_stage,
-                    max_block_size,
-                    num_streams);
+            buildSelectQueryPlan(
+                plan, column_names, query_info, inner_context,
+                inner_table_id.database_name, inner_table_id.table_name);
         }
 
         if (plan.isInitialized())
         {
+            /// Rows come from a source resolved by name on every read, while the header advertised
+            /// here is the metadata cached at CREATE: a column whose type has drifted since then
+            /// must be converted, because a port validates only the column count.
+            const auto & advertised_header = getPort().getSharedHeader();
+            if (!blocksHaveEqualStructure(*plan.getCurrentHeader(), *advertised_header))
+            {
+                auto step = std::make_unique<ExpressionStep>(
+                    plan.getCurrentHeader(),
+                    ActionsDAG::makeConvertingActions(
+                        plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                        advertised_header->getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        inner_context));
+                step->setStepDescription("Converting columns");
+                plan.addStep(std::move(step));
+            }
+
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -207,14 +204,11 @@ private:
     const Names column_names;
     SelectQueryInfo query_info;
     const StorageSnapshotPtr storage_snapshot;
-    QueryProcessingStage::Enum processed_stage;
     ContextPtr context;
-    StoragePtr inner_storage;
+    StorageID inner_table_id;
     ASTPtr inner_table_function_ast;
-    size_t max_block_size;
-    size_t num_streams;
     ContextPtr inner_context;
-    // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
+    // add retries. If the source failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
     size_t max_retries_count = 3;
     size_t rows_read = 0;
@@ -235,11 +229,8 @@ ReadFromLoopStep::ReadFromLoopStep(
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        QueryProcessingStage::Enum processed_stage_,
-        StoragePtr inner_storage_,
-        ASTPtr inner_table_function_ast_,
-        size_t max_block_size_,
-        size_t num_streams_)
+        const StorageID & inner_table_id_,
+        ASTPtr inner_table_function_ast_)
         : SourceStepWithFilter(
         std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
         column_names_,
@@ -247,18 +238,15 @@ ReadFromLoopStep::ReadFromLoopStep(
         storage_snapshot_,
         disableParallelReplicas(context_))
         , column_names(column_names_)
-        , processed_stage(processed_stage_)
-        , inner_storage(std::move(inner_storage_))
+        , inner_table_id(inner_table_id_)
         , inner_table_function_ast(std::move(inner_table_function_ast_))
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
 {
 }
 
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size, num_streams));
+            column_names, query_info, storage_snapshot, context, inner_table_id, inner_table_function_ast));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
