@@ -85,9 +85,9 @@ Each row describes one data part.
 - `rows_where_ttl_info.max` ([Array(DateTime)](/reference/data-types/array)) — The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL.
 - `projections` ([Array(String)](/reference/data-types/array)) — The list of projection names calculated for this part.
 - `visible` ([UInt8](/reference/data-types/int-uint)) — Flag which indicated whether this part is visible for SELECT queries.
-- `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/reference/data-types/tuple)) — ID of transaction that has created/is trying to create this object.
+- `creation_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/reference/data-types/tuple)) — ID of transaction that has created/is trying to create this object.
 - `removal_tid_lock` ([UInt64](/reference/data-types/int-uint)) — Hash of removal_tid, used to lock an object for removal.
-- `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/reference/data-types/tuple)) — ID of transaction that has removed/is trying to remove this object
+- `removal_tid` ([Tuple(UInt64, UInt64, UUID, Int64)](/reference/data-types/tuple)) — ID of transaction that has removed/is trying to remove this object
 - `creation_csn` ([UInt64](/reference/data-types/int-uint)) — CSN of transaction that has created this object
 - `removal_csn` ([UInt64](/reference/data-types/int-uint)) — CSN of transaction that has removed this object
 - `has_lightweight_delete` ([UInt8](/reference/data-types/int-uint)) — The flag which indicated whether the part has lightweight delete mask.

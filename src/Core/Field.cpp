@@ -439,7 +439,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::String:
         {
             std::string value;
-            readStringBinaryGrowing(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
         case Field::Types::Array:
@@ -469,8 +469,8 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
-            readStringBinaryGrowing(value.name, buf);
-            readStringBinaryGrowing(value.data, buf);
+            readStringBinary(value.name, buf);
+            readStringBinary(value.data, buf);
             return value;
         }
         case Field::Types::Bool:
@@ -597,7 +597,7 @@ void readBinary(Object & x, ReadBuffer & buf)
         UInt8 type = 0;
         String key;
         readBinary(type, buf);
-        readStringBinaryGrowing(key, buf);
+        readBinary(key, buf);
         x[key] = getBinaryValue(type, buf);
     }
 }

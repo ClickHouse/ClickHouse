@@ -40,8 +40,9 @@ If true, lightweight delete is optimized on vertical merge.
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"}]}]}/>
 
-If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
-the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
+If true, rows TTL delete is optimized on vertical merge only for `MergeTree` tables. Instead of
+forcing horizontal merge, the TTL filter is evaluated and passed to the merging algorithm which
+sets skip flags in row sources.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 <SettingsInfoBlock type="Bool" default_value="1" />

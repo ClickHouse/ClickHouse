@@ -80,6 +80,11 @@ public:
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
 
+        /// A state of an empty range holds no nested state and serializes to zero bytes, and a column of
+        /// states is read back one state at a time with no length in front of any of them.
+        if (total == 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} is empty", getName());
+
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
                     getName());
