@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Roundtrip varied data through Parquet with the gzip codec (compressed and decompressed by
-# libdeflate when available) and verify the data is byte-for-byte identical across levels.
+# Round-trip varied data through Parquet with the `gzip` codec at non-default compression levels and
+# verify the data is identical. This keeps `output_format_compression_level` covered for
+# `output_format_parquet_compression_method='gzip'` independently of the compression backend.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,11 +22,8 @@ gen="SELECT
 
 reference=$($CLICKHOUSE_LOCAL -q "$gen ORDER BY id" | md5sum)
 
-# Levels are kept within zlib's [1, 9] range so the test also passes in the
-# ENABLE_LIBDEFLATE=0 fallback build (where Parquet gzip falls back to zlib,
-# which rejects levels above 9). In the default build these still go through
-# libdeflate; its extended levels 10-12 are covered by the gtest_libdeflate* tests.
-for level in 1 3 6 9; do
+# Levels 10-12 are accepted for compatibility with 26.7 and clamped to zlib's maximum of 9.
+for level in 1 3 6 9 12; do
     roundtrip=$($CLICKHOUSE_LOCAL -q "$gen FORMAT Parquet
             SETTINGS output_format_parquet_compression_method='gzip', output_format_compression_level=$level" \
         | $CLICKHOUSE_LOCAL --input-format=Parquet -q "SELECT * FROM table ORDER BY id" \
