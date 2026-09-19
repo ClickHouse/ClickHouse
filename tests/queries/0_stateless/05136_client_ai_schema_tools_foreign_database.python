@@ -52,12 +52,26 @@ FINAL_ANSWER = "MOCK-DONE"
 SQLITE_PATH = os.path.join(os.environ["CLICKHOUSE_TMP"], "05136_foreign.sqlite")
 FOREIGN_TABLE = "rows"
 
-# One tool call per case: the tool, its arguments, and whether it should be accepted. Each list
-# is the plan of one session; `current_plan` selects the one the mock provider is answering.
+# One tool call per case: the tool, its arguments, whether it should be accepted, and a fragment
+# the result shown to the model must contain. The fragment is what makes an accepted call mean
+# something: a call that returned an empty result, or a definition resolved from another object,
+# would be accepted just the same. Each list is the plan of one session; `current_plan` selects
+# the one the mock provider is answering.
+#
+# For the foreign table the fragment is the part of the definition that can only come from the
+# SQLite file - the column `s`, which exists in no other table here - and for `list_tables` it is
+# the name of the table enumerated from that file.
+FOREIGN_COLUMN = "`s` Nullable(String)"
 WRITABLE_SESSION = [
-    ("local_show_create", "show_create_table", {"database": "default", "table": "plain"}, True),
-    ("foreign_show_create", "show_create_table", {"database": "foreign_db", "table": FOREIGN_TABLE}, True),
-    ("foreign_list_tables", "list_tables", {"database": "foreign_db"}, True),
+    ("local_show_create", "show_create_table", {"database": "default", "table": "plain"}, True, "ENGINE = MergeTree"),
+    (
+        "foreign_show_create",
+        "show_create_table",
+        {"database": "foreign_db", "table": FOREIGN_TABLE},
+        True,
+        FOREIGN_COLUMN,
+    ),
+    ("foreign_list_tables", "list_tables", {"database": "foreign_db"}, True, FOREIGN_TABLE),
     # The same table through the read-only tool: a query can read the rows behind the name, so
     # the engine of the database decides and this one is refused.
     (
@@ -65,11 +79,18 @@ WRITABLE_SESSION = [
         "run_readonly_query",
         {"query": f"SHOW CREATE TABLE foreign_db.`{FOREIGN_TABLE}`"},
         False,
+        None,
     ),
 ]
 READONLY_SESSION = [
-    ("readonly_foreign_show_create", "show_create_table", {"database": "foreign_db", "table": FOREIGN_TABLE}, True),
-    ("readonly_foreign_list_tables", "list_tables", {"database": "foreign_db"}, True),
+    (
+        "readonly_foreign_show_create",
+        "show_create_table",
+        {"database": "foreign_db", "table": FOREIGN_TABLE},
+        True,
+        FOREIGN_COLUMN,
+    ),
+    ("readonly_foreign_list_tables", "list_tables", {"database": "foreign_db"}, True, FOREIGN_TABLE),
 ]
 CASES = WRITABLE_SESSION + READONLY_SESSION
 
@@ -100,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
         index = sum(1 for m in request["messages"] if m.get("role") == "tool")
 
         if index < len(current_plan):
-            name, tool, arguments, _ = current_plan[index]
+            name, tool, arguments, _, _ = current_plan[index]
             message = {
                 "role": "assistant",
                 "content": None,
@@ -322,19 +343,31 @@ def main():
             current_plan = plan
             results |= run_session(server, config, plan[0][0], setup, question)
 
-        for name, _, _, should_be_allowed in CASES:
+        for name, _, _, should_be_allowed, expected in CASES:
             answer = results.get(f"call_{name}")
             if answer is None:
                 print(f"{name}: NO RESULT")
                 continue
             # The tool reports a refusal as an error; an accepted call reports its outcome.
             allowed = '"success":true' in answer.replace(" ", "")
-            if allowed == should_be_allowed:
-                print(f"{name}: {'OK' if allowed else 'BLOCKED'}")
-            else:
+            if allowed != should_be_allowed:
                 print(f"{name}: UNEXPECTED {answer[:200]}")
+            elif not allowed:
+                print(f"{name}: BLOCKED")
+            elif expected not in tool_result_payload(answer):
+                # Accepted, but what the model was shown is not what the tool promises.
+                print(f"{name}: MISSING PAYLOAD {tool_result_payload(answer)[:200]}")
+            else:
+                print(f"{name}: OK")
     finally:
         server.shutdown()
+
+
+def tool_result_payload(answer):
+    """The text of an accepted tool result, which is what the model is shown. The tool wraps it
+    into `{"result": ..., "success": true}`, so the wrapper has to come off before the payload of
+    the call can be looked at."""
+    return json.loads(answer)["result"]
 
 
 def collect(request_holder):
