@@ -198,6 +198,16 @@ def create_query_engine(query):
     `ENGINE` written inside a column `COMMENT` literal or inside the schema
     parentheses is not matched. Only the bare engine name is returned; its
     arguments (`ReplicatedMergeTree('/path', 'replica')`) are not parsed.
+
+    A top-level `AS` is disambiguated exactly as in
+    `find_table_settings_keyword`: `AS [db.]source_table` /
+    `AS table_function(...)` carries an identifier that is not syntax, so the
+    scan resumes after the whole carrier -- otherwise a source table named
+    `engine` (`CREATE TABLE dst AS engine ENGINE = MergeTree ...`) would be
+    taken for the keyword. `AS SELECT` / `AS WITH` / `AS (` start the select
+    query, after which no table-level `ENGINE` can follow, so the scan stops
+    and the caller sees no engine (fail fast) rather than a keyword picked out
+    of the select body.
     """
     i = 0
     n = len(query)
@@ -244,6 +254,12 @@ def create_query_engine(query):
             if j > start:
                 return query[start:j]
             return None
+        if depth == 0 and is_word_at(query, i, "AS"):
+            j = skip_whitespace_and_comments(query, i + len("AS"))
+            if j >= n or query[j] == "(" or is_word_at(query, j, "SELECT") or is_word_at(query, j, "WITH"):
+                return None
+            i = skip_table_carrier(query, j)
+            continue
         i += 1
     return None
 

@@ -799,3 +799,48 @@ def test_perf_py_imports_the_sibling_module_under_pythonsafepath(tmp_path):
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # A bare source table named exactly like the keyword: the `engine`
+        # after a top-level `AS` is the source name, so the engine scan must
+        # resume after the whole carrier.
+        ("CREATE TABLE dst AS engine ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE dst AS `engine` ENGINE = SharedMergeTree ORDER BY tuple()", "SharedMergeTree"),
+        # An `EMPTY` / `CLONE` marker sits between the name and the `AS`, so
+        # the disambiguation still happens at the `AS`.
+        ("CREATE TABLE dst AS engine EMPTY ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE dst CLONE AS engine ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        # A qualified source name, and one written with whitespace around the
+        # dot, are both a single carrier.
+        ("CREATE TABLE dst AS db . engine ENGINE = ReplicatedMergeTree ORDER BY tuple()", "ReplicatedMergeTree"),
+        # A table function carries an argument list that may itself mention
+        # the keyword; it is skipped as a balanced group.
+        ("CREATE TABLE dst AS remote('h', 'd', 'engine') ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        # `ENGINE` before the `AS` is found the usual way.
+        ("CREATE TABLE dst ENGINE = Memory AS SELECT 1 AS engine", "Memory"),
+        # After `AS SELECT` / `AS WITH` / `AS (` no table-level engine can
+        # follow, so a column alias named `engine` in the select body is never
+        # taken for the engine of the table.
+        ("CREATE TABLE dst AS SELECT 1 AS engine", None),
+        ("CREATE TABLE dst AS WITH x AS (SELECT 1) SELECT 1 AS engine FROM x", None),
+        ("CREATE TABLE dst AS (SELECT 1 AS engine)", None),
+    ],
+)
+def test_engine_detection_skips_the_source_table_carrier(query, expected):
+    assert create_query_engine(query) == expected
+
+
+def test_source_table_named_engine_is_still_a_strippable_mergetree():
+    """The whole point of the carrier skip: `perf.py` must still recognise
+    `CREATE TABLE dst AS engine ENGINE = MergeTree ... SETTINGS ...` as a
+    `MergeTree` create query, or the baseline server would fail outright
+    instead of stripping the baseline-equivalent setting."""
+    query = f"CREATE TABLE dst AS engine ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    assert is_mergetree_create_query(query)
+    assert (
+        strip_setting_from_query(query, SETTING, {"0", "false"})
+        == "CREATE TABLE dst AS engine ENGINE = MergeTree ORDER BY tuple()"
+    )

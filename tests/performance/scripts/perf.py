@@ -865,8 +865,17 @@ if not args.use_existing_tables:
                         # the setting cannot affect at all) still surface as
                         # failures instead of silently producing different
                         # datasets on the two sides.
+                        #
+                        # Only the reference connection (index 0) may strip:
+                        # the rewrite exists to let the *old* server fall back
+                        # to its own default. An `UNKNOWN_SETTING` on the PR
+                        # side means the patched server does not know its own
+                        # new setting -- a broken feature or package -- so it
+                        # must surface instead of being papered over with a
+                        # silently rewritten `CREATE TABLE`.
                         if (
-                            e.code == 115  # UNKNOWN_SETTING
+                            index == 0
+                            and e.code == 115  # UNKNOWN_SETTING
                             and first_keyword(current_query) == "CREATE"
                             and is_mergetree_create_query(current_query)
                         ):
