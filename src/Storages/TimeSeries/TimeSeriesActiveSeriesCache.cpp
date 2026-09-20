@@ -82,7 +82,9 @@ UInt128 TimeSeriesActiveSeriesCache::extractId(const IColumn & id_column, size_t
     }
 
     if (const auto * col_u64 = typeid_cast<const ColumnVector<UInt64> *>(&id_column))
-        return UInt128(0, col_u64->getElement(row));
+        /// The converting constructor zero-extends into the low word. Do not reach for a two-element
+        /// brace list instead: it fills the words in argument order, so it would mean the value << 64.
+        return col_u64->getElement(row);
 
     if (const auto * col_lc = typeid_cast<const ColumnLowCardinality *>(&id_column))
     {
