@@ -60,10 +60,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
-struct NATSSettingsImpl : public SettingsWithRecordedOrigin<NATSSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {

@@ -24,10 +24,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_queue_size, 1000, "Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged.", 0) \
 
 DECLARE_SETTINGS_TRAITS(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QUERY_RUNNER_SETTINGS_SUPPORTED_TYPES)
-struct QueryRunnerSettingsImpl : public SettingsWithRecordedOrigin<QueryRunnerSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QueryRunnerSettings, QueryRunnerSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(QueryRunnerSettingsTraits, QUERY_RUNNER_SETTINGS, QueryRunnerSettings, QueryRunnerSetting)
 
 QueryRunnerSettings::QueryRunnerSettings() : impl(std::make_unique<QueryRunnerSettingsImpl>())
 {

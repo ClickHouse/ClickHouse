@@ -75,10 +75,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
-struct KafkaSettingsImpl : public SettingsWithRecordedOrigin<KafkaSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
 
 KafkaSettings::KafkaSettings() : impl(std::make_unique<KafkaSettingsImpl>())
 {

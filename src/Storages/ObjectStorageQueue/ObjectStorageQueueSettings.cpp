@@ -79,10 +79,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES)
-struct ObjectStorageQueueSettingsImpl : public SettingsWithRecordedOrigin<ObjectStorageQueueSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings() : impl(std::make_unique<ObjectStorageQueueSettingsImpl>())
 {

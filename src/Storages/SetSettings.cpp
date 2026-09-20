@@ -27,10 +27,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SET_SETTINGS_SUPPORTED_TYPES)
-struct SetSettingsImpl : public SettingsWithRecordedOrigin<SetSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
 
 SetSettings::SetSettings() : impl(std::make_unique<SetSettingsImpl>())
 {

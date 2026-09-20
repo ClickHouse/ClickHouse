@@ -57,10 +57,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)   \
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RABBITMQ_SETTINGS_SUPPORTED_TYPES)
-struct RabbitMQSettingsImpl : public SettingsWithRecordedOrigin<RabbitMQSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, RabbitMQSettings, RabbitMQSetting)
 
 RabbitMQSettings::RabbitMQSettings() : impl(std::make_unique<RabbitMQSettingsImpl>())
 {

@@ -32,10 +32,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HIVE_SETTINGS_SUPPORTED_TYPES)
-struct HiveSettingsImpl : public SettingsWithRecordedOrigin<HiveSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HiveSettings, HiveSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HiveSettings, HiveSetting)
 
 HiveSettings::HiveSettings() : impl(std::make_unique<HiveSettingsImpl>())
 {

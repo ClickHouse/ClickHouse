@@ -36,10 +36,7 @@ namespace ErrorCodes
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32, geometry) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', 'date2String', or 'geometry'. Must match the default of the 'mysql_datatypes_support_level' server setting, so that creating a MySQL database or table engine with the default settings does not persist a redundant SETTINGS clause.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
-struct MySQLSettingsImpl : public SettingsWithRecordedOrigin<MySQLSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
 
 MySQLSettings::MySQLSettings() : impl(std::make_unique<MySQLSettingsImpl>())
 {

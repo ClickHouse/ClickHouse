@@ -34,10 +34,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FILELOG_SETTINGS_SUPPORTED_TYPES)
-struct FileLogSettingsImpl : public SettingsWithRecordedOrigin<FileLogSettingsTraits>
-{
-};
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
 
 FileLogSettings::FileLogSettings() : impl(std::make_unique<FileLogSettingsImpl>())
 {

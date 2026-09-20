@@ -122,4 +122,11 @@ private:
     }
 };
 
+/// `IMPLEMENT_SETTINGS_TRAITS` with an `Impl` that records where each value came from. An `Impl` that needs
+/// methods of its own - `MergeTreeSettingsImpl` - is written out and takes `IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL`.
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE) \
+    struct CLASS_NAME##Impl : public SettingsWithRecordedOrigin<SETTINGS_TRAITS_NAME> {}; \
+    IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, CLASS_NAME, SETTING_NAMESPACE)
+
 }
