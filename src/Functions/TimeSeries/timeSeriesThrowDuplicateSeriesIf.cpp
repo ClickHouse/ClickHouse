@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int PROMQL_QUERY_EXECUTION_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -101,7 +102,7 @@ public:
             auto tags = tags_collector->getTagsByGroup(group);
 
             throw Exception(
-                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR,
                 "Multiple series have the same tags {}, duplicate series in the same result set are not allowed",
                 ContextTimeSeriesTagsCollector::toString(tags));
         }
