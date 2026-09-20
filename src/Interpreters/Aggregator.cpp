@@ -2669,6 +2669,13 @@ public:
             owner_of_raw.push_back(owner);
         }
 
+        /// The scratch row is measured by how much the column it goes into grows, so the size it
+        /// starts from is remembered per column - an empty `LowCardinality` column already carries a
+        /// dictionary, and that is not part of any key.
+        scratch_bytes.reserve(columns.raw_key_columns.size());
+        for (const auto * raw : columns.raw_key_columns)
+            scratch_bytes.push_back(raw->byteSize());
+
         if (keep_sample)
         {
             sample_columns.reserve(columns.key_columns.size());
@@ -2714,11 +2721,16 @@ private:
     /// cardinality - with the one exception the rebuild below covers.
     void takeRow(size_t num_raw_columns)
     {
+        /// Measured as whole-column growth rather than as `byteSizeAt` of the inserted row, because
+        /// `byteSizeAt` is not additive: `ColumnLowCardinality::byteSizeAt` reports the referenced
+        /// dictionary value alone, so summing it would drop every row's index byte and would charge a
+        /// value repeated across groups once per group instead of once. The growth of the column the
+        /// key goes into prices both the way a materialized column does.
         UInt64 row_bytes = 0;
         for (size_t raw = 0; raw < num_raw_columns; ++raw)
         {
-            const auto * column = columns.raw_key_columns[raw];
-            row_bytes += column->byteSizeAt(column->size() - 1);
+            const size_t grown_to = columns.raw_key_columns[raw]->byteSize();
+            row_bytes += grown_to - std::min(grown_to, scratch_bytes[raw]);
         }
         bytes += row_bytes;
 
@@ -2742,6 +2754,11 @@ private:
                 columns.key_columns[owner] = columns.key_columns[owner]->cloneEmpty();
                 columns.raw_key_columns[raw] = columns.key_columns[owner].get();
             }
+
+            /// Whatever `popBack` left behind - an interned dictionary value, a string's reserved
+            /// characters - is where the next row's growth is measured from, so a value already in the
+            /// scratch dictionary is charged its index alone the second time it is seen.
+            scratch_bytes[raw] = columns.raw_key_columns[raw]->byteSize();
         }
 
         if (sample_this_row)
@@ -2766,6 +2783,7 @@ private:
     const Sizes & key_sizes_ref;
     IColumn::SerializationSettings serialization_settings;
     std::vector<size_t> owner_of_raw;
+    std::vector<size_t> scratch_bytes;
     MutableColumns sample_columns;
     UInt64 bytes = 0;
     size_t sampled_rows = 0;
