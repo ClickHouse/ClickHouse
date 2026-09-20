@@ -36,9 +36,12 @@
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Interpreters/misc.h>
+#include <Storages/SelectQueryInfo.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
@@ -58,17 +61,67 @@ namespace QueryPlanOptimizations
 
 bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+String findDictionaryFunction(const IQueryPlanStep & step);
+
+/// The name of the first dictionary function (`dictGet` and its variations, `dictHas`, `dictIsIn`) in the
+/// expressions the step would carry to a worker, or an empty string. A dictionary is an object of the
+/// initiator: a worker task resolves the name in its own catalog and fails with `Dictionary (...) not found`
+/// when the dictionary is not there, so a plan that calls one is executed locally until dictionaries can be
+/// shipped. Besides expression and filter steps, the join expression and the filters pushed into a source
+/// read (prewhere, row-level filter, the pushed-down filter) carry expressions.
+String findDictionaryFunction(const IQueryPlanStep & step)
+{
+    auto find_in_dag = [](const ActionsDAG & dag) -> String
+    {
+        for (const auto & node : dag.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && functionIsDictGet(node.function_base->getName()))
+                return node.function_base->getName();
+        return {};
+    };
+
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        return find_in_dag(expression->getExpression());
+    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        return find_in_dag(filter->getExpression());
+    if (const auto * join = typeid_cast<const JoinStepLogical *>(&step))
+        return find_in_dag(join->getActionsDAG());
+    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & prewhere = source->getPrewhereInfo())
+            if (auto name = find_in_dag(prewhere->prewhere_actions); !name.empty())
+                return name;
+        if (const auto & row_level_filter = source->getRowLevelFilter())
+            if (auto name = find_in_dag(row_level_filter->actions); !name.empty())
+                return name;
+        if (const auto & filter_dag = source->getFilterActionsDAG())
+            if (auto name = find_in_dag(*filter_dag); !name.empty())
+                return name;
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+        {
+            if (const auto & prewhere = read->getDeferredPrewhereInfo())
+                if (auto name = find_in_dag(prewhere->prewhere_actions); !name.empty())
+                    return name;
+            if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
+                if (auto name = find_in_dag(row_level_filter->actions); !name.empty())
+                    return name;
+        }
+    }
+    return {};
+}
 
 /// True if the step cannot be shipped to a worker as part of a serialized fragment.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
-/// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
+/// connection: its callback holds the connection's protocol version and codec. A step that calls a
+/// dictionary function refers to a dictionary of the initiator (`findDictionaryFunction`). A `ReadFromMergeTree`
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
 bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
     if (typeid_cast<const BlocksMarshallingStep *>(&step))
+        return true;
+    if (!findDictionaryFunction(step).empty())
         return true;
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return false;
@@ -301,6 +354,10 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     /// materialize them away (`materializeQueryPlanReferences` / `optimizeUnusedCommonSubplans`)
     if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const CommonSubplanReferenceStep *>(&step))
         return std::nullopt;
+
+    if (auto dictionary_function = findDictionaryFunction(step); !dictionary_function.empty())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support the dictionary function {}", dictionary_function);
 
     if (isStepUnsupportedForRemoteExecution(step))
         return PreformattedMessage::create(
