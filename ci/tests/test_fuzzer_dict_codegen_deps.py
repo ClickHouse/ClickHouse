@@ -55,6 +55,27 @@ _GENERATED_SOURCE = "out.cpp"
 # a suffix-filtered glob drops.
 _UNSUFFIXED_CARRIER = "src/Functions/stl.hpp"
 
+# The names src/Functions/grouping.cpp registers by looping over an initializer
+# list and passing the loop variable to the factory. They stand in for the whole
+# class of names that never appear as a register* argument.
+_LOOP_REGISTERED_NAMES = (
+    "__groupingForCube",
+    "__groupingForGroupingSets",
+    "__groupingForRollup",
+    "__groupingOrdinary",
+)
+
+# The head of the pattern matching that form, and a keyword no source file
+# holds, so replacing one with the other leaves the pass matching nothing.
+_LOOP_PASS_ANCHOR = r"'for[[:space:]]*\("
+_LOOP_PASS_DISABLED = r"'forNoSuchKeyword[[:space:]]*\("
+
+# A name whose only carrier is the register* call taking a string literal
+# (factory.registerAlias("lcase", ...) in src/Functions/lower.cpp): it is in
+# neither CommonParsers.h nor the curated old.dict, so it can only arrive
+# through the pass the one above sits next to.
+_LITERAL_ARGUMENT_NAME = "lcase"
+
 
 def _read(path):
     with open(path, encoding="utf-8") as f:
@@ -454,6 +475,70 @@ class TestTheDictionaryTracksAnUnsuffixedCarrier:
         control, treatment = arms
         assert '"codegenDepsProbeToken"' not in control
         assert len(treatment) == len(control) + 1
+
+
+class TestLoopRegisteredNamesReachTheDictionary:
+    """Run the generator, so a registration form no pass covered is measured.
+
+    A name the generator cannot derive is a name the grammar never produces, and
+    update_dict.sh's coverage check fails the nightly libFuzzer job on it before
+    any fuzzer runs. src/Functions/grouping.cpp registers its four
+    specializations in a range-for over an initializer list and passes the loop
+    variable to factory.registerFunction, so the pass matching a string literal
+    as the register* argument did not see them: the binary registered four names
+    the source-derived dictionary did not have.
+    """
+
+    @staticmethod
+    def _generate(generator, output):
+        finished = subprocess.run(
+            [generator, _REPO, output],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+        assert finished.returncode == 0, finished.stderr
+        return _read(output).splitlines()
+
+    @pytest.fixture(scope="class")
+    def generated(self, tmp_path_factory):
+        directory = tmp_path_factory.mktemp("loop_registered")
+        return self._generate(_GENERATOR, str(directory / "source.dict"))
+
+    @pytest.fixture(scope="class")
+    def without_the_pass(self, tmp_path_factory):
+        # The control arm runs a copy of the generator with that one pass
+        # matching nothing, which is the state the names were missing in.
+        generator = _read(_GENERATOR)
+        mutated = generator.replace(_LOOP_PASS_ANCHOR, _LOOP_PASS_DISABLED, 1)
+        assert mutated != generator, (
+            f"no pass starts with {_LOOP_PASS_ANCHOR} any more, so this arm "
+            "disables nothing; point it at the loop-registration pattern"
+        )
+        directory = tmp_path_factory.mktemp("loop_registered_control")
+        script = directory / "generate_source_dict.sh"
+        script.write_text(mutated, encoding="utf-8")
+        script.chmod(0o755)
+        return self._generate(str(script), str(directory / "source.dict"))
+
+    @pytest.mark.parametrize("name", _LOOP_REGISTERED_NAMES)
+    def test_the_name_is_in_the_dictionary(self, generated, name):
+        assert f'"{name}"' in generated
+
+    @pytest.mark.parametrize("name", _LOOP_REGISTERED_NAMES)
+    def test_the_loop_pass_is_what_supplies_it(self, without_the_pass, name):
+        # Without this arm the assertion above would also hold for a generator
+        # that carried the names through some other pass, or through old.dict.
+        assert f'"{name}"' not in without_the_pass
+
+    def test_disabling_the_pass_leaves_the_others_working(self, without_the_pass):
+        # And the arm above would hold for a mutation that broke the generator
+        # into emitting nothing at all.
+        assert f'"{_LITERAL_ARGUMENT_NAME}"' in without_the_pass, (
+            f"{_LITERAL_ARGUMENT_NAME} is gone; pick another name whose only "
+            "carrier is a register* call taking a string literal"
+        )
 
 
 class TestPythonGlobResolutionIsFaithful:
