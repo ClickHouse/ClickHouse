@@ -714,10 +714,11 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
-        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
-        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
-        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
+        /// SETTINGS without ENGINE is allowed for both TABLE and DATABASE, so that the engine can come
+        /// from `default_table_engine` for a table and from the only default database engine (`Atomic`)
+        /// for a database. Special handling is provided in `InterpreterSetQuery::applySettingsFromQuery`
+        /// to differentiate between engine and query settings.
+        if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -2013,6 +2014,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```
 
 ### SETTINGS {#settings}
+
+The `SETTINGS` clause may be used without an `ENGINE` clause, in which case the default database engine
+(`Atomic`) is used. It may hold both settings of the database engine and ordinary query settings; each
+name is dispatched to whichever of the two it belongs to.
+
+#### disk {#disk}
+
+The disk used to store the table metadata files of the database. It can name a disk from the server
+configuration, or define one inline with the `disk` function, the same way a single table does:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Applies to database engines that store table metadata on disk (`Atomic`, `Ordinary`). If unspecified,
+the disk defined in the `database_disk.disk` server setting is used.
 
 #### lazy_load_tables {#lazy-load-tables}
 
