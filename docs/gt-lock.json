@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-20T18:48:05.087Z",
+          "updatedAt": "2026-09-20T21:11:28.926Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-20T18:48:04.296Z",
+          "updatedAt": "2026-09-20T21:11:27.893Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-20T18:48:04.698Z",
+          "updatedAt": "2026-09-20T21:11:28.419Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-20T18:48:04.829Z",
+          "updatedAt": "2026-09-20T21:11:28.583Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-20T18:48:04.572Z",
+          "updatedAt": "2026-09-20T21:11:28.253Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-20T18:48:04.435Z",
+          "updatedAt": "2026-09-20T21:11:28.086Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-20T18:48:04.112Z",
+          "updatedAt": "2026-09-20T21:11:27.713Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-20T18:48:04.961Z",
+          "updatedAt": "2026-09-20T21:11:28.749Z",
           "fileName": "docs.json"
         }
       },
@@ -22086,51 +22086,50 @@
     },
     {
       "fileId": "5cc522a4d65821b0bacf8bb2d03f9143a076fa58f47f88babd19280893ad8cf0",
-      "versionId": "114490a8b557b5c1673fd30e24229e0011381b52832e20dfb6bc015109f7f8fd",
+      "versionId": "ee1fbac751b0470fb0d41e690e4ea629265cca0289217f62dd6a2288fcd768a9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.143Z",
-          "fileName": "es/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "1aeb3d9ab3951bc0cd9955dab2714e1568cad6df84122ff88ad3948f9c53afcf"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.143Z",
+          "updatedAt": "2026-09-20T21:11:32.773Z",
           "fileName": "ja/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "42dd5ce88c514a99fa009a35851b07bc3f9b2d0dcf4008126a554958ea623a8d"
+          "postProcessHash": "04b078141f68fad7626beae4a912f61f511a1fb324e72a7932dc106202c277ed"
         },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
-          "fileName": "ko/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "e7c0b8bc856cee4585d8d0756eee9a8c91ca6165685a0a7a145ed6934b731c53"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
-          "fileName": "pt-BR/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "7ca5f3c9575cde061d51c164d19b5869ef948ce9bbc6a3f2190182a46d827344"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
-          "fileName": "ru/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "94acdc1d0f1a1451358878b3388851c3070fec9fd5efa9c8a9a28c0d40eaae92"
+        "es": {
+          "updatedAt": "2026-09-20T21:11:32.774Z",
+          "fileName": "es/reference/system-tables/fail_points.mdx",
+          "postProcessHash": "303436ffd886f71faed2181be094d1cf7e1354ace67b08fb2e32d9adfdf569bf"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
+          "updatedAt": "2026-09-20T21:11:32.774Z",
           "fileName": "zh/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "cad3b1f676f7be26f5d69e7f25bd758e04a1bc4a0c5d863c1f255bf5bdce7096"
+          "postProcessHash": "de280638e314e9b2e941543ca60eba8147680232975d346fb732119456463433"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
-          "fileName": "ar/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "ea2146ad7137ee665a6bb6fba4987f1fb2cc453e751b12f0d23c60e166a7d06d"
+        "pt-BR": {
+          "updatedAt": "2026-09-20T21:11:32.775Z",
+          "fileName": "pt-BR/reference/system-tables/fail_points.mdx",
+          "postProcessHash": "b65f85bd3867f73a1baf4b43209e08862d66d027fd29b13ea82d2738b2b5377f"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.144Z",
+          "updatedAt": "2026-09-20T21:11:32.775Z",
           "fileName": "fr/reference/system-tables/fail_points.mdx",
-          "postProcessHash": "258862fadd64449886793b806eb8fe7200e773654c31af75995b37136f63eb90"
+          "postProcessHash": "c69c717e8c777b780533e47248bf50297fa01be18605a3c5ec2f340b96bdc303"
+        },
+        "ar": {
+          "updatedAt": "2026-09-20T21:11:32.775Z",
+          "fileName": "ar/reference/system-tables/fail_points.mdx",
+          "postProcessHash": "102e5d609f80c115bd40361cc5a3a0968ee0976fff11ff860e554e0d39735df5"
+        },
+        "ru": {
+          "updatedAt": "2026-09-20T21:11:32.776Z",
+          "fileName": "ru/reference/system-tables/fail_points.mdx",
+          "postProcessHash": "5afdb28b417b57f79be6aea3e7b7270d62057246e954044ac61c3d6853d89deb"
+        },
+        "ko": {
+          "updatedAt": "2026-09-20T21:11:32.776Z",
+          "fileName": "ko/reference/system-tables/fail_points.mdx",
+          "postProcessHash": "f99a6943792c41feec8bad1ab261785750e065a23ed3712c6fd6f150538ce053"
         }
       },
-      "fileName": "reference/system-tables/fail_points.mdx",
-      "staged": false
+      "fileName": "reference/system-tables/fail_points.mdx"
     },
     {
       "fileId": "d080b10f03306dde284450048efe68bea490363820c2d55df3d8f547b22fc611",
