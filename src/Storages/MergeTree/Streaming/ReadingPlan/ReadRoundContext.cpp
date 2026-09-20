@@ -10,6 +10,7 @@
 #include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace DB
 {
@@ -77,31 +78,33 @@ void restoreStreamingAuxiliaryColumns(ActionsDAG & actions, const StreamSettings
     }
 }
 
-PrewhereInfoPtr makeReadRoundPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+FilterDAGInfo makeReadRoundFilter(const ActionsDAG & actions, const String & column_name, bool remove_column, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
 {
-    if (!info)
-        return nullptr;
+    FilterDAGInfo filter{actions.clone(), column_name, remove_column};
+    restoreStreamingAuxiliaryColumns(filter.actions, stream_settings, storage, context);
+    for (const auto & required_column : filter.actions.getRequiredColumnsNames())
+        filter.actions.tryRestoreColumn(required_column);
 
-    auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
-    restoreStreamingAuxiliaryColumns(patched_info->prewhere_actions, stream_settings, storage, context);
-
-    return patched_info;
+    return filter;
 }
 
-FilterDAGInfoPtr makeReadRoundRowLevelFilter(FilterDAGInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+std::optional<FilterDAGInfo> makeReadRoundRowLevelFilter(const FilterDAGInfoPtr & info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
 {
     if (!info)
-        return nullptr;
+        return std::nullopt;
 
-    auto patched_info = std::make_shared<FilterDAGInfo>(info->actions.clone(), info->column_name, info->do_remove_column);
-    restoreStreamingAuxiliaryColumns(patched_info->actions, stream_settings, storage, context);
-    for (const auto & required_column : patched_info->actions.getRequiredColumnsNames())
-        patched_info->actions.tryRestoreColumn(required_column);
-
-    return patched_info;
+    return makeReadRoundFilter(info->actions, info->column_name, info->do_remove_column, stream_settings, storage, context);
 }
 
-Names makeColumnsToRead(Names columns, const StreamSettings & stream_settings, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
+std::optional<FilterDAGInfo> makeReadRoundPrewhereFilter(const PrewhereInfoPtr & info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    if (!info)
+        return std::nullopt;
+
+    return makeReadRoundFilter(info->prewhere_actions, info->prewhere_column_name, info->remove_prewhere_column, stream_settings, storage, context);
+}
+
+Names makeColumnsToRead(Names columns, const StreamSettings & stream_settings, const std::optional<FilterDAGInfo> & row_level_filter, const std::optional<FilterDAGInfo> & prewhere_filter)
 {
     std::erase(columns, TimeAttributeColumn::name);
 
@@ -113,21 +116,11 @@ Names makeColumnsToRead(Names columns, const StreamSettings & stream_settings, c
         if (!std::ranges::contains(columns, stream_settings.watermark->column))
             columns.push_back(stream_settings.watermark->column);
 
-    if (prewhere_info)
-    {
-        const auto source_columns = prewhere_info->prewhere_actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    if (row_level_filter)
-    {
-        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
+    for (const auto * filter : {&row_level_filter, &prewhere_filter})
+        if (filter->has_value())
+            for (const auto & source_column : (*filter)->actions.getRequiredColumnsNames())
+                if (!std::ranges::contains(columns, source_column))
+                    columns.push_back(source_column);
 
     return columns;
 }
@@ -164,9 +157,9 @@ ReadRoundContext makeReadRoundContext(
 {
     const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
 
-    auto prewhere_info = makeReadRoundPrewhereInfo(query_info.prewhere_info, stream_settings, storage, context);
     auto row_level_filter = makeReadRoundRowLevelFilter(query_info.row_level_filter, stream_settings, storage, context);
-    auto columns_to_read = makeColumnsToRead(std::move(user_requested_columns), stream_settings, prewhere_info, row_level_filter);
+    auto prewhere_filter = makeReadRoundPrewhereFilter(query_info.prewhere_info, stream_settings, storage, context);
+    auto columns_to_read = makeColumnsToRead(std::move(user_requested_columns), stream_settings, row_level_filter, prewhere_filter);
 
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
     const auto * projection = chooseCommitOrderProjection(*metadata, columns_to_read);
@@ -174,9 +167,9 @@ ReadRoundContext makeReadRoundContext(
     return ReadRoundContext{
         .storage = storage,
         .query_info = makeStreamingSelectQueryInfo(query_info),
-        .prewhere_info = std::move(prewhere_info),
-        .row_level_filter = std::move(row_level_filter),
         .stream_settings = stream_settings,
+        .row_level_filter = std::move(row_level_filter),
+        .prewhere_filter = std::move(prewhere_filter),
         .context = makeStreamingContext(std::move(context), projection),
         .columns_to_read = std::move(columns_to_read),
         .requested_num_streams = requested_num_streams,

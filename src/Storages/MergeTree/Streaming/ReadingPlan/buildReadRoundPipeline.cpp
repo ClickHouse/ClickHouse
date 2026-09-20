@@ -123,33 +123,17 @@ Pipe buildPartitionReadingPipeline(
 {
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
-    const auto & prewhere_info = reading_context.prewhere_info;
-    const auto & row_level_filter = reading_context.row_level_filter;
     const auto & output_header = reading_context.output_header;
 
     auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, reading_context.columns_to_read);
     if (!plan)
         return {};
 
-    /// Add row policy filter built from the outer query analysis.
-    if (row_level_filter)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            row_level_filter->actions.clone(),
-            row_level_filter->column_name,
-            row_level_filter->do_remove_column));
-    }
+    if (const auto & filter = reading_context.row_level_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
-    /// Add filter built from the outer query analysis.
-    if (prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            prewhere_info->prewhere_actions.clone(),
-            prewhere_info->prewhere_column_name,
-            prewhere_info->remove_prewhere_column));
-    }
+    if (const auto & filter = reading_context.prewhere_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
