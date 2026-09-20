@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
@@ -34,6 +35,12 @@ ColumnPtr denseUInt16(UInt16 value, size_t n)
     auto col = ColumnUInt16::create();
     col->getData().assign(n, value);
     return col;
+}
+
+/// A ColumnConst over UInt16 where every row holds `value`.
+ColumnPtr constUInt16(UInt16 value, size_t n)
+{
+    return ColumnConst::create(denseUInt16(value, 1), n);
 }
 
 /// A ColumnSparse over UInt16 where every row holds `value` (fully default when value == 0,
@@ -613,5 +620,19 @@ TEST(PartialSortingTransform, TupleReplicatedThresholdDoesNotBadCast)
     std::vector<std::vector<UInt64>> blocks;
     ASSERT_NO_THROW(blocks = runPartialSorting(
         key_type, tupleOf(replicatedUInt16(0, n)), tupleOf(denseUInt16(0, n)), n));
+    expectThresholdFiltered(blocks);
+}
+
+/// The const key goes the other way: only the threshold is materialized here, so unwrapping it
+/// leaves the live key column const, and `ColumnConst::compareAt` casts its rhs to `ColumnConst`.
+/// `02427_column_nullable_ubsan` (`SELECT 0 AS a, ... ORDER BY a DESC, b DESC, c ASC LIMIT 1500`)
+/// is this shape, and segfaults where `assert_cast` compiles to `static_cast`.
+TEST(PartialSortingTransform, ConstThresholdDoesNotBadCast)
+{
+    constexpr size_t n = 1600;
+    auto key_type = std::make_shared<DataTypeUInt16>();
+    std::vector<std::vector<UInt64>> blocks;
+    ASSERT_NO_THROW(blocks = runPartialSorting(
+        key_type, constUInt16(0, n), constUInt16(0, n), n));
     expectThresholdFiltered(blocks);
 }
