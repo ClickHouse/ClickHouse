@@ -40,49 +40,86 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t num_args = arguments.size();
-
-        /// Keep the constant result for fixed-size types, including sparse columns.
-        /// Only the String.size rewrite needs their representation-dependent overhead:
-        /// its original String argument could not use this fast path.
-        bool all_constant = true;
-        UInt64 constant_size = 0;
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+        if constexpr (!include_sparse_overhead)
         {
-            if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
-                && (!include_sparse_overhead || !arguments[arg_num].column->isSparse()))
+            size_t num_args = arguments.size();
+
+            /// If the resulting size is constant, return constant column.
+            bool all_constant = true;
+            UInt64 constant_size = 0;
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
-                constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                {
+                    constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                }
+                else
+                {
+                    all_constant = false;
+                    break;
+                }
             }
-            else
+
+            if (all_constant)
+                return result_type->createColumnConst(input_rows_count, constant_size);
+
+            auto result_col = ColumnUInt64::create(input_rows_count);
+            auto & vec_res = result_col->getData();
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             {
-                all_constant = false;
-                break;
+                const IColumn * column = arguments[arg_num].column.get();
+
+                if (arg_num == 0)
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] = column->byteSizeAt(row);
+                else
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] += column->byteSizeAt(row);
             }
+
+            return result_col;
         }
-
-        if (all_constant)
-            return result_type->createColumnConst(input_rows_count, constant_size);
-
-        auto result_col = ColumnUInt64::create(input_rows_count);
-        auto & vec_res = result_col->getData();
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+        else
         {
-            const IColumn * column = arguments[arg_num].column.get();
+            size_t num_args = arguments.size();
 
-            if constexpr (include_sparse_overhead)
+            /// Fixed-size arguments can be added once even when another argument
+            /// needs per-row sparse accounting.
+            auto is_constant_size = [&](size_t arg_num)
+            {
+                return !arguments[arg_num].column->isSparse()
+                    && arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+            };
+
+            size_t first_dynamic_arg = num_args;
+            UInt64 constant_size = 0;
+            for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+            {
+                if (is_constant_size(arg_num))
+                {
+                    constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
+                }
+                else if (first_dynamic_arg == num_args)
+                {
+                    first_dynamic_arg = arg_num;
+                }
+            }
+
+            if (first_dynamic_arg == num_args)
+                return result_type->createColumnConst(input_rows_count, constant_size);
+
+            auto result_col = ColumnUInt64::create(input_rows_count, constant_size);
+            auto & vec_res = result_col->getData();
+
+            auto add_column_size = [&](const IColumn * column)
             {
                 if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column))
                 {
                     const auto & values = sparse_column->getValuesColumn();
                     const size_t default_size = values.byteSizeAt(0);
 
-                    if (arg_num == 0)
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            vec_res[row] = default_size;
-                    else
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            vec_res[row] += default_size;
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        vec_res[row] += default_size;
 
                     const auto & offsets = sparse_column->getOffsetsData();
                     for (size_t offset = 0; offset < offsets.size(); ++offset)
@@ -91,19 +128,23 @@ public:
                         vec_res[row] -= default_size;
                         vec_res[row] += values.byteSizeAt(offset + 1) + sizeof(UInt64);
                     }
-                    continue;
+                    return;
                 }
-            }
 
-            if (arg_num == 0)
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    vec_res[row] = column->byteSizeAt(row);
-            else
                 for (size_t row = 0; row < input_rows_count; ++row)
                     vec_res[row] += column->byteSizeAt(row);
-        }
+            };
 
-        return result_col;
+            for (size_t arg_num = first_dynamic_arg; arg_num < num_args; ++arg_num)
+            {
+                if (is_constant_size(arg_num))
+                    continue;
+
+                add_column_size(arguments[arg_num].column.get());
+            }
+
+            return result_col;
+        }
     }
 };
 
