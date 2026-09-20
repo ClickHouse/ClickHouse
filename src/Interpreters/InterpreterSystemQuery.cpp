@@ -708,7 +708,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { doRestartReplica(replica, system_context, /*throw_on_error=*/ false); });
+        pool.scheduleOrThrowOnError([=, this]() { doRestartReplica(replica, system_context, /*throw_on_error=*/false); });
     }
     pool.wait();
 }
