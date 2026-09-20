@@ -1646,9 +1646,9 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Toggle APPEND
+    /// Fuzz the refresh mode
     if (fuzz_rand() % 10 == 0)
-        strategy.append = !strategy.append;
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
@@ -2640,7 +2640,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
-    static const Strings posting_list_codecs = {"none", "bitpacking"};
+    static const Strings posting_list_codecs = {"none", "bitpacking", "pfor"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
     static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};
@@ -3292,7 +3292,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
+        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -4762,8 +4762,12 @@ ASTPtr QueryFuzzer::addJoinClause()
         }
 
         auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-        table->table_join = table_join;
-        table->table_expression = table_exp;
+        /// Every sub-node must also be in `children`: a generic AST walk visits only that vector,
+        /// so a member missing from it hides the joined relation from every visitor.
+        table->children.push_back(table_join);
+        table->table_join = table->children.back();
+        table->children.push_back(table_exp);
+        table->table_expression = table->children.back();
         return table;
     }
     return nullptr;
@@ -7836,8 +7840,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
                 {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
-                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},
-                {Type::RELOAD_MODEL, Type::RELOAD_MODELS},*/
+                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},*/
                 {Type::JEMALLOC_ENABLE_PROFILE, Type::JEMALLOC_DISABLE_PROFILE},
                 {Type::JEMALLOC_PURGE, Type::JEMALLOC_FLUSH_PROFILE},
                 {Type::FLUSH_LOGS, Type::FLUSH_ASYNC_INSERT_QUEUE},

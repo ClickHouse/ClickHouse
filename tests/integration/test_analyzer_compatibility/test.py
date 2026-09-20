@@ -13,11 +13,13 @@ current = cluster.add_instance(
     "current",
     main_configs=["configs/remote_servers.xml"],
 )
-# Here analyzer is disabled by default
+# Here analyzer is disabled by default. The value is pinned explicitly all the same: only a changed
+# setting is sent to a remote server, so without it this initiator would leave the choice to the
+# other server, which has no way to analyze the query the old way anymore.
 backward = cluster.add_instance(
     "backward",
-    use_old_analyzer=True,
     main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/old_analyzer.xml"],
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_MAX_VERSION_WITH_ANALYZER_DISABLED_BY_DEFAULT,
     with_installed_binary=True,
