@@ -1,0 +1,33 @@
+the reported oracle mismatch: count(p) + count(not p) + count(p is null) = count(*)
+1
+predicate, row-level truth, answer over the partitioned table
+assumeNotNull(c0) = 0	3	3
+assumeNotNull(c0) < 3	4	4
+NOT (assumeNotNull(c0) > 0)	3	3
+assumeNotNull(c0) >= 0	5	5
+assumeNotNull(c0) IN (0)	3	3
+the partition step is the sole pruner here, and it now keeps the NULL partition
+Min-Max
+Condition: true
+Parts: 4/4
+Partition
+Condition: (assumeNotNull(c0) in [0, 0])
+Parts: 2/4
+ifNull and coalesce reach the same chain once the rewrite that usually hides them is off
+ifNull(c0, 0) = 0	3	3
+coalesce(c0, 0) = 0	3	3
+reverse key	3	3
+LowCardinality(Nullable) key	3	3
+SummingMergeTree, the query the fuzzer reported
+1
+control: with no NULL row the partition step is the only pruner and still prunes
+assumeNotNull(c0) = 0	1
+Min-Max
+Parts: 3/3
+Partition
+Parts: 1/3
+control: the primary-key path already rejected the chain and is unchanged
+assumeNotNull(c0) = 0	3	3
+control: a NULL-preserving wrapper maps the NULL row to NULL and still answers correctly
+c0 + 1 = 1	1	1
+round(c0) = 0	1	1
