@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 /// `is_rate` divides the accumulated value by the window;
 /// `check_resets` counts resets and clamps extrapolation at zero.
 template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
@@ -284,7 +279,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 5;
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
@@ -338,21 +333,6 @@ public:
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
-    {
-        Base::serialize(place, buf, version);
-        writeBinaryLittleEndian(UInt8(exact_rate ? 1 : 0), buf);
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
-    {
-        Base::deserialize(place, buf, version, arena);
-        UInt8 stored_exact_rate = 0;
-        readBinaryLittleEndian(stored_exact_rate, buf);
-        if (static_cast<bool>(stored_exact_rate) != exact_rate)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different exact_rate mode");
     }
 };
 
