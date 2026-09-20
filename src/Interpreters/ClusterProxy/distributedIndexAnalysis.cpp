@@ -393,6 +393,7 @@ private:
             /// Exclude local replica
             max_active_replicas - 1,
             /*skip_unavailable_shards_=*/ true,
+            /*fail_if_replica_unprobed_=*/ false,
             /// FIXME: we can pass db.table, but, we use UUIDs internally, so we need first to add support of checking UUIDs
             /*table_to_check=*/ nullptr,
             replicaIndexPriorityFunc());
