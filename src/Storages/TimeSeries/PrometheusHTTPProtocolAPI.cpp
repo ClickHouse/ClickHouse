@@ -52,6 +52,12 @@
 
 #include <optional>
 
+namespace ProfileEvents
+{
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
+}
+
 namespace DB
 {
 
@@ -280,11 +286,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         QueryStatsCallback query_stats_callback;
         if (params.include_stats)
         {
-            query_stats_callback = [thread_group, counters_before = std::move(counters_before), &evaluation_watch](WriteBuffer & output)
+            query_stats_callback = [thread_group, initial_counters = std::move(counters_before), &evaluation_watch](WriteBuffer & output)
             {
                 const auto counters_after = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-                const auto read_rows = counters_after[ProfileEvents::SelectedRows] - (*counters_before)[ProfileEvents::SelectedRows];
-                const auto read_bytes = counters_after[ProfileEvents::SelectedBytes] - (*counters_before)[ProfileEvents::SelectedBytes];
+                const auto read_rows = counters_after[ProfileEvents::SelectedRows] - (*initial_counters)[ProfileEvents::SelectedRows];
+                const auto read_bytes = counters_after[ProfileEvents::SelectedBytes] - (*initial_counters)[ProfileEvents::SelectedBytes];
                 const auto peak_memory_usage = thread_group->memory_tracker.getPeak();
 
                 writeString(R"(,"stats":{"timings":{"evalTotalTime":)", output);
