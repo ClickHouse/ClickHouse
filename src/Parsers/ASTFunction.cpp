@@ -503,10 +503,15 @@ struct FunctionOperatorMapping
 
 }
 
-/// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
-/// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
-static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & arguments)
+static bool nameNeedsQuotingToSurviveReparse(const String & name, const ASTPtr & arguments)
 {
+    /// A bare `COLUMNS` followed by a parenthesized list is the column matcher: `ParserColumnsMatcher` reads it
+    /// as an `ASTColumnsListMatcher`/`ASTColumnsRegexpMatcher`, not as a call of a function of that name.
+    if (equalsCaseInsensitive(name, "columns"))
+        return true;
+
+    /// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
+    /// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
     return equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
         && arguments->children[0]->as<ASTSubquery>();
 }
@@ -582,7 +587,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
+    /// A window specification has no place in the operator form: `NOT x OVER ()` re-parses with `OVER` as an alias.
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
+        && !isWindowFunction())
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -1012,7 +1019,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (!name.empty())
-        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+        ostr << (nameNeedsQuotingToSurviveReparse(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
     if (parameters)
     {

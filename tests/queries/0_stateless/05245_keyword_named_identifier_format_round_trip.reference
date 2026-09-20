@@ -1,0 +1,20 @@
+SELECT `COLUMNS`(x) FROM t
+SELECT `COLUMNS`(x) IGNORE NULLS FROM t
+SELECT `COLUMNS`(x) OVER () FROM t
+SELECT `COLUMNS`(x)(1) FROM t
+SELECT `columns`(x) FROM t
+SELECT * EXCEPT `strict` FROM t
+SELECT * EXCEPT `strict` FROM t
+SELECT * EXCEPT `STRICT` FROM t
+1	2	3	4
+1	2	3	4
+1	2	3	4
+SELECT plus(x, y) OVER ()
+3
+1	2
+3
+1	2	3	4
+2	3	4
+1	2	3	4
+SELECT not(true)\nFROM system.one
+1	[]
