@@ -90,7 +90,8 @@ public:
 
 private:
     IBackgroundOperation & data;
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(storage_id_mutex);
+    mutable std::mutex storage_id_mutex;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
@@ -110,11 +111,15 @@ private:
     static String toString(Type type);
 
     /// Must be called under `holder_mutex`. Returns true if the task was created by this call.
-    bool createHolderIfNeeded();
+    /// Takes the storage ID as an argument because it must be read before `holder_mutex` is taken,
+    /// so that `holder_mutex` and `storage_id_mutex` are never nested.
+    bool createHolderIfNeeded(const StorageID & current_storage_id);
 
     /// Function that executes in background scheduling pool
     void threadFunc();
 
     BackgroundTaskSchedulingSettings getSettings() const;
+
+    StorageID getStorageID() const;
 };
 }
