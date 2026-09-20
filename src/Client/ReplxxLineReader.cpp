@@ -802,7 +802,16 @@ ReplxxLineReader::~ReplxxLineReader()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// The reporting path must not be able to escape either: the `const char *` overload of
+        /// `tryLogCurrentException` builds a `String` for the logger name and calls `getLogger`
+        /// before it reaches its own `try`, so under memory pressure it can throw as well.
+        try
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: reporting failed, nothing more to do
+        {
+        }
     }
 }
 
