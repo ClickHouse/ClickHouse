@@ -17,10 +17,12 @@ mkdir -p "$DIR"
 # Append an Avro block header (zigzag object count, zigzag byte count) plus the file's own sync
 # marker, so the appended block is well-framed and only its declared count is wrong.
 # The byte count defaults to zero, which is what an empty appended payload declares.
+# A 5th argument writes that many 0xff payload bytes before the sync marker.
 avro_append_block() {
     python3 -c "
 import sys
 src, dst, count, bytes_declared = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+payload_len = int(sys.argv[5])
 def zigzag(n):
     n = ((n << 1) ^ (n >> 63)) if n < 0 else (n << 1)
     n &= (1 << 64) - 1
@@ -33,8 +35,8 @@ def zigzag(n):
             break
     return bytes(out)
 data = open(src, 'rb').read()
-open(dst, 'wb').write(data + zigzag(count) + zigzag(bytes_declared) + data[-16:])
-" "$1" "$2" "$3" "${4-0}"
+open(dst, 'wb').write(data + zigzag(count) + zigzag(bytes_declared) + b'\xff' * payload_len + data[-16:])
+" "$1" "$2" "$3" "${4-0}" "${5-0}"
 }
 
 # Same, for a snappy-compressed file. An empty payload is rejected by the codec itself (a snappy
@@ -102,8 +104,12 @@ avro_append_snappy_block "$DIR/ok-snappy.avro" "$DIR/huge-snappy.avro" 100000000
 avro_append_block "$DIR/deflate.avro" "$DIR/huge-deflate.avro" 1000000000 0
 avro_append_block "$DIR/ok-zstd.avro" "$DIR/huge-zstd.avro" 1000000000 0
 
+# A block whose header is honest -- 2 objects do fit in 8 payload bytes for this schema -- but whose
+# payload is 8 0xff bytes, an unterminated varint that no decoder can consume.
+avro_append_block "$DIR/ok.avro" "$DIR/badpayload.avro" 2 8 8
+
 # A fixture that failed to be written would turn every count below into a silent zero.
-for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deflate huge-zstd; do
+for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deflate huge-zstd badpayload; do
     [ -s "$DIR/$f.avro" ] || echo "MISSING FIXTURE $f.avro"
 done
 
@@ -177,5 +183,16 @@ for f in huge-deflate.avro huge-zstd.avro; do
         SELECT count() FROM file('$DIR/$f', Avro)
         $BOUND, optimize_count_from_files = 0" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
 done
+
+# The shortcut answers from the block headers without decoding the payload, and that is its only
+# user-visible difference from a full read. This file's headers are honest, so the size bound
+# accepts it; its payload is not decodable, so only the reading path can fail on it.
+echo '--- the count shortcut answers from the block header without decoding the payload'
+$CLICKHOUSE_LOCAL -q "
+    SELECT count() FROM file('$DIR/badpayload.avro', Avro)
+    $BOUND, optimize_count_from_files = 1"
+$CLICKHOUSE_LOCAL -q "
+    SELECT count() FROM file('$DIR/badpayload.avro', Avro)
+    $BOUND, optimize_count_from_files = 0" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
 
 rm -rf "$DIR"

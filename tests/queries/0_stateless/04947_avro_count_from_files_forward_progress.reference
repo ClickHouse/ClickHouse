@@ -42,3 +42,6 @@ optimize_count_from_files = 0
 --- lazily decompressed codecs are rejected by the read path
 1
 1
+--- the count shortcut answers from the block header without decoding the payload
+5002
+1
