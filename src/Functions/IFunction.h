@@ -54,11 +54,6 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
-    /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
-    /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
-
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
@@ -138,6 +133,14 @@ protected:
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+
+    /** The default implementations above may execute the function over a representation that stores
+      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
+      * result back onto the logical rows, which is sound only if the result is determined by the
+      * argument values. A function answering `false` is executed over materialized rows instead.
+      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
@@ -599,11 +602,6 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
-      * override this when the function handles NULLs itself but still propagates them.
-      */
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
