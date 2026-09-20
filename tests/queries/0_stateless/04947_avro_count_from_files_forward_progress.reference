@@ -14,17 +14,17 @@ optimize_count_from_files = 0
 1
 --- valid input still counts every row, including rows that occupy no payload bytes
 optimize_count_from_files = 1
-5000
+500
 1000
 200000
 optimize_count_from_files = 0
-5000
+500
 1000
 200000
 --- reading valid input is unchanged, at several block sizes
-5000	16876015480804349662
-5000	16876015480804349662
-5000	16876015480804349662
+500	1772942825771434699
+500	1772942825771434699
+500	1772942825771434699
 --- a declared count the payload cannot hold is rejected at the header, not counted
 1
 1
@@ -35,15 +35,15 @@ optimize_count_from_files = 0
 1
 --- valid input on every codec counts the same with and without the count shortcut
 optimize_count_from_files = 1
-5000
-5000
+500
+500
 1000
 optimize_count_from_files = 0
-5000
-5000
+500
+500
 1000
 --- the count shortcut answers from the block header without decoding the payload
-5002
+502
 1
 --- the shortcut is declined where the declared payload size is not verified
 1

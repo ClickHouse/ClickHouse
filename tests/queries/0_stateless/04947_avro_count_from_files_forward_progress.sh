@@ -67,29 +67,30 @@ open(dst, 'wb').write(data + varint(count << 1) + varint(len(payload) << 1) + pa
 " "$1" "$2" "$3" "$4" "${5--1}"
 }
 
+# Keep this small: the block-size sweep below reads ok.avro one row per chunk, and every chunk is a
+# pipeline handoff the flaky check's ThreadFuzzer can sleep at.
+ROWS=500
+
+# An all-NULL column encodes to zero payload bytes, so nullrows.avro legitimately declares 1000 rows
+# in a few hundred bytes, and deflate.avro 200000 rows of one repeated value in under a kilobyte.
+# They are the counter-examples to bounding the declared count by the input size.
+# snappy is what ClickHouse writes by default, and zstd is the fourth codec it can write.
 $CLICKHOUSE_LOCAL -q "
-    SELECT number AS n, toString(number) AS s FROM numbers(5000)
+    SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
     INTO OUTFILE '$DIR/ok.avro' TRUNCATE FORMAT Avro
-    SETTINGS output_format_avro_codec = 'null'"
-# An all-NULL column encodes to zero payload bytes, so this file legitimately declares 1000 rows in
-# a few hundred bytes. It is the counter-example to bounding the declared count by the input size.
-$CLICKHOUSE_LOCAL -q "
+    SETTINGS output_format_avro_codec = 'null';
     SELECT NULL AS a FROM numbers(1000)
     INTO OUTFILE '$DIR/nullrows.avro' TRUNCATE FORMAT Avro
-    SETTINGS output_format_avro_codec = 'null'"
-# Same for a compressed file: 200000 rows of one repeated value compress to under a kilobyte.
-$CLICKHOUSE_LOCAL -q "
+    SETTINGS output_format_avro_codec = 'null';
     SELECT 1 AS a FROM numbers(200000)
     INTO OUTFILE '$DIR/deflate.avro' TRUNCATE FORMAT Avro
-    SETTINGS output_format_avro_codec = 'deflate'"
-# snappy is what ClickHouse writes by default, and zstd is the fourth codec it can write.
-for codec in snappy zstd; do
-    $CLICKHOUSE_LOCAL -q "
-        SELECT number AS n, toString(number) AS s FROM numbers(5000)
-        INTO OUTFILE '$DIR/ok-$codec.avro' TRUNCATE FORMAT Avro
-        SETTINGS output_format_avro_codec = '$codec'"
-done
-$CLICKHOUSE_LOCAL -q "
+    SETTINGS output_format_avro_codec = 'deflate';
+    SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
+    INTO OUTFILE '$DIR/ok-snappy.avro' TRUNCATE FORMAT Avro
+    SETTINGS output_format_avro_codec = 'snappy';
+    SELECT number AS n, toString(number) AS s FROM numbers($ROWS)
+    INTO OUTFILE '$DIR/ok-zstd.avro' TRUNCATE FORMAT Avro
+    SETTINGS output_format_avro_codec = 'zstd';
     SELECT NULL AS a FROM numbers(1000)
     INTO OUTFILE '$DIR/nullrows-snappy.avro' TRUNCATE FORMAT Avro
     SETTINGS output_format_avro_codec = 'snappy'"
@@ -150,18 +151,17 @@ done
 echo '--- valid input still counts every row, including rows that occupy no payload bytes'
 for setting in 1 0; do
     echo "optimize_count_from_files = $setting"
-    for f in ok.avro nullrows.avro deflate.avro; do
-        $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DIR/$f', Avro) $BOUND, optimize_count_from_files = $setting"
-    done
+    $CLICKHOUSE_LOCAL -q "
+        SELECT count() FROM file('$DIR/ok.avro', Avro) $BOUND, optimize_count_from_files = $setting;
+        SELECT count() FROM file('$DIR/nullrows.avro', Avro) $BOUND, optimize_count_from_files = $setting;
+        SELECT count() FROM file('$DIR/deflate.avro', Avro) $BOUND, optimize_count_from_files = $setting"
 done
 
 echo '--- reading valid input is unchanged, at several block sizes'
-for size in 1 13 65505; do
-    $CLICKHOUSE_LOCAL -q "
-        SELECT count(), sum(cityHash64(n, s))
-        FROM file('$DIR/ok.avro', Avro)
-        $BOUND, max_block_size = $size"
-done
+$CLICKHOUSE_LOCAL -q "
+    SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 1;
+    SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 13;
+    SELECT count(), sum(cityHash64(n, s)) FROM file('$DIR/ok.avro', Avro) $BOUND, max_block_size = 65505"
 
 # Name the size bound's own diagnostic: the broad AVRO_EXCEPTION grep above cannot tell it from
 # payload exhaustion, from the snappy checksum, or from a snappy payload shorter than 4 bytes.
@@ -186,9 +186,10 @@ done
 echo '--- valid input on every codec counts the same with and without the count shortcut'
 for setting in 1 0; do
     echo "optimize_count_from_files = $setting"
-    for f in ok-snappy.avro ok-zstd.avro nullrows-snappy.avro; do
-        $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DIR/$f', Avro) $BOUND, optimize_count_from_files = $setting"
-    done
+    $CLICKHOUSE_LOCAL -q "
+        SELECT count() FROM file('$DIR/ok-snappy.avro', Avro) $BOUND, optimize_count_from_files = $setting;
+        SELECT count() FROM file('$DIR/ok-zstd.avro', Avro) $BOUND, optimize_count_from_files = $setting;
+        SELECT count() FROM file('$DIR/nullrows-snappy.avro', Avro) $BOUND, optimize_count_from_files = $setting"
 done
 
 # The shortcut answers from the block headers without decoding the payload, and that is its only
