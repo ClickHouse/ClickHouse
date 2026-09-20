@@ -509,6 +509,14 @@ It does random permutations and substitutions in queries AST.
 It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order.
 You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
 
+### Structure-aware parser fuzzing {#structure-aware-parser-fuzzing}
+
+`json_ast_sql_parser_fuzzer` (`src/Parsers/fuzzers/json_ast_sql_parser_fuzzer/`) is a libFuzzer target that generates SQL from the native JSON AST representation instead of mutating bytes.
+The fuzz input is a binary protobuf message mirroring the JSON AST (`json_ast.proto`), mutated structurally by libprotobuf-mutator; the target renders it as JSON, deserializes it with `IAST::createFromJSON`, formats the AST as SQL and parses that SQL with `ParserQuery`, then formats and parses once more.
+Its seed corpus in `tests/fuzz/json_ast_sql_parser_fuzzer.in` is generated from `seed_queries.sql` with `parseQueryToJSON`.
+`json_ast_sql_execution_fuzzer` (`programs/local/fuzzers/`) shares the generation stages and executes the SQL in an in-process `clickhouse local` against a fixture of tables, views and a dictionary whose names are part of the protobuf vocabulary.
+The `README.md` in the target directory describes the schema, the build, how to reproduce a crash and show the generated SQL (`JSON_AST_FUZZER_DUMP=1`) and how to minimize a corpus.
+
 ## Stress test {#stress-test}
 
 Stress tests are another case of fuzzing.
