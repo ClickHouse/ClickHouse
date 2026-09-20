@@ -309,7 +309,9 @@ def test_inactive_replica_not_counted_with_shard_affinity(kafka_cluster):
             # A live replica of the other shard: it has `is_active`, but it must be filtered out by
             # the shard num, so it does not shrink our quota either.
             zk.create(f"{keeper_path}/replicas/live_other_shard", str(shard_num + 1))
-            zk.create(f"{keeper_path}/replicas/live_other_shard/is_active", "")
+            # The content of `is_active` is irrelevant, only its existence matters; the keeper
+            # client cannot create a node with an empty value, so write a placeholder.
+            zk.create(f"{keeper_path}/replicas/live_other_shard/is_active", "1")
             assert set(zk.ls(f"{keeper_path}/replicas")) >= {
                 "r1", "ghost_same_shard", "live_other_shard"
             }
