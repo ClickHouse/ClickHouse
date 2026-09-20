@@ -19,6 +19,8 @@ DROP TABLE IF EXISTS kl_05233;
 DROP TABLE IF EXISTS kl_lc_05233;
 DROP TABLE IF EXISTS kl_tup_05233;
 DROP TABLE IF EXISTS kl_tup_mix_05233;
+DROP TABLE IF EXISTS kie_l_05233;
+DROP TABLE IF EXISTS kie_r_05233;
 DROP TABLE IF EXISTS kl_date_05233;
 DROP DICTIONARY IF EXISTS dict_05233;
 DROP TABLE IF EXISTS kdr_05233;
@@ -73,12 +75,24 @@ SELECT 'LowCardinality(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_lc_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
+SELECT 'LowCardinality(Date32), conversion preserved, plan', count() FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM kr_05233 AS r LEFT JOIN kl_lc_05233 AS l ON l.v = r.v
+    WHERE l.d > toDate32('1980-01-01')
+) WHERE explain ILIKE '%Type: inner%';
+
 CREATE TABLE kl_tup_05233 (t Tuple(Date32), v Int64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO kl_tup_05233 VALUES (tuple(toDate32('2021-01-01')), 1);
 
 SELECT 'Tuple(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00');
+
+SELECT 'Tuple(Date32), conversion preserved, plan', count() FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
+    WHERE toDateTime(materialize(l.t).1) > toDateTime('2030-01-01')
+) WHERE explain ILIKE '%Type: inner%';
 
 CREATE TABLE kl_tup_mix_05233 (t Tuple(Date32, Enum8('x' = 1)), v Int64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO kl_tup_mix_05233 VALUES (tuple(toDate32('2021-01-01'), 'x'), 1);
@@ -93,6 +107,25 @@ SELECT 'Tuple(Date32, Enum8), subcolumn extraction off', count()
 FROM kr_05233 AS r LEFT JOIN kl_tup_mix_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00')
 SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- An inequality-only ON routes to `ie_join`, which pads a not-matched row through
+-- `IColumn::insertDefault` (0) while the hash join pads through `DataTypeEnum::insertDefaultInto`
+-- (the first declared value). The old probe used the latter, so it judged a filter the padded row
+-- passes.
+CREATE TABLE kie_l_05233 (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE kie_r_05233 (x UInt8, y UInt8, e Enum8('a' = 1)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO kie_l_05233 VALUES (1, 1), (2, 2);
+INSERT INTO kie_r_05233 VALUES (0, 0, 'a');   -- no row of kie_r can match on both inequalities
+
+SELECT 'Enum8 over ie_join, conversion disabled', count()
+FROM kie_l_05233 AS l LEFT JOIN kie_r_05233 AS r ON l.x > r.x AND l.y < r.y
+WHERE toInt8(r.e) = 0
+SETTINGS join_algorithm = 'ie_join', query_plan_convert_outer_join_to_inner_join = 0;
+
+SELECT 'Enum8 over ie_join', count()
+FROM kie_l_05233 AS l LEFT JOIN kie_r_05233 AS r ON l.x > r.x AND l.y < r.y
+WHERE toInt8(r.e) = 0
+SETTINGS join_algorithm = 'ie_join';
 
 -- `Date` agrees on both values, so neither its result nor its conversion may move.
 CREATE TABLE kl_date_05233 (d Date, v Int64) ENGINE = MergeTree ORDER BY d;
@@ -127,10 +160,12 @@ SELECT 'dictionary LEFT JOIN, answer unchanged',
 
 SELECT 'dictionary ANY LEFT JOIN, answer unchanged',
     (SELECT count() FROM kdr_05233 AS r ANY LEFT JOIN dict_05233 AS d ON d.k = r.v
-     WHERE toDateTime(d.d) > toDateTime('2030-01-01'))
+     WHERE toDateTime(d.d) > toDateTime('2030-01-01')
+     SETTINGS join_algorithm = 'direct')
   = (SELECT count() FROM kdr_05233 AS r ANY LEFT JOIN dict_05233 AS d ON d.k = r.v
      WHERE toDateTime(d.d) > toDateTime('2030-01-01')
-     SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 0,
+     SETTINGS join_algorithm = 'direct',
+              query_plan_convert_any_join_to_semi_or_anti_join = 0,
               query_plan_convert_outer_join_to_inner_join = 0);
 
 SELECT 'dictionary direct join, answer unchanged',
@@ -145,6 +180,8 @@ DROP DICTIONARY dict_05233;
 DROP TABLE kdr_05233;
 DROP TABLE dsrc_05233;
 DROP TABLE kl_date_05233;
+DROP TABLE kie_r_05233;
+DROP TABLE kie_l_05233;
 DROP TABLE kl_tup_mix_05233;
 DROP TABLE kl_tup_05233;
 DROP TABLE kl_lc_05233;
