@@ -30,8 +30,11 @@ SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!';
 -- Two agreeing counts are also what an index that prunes nothing gives, so the granule count index
 -- analysis reached is asserted as well; `use_skip_indexes_on_data_read` keeps the filtering at that
 -- stage, and the assertion fails by producing no row at all if the index is not applied.
+-- `EXPLAIN` renders the plan as a tree by default, and the tree prefix of a step that is not a last
+-- child carries box-drawing characters rather than spaces, so extract the counter instead of
+-- trimming the indentation: under parallel replicas the read step gains a sibling.
 
-SELECT trimLeft(explain) FROM (
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_ngram_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
     SETTINGS use_skip_indexes_on_data_read = 0
 ) WHERE explain LIKE '%Granules: %/%';
@@ -67,7 +70,7 @@ SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
-SELECT trimLeft(explain) FROM (
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_text_index_backslash WHERE s LIKE '%ab\\\\%cd%' ESCAPE '!'
     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0, use_skip_indexes_on_data_read = 0
 ) WHERE explain LIKE '%Granules: %/%';
