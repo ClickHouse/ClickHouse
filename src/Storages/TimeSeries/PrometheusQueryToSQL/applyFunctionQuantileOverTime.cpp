@@ -187,11 +187,11 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         {
             auto remove_tag = makeASTFunction(
                 "timeSeriesRemoveTag",
-                make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}),
                 make_intrusive<ASTLiteral>(kMetricName));
             remove_tag->setAlias(ColumnNames::Group);
             builder.select_list.push_back(std::move(remove_tag));
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(builder.from_table, ColumnNames::Group));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}));
         }
         else
         {
