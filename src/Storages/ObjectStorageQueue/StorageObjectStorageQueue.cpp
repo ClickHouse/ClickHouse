@@ -80,7 +80,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool azure_use_native_copy;
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
@@ -392,9 +391,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
-    if (context_->getSettingsRef()[Setting::azure_use_native_copy])
-        object_storage_context->setSetting("azure_use_native_copy", true);
-
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
