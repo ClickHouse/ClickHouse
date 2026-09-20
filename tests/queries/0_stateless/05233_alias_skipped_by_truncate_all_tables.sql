@@ -38,3 +38,14 @@ SELECT '-- an alias to a missing table no longer fails the whole statement';
 CREATE TABLE al_missing ENGINE = Alias(currentDatabase(), 'no_such_table');
 TRUNCATE ALL TABLES FROM {CLICKHOUSE_DATABASE:Identifier};
 SELECT count() FROM j;
+
+-- A `MergeTree` target on purpose: this arm's loss is silent, with no lock convergence and no error,
+-- so it fails on its own rather than through the abort the arms above provoke.
+SELECT '-- the statement names one database, so a target in another one keeps its rows';
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t SELECT number FROM numbers(300);
+CREATE TABLE al_cross ENGINE = Alias({CLICKHOUSE_DATABASE_1:String}, 't');
+TRUNCATE ALL TABLES FROM {CLICKHOUSE_DATABASE:Identifier};
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

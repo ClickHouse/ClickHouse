@@ -14,3 +14,5 @@ j	Join
 300
 -- an alias to a missing table no longer fails the whole statement
 0
+-- the statement names one database, so a target in another one keeps its rows
+300
