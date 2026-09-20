@@ -155,6 +155,7 @@ def test_query_stats():
     assert instant_data["result"] == instant_data_without_stats["result"]
     assert "stats" not in instant_data_without_stats
     assert instant_data["stats"]["timings"]["evalTotalTime"] >= 0
+    assert instant_data["stats"]["samples"]["samplesRead"] > 0
     assert instant_data["stats"]["clickhouse"]["readRows"] > 0
     assert instant_data["stats"]["clickhouse"]["readBytes"] > 0
     assert instant_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0
@@ -211,6 +212,7 @@ def test_query_stats():
     assert range_data["result"] == range_data_without_stats["result"]
     assert "stats" not in range_data_without_stats
     assert range_data["stats"]["timings"]["evalTotalTime"] >= 0
+    assert range_data["stats"]["samples"]["samplesRead"] > 0
     assert range_data["stats"]["clickhouse"]["readRows"] > 0
     assert range_data["stats"]["clickhouse"]["readBytes"] > 0
     assert range_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0

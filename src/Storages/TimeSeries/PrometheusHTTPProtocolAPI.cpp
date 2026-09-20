@@ -296,6 +296,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
                 writeString(R"(,"stats":{"timings":{"evalTotalTime":)", output);
                 writeFloatText(evaluation_watch->elapsedSeconds(), output);
+                writeString(R"(},"samples":{"samplesRead":)", output);
+                writeIntText(read_rows, output);
                 writeString(R"(},"clickhouse":{"readRows":)", output);
                 writeIntText(read_rows, output);
                 writeString(R"(,"readBytes":)", output);
