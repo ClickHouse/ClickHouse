@@ -488,13 +488,14 @@ namespace
 
 /// Iterator to the first row_id >= row_offset + num_rows. Returns `end` directly when the
 /// exclusive bound exceeds UInt32::max — saturating would drop a match at the boundary.
+/// Galloping: the window holds few postings compared to the rest of the array, so the answer is close to `begin`.
 inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t * end, size_t row_offset, size_t num_rows)
 {
     size_t exclusive_end = row_offset + num_rows;
     if (exclusive_end > std::numeric_limits<uint32_t>::max())
         return end;
 
-    return std::lower_bound(begin, end, static_cast<uint32_t>(exclusive_end));
+    return gallopingLowerBound(begin, end, static_cast<uint32_t>(exclusive_end));
 }
 
 template <PadOp op>
@@ -587,7 +588,7 @@ inline bool canSkipRegion(const UInt8 * data, size_t count)
 
 } // anonymous namespace
 
-bool PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsCursorWindow PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     requireRowOffsetRepresentable(row_offset);
 
@@ -597,7 +598,7 @@ bool PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
     return linearSegments<PadOp::Or>(data, row_offset, num_rows);
 }
 
-bool PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsCursorWindow PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     requireRowOffsetRepresentable(row_offset);
 
@@ -608,13 +609,12 @@ bool PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 }
 
 template <PadOp op>
-bool PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsCursorWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
 {
-    if (info->ranges.empty() || total_segments == 0)
-        return false;
+    PostingsCursorWindow written;
 
-    /// Whether at least one byte of `data` was written, i.e. the posting list has doc_ids in the window.
-    bool set_any_bytes = false;
+    if (info->ranges.empty() || total_segments == 0)
+        return written;
 
     for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
@@ -664,18 +664,27 @@ bool PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
                 {
                     ++counters.segments_skipped_dense;
                     padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
-                    set_any_bytes = true;
+                    written.extend(clip_begin, clip_end);
                     continue;
                 }
             }
         }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
+        /// The windows come in ascending order, so the search for the first block resumes from the last
+        /// decoded block when that block still lies before the window, instead of bisecting the whole segment.
         const auto & block_last_row_ids = current_segment->block_last_row_ids;
-        const auto * first_block_it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), static_cast<uint32_t>(row_offset));
-        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.begin());
+        const size_t block_count = current_segment->block_count;
+        const size_t search_from = (current_block > 0 && block_last_row_ids[current_block - 1] < row_offset) ? current_block : 0;
 
-        for (size_t block_idx = first_block_idx; block_idx < current_segment->block_count; ++block_idx)
+        const auto * first_block_it = gallopingLowerBound(
+            block_last_row_ids.data() + search_from,
+            block_last_row_ids.data() + block_count,
+            static_cast<uint32_t>(row_offset));
+
+        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.data());
+
+        for (size_t block_idx = first_block_idx; block_idx < block_count; ++block_idx)
         {
             if (block_idx > 0 && block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
             {
@@ -721,21 +730,21 @@ bool PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
             /// No doc_ids of this block fall into the window. The block has a doc_id >= row_offset (`block_last`),
             /// so that doc_id is past the window, and so is everything in the following blocks and segments.
             if (begin_idx == end_idx)
-                return set_any_bytes;
+                return written;
 
             padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
-            set_any_bytes = true;
+            written.extend(decoded_values_ptr[begin_idx], static_cast<size_t>(decoded_values_ptr[end_idx - 1]) + 1);
         }
     }
 
-    return set_any_bytes;
+    return written;
 }
 
 template <PadOp op>
-bool PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows)
+PostingsCursorWindow PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows)
 {
     if (decoded_count == 0)
-        return false;
+        return {};
 
     /// Dense shortcut: if every row in the range is in the posting list,
     /// pad the entire clipped region at once without binary search.
@@ -753,21 +762,27 @@ bool PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t n
         {
             ++counters.segments_skipped_dense;
             padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
-            return true;
+            return {clip_begin, clip_end};
         }
     }
 
-    const auto * begin_it = gallopingLowerBound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+    /// The windows come in ascending order: resume the search from the read position when it still lies
+    /// before the window, and leave it at the first doc_id past the window for the next scan.
+    chassert(index <= decoded_count);
+    const size_t search_from = (index > 0 && decoded_values_ptr[index - 1] < row_offset) ? index : 0;
+
+    const auto * begin_it = gallopingLowerBound(decoded_values_ptr + search_from, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
     const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
     size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
     size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
+    index = end_idx;
 
     /// No doc_ids in the window.
     if (begin_idx == end_idx)
-        return false;
+        return {};
 
     padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
-    return true;
+    return {decoded_values_ptr[begin_idx], static_cast<size_t>(decoded_values_ptr[end_idx - 1]) + 1};
 }
 
 namespace
@@ -1057,29 +1072,44 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 /// Brute-force intersection via bitmap counting. The cursors are sorted by ascending cardinality.
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
+///
+/// `out` is all-zero on entry. The first cursor writes only inside the range it returns, so the rows outside
+/// stay zero and the other cursors scan that range alone. Each of them narrows the range further to the rows
+/// it incremented itself: a row outside misses at least one cursor, so its count can never reach n.
+/// Whole packed blocks outside the range are then skipped by a range comparison instead of a scan of their
+/// output region, and the final pass covers the first cursor's range instead of the whole window.
 void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
 {
-    if (!cursors[0]->linearOr(out, row_offset, num_rows))
+    const PostingsCursorWindow first = cursors[0]->linearOr(out, row_offset, num_rows);
+
+    if (first.empty())
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits);
         return;
     }
 
+    PostingsCursorWindow window = first;
+
     for (size_t i = 1; i < cursors.size(); ++i)
     {
-        if (!cursors[i]->linearAnd(out, row_offset, num_rows))
+        PostingsCursorWindow written = cursors[i]->linearAnd(out + (window.begin - row_offset), window.begin, window.end - window.begin);
+
+        if (written.empty())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceEarlyExits);
-            memset(out, 0, num_rows);
+            memset(out + (first.begin - row_offset), 0, first.end - first.begin);
             return;
         }
+
+        chassert(written.begin >= window.begin && written.end <= window.end);
+        window = written;
     }
 
     size_t n = cursors.size();
     if (n > 1)
     {
-        chassert(n <= 256);
-        finalizeCounters(out, num_rows, static_cast<UInt8>(n));
+        chassert(n < 256);
+        finalizeCounters(out + (first.begin - row_offset), first.end - first.begin, static_cast<UInt8>(n));
     }
 }
 
