@@ -328,9 +328,6 @@ private:
         visitChildren(*subquery);
     }
 
-    bool only_replace_current_database_function = false;
-    bool only_replace_in_join = false;
-
     void visitTableExpressionsImpl(IAST & ast) const
     {
         if (auto * select = ast.as<ASTSelectQuery>())
