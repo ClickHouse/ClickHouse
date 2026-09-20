@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int PROMQL_QUERY_EXECUTION_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
