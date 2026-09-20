@@ -47,6 +47,17 @@ SELECT 'ifNull and coalesce reach the same chain once the rewrite that usually h
 SELECT 'ifNull(c0, 0) = 0', (SELECT count() FROM t_flat WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
 SELECT 'coalesce(c0, 0) = 0', (SELECT count() FROM t_flat WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
 
+-- An inner link can also produce a real NULL: `nullIf` maps the exact point 5 to one, and the chain
+-- leaves it untransformed just like an infinity bound. Such a bound compares as both inside and
+-- outside every range, so the negated atom is the form that can wrongly prune it; keep it negated.
+SELECT 'NOT (coalesce(nullIf(c0, 5), 0) = 1)', (SELECT count() FROM t_flat WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1) SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1) SETTINGS allow_key_condition_coalesce_rewrite = 0);
+-- Partition 1 is still pruned, so such a bound costs its own partition and no other.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1 SELECT c0 FROM t_part WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1)
+    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0, use_skip_indexes = 0,
+             allow_key_condition_coalesce_rewrite = 0
+) WHERE explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
+
 DROP TABLE IF EXISTS t_rev;
 CREATE TABLE t_rev (c0 Nullable(Int)) ENGINE = MergeTree PARTITION BY (c0) ORDER BY (c0 DESC)
 SETTINGS allow_nullable_key = 1;
