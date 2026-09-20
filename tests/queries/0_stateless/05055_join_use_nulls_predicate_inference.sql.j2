@@ -175,3 +175,22 @@ SELECT '-- LowCardinality key, join_use_nulls = 1: clk is inferred';
 {{ conditions(q(lc_join, "r.crk = '42'", 1)) }}
 {{ results('SELECT count()', lc_join, "r.crk = '42'") }}
 DROP TABLE t_infer_lc_l; DROP TABLE t_infer_lc_r;
+
+-- Two keys the substitution has to decline, each asserted against the same query with the push-down off.
+-- A float key is one value to the join and two to a predicate reading the representation: the join matches
+-- `-0.0` with `+0.0`, so the opposite key standing in for it drops a row the join keeps.
+SELECT '-- float key: the bit different match survives, push-down on and off';
+{% for pushdown in [1, 0] -%}
+SELECT reinterpretAsUInt64(l.a), reinterpretAsUInt64(r.a)
+FROM (SELECT materialize(-0.0 :: Float64) AS a) AS l LEFT JOIN (SELECT materialize(0.0 :: Float64) AS a) AS r
+ON l.a = r.a WHERE reinterpretAsUInt64(r.a) = 0
+SETTINGS join_use_nulls = 1, join_algorithm = 'full_sorting_merge', query_plan_filter_push_down = {{ pushdown }};
+{% endfor -%}
+-- The pushed-down filter computes the substituted key again, so a key whose value depends on the rows it
+-- has already seen cannot stand in for the opposite one either.
+SELECT '-- stateful key expression: both matched rows survive, push-down on and off';
+{% for pushdown in [1, 0] -%}
+SELECT l.number, r.a FROM (SELECT number FROM numbers(10)) AS l LEFT JOIN (SELECT number AS a FROM numbers(10)) AS r
+ON toUInt64(rowNumberInAllBlocks() + l.number * 0) = r.a WHERE r.a >= 5 AND r.a <= 6 ORDER BY l.number
+SETTINGS join_use_nulls = 1, max_threads = 1, query_plan_filter_push_down = {{ pushdown }};
+{% endfor -%}

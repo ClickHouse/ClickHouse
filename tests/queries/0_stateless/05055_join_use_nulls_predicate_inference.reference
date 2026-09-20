@@ -85,3 +85,11 @@ Condition: (_CAST(clk, \'LowCardinality(Nullable(String))\') in [\'42\', \'42\']
 Condition: (toNullable(crk) in [\'42\', \'42\'])
 100
 100
+-- float key: the bit different match survives, push-down on and off
+9223372036854775808	0
+9223372036854775808	0
+-- stateful key expression: both matched rows survive, push-down on and off
+5	5
+6	6
+5	5
+6	6
