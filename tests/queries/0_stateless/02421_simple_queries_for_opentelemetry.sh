@@ -7,12 +7,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# This function takes 2 arguments:
+# This function takes 3 arguments, the third optional:
 # $1 - query id
 # $2 - query
+# $3 - a client-supplied trace id, so the caller can find this query's TCPHandler span
 function execute_query()
 {
-  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -q "
+  local traceparent=()
+  [[ -n "${3:-}" ]] && traceparent=(--opentelemetry-traceparent "00-${3}-0000000000000010-01")
+  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 "${traceparent[@]}" --query_id $1 -q "
       ${2}
   "
 }
@@ -108,26 +111,17 @@ function read_server_span()
 
 function check_tcp_attributes()
 {
-  local query_id="$1"
-  local result
   local client_version="not found"
 
-  result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS opentelemetry_span_log;
-      SELECT attribute['client.version']
-      FROM system.opentelemetry_span_log
-      WHERE finish_date >= yesterday()
-      AND operation_name = 'query'
-      AND attribute['clickhouse.query_id'] = '${query_id}'
-      FORMAT JSONEachRow;
-    ")
+  # client.version is recorded on the TCPHandler (SERVER) span, not on the child query span.
+  read_server_span "attribute['client.version'] != '' AS client_version" 'TCPHandler' "$1"
 
-  if [[ -z "$result" ]]; then
+  if [[ -z "$span_read_result" ]]; then
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-  
-  if [[ $result == *"client.version"* ]]; then
+
+  if [[ $span_read_result == *'"client_version":1'* ]]; then
     client_version="present"
   fi
 
@@ -212,10 +206,11 @@ execute_query "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
 check_query_span "$query_id"
 check_query_settings "$query_id" "max_execution_time"
 
-# Test 6: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+# Test 6: Executes a TCP SELECT query and checks for client attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query $query_id 'select * from opentelemetry_test format Null'
-check_tcp_attributes $query_id
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))")
+execute_query $query_id 'select * from opentelemetry_test format Null' "$trace_id"
+check_tcp_attributes "$trace_id"
 
 # Test 7: Executes an HTTP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
