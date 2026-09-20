@@ -11,9 +11,11 @@
 namespace DB
 {
 
-/// Where the effective value of a table setting came from. Exposed as `system.table_settings.source`.
+/// The origin of a table setting's effective value - where it came from. Exposed as the `source` column of
+/// `system.table_settings`, `system.engine_settings` and `system.merge_tree_settings`; "origin" in the code,
+/// "source" where that column is meant.
 ///
-/// When several sources wrote a setting, the one reported is whichever wrote it last, and that order is the
+/// When several of them wrote a setting, the one reported is whichever wrote it last, and that order is the
 /// engine's. The values are declared in the order the engines apply them - each later source overriding the
 /// earlier ones, as when the table is built - and the column is an `Enum8` of them, so `ORDER BY source` sorts
 /// by that precedence: keep it when adding a value. `Other` is the exception - the catch-all, set wherever an
@@ -35,7 +37,8 @@ enum class SettingOrigin : uint8_t
     Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
     /// The engine does not report an origin for this setting - including a value it adjusts while it runs and
-    /// does not write back. A value for that belongs before this one, in the order above.
+    /// does not write back. A value for that belongs before this one, in the order above. Enumeration also sets
+    /// this for every setting that is merely changed, before a storage's override refines it.
     Other,
 };
 
@@ -76,9 +79,10 @@ struct SettingDescription
     /// Whether the setting cannot be changed: a settings constraint makes it read-only, or the engine
     /// refuses to change it on an existing table (`MergeTreeSettings::isReadonlySetting`).
     bool readonly = false;
-    /// The value with its credential hidden, when the setting holds one. Filled during enumeration,
-    /// which is the last place the raw `Field` is available - a value can be an AST rather than a
-    /// literal, and no plain string form of it hides anything. Empty when nothing is secret.
+    /// The value with its credential hidden, when the setting holds one and this value carries it. Filled during
+    /// enumeration, which is the last place the raw `Field` is available - a value can be an AST rather than a
+    /// literal, and no plain string form of it hides anything. Empty means nothing of this value has to be
+    /// hidden - a reader who may not see it is then shown `[HIDDEN]` in full, as for a named collection's value.
     String masked_value;
 };
 

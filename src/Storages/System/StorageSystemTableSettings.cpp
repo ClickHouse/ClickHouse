@@ -75,6 +75,9 @@ VirtualColumnsDescription StorageSystemTableSettings::createVirtuals()
     return desc;
 }
 
+/// Reading one table means reading all of its settings, which for a `MergeTree` table is hundreds of rows. So every
+/// predicate this source can answer about a table - on its database, its name, its engine - is answered before its
+/// settings are read, rather than by discarding rows afterwards.
 class TableSettingsSource : public ISource
 {
 public:
@@ -180,10 +183,9 @@ private:
         return rows_count;
     }
 
-    /// The session's temporary tables, once the catalog's databases are consumed. They get the same two filters
-    /// the catalog tables get, because one table's settings are hundreds of rows: a predicate on `database` decides
-    /// whether any of them can match at all - they report an empty one, which `with_temporary_tables` answers once -
-    /// and a predicate on `table` is applied before the settings are read rather than after.
+    /// The session's temporary tables, once the catalog's databases are consumed. They get the same filters: a
+    /// predicate on `database` decides whether any of them can match at all - they report an empty one, which
+    /// `with_temporary_tables` answers once - and one on `table` is applied here.
     size_t writeTemporaryTables(SettingRowWriter & writer, size_t rows_written)
     {
         if (!with_temporary_tables || rows_written >= max_block_size)
@@ -339,9 +341,9 @@ private:
         std::erase_if(tables, [&allowed](const auto & entry) { return !allowed.contains(entry.first); });
     }
 
-    /// Which of a database's tables the query can still be about. A table's settings are hundreds of rows, so
-    /// `WHERE table = ...` - the query `SHOW TABLE SETTINGS` generates - must not read every table to discard
-    /// the rest: the names are filtered first, and the real iterator is asked only for the survivors.
+    /// Which of a database's tables the query can still be about: the names are filtered first, and the real
+    /// iterator is asked only for the survivors - which is what makes `WHERE table = ...`, the query
+    /// `SHOW TABLE SETTINGS` generates, read one table rather than all of them.
     ///
     /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
     /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so

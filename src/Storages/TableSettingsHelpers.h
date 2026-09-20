@@ -21,12 +21,21 @@ using NameSetWithViewLookup
 /// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
 /// beyond its id.
 ///
-/// Most overrides need none of these: an engine's settings object records every source it can name, the table's
-/// own `SETTINGS` clause included, so its override is the enumeration. These are for what the settings object
-/// cannot hold: `withOriginFromDefinition` and `getSettingsStatedInDefinition` read the stored `CREATE` query for
-/// an engine with no settings object of its own (`Join`, `Set`, the `IStorage` base) or one rebuilt on every call
-/// (`ObjectStorageQueue`); the others correct rows for values the engine keeps outside it. `set*` modify in
-/// place; `withOriginFromDefinition` returns.
+/// There are two ways a table answers for its settings. Most engines *record*: the settings object marks each
+/// value with the source that assigned it as it is assigned, so the override is the enumeration and needs none of
+/// these helpers. The rest *reconstruct*, because their settings object cannot be believed, in one of four ways:
+///
+///   - the engine keeps no settings object at all, so nothing recorded anything - `Join`, `Set`, the `IStorage`
+///     base: `getSettingsStatedInDefinition` and `withOriginFromDefinition` read the stored `CREATE` query;
+///   - the object is rebuilt on every call, so every setting in it reads as assigned and the marks say nothing -
+///     `ObjectStorageQueue`: `setOriginByValue` recovers the distinction from the value;
+///   - the loader assigns every setting from the session before the table's own sources, with the same effect -
+///     `PostgreSQL`: `setOriginByValue` again;
+///   - the engine derives what it works with after loading - an expanded macro, a generated id, a value taken
+///     from a server config section when the table gave none - so the object holds what it was given rather than
+///     what it uses: `setEffectiveValue` and `setEffectiveValueWithConfigFallback` report the latter.
+///
+/// `set*` modify in place; `withOriginFromDefinition` returns.
 
 /// The `SETTINGS` clause of the table's stored `CREATE` query, copied out. Empty when there is none, or when
 /// the catalog does not know the table, as for a table function's storage.

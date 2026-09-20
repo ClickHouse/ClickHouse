@@ -13,10 +13,8 @@
 namespace DB
 {
 
-/// The fourteen columns `system.engine_settings`, `system.merge_tree_settings` and
-/// `system.table_settings` all carry, declared and written in one place so the three cannot drift:
-/// `name`, `value`, `default`, `changed`, `source`, `description`, `min`, `max`, `disallowed_values`,
-/// `readonly`, `type`, `is_obsolete`, `tier`, `alias_for`.
+/// The columns `system.engine_settings`, `system.merge_tree_settings` and `system.table_settings` all carry,
+/// declared and written in one place so the three cannot drift.
 ///
 /// The descriptions say what is true of a *setting*, not of a *table*, because the same text has to
 /// read correctly in a table describing one engine family and in one describing every engine.
@@ -102,7 +100,7 @@ private:
     size_t res_index = 0;
 };
 
-/// Writes the fourteen shared columns of one row.
+/// Writes the shared columns of one row.
 void writeSharedSettingColumns(
     SettingRowWriter & writer, std::string_view name, const SettingDescription & setting, std::string_view alias_for);
 

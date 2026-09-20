@@ -43,14 +43,14 @@ public:
 
     String getName() const override { return "Join"; }
 
-    /// Reports the values this table holds for all eight of its settings, not only the ones its `SETTINGS`
+    /// Reports the values this table holds for every setting it has, not only the ones its `SETTINGS`
     /// clause states - see the definition.
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
-    /// For `system.engine_settings`: the eight settings with the values a table created now would get.
+    /// For `system.engine_settings`: those settings with the values a table created now would get.
     static SettingDescriptions enumerateEngineSettings(ContextPtr context);
 
-    /// Whether `name` is one of the eight, for the `SETTINGS` clause of a `CREATE` query.
+    /// Whether `name` is one of them, for the `SETTINGS` clause of a `CREATE` query.
     static bool hasBuiltinSetting(std::string_view name);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;

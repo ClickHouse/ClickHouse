@@ -10,15 +10,16 @@
 namespace DB
 {
 
-/// A settings `Impl` that remembers which source assigned each setting: a server config section and
+/// A settings `Impl` that remembers the origin of each setting - who assigned it: a server config section and
 /// `compatibility`, which assign every key they name and so set the changed bit even where the value equals the
 /// default, a named collection, whose values look like any other, and the table's own `SETTINGS` clause, which
-/// each engine's loader records as it applies it. Enumeration reports the recorded source for a setting that is
-/// still changed, so a table's report comes from its settings object alone.
+/// each engine's loader records as it applies it. Enumeration reports the recorded origin for a setting that is
+/// still changed, so a table's report comes from its settings object alone. The `source` column of
+/// `system.table_settings` is that origin.
 ///
 /// The origin lives in the settings object, so it travels with every copy of it - from the server's baseline
 /// into each table, from a database into each table it makes. Every assignment records one - `setWithOrigin` the
-/// source it names, `set` `Default`, meaning none - so a setting belongs to whoever assigned it last: the table's
+/// origin it names, `set` `Default`, meaning none - so a setting belongs to whoever assigned it last: the table's
 /// own `SETTINGS` clause included, and a reset to the default. An assignment through `operator[]` bypasses both
 /// and keeps the origin, which suits an engine that adjusts a value in place, such as by expanding macros; one
 /// that replaces a value uses `setAtOffset`, through the typed `set` of its public settings class.

@@ -65,7 +65,7 @@ SettingDescriptions StorageLogSettings::enumerateEngineSettings(ContextPtr)
         described.type = "String";
         described.comment = description;
         described.tier = SettingsTierType::PRODUCTION;
-        /// These are the compiled-in defaults; `describeTable` recomputes the origin from a table's own values.
+        /// These are the compiled-in defaults; `enumerateTableSettings` recomputes the origin from a table's own values.
         described.origin = SettingOrigin::Default;
         return described;
     };
@@ -79,7 +79,7 @@ SettingDescriptions StorageLogSettings::enumerateEngineSettings(ContextPtr)
     };
 }
 
-SettingDescriptions StorageLogSettings::describeTable(const String & disk_name, const StorageID & table_id, ContextPtr context)
+SettingDescriptions StorageLogSettings::enumerateTableSettings(const String & disk_name, const StorageID & table_id, ContextPtr context)
 {
     const auto stated = getSettingsStatedInDefinition(table_id, context);
     auto settings = enumerateEngineSettings(context);

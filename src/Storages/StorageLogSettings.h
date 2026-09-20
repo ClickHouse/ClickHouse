@@ -21,6 +21,6 @@ namespace DB
 
         /// For `system.table_settings`: the two with the values a table holds. `disk_name` is the disk it keeps its
         /// data on - the one `disk` names, or the first disk of the `storage_policy`, or `default`.
-        static SettingDescriptions describeTable(const String & disk_name, const StorageID & table_id, ContextPtr context);
+        static SettingDescriptions enumerateTableSettings(const String & disk_name, const StorageID & table_id, ContextPtr context);
     };
 }
