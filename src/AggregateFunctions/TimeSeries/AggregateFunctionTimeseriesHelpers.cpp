@@ -82,6 +82,13 @@ UInt64 extractTimeseriesIntParameter(const std::string & function_name, const st
     {
         return int_value;
     }
+    else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
+    {
+        if (int_value < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Parameter {} for aggregate function {} must be non-negative", parameter_name, function_name);
+        return static_cast<UInt64>(int_value);
+    }
     else if (String string_value; parameter_field.tryGet(string_value))
     {
         UInt64 value{};

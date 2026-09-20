@@ -12,6 +12,8 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <optional>
 
@@ -277,7 +279,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 4;
+    static constexpr UInt16 FORMAT_VERSION = 5;
 };
 
 
@@ -302,6 +304,18 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
     bool exact_rate = false;
 
+    static bool extractExactRate(const Array & parameters_, bool fallback)
+    {
+        if (parameters_.size() >= 5)
+        {
+            if (UInt64 val = 0; parameters_[4].tryGet(val))
+                return val != 0;
+            if (Int64 val = 0; parameters_[4].tryGet(val))
+                return val != 0;
+        }
+        return fallback;
+    }
+
     AggregateFunctionTimeseriesExtrapolatedValue(
         const DataTypes & argument_types_,
         const Array & parameters_,
@@ -312,13 +326,28 @@ public:
         UInt32 scale_,
         bool exact_rate_ = false)
         : Base(argument_types_, parameters_, start_, end_, step_, window_, scale_)
-        , exact_rate(exact_rate_)
+        , exact_rate(extractExactRate(parameters_, exact_rate_))
     {
     }
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    {
+        Base::serialize(place, buf, version);
+        writeBinaryLittleEndian(UInt8(exact_rate ? 1 : 0), buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    {
+        Base::deserialize(place, buf, version, arena);
+        UInt8 stored_exact_rate = 0;
+        readBinaryLittleEndian(stored_exact_rate, buf);
+        if (static_cast<bool>(stored_exact_rate) != exact_rate)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different exact_rate mode");
     }
 };
 

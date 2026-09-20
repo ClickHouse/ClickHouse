@@ -17,3 +17,22 @@
 [NULL,10,10]
 --- Counter reset across window boundaries ---
 [NULL,10,15]
+--- Explicit parameter exact_rate = 1 regardless of setting ---
+[10]
+[10]
+[0.25]
+--- Explicit parameter exact_rate = 0 regardless of setting ---
+[20]
+[20]
+[0.5]
+--- Materialized state retains semantics under both settings ---
+[10]
+[0.25]
+[10]
+[0.25]
+[10]
+[0.25]
+[10]
+[0.25]
+[10]
+[0.25]
