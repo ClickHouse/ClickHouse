@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -172,7 +173,14 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        /// A not-matched row holds the column's own default, which for `Date32` is 0 (1970-01-01) and
+        /// not the type's `getDefault()` field (1900-01-01). Types whose default insertion is not
+        /// trivial keep the type default: there the join's own fill sites disagree with each other.
+        ColumnPtr constant_column;
+        if (input->result_type->isDefaultInsertTrivial())
+            constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
+        else
+            constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
