@@ -2328,6 +2328,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         }
     }
 
+    std::optional<KeyConditionRangeScratch> sparse_key_range_scratch;
+    if (use_sparse_pk_representation)
+        sparse_key_range_scratch.emplace(used_key_indices, sparse_key_types, equal_boundaries_mask, &index_bounds);
+
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -2399,7 +2403,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_types,
                     equal_boundaries_mask,
                     initial_mask,
-                    &index_bounds);
+                    &index_bounds,
+                    *sparse_key_range_scratch);
             }
 
             if (range.end == marks_count)

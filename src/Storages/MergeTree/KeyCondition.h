@@ -55,6 +55,18 @@ struct DeterministicKeyTransformDag
     String input_name;
 };
 
+struct KeyConditionRangeScratch
+{
+    KeyConditionRangeScratch(
+        const std::vector<size_t> & sparse_key_indices,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        const Hyperrectangle * key_bounds);
+
+    Hyperrectangle sparse_key_ranges;
+    std::vector<int> key_col_to_sparse_pos;
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -188,6 +200,16 @@ public:
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
+
+    BoolMask checkInRange(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds,
+        KeyConditionRangeScratch & scratch) const;
 
     const KeyOrder & getKeyOrder() const { return key_order; }
 
