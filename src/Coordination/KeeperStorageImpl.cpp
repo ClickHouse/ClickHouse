@@ -1538,15 +1538,26 @@ static Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
+/// Cuts the deltas of the next subrequest, up to its `SubDeltaEnd` marker, off the front of `deltas`
+/// and drops the marker. `preprocess` appends the marker after every subrequest, so a range without
+/// it does not match the request that is being processed: the markers were lost, and stepping past
+/// the end of the range to look for them is undefined behavior. This runs on the raft commit and
+/// replay threads, so treat it like every other mismatch between a request and its deltas.
+///
+/// `FailedMultiDelta` is the other marker `preprocess` emits, and the callers handle it before they
+/// get here: it is the sole delta of a failed multi request. Inside a subrequest slice it is out of
+/// place, and `commit` would ignore it and report the subrequest as successful, so the walk stops on
+/// both markers and rejects the failure marker instead of passing it on as an ordinary delta.
 static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & deltas)
 {
-    auto it = deltas.begin();
-
-    for (; it != deltas.end(); ++it)
-    {
-        if (std::holds_alternative<SubDeltaEnd>(it->operation))
-            break;
-    }
+    auto it = std::ranges::find_if(
+        deltas,
+        [](const auto & delta)
+        { return std::holds_alternative<SubDeltaEnd>(delta.operation) || std::holds_alternative<FailedMultiDelta>(delta.operation); });
+    if (it == deltas.end())
+        onStorageInconsistency("Missing SubDeltaEnd marker for a Multi subrequest");
+    if (std::holds_alternative<FailedMultiDelta>(it->operation))
+        onStorageInconsistency("Unexpected failure marker inside a subrequest of a Multi request");
 
     KeeperStorage::DeltaRange result{deltas.begin(), it};
     ++it;
@@ -1570,10 +1581,34 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     const auto & subrequests = zk_request.requests;
 
-    // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-    chassert(!deltas.empty());
+    /// `preprocess` appends at least `SubDeltaEnd` or `FailedMultiDelta` for every subrequest, so the
+    /// range is empty only for a multi request that has no subrequests. Such a request is accepted -
+    /// ZooKeeper answers it with an empty successful response, and a client that builds a transaction
+    /// from a list that turns out to be empty sends exactly that - so answer it the same way here.
+    /// `processWatches` below already handles the empty range, and this runs on the raft commit
+    /// thread, where an exception terminates the process.
+    ///
+    /// The success return is reserved for the true zero-subrequest case: a multi request with
+    /// subrequests but without deltas means that the markers of the preprocessing were lost, and
+    /// answering it with an empty success would silently drop every suboperation, so it goes through
+    /// the storage inconsistency path like every other request whose deltas do not match.
+    if (deltas.empty())
+    {
+        if (!subrequests.empty())
+            onStorageInconsistency("Unexpected empty deltas for Multi request with subrequests");
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
+        /// `preprocess` puts the failure marker last and the caller rolls back everything before it,
+        /// so the marker is the only delta of a failed multi request. Anything else in the range is
+        /// a delta that no subrequest response would account for, so it cannot be dropped silently.
+        if (std::next(deltas.begin()) != deltas.end())
+            onStorageInconsistency("Unexpected deltas after the failure marker of a Multi request");
+
         const size_t subrequests_count = subrequests.size();
 
         for (size_t i = 0; i < subrequests_count; ++i)
@@ -1596,6 +1631,12 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
+
+    /// Every delta of the transaction belongs to one of the subrequests above. Deltas left after the
+    /// last marker belong to no subrequest: they are already applied to the storage, and no response
+    /// would account for them, so they cannot be silently ignored either.
+    if (!deltas.empty())
+        onStorageInconsistency("Unexpected deltas after the last subrequest of a Multi request");
 
     response->error = Coordination::Error::ZOK;
     return response;
