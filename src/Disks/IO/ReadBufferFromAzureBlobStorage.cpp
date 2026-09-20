@@ -40,6 +40,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+}
+
+namespace
+{
+
+/// The endpoint chooses which range it answers a ranged request with: it is allowed to ignore the
+/// requested range and answer with the whole blob as `200 OK`, and a misbehaving one can answer
+/// with a different range altogether. The body of such a response would be handed to the caller as
+/// if it were the bytes at the requested offset, which is a wrong slice of the blob, so a response
+/// that does not start where it was asked to is rejected instead.
+void checkResponseStartsAtRequestedOffset(int64_t response_range_start, off_t requested_offset, const String & path)
+{
+    if (response_range_start != static_cast<int64_t>(requested_offset))
+        throw Exception(
+            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            "Blob Storage answered a request for the range of the file {} starting at offset {} with a range starting at offset {}",
+            path, requested_offset, response_range_start);
+}
+
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -283,6 +303,8 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
 
+            checkResponseStartsAtRequestedOffset(download_response.Value.ContentRange.Offset, offset, path);
+
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
 
@@ -362,6 +384,9 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
     /// The size of the blob from the same response is not used to bound it, because it comes from
     /// the same untrusted place; only `read_until_position`, which is set locally by the caller,
     /// is a trustworthy bound.
+    ///
+    /// That the body starts at `offset_` rather than somewhere else is not assumed either: it is
+    /// checked against the range of the response by `checkResponseStartsAtRequestedOffset`.
     size_t total = reported_length >= 0
         ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
         : std::numeric_limits<size_t>::max();
@@ -423,6 +448,9 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
+
+            checkResponseStartsAtRequestedOffset(download_response.Value.ContentRange.Offset, static_cast<off_t>(range_begin), path);
+
             if (blob_storage_log)
             {
                 blob_storage_log->addEvent(

@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/http/transport.hpp>
@@ -522,6 +523,50 @@ TEST(AzureReadUntilPosition, TightenedToEmptyRangeAfterPartialRead)
 
     ASSERT_TRUE(rest.empty());
     ASSERT_EQ(transport->getDownloadCount(), downloads_after_head);
+}
+
+/// The endpoint chooses the range it answers with, and `RangeResponseTransport` answers every
+/// request with the bytes of the blob from its very beginning, which is what an endpoint that
+/// ignores the requested range (or answers `200 OK` with the whole blob) does. Those bytes are not
+/// the bytes at the requested offset, so handing them out would return a wrong slice of the blob;
+/// the reader must reject the response instead.
+TEST(AzureReadUntilPosition, RejectsResponseStartingAtWrongOffset)
+{
+    auto buffer = makeBuffer(/* claimed_size */ 256, /* served_size */ 256);
+
+    buffer->seek(100, SEEK_SET);
+    buffer->setReadUntilPosition(200);
+
+    std::string data;
+    ASSERT_THROW(DB::readStringUntilEOF(data, *buffer), DB::Exception);
+}
+
+/// The same for the `readBigAt` path, which issues a ranged request of its own.
+TEST(AzureReadBigAt, RejectsResponseStartingAtWrongOffset)
+{
+    auto buffer = makeBuffer(/* claimed_size */ 256, /* served_size */ 256);
+
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    std::array<char, 16> payload{};
+    ASSERT_THROW(buffer->readBigAt(payload.data(), payload.size(), /* range_begin */ 100, {}), DB::Exception);
+}
+
+/// An endpoint that honours the requested range must keep working: reading a bounded range from a
+/// nonzero offset returns exactly the bytes of the blob at that offset.
+TEST(AzureReadUntilPosition, SeekToNonZeroOffsetWithHonestEndpoint)
+{
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64);
+
+    buffer->seek(100, SEEK_SET);
+    buffer->setReadUntilPosition(200);
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(100 + i)) << "at position " << i;
 }
 
 #endif
