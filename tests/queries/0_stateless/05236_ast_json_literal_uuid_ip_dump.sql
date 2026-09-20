@@ -10,3 +10,8 @@ SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UUID","valu
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UUID","value":"Int128_1"}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UUID","value":"UUID"}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UUID","value":"UUID_''not-a-uuid''"}}'); -- { serverError CANNOT_PARSE_UUID }
+
+-- The whole dump payload has to be consumed: trailing bytes after the quoted value are an error, not silently dropped.
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UUID","value":"UUID_''61f0c404-5cb3-11e7-907b-a6006ad3dba0''junk"}}'); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"IPv4","value":"IPv4_''1.2.3.4''x"}}'); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"IPv6","value":"IPv6_''::1''x"}}'); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }

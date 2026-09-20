@@ -816,6 +816,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         UUID value;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(value, buf);
+        if (!buf.eof())
+            show_error();
         return value;
     }
 
@@ -825,6 +827,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         IPv4 value;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(value, buf);
+        if (!buf.eof())
+            show_error();
         return value;
     }
 
@@ -834,6 +838,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         IPv6 value;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(value, buf);
+        if (!buf.eof())
+            show_error();
         return value;
     }
 
