@@ -55,13 +55,8 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     /// `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not actually compressed, so
     /// there is nothing here the server could fail to decompress; only reject a clause that resolves
     /// to a real compression method.
-    if (ast_insert_query->compression && context->getApplicationType() == Context::ApplicationType::SERVER)
-    {
-        const auto & compression_method_node = ast_insert_query->compression->as<ASTLiteral &>();
-        String compression_method_string = compression_method_node.value.safeGet<std::string>();
-        if (chooseCompressionMethod("", compression_method_string) != CompressionMethod::None)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
-    }
+    if (context->getApplicationType() == Context::ApplicationType::SERVER && ast_insert_query->isCompressionEffective())
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 
     const Settings & settings = context->getSettingsRef();
 

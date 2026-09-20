@@ -2652,16 +2652,13 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
         if (!insert->infile && insert->compression)
         {
-            const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
-            String compression_method_string = compression_method_node.value.safeGet<std::string>();
             /// "auto" has no filename to sniff an extension from here; reuse the detection already
             /// done once against the real stdin descriptor for the default (no explicit COMPRESSION)
             /// case -- but only when `buf` actually is that stdin descriptor. For query-embedded
             /// inline data, "auto" has nothing to detect from and must stay uncompressed, or it would
             /// try to decompress plain query bytes based on an unrelated redirected stdin's name.
-            CompressionMethod compression_method = compression_method_string == "auto"
-                ? (buf_is_stdin ? default_input_compression_method : CompressionMethod::None)
-                : chooseCompressionMethod("", compression_method_string);
+            CompressionMethod compression_method = insert->resolveCompressionMethod(
+                buf_is_stdin ? default_input_compression_method : CompressionMethod::None);
             compressed_buf = wrapReadBufferWithCompressionMethod(
                 wrapReadBufferReference(buf), compression_method,
                 /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
@@ -2773,7 +2770,7 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     try
     {
         /// An explicit `COMPRESSION` clause on the INSERT query takes precedence over compression
-        /// auto-detected from the redirected stdin file descriptor's name, sendDataFrom() applies
+        /// auto-detected from the redirected stdin file descriptor's name, sendDataFrom applies
         /// it below. Applying both here would decompress the stream twice and corrupt it.
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         bool has_explicit_compression = insert && insert->compression && !insert->infile;
@@ -3009,17 +3006,12 @@ void ClientBase::processParsedSingleQuery(
         /// is why everything after this INSERT in a multiquery script goes unexecuted; the error
         /// message calls this out). `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not
         /// actually compressed, so it does not have this ambiguous-boundary problem and is allowed.
-        if (insert && insert->data && insert->compression && !insert->infile)
-        {
-            const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
-            String compression_method_string = compression_method_node.value.safeGet<std::string>();
-            if (chooseCompressionMethod("", compression_method_string) != CompressionMethod::None)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "COMPRESSION next to FORMAT is only supported for data supplied via stdin, "
-                    "not for data embedded inline in the query. Pipe the compressed data via stdin instead. "
-                    "Note that in a multiquery script this INSERT must be the last statement, since its true "
-                    "data boundary cannot be determined without decompressing it.");
-        }
+        if (insert && insert->data && !insert->infile && insert->isCompressionEffective())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "COMPRESSION next to FORMAT is only supported for data supplied via stdin, "
+                "not for data embedded inline in the query. Pipe the compressed data via stdin instead. "
+                "Note that in a multiquery script this INSERT must be the last statement, since its true "
+                "data boundary cannot be determined without decompressing it.");
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`

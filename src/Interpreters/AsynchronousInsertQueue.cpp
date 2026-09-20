@@ -30,7 +30,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/StorageID.h>
-#include <IO/CompressionMethod.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryNormalization.h>
@@ -554,13 +553,8 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// there is nothing here the server could fail to decompress; only reject a clause that resolves
         /// to a real compression method.
         if (const auto * insert_query = query->as<ASTInsertQuery>();
-            insert_query && insert_query->compression && query_context->getApplicationType() == Context::ApplicationType::SERVER)
-        {
-            const auto & compression_method_node = insert_query->compression->as<ASTLiteral &>();
-            String compression_method_string = compression_method_node.value.safeGet<std::string>();
-            if (chooseCompressionMethod("", compression_method_string) != CompressionMethod::None)
-                throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
-        }
+            insert_query && query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 
         auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
 

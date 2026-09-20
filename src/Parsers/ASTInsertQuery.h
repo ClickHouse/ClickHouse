@@ -3,6 +3,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <IO/ReadBuffer.h>
+#include <IO/CompressionMethod.h>
 
 class SipHash;
 
@@ -53,6 +54,19 @@ public:
     void setTable(const String & name);
 
     bool hasInlinedData() const { return data || tail; }
+
+    /// Whether `compression` resolves to an actual compression method (as opposed to 'none', or
+    /// 'auto' with nothing to detect a method from). The server cannot decompress data itself, so
+    /// this is what call sites check before rejecting a query that reached the server with a still
+    /// -compressed data stream instead of a client-side-decompressed one.
+    bool isCompressionEffective() const;
+
+    /// Resolves `compression` to a CompressionMethod, without a file path to detect an extension
+    /// from (there isn't one for stdin-piped data). `'auto'` resolves to `auto_fallback`, which the
+    /// caller has typically already determined by sniffing its own real stdin descriptor (e.g. the
+    /// backing file name, if any) -- `chooseCompressionMethod` has nothing to detect from here.
+    /// No `compression` clause resolves to `CompressionMethod::None`.
+    CompressionMethod resolveCompressionMethod(CompressionMethod auto_fallback) const;
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
