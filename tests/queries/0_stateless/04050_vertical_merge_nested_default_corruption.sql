@@ -683,3 +683,48 @@ SELECT count(), countDistinct(_part) FROM t_nested_default_skip_index;
 SELECT id, `n.a`, `n.urls`, `n.domains` FROM t_nested_default_skip_index ORDER BY id;
 
 DROP TABLE t_nested_default_skip_index;
+
+-- A part may omit a column with a `MissingColumnInfo` marker (`skip_empty_columns_on_insert`): the
+-- merge then fills the type default frozen at write time for that part's rows and does not evaluate
+-- the current `DEFAULT`. Here one part lacks `n.b` entirely and another carries a marker for it, so
+-- the merge must write `n.b` (a single marker cannot represent both) and keep the frozen `[]` for the
+-- marker part's rows while recomputing the other part's rows from the new `DEFAULT`. Expiring `n.b`
+-- because its `DEFAULT` now reads the absent `m` would drop the marker, and reads would evaluate the
+-- current `DEFAULT` (`['d']`) for the marker part's rows.
+DROP TABLE IF EXISTS t_nested_missing_marker;
+
+CREATE TABLE t_nested_missing_marker (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    skip_empty_columns_on_insert = 1,
+    serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_missing_marker;
+
+INSERT INTO t_nested_missing_marker VALUES (1, [10,20]);
+
+ALTER TABLE t_nested_missing_marker ADD COLUMN `n.b` Array(String);
+-- All values of `n.b` (and `n.a`) are type defaults: both are omitted from the part with a marker.
+INSERT INTO t_nested_missing_marker VALUES (2, [], []);
+
+ALTER TABLE t_nested_missing_marker ADD COLUMN m Array(String);
+ALTER TABLE t_nested_missing_marker MODIFY COLUMN `n.b` Array(String) DEFAULT arrayResize(m, 1, 'd');
+
+SELECT id, `n.a` FROM t_nested_missing_marker ORDER BY id;
+
+SYSTEM START MERGES t_nested_missing_marker;
+OPTIMIZE TABLE t_nested_missing_marker FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_missing_marker;
+-- `n.b` is materialized by the merge: neither dropped nor left to the marker.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_missing_marker' AND active AND column = 'n.b';
+SELECT id, `n.a`, `n.b` FROM t_nested_missing_marker ORDER BY id;
+
+DROP TABLE t_nested_missing_marker;
