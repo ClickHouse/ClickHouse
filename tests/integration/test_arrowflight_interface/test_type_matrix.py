@@ -15,6 +15,11 @@
 #     in Arrow's keeps it readable and keeps it from breaking when an Arrow mapping is refined:
 #     what must hold is that a value survives the round trip.
 #
+#   * `test_doget_arrow_schema` pins the Arrow type `DoGet` emits for the mappings that are a
+#     deliberate choice rather than the obvious one. The round trip alone cannot see those: the
+#     import casts to the destination header type, so a wrong-but-castable schema would still
+#     compare equal.
+#
 #   * `test_doput_arrow_type` covers the Arrow types ClickHouse never emits and therefore cannot
 #     reach by a round trip: `date64`, `duration`, `time32`, the large and view string layouts,
 #     dictionary encoding, `null`, `halffloat` and offset-named timestamp zones. These are built
@@ -96,12 +101,20 @@ ROUNDTRIP_GROUPS = {
         ("lc", "LowCardinality(String)", "'lc'"),
         ("lc_nullable", "LowCardinality(Nullable(String))", "NULL"),
     ],
+    # Every emitted temporal variant, not one representative: `DateTime64` and `Time64` map onto a
+    # different Arrow unit per scale, so each scale is a separate writer and reader branch.
     "temporal": [
         ("d", "Date", "'2026-09-20'"),
         ("d32", "Date32", "'2026-09-20'"),
         ("dt", "DateTime('UTC')", "'2026-09-20 10:11:12'"),
-        ("dt64", "DateTime64(3, 'UTC')", "'2026-09-20 10:11:12.345'"),
-        ("t64", "Time64(3)", "'10:11:12.345'"),
+        ("dt64_0", "DateTime64(0, 'UTC')", "'2026-09-20 10:11:12'"),
+        ("dt64_3", "DateTime64(3, 'UTC')", "'2026-09-20 10:11:12.345'"),
+        ("dt64_6", "DateTime64(6, 'UTC')", "'2026-09-20 10:11:12.345678'"),
+        ("dt64_9", "DateTime64(9, 'UTC')", "'2026-09-20 10:11:12.345678901'"),
+        ("t64_0", "Time64(0)", "'10:11:12'"),
+        ("t64_3", "Time64(3)", "'10:11:12.345'"),
+        ("t64_6", "Time64(6)", "'10:11:12.345678'"),
+        ("t64_9", "Time64(9)", "'10:11:12.345678901'"),
         ("interval", "IntervalSecond", "INTERVAL 5 SECOND"),
     ],
     "network_and_uuid": [
@@ -159,6 +172,80 @@ def test_roundtrip(group):
 
     node.query("DROP TABLE matrix_src SYNC")
     node.query("DROP TABLE matrix_dst SYNC")
+
+
+# `DoGet` output types worth pinning: a mapping that is a deliberate choice, and that the round trip
+# cannot check because the import casts to the destination header type anyway. Only the interesting
+# ones are listed; there is no value in restating that `Int32` is `int32`.
+DOGET_ARROW_TYPES = [
+    # Deliberately uint32 rather than date64/timestamp: seconds are all a DateTime carries.
+    ("dt", "DateTime('UTC')", "'2026-09-20 10:11:12'", pa.uint32()),
+    ("d", "Date", "'2026-09-20'", pa.date32()),
+    ("d32", "Date32", "'2026-09-20'", pa.date32()),
+    # One Arrow unit per scale, and time32 below milliseconds where Arrow requires it.
+    ("dt64_0", "DateTime64(0, 'UTC')", "'2026-09-20 10:11:12'", pa.timestamp("s", tz="UTC")),
+    ("dt64_9", "DateTime64(9, 'UTC')", "'2026-09-20 10:11:12.345678901'", pa.timestamp("ns", tz="UTC")),
+    ("t64_0", "Time64(0)", "'10:11:12'", pa.time32("s")),
+    ("t64_9", "Time64(9)", "'10:11:12.345678901'", pa.time64("ns")),
+    ("interval", "IntervalSecond", "INTERVAL 5 SECOND", pa.duration("s")),
+    # Fixed-width rather than variable binary, so the width stays in the schema.
+    ("fs", "FixedString(4)", "'abcd'", pa.binary(4)),
+    ("ip6", "IPv6", "'2001:db8::1'", pa.binary(16)),
+    ("i256", "Int256", "12345", pa.binary(32)),
+    # IPv4 is 4 bytes but travels as a number, unlike IPv6.
+    ("ip4", "IPv4", "'1.2.3.4'", pa.uint32()),
+    # Full decimal256 width, not the narrowest that fits.
+    ("dec256", "Decimal256(8)", "'2.71828182'", pa.decimal256(76, 8)),
+    # Enums travel as their underlying integer, losing the names.
+    ("e8", "Enum8('a' = 1, 'b' = 2)", "'b'", pa.int8()),
+    ("s", "String", "'abc'", pa.string()),
+]
+
+
+def test_doget_arrow_schema():
+    schema = ", ".join(f"{name} {type_name}" for name, type_name, _, _ in DOGET_ARROW_TYPES)
+    values = ", ".join(value for _, _, value, _ in DOGET_ARROW_TYPES)
+
+    node.query("DROP TABLE IF EXISTS arrow_schema SYNC")
+    node.query(f"CREATE TABLE arrow_schema ({schema}) ENGINE = MergeTree ORDER BY tuple()")
+    node.query(f"INSERT INTO arrow_schema VALUES ({values})")
+
+    client, options = get_client()
+    descriptor = flight.FlightDescriptor.for_command("SELECT * FROM arrow_schema")
+    flight_info = client.get_flight_info(descriptor, options)
+    table = client.do_get(flight_info.endpoints[0].ticket, options).read_all()
+
+    actual = {field.name: field.type for field in table.schema}
+    expected = {name: arrow_type for name, _, _, arrow_type in DOGET_ARROW_TYPES}
+    assert actual == expected
+
+    # None of the columns is Nullable, and that has to reach the schema: a reader that treats
+    # everything as nullable cannot tell a null-free column from one that happens to have no nulls.
+    assert all(not field.nullable for field in table.schema)
+
+    node.query("DROP TABLE arrow_schema SYNC")
+
+
+def test_doget_uuid_is_tagged():
+    """`UUID` is the one type that travels as an Arrow extension rather than as a plain layout.
+
+    Without the tag a client sees 16 opaque bytes, so the metadata is the whole point of the
+    mapping and is worth asserting separately from the type.
+    """
+    node.query("DROP TABLE IF EXISTS arrow_uuid SYNC")
+    node.query("CREATE TABLE arrow_uuid (v UUID) ENGINE = MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO arrow_uuid VALUES ('61f0c404-5cb3-11e7-907b-a6006ad3dba0')")
+
+    client, options = get_client()
+    descriptor = flight.FlightDescriptor.for_command("SELECT * FROM arrow_uuid")
+    flight_info = client.get_flight_info(descriptor, options)
+    table = client.do_get(flight_info.endpoints[0].ticket, options).read_all()
+
+    field = table.schema.field("v")
+    assert field.metadata[b"ARROW:extension:name"] == b"arrow.uuid"
+    assert field.type.storage_type == pa.binary(16)
+
+    node.query("DROP TABLE arrow_uuid SYNC")
 
 
 def arrow_type_cases():
