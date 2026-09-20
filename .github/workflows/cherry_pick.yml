@@ -52,7 +52,7 @@ jobs:
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Cherry pick
-        working-directory: tests/ci
+        working-directory: ci/tools
         run: python3 cherry_pick.py --loop
       - name: Cleanup
         if: always()
