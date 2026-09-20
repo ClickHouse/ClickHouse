@@ -16,6 +16,10 @@ codegen.dict untouched and codegen_select_fuzzer keeps fuzzing with a grammar
 that no longer matches the sources. src/Functions/stl.hpp is such a carrier:
 a `*.h` / `*.cpp` glob does not match a `.hpp` file.
 
+The file also covers what the generator extracts: a name no pass derives is a
+name the grammar never produces, and tests/fuzz/update_dict.sh fails the
+nightly libFuzzer job on it before any fuzzer runs.
+
 The comparison is over resolved file paths rather than the two lists of
 patterns, because a pattern list can agree while the sets it expands to do not.
 Every assertion has a mutation arm that narrows one side and requires the
@@ -526,15 +530,15 @@ class TestLoopRegisteredNamesReachTheDictionary:
     def test_the_name_is_in_the_dictionary(self, generated, name):
         assert f'"{name}"' in generated
 
-    @pytest.mark.parametrize("name", _LOOP_REGISTERED_NAMES)
-    def test_the_loop_pass_is_what_supplies_it(self, without_the_pass, name):
-        # Without this arm the assertion above would also hold for a generator
-        # that carried the names through some other pass, or through old.dict.
-        assert f'"{name}"' not in without_the_pass
+    def test_the_pass_adds_exactly_those_names(self, generated, without_the_pass):
+        # update_dict.sh's coverage check is one-way (binary minus source), so a
+        # dictionary carrying tokens the binary lacks passes the nightly job.
+        added = set(generated) - set(without_the_pass)
+        assert added == {f'"{name}"' for name in _LOOP_REGISTERED_NAMES}
+        assert set(without_the_pass) - set(generated) == set()
 
     def test_disabling_the_pass_leaves_the_others_working(self, without_the_pass):
-        # And the arm above would hold for a mutation that broke the generator
-        # into emitting nothing at all.
+        # The mutation has to disable one pass, not the generator.
         assert f'"{_LITERAL_ARGUMENT_NAME}"' in without_the_pass, (
             f"{_LITERAL_ARGUMENT_NAME} is gone; pick another name whose only "
             "carrier is a register* call taking a string literal"
