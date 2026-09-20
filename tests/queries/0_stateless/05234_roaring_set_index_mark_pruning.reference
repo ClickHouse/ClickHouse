@@ -10,9 +10,38 @@
 3
 --- Single element NOT IN ---
 50
+--- Transformed key: intDiv(id, 10) IN (2, 4) ---
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
 --- UInt32 key column ---
 0
 10
 20
 30
 40
+--- Transformed key: toWeek(dt) and toMonth(dt) IN (...) ---
+7
+2026-01-04	1
+2026-01-07	1
+2026-01-10	1
+2026-01-19	3
+2026-01-22	3
+20

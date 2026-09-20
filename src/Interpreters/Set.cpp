@@ -758,6 +758,20 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             for (auto val : data)
                 roaring_bitmap->add(val);
         }
+        else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u16->getData();
+            roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+            for (auto val : data)
+                roaring_bitmap->add(val);
+        }
+        else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u8->getData();
+            roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+            for (auto val : data)
+                roaring_bitmap->add(val);
+        }
     }
 }
 
@@ -867,48 +881,47 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         if (r.left.isPositiveInfinity() || r.right.isNegativeInfinity())
             return {false, true};
 
-        const auto * left_col_u64 = typeid_cast<const ColumnUInt64 *>(r.left.column.get());
-        const auto * right_col_u64 = typeid_cast<const ColumnUInt64 *>(r.right.column.get());
-        const auto * left_col_u32 = left_col_u64 ? nullptr : typeid_cast<const ColumnUInt32 *>(r.left.column.get());
-        const auto * right_col_u32 = right_col_u64 ? nullptr : typeid_cast<const ColumnUInt32 *>(r.right.column.get());
-
-        if ((left_col_u64 && right_col_u64) || (left_col_u32 && right_col_u32))
+        auto extract_val = [](const IColumn * col) -> std::optional<UInt64>
         {
-            UInt64 left_val = 0;
-            UInt64 right_val = std::numeric_limits<UInt64>::max();
+            if (const auto * u64 = typeid_cast<const ColumnUInt64 *>(col)) return u64->getElement(0);
+            if (const auto * u32 = typeid_cast<const ColumnUInt32 *>(col)) return u32->getElement(0);
+            if (const auto * u16 = typeid_cast<const ColumnUInt16 *>(col)) return u16->getElement(0);
+            if (const auto * u8  = typeid_cast<const ColumnUInt8 *>(col))  return u8->getElement(0);
+            return std::nullopt;
+        };
 
-            if (r.left.isNormal())
+        std::optional<UInt64> left_opt = r.left.isNormal() ? extract_val(r.left.column.get()) : std::make_optional<UInt64>(0);
+        std::optional<UInt64> right_opt = r.right.isNormal() ? extract_val(r.right.column.get()) : std::make_optional<UInt64>(std::numeric_limits<UInt64>::max());
+
+        if (left_opt && right_opt)
+        {
+            /// Conservative fallback if applyMonotonicFunctionsChainToRange inverted the transformed bounds.
+            if (r.left.isNormal() && r.right.isNormal() && *left_opt > *right_opt)
+                return {true, true};
+
+            UInt64 left_val = *left_opt;
+            UInt64 right_val = *right_opt;
+
+            if (r.left.isNormal() && !r.left_included)
             {
-                left_val = left_col_u64 ? left_col_u64->getElement(0) : left_col_u32->getElement(0);
-                if (!r.left_included)
-                {
-                    if (left_val == std::numeric_limits<UInt64>::max())
-                        return {false, true};
-                    ++left_val;
-                }
-            }
-            else if (r.left.isNegativeInfinity())
-            {
-                left_val = 0;
+                if (left_val == std::numeric_limits<UInt64>::max())
+                    return {false, true};
+                ++left_val;
             }
 
-            if (r.right.isNormal())
+            if (r.right.isNormal() && !r.right_included)
             {
-                right_val = right_col_u64 ? right_col_u64->getElement(0) : right_col_u32->getElement(0);
-                if (!r.right_included)
-                {
-                    if (right_val == 0)
-                        return {false, true};
-                    --right_val;
-                }
-            }
-            else if (r.right.isPositiveInfinity())
-            {
-                right_val = std::numeric_limits<UInt64>::max();
+                if (right_val == 0)
+                    return {false, true};
+                --right_val;
             }
 
             if (left_val > right_val)
+            {
+                if (!indexes_mapping[0].functions.empty())
+                    return {true, true};
                 return {false, true};
+            }
 
             const uint64_t upper = roaring_bitmap->rank(right_val);
             const uint64_t lower = (left_val == 0) ? 0 : roaring_bitmap->rank(left_val - 1);
