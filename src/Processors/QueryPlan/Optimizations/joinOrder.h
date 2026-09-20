@@ -3,14 +3,12 @@
 #include <concepts>
 #include <vector>
 #include <Core/Joins.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+#include <base/types.h>
 #include <Common/EquivalenceClasses.h>
 #include <Common/logger_useful.h>
-#include <base/types.h>
-#include <Interpreters/JoinOperator.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/RelationEstimateInfo.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -67,21 +65,6 @@ struct DPJoinEntry
     String dump() const;
 };
 
-struct RelationStats
-{
-    std::optional<UInt64> estimated_rows = {};
-    std::optional<Float64> avg_row_bytes = {};
-    std::unordered_map<String, ColumnStats> column_stats = {};
-
-    String table_name;
-
-    bool imprecise_estimate = false;
-
-    /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
-    /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
-    RowEstimateSource source = RowEstimateSource::NoSource;
-};
-
 /// One binary join operator captured verbatim from the original (pre-flattening) join tree.
 /// Used only by the optional conflict detector for DPsub (CD-A or CD-C; see conflictDetector.h).
 ///   - `left` / `right`: the relation sets of the operator's two input subtrees;
@@ -113,12 +96,10 @@ struct QueryGraph
     /// otherwise. See `ConflictJoinOp`.
     std::vector<ConflictJoinOp> conflict_ops;
 
-    /// When either is true, DPsub builds its reordering constraints from the conflict detector
+    /// When not `NONE`, DPsub builds its reordering constraints from the selected conflict detector
     /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
-    /// restrictions. CD-C takes precedence over CD-A when both are set. Set from settings in
-    /// `optimizeJoinOrder`; affects only the DPsub algorithm.
-    bool use_conflict_detector_a = false;
-    bool use_conflict_detector_c = false;
+    /// restrictions. Set from settings in `optimizeJoinOrder`; affects only the DPsub algorithm.
+    JoinOrderConflictDetector conflict_detector = JoinOrderConflictDetector::NONE;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
@@ -152,20 +133,5 @@ struct QueryGraph
 struct QueryPlanOptimizationSettings;
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
-
-namespace QueryPlanOptimizations
-{
-
-/// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
-/// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
-/// single-argument function of it (which cannot increase the distinct count).
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
-
-/// Estimate the number of rows and per-column statistics of the relation produced by the subtree
-/// rooted at `node`, keyed by the subtree's output column names. `filter` is an optional predicate
-/// over these columns to account for.
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-
-}
 
 }
