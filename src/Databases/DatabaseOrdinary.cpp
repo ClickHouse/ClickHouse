@@ -159,7 +159,8 @@ TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & c
     /// The replica name is resolved with a Nil UUID above, so a {uuid} in `default_replica_name` has already
     /// been rejected here: the literal path is the only thing that outlives the temporary UUID of the conversion.
     if (stores_path_literally)
-        znode_info.checkPrefixForDropRecoverableFromPath();
+        znode_info.checkPrefixForDropRecoverableFromPath(
+            StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), local_context);
 
     return znode_info;
 }
