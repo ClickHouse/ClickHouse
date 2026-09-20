@@ -487,9 +487,11 @@ public:
   public:
     Function_Context(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *FUNCTION();
     antlr4::tree::TerminalNode *LEFT_PAREN();
     antlr4::tree::TerminalNode *RIGHT_PAREN();
+    antlr4::tree::TerminalNode *FUNCTION();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *END();
     std::vector<ParameterContext *> parameter();
     ParameterContext* parameter(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COMMA();

@@ -767,16 +767,30 @@ namespace
         {
             auto * function_name_ctx = ctx->FUNCTION();
             if (!function_name_ctx)
+                function_name_ctx = ctx->START() ? ctx->START() : ctx->END();
+            if (!function_name_ctx)
                 throwInconsistentSchema("Function", ctx->getText());
 
             auto function_name = getText(function_name_ctx);
+            /// START and END are case-insensitive tokens for the @ modifier, but function names are case-sensitive.
+            if (!ctx->FUNCTION() && function_name != "start" && function_name != "end")
+            {
+                error_listener.setError(fmt::format("Unknown function '{}'", function_name), getStartPos(function_name_ctx));
+                return nullptr;
+            }
+            if ((function_name == "start" || function_name == "end") && !arguments.empty())
+            {
+                error_listener.setError(fmt::format("Function '{}' expects no arguments", function_name), getStartPos(function_name_ctx));
+                return nullptr;
+            }
             return makeFunction(function_name, arguments);
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi"
+                || function_name == "start" || function_name == "end")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
