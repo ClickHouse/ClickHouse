@@ -23,8 +23,8 @@ node = cluster.add_instance(
 )
 
 DB_DISK_PATH = "/var/lib/clickhouse/disks/db_meta_disk"
+OTHER_DB_DISK_PATH = "/var/lib/clickhouse/disks/other_db_disk"
 DEFAULT_DISK_PATH = "/var/lib/clickhouse"
-SERVER_LOG = "/var/log/clickhouse-server/clickhouse-server.log"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -47,9 +47,10 @@ def read_state_file(path):
     return node.exec_in_container(["bash", "-c", f"cat {shlex.quote(path)}"])
 
 
-def refresh_info(name, column):
+def refresh_info(name, column, database="default"):
     return node.query(
-        f"SELECT {column} FROM system.view_refreshes WHERE view = '{name}'"
+        f"SELECT {column} FROM system.view_refreshes "
+        f"WHERE database = '{database}' AND view = '{name}'"
     ).strip()
 
 
@@ -61,54 +62,41 @@ def profile_event(name):
     )
 
 
-def wait_for_refresh_info(name, column, predicate, retry_count=120, sleep_time=0.5):
+def wait_for_refresh_info(
+    name, column, predicate, retry_count=120, sleep_time=0.5, database="default"
+):
     """Poll one system.view_refreshes column until `predicate` holds, then assert that it does.
 
     query_with_retry returns its last result even when the callback never passed, so the assert is
     what makes this a check rather than a delay.
     """
     value = node.query_with_retry(
-        f"SELECT {column} FROM system.view_refreshes WHERE view = '{name}'",
+        f"SELECT {column} FROM system.view_refreshes "
+        f"WHERE database = '{database}' AND view = '{name}'",
         check_callback=lambda x: predicate(x.strip()),
         retry_count=retry_count,
         sleep_time=sleep_time,
     ).strip()
-    assert predicate(value), f"{name}.{column} is {value!r}"
+    assert predicate(value), f"{database}.{name}.{column} is {value!r}"
     return value
 
 
-def count_in_server_logs(pattern):
-    """Count matches across the current log and every rotated one.
-
-    A restart rotates the log, so a byte offset taken before it points past the end of the file
-    that exists afterwards and would match nothing at all. Comparing this count before and after
-    is what makes "the line did not appear" an assertion instead of a tautology.
-    """
-    return int(
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"zgrep -ac -- {shlex.quote(pattern)} {SERVER_LOG}* 2>/dev/null "
-                f"| awk -F: '{{s += $NF}} END {{print s + 0}}'",
-            ]
-        ).strip()
-    )
-
-
-def create_daily_rmv(name):
+def create_daily_rmv(name, database="default"):
     """A view that refreshes once now and then not again for a day.
 
+    AFTER, not EVERY: EVERY 1 DAY without OFFSET is due at the next calendar midnight, so a run that
+    straddles midnight would legitimately refresh again and read as a stampede. AFTER has no
+    calendar boundary (RefreshSchedule::advance returns completion + the period).
     No EMPTY: the stored metadata does not keep the EMPTY flag, and an EMPTY view has no completed
     refresh anyway, while last_success_time is what these tests compare across a restart.
     """
-    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {database}.{name} SYNC")
     node.query(
-        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
+        f"CREATE MATERIALIZED VIEW {database}.{name} REFRESH AFTER 1 DAY (a DateTime, b UInt64) "
         f"ENGINE = MergeTree ORDER BY tuple() AS SELECT now() a, number b FROM numbers(2)"
     )
     return wait_for_refresh_info(
-        name, "last_success_time", lambda x: x not in ("", "\\N")
+        name, "last_success_time", lambda x: x not in ("", "\\N"), database=database
     )
 
 
@@ -146,7 +134,7 @@ def test_empty_view_keeps_its_schedule_across_restart():
     name = "rmv_empty"
     node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
-        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
+        f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt64) "
         f"ENGINE = MergeTree ORDER BY tuple() EMPTY "
         f"AS SELECT now() a, number b FROM numbers(2)"
     )
@@ -187,10 +175,12 @@ def test_empty_view_keeps_its_schedule_across_restart():
 def test_unusable_persisted_refresh_state_stops_the_view(payload):
     name = "rmv_unusable"
     create_daily_rmv(name)
-    state_files = find_refresh_state_files(DB_DISK_PATH)
-    assert len(state_files) == 1
-
     try:
+        # Inside the try: a leaked view keeps its state file, which would then fail every later
+        # filesystem-wide count and report one fault as several.
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1
+
         node.stop_clickhouse()
         node.exec_in_container(
             ["bash", "-c", f"printf '%s' {shlex.quote(payload)} > {state_files[0]}"]
@@ -223,63 +213,18 @@ def test_unusable_persisted_refresh_state_stops_the_view(payload):
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
-def test_refresh_is_not_published_when_the_state_cannot_be_persisted():
-    name = "rmv_persist_fails"
-    before = create_daily_rmv(name)
-    state_files = find_refresh_state_files(DB_DISK_PATH)
-    assert len(state_files) == 1
-    # A directory where the temporary file goes makes the write fail with EISDIR for any uid,
-    # unlike permission bits, which root would ignore.
-    blocker = state_files[0] + ".tmp"
-    failures_before = profile_event("RefreshableViewStatePersistFailed")
-
-    try:
-        node.exec_in_container(["bash", "-c", f"mkdir {blocker}"], user="root")
-        try:
-            node.query(f"SYSTEM REFRESH VIEW {name}")
-            # Not SYSTEM WAIT VIEW: its predicate excludes Running and Scheduling, and the view
-            # parks in Scheduling while the transition keeps failing.
-            failures = node.query_with_retry(
-                "SELECT sum(value) FROM system.events "
-                "WHERE event = 'RefreshableViewStatePersistFailed'",
-                check_callback=lambda x: int(x.strip()) > failures_before,
-                retry_count=120,
-            ).strip()
-            assert int(failures) > failures_before
-            assert refresh_info(name, "last_success_time") == before
-            # Past one 5 s retry, so a transition that publishes late still reddens this.
-            time.sleep(7)
-            assert refresh_info(name, "last_success_time") == before
-        finally:
-            node.exec_in_container(["bash", "-c", f"rmdir {blocker}"], user="root")
-
-        # Converges once the write can succeed, and only once: a retry storm would keep moving it.
-        after = wait_for_refresh_info(
-            name, "last_success_time", lambda x: x not in ("", "\\N", before)
-        )
-        time.sleep(7)
-        assert refresh_info(name, "last_success_time") == after
-        state_files = find_refresh_state_files(DB_DISK_PATH)
-        assert len(state_files) == 1
-        state = read_state_file(state_files[0])
-        assert state.startswith("format version: 1\n")
-        assert "last_success_time: 0\n" not in state
-    finally:
-        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
-
-
 def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
     """Blocking the write while a refresh is in flight covers the transition that publishes it.
 
-    The test above blocks the write first, so the transition that starts a refresh fails and the
-    refresh never runs. Only this order reaches the transition that records a finished one, which is
-    what publishes last_completed_timeslot and the incremental cursor, and which is therefore the
-    only arm that can show the data landing while the schedule stays unpublished.
+    The transition that records a finished refresh is what publishes last_completed_timeslot and the
+    incremental cursor, so it is the only arm that can show the data landing while the schedule
+    stays unpublished. It is also the only transition an uncoordinated view persists at all, which
+    makes it the whole of the fail-closed contract.
     """
     name = "rmv_finish_persist_fails"
     node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
-        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt8) "
+        f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt8) "
         f"ENGINE = MergeTree ORDER BY tuple() "
         f"AS SELECT now() a, sleep(1) b FROM numbers(8) "
         f"SETTINGS max_block_size = 1, max_threads = 1"
@@ -293,6 +238,8 @@ def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
         data_before = node.query(f"SELECT max(a) FROM {name}").strip()
         state_files = find_refresh_state_files(DB_DISK_PATH)
         assert len(state_files) == 1
+        # A directory where the temporary file goes makes the write fail with EISDIR for any uid,
+        # unlike permission bits, which root would ignore.
         blocker = state_files[0] + ".tmp"
         failures_before = profile_event("RefreshableViewStatePersistFailed")
 
@@ -338,47 +285,124 @@ def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
-def test_refresh_running_is_not_believed_after_a_crash():
-    """A crash mid-refresh persists refresh_running, which the loader has to clear.
-
-    Without that, the view starts up believing a refresh it cannot observe is in flight, and the
-    reconciliation path that then cleans up ignores whether its own write succeeded.
-
-    The kill has to land while the refresh is still running, or the file holds refresh_running: 0
-    and neither implementation enters that path; the status assert before the kill enforces it.
-    """
-    name = "rmv_crash"
+def create_slow_rmv(name):
+    """A view whose refresh takes seconds, so a control command can be issued while it runs."""
     node.query(f"DROP TABLE IF EXISTS {name} SYNC")
     node.query(
-        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt8) "
-        f"ENGINE = MergeTree ORDER BY tuple() EMPTY "
-        f"AS SELECT now() a, sleep(1) b FROM numbers(10) "
+        f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt8) "
+        f"ENGINE = MergeTree ORDER BY tuple() "
+        f"AS SELECT now() a, sleep(1) b FROM numbers(3) "
         f"SETTINGS max_block_size = 1, max_threads = 1"
     )
+    return wait_for_refresh_info(
+        name, "last_success_time", lambda x: x not in ("", "\\N")
+    )
+
+
+def test_a_starting_refresh_is_not_persisted():
+    """Only transitions that do not start a refresh are persisted.
+
+    The state a starting refresh would contribute is refresh_running, which the loader would have to
+    throw away anyway, so persisting it buys nothing; and doing it would release the task's mutex for
+    an fsync in the middle of starting the refresh, which is what
+    test_stop_view_is_not_lost_while_a_refresh_starts is about. That makes refresh_running: 0 an
+    invariant of every payload ever written, and this asserts it at the one moment it could differ.
+    """
+    name = "rmv_starting"
+    create_slow_rmv(name)
     try:
-        wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
-        leftover_warning = "znode says this replica is running refresh, but it isn't"
-        # Counted before the refresh starts, not just before the kill: the warning comes from a
-        # scheduling pass that needs a startup-loaded refresh_running, so nothing can emit it in
-        # between, and scanning every rotated log is the slowest step in the window.
-        warnings_before = count_in_server_logs(leftover_warning)
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1
+
         node.query(f"SYSTEM REFRESH VIEW {name}")
         wait_for_refresh_info(
             name, "status", lambda x: x == "Running", retry_count=300, sleep_time=0.1
         )
-
-        # The precondition the loader handles, made observable: without this the test would pass
-        # either way, because the reconciliation path self-heals in one extra scheduling pass.
-        state_files = find_refresh_state_files(DB_DISK_PATH)
-        assert len(state_files) == 1
-        persisted = read_state_file(state_files[0])
-        assert "refresh_running: 1\n" in persisted, persisted
-
+        # Read while the refresh is in flight, which is the only window in which the in-memory
+        # root_znode says refresh_running = true.
         assert refresh_info(name, "status") == "Running"
-        node.stop_clickhouse(kill=True)
-        node.start_clickhouse()
+        persisted = read_state_file(state_files[0])
+        assert "refresh_running: 0\n" in persisted, persisted
 
-        wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
-        assert count_in_server_logs(leftover_warning) == warnings_before
+        node.query(f"SYSTEM WAIT VIEW {name}")
+        # The skip is confined to the start transition, so the finished one does publish: the payload
+        # has to change. last_completed_timeslot alone guarantees it moves, since AFTER anchors on the
+        # end time and the refresh sleeps for seconds.
+        published = read_state_file(state_files[0])
+        assert published != persisted
+        assert "refresh_running: 0\n" in published, published
+        assert find_refresh_state_files(DB_DISK_PATH) == state_files
     finally:
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_stop_view_is_not_lost_while_a_refresh_starts():
+    """SYSTEM STOP VIEW issued as a refresh starts must still prevent that refresh.
+
+    The transition that starts a refresh clears the execution interrupt flag right after it returns,
+    so a STOP that lands while that transition holds no mutex sets a flag which is then discarded and
+    the refresh runs to completion. The transition no longer releases the mutex at all, so there is
+    no window to land in.
+
+    The refresh sleeps, so it cannot finish inside the STOP's round trip: whichever side wins,
+    last_success_time may only move after the START below, never because of the STOP.
+    """
+    name = "rmv_stop_race"
+    before = create_slow_rmv(name)
+    try:
+        # Repeated because the two commands race: 8 rounds keep the test under a minute, and a
+        # restored window is caught on the first round anyway (measured against a build that
+        # re-adds the persist and delays it by 200 ms, standing in for object storage).
+        for attempt in range(8):
+            node.query(f"SYSTEM REFRESH VIEW {name}")
+            node.query(f"SYSTEM STOP VIEW {name}")
+            # A swallowed STOP leaves the refresh running, so this waits it out and then reads a
+            # moved last_success_time rather than timing out.
+            wait_for_refresh_info(name, "status", lambda x: x == "Disabled")
+            assert (
+                refresh_info(name, "last_success_time") == before
+            ), f"attempt {attempt}: the refresh ran although the view was stopped"
+
+            # Re-arm. The out-of-schedule request is consumed when the refresh starts, so a stop
+            # that interrupted a started one leaves nothing for START to run; ask again and wait.
+            node.query(f"SYSTEM START VIEW {name}")
+            node.query(f"SYSTEM REFRESH VIEW {name}")
+            node.query(f"SYSTEM WAIT VIEW {name}")
+            before = wait_for_refresh_info(
+                name, "last_success_time", lambda x: x not in ("", "\\N", before)
+            )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_state_follows_the_owning_databases_disk():
+    """A database can keep its metadata off the server-global database_disk, and this follows it.
+
+    {global database_disk read-only or simply elsewhere} plus {database created with SETTINGS disk}
+    is a supported server on which DDL works, so resolving the disk globally would silently leave the
+    stampede in place for every view in such a database.
+    """
+    database = "rmv_other_disk_db"
+    name = "rmv_on_other_disk"
+    node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = Atomic SETTINGS disk = 'other_db_disk'"
+    )
+    try:
+        before = create_daily_rmv(name, database=database)
+
+        state_files = find_refresh_state_files(OTHER_DB_DISK_PATH)
+        assert len(state_files) == 1
+        server_uuid = node.query("SELECT serverUUID()").strip()
+        assert os.path.basename(state_files[0]) == f"refresh_state.{server_uuid}.txt"
+        assert find_refresh_state_files(DB_DISK_PATH) == []
+
+        node.restart_clickhouse()
+
+        wait_for_refresh_info(
+            name, "status", lambda x: x == "Scheduled", database=database
+        )
+        time.sleep(3)
+        assert refresh_info(name, "last_success_time", database=database) == before
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")

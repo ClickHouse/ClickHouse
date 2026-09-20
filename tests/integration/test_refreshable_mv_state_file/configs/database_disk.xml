@@ -8,6 +8,10 @@
                 <type>local</type>
                 <path>/var/lib/clickhouse/disks/db_meta_disk/</path>
             </db_meta_disk>
+            <other_db_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/other_db_disk/</path>
+            </other_db_disk>
         </disks>
     </storage_configuration>
 </clickhouse>

@@ -527,12 +527,15 @@ def test_query_retry(fn3_setup_tables):
 def create_daily_rmv(instance, name):
     """A view that refreshes once now and then not again for a day.
 
+    AFTER, not EVERY: EVERY 1 DAY without OFFSET is due at the next calendar midnight, so a run that
+    straddles midnight would legitimately refresh again and read as a stampede. AFTER has no
+    calendar boundary (RefreshSchedule::advance returns completion + the period).
     No EMPTY: the stored metadata does not keep the EMPTY flag, and an EMPTY view has no completed
     refresh anyway, while last_success_time is what these tests compare across a restart.
     """
     instance.query(f"DROP TABLE IF EXISTS {name}")
     instance.query(
-        f"CREATE MATERIALIZED VIEW {name} REFRESH EVERY 1 DAY (a DateTime, b UInt64) "
+        f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt64) "
         f"ENGINE = MergeTree ORDER BY tuple() AS SELECT now() a, number b FROM numbers(2)"
     )
     return get_rmv_info(
@@ -549,8 +552,8 @@ def test_schedule_survives_restart(fn_setup_tables):
     for name in names:
         get_rmv_info(node, name, wait_status="Scheduled")
     # A stampede lands within milliseconds of the server accepting connections, so by now it would
-    # already have moved last_success_time. next_refresh_time is not an oracle here: EVERY 1 DAY
-    # rounds the stampeding refresh onto the same timeslot, so it reads the same either way.
+    # already have moved last_success_time. That is the oracle: next_refresh_time would shift only by
+    # however long the restart took, which is not something to assert on.
     time.sleep(3)
 
     for name in names:
@@ -570,29 +573,36 @@ def test_incremental_cursor_survives_restart():
     node.query(
         "CREATE TABLE test_incr_tgt (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
     )
+    # EVERY, unlike its siblings above, which use AFTER to stay off a calendar boundary: this one's
+    # boundary is decennial, and the test drives every refresh with SYSTEM REFRESH VIEW anyway.
     node.query(
         "CREATE MATERIALIZED VIEW test_incr_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL "
         "TO test_incr_tgt EMPTY AS SELECT k, v FROM test_incr_src"
     )
 
-    node.query("INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5)")
-    node.query("SYSTEM REFRESH VIEW test_incr_mv")
-    node.query("SYSTEM WAIT VIEW test_incr_mv")
-    assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "5\t5\n"
+    try:
+        node.query(
+            "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5)"
+        )
+        node.query("SYSTEM REFRESH VIEW test_incr_mv")
+        node.query("SYSTEM WAIT VIEW test_incr_mv")
+        assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "5\t5\n"
 
-    node.restart_clickhouse()
+        node.restart_clickhouse()
 
-    node.query(
-        "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5, 5)"
-    )
-    node.query("SYSTEM REFRESH VIEW test_incr_mv")
-    node.query("SYSTEM WAIT VIEW test_incr_mv")
-    # A lost cursor restarts the stream from the beginning and appends rows 0..4 a second time.
-    assert node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "10\t10\n"
-
-    node.query("DROP TABLE test_incr_mv")
-    node.query("DROP TABLE test_incr_src")
-    node.query("DROP TABLE test_incr_tgt")
+        node.query(
+            "INSERT INTO test_incr_src SELECT number, number * 10 FROM numbers(5, 5)"
+        )
+        node.query("SYSTEM REFRESH VIEW test_incr_mv")
+        node.query("SYSTEM WAIT VIEW test_incr_mv")
+        # A lost cursor restarts the stream from the beginning and appends rows 0..4 a second time.
+        assert (
+            node.query("SELECT count(), uniqExact(k) FROM test_incr_tgt") == "10\t10\n"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS test_incr_mv")
+        node.query("DROP TABLE IF EXISTS test_incr_src")
+        node.query("DROP TABLE IF EXISTS test_incr_tgt")
 
 
 def test_start_views_after_startup_stop_does_not_stampede(fn_setup_tables):

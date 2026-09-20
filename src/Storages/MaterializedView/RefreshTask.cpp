@@ -271,22 +271,6 @@ RefreshTask::RefreshTask(
     {
         if (is_restore_from_backup)
             scheduling.stop_requested = true;
-
-        const UUID view_uuid = view->getStorageID().uuid;
-        /// tryGet, not get: get() throws LOGICAL_ERROR until the server UUID is loaded.
-        const UUID server_uuid = ServerUUID::tryGet();
-        auto db_disk = context->getDatabaseDisk();
-        /// A read-only database disk is a live configuration, not a misconfiguration: DiskLocal
-        /// marks itself read-only without failing startup.
-        if (view_uuid != UUIDHelpers::Nil && server_uuid != UUIDHelpers::Nil
-            && db_disk && !db_disk->isReadOnly() && !db_disk->isWriteOnce())
-        {
-            local_state_disk = std::move(db_disk);
-            /// The database disk may be object storage shared by replicas, which all hold the same
-            /// view UUID, and an uncoordinated view schedules independently on each replica.
-            local_state_path = DatabaseCatalog::getStoreDirPath(view_uuid)
-                / fmt::format("refresh_state.{}.txt", server_uuid);
-        }
     }
 }
 
@@ -351,6 +335,9 @@ void RefreshTask::startup()
 {
     auto context = view->getContext();
 
+    if (!coordination.coordinated)
+        resolveLocalStateLocation(context);
+
     /// Must precede RefreshSet::emplace, which notifies dependent views, and those read
     /// last_completed_timeslot. Reading a file is also not allowed while holding `mutex`.
     auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState(context);
@@ -362,8 +349,6 @@ void RefreshTask::startup()
     {
         coordination.root_znode = std::move(*loaded.znode);
         coordination.root_znode.version = -1;
-        /// refresh_running is serialized, so a refresh interrupted by a crash persisted it as true.
-        coordination.root_znode.refresh_running = false;
     }
     else if (loaded.unusable)
     {
@@ -1883,7 +1868,10 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
     }
-    else if (!local_state_path.empty())
+    /// Not on the transition that starts a refresh: it publishes nothing this feature reloads, and
+    /// its caller clears `execution.interrupt_execution` immediately afterwards, so persisting here
+    /// would only open a window for a lost SYSTEM STOP VIEW.
+    else if (!local_state_path.empty() && !running)
     {
         const String data = root.toString();
         /// Taken before unlocking: shutdown() nulls `view` under `mutex`.
@@ -1907,6 +1895,31 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     wait_cv.notify_all();
 
     return true;
+}
+
+void RefreshTask::resolveLocalStateLocation(const ContextPtr & context)
+{
+    const UUID view_uuid = view->getStorageID().uuid;
+    /// tryGet, not get: get() throws LOGICAL_ERROR until the server UUID is loaded.
+    const UUID server_uuid = ServerUUID::tryGet();
+    if (view_uuid == UUIDHelpers::Nil || server_uuid == UUIDHelpers::Nil)
+        return;
+
+    /// The owning database's metadata disk, which `SETTINGS disk` can point away from the
+    /// server-global one. IDatabase::getDisk() already defaults to getDatabaseDisk(), so an engine
+    /// that keeps no metadata on disk needs no separate fallback.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(view->getStorageID().database_name);
+    auto disk = database ? database->getDisk() : context->getDatabaseDisk();
+    /// A read-only database disk is a live configuration, not a misconfiguration: DiskLocal
+    /// marks itself read-only without failing startup.
+    if (!disk || disk->isReadOnly() || disk->isWriteOnce())
+        return;
+
+    local_state_disk = std::move(disk);
+    /// The database disk may be object storage shared by replicas, which all hold the same
+    /// view UUID, and an uncoordinated view schedules independently on each replica.
+    local_state_path = DatabaseCatalog::getStoreDirPath(view_uuid)
+        / fmt::format("refresh_state.{}.txt", server_uuid);
 }
 
 RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const ContextPtr & context)

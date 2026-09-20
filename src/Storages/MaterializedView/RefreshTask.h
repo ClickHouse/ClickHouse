@@ -356,7 +356,8 @@ private:
 
     /// Where an uncoordinated view persists `coordination.root_znode`, standing in for the Keeper
     /// znode a coordinated view re-reads at startup. Empty disables persistence.
-    /// Assigned only in the constructor, so both are read without holding `mutex`.
+    /// Assigned only in startup(), which publishes them by releasing `mutex` before the scheduling
+    /// task can run, so both are then read without holding `mutex`.
     DiskPtr local_state_disk;
     String local_state_path;
 
@@ -449,6 +450,8 @@ private:
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
+    /// Assign `local_state_disk`/`local_state_path`, or leave them unset to disable persistence.
+    void resolveLocalStateLocation(const ContextPtr & context);
     /// Read/write `local_state_path`. Callers must not hold `mutex`, and pass the context rather
     /// than letting these touch `view`, which a parallel shutdown() may null. Neither throws.
     LoadedLocalState loadLocalCoordinationState(const ContextPtr & context);
