@@ -66,6 +66,7 @@ send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(quantile(1 IN (6))) FRO
 # `UserDefinedSQLFunctionVisitor` splices it into a caller during `TreeRewriter::normalize`, after
 # deserialization has finished. The name carries the test database because a SQL UDF is server-wide.
 UDF="${CLICKHOUSE_DATABASE}_udf_argumentless"
+${CLICKHOUSE_CLIENT} --query "DROP FUNCTION IF EXISTS ${UDF}"
 send "$(payload "CREATE FUNCTION ${UDF} AS (x) -> x IN (9)" "$ARGS_X_9")"
 # Rejected at the boundary means nothing was persisted, so no caller can reach the visitor through it.
 ${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" 2>&1 | grep -oEm1 'UNKNOWN_FUNCTION'
