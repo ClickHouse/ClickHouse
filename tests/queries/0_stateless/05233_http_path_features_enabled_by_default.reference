@@ -1,0 +1,14 @@
+-- table as file
+1,"one"
+2,"two"
+3,"three"
+-- database as path
+one
+two
+three
+-- filters as path
+2,"two"
+-- filters as unrecognized URL parameters
+3,"three"
+-- the features can still be switched off per request
+UNKNOWN_TABLE

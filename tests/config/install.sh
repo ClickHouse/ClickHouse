@@ -368,12 +368,19 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
-# The http_allow_* settings are introduced by this feature and are not present in any
-# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
-# that can contain them) to keep the previous-release server of the upgrade check bootable.
+# The `url_prefix` handler option is introduced by this feature and is not present in any
+# released version before 26.8, so gate on 26.8 (the first version that can contain it) to
+# keep the previous-release server of the upgrade check bootable.
 if check_clickhouse_version 26.8; then
-    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+    # The path-as-URL features are enabled by default since 26.10. An older server - the
+    # previous-release one of the upgrade check - still needs them turned on explicitly,
+    # because that release's tests expect the feature to work. On 26.10 and newer the tests
+    # must exercise the defaults, so these files are deliberately not installed there.
+    if ! check_clickhouse_version 26.10; then
+        ln -sf $SRC_PATH/config.d/http_allow_path_requests.xml $DEST_SERVER_PATH/config.d/
+        ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    fi
 fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
