@@ -112,7 +112,29 @@ namespace
             SQLSubqueryType::TABLE);
         builder.from_table = context.subqueries.back().name;
 
-        vector_grid.select_query = builder.getSelectQuery();
+        /// A vector-grid row whose every step is NULL represents no series at all.
+        /// Drop it here so downstream operators which validate uniqueness by row count
+        /// don't mistake a stale series for a duplicate.
+        context.subqueries.emplace_back(
+            context.subqueries.size(),
+            builder.getSelectQuery(),
+            SQLSubqueryType::TABLE);
+
+        SelectQueryBuilder filter_builder;
+        filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        filter_builder.from_table = context.subqueries.back().name;
+
+        const String filter_iterator_name = "x";
+        filter_builder.where = makeASTFunction(
+            "arrayExists",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>(filter_iterator_name)),
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>(filter_iterator_name))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+        vector_grid.select_query = filter_builder.getSelectQuery();
         return std::move(vector_grid);
     }
 }
