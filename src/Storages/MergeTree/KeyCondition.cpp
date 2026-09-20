@@ -2630,19 +2630,20 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
-            return false;
+        /// `modulo(...) = const` used to be assumed equivalent to `moduloLegacy(...) = const` when
+        /// the storage's partition key rewrites `modulo` to `moduloLegacy` (`KeyDescription::
+        /// moduloToModuloLegacyRecursive`), since the two functions computed identically. They no
+        /// longer do for a mixed-sign pair with an equal-or-wider unsigned operand (`ModuloImpl`
+        /// now takes the mathematically correct, signed remainder; `moduloLegacy` deliberately keeps
+        /// the historical, sometimes unsigned-computed one - see `DivisionUtils.h`). Substituting
+        /// one for the other here is no longer just imprecise, it can be unsound: `moduloLegacy`'s
+        /// range for such a pair never includes a negative value, so rewriting e.g.
+        /// `modulo(c0, toUInt32(N)) = -1` this way makes every partition provably unable to match
+        /// and prunes all of them, even though the row is really there. This substitution is only
+        /// an optimization (its absence merely reads more granules), so it is removed rather than
+        /// made conditional on the operand types - the type-level equivalence check that would
+        /// require is exactly the class of reasoning that produced the original bug.
+        return false;
     }
 
     if (out_value.isNull())
@@ -4044,22 +4045,12 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
     // Checking if column name matches any of key subexpressions
     String expr_name = node.getColumnName();
 
+    /// See the identical rationale in `canConstantBeWrappedByDeterministicFunctions` above: the
+    /// `modulo` -> `moduloLegacy` substitution used for `IN (...)` here is no longer sound now
+    /// that the two functions can diverge on mixed-sign operands, so it is removed rather than
+    /// made conditional on the operand types.
     if (!info.key_subexpr_names.contains(expr_name))
-    {
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
-            return false;
-    }
+        return false;
 
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform))
         return false;

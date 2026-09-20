@@ -90,11 +90,6 @@ public:
     /// Get column name
     std::string getColumnName() const;
 
-    /** Get column name.
-      * Function `modulo` is replaced with `moduloLegacy`.
-      */
-    std::string getColumnNameWithModuloLegacy() const;
-
     /// Is node function
     bool isFunction() const;
 

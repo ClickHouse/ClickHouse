@@ -270,18 +270,6 @@ std::string RPNBuilderTreeNode::getColumnName() const
     return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
 }
 
-std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
-{
-    if (ast_node)
-    {
-        auto adjusted_ast = ast_node->clone();
-        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        return adjusted_ast->getColumnNameWithoutAlias();
-    }
-
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
-}
-
 bool RPNBuilderTreeNode::isFunction() const
 {
     if (ast_node)
