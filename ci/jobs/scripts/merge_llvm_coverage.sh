@@ -2,6 +2,11 @@
 
 set -e
 
+# Resolved before the `cd ci/tmp` below, while the invocation path is still valid.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./coverage_ignore_paths.sh
+source "$SCRIPT_DIR/coverage_ignore_paths.sh"
+
 echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
@@ -129,28 +134,6 @@ echo "Generating coverage report..."
 # The coverage data references paths like "ci/tmp/build/base/base/..."
 # We created symlinks so those paths now resolve to actual source files
 
-# Sources that are deliberately kept out of the measurement. The report answers
-# "how much of the shipped server do the tests reach", so anything that is not
-# shipped server code only adds noise to the total:
-#   contrib                 third-party code, built without instrumentation anyway
-#   [/_]gtest_              the unit tests themselves. They run in the unit test
-#                           shard, so they score ~97% and inflate the total with
-#                           ~105k lines of test bodies rather than tested code
-#   \.pb\. \.generated\.    generated sources, nobody writes tests against them
-#   QueryFuzzer & co.       fuzzing helpers, exercised only by the fuzzer jobs
-#                           whose profiles are not merged here
-#   /programs/<tool>/       standalone dev and ops utilities (benchmarks, the
-#                           installer, keeper and zookeeper offline tools). No
-#                           CI job runs them, so they contribute ~9k lines that
-#                           are uncoverable by construction. The server, client,
-#                           local and keeper entry points stay in the report
-IGNORE_FILENAME_REGEX='contrib'
-IGNORE_FILENAME_REGEX+='|[/_]gtest_'
-IGNORE_FILENAME_REGEX+='|\.pb\.|\.generated\.'
-IGNORE_FILENAME_REGEX+='|/(QueryFuzzer|ThreadFuzzer|fuzzQuery|fuzzBits|StorageFuzzQuery|hasThreadFuzzer)\.(cpp|h)$'
-IGNORE_FILENAME_REGEX+='|/fuzzers/'
-IGNORE_FILENAME_REGEX+='|/programs/(check-marks|disks|docker-init|install|keeper-bench|keeper-data-dumper|keeper-utils|obfuscator|su|zookeeper-dump-tree|zookeeper-remove-by-list)/'
-
 # Detect workspace path - use WORKSPACE_PATH if set, otherwise try to detect
 if [ -z "$WORKSPACE_PATH" ]; then
     # Go back to workspace root (we're in ci/tmp)
@@ -165,7 +148,7 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex="$IGNORE_FILENAME_REGEX" \
+        -ignore-filename-regex="$COVERAGE_IGNORE_FILENAME_REGEX" \
         -skip-expansions \
         > llvm_coverage.info
 
