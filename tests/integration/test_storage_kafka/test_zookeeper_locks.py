@@ -346,3 +346,82 @@ def test_inactive_replica_not_counted_with_shard_affinity(kafka_cluster):
         # The lock set must stay complete across a refresh round as well.
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+
+def test_own_registration_loss_triggers_reactivation(kafka_cluster):
+    """The replica must recover when its own `is_active` node disappears from Keeper.
+
+    `is_active` is ephemeral, but it can also be removed while the session is alive, e.g. from
+    outside the server. Nothing re-creates it on its own, and since the partition locks are
+    distributed by counting only active replicas, the replica would be left out of every peer's
+    quota while still holding on to its own locks. The consumer has to notice that it is not among
+    the active replicas anymore and hand control over to the normal deactivate/reactivate path.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_own_registration_loss_topic"
+    num_partitions = 2
+    keeper_path = "/clickhouse/test/zk_own_registration_loss"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # Drop our own registration behind the server's back.
+        is_active_path = f"{keeper_path}/replicas/r1/is_active"
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            zk.rm(is_active_path)
+            assert "is_active" not in set(zk.ls(f"{keeper_path}/replicas/r1"))
+
+        # The table must re-register itself instead of staying wedged without an `is_active` node.
+        deadline = time.time() + 180.0
+        while time.time() < deadline:
+            with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                if "is_active" in set(zk.ls(f"{keeper_path}/replicas/r1")):
+                    break
+            time.sleep(1.0)
+        else:
+            pytest.fail(f"Timed out waiting for {is_active_path} to be re-created")
+
+        # And it must keep consuming afterwards, with the full lock set back in place.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1", timeout=120.0)
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= 2 * len(messages),
+            retry_count=120,
+            sleep_time=1,
+        )

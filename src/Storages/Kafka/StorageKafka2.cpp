@@ -255,7 +255,17 @@ void StorageKafka2::partialShutdown()
 bool StorageKafka2::activate()
 {
     LOG_TEST(log, "Activate task");
-    if (is_active && !getZooKeeper()->expired())
+
+    const bool session_expired = is_active && getZooKeeper()->expired();
+    /// The ephemeral `is_active` node can also disappear while the session is alive, e.g. when it is removed
+    /// from outside the server. Nothing re-creates it on its own, and since the consumers count only active
+    /// replicas when they distribute the partition locks, this replica would be silently left out of every
+    /// peer's quota while still holding on to its own locks. Detect it here so the same deactivate/reactivate
+    /// path as for a lost session recovers the registration.
+    const bool registration_lost
+        = is_active && !session_expired && !getZooKeeper()->exists(fs::path(replica_path) / "is_active");
+
+    if (is_active && !session_expired && !registration_lost)
     {
         LOG_TEST(log, "No need to activate");
         return true;
@@ -265,9 +275,14 @@ bool StorageKafka2::activate()
     {
         LOG_WARNING(log, "Table was not active. Will try to activate it");
     }
-    else if (getZooKeeper()->expired())
+    else if (session_expired)
     {
         LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session");
+        partialShutdown();
+    }
+    else if (registration_lost)
+    {
+        LOG_WARNING(log, "Node {}/is_active is gone, the replica is not registered as active anymore. Will re-register it", replica_path);
         partialShutdown();
     }
     else
@@ -1398,7 +1413,14 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
+        {
+            if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive)
+            {
+                LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
+                activating_task->schedule();
+            }
             return getStallKind(*cannot_poll_reason);
+        }
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
         const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
@@ -1650,6 +1672,9 @@ StorageKafka2::StallKind StorageKafka2::getStallKind(const KeeperHandlingConsume
         case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
             return StallKind::LongStall;
         case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
+            [[fallthrough]];
+        /// The activating task re-registers the replica, so the stream should be able to continue soon.
+        case KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive:
             return StallKind::ShortStall;
     }
 }

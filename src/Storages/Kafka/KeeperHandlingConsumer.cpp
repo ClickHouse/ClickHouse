@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ABORTED;
 extern const int LOGICAL_ERROR;
 }
 
@@ -205,6 +204,13 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
+    /// We are not registered as active in Keeper anymore, so the peers distribute the locks without us.
+    /// Don't grab anything this round: the storage reacts to this by deactivating and activating the table
+    /// again, which re-creates our `is_active` node and releases the locks we are still holding.
+    if (!active_replicas_info.self_is_active)
+        return CannotPollReason::ReplicaNotActive;
+
+    chassert(active_replicas_info.active_replica_count > 0);
     /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
     /// assignment must be left either rewound to the committed offsets or empty.
     try
@@ -333,30 +339,33 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
 
     size_t active_replica_count = 0;
     size_t active_replicas_with_lock = 0;
+    bool self_is_active = false;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
         if (is_active_responses[i].error != Coordination::Error::ZOK)
             continue;
 
         ++active_replica_count;
+        if (candidates[i] == replica_name)
+            self_is_active = true;
         if (replicas_with_lock.contains(candidates[i]))
             ++active_replicas_with_lock;
     }
 
     /// Our own `is_active` is created by `StorageKafka2::activate` before the reader tasks are started and is
     /// only removed after they are stopped, so by the time we get here this replica must be among the active
-    /// ones. Counting zero therefore means our own registration is gone from Keeper or we filtered ourselves
-    /// out. Fail closed instead of defaulting to 1: pretending there is one active replica would let this
-    /// replica claim a full quota of locks while every peer leaves it out of theirs, silently hiding the
-    /// broken state (and 0 would divide by zero in `updatePermanentLocksLocked`, whose `chassert` is a no-op
-    /// in the release build).
-    if (active_replica_count == 0)
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "Replica {} is not among the active replicas of {}: none of the {} candidate replicas (out of {} total, "
-            "shard_count={}) has an `is_active` node. The replica is not registered in Keeper as active anymore",
+    /// ones. If it is not, our registration in Keeper is gone (e.g. the node was removed from outside the
+    /// server) and every peer already leaves us out of its quota. Taking part in the distribution anyway would
+    /// let this replica claim locks nobody accounts for, so the caller stops the cycle and asks the storage to
+    /// go through the normal deactivate/reactivate path instead.
+    if (!self_is_active)
+        LOG_WARNING(
+            log,
+            "Replica {} is not among the active replicas of {}: {} of the {} candidate replicas (out of {} total, "
+            "shard_count={}) have an `is_active` node, but this replica does not",
             replica_name,
             keeper_path.string(),
+            active_replica_count,
             candidates.size(),
             replica_names.size(),
             shard_count);
@@ -364,7 +373,7 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     LOG_TEST(log, "There are {} active replicas with lock, {} active replicas out of {} total replicas (shard_count={})",
              active_replicas_with_lock, active_replica_count, replica_names.size(), shard_count);
     const auto has_replica_without_locks = active_replicas_with_lock < active_replica_count;
-    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks};
+    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks, self_is_active};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>

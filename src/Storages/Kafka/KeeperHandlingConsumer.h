@@ -38,6 +38,9 @@ public:
         NoMetadata,
         KeeperSessionEnded,
         NoPartitions,
+        /// This replica is not registered as active in Keeper anymore, so it must not take part in
+        /// distributing the partition locks until it is activated again.
+        ReplicaNotActive,
     };
 
     class MessageInfo
@@ -149,6 +152,8 @@ private:
     {
         UInt64 active_replica_count{0};
         bool has_replica_without_locks{false};
+        /// Whether this replica itself is among the counted active replicas.
+        bool self_is_active{false};
     };
 
     std::filesystem::path keeper_path;
