@@ -11,6 +11,7 @@ import socket
 import struct
 import threading
 import time
+import ssl
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -71,6 +72,30 @@ server_port = 5433
 alt_server_port = 5435
 
 
+def _read_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise AssertionError("Connection closed before the complete PostgreSQL message was received")
+        data += chunk
+    return data
+
+
+def _read_startup_error(sock):
+    assert _read_exact(sock, 1) == b"E"
+    message_size = struct.unpack("!I", _read_exact(sock, 4))[0]
+    message = _read_exact(sock, message_size - 4)
+    assert b"C08P01\x00" in message
+
+
+def _assert_connection_closed(sock):
+    try:
+        assert sock.recv(1) == b""
+    except ConnectionResetError:
+        pass
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -85,6 +110,33 @@ def started_cluster():
         raise ex
     finally:
         cluster.shutdown()
+
+
+def test_malformed_startup_messages_do_not_consume_following_bytes(started_cluster):
+    node = cluster.instances["node"]
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!I", 7))
+        _assert_connection_closed(sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!II", 8, 80877103))
+        assert _read_exact(sock, 1) == b"S"
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with context.wrap_socket(sock, server_hostname=node.ip_address) as tls_sock:
+            tls_sock.sendall(struct.pack("!II", 8, 196608))
+            _read_startup_error(tls_sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(
+            struct.pack("!II", 13, 196608)
+            + b"user\x00default\x00\x00"
+            + b"following message bytes"
+        )
+        _read_startup_error(sock)
 
 
 def test_psql_client(started_cluster):
@@ -1041,6 +1093,55 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.sendall(_fe("Q", b"SELECT 7\x00"))
     types = read_until_ready()
     assert "C" in types, f"connection must stay alive after a rejected Bind, got {types}"
+    sock.close()
+
+    # `C = 1` applies one format code to all parameters, so a binary code over a message that
+    # carries no value to decode describes nothing and must not be rejected.
+    def bind_format_codes_only(portal, stmt, codes, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", len(codes))
+        for c in codes:
+            b += struct.pack("!H", c)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            if v is None:
+                b += struct.pack("!i", -1)  # protocol NULL: no value bytes follow
+                continue
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT 1", ())
+        + bind_format_codes_only("", "", (1,), ())
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"a zero-parameter Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the zero-parameter statement must run, got {types}"
+
+    # A protocol NULL carries no value bytes either, so a binary code over it is also accepted.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), (None,))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"an all-NULL Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the all-NULL statement must run, got {types}"
+
+    # A binary format code that does cover an actual value is still rejected.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), ("5",))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"a binary parameter value must still be rejected, got {types}"
     sock.close()
 
 

@@ -1,0 +1,74 @@
+<test>
+    <!--
+        Populate the arrays before the timed queries. Constructing temporary arrays with arrayResize inside
+        the query would add allocation and copy work that is unrelated to arrayFirst/arrayLast.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE array_first_last_32
+        (
+            x Array(UInt64)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE array_first_last_128
+        (
+            x Array(UInt64)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE array_first_last_complex
+        (
+            tuple_values Array(Tuple(UInt64, UInt64)),
+            nested_values Array(Array(UInt64))
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_first_last_32
+        SELECT arrayResize([toUInt64(number)], 32)
+        FROM numbers(2000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO array_first_last_128
+        SELECT arrayResize([toUInt64(number)], 128)
+        FROM numbers(500000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO array_first_last_complex
+        SELECT
+            arrayMap(x -&gt; (x, x), range(32)),
+            arrayMap(x -&gt; [x, x], range(32))
+        FROM numbers(250000)
+    </fill_query>
+
+    <!-- Constant predicate path. -->
+    <query>SELECT arrayFirst(x -&gt; 1, x) FROM array_first_last_32 FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, x) FROM array_first_last_32 FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; 1, x) FROM array_first_last_128 FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, x) FROM array_first_last_128 FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; 1, tuple_values) FROM array_first_last_complex FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, tuple_values) FROM array_first_last_complex FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; 1, nested_values) FROM array_first_last_complex FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, nested_values) FROM array_first_last_complex FORMAT Null</query>
+
+    <!-- Regular filter path. -->
+    <query>SELECT arrayFirst(x -&gt; x &gt; 3, x) FROM array_first_last_32 FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; x &gt; 3, x) FROM array_first_last_32 FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; x &gt; 3, x) FROM array_first_last_128 FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; x &gt; 3, x) FROM array_first_last_128 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_first_last_32</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_first_last_128</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_first_last_complex</drop_query>
+</test>
