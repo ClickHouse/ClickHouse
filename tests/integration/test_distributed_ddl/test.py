@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 from .cluster import ClickHouseClusterWithDDLHelpers
 
@@ -330,9 +330,48 @@ def test_allowed_databases(test_cluster):
 
 def test_kill_query(test_cluster):
     instance = test_cluster.instances["ch3"]
+    query_instance = test_cluster.instances["ch1"]
+    query_id = "test_kill_query_on_cluster"
+
+    query_instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'clickhouse client --query_id "{query_id}" '
+            '-q "SELECT sleepEachRow(1) FROM numbers(100) '
+            'SETTINGS function_sleep_max_microseconds_per_block = 300000000" '
+            "> /dev/null 2>&1 &",
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    process_count_query = (
+        "SELECT count() FROM system.processes " f"WHERE query_id = '{query_id}'"
+    )
+    assert_eq_with_retry(query_instance, process_count_query, "1")
+
+    try:
+        test_cluster.ddl_check_query(
+            instance,
+            f"KILL QUERY ON CLUSTER 'cluster' WHERE query_id = '{query_id}' SYNC "
+            "FORMAT TSV SETTINGS kill_throw_if_noop = true",
+        )
+    finally:
+        query_instance.query(
+            f"KILL QUERY WHERE query_id = '{query_id}' SETTINGS kill_throw_if_noop = false"
+        )
+
+    assert_eq_with_retry(query_instance, process_count_query, "0")
+
+
+def test_kill_mutation(test_cluster):
+    instance = test_cluster.instances["ch3"]
 
     test_cluster.ddl_check_query(
-        instance, "KILL QUERY ON CLUSTER 'cluster' WHERE NOT elapsed FORMAT TSV SETTINGS kill_throw_if_noop = false"
+        instance,
+        "KILL MUTATION ON CLUSTER 'cluster' WHERE mutation_id = 'nonexistent_mutation' "
+        "FORMAT TSV SETTINGS kill_throw_if_noop = true",
     )
 
 

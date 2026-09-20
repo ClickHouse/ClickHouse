@@ -207,7 +207,8 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
-    const auto & kill_throw_if_noop = getContext()->getSettingsRef()[Setting::kill_throw_if_noop];
+    const bool kill_throw_if_noop
+        = getContext()->getSettingsRef()[Setting::kill_throw_if_noop] && !getContext()->isDDLOrOnClusterInternal();
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -444,7 +445,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     String select_query = "SELECT " + columns + " FROM " + table;
     auto & where_expression = query_ptr->as<ASTKillQueryQuery>()->where_expression;
     if (where_expression)
-        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
+        select_query += " WHERE (" + where_expression->formatWithSecretsOneLine() + ")";
+
+    if (table == "system.processes")
+        select_query += where_expression ? " AND query_id != currentQueryID()" : " WHERE query_id != currentQueryID()";
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
