@@ -8,7 +8,6 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
-from ci.praktika.utils import Shell
 
 
 def only_docs(changed_files):
@@ -113,14 +112,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
-    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
-    # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
-    # are continuous-mode kill-safe.
-    "ci/jobs/scripts/clickhouse_proc.py",
-    "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
     "tests/clickhouse-test",
@@ -142,59 +136,6 @@ def _has_coverage_pipeline_changes(changed_files):
 
 _info_cache = None
 _pipeline_note_labels = set()
-
-# A revert pull request is recognized by its canonical title shape only - the
-# one `git revert` and the GitHub "Revert" button produce, not a prose mention
-# of a revert: `Revert "<title of the reverted change>"`. Reverting a revert
-# nests the wrappers (`Revert "Revert "X""`), so the nesting depth gives the net
-# effect: an odd depth is a real revert (it restores a state of `master` that CI
-# has already validated), while an even depth re-applies the original change and
-# must be tested as usual.
-_REVERT_TITLE_RE = re.compile(r'^Revert "(.*)"$', re.DOTALL)
-
-# The per-job reason shown on the report page.
-REVERT_PR_SKIP_REASON = (
-    f"Skipped: revert PR, CI is bypassed unless labeled '{Labels.CI_FORCE_ALL}'"
-)
-REVERT_PR_NOTE = (
-    "Revert PR: all CI jobs except the style check are skipped so that the revert "
-    "can be merged as quickly as possible. Add the "
-    f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
-)
-
-
-def revert_depth(title):
-    """Number of nested `Revert "..."` wrappers in the pull request title; see
-    `_REVERT_TITLE_RE`. An odd depth is a net revert, an even depth re-applies
-    the reverted change."""
-    depth = 0
-    t = (title or "").strip()
-    while True:
-        m = _REVERT_TITLE_RE.fullmatch(t)
-        if not m:
-            break
-        depth += 1
-        t = m.group(1).strip()
-    return depth
-
-
-def is_net_revert_pr(title):
-    """True if the pull request is, on balance, a revert: its title is an
-    odd-depth stack of `Revert "..."` wrappers. A revert of a revert (even
-    depth) re-applies the original change and is tested as usual."""
-    return revert_depth(title) % 2 == 1
-
-
-_revert_note_added = False
-
-
-def _add_revert_note():
-    """Explain the green light once on the workflow report page."""
-    global _revert_note_added
-    if _revert_note_added or _info_cache is None:
-        return
-    _revert_note_added = True
-    _info_cache.add_workflow_note(REVERT_PR_NOTE)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -247,43 +188,11 @@ def _is_bugfix_pr():
     return any(lb in _info_cache.pr_labels for lb in _BUGFIX_LABELS)
 
 
-def _is_empty_merge_commit(sha):
-    """True if `sha` is a merge commit (>=2 parents) that introduced no changes -
-    i.e. its diff against the first parent is empty.
-
-    This is the commit produced by merging the base branch into the PR branch when
-    the merge brings nothing new (e.g. the GitHub "Update branch" button on a branch
-    that is already effectively up to date). The reviewed code is then identical to
-    the previous head, so re-running the AI `Code Review` job would only repeat the
-    previous review.
-
-    Resolved via the GitHub API rather than local git: the CI checkout may be a
-    shallow clone that lacks the merge commit's parents, and the commits endpoint
-    reports `.files` for a merge commit relative to its first parent. Returns False
-    on any uncertainty (not a merge, API error, unparseable output) so that we
-    prefer to run the review rather than silently skip it.
-    """
-    out = Shell.get_output(
-        f"gh api repos/{_info_cache.repo_name}/commits/{sha} "
-        "--jq '\"\\(.parents | length) \\(.files | length)\"'",
-        verbose=True,
-        retries=3,
-    ).split()
-    if len(out) != 2 or not all(s.isdigit() for s in out):
-        print(f"WARNING: could not determine parents/files for commit {sha}")
-        return False
-    num_parents, num_files = int(out[0]), int(out[1])
-    return num_parents >= 2 and num_files == 0
-
-
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
-
-    if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
-        return False, ""
 
     # There is no way to prevent GitHub Actions from running the PR workflow on
     # release branches, so we skip all jobs here. The ReleaseCI workflow is used
@@ -293,25 +202,6 @@ def should_skip_job(job_name):
         or Labels.RELEASE_LTS in _info_cache.pr_labels
     ):
         return True, "Skipped for release PR"
-
-    if (
-        _info_cache.pr_number > 0
-        and job_name != JobNames.STYLE_CHECK
-        and is_net_revert_pr(_info_cache.pr_title)
-    ):
-        _add_revert_note()
-        return True, REVERT_PR_SKIP_REASON
-
-    # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
-    # an empty merge commit (base branch merged in with no net change - e.g. the
-    # GitHub "Update branch" button), the code is identical to the previous head and
-    # a fresh review would only repeat itself, so skip it.
-    if (
-        job_name == JobNames.CODE_REVIEW
-        and _info_cache.pr_number > 0
-        and _is_empty_merge_commit(_info_cache.sha)
-    ):
-        return True, "Skipped, PR latest commit is an empty merge commit"
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -513,19 +403,6 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
-    # When the PR carries a functional or integration test, `new_tests_check.check`
-    # decides the bug fix on the per-arch validators for those and returns before it
-    # reads the unit validator, so a merge-base unit build has no verdict to contribute.
-    if (
-        _is_bugfix_pr()
-        and job_name == JobNames.BUGFIX_VALIDATE_UT
-        and (
-            has_new_functional_tests(_info_cache.get_changed_files())
-            or has_new_integration_tests(_info_cache.get_changed_files())
-        )
-    ):
-        return True, "Skipped, the functional/integration bugfix validation owns the verdict"
-
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
         " Performance Improvement" not in _info_cache.pr_body
@@ -569,21 +446,20 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
-    the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests as a drift guard, so a PR that changes no stateless tests has nothing
-    for it to do. Filter it out here, at config time, so such a PR does not
-    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    `amd_binary` build, and the stateless flaky check). Only the flaky check is
+    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
+    so a PR that changes no stateless tests has nothing for it to do. Filter it
+    out here, at config time, so such a PR does not schedule the runner, restore
+    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
+    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
+    deliberately minimal so it cannot skip the build/style/fast-test jobs the
+    queue always needs. The skip condition matches the in-job selection in
+    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
+    early exit and the config-time skip never disagree. `get_changed_tests`
+    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
+    even one nested in a subdirectory) back to the tests that consume them, so a
+    fixture-only PR still reruns the affected test surface instead of being
+    skipped here as "no changed tests".
     """
     global _info_cache
     if _info_cache is None:

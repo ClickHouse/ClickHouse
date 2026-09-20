@@ -130,6 +130,7 @@ using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, cons
 
 static void testServerSideEncryption(
     RequestFn do_request,
+    bool disable_checksum,
     String server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
     String expected_headers,
@@ -169,6 +170,7 @@ static void testServerSideEncryption(
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = is_s3express_bucket,
     };
@@ -201,6 +203,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -225,6 +228,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -232,6 +236,30 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "amz-sdk-request;"
         "content-length;"
         "content-md5;"
+        "content-type;"
+        "host;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
+        "x-amz-server-side-encryption-customer-algorithm: AES256\n"
+        "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
+        "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+}
+
+TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWriteDisableChecksum)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
         "content-type;"
         "host;"
         "x-amz-content-sha256;"
@@ -253,6 +281,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
     // KMS headers shouldn't be set on a read request
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -274,6 +303,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
     sse_kms_config.bucket_key_enabled = true;
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -301,6 +331,7 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ true,
         "",
         {},
         "authorization: ... SignedHeaders="
@@ -344,6 +375,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
     DB::HTTPHeaderEntries headers;
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
     };
@@ -497,6 +529,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
+            .disable_checksum = false,
         };
 
         std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -639,6 +672,7 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };
@@ -733,20 +767,6 @@ TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
 
     EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
-}
-
-TEST(IOTestAwsS3Client, HttpResponseCodeToString)
-{
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::NOT_FOUND), "404");
-
-    /// The AWS SDK uses this value when there was no response at all: it must not be printed as a number,
-    /// and especially not as 18446744073709551615, which is what a cast to an unsigned type produces.
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-
-    /// The same rendering must be used by `{}` in log and exception messages.
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
 }
 
 TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
@@ -936,6 +956,7 @@ std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };

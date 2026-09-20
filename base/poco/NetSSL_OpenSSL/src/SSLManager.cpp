@@ -314,8 +314,6 @@ void SSLManager::initDefaultContext(bool server)
 			disabledProtocols |= Context::PROTO_TLSV1_1;
 		else if (*it == "tlsv1_2")
 			disabledProtocols |= Context::PROTO_TLSV1_2;
-		else if (*it == "tlsv1_3")
-			disabledProtocols |= Context::PROTO_TLSV1_3;
 	}
 	if (server)
 		_ptrDefaultServerContext->disableProtocols(disabledProtocols);
@@ -342,9 +340,7 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	/// Only an outbound connection has a requested host name to check: on an accepted socket this
-	/// would run against the client's address, which a client certificate does not name.
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else
