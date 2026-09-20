@@ -163,12 +163,43 @@ def test_empty_view_keeps_its_schedule_across_restart():
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
+# Everything the parser insists on, with nothing after it. The fields that follow are optional, so
+# that Keeper znodes written by older servers still load, which means a file cut anywhere past this
+# point parses as valid and silently resets the incremental cursor and the dependency checkpoint:
+# the duplicate-append bug this PR fixes, reintroduced from a torn write.
+REQUIRED_FIELDS = (
+    "format version: 1\n"
+    "last_completed_timeslot: 1758240000\n"
+    "last_success_time: 1758240000\n"
+    "last_success_duration_ms: 7\n"
+    "last_success_table_uuid: 00000000-0000-0000-0000-000000000000\n"
+    "last_attempt_time: 1758240000\n"
+    "last_attempt_replica: \n"
+    "last_attempt_error: \n"
+    "last_attempt_succeeded: 1\n"
+    "previous_attempt_error: \n"
+    "attempt_number: 0\n"
+    "randomness: 1\n"
+)
+OPTIONAL_FIELDS_BEFORE_CURSOR = (
+    "refresh_running: 0\n"
+    "last_success_end_time_ns: 1758240000000000000\n"
+    "last_success_dependencies: {}\n"
+)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
         pytest.param("not a refresh state at all", id="garbage"),
         pytest.param(
             "format version: 1\nlast_completed_timeslot: 1758240000\n", id="truncated"
+        ),
+        pytest.param(REQUIRED_FIELDS, id="truncated_before_the_cursor"),
+        # The label alone is not the field: readEscapedString takes EOF for an empty cursor.
+        pytest.param(
+            REQUIRED_FIELDS + OPTIONAL_FIELDS_BEFORE_CURSOR + "cursor: ",
+            id="truncated_inside_the_cursor",
         ),
     ],
 )
@@ -372,3 +403,70 @@ def test_state_follows_the_owning_databases_disk():
         assert find_refresh_state_files(OTHER_DB_DISK_PATH) == []
     finally:
         node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+
+def test_moving_a_view_to_another_database_keeps_its_schedule():
+    """The state file is named after the view's own UUID, which outlives a rename.
+
+    Only a view without an inner table can move between databases, and only between databases on one
+    disk: DatabaseAtomic moves the metadata file with the source database's disk, so a destination on
+    another disk fails. A database's `disk` is also not alterable. Between them, the disk resolved
+    when the view started cannot become the wrong one.
+    """
+    same_disk_db = "rmv_move_db"
+    other_disk_db = "rmv_move_other_disk_db"
+    name = "rmv_moved"
+    target = "rmv_moved_target"
+    node.query(f"DROP DATABASE IF EXISTS {same_disk_db} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {other_disk_db} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {target} SYNC")
+    node.query(f"CREATE DATABASE {same_disk_db} ENGINE = Atomic")
+    node.query(
+        f"CREATE DATABASE {other_disk_db} ENGINE = Atomic SETTINGS disk = 'other_db_disk'"
+    )
+    try:
+        node.query(
+            f"CREATE TABLE {target} (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        )
+        # TO, so there is no inner table and the view is movable at all.
+        node.query(
+            f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY TO {target} "
+            f"AS SELECT now() a, number b FROM numbers(2)"
+        )
+        before = wait_for_refresh_info(
+            name, "last_success_time", lambda x: x not in ("", "\\N")
+        )
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1
+
+        node.query(f"RENAME TABLE {name} TO {same_disk_db}.{name}")
+        assert find_refresh_state_files(DB_DISK_PATH) == state_files
+
+        # The out-of-range arm of the same statement: one variable changes, the destination's disk.
+        assert (
+            node.query_and_get_error(
+                f"RENAME TABLE {same_disk_db}.{name} TO {other_disk_db}.{name}"
+            )
+            != ""
+        )
+        assert (
+            node.query(
+                f"SELECT database FROM system.tables WHERE name = '{name}'"
+            ).strip()
+            == same_disk_db
+        )
+        assert find_refresh_state_files(OTHER_DB_DISK_PATH) == []
+
+        node.restart_clickhouse()
+
+        wait_for_refresh_info(
+            name, "status", lambda x: x == "Scheduled", database=same_disk_db
+        )
+        time.sleep(3)
+        assert refresh_info(name, "last_success_time", database=same_disk_db) == before
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {same_disk_db} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {other_disk_db} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {target} SYNC")

@@ -455,7 +455,7 @@ private:
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
-    /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
+    /// If coordination is disabled, a non-running transition goes to the view's state file if it has one; a failed write returns false.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets

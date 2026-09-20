@@ -1923,6 +1923,11 @@ RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState()
         {
             const String data = readMetadataFile(local_state_disk, local_state_path);
 
+            /// parse() makes the fields after `randomness` optional, for old znodes, and reads a cut-off
+            /// cursor as an empty one; every field toString() writes ends in a newline.
+            if (data.find("\ncursor: ") == String::npos || !data.ends_with("\n"))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Persisted refresh state does not end with a complete cursor field");
+
             CoordinationZnode znode;
             znode.parse(data, /*running_znode_exists=*/ false, getLogger());
             result.znode = std::move(znode);
