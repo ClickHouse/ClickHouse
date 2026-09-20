@@ -84,6 +84,8 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.enable_group_by_top_k_dynamic_filtering,
+        optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,

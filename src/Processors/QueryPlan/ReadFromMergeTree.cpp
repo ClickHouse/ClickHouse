@@ -5353,10 +5353,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context->getIndexUncompressedCache(),
             context->getVectorSimilarityIndexCache(),
             reader_settings,
-            /*dynamic_predicate_builder=*/{},
+            MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
             /*prune_primary_key=*/false,
             MergeTreeIndices{},
-            /*dynamic_skip_index_filter=*/{},
+            MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},
             context,
             getLogger("MergeTreeSkipIndexReader"));
     }

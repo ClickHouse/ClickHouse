@@ -917,6 +917,7 @@ void applyTopKPushdownToPartialAggregation(
             .nulls_directions = std::move(nulls_directions),
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+            .threshold_tracker = nullptr,
         });
 }
 

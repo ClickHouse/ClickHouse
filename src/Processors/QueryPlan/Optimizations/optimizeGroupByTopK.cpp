@@ -387,6 +387,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         .nulls_directions = std::move(nulls_directions),
         .key_columns = num_key_columns,
         .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
+        .threshold_tracker = nullptr,
     };
 
     top_k_params.threshold_tracker = tryAttachDynamicFilter(
