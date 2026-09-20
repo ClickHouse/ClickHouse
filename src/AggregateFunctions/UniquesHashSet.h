@@ -644,10 +644,14 @@ public:
     requires std::is_invocable_r_v<Value, decltype(Transform), const SourceType &>
     void insertMany(const SourceType * data, size_t size)
     {
-        /** The candidates for the wide set (see the comment at `widePrefilterMask`) are only detected
-          * in the main loop - branchlessly, on the truncated hashes - and are inserted after it:
-          * a call inside the loop would make the compiler cautiously reload the fields of the set
-          * from memory all the time, slowing the loop down by tens of percent.
+        /** The candidates for the wide set (see the comment at `widePrefilterMask`) are detected
+          * behind the `good()` test, which every one of them passes and which already rejects all
+          * but one value in 2^skip_degree - so the loop that computes the hashes is left exactly as
+          * it was before the wide set existed. Testing every hash there instead cost 24% of
+          * `SELECT uniq(number) FROM numbers(50000000)`: three instructions per value against the
+          * dozen the loop otherwise executes.
+          * The candidates are inserted after the loop rather than inside it: a call inside would
+          * make the compiler cautiously reload the fields of the set from memory all the time.
           * A candidate is expected once per 262144 values, so the positions are collected
           * into a small buffer; on its overflow (pathological input) the tail after the last
           * recorded position is simply rescanned - insertion into the wide set is idempotent.
@@ -668,20 +672,12 @@ public:
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
                 std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
-                size_t wide_candidates = 0;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
-                    wide_candidates += !(hash_value[j] & wide_prefilter);
                 }
 
-                if (unlikely(wide_candidates))
-                {
-                    for (size_t j = 0; j < insert_many_batch_size; ++j)
-                        if ((hash_value[j] & wide_prefilter) == 0 && num_wide_candidates < wide_candidate_positions.size())
-                            wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(i + j);
-                }
-
+                const size_t batch_begin = i;
                 i += insert_many_batch_size;
 
                 std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
@@ -695,6 +691,13 @@ public:
                     const HashValue & x = hash_value[j];
                     if (!good(x))
                         continue;
+
+                    /// Every wide candidate passes `good()` (see `widePrefilterMask`), and `good()`
+                    /// rejects all but one value in 2^skip_degree, so testing the candidates here
+                    /// rather than in the hash loop above keeps the hot loop exactly as it was
+                    /// before the wide set existed.
+                    if (unlikely((x & wide_prefilter) == 0) && num_wide_candidates < wide_candidate_positions.size())
+                        wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(batch_begin + j);
 
                     if (x == 0)
                     {
@@ -724,13 +727,14 @@ public:
             else
             {
                 const HashValue hash_value = hash(Transform(data[i]));
-
-                if (unlikely((hash_value & wide_prefilter) == 0) && num_wide_candidates < wide_candidate_positions.size())
-                    wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(i);
+                const size_t position = i;
 
                 i++;
                 if (!good(hash_value))
                     continue;
+
+                if (unlikely((hash_value & wide_prefilter) == 0) && num_wide_candidates < wide_candidate_positions.size())
+                    wide_candidate_positions[num_wide_candidates++] = static_cast<UInt32>(position);
 
                 insertImpl(hash_value);
             }
