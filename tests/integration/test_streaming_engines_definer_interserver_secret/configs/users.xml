@@ -1,0 +1,26 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Send to the shard synchronously, so that a flush either delivers the rows
+                 or fails right away, without a background directory queue in between. -->
+            <distributed_foreground_insert>1</distributed_foreground_insert>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</clickhouse>
