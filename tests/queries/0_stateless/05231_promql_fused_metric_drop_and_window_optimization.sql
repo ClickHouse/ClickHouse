@@ -32,6 +32,8 @@ SELECT tags, timestamp, value FROM prometheusQuery('prometheus', 'rate(m[20])', 
 SET prefer_column_name_to_alias = 1;
 SELECT '-- under prefer_column_name_to_alias = 1';
 SELECT tags, time_series FROM prometheusQueryRange('prometheus', 'rate(m[20])', 100, 130, 10) ORDER BY ALL;
+SELECT tags, time_series FROM prometheusQueryRange('prometheus', 'predict_linear(m[20], 10)', 100, 130, 10) ORDER BY ALL;
+SELECT tags, time_series FROM prometheusQueryRange('prometheus', 'quantile_over_time(0.5, m[20])', 100, 130, 10) ORDER BY ALL;
 SET prefer_column_name_to_alias = 0;
 
 SELECT '-- non-exact metric selector with duplicate series collision throws exception';
@@ -46,5 +48,13 @@ SELECT '-- explain plan verifies single aggregation step when metric name is exa
 SELECT countIf(explain LIKE '%Aggregating%') AS aggregating_steps,
        countIf(explain LIKE '%any(timeSeriesRateToGrid%') AS has_redundant_array_aggregation
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'rate(m[20])', 100, 130, 10));
+
+SELECT countIf(explain LIKE '%Aggregating%') AS aggregating_steps,
+       countIf(explain LIKE '%any(timeSeriesLinearRegressionToGrid%') AS has_redundant_array_aggregation
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'predict_linear(m[20], 10)', 100, 130, 10));
+
+SELECT countIf(explain LIKE '%Aggregating%') AS aggregating_steps,
+       countIf(explain LIKE '%any(timeSeriesQuantileToGrid%') AS has_redundant_array_aggregation
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'quantile_over_time(0.5, m[20])', 100, 130, 10));
 
 DROP TABLE prometheus;
