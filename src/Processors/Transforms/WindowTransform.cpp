@@ -1334,6 +1334,8 @@ void WindowTransform::updateAggregationState()
     }
     else
     {
+        previous_row_excluded_rows = current_row_excluded_rows;
+
         RowNumber excluded_start = current_row;
         RowNumber excluded_end = current_row;
         advanceRowNumber(excluded_end);
@@ -1365,7 +1367,7 @@ void WindowTransform::updateAggregationState()
             // over from the previous row as it does for any other frame, and a frame whose start
             // does not move stays linear. The one thing that cannot be carried over is a state
             // built with a hole in it.
-            if (prev_row_excluded_rows)
+            if (previous_row_excluded_rows)
             {
                 reset_aggregation = true;
                 rows_to_add_start = frame_start;
@@ -1373,7 +1375,7 @@ void WindowTransform::updateAggregationState()
             }
 
             add_range(rows_to_add_start, rows_to_add_end);
-            prev_row_excluded_rows = false;
+            current_row_excluded_rows = false;
         }
         else
         {
@@ -1389,7 +1391,7 @@ void WindowTransform::updateAggregationState()
                     add_range(current_row, after_current);
             }
             add_range(std::max(excluded_end, frame_start), frame_end);
-            prev_row_excluded_rows = true;
+            current_row_excluded_rows = true;
         }
     }
 
@@ -1464,9 +1466,10 @@ void WindowTransform::writeOutCurrentRow()
     // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
     // row of the partition, so there's no previous row in this partition (and thus no previous frame)
     // to compare against.
-    // A frame exclusion takes a hole out of the frame around the current row, so two rows with the
-    // same frame boundaries still have different results and the shortcut below does not apply.
-    const bool frame_unchanged = window_description.frame.exclusion == WindowFrame::Exclusion::NoOthers
+    // A frame exclusion takes a hole out of the frame around the current row, and the hole moves with
+    // it, so two rows with the same frame boundaries still have different results. An exclusion that
+    // takes nothing out of either row is the exception: the two states were built from the same rows.
+    const bool frame_unchanged = !current_row_excluded_rows && !previous_row_excluded_rows
         && current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
 
     const auto & block = blockAt(current_row);
@@ -1739,7 +1742,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         frame_end = partition_start;
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
-        prev_row_excluded_rows = false;
+        current_row_excluded_rows = false;
+        previous_row_excluded_rows = false;
         chassert(current_row == partition_start);
         current_row_number = 1;
         peer_group_start = partition_start;

@@ -326,7 +326,11 @@ public:
 
     // Whether the frame exclusion actually took rows out for the previous row of the partition. The
     // state left behind then is not a prefix of this row's frame, so it cannot be carried over.
-    bool prev_row_excluded_rows = false;
+    /// Whether the aggregate state of the current row, and of the one before it, was built with a
+    /// hole in it. An exclusion that takes nothing out leaves both false, and then the frame behaves
+    /// as it would without the clause.
+    bool current_row_excluded_rows = false;
+    bool previous_row_excluded_rows = false;
 
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for
