@@ -514,8 +514,9 @@ def failed_compile_edge_sources(compile_result):
     read as a command and carries no `-c <source>`, such as a link step, an archive step
     or a custom command; the outputs of the edges whose command line is absent or is not
     recognisable as a command, because the log ends there or something else stands in its
-    place; and the translation units of the compile edges that raised no parsable
-    compiler error of their own.
+    place, and which do carry a diagnostic of their own; and the edges that raised no
+    parsable compiler error of their own, named by translation unit where the command
+    line gave one and by output otherwise.
 
     A non-empty `unattributable` or `diagnostic_free` is evidence that something failed
     which either is not a translation unit or never said why. A non-empty `unreadable` is
@@ -541,8 +542,14 @@ def failed_compile_edge_sources(compile_result):
         for n, i in enumerate(edges):
             outputs = lines[i][len("FAILED:") :].strip() or "unnamed edge"
             command = lines[i + 1] if i + 1 < len(lines) else ""
+            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
+            silent = not any(
+                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
+            )
             if not command.strip() or not _NINJA_COMMAND_LINE_RE.match(command):
-                unreadable.add(outputs)
+                # An unreadable edge that also said nothing is a failure with no account
+                # of itself, whichever step it was, so it belongs with the silent edges.
+                (diagnostic_free if silent else unreadable).add(outputs)
                 continue
             m = _COMPILE_SOURCE_RE.search(command)
             if not m:
@@ -552,10 +559,7 @@ def failed_compile_edge_sources(compile_result):
             idx = path.find(marker)
             rel = path[idx + len(marker) :] if idx != -1 else path
             sources.add(rel)
-            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
-            if not any(
-                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
-            ):
+            if silent:
                 diagnostic_free.add(rel)
     return (
         sorted(sources),
@@ -593,14 +597,15 @@ def compile_failure_attribution(compile_result, test_files):
     file, defeats both bases whatever the diagnostics say: something outside the overlaid
     tests demonstrably failed.
 
-    An edge whose command line could not be read defeats only the second basis, which
-    claims every failed translation unit is an overlaid test and therefore needs all of
-    them enumerated. The first basis reasons about the diagnostics that are present, so an
-    edge this log does not describe cannot contradict it.
+    An edge whose command line could not be read, but which did raise a diagnostic of its
+    own, defeats only the second basis, which claims every failed translation unit is an
+    overlaid test and therefore needs all of them enumerated. The first basis reasons about
+    the diagnostics that are present, and this edge contributed one.
 
-    A compile edge that raised no parsable error of its own is not attributable either: a
-    killed compiler says nothing about why that translation unit failed, and a diagnostic
-    belonging to a different edge cannot answer for it.
+    An edge that raised no parsable error of its own is not attributable either, whether or
+    not its command line was read: a killed compiler, or a step this log stops describing,
+    says nothing about why it failed, and a diagnostic belonging to a different edge cannot
+    answer for it.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
     sources, unattributable, unreadable, diagnostic_free = failed_compile_edge_sources(
@@ -695,12 +700,20 @@ def mark_reproduced(result):
     result.set_status(Result.Status.XFAIL)
 
 
-def finalize(results, info_lines):
+def finalize(results, info_lines, status=""):
+    # `Result.create_from` derives the job status from the children and skips over
+    # OK/SKIPPED/XFAIL ones, so a lone SKIPPED child yields a job status of OK. A caller
+    # that needs the job itself to read SKIPPED has to pass `status` explicitly.
+    #
+    # No verdict here is cacheable: each reads the merge base, the PR's labels or the PR's
+    # changed-file set, and a digest hashes the checkout's files and submodule revisions
+    # only. The digest is kept because it also gates affectedness.
     Result.create_from(
         results=results,
         info=info_lines,
         with_info_from_results=True,
-    ).complete_job()
+        status=status,
+    ).complete_job(do_not_cache=True)
 
 
 def main():
@@ -801,33 +814,85 @@ def main():
     # which would otherwise leak base-tip contrib sources into the merge-base build.
     # Either way the "before" binary would be built against the wrong submodule content
     # (or miss a merge-base-only submodule entirely) and the validator could report a
-    # false reproduction or refutation. Inconclusive (ERROR), not a pass.
+    # false reproduction or refutation. None of these outcomes counts as a validation: a
+    # PR-side or unattributable difference reports ERROR, base-only motion reports
+    # SKIPPED, and `is_success` counts neither.
     checkout_head = Shell.get_output("git rev-parse HEAD").strip()
     assert (
         checkout_head
     ), "Failed to resolve the checkout HEAD; cannot verify submodule state"
     submodule_changes = get_submodule_state_changes(merge_base, checkout_head)
     if submodule_changes:
+        # `checkout_head` is the base+PR merge ref, so it carries the base tip's gitlinks
+        # too: a base-only bump after the branch split lands in the diff above with nothing
+        # contributed by the PR. `None` means the attribution itself could not be computed.
+        try:
+            pr_submodule_changes = get_submodule_state_changes(merge_base, pr_sha)
+        except Exception as e:
+            print(f"WARNING: failed to attribute the submodule difference: {e}")
+            pr_submodule_changes = None
+        changed = ", ".join(submodule_changes)
+        why_inconclusive = (
+            "The before-worktree can only be populated with the primary checkout's "
+            "submodule content, not the merge-base's, so building the before-binary "
+            "would validate against the wrong submodule code. This is "
+            "inconclusive, NOT a reproduction or a refutation."
+        )
+        if pr_submodule_changes is None:
+            finalize(
+                [
+                    Result(
+                        name="Bugfix validation (unit tests)",
+                        status=Result.Status.ERROR,
+                        info=(
+                            f"Submodule state differs between the merge-base and the "
+                            f"checkout ({changed}), and the diff that would attribute it "
+                            f"to the PR or to the base branch could not be computed. "
+                            f"{why_inconclusive}"
+                        ),
+                    )
+                ],
+                "Bugfix validation inconclusive: submodule state differs between the "
+                "merge-base and the checkout, and the change could not be attributed to "
+                "the PR or to the base branch.",
+            )
+            return
+        if pr_submodule_changes:
+            finalize(
+                [
+                    Result(
+                        name="Bugfix validation (unit tests)",
+                        status=Result.Status.ERROR,
+                        info=(
+                            f"The PR changes submodule state "
+                            f"({', '.join(pr_submodule_changes)}), so submodule state "
+                            f"differs between the merge-base and the checkout "
+                            f"({changed}). {why_inconclusive}"
+                        ),
+                    )
+                ],
+                "Bugfix validation inconclusive: the PR changes submodule state, and the "
+                "before-worktree cannot be populated at the merge-base submodule "
+                "revisions.",
+            )
+            return
+        # Base-only motion is a function of the branch's age, not of anything the author
+        # can influence.
         finalize(
             [
                 Result(
                     name="Bugfix validation (unit tests)",
-                    status=Result.Status.ERROR,
+                    status=Result.Status.SKIPPED,
                     info=(
-                        "Submodule state differs between the merge-base and the "
-                        "checkout (" + ", ".join(submodule_changes) + ") — either the "
-                        "PR changes submodule state, or the base branch moved a "
-                        "submodule after the branch split. The before-worktree can "
-                        "only be populated with the primary checkout's submodule "
-                        "content, not the merge-base's, so building the before-binary "
-                        "would validate against the wrong submodule code. This is "
-                        "inconclusive — NOT a reproduction or a refutation."
+                        f"The base branch moved submodule state after the branch split "
+                        f"({changed}) and the PR changes none of it. {why_inconclusive}"
                     ),
                 )
             ],
-            "Bugfix validation inconclusive: submodule state differs between the "
-            "merge-base and the checkout, and the before-worktree cannot be populated "
-            "at the merge-base submodule revisions.",
+            "Bugfix validation skipped: the base branch moved a submodule after the "
+            "branch split, so the before-worktree cannot be populated at the merge-base "
+            "submodule revisions.",
+            status=Result.Status.SKIPPED,
         )
         return
 

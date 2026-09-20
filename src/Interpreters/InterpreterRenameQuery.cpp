@@ -52,7 +52,7 @@ void recomputeOrdinaryViewDependencies(IDatabase & database, const String & new_
         auto dependencies = getDependenciesFromCreateQuery(
             context->getGlobalContext(), table_id.getQualifiedName(), ast, new_database_name,
             /*can_throw*/ false, /*validate_current_database*/ false);
-        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), table_id.getQualifiedName(), ast);
+        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), table_id.getQualifiedName(), ast, new_database_name);
 
         DatabaseCatalog::instance().updateDependencies(
             table_id, dependencies.dependencies, loading_dependencies, {}, dependencies.plain_view_dependencies);

@@ -181,7 +181,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// (as on the metadata loading path), not against the current database of the session that issued
     /// the `ALTER`, so that a metadata-only `ALTER` does not move the dependencies of the table.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, table_id.database_name);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, table_id.database_name);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
@@ -261,7 +261,38 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.context);
     };
     factory.registerDatabase("Memory", create_fn, {}, Documentation{
-        .description = "An in-memory database whose metadata is not persisted and is lost on restart; tables and data live only for the duration of the server session.",
+        .description = R"DOCS_MD(
+The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE temporary_data
+ENGINE = Memory;
+```
+
+## Usage {#usage}
+
+Create and use tables as in an [`Atomic`](/reference/engines/database-engines/atomic) database:
+
+```sql
+CREATE TABLE temporary_data.events
+(
+    id UInt64,
+    name String
+)
+ENGINE = Memory;
+
+INSERT INTO temporary_data.events VALUES (1, 'started');
+```
+
+Do not use this engine for data or definitions that must survive a restart. Use `Atomic`, the default open-source database engine, for persistent database metadata.
+
+## See also {#see-also}
+
+- [Atomic database engine](/reference/engines/database-engines/atomic)
+- [`Memory` table engine](/reference/engines/table-engines/special/memory)
+)DOCS_MD",
         .syntax = "ENGINE = Memory",
         .related = {"Atomic"}});
 }
