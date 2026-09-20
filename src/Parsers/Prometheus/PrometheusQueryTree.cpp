@@ -467,13 +467,19 @@ String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
     {
-        /// A literal written with time units is printed back with them, as Prometheus prints one.
+        /// A literal written with time units is printed back with them, as Prometheus prints one, and
+        /// in the canonical spelling rather than the one it was written in: `90s` prints as `1m30s`.
         if (is_duration)
         {
+            /// A double carries whole milliseconds exactly up to 2^53, which is longer than any duration
+            /// worth spelling. Beyond that the canonical form cannot be computed, so the literal is
+            /// returned as it was written rather than rounded into something it is not.
+            static constexpr ScalarType max_exactly_representable_ms = 9007199254740992.0;
+            const ScalarType milliseconds = scalar * 1000;
+            if (std::abs(milliseconds) <= max_exactly_representable_ms)
+                return formatDuration(DurationType{std::llround(milliseconds)}, 3);
             if (!duration_str.empty())
                 return duration_str;
-            if (std::abs(scalar) <= static_cast<ScalarType>(std::numeric_limits<Int64>::max() / 1000))
-                return formatDuration(DurationType{std::llround(scalar * 1000)}, 3);
         }
         return ::DB::toString(scalar);
     }
