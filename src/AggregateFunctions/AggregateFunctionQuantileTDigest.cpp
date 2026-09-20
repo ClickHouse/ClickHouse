@@ -79,7 +79,7 @@ SELECT quantileTDigest(number) FROM numbers(10);
         )",
         R"(
 ┌─quantileTDigest(number)─┐
-│                     4.5 │
+│                       4 │
 └─────────────────────────┘
         )"
     }
@@ -117,7 +117,7 @@ SELECT quantilesTDigest(0.25, 0.5, 0.75)(number) FROM numbers(100);
         )",
         R"(
 ┌─quantilesTDigest(0.25, 0.5, 0.75)(number)─┐
-│ [24.75,49.5,74.25]                        │
+│ [24,49,74]                                │
 └───────────────────────────────────────────┘
         )"
     }

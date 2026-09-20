@@ -26,8 +26,6 @@ INSERT INTO pfsmj_rio_left SELECT number, number FROM numbers(0, 2000);
 INSERT INTO pfsmj_rio_left SELECT number, number FROM numbers(2000, 2000);
 INSERT INTO pfsmj_rio_right SELECT number, number * 2 FROM numbers(0, 4000);
 
--- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
--- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
 SET enable_analyzer = 1;
 
 -- Generic already-sorted subqueries (the `ORDER BY k` is preserved because the query returns `l.k`, so the
@@ -68,20 +66,6 @@ FROM (EXPLAIN PIPELINE
   SELECT l.k FROM (SELECT number % 1000 AS k FROM numbers(4000)) AS l
   INNER JOIN (SELECT number % 1000 AS k FROM numbers(4000)) AS r ON l.k = r.k
   SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
-
--- Legacy analyzer: `InterpreterSelectQuery` does not recognize the subquery's sortedness (no `applyOrder`),
--- so the pre-join sorts stay plain full sorts - which ARE scattered (the safe, fully-draining path).
--- `enable_analyzer` cannot be changed inside a subquery, so set it at session level (as in `04494` /
--- `04497`).
-SET enable_analyzer = 0;
-
-SELECT 'legacy sorted_subquery_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
-FROM (EXPLAIN PIPELINE
-  SELECT l.k FROM (SELECT number % 1000 AS k FROM numbers(4000) ORDER BY k) AS l
-  INNER JOIN (SELECT number % 1000 AS k FROM numbers(4000) ORDER BY k) AS r ON l.k = r.k
-  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
-
-SET enable_analyzer = 1;
 
 -- The sorted-subquery join (fallback single merge join) must return the same (correct) result as
 -- `full_sorting_merge` and `hash`.

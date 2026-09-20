@@ -40,6 +40,9 @@ public:
     /// For specifying table name patterns for `TRUNCATE ALL TABLES` query
     String like;
 
+    /// `LIKE ''` is distinct from omitting the filter altogether.
+    bool has_like{false};
+
     bool not_like = false;
     bool case_insensitive_like = false;
 
@@ -74,6 +77,8 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 

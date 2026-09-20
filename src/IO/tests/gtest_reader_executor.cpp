@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -84,7 +85,7 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `concurrent_download` holds the ranges another thread is downloading: `claim` leaves them
+/// `concurrent_download` holds the ranges another thread is downloading: `role` leaves them
 /// unlisted and `write` refuses to land bytes there, so the driver fetches them through from source.
 struct MockCacheState
 {
@@ -96,8 +97,8 @@ struct MockCacheState
     IntervalSet resident;
     IntervalSet concurrent_download;
     /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
-    /// (they are not in `resident`). `claimLeadRole` reports them as `available` - models a block a
-    /// concurrent query populated in the window between our read-only probe and the claim.
+    /// (they are not in `resident`). `takeFillRole` reports them as `available` - models a block a
+    /// concurrent query populated in the window between our read-only probe and the role.
     IntervalSet late_committed;
     VectorWithMemoryTracking<ByteRange> writes;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
@@ -177,39 +178,26 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
         ByteRange range() const override { return r; }
-        IntervalSet committed() const override
+        bool fillsWholeSegment() const override { return true; }
+        size_t committed() const override
         {
-            IntervalSet c;
-            if (state->resident.subtract(r).empty())  // whole block resident
-                c.add(r);
-            return c;
+            /// Whole-block: committed at resolve time (`resident`) or populated since (`late_committed`).
+            const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
+            return done ? r.end() : r.offset;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
-        Lead claimLeadRole(ByteRange range) override
+        FillRole takeFillRole() override
         {
-            Lead lead;
-            const size_t lo = std::max(range.offset, r.offset);
-            const size_t hi = std::min(range.end(), r.end());
-            lead.available = ByteRange{lo, 0};
-            if (lo >= hi)
-                return lead;
-            const ByteRange overlap{lo, hi - lo};
-            /// A block populated since `resolve` is reported as an available committed prefix; the
-            /// caller serves it from cache and there is nothing left to fill (no claim).
-            if (state->late_committed.subtract(overlap).empty())
-            {
-                lead.available = overlap;
-                return lead;
-            }
-            /// We hold the role over the free part (not led by a concurrent downloader); if the whole
-            /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
-            const bool held = !state->concurrent_download.subtract(overlap).empty();
-            lead.claim = makeClaim(held, /*release=*/nullptr);
-            return lead;
+            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no role.
+            if (state->late_committed.subtract(r).empty())
+                return {};
+            /// We hold the role unless the whole block is being downloaded elsewhere (then hold nothing).
+            const bool held = !state->concurrent_download.subtract(r).empty();
+            return makeFillRole(held, /*release=*/nullptr);
         }
-        size_t write(ChainedBuffers data, const Claim & claim) override
+        size_t write(ChainedBuffers data, const FillRole & role) override
         {
-            chassert(claim);
+            chassert(role);
             /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
             for (const auto & fr : state->concurrent_download.subtract(r))
@@ -474,6 +462,87 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
     EXPECT_EQ(windows, 10u);
 }
 
+TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
+{
+    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
+    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
+    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Drive the query's pressure level by loading its group memory tracker to a percent of a large
+    /// hard limit (kept large so the executor's own tracked reads stay well inside it). A fresh group
+    /// per call starts the cooldown clean, and snap-up is immediate, so the first window reflects the
+    /// level. Default thresholds are 75 / 90 / 95 percent.
+    auto firstWindow = [&](UInt64 pct) -> size_t
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window});
+        ChainedBuffers w = ex.readNextWindow();
+        const size_t got = w.atEnd() ? 0 : w.totalBytes();
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return got;
+    };
+
+    EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
+    EXPECT_EQ(firstWindow(80), base_window / 4);    /// Elevated: window / 4
+    EXPECT_EQ(firstWindow(92), base_window / 16);   /// High: window / 16
+    EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
+}
+
+TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
+{
+    /// The block shrinks too, not only the window: the source path chunks into nodes of the
+    /// pressure-adjusted block. Under Elevated the window is `window/4` but each node is `block/2`,
+    /// so the node size proves the block adapts independently of the window.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t base_block = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
+    /// for how the pressure level is driven through the group memory tracker.
+    auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
+        ChainedBuffers w = ex.readNextWindow();
+        size_t total = 0;
+        size_t max_node = 0;
+        while (!w.atEnd())
+        {
+            auto span = w.peek();
+            max_node = std::max(max_node, span.size);
+            total += span.size;
+            w.advance(span.size);
+        }
+        mt.adjustWithUntrackedMemory(-amount);
+        return {total, max_node};
+    };
+
+    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
+    EXPECT_EQ(normal_total, base_window);
+    EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
+
+    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
+    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
+    EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
+}
+
 TEST_F(ReaderExecutorTest, SeekThenRead)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
@@ -600,7 +669,7 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadCellIsFetchedThrough)
 TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 {
     /// A block that a concurrent query populated AFTER our `resolve` (a read-only probe) but BEFORE we
-    /// claim it: `claimLeadRole` re-probes and reports it as `available`, so the executor serves it
+    /// role it: `takeFillRole` re-probes and reports it as `available`, so the executor serves it
     /// from cache and does not re-read it from the source. Here block 0 is committed-since-resolve;
     /// blocks 1..3 are plain misses fetched from source. Zero source bytes for block 0 is the signal.
     const size_t block = 256;
@@ -608,7 +677,7 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
     /// Block [0, block) is NOT resident (so `resolve` misses it), but it became committed since - the
-    /// bytes are in the store and the claim reports it available.
+    /// bytes are in the store and the role reports it available.
     state->late_committed.add(ByteRange{0, block});
     for (size_t i = 0; i < block; ++i)
         state->store[i] = static_cast<char>(patternByte(i));
@@ -625,10 +694,10 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Only blocks 1..3 hit the source; block 0 came from cache via the claim-time recheck.
+    /// Only blocks 1..3 hit the source; block 0 came from cache via the role-time recheck.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
         << "block committed since resolve should be served from cache, not the source";
-    /// Nothing filled block 0 - it was already committed (available, no claim).
+    /// Nothing filled block 0 - it was already committed (available, no role).
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
 }
@@ -879,6 +948,42 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u);
     /// Forward-scan connections are read to their bound, so none are abandoned.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionAdmissionFollowsThePressureWindow)
+{
+    /// Admission is "the run outlives the current window", so it must weigh the run against the
+    /// pressure-adjusted window rather than the base one. The same scan is run twice over the same
+    /// file, and the only difference is the window the rule is measured against: at `Normal` the run
+    /// never outlives an 8 MiB window before the file ends, while at `Elevated` it outgrows a 2 MiB
+    /// window part way in. Measuring against the base window at `Elevated` gives one-shot reads
+    /// throughout, which is what this pins.
+    /// See `WindowShrinksUnderMemoryPressure` for how the pressure level is driven.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t size = 12 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+
+    auto connectionsOpened = [&](UInt64 pct) -> UInt64
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB, far above anything the read tracks
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+            .window_size = base_window, .min_bytes_for_seek = 2 * 1024 * 1024,
+            .max_tail_for_drain = 1024 * 1024,
+            .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
+        EXPECT_EQ(drain(ex).size(), size);
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened);
+    };
+
+    EXPECT_EQ(connectionsOpened(50), 0u);   /// Normal: no run outlives an 8 MiB window here
+    EXPECT_GE(connectionsOpened(80), 1u);   /// Elevated: the run outlives the 2 MiB window
 }
 
 TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)

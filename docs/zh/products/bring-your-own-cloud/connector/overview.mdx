@@ -1,0 +1,67 @@
+---
+title: '连接器概述'
+sidebarTitle: '概述'
+description: '为您自行运营的环境中的 ClickHouse 集群提供可观测性和支持，无需授予长期访问权限'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器']
+doc_type: 'guide'
+---
+
+<Note>
+  ClickHouse 连接器目前处于私有预览阶段。如需申请访问权限，请联系您的 ClickHouse 客户团队。
+</Note>
+
+<div id="what-the-connector-does">
+  ## 连接器的作用
+</div>
+
+ClickHouse 连接器是部署在您自身环境中的组件，与您运行的 ClickHouse 集群一同部署。它让 ClickHouse 能够获得监控这些集群所需的可见性，并在您需要帮助时提供支持，同时不会让 ClickHouse 获得对您环境的长期访问权限。该连接器以名为 `clicklink` 的单个二进制文件形式提供，其中包含连接器守护进程，以及用于安装和运行这些守护进程的 `clicklink clctl` 命令行工具。
+
+连接器包含两个组件：
+
+* **抓取器**从允许列表中的 ClickHouse 系统表收集指标，以及基础设施元数据和运行状况，并将其发送至 ClickHouse Cloud。
+* **故障排查器**允许 ClickHouse 支持团队工程师执行只读诊断，但仅限于您启用且可随时结束的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间。
+
+连接器建立的所有连接均为出站连接。ClickHouse Cloud 绝不会主动连接到您的环境；[架构](/zh/products/bring-your-own-cloud/connector/architecture)页面列出了每个连接、所用协议及其身份验证方式。
+
+<div id="when-to-use-it">
+  ## 适用场景
+</div>
+
+当 ClickHouse 需要监控或支持在您的环境中运行的 ClickHouse 集群，且您的安全要求如下时，请部署该连接器：
+
+* 所有访问路径均从您的边界内部发起，不允许入站连接。
+* 支持访问有时间限制，由您启用，并可随时由您撤销。
+* ClickHouse 读取的所有内容均为只读：始终只访问 ClickHouse 表；仅在您启用的会话期间访问命名空间范围内的工作负载元数据和日志。每条支持会话命令都会记录在您拥有的审计日志中。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+在引导设置期间，ClickHouse 会提供连接器端点和一次性注册标记。对于 Kubernetes 安装，请在具有 kubeconfig 访问权限的工作站上执行一次 `clicklink clctl init --enroll`；对于 Linux VM 安装，请直接在主机上执行。该命令会兑换标记，为各组件创建专用的只读 ClickHouse 用户，获取 mTLS 客户端证书，部署并启动守护进程，并验证其运行状况。
+
+此后，抓取器会定期读取允许列表中的系统表，并通过双向身份验证 TLS 将指标、元数据和运行状况发送到您的连接器端点。故障排查器会保持空闲状态：它会维持一个出站命令通道，但在您启用支持会话之前，该通道不会传输任何内容。mTLS 证书会自动续期，您无需执行任何操作。
+
+<div id="requirements-at-a-glance">
+  ## 要求概览
+</div>
+
+* **部署目标。** 任意符合要求的 Kubernetes 集群 (使用 Helm 图表安装) ，或任何采用 systemd 的 Linux 主机 (amd64 或 arm64) 。
+* **通过端口 443 的出站网络访问。** 安装时需能够访问连接器端点及其注册端点，以及 `releases.clicklink.clickhouse.com` 和 ECR Public。这是标准方式；每个步骤均提供隔离网络和镜像替代方案，参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+* **可访问的 ClickHouse 原生监听端点。** 连接器通过原生协议与各个集群通信；在 Kubernetes 上，会自动检测安全端口 (9440) 或明文端口 (9000) 。
+* **注册标记。** ClickHouse 会在引导设置期间提供连接器端点和一次性注册标记。
+* **设置期间的 ClickHouse 管理员访问权限。** 初始预配会创建连接器的只读用户。若设置了管理员密码，系统只会提示输入一次，且绝不会存储。
+* **预配期间对 Kubernetes API server 的管理员访问权限**，两种安装目标均需具备：访问包与 Kubernetes ServiceAccount 绑定。参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+
+有关两种安装目标的完整操作指南，请参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)：在 Kubernetes 或 Linux VM 上安装并注册连接器。
+* [Architecture](/zh/products/bring-your-own-cloud/connector/architecture)：组件、各项连接、证书生命周期，以及哪些数据会离开您的环境。
+* [Support sessions](/zh/products/bring-your-own-cloud/connector/support-sessions)：如何启用、限定范围、审计和撤销支持访问权限。
+* [Configuration](/zh/products/bring-your-own-cloud/connector/configuration) 和 [操作](/zh/products/bring-your-own-cloud/connector/operations)：调优、升级和日常运维任务。
+* [FAQ](/zh/products/bring-your-own-cloud/connector/reference/faq)：常见问题，包括数据出站和访问权限撤销。
+
+该连接器适用于由您自行运营的环境。如果您希望由 ClickHouse 在您的云账户中运营集群，请选择 [BYOC](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 部署模式；有关两者的差异，请参阅 [BYOC architecture](/zh/products/bring-your-own-cloud/overview/architecture) 页面。

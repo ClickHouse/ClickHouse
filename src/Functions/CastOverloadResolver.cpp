@@ -32,24 +32,45 @@ namespace ErrorCodes
 /// us whether the conversion is accurate or not.
 /// This check walks Tuple elements recursively to also reject cases like
 /// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+/// Returns the first unsupported nested type, or nullptr when the target is supported.
+static DataTypePtr findUnsupportedTypeForAccurateCastOrNull(const DataTypePtr & type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : tuple_type->getElements())
-            validateNestedTypesForAccurateCastOrNull(element);
+        {
+            if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(element))
+                return unsupported;
+        }
+        return nullptr;
     }
-    else if (type->isNullable())
-    {
-        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
-    }
-    else if (!type->canBeInsideNullable() && !canContainNull(*type))
-    {
+
+    if (type->isNullable())
+        return findUnsupportedTypeForAccurateCastOrNull(removeNullable(type));
+
+    if (!type->canBeInsideNullable() && !canContainNull(*type))
+        return type;
+
+    return nullptr;
+}
+
+bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
+{
+    /// The cast wraps its target in Nullable to report a failure, so a target that cannot itself be
+    /// inside Nullable is refused even when it can hold a NULL of its own.
+    if (!type->isNullable() && !type->canBeInsideNullable())
+        return false;
+
+    return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            type->getName());
-    }
+            unsupported->getName());
 }
 
 struct FunctionConvertSettings;
@@ -248,10 +269,10 @@ protected:
         if (internal)
             return type;
 
-        if (keep_nullable
-            && canContainNull(*arguments.front().type)
-            && type->canBeInsideNullable())
-            return makeNullable(type);
+        /// Nullable(LowCardinality(T)) is not a valid type, so a LowCardinality target
+        /// carries NULL as LowCardinality(Nullable(T)) instead.
+        if (keep_nullable && canContainNull(*arguments.front().type))
+            return makeNullableOrLowCardinalityNullableSafe(type);
 
         return type;
     }
@@ -421,6 +442,11 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+}
+
+FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
 }
 
 }

@@ -20,6 +20,7 @@
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <base/defines.h>
 
@@ -30,9 +31,12 @@
 
 #endif
 
+#include <algorithm>
 #include <atomic>
+#include <limits>
 #include <random>
 #include <cstdlib>
+#include <mutex>
 #include <string>
 
 
@@ -138,12 +142,17 @@ namespace ProfileEvents
     extern const Event PageCacheOvercommitResize;
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
+    extern const Event MemoryLargeAllocationTraced;
 }
 
 using namespace std::chrono_literals;
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 static std::atomic_bool total_memory_tracker_initialized{false};
+static std::atomic<UInt64> min_allocation_size_to_log_stack_trace{0};
+/// Symbolizing in TraceCollector is expensive and the trigger repeats, so traces are budgeted.
+static constexpr UInt64 max_large_allocations_traced = 10;
+static std::atomic<UInt64> large_allocations_traced{0};
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
@@ -267,6 +276,59 @@ static void incrementAllocationWithoutCheck(Int64 size) noexcept
     }
 }
 
+void MemoryTracker::setMinAllocationSizeToLogStackTrace(UInt64 value)
+{
+    /// Capturing a stack costs an unwind and the trace is delivered through the TraceCollector
+    /// pipe, so without a collector the setting could only throw work away.
+    if (value && !DB::TraceSender::isCollecting())
+    {
+        static std::once_flag warned;
+        std::call_once(warned, []
+        {
+            LOG_WARNING(
+                getLogger("MemoryTracker"),
+                "min_allocation_size_to_log_stack_trace is ignored because the trace collector is not "
+                "running (it requires `trace_log` to be configured).");
+        });
+        value = 0;
+    }
+
+    /// Release pairs with the acquire at the detect sites, so a thread that sees the threshold also sees the collector's budget reset.
+    min_allocation_size_to_log_stack_trace.store(value, std::memory_order_release);
+}
+
+void MemoryTracker::resetLargeAllocationTraceBudget()
+{
+    large_allocations_traced.store(0, std::memory_order_relaxed);
+}
+
+UInt64 MemoryTracker::getMinAllocationSizeToLogStackTrace()
+{
+    return min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed);
+}
+
+void MemoryTracker::traceLargeAllocation(Int64 size) noexcept
+{
+    /// Tracing the collector's own allocations would feed the diagnostic with itself. Deliberately
+    /// narrower than MemoryTrackerUntrackedAllocationsBlockerInThread, which also covers system-log
+    /// enqueues and whole ZooKeeper thread loops - the background paths this exists to catch.
+    if (DB::getThreadName() == DB::ThreadName::TRACE_COLLECTOR)
+        return;
+
+    if (large_allocations_traced.fetch_add(1, std::memory_order_relaxed) >= max_large_allocations_traced)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::MemoryLargeAllocationTraced);
+
+    /// Unsymbolized: StackTrace::toString takes the symbolizer cache mutex and allocates, neither of
+    /// which may happen inside an allocation. TraceCollector symbolizes instead.
+    DB::TraceSender::send(DB::TraceType::MemoryLargeAllocation, StackTrace(), DB::TraceSender::Extras{
+        .size = size,
+        .memory_context = level,
+        .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+    });
+}
+
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
 {
     if (size < 0)
@@ -290,6 +352,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
+
+            /// This branch returns below without reaching commitAllocation, so an allocation charged here would otherwise go unreported.
+            const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
+            if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
+                traceLargeAllocation(size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -430,21 +497,39 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
-                const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
-                throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
-                    "{} Untracked memory across all threads: {}.",
-                    description ? description : "",
-                    description ? " memory limit" : "Memory limit",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    formatReadableSizeWithBinarySuffix(size),
-                    (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
-                    (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
-                    formatReadableSizeWithBinarySuffix(untracked));
+
+                if (level == VariableContext::Global)
+                {
+                    const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
+                    throw DB::Exception(
+                        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                        "{}{} exceeded: "
+                        "would use {} (attempt to allocate chunk of {}), "
+                        "current RSS: {}"
+                        "{}, " /// page cache
+                        "maximum: {}."
+                        "{} Untracked memory across all threads: {}.",
+                        description ? description : "",
+                        description ? " memory limit" : "Memory limit",
+                        formatReadableSizeWithBinarySuffix(will_be),
+                        formatReadableSizeWithBinarySuffix(size),
+                        formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
+                        page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
+                        formatReadableSizeWithBinarySuffix(current_hard_limit),
+                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
+                        formatReadableSizeWithBinarySuffix(untracked));
+                }
+                else
+                {
+                    throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                        "{}{} exceeded: would use {} (attempt to allocate chunk of {}), maximum: {}.{}",
+                        description ? description : "",
+                        description ? " memory limit" : "Memory limit",
+                        formatReadableSizeWithBinarySuffix(will_be),
+                        formatReadableSizeWithBinarySuffix(size),
+                        formatReadableSizeWithBinarySuffix(current_hard_limit),
+                        overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)));
+                }
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
@@ -512,6 +597,15 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
 
 void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept
 {
+    /// Only reached once the allocation survived every limit check, so a refused or reverted add is
+    /// never reported here.
+    if (level == VariableContext::Global)
+    {
+        const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
+        if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
+            traceLargeAllocation(size);
+    }
+
     const auto current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
     bool allocation_traced = false;
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
@@ -694,7 +788,13 @@ OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 
 void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
 {
-    max_wait_time.store(wait_time * 1us, std::memory_order_relaxed);
+    /// The parameter is unsigned but the stored count is signed, so a value above the signed range would
+    /// arrive negative and read as an already-expired wait. Saturating upwards keeps zero exact, which the
+    /// overcommit tracker reads as "overcommit waiting is off".
+    static constexpr UInt64 max_representable = static_cast<UInt64>(std::chrono::microseconds::max().count());
+    max_wait_time.store(
+        std::chrono::microseconds(static_cast<Int64>(std::min(wait_time, max_representable))),
+        std::memory_order_relaxed);
 }
 
 

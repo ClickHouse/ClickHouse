@@ -10,8 +10,7 @@ doc_type: 'referência'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Os backups do banco de dados funcionam como uma proteção, garantindo que, se os dados forem perdidos por algum motivo imprevisto, o serviço possa ser restaurado para um estado anterior com base no último backup bem-sucedido.
-Isso minimiza o tempo de indisponibilidade e evita a perda permanente de dados críticos para o negócio.
+Os backups do banco de dados foram projetados para permitir que você restaure um serviço a um estado anterior com base no último backup bem-sucedido.
 
 <div id="backups">
   ## Backups
@@ -34,8 +33,7 @@ No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2
 </div>
 
 Os backups são contabilizados e cobrados separadamente do armazenamento nos níveis Basic, Scale e Enterprise.
-Por padrão, todos os serviços terão um backup diário, com a possibilidade de configurar mais, a partir do nível Scale, na aba Settings do console do Cloud.
-Cada backup será mantido por pelo menos 24 horas.
+Atualmente, os serviços têm por padrão um backup diário com retenção de 24 horas. A configuração de backup pode variar conforme o serviço e o contrato.
 
 Consulte [&quot;Revisar e restaurar backups&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups) para mais detalhes.
 
@@ -64,8 +62,8 @@ Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/g
 </div>
 
 O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
-Se você configurar os backups para o seu próprio bucket, o ClickHouse Cloud continuará fazendo backups diários no bucket dele.
-Isso garante que tenhamos pelo menos uma cópia dos dados para restaurar caso os backups no seu bucket sejam corrompidos.
+Se você configurar os backups para o seu próprio bucket, o ClickHouse Cloud também continuará fazendo os próprios backups por padrão.
+
 Para saber como funcionam os backups do ClickHouse Cloud, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups).
 
 Neste guia, mostramos como exportar backups para o armazenamento de objetos da AWS, GCP e Azure, bem como restaurar esses backups da sua conta em um novo serviço do ClickHouse Cloud.

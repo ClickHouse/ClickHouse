@@ -400,7 +400,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  renvoie `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` sur la machine de test.
+  renvoie `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` sur la machine de test.
 
   **Étape 2 : obtenir user&#95;files&#95;path**
 
@@ -408,12 +408,12 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
 
   et sous Linux, vous pouvez vérifier s’il a été modifié : `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  Sur la machine de test, le chemin est `/Users/tomschreiber/Clickhouse/user_files/`
+  Sur la machine de test, le chemin est `/Users/tomschreiber/ClickHouse/user_files/`
 
   **Étape 3 : copier le fichier d’index primaire dans le user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   Nous pouvons maintenant inspecter le contenu de l’index primaire via SQL :
@@ -427,7 +427,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
 
   renvoie `1083`
 
-  **Obtenir les deux premières index marks**
+  **Obtenir les deux premières marques d’index**
 
   ```sql
   SELECT UserID, URL
@@ -442,7 +442,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
   4073710, http://mk.ru&pos=3_0
   ```
 
-  **Obtenir la dernière index mark**
+  **Obtenir la dernière marque d’index**
 
   ```sql
   SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
@@ -458,19 +458,19 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
   Cela correspond exactement à notre schéma du contenu de l’index primaire pour notre table d’exemple :
 </Accordion>
 
-Les entrées de la clé primaire sont appelées index marks, car chaque entrée d’index marque le début d’une plage de données spécifique. Plus précisément, pour la table d’exemple :
+Les entrées de la clé primaire sont appelées marques d’index, car chaque entrée d’index marque le début d’une plage de données spécifique. Plus précisément, pour la table d’exemple :
 
-* Index marks UserID :
+* Marques d’index UserID :
 
   Les valeurs `UserID` stockées dans l’index primaire sont triées par ordre croissant.<br />
   La « marque 1 » dans le schéma ci-dessus indique donc que les valeurs `UserID` de toutes les lignes de la table dans le granule 1, ainsi que dans tous les granules suivants, sont garanties supérieures ou égales à 4.073.710.
 
-[Comme nous le verrons plus tard](#the-primary-index-is-used-for-selecting-granules), cet ordre global permet à ClickHouse d’<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">utiliser un algorithme de recherche binaire</a> sur les index marks de la première colonne de clé lorsqu’une requête applique un filtre sur la première colonne de la clé primaire.
+[Comme nous le verrons plus tard](#the-primary-index-is-used-for-selecting-granules), cet ordre global permet à ClickHouse d’<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">utiliser un algorithme de recherche binaire</a> sur les marques d’index de la première colonne de clé lorsqu’une requête applique un filtre sur la première colonne de la clé primaire.
 
-* Index marks URL :
+* Marques d’index URL :
 
   La cardinalité assez similaire des colonnes de clé primaire `UserID` et `URL`
-  signifie que les index marks de toutes les colonnes de clé après la première n’indiquent généralement une plage de données que tant que la valeur de la colonne de clé précédente reste la même pour toutes les lignes de la table, au moins dans le granule courant.<br />
+  signifie que les marques d’index de toutes les colonnes de clé après la première n’indiquent généralement une plage de données que tant que la valeur de la colonne de clé précédente reste la même pour toutes les lignes de la table, au moins dans le granule courant.<br />
   Par exemple, comme les valeurs `UserID` de la marque 0 et de la marque 1 sont différentes dans le diagramme ci-dessus, ClickHouse ne peut pas supposer que toutes les valeurs `URL` de toutes les lignes de la table dans le granule 0 sont supérieures ou égales à `'http://showtopics.html%3...'`. En revanche, si les valeurs `UserID` de la marque 0 et de la marque 1 étaient identiques dans le diagramme ci-dessus (ce qui signifie que la valeur `UserID` reste la même pour toutes les lignes de la table dans le granule 0), ClickHouse pourrait supposer que toutes les valeurs `URL` de toutes les lignes de la table dans le granule 0 sont supérieures ou égales à `'http://showtopics.html%3...'`.
 
   Nous examinerons plus en détail, plus tard, les conséquences de cela sur les performances d’exécution des requêtes.
