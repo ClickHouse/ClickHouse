@@ -20,4 +20,4 @@ BFloat16
 Time
 Time64(3)
 Dynamic
-Variant(UInt64, String)
+Variant(String, UInt64)
