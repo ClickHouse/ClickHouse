@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-19T22:21:39.825Z",
+          "updatedAt": "2026-09-20T05:29:56.059Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-19T22:21:38.683Z",
+          "updatedAt": "2026-09-20T05:29:55.275Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-19T22:21:39.268Z",
+          "updatedAt": "2026-09-20T05:29:55.673Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-19T22:21:39.459Z",
+          "updatedAt": "2026-09-20T05:29:55.803Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-19T22:21:39.080Z",
+          "updatedAt": "2026-09-20T05:29:55.545Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-19T22:21:38.879Z",
+          "updatedAt": "2026-09-20T05:29:55.413Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-19T22:21:38.468Z",
+          "updatedAt": "2026-09-20T05:29:55.101Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-19T22:21:39.646Z",
+          "updatedAt": "2026-09-20T05:29:55.932Z",
           "fileName": "docs.json"
         }
       },
@@ -66262,47 +66262,47 @@
     },
     {
       "fileId": "7ed5349a06a9e9f516a5f7b6af36a424875a6e22f174836fb8715f821a8cd318",
-      "versionId": "0e1874e871e0a2c9c922b6d1e7f427764f4593bd2377ccf922eff363807ff9e2",
+      "versionId": "7d63e959357164040f6d477609c820921af7529760ff13550347ed7f28fbaecc",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:42.350Z",
-          "fileName": "es/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "d01d1ebfbfddd6ab1ce04dfc73783560aa6da8995193445af170faf451ce7b43"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:42.351Z",
-          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "d49b8ec126124ed57b76de2c924a18321628f1c753492795bda812672c6e239e"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:42.352Z",
-          "fileName": "ko/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "a4ad9d4df405b8e8fdcf7beb743278e4aa518ab64b94167f111758e54b99e4eb"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:42.352Z",
-          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "ec88481c4a3402f16fbd2ec0f0c5b411a213335e6ae16b18014f6cebc9e2e868"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:42.353Z",
-          "fileName": "ru/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "6db20feb783cdc63a7b154e21d42ef5b33344665a860c17feac874de52d66a14"
-        },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:42.354Z",
+          "updatedAt": "2026-09-20T05:29:59.053Z",
           "fileName": "zh/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "ddbbfc77a48fd8063da41dc00bf219a309937a4e2d83c773720c85ed92e783c7"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:42.355Z",
-          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "89d3df4461237b28b72b9f3859dccc6bc1291f451f85e35c7dbbcd3fb8ad6035"
+          "postProcessHash": "387424a0a6924487590122eccd658fa9a85e0445321d327db4dd01d7b341a764"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:42.355Z",
+          "updatedAt": "2026-09-20T05:29:59.055Z",
           "fileName": "fr/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "3933af7ca721fd75858373374283d4dc85eab09981d57ad96109a4fb4770e670"
+          "postProcessHash": "130ed747fdda6e00b979813e9267bfcedd656dc01af27bcdfa268460bdf81661"
+        },
+        "ja": {
+          "updatedAt": "2026-09-20T05:29:59.056Z",
+          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "c26ddac4ba67903d9dfa8484a243c1e1316a672ad907433bc6a0c93beac252a6"
+        },
+        "es": {
+          "updatedAt": "2026-09-20T05:29:59.057Z",
+          "fileName": "es/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "f2c235d9db47b9f5ba537532f088fb2ef39cb7ea68348f35726730373269b55c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-20T05:29:59.058Z",
+          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "c89267bcbb91e195888013baae71ce6209ac273b5ec345d901b2ca36c698c470"
+        },
+        "ko": {
+          "updatedAt": "2026-09-20T05:29:59.058Z",
+          "fileName": "ko/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "b2d37261499d8c1c66e0e2118609629e246e2cbe2c6c5810b4313b1168a8f7db"
+        },
+        "ar": {
+          "updatedAt": "2026-09-20T05:29:59.060Z",
+          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "471f470d694fd77ef7b9f7feb937d644301627317f744b33b44a7d1baf490a08"
+        },
+        "ru": {
+          "updatedAt": "2026-09-20T05:29:59.061Z",
+          "fileName": "ru/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "4c73a595af332b3d351f1d08a29d4380854791ef83e25f5b96ca3c04bb5d3a84"
         }
       },
       "fileName": "reference/settings/server-settings/_server_settings_outside_source.mdx"
