@@ -18,6 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS dll_tbl"
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE dll_tbl (x Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH}')
 SETTINGS iceberg_max_number_datafiles_to_compact = 7"

@@ -33,6 +33,7 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --max_query_size 100000000 --log_queri
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
+$CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS probed_settings"
 $CLICKHOUSE_CLIENT -q "
     CREATE VIEW probed_settings AS
     WITH (
@@ -53,3 +54,5 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'an ordinary setting is not taken for a secret', NOT has(groupUniqArrayIf(name, secret), 'index_granularity') FROM probed_settings;
     SELECT 'secrets with a non-empty default:';
     SELECT engine_name, name, default FROM probed_settings WHERE secret AND default != '' ORDER BY ALL;"
+
+$CLICKHOUSE_CLIENT -q "DROP VIEW probed_settings"

@@ -2214,87 +2214,64 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 
 SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
 {
-    /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper,
-    /// the metadata object and plain members of this storage.
-    ///
-    /// `getSettings` also reports whether it read the shared metadata: it returns an untouched object when
-    /// this table has not finished `startup()` or after `shutdown()` dropped the metadata handle, and in that
-    /// state nothing below came from Keeper, so neither the values nor the source may say it did. Taken from
-    /// this call rather than sampled again later, which would describe the table a moment later - a startup
-    /// finishing in between would put the stamp back on values that never came from there.
-    ///
-    /// Defensive rather than reachable from SQL today: reading a table whose startup threw waits on its
-    /// startup job and rethrows, so the query fails before it can report anything. The guard is here because
-    /// this function must not answer for Keeper on a state `getSettings` itself refuses to answer for.
+    /// This storage keeps no settings object: `getSettings` rebuilds one from the table metadata in Keeper, the
+    /// metadata object and plain members of this storage. It also reports whether it read the shared metadata -
+    /// it returns an untouched object before `startup()` finishes and after `shutdown()` - and that answer is
+    /// taken from this call rather than sampled later, which would describe the table a moment later.
     bool rebuilt_from_shared_metadata = false;
     auto settings = getSettings(&rebuilt_from_shared_metadata).enumerateSettings();
 
-    /// The fields `getSettings` reads from the table metadata serialized to Keeper, and serialization - not
-    /// the `isStoredInKeeper` name list - decides what that metadata holds. So not `keeper_path`, which the
-    /// storage keeps itself, and not `parallel_inserts`, which the table metadata declares but never writes
-    /// or reads: https://github.com/ClickHouse/ClickHouse/issues/119018.
+    /// The fields `getSettings` reads from the table metadata serialized to Keeper, which is what serialization
+    /// writes rather than what the `isStoredInKeeper` name list claims: not `keeper_path`, which the storage
+    /// keeps itself, and not `parallel_inserts`, which the metadata declares but never writes or reads.
     static const NameSet held_in_shared_metadata{
         "mode", "after_processing", "loading_retries", "processing_threads_num",
         "last_processed_path", "bucketing_mode", "partitioning_mode",
         "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
         "buckets"};
 
-    /// The rebuild assigns the settings this engine keeps somewhere - in Keeper, in the metadata handle
-    /// or in a member of this storage - and nothing else. The rest, which is most of this struct because it
-    /// carries the shared format settings, is left at a compiled-in default even when the table's own
-    /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
-    /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
-    /// that distinction is visible, before `setOriginByValue` below overwrites it.
-    ///
-    /// What the rebuild did not assign: the definition is then the only source of the value the table works
-    /// with. The shared-metadata settings belong here only when the rebuild did not run - when it did, they
-    /// carry what Keeper holds, which is what the table uses however its own `CREATE` query reads.
+    /// The rebuild assigns only what this engine keeps somewhere - in Keeper, in the metadata handle or in a
+    /// member of this storage. The rest, most of this struct since it carries the shared format settings, keeps a
+    /// compiled-in default even where the definition states it, because `registerQueueStorage` turned those into
+    /// the table's `FormatSettings`, which the rebuild never sees. Enumeration marks an assigned setting `Other`,
+    /// so this is the one moment the distinction is visible, before `setOriginByValue` overwrites it.
     NameSet not_assigned_by_rebuild;
     for (const auto & setting : settings)
         if (setting.origin == SettingOrigin::Default
             && (!rebuilt_from_shared_metadata || !held_in_shared_metadata.contains(setting.name)))
             not_assigned_by_rebuild.insert(setting.name);
 
-    /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
-    /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
-    /// against the table metadata instead. Recover the distinction by value.
+    /// `getSettings` assigns every setting it knows, so the changed bit distinguishes nothing. Recover it by value.
     setOriginByValue(settings);
 
     /// Read once: the names mark the origin and the values fill in what the rebuild left out, and both have
     /// to come from the same reading of the definition, or an `ALTER` in between would split them.
     auto stated = getSettingsStatedInDefinition(getStorageID(), query_context);
 
-    /// The definition may spell a setting the way this engine used to accept it - with the
-    /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
-    /// those rather than declaring them as aliases. Read them the same way, or a table created with a
-    /// legacy spelling reports its settings as coming from nowhere.
+    /// The definition may spell a setting the way this engine used to accept it - the `s3queue_` prefix, or
+    /// `enable_logging_to_s3queue_log` - since `loadFromQuery` rewrites those rather than declaring aliases.
     for (auto & change : stated)
         if (const auto canonical = ObjectStorageQueueSettings::adjustSettingName(change.name))
             change.name = String{*canonical};
 
     settings = withOriginFromDefinition(std::move(settings), stated);
 
-    /// For a setting the rebuild does not assign, the definition is the only source of the value the table
-    /// works with, so reporting the rebuilt default would say the table ignores a setting it honours. Only
-    /// the value: the origin is already `Definition`. Disjoint from the shared metadata below, which the
-    /// rebuild does assign - see `not_assigned_by_rebuild`.
+    /// For a setting the rebuild does not assign, the definition is the only source of the value the table works
+    /// with, so the rebuilt default would say the table ignores a setting it honours. Only the value: the origin
+    /// is already `Definition`.
     for (const auto & change : stated)
         if (not_assigned_by_rebuild.contains(change.name))
             setEffectiveValue(settings, change.name, convertFieldToString(change.value));
 
-    /// Applied after the definition, because for these the shared metadata is what the table
-    /// actually uses: an `ALTER` on another replica has already changed them here, while this
-    /// replica's `CREATE` query still states whatever it was created with. Only where the rebuild
-    /// read it, though - otherwise these rows carry what the definition states, as every other
-    /// unassigned setting does, and saying `shared_metadata` would name a source never consulted.
+    /// After the definition, because here the shared metadata is what the table uses: an `ALTER` on another
+    /// replica has already changed it while this replica's `CREATE` query still states the old value. Only where
+    /// the rebuild read it - otherwise naming `shared_metadata` would name a source never consulted.
     if (rebuilt_from_shared_metadata)
         setOrigin(settings, held_in_shared_metadata, SettingOrigin::SharedMetadata);
 
-    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
-    /// so the rebuilt settings object always carries its default. Report what the table actually
-    /// does, which is what `partitioning_mode` now says - last, so that it takes that setting's final
-    /// origin. The origin is taken even when the value is the default: they are one setting after the
-    /// fold, and `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
+    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, so the
+    /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
+    /// setting's final origin - even when the value is the default, since after the fold they are one setting.
     if (const auto mode = std::ranges::find(settings, "partitioning_mode", &SettingDescription::name); mode != settings.end())
         setEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
 

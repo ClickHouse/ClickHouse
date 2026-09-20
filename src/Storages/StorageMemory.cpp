@@ -878,8 +878,6 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 
 SettingDescriptions StorageMemory::getTableSettings(ContextPtr /* query_context */) const
 {
-    /// The settings object records the definition as `loadFromQuery` and `applyChanges` - on `ALTER ... MODIFY
-    /// SETTING`, the only settings `ALTER` this engine supports - apply it.
     return memory_settings.get()->enumerateSettings();
 }
 

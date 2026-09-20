@@ -65,8 +65,7 @@ SettingDescriptions StorageLogSettings::enumerateEngineSettings(ContextPtr)
         described.type = "String";
         described.comment = description;
         described.tier = SettingsTierType::PRODUCTION;
-        /// Not the `Other` a `SettingDescription` starts at: these are the compiled-in defaults, and a table's own
-        /// values are described by `describeTable`, which recomputes the origin from each.
+        /// These are the compiled-in defaults; `describeTable` recomputes the origin from a table's own values.
         described.origin = SettingOrigin::Default;
         return described;
     };

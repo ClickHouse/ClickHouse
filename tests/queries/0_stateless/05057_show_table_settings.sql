@@ -18,6 +18,7 @@ SHOW CHANGED TABLE SETTINGS FROM mt;
 SELECT '-- CHANGED is about who set it, not whether the value differs';
 -- `max_rows_to_keep = 0` states the default. It is still reported as changed, because the
 -- definition acted on it - which is what `source != default` means.
+DROP TABLE IF EXISTS stated_default;
 CREATE TABLE stated_default (a UInt64) ENGINE = Memory SETTINGS max_rows_to_keep = 0;
 SHOW CHANGED TABLE SETTINGS FROM stated_default;
 DROP TABLE stated_default;

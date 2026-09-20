@@ -32,6 +32,7 @@ WHERE ts.database = currentDatabase() AND ts.table = 't_s3';
 DROP TABLE t_s3;
 
 SELECT '-- the metadata is reported for an obsolete setting too, which must not claim to be a production one';
+DROP TABLE IF EXISTS t_s3_obsolete;
 CREATE TABLE t_s3_obsolete (a UInt64)
 ENGINE = S3('http://localhost:11111/test/table_settings.parquet', NOSIGN, 'Parquet')
 SETTINGS input_format_parquet_import_nested = 1;

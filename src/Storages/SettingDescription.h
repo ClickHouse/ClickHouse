@@ -19,10 +19,8 @@ namespace DB
 /// by that precedence: keep it when adding a value. `Other` is the exception - the catch-all, set wherever an
 /// engine cannot tell the source, including before any other. Most engines apply the table's own `SETTINGS`
 /// clause after a config section, `compatibility` and a named collection, so `Definition` outranks those.
-/// `S3Queue` and `AzureQueue` apply `SharedMetadata` after the definition, deliberately: an `ALTER ... MODIFY
-/// SETTING` on another replica has already changed the value this replica uses while its own `CREATE` query
-/// still states the old one. An engine that adds a source has to decide where it belongs relative to the
-/// definition.
+/// An engine that adds a source has to decide where it belongs relative to the definition - `S3Queue` and
+/// `AzureQueue` put `SharedMetadata` after it, which `docs/reference/system-tables/table_settings.mdx` explains.
 enum class SettingOrigin : uint8_t
 {
     /// The engine's compiled-in default. Also what `SettingsWithRecordedOrigin` stores for "nothing recorded",
@@ -36,11 +34,8 @@ enum class SettingOrigin : uint8_t
     NamedCollection,
     Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
-    /// The engine does not report an origin for this setting. A value the engine adjusts while it runs and
-    /// does not write back - `StorageKafka` halving `kafka_max_block_size`, which
-    /// https://github.com/ClickHouse/ClickHouse/pull/116522 is about - is reported this way too, until an
-    /// engine reports such a value as its own source; a new value belongs in the order the sources are
-    /// applied in, before this one.
+    /// The engine does not report an origin for this setting - including a value it adjusts while it runs and
+    /// does not write back. A value for that belongs before this one, in the order above.
     Other,
 };
 

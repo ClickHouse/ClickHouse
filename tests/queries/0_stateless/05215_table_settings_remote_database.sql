@@ -14,6 +14,7 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 
 -- Created while the test's own database is current: `Remote` evaluates `currentDatabase()` here.
+DROP TABLE IF EXISTS t;
 CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Remote('127.0.0.1', currentDatabase());
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Remote('127.0.0.1:1', currentDatabase());

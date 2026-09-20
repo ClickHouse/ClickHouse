@@ -70,13 +70,13 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
     /// unknown name is ignored, as `resetToDefault` ignores it.
     void recordOrigin(std::string_view name, SettingOrigin origin) { setOrigin(settingIndex(name), origin); }
 
-    /// Hide the base versions, which are not virtual, so that a reset forgets the source as well.
-    void resetToDefault(std::string_view name)
+    /// A reset forgets the source as well.
+    void resetToDefault(std::string_view name) override
     {
         BaseSettings<TTraits>::resetToDefault(name);
         setOrigin(settingIndex(name), SettingOrigin::Default);
     }
-    void resetToDefault()
+    void resetToDefault() override
     {
         BaseSettings<TTraits>::resetToDefault();
         recorded = {};

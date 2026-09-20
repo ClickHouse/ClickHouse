@@ -239,11 +239,13 @@ public:
     void checkShorthandChange(const SettingChange & change) const;
     void checkShorthandChanges(const SettingsChanges & changes) const;
 
-    /// Resets all the settings to their default values
-    void resetToDefault();
+    /// Resets all the settings to their default values. Virtual, as `set` is, so that a subclass keeping
+    /// something alongside the values - `SettingsWithRecordedOrigin` keeps where each came from - is not
+    /// bypassed by a caller holding the base, `read` among them.
+    virtual void resetToDefault();
 
     /// Resets specified setting to its default value
-    void resetToDefault(std::string_view name);
+    virtual void resetToDefault(std::string_view name);
 
     /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
     /// The setting keeps acting locally (readers see the value) but is no longer serialized to a

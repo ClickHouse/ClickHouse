@@ -30,6 +30,7 @@ SELECT engine_name, name, changed, source FROM system.engine_settings
 WHERE engine_name IN ('Log', 'StripeLog', 'TinyLog') ORDER BY ALL;
 
 SELECT '-- a view has no settings of its own, and a materialized view reports through its inner table';
+DROP TABLE IF EXISTS mv;
 CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1024 AS SELECT x FROM mt;
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table IN ('v', 'mv');
 SELECT name, value, source FROM system.table_settings
