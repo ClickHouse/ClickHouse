@@ -419,11 +419,20 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* priority= */ Priority{1},
         /* cluster_name= */ cluster_info.name,
         /* cluster_secret= */ cluster_info.cluster_secret};
+    /// The nodes register at `<zk_root>/shards/<server uuid>` with no component for the name the cluster
+    /// is configured under, so two `remote_servers` entries over one discovery path read the same znodes
+    /// and agree on which shard a node belongs to. Keying the identity by the discovery path rather than
+    /// by the entry's name therefore keeps parallel replicas through either name, while two discovery
+    /// paths whose nodes happen to carry the same `discovery.shard` numbers stay foreign to each other.
+    /// `zk_name` is length-prefixed so the boundary between the two parts cannot slide.
+    const String shard_scope_key
+        = toString(cluster_info.zk_name.size()) + ':' + cluster_info.zk_name + cluster_info.zk_root;
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,
         params,
-        shard_ids);
+        shard_ids,
+        shard_scope_key);
     return cluster;
 }
 

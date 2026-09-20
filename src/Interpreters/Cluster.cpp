@@ -643,8 +643,10 @@ Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params,
-    const Strings & shard_keys)
-    : shard_scope_identity(makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, params.cluster_name, shard_keys))
+    const Strings & shard_keys,
+    const String & shard_scope_key)
+    : shard_scope_identity(
+          makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, shard_scope_key.empty() ? params.cluster_name : shard_scope_key, shard_keys))
 {
     /// A missing key would be silently taken for a shorter cluster, so a partial list is not accepted.
     if (!shard_keys.empty() && shard_keys.size() != names.size())

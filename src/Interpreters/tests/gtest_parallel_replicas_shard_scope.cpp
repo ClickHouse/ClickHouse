@@ -63,17 +63,26 @@ ClusterPtr makeCluster(const Settings & settings, const String & name, size_t sh
 /// A cluster discovered from Keeper: `ClusterDiscovery::makeCluster` groups the currently visible nodes by
 /// their `shard_id` and lets `Cluster` renumber the groups `1..N`, so the shard ids are what a shard number
 /// of the result means, and they are what identifies its numbering.
-/// On a tree without the shard-keys parameter this falls back to the three-argument form, which is what
-/// makes the arms below report what an unpatched server computes instead of failing to compile.
+/// `name` is the `remote_servers` entry the cluster is configured under; `discovery_path` is the
+/// `<zk_name><zk_root>` pair `ClusterDiscovery::makeCluster` keys the shard-scope identity by, the same
+/// for every entry pointing at one path.
+/// On a tree without either parameter this falls back to the shorter form, which is what makes the arms
+/// below report what an unpatched server computes instead of failing to compile.
 template <typename SettingsT>
 ClusterPtr makeDiscoveredCluster(
-    const SettingsT & settings, const String & name, const Strings & shard_ids, size_t replicas_per_shard = 1)
+    const SettingsT & settings,
+    const String & name,
+    const Strings & shard_ids,
+    size_t replicas_per_shard = 1,
+    const String & discovery_path = {})
 {
     const HostsByShard hosts = makeHosts(shard_ids.size(), replicas_per_shard);
     const ConnectionParameterStorage storage;
     const auto params = storage.params(name);
 
-    if constexpr (requires { Cluster(settings, hosts, params, shard_ids); })
+    if constexpr (requires { Cluster(settings, hosts, params, shard_ids, discovery_path); })
+        return std::make_shared<Cluster>(settings, hosts, params, shard_ids, discovery_path);
+    else if constexpr (requires { Cluster(settings, hosts, params, shard_ids); })
         return std::make_shared<Cluster>(settings, hosts, params, shard_ids);
     else
         return std::make_shared<Cluster>(settings, hosts, params);
@@ -615,6 +624,30 @@ TEST(ParallelReplicasShardScope, ConfigClusterAliasWithTheSameShardsIsScoped)
 
     auto named_context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*named_a)));
     EXPECT_EQ(getShardScopeCompat(named_context, *named_b).kind, SCOPE_FOREIGN);
+}
+
+/// Two `remote_servers` entries pointing at one discovery path are one numbering: the nodes register at
+/// `<zk_root>/shards/<server uuid>`, with nothing in the path standing for the entry's name, so both
+/// entries read the same znodes and shard `N` denotes the same shard through either. Keying the identity
+/// by the name would classify a `_shard_num` produced through one alias as `Foreign` through the other
+/// and turn parallel replicas off for a read that is perfectly in scope.
+/// The shard keys themselves are each node's own `discovery.shard`, a per-cluster number, so the
+/// namespace still has to separate two discovery paths that happen to use the same shard ids.
+TEST(ParallelReplicasShardScope, DiscoveredClusterAliasWithTheSameShardsIsScoped)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    auto alias_a = makeDiscoveredCluster(settings, "alias_a", {"0", "1"}, 1, "zookeeper/clickhouse/discovery/some_cluster");
+    auto alias_b = makeDiscoveredCluster(settings, "alias_b", {"0", "1"}, 1, "zookeeper/clickhouse/discovery/some_cluster");
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*alias_a)));
+    const auto scope = getShardScopeCompat(context, *alias_b);
+    EXPECT_EQ(scope.kind, SCOPE_SCOPED);
+    EXPECT_EQ(scope.shard_num, 2u);
+    EXPECT_EQ(getShardScopeIdentityCompat(*alias_b), getShardScopeIdentityCompat(*alias_a));
+
+    auto another_path
+        = makeDiscoveredCluster(settings, "alias_a", {"0", "1"}, 1, "zookeeper/clickhouse/discovery/another_cluster");
+    EXPECT_EQ(getShardScopeCompat(context, *another_path).kind, SCOPE_FOREIGN);
 }
 
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the

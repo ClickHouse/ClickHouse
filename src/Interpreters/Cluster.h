@@ -85,11 +85,20 @@ public:
     /// identity (see `getShardScopeIdentity`): the same name describes a different numbering as soon as
     /// the caller's visible membership differs. A caller that has no such keys passes none and gets no
     /// identity, which declines a shard scope rather than trusting the name.
+    ///
+    /// `shard_scope_key` plays the same role it plays for a `Replicated` database below: it says whose
+    /// shard keys those are, for keys that are per-cluster numbers rather than the shards' membership.
+    /// A discovered cluster's keys are each node's own `discovery.shard`, so two discovery paths with
+    /// shards `0`/`1` over different hosts must stay apart - but two `remote_servers` entries over one
+    /// path read the same znodes and cannot disagree about which shard a node belongs to, so such a
+    /// caller passes the discovery path and keeps parallel replicas through either name. A caller
+    /// without such a key leaves it empty and `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const HostsByShard & names,
         const ClusterConnectionParameters & params,
-        const Strings & shard_keys = {});
+        const Strings & shard_keys = {},
+        const String & shard_scope_key = {});
 
 
     /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
