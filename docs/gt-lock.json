@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-20T12:04:19.170Z",
+          "updatedAt": "2026-09-20T18:48:05.087Z",
           "fileName": "docs.json",
           "postProcessHash": "06e4dfbf312293c3556f1982a25a1ebe17e82e6dc6dea1eee8ba84b41ac4e9ec"
         },
         "ja": {
-          "updatedAt": "2026-09-20T12:04:18.316Z",
+          "updatedAt": "2026-09-20T18:48:04.296Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-20T12:04:18.738Z",
+          "updatedAt": "2026-09-20T18:48:04.698Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-20T12:04:18.890Z",
+          "updatedAt": "2026-09-20T18:48:04.829Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-20T12:04:18.601Z",
+          "updatedAt": "2026-09-20T18:48:04.572Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-20T12:04:18.466Z",
+          "updatedAt": "2026-09-20T18:48:04.435Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-20T12:04:18.163Z",
+          "updatedAt": "2026-09-20T18:48:04.112Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-20T12:04:19.032Z",
+          "updatedAt": "2026-09-20T18:48:04.961Z",
           "fileName": "docs.json"
         }
       },
@@ -70370,51 +70370,50 @@
     },
     {
       "fileId": "6b78d7cd8ca111b2b21b1959b710dad1a24ab1e6b1a747d7f33970f90370da47",
-      "versionId": "e0061f91fe2cc35bcc3127c12e7d0f3503303ff6912fb34cf4ef037ee623c3a7",
+      "versionId": "87f9e7fc1ff2b236969f4e5f651d97f7f0cd45af311db9a571c378afd1f1dc4b",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.802Z",
-          "fileName": "es/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "965d1371ab81fcb5b06ebe8b25c1bff2c42b4ec79da74fe0fcbf80c448b3ea36"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
-          "fileName": "ja/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "038015ccb7e1dd6fa6ebbccc03394b9ed8af72bda41957a751bfd28cf25589d8"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
+          "updatedAt": "2026-09-20T18:48:08.009Z",
           "fileName": "ko/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "980517aa5f0d5578334bd1baf8bc58c6c23391f7ac88c7994b892f4bfb2e6621"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
-          "fileName": "pt-BR/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "0555fb6fb4a480700f2bc1a98c2e15d5e34288838b9eff6ccfb6711f96ce20ed"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
-          "fileName": "ru/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "a29bde3db134db59067331141f8a1b80de8182069f1dcca9bc09f43ec304818e"
+          "postProcessHash": "5f9836128f36835e562cf9ca8a2b1ef39ed07ad815f7de615e08b4423b60f583"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
+          "updatedAt": "2026-09-20T18:48:08.009Z",
           "fileName": "zh/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "61c7fac77b8de460c61175803b2f40e5761ea7827ca948573a3c0e90504df2be"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
-          "fileName": "ar/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "8b0b7495bcdd650a0b658c430d31c11fdd1aa4e2977e521c66e73a441dcc07a5"
+          "postProcessHash": "675818c8e47e37a12f106370156d304a1ed5d5e98235f430ea85c0caf9f67f98"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.803Z",
+          "updatedAt": "2026-09-20T18:48:08.010Z",
           "fileName": "fr/resources/develop-contribute/contribute/backports.mdx",
-          "postProcessHash": "cbf1cb0827cc333e6b473e49a073fa934d8780a92e4e3524ac2f2a3b13be702d"
+          "postProcessHash": "55e0f3b19f719dc4c10a8445990b11f20c01f861ba808ff9366399f85198434f"
+        },
+        "ja": {
+          "updatedAt": "2026-09-20T18:48:08.010Z",
+          "fileName": "ja/resources/develop-contribute/contribute/backports.mdx",
+          "postProcessHash": "7d52b4f9e93de7a5b9293e714c76011be430cbbfcf5738fce3adf9283f50fb20"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-20T18:48:08.011Z",
+          "fileName": "pt-BR/resources/develop-contribute/contribute/backports.mdx",
+          "postProcessHash": "dcf9d2de5a5f366cf1d4133da7a8f73dbcd82b0260713a0aa001097dd0af2982"
+        },
+        "es": {
+          "updatedAt": "2026-09-20T18:48:08.011Z",
+          "fileName": "es/resources/develop-contribute/contribute/backports.mdx",
+          "postProcessHash": "eca7755964ee29d121343a7602087f6baa0cb288b32468a0db65fb56012aa777"
+        },
+        "ru": {
+          "updatedAt": "2026-09-20T18:48:08.012Z",
+          "fileName": "ru/resources/develop-contribute/contribute/backports.mdx",
+          "postProcessHash": "853d2e44217bccf8b564099727a7e34c1322b1f96a4956a6616e29bcf9eb0436"
+        },
+        "ar": {
+          "updatedAt": "2026-09-20T18:48:08.012Z",
+          "fileName": "ar/resources/develop-contribute/contribute/backports.mdx",
+          "postProcessHash": "f1bb82871864eb4f05d6190b25573d1816296c1dfda0e33081069e59a7f2b288"
         }
       },
-      "fileName": "resources/develop-contribute/contribute/backports.mdx",
-      "staged": false
+      "fileName": "resources/develop-contribute/contribute/backports.mdx"
     },
     {
       "fileId": "c3cb105788ce0766ce2fe50daf4193002839854ee5942b44aec6bf0465fdf0ec",
