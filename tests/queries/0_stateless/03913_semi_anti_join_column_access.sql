@@ -390,3 +390,42 @@ SET semi_join_compatibility = 0;
 SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true FORMAT TSVWithNames;
 SELECT t2.a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
 SET semi_join_compatibility = 1;
+
+SET semi_join_compatibility = 1, anti_join_compatibility = 1;
+-- A `USING` key of the preserved side must keep its own type: the `USING` supertype is derived from
+-- the hidden side too, so exposing it would leak the type of a table that is not part of the result.
+SELECT toTypeName(id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id);
+SELECT toTypeName(id), toTypeName(l.id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id);
+SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+SELECT l.* FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+SELECT id FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+-- The preserved side of a RIGHT SEMI JOIN is the right one.
+SELECT * FROM (SELECT toUInt16(1) AS id) AS l RIGHT SEMI JOIN (SELECT toUInt8(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+-- The same for ANTI JOIN, controlled by `anti_join_compatibility`.
+SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+SELECT * FROM (SELECT toUInt16(2) AS id) AS l RIGHT ANTI JOIN (SELECT toUInt8(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+-- Every `USING` key of a multi-column clause is kept on the preserved side.
+SELECT * FROM (SELECT toUInt8(1) AS a, toUInt8(2) AS b) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS a, toInt64(2) AS b) AS r USING (a, b) FORMAT TSVWithNamesAndTypes;
+-- Only the result type changes - the rows are the ones the default behaviour returns, including
+-- signed/unsigned keys that must not compare equal after a narrowing conversion.
+DROP TABLE IF EXISTS t_semi_using_left;
+DROP TABLE IF EXISTS t_semi_using_right;
+CREATE TABLE t_semi_using_left (id Int8) ENGINE = Memory;
+INSERT INTO t_semi_using_left VALUES (-1), (1), (2);
+CREATE TABLE t_semi_using_right (id UInt8) ENGINE = Memory;
+INSERT INTO t_semi_using_right VALUES (255), (1), (3);
+SELECT id FROM t_semi_using_left LEFT SEMI JOIN t_semi_using_right USING (id) ORDER BY id FORMAT TSVWithNamesAndTypes;
+SELECT id FROM t_semi_using_left LEFT ANTI JOIN t_semi_using_right USING (id) ORDER BY id FORMAT TSVWithNamesAndTypes;
+SELECT id FROM t_semi_using_left RIGHT SEMI JOIN t_semi_using_right USING (id) ORDER BY id FORMAT TSVWithNamesAndTypes;
+-- Nullability and LowCardinality of the preserved side are kept as well.
+SELECT id FROM (SELECT toNullable(toUInt8(1)) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+SELECT id FROM (SELECT toLowCardinality(toUInt8(1)) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS join_use_nulls = 1 FORMAT TSVWithNamesAndTypes;
+-- The nested-subquery shape resolves the bare name and keeps the preserved-side type.
+SELECT toTypeName(id) FROM (SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id));
+-- With the compatibility settings disabled, the `USING` supertype is exposed as before.
+SELECT toTypeName(id) FROM (SELECT toUInt8(1) AS id) AS l LEFT SEMI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS semi_join_compatibility = 0;
+SELECT * FROM (SELECT toUInt8(2) AS id) AS l LEFT ANTI JOIN (SELECT toUInt16(1) AS id) AS r USING (id) SETTINGS anti_join_compatibility = 0 FORMAT TSVWithNamesAndTypes;
+-- A plain LEFT JOIN is unaffected by these settings.
+SELECT * FROM (SELECT toUInt8(1) AS id) AS l LEFT JOIN (SELECT toUInt16(1) AS id) AS r USING (id) FORMAT TSVWithNamesAndTypes;
+DROP TABLE t_semi_using_left;
+DROP TABLE t_semi_using_right;

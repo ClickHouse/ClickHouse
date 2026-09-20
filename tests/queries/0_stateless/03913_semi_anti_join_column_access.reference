@@ -57,3 +57,50 @@ t1.a	t2.a
 a	t2.a
 1	2
 2
+UInt8
+UInt8	UInt8
+id
+UInt8
+1
+id
+UInt8
+1
+id
+UInt8
+1
+id
+UInt8
+1
+id
+UInt8
+2
+id
+UInt8
+1
+a	b
+UInt8	UInt8
+1	2
+id
+Int8
+1
+id
+Int8
+-1
+2
+id
+UInt8
+1
+id
+Nullable(UInt8)
+1
+id
+LowCardinality(UInt8)
+1
+UInt8
+UInt16
+id
+UInt16
+2
+id
+UInt16
+1

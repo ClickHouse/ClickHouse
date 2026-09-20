@@ -2190,6 +2190,20 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
     if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
     {
+        /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, only the
+          * preserved side is part of the result, so its `USING` key must keep its own type rather than be
+          * widened to the `USING` supertype - which is derived from the hidden side as well.
+          */
+        SemiAntiJoinSideChecker semi_anti_using_checker(
+            *join_node,
+            join_node->getStrictness(),
+            join_node->getKind(),
+            scope.context,
+            scope.resolving_join_on_expression);
+
+        if (semi_anti_using_checker.preservedSideOrNone())
+            return;
+
         const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
         const auto & join_using_nodes = join_using_list.getNodes();
 
@@ -2535,7 +2549,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     return result_matched_column_nodes_with_names;
 }
 
-QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope);
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope, std::optional<JoinTableSide> preserved_side);
 
 /// Resolve non qualified matcher, using scope join tree node.
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
@@ -2685,6 +2699,18 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
+            /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
+              * - LEFT SEMI/ANTI JOIN: only left table columns
+              * - RIGHT SEMI/ANTI JOIN: only right table columns
+              * Controlled by `semi_join_compatibility` and `anti_join_compatibility` (see `SemiAntiJoinSideChecker`).
+              */
+            SemiAntiJoinSideChecker semi_anti_star_checker(
+                *join_node,
+                join_node->getStrictness(),
+                join_node->getKind(),
+                scope.context,
+                scope.resolving_join_on_expression);
+
             /** If there is JOIN with USING we need to match only single USING column and do not use left table expression
               * and right table expression column with same name.
               *
@@ -2732,25 +2758,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
-                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(join_using_column_node, join_node->getKind(), scope);
+                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(
+                        join_using_column_node, join_node->getKind(), scope, semi_anti_star_checker.preservedSideOrNone());
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
                 }
             }
-
-            /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
-              * - LEFT SEMI/ANTI JOIN: only left table columns
-              * - RIGHT SEMI/ANTI JOIN: only right table columns
-              * Controlled by `semi_join_compatibility` and `anti_join_compatibility` (see `SemiAntiJoinSideChecker`).
-              */
-            SemiAntiJoinSideChecker semi_anti_star_checker(
-                *join_node,
-                join_node->getStrictness(),
-                join_node->getKind(),
-                scope.context,
-                scope.resolving_join_on_expression);
 
             if (!semi_anti_star_checker.shouldSkipSide(JoinTableSide::Left))
             {

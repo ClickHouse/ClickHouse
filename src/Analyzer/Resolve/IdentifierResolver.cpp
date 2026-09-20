@@ -1318,9 +1318,9 @@ static bool innerJoinKeyColumnsAreEquated(
  * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
  * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
  */
-QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope);
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope, std::optional<JoinTableSide> preserved_side);
 
-QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope, std::optional<JoinTableSide> preserved_side)
 {
     const auto & using_expression = using_column_node.getExpression();
     if (!using_expression)
@@ -1331,13 +1331,25 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
 
-    for (size_t i = 0; i < arguments.size(); ++i)
+    /** When `semi_join_compatibility` / `anti_join_compatibility` hides one side of the JOIN, the
+      * visible `USING` key must keep the preserved side's own type: widening it to the `USING`
+      * supertype would expose the type of a table that is not part of the result at all.
+      * The preserved side never needs `join_use_nulls` either - a `SEMI`/`ANTI` JOIN only preserves
+      * rows of that side, so nothing of it can become NULL - so the conversion is skipped entirely.
+      */
+    if (!preserved_side)
     {
-        auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
-        auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
-        if (converted_argument)
-            arguments[i] = converted_argument;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
+            auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
+            if (converted_argument)
+                arguments[i] = converted_argument;
+        }
     }
+
+    if (preserved_side == JoinTableSide::Right)
+        return arguments.back();
 
     if (join_kind == JoinKind::Right)
         return arguments.back();
@@ -1427,6 +1439,15 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
 bool SemiAntiJoinSideChecker::shouldSkipSide(JoinTableSide side) const
 {
     return (skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right);
+}
+
+std::optional<JoinTableSide> SemiAntiJoinSideChecker::preservedSideOrNone() const
+{
+    if (skip_left)
+        return JoinTableSide::Right;
+    if (skip_right)
+        return JoinTableSide::Left;
+    return {};
 }
 
 bool IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(
@@ -1602,6 +1623,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     }
 
     SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
+    /// Set when one side of this JOIN is hidden by `semi_join_compatibility` / `anti_join_compatibility`.
+    const auto using_preserved_side = side_checker.preservedSideOrNone();
     std::optional<JoinTableSide> denied_qualified_access;
 
     bool ambiguous_in_join_tree = false;
@@ -1868,7 +1891,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
             const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
-            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
+            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope, using_preserved_side);
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
@@ -1930,7 +1953,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
+            /// The right side is hidden by the compatibility settings, so the `USING` key must keep
+            /// the preserved left side's type instead of the `USING` supertype.
+            if (using_preserved_side != JoinTableSide::Left)
+                convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
     else if (right_resolved_identifier)
@@ -1944,7 +1970,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
+            /// Same as above, with the left side hidden and the right side preserved.
+            if (using_preserved_side != JoinTableSide::Right)
+                convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
 
