@@ -1539,6 +1539,10 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             interpolate_actions_dag.removeUnusedActions();
         }
 
+        /// The actions of `INTERPOLATE` are the one expression of a query that reaches no other
+        /// `appendSetsFromActionsDAG`, so without this the sets they read are never built.
+        appendSetsFromActionsDAG(interpolate_actions_dag, useful_sets);
+
         Aliases empty_aliases;
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }

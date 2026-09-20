@@ -285,7 +285,8 @@ private:
             return true;
 
         const auto & typed_query_node = query_node->as<const QueryNode &>();
-        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode())
+        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode()
+            || node == typed_query_node.getInterpolate())
             return true;
 
         const auto * function_node = node->as<FunctionNode>();

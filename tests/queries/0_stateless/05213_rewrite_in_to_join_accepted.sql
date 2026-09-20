@@ -110,6 +110,13 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM 
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- The same IN in the projection and in INTERPOLATE, which keeps its set';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, b, (b IN (SELECT k FROM s)) AS f FROM t ORDER BY id WITH FILL FROM 1 TO 5 INTERPOLATE (b AS b + (b IN (SELECT k FROM s))));
+
+SELECT groupArray((id, b, f)) FROM (SELECT id, b, (b IN (SELECT k FROM s)) AS f FROM t ORDER BY id WITH FILL FROM 1 TO 5 INTERPOLATE (b AS b + (b IN (SELECT k FROM s)))) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray((id, b, f)) FROM (SELECT id, b, (b IN (SELECT k FROM s)) AS f FROM t ORDER BY id WITH FILL FROM 1 TO 5 INTERPOLATE (b AS b + (b IN (SELECT k FROM s)))) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- Two columns of the subquery share a name';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE (id, b) IN (SELECT number AS `plus(number, 1)`, number + 1 FROM numbers(3)));

@@ -50,6 +50,10 @@
 1	0
 2
 2
+-- The same IN in the projection and in INTERPOLATE, which keeps its set
+1	1
+[(1,1,1),(2,3,0),(3,4,0),(4,4,0)]
+[(1,1,1),(2,3,0),(3,4,0),(4,4,0)]
 -- Two columns of the subquery share a name
 1	0
 [(2,3)]

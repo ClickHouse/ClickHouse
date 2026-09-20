@@ -42,6 +42,12 @@ SELECT '-- `nullIn`';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS transform_null_in = 1);
 
+SELECT '-- IN inside INTERPOLATE';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, b FROM t ORDER BY id WITH FILL FROM 1 TO 5 INTERPOLATE (b AS b + (b IN (SELECT k FROM s))));
+
+SELECT groupArray((id, b)) FROM (SELECT id, b FROM t ORDER BY id WITH FILL FROM 1 TO 5 INTERPOLATE (b AS b + (b IN (SELECT k FROM s))));
+
 DROP TABLE t;
 DROP TABLE s;
 DROP TABLE w;
