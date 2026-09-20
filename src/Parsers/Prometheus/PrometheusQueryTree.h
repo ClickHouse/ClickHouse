@@ -79,6 +79,7 @@ public:
         /// Whether the literal was written with time units (`2h30m`), which is printed back that way.
         bool is_duration = false;
         String duration_str;
+        std::optional<Int64> duration_ms;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;

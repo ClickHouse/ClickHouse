@@ -96,6 +96,8 @@ def format_query(query):
         # Longer than a double can carry in whole milliseconds: returned as written rather than
         # rounded into a duration it is not.
         ("9223372036854776s", "9223372036854776s"),
+        # Large duration with millisecond precision preserved exactly without float rounding.
+        ("4503599627360521ms", "52124995d16h29m20s521ms"),
         # Numeric literals are canonicalized, and a hexadecimal one is not a duration even when its
         # digits contain the letter of a time unit.
         ("100 * 0x1F", "100 * 31"),
