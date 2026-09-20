@@ -293,6 +293,14 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 void StorageSetOrJoinBase::waitForOutstandingSinks(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(outstanding_sinks_mutex);
+
+    /// Zero means "no timeout" everywhere else in the locking code (see `RWLockImpl::getLock`), so wait indefinitely.
+    if (timeout == std::chrono::milliseconds(0))
+    {
+        outstanding_sinks_changed.wait(lock, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; });
+        return;
+    }
+
     if (!outstanding_sinks_changed.wait_for(lock, timeout, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; }))
     {
         /// The lock is held here; the analysis does not see through `wait_for`.
