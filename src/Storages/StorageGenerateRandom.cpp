@@ -481,7 +481,8 @@ size_t estimateValueSize(
             size_t res = 0;
             for (const auto & [path, path_type] : object_type.getTypedPaths())
                 res += estimateValueSize(path_type, max_array_length / 2, max_string_length, max_json_dynamic_keys);
-            res += max_json_dynamic_keys * (max_string_length + sizeof(UInt64));
+            const size_t max_dyn = std::min<size_t>(max_json_dynamic_keys, object_type.getMaxDynamicPaths());
+            res += max_dyn * (max_string_length + sizeof(UInt64));
             return res;
         }
 
