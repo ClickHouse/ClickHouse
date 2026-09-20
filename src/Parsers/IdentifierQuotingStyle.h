@@ -11,7 +11,10 @@ enum class IdentifierQuotingStyle : uint8_t
     Backticks, /// `clickhouse` style
     DoubleQuotes, /// "postgres" style, but with ClickHouse escaping: '\"' for an embedded quote, '\\' for a backslash
     BackticksMySQL, /// `mysql` style, most same as Backticks, but it uses '``' to escape '`'
-    DoubleQuotesStandard, /// standard SQL style: an embedded double quote is doubled ('""'), a backslash stays literal (SQLite, PostgreSQL)
+    /// "postgres" style as PostgreSQL actually reads it: `"` is escaped by doubling it, and a backslash
+    /// is a literal byte. Deliberately absent from the `show_create_query_identifier_quoting_style` value
+    /// map (`SettingsEnums.cpp`): this is a dialect for queries sent out, not a `SHOW CREATE` style.
+    DoubleQuotesPostgreSQL,
     BackticksSQLite, /// SQLite strict identifier style: an embedded backtick is doubled, every other byte stays literal
 };
 

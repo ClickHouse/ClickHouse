@@ -389,12 +389,12 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
-        case IdentifierQuotingStyle::DoubleQuotesStandard:
+        case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
         {
             if (must_quote)
-                writeDoubleQuotedStringStandard(name, ostr);
+                writeDoubleQuotedStringPostgreSQL(name, ostr);
             else
-                writeProbablyDoubleQuotedStringStandard(name, ostr);
+                writeProbablyDoubleQuotedStringPostgreSQL(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::BackticksSQLite:

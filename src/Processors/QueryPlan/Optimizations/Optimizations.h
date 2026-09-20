@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
+#include <expected>
 #include <unordered_map>
 
 class SipHash;
@@ -88,6 +89,9 @@ struct Optimization
         /// optimization when the plan is going to be distributed or serialized.
         bool make_distributed_plan = false;
         bool serialize_query_plan = false;
+        /// Plan-based parallel replicas also ships plan fragments to the replicas, so the same
+        /// optimizations have to be suppressed as for the two settings above.
+        bool enable_parallel_replicas = false;
         /// When short-circuit is off, a FilterStep still masks a throwing atom by splitting the AND into
         /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
         /// AND in this mode.
@@ -238,13 +242,9 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Derive IS NOT NULL filters for Nullable columns used in null-rejecting join conditions.
-/// The derived filters serve as evidence for outer-to-inner JOIN conversion.
-size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 24> optimizations = {{
+    static const std::array<Optimization, 23> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
@@ -258,7 +258,6 @@ inline const auto & getOptimizations()
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
-        {tryDeriveNotNullFiltersFromJoin, "deriveNotNullFiltersFromJoin", &QueryPlanOptimizationSettings::derive_not_null_filters_from_joins},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
@@ -324,7 +323,6 @@ void materializeQueryPlanReferences(
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
-void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
@@ -362,13 +360,18 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(
+struct UseProjectionsResult
+{
+    std::optional<String> applied_projection;
+    std::unordered_map<String, String> projection_reject_reasons;
+};
+
+UseProjectionsResult optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-std::optional<String> optimizeUseNormalProjections(
+UseProjectionsResult optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
