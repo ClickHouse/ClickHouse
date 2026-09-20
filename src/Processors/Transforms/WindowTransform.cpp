@@ -413,8 +413,10 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         || window_description.frame.exclusion == WindowFrame::Exclusion::Ties;
     const auto hasCollationInOrderBy = [&]
     {
-        return std::ranges::any_of(window_description.order_by,
-            [](const auto & column_description) { return column_description.collator != nullptr; });
+        /// The old analysis path drops the collator instead of carrying it here, and says so.
+        return window_description.order_by_collation_dropped
+            || std::ranges::any_of(window_description.order_by,
+                [](const auto & column_description) { return column_description.collator != nullptr; });
     };
 
     for (const auto & workspace : workspaces)

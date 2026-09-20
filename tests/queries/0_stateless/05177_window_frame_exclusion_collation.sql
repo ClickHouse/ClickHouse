@@ -7,12 +7,17 @@
 SELECT sum(v) OVER (ORDER BY s COLLATE 'en' RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT 'a' AS s, 1 AS v); -- { serverError NOT_IMPLEMENTED }
 SELECT sum(v) OVER (ORDER BY s COLLATE 'en' RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES) FROM (SELECT 'a' AS s, 1 AS v); -- { serverError NOT_IMPLEMENTED }
 
+-- A window that takes its order from a named one carries the collation with it.
+SELECT sum(v) OVER (w RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT 'a' AS s, 1 AS v) WINDOW w AS (ORDER BY s COLLATE 'en'); -- { serverError NOT_IMPLEMENTED }
+
 -- CURRENT ROW takes out one row rather than a peer group, so it does not depend on the comparison.
 SELECT sum(v) OVER (ORDER BY s COLLATE 'en' ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM (SELECT 'a' AS s, 1 AS v);
 
 -- A function that never reads the frame cannot be given the wrong rows, so a window carrying only
 -- one of those takes the clause whatever the order is collated with.
 SELECT row_number() OVER (ORDER BY s COLLATE 'en' RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT arrayJoin(['a', 'b']) AS s) ORDER BY ALL;
+
+SELECT row_number() OVER (w RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT arrayJoin(['a', 'b']) AS s) WINDOW w AS (ORDER BY s COLLATE 'en') ORDER BY ALL;
 
 -- Without a collator the peer exclusions work as they do everywhere else.
 SELECT sum(v) OVER (ORDER BY s RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM (SELECT 'a' AS s, 1 AS v);

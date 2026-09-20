@@ -635,6 +635,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         const auto & parent = it->second;
         desc.partition_by = parent.partition_by;
         desc.order_by = parent.order_by;
+        desc.order_by_collation_dropped = parent.order_by_collation_dropped;
         desc.frame = parent.frame;
 
         // If an existing_window_name is specified it must refer to an earlier
@@ -701,7 +702,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         }
     }
 
-    bool order_by_has_collation = false;
     if (definition.order_by)
     {
         for (const auto & column_ast
@@ -710,9 +710,11 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             // Parser should have checked that we have a proper element here.
             const auto & order_by_element
                 = column_ast->as<ASTOrderByElement &>();
+            // Ignore collation for now. It is dropped here rather than compared with, so a frame
+            // exclusion that is defined in terms of the ordering peers has to be refused; the flag
+            // is what says so, because the collator is gone by the time anything reads this.
             if (order_by_element.getCollation())
-                order_by_has_collation = true;
-            // Ignore collation for now.
+                desc.order_by_collation_dropped = true;
             desc.order_by.push_back(
                 SortColumnDescription(
                     order_by_element.children.front()->getColumnName(),
@@ -758,16 +760,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.frame.end_type = definition.frame_end_type;
     desc.frame.end_preceding = definition.frame_end_preceding;
     desc.frame.exclusion = definition.frame_exclusion;
-
-    /// `WindowTransform` refuses a peer exclusion over a collated window order, because peers are
-    /// decided without consulting the collator. It cannot refuse it here: the collation is dropped
-    /// just above, so the transform never sees it on this path. Refuse it where it is still known.
-    if ((desc.frame.exclusion == WindowFrame::Exclusion::Group || desc.frame.exclusion == WindowFrame::Exclusion::Ties)
-        && order_by_has_collation)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
-    }
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {

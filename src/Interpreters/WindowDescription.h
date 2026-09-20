@@ -95,6 +95,11 @@ struct WindowDescription
 
     SortDescription order_by;
 
+    /// Whether the window `ORDER BY` was written with a `COLLATE` whose collator is not in
+    /// `order_by`. The old analysis path drops it (see `ExpressionAnalyzer::makeWindowDescriptionFromAST`),
+    /// and the peers of a row are then compared without it, so whoever needs the peers has to know.
+    bool order_by_collation_dropped = false;
+
     // To calculate the window function, we sort input data first by PARTITION BY,
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
