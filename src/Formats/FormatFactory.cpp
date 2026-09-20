@@ -989,34 +989,48 @@ void FormatFactory::registerFileExtension(const String & extension, const String
 
 void FormatFactory::registerFormatAlias(const String & alias, const String & format_name)
 {
-    format_aliases[boost::to_lower_copy(alias)] = boost::to_lower_copy(format_name);
+    const auto lowercased_alias = boost::to_lower_copy(alias);
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+    format_aliases[lowercased_alias] = lowercased_format_name;
+    format_alias_groups[lowercased_format_name].insert(lowercased_alias);
 }
 
 std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
 {
     const auto lowercased_format_name = boost::to_lower_copy(format_name);
 
-    std::vector<String> format_names;
-
     /// Interchangeable spellings of the same format (`JSONLines` for `JSONEachRow`, `TSV` for
-    /// `TabSeparated`) are registered as independent formats, and the extensions are registered
-    /// only for the canonical spelling, so resolve the alias before the lookup.
-    const auto add_name = [&](const String & name)
+    /// `TabSeparated`) are registered as independent formats: each spelling carries its own name
+    /// as a file extension, and the shared extensions are registered only for the canonical
+    /// spelling. A hive lake written as `JSONLines` is a lake of `.jsonlines` files and has to be
+    /// readable as `JSONEachRow` and the other way round, so collect the whole group of spellings.
+    const auto spellings_of = [&](const String & name)
     {
-        format_names.push_back(name);
+        String canonical = name;
         if (const auto it = format_aliases.find(name); it != format_aliases.end())
-            format_names.push_back(it->second);
+            canonical = it->second;
+
+        std::vector<String> spellings{canonical};
+        if (const auto it = format_alias_groups.find(canonical); it != format_alias_groups.end())
+            spellings.insert(spellings.end(), it->second.begin(), it->second.end());
+        return spellings;
     };
 
-    add_name(lowercased_format_name);
+    std::vector<String> format_names = spellings_of(lowercased_format_name);
 
     /// A format registered via registerWithNamesAndTypes reads the files of its base format:
     /// e.g. a lake of `.csv` files with a header row is read with the `CSVWithNames` format.
+    /// The `WithNames` flavours are spelled with the same aliases as the base format, and each
+    /// of them is a format of its own as well: `TSVWithNames` writes `.tsvwithnames` files.
     for (const std::string_view suffix : {"withnamesandtypes", "withnames"})
     {
         if (lowercased_format_name.ends_with(suffix))
         {
-            add_name(lowercased_format_name.substr(0, lowercased_format_name.size() - suffix.size()));
+            for (const auto & spelling : spellings_of(lowercased_format_name.substr(0, lowercased_format_name.size() - suffix.size())))
+            {
+                format_names.push_back(spelling);
+                format_names.push_back(spelling + String(suffix));
+            }
             break;
         }
     }

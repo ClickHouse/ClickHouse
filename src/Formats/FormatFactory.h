@@ -353,11 +353,12 @@ public:
     void registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference = true);
     /// Register an interchangeable spelling of a format registered under another name, such as
     /// `JSONLines` for `JSONEachRow`. Only getFileExtensionsForFormat consults it: the alias is
-    /// a format of its own everywhere else, and the file extensions are registered only for the
-    /// canonical spelling.
+    /// a format of its own everywhere else, and the file extensions are registered mostly for
+    /// the canonical spelling.
     void registerFormatAlias(const String & alias, const String & format_name);
-    /// All file extensions registered for the format, for the format it is an alias of, or for
-    /// its `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
+    /// All file extensions registered for the format, for every interchangeable spelling of it
+    /// (both the format it is an alias of and the other aliases of that format), and for its
+    /// `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
     /// format name is always a part of the result, because format names are registered as
     /// extensions of the format itself.
     std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
@@ -425,6 +426,10 @@ private:
     std::unordered_map<String, std::set<String>> format_file_extensions;
     /// Lowercased alias -> lowercased canonical format name, see registerFormatAlias.
     std::unordered_map<String, String> format_aliases;
+    /// The reverse of format_aliases: lowercased canonical format name -> all of its aliases.
+    /// Every spelling of a format is a format of its own and carries its own name as a file
+    /// extension, so the lookup has to walk the aliases in both directions.
+    std::unordered_map<String, std::set<String>> format_alias_groups;
 
     const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);

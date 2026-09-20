@@ -75,6 +75,28 @@ PARTITION BY key;
 SELECT 'tsv lake as TSVRaw:';
 SELECT id, key FROM 05233_tsvraw;
 
+-- Every spelling of a format is a format of its own and writes files named after itself:
+-- a lake written as JSONLines is a lake of .jsonlines files, and it must be readable as
+-- JSONEachRow, so the alias lookup has to walk in both directions.
+INSERT INTO FUNCTION s3('$path/jsonlines_lake/key=6/data.jsonlines', 'test', 'testtest', 'JSONLines') SELECT 9 AS id;
+
+CREATE TABLE 05233_jsonlines_lake (id UInt64, key UInt64)
+ENGINE = S3('$path/jsonlines_lake', 'test', 'testtest', format = 'JSONEachRow', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'jsonlines lake as JSONEachRow:';
+SELECT id, key FROM 05233_jsonlines_lake;
+
+-- The same holds for the WithNames flavours of an aliased format.
+INSERT INTO FUNCTION s3('$path/tsvwithnames_lake/key=7/data.tsvwithnames', 'test', 'testtest', 'TSVWithNames') SELECT 10 AS id;
+
+CREATE TABLE 05233_tsvwithnames_lake (id UInt64, key UInt64)
+ENGINE = S3('$path/tsvwithnames_lake', 'test', 'testtest', format = 'TabSeparatedWithNames', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'tsvwithnames lake as TabSeparatedWithNames:';
+SELECT id, key FROM 05233_tsvwithnames_lake;
+
 -- Files written through the table itself are named <snowflake id>.<lowercased format name>
 -- and must still be read back together with the pre-existing files.
 INSERT INTO 05233_jsonl VALUES (3, 4);
@@ -88,4 +110,6 @@ DROP TABLE 05233_csv;
 DROP TABLE 05233_tsv;
 DROP TABLE 05233_jsonlines;
 DROP TABLE 05233_tsvraw;
+DROP TABLE 05233_jsonlines_lake;
+DROP TABLE 05233_tsvwithnames_lake;
 "
