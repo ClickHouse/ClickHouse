@@ -2288,6 +2288,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
