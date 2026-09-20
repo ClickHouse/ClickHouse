@@ -270,6 +270,13 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         create_query.uuid = UUIDHelpers::Nil;
         create_query.has_uuid = false;
     }
+
+    /// The same normalization `ATTACH TABLE ... AS REPLICATED` does: a part that still carries `txn_version.txt`
+    /// makes the loaded `ReplicatedMergeTree` set `transactions_enabled`, and every replicated merge, which runs
+    /// without a transaction, is then cancelled in `renameMergedTemporaryPart`. Nothing holds the table at this
+    /// point -- it has not been loaded yet -- so the files can go away right here.
+    InterpreterCreateQuery::clearTransactionMetadata(getTableDataPath(create_query), getContext());
+
     /// Write changes to metadata
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";

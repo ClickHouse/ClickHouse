@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Lets an INSERT run under an implicit transaction, so that its part carries `txn_version.txt`. -->
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+</clickhouse>
