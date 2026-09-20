@@ -128,6 +128,7 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     filter.enableIndexAnalysis();
+    filter.enableKeyRangeTracking();
     filter.insert(makeUInt64Column({1, 3}));
     filter.insert(makeUInt64Column({5}));
     filter.finishInsert();
@@ -158,6 +159,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     destination.enableIndexAnalysis();
+    destination.enableKeyRangeTracking();
     destination.insert(makeUInt64Column({1}));
 
     RuntimeFilter source(
@@ -172,6 +174,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     source.enableIndexAnalysis();
+    source.enableKeyRangeTracking();
     source.insert(makeUInt64Column({3, 5}));
     source.finishInsert();
 
@@ -474,6 +477,7 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     destination.enableIndexAnalysis();
+    destination.enableKeyRangeTracking();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
@@ -481,6 +485,7 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     source.enableIndexAnalysis();
+    source.enableKeyRangeTracking();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();
 
@@ -494,6 +499,26 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     ASSERT_TRUE(range);
     EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
     EXPECT_EQ(range->right.safeGet<UInt64>(), 9);
+}
+
+/// The control for the test above: index analysis and key range tracking are enabled separately, so a
+/// probe side that can only test the exact values (a `bloom_filter` index) does not make the build side
+/// pay the `getExtremes` pass that recording the `[min, max]` range costs.
+TEST(RuntimeFilterLookup, IndexAnalysisWithoutKeyRangeTrackingRecordsNoRange)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
+    filter.enableIndexAnalysis();
+    filter.insert(makeUInt64Column({3, 7}));
+    filter.finishInsert();
+
+    auto values = filter.getRecordedKeyValues();
+    ASSERT_TRUE(values);
+    EXPECT_EQ(values->size(), 2);
+    EXPECT_FALSE(filter.getRecordedKeyRanges());
 }
 
 TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
