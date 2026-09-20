@@ -1,0 +1,110 @@
+the probe values differ from their declared defaults under compatibility 26.7
+enable_group_by_top_k_optimization	1
+input_format_read_datetime_number_as_raw_value	1
+merge_tree_min_bytes_per_read_stream	1
+SET name = DEFAULT
+1
+SET name = DEFAULT after the setting was assigned explicitly
+1
+SET compatibility = DEFAULT reverts what it derived
+0
+1
+an explicitly assigned setting is left alone by a later compatibility change
+0
+SETTINGS name = DEFAULT in a query
+1
+0
+a reset that lands on a value the profile forbids is rejected
+SETTING_CONSTRAINT_VIOLATION
+1
+a merge_tree_-prefixed name that Settings owns is checked against its derived value too
+SETTING_CONSTRAINT_VIOLATION
+65536
+the reset rides along in the statement that activates compatibility
+SETTING_CONSTRAINT_VIOLATION
+1
+
+and the same statement is accepted when its compatibility moves the reset onto an allowed value
+1
+26.8
+a query-level compatibility override does not decide what the session reset lands on
+SETTING_CONSTRAINT_VIOLATION
+1
+a reset that lands on the same value still leaves the setting under the constraint
+SETTING_CONSTRAINT_VIOLATION
+1
+
+control: without that reset the profile value keeps compatibility away from the setting
+1
+26.7
+a compatibility change is refused when it derives a value the profile forbids, with no reset at all
+SETTING_CONSTRAINT_VIOLATION
+65536
+
+the same refusal when compatibility arrives as a query setting rather than a statement
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+a value the profile itself derived at login does not fail the statements that follow
+0
+1
+resetting a CONST compatibility is still rejected
+SETTING_CONSTRAINT_VIOLATION
+26.7
+1
+SET compatibility = DEFAULT re-applies the settings post-processors
+0
+1
+0
+and the spelling it has to agree with reaches the same state
+0
+control: each half of that statement is accepted on its own
+1
+1
+a reset is refused when the same statement enters readonly mode
+READONLY
+0
+0
+and a declared constraint does not change that answer
+READONLY
+0
+1
+a compatibility carried by a CREATE settings clause is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+t2_05047
+a compatibility carried by BACKUP core settings is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+ACCESS_DENIED
+a profile constraint on a MergeTree setting leaves an unrelated reset alone
+1
+a compatibility carried by a profile switch is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+1
+
+0
+and the same profile carried by the URL is refused too
+SETTING_CONSTRAINT_VIOLATION
+a profile deriving the same value with nothing constraining it still applies
+0
+a compatibility that moves a setting back onto its declared default is checked as well
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+26.7
+a profile switch is refused when its constraint forbids a value compatibility already derived
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+0
+and the same pre-armed switch carried by the URL is refused too
+SETTING_CONSTRAINT_VIOLATION
+a switch between two profiles that derive the same value is judged by the constraint that arrives
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+1	0
+control: a profile that forbids writing a derived value is still selectable
+0
+SETTING_CONSTRAINT_VIOLATION
+control: a profile that forbids a value nothing derived is still selectable
+1
+1
