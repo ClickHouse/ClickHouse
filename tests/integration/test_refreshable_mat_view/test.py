@@ -365,7 +365,8 @@ def get_rmv_info(
 
 
 def parse_ch_datetime(date_str):
-    # A NULL timestamp arrives as a float nan, not as None, because the column is parsed by pandas.
+    # A NULL timestamp can reach here as a float nan rather than None: helpers/client.py maps both,
+    # but `.replace(np.nan, None)` is a no-op on an all-NULL float column in newer pandas.
     if not isinstance(date_str, str):
         return None
     return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
