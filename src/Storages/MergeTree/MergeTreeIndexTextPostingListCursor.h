@@ -46,19 +46,17 @@ struct PostingsCursorWindow
 
     bool empty() const { return begin >= end; }
 
-    /// Extend the range to cover [row_begin, row_end).
+    /// Extend the window to cover [row_begin, row_end). The scans write in ascending order, so a new range
+    /// starts past the current end: only `end` moves once the window is not empty.
     void extend(size_t row_begin, size_t row_end)
     {
+        chassert(row_begin < row_end);
+        chassert(empty() || row_begin >= end);
+
         if (empty())
-        {
             begin = row_begin;
-            end = row_end;
-        }
-        else
-        {
-            begin = std::min(begin, row_begin);
-            end = std::max(end, row_end);
-        }
+
+        end = row_end;
     }
 };
 
