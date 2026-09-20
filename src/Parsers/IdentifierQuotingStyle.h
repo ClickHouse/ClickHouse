@@ -15,7 +15,12 @@ enum class IdentifierQuotingStyle : uint8_t
     /// is a literal byte. Deliberately absent from the `show_create_query_identifier_quoting_style` value
     /// map (`SettingsEnums.cpp`): this is a dialect for queries sent out, not a `SHOW CREATE` style.
     DoubleQuotesPostgreSQL,
-    BackticksSQLite, /// SQLite strict identifier style: an embedded backtick is doubled, every other byte stays literal
+    /// SQLite strict identifier style: an embedded backtick is doubled, every other byte stays literal.
+    /// Deliberately absent from the `show_create_query_identifier_quoting_style` value map
+    /// (`SettingsEnums.cpp`), for the same reason as `DoubleQuotesPostgreSQL`: this is a dialect for
+    /// queries sent out to SQLite, not a `SHOW CREATE` style - ClickHouse does not read back what it
+    /// prints in it (a name containing a backslash round-trips through the regular `Backticks` style).
+    BackticksSQLite,
 };
 
 enum class IdentifierQuotingRule : uint8_t

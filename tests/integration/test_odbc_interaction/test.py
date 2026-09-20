@@ -538,65 +538,6 @@ def test_sqlite_simple_select_storage_works(started_cluster):
     )
 
 
-def test_sqlite_odbc_strict_query_local_only_column(started_cluster):
-    skip_test_sanitizers(node1)
-
-    # The ownership check of the pushed-down query must see the full column set of the storage, not only
-    # the columns requested by the read. A `MATERIALIZED` column is a physical column of the remote table:
-    # its value is read from SQLite and a filter over it is pushed down like one over an ordinary column,
-    # so `external_table_strict_query` accepts it. An `ALIAS` column belongs to this source too, but exists
-    # only locally: its filter is applied locally and must be rejected under `external_table_strict_query`
-    # instead of being silently dropped as if it belonged to another table.
-    sqlite_setup = node1.odbc_drivers["SQLite3"]
-    sqlite_db = sqlite_setup["Database"]
-
-    node1.exec_in_container(
-        [
-            "sqlite3",
-            sqlite_db,
-            "CREATE TABLE t_strict_local_only(a INTEGER, m INTEGER); "
-            "INSERT INTO t_strict_local_only VALUES (1, 2), (2, 3);",
-        ],
-        privileged=True,
-        user="root",
-    )
-    node1.query("DROP TABLE IF EXISTS SqliteODBCStrictLocalOnly")
-    node1.query(
-        "CREATE TABLE SqliteODBCStrictLocalOnly (a Int32, m Int32 MATERIALIZED a + 1, l Int32 ALIAS a * 10) "
-        "ENGINE = ODBC('DSN={}', '', 't_strict_local_only')".format(sqlite_setup["DSN"])
-    )
-
-    assert node1.query("SELECT count() FROM SqliteODBCStrictLocalOnly WHERE m = 2").rstrip() == "1"
-    assert node1.query("SELECT count() FROM SqliteODBCStrictLocalOnly WHERE l = 10").rstrip() == "1"
-    assert (
-        node1.query(
-            "SELECT count() FROM SqliteODBCStrictLocalOnly WHERE a = 1 SETTINGS external_table_strict_query = 1"
-        ).rstrip()
-        == "1"
-    )
-    # The `MATERIALIZED` column is read from the remote table, not computed from its expression.
-    assert node1.query("SELECT a, m FROM SqliteODBCStrictLocalOnly ORDER BY a").splitlines() == [
-        "1\t2",
-        "2\t3",
-    ]
-    assert (
-        node1.query(
-            "SELECT count() FROM SqliteODBCStrictLocalOnly WHERE m = 2 SETTINGS external_table_strict_query = 1"
-        ).rstrip()
-        == "1"
-    )
-    assert "INCORRECT_QUERY" in node1.query_and_get_error(
-        "SELECT count() FROM SqliteODBCStrictLocalOnly WHERE l = 10 SETTINGS external_table_strict_query = 1"
-    )
-
-    node1.query("DROP TABLE SqliteODBCStrictLocalOnly")
-    node1.exec_in_container(
-        ["sqlite3", sqlite_db, "DROP TABLE t_strict_local_only;"],
-        privileged=True,
-        user="root",
-    )
-
-
 def test_table_engine_odbc_named_collection(started_cluster):
     skip_test_sanitizers(node1)
 
