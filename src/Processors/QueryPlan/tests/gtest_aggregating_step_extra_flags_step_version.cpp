@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -16,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -81,7 +83,7 @@ String serializeStep(const IQueryPlanStep & step, UInt64 step_version)
     return out.str();
 }
 
-QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & header, UInt64 step_version)
+std::unique_ptr<AggregatingStep> deserializeStep(const String & bytes, const SharedHeader & header, UInt64 step_version)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
@@ -90,11 +92,18 @@ QueryPlanStepPtr deserializeStep(const String & bytes, const SharedHeader & head
     IQueryPlanStep::Deserialization ctx{
         in, registry, {}, getContext().context, input_headers, header, settings, 0,
         DBMS_QUERY_PLAN_SERIALIZATION_VERSION, step_version, false};
-    return AggregatingStep::deserialize(ctx);
+    auto step = AggregatingStep::deserialize(ctx);
+    /// The registry create function is typed as `QueryPlanStepPtr`; the pipeline check below needs
+    /// the concrete step.
+    auto * aggregating = typeid_cast<AggregatingStep *>(step.get());
+    if (!aggregating)
+        return nullptr;
+    step.release();
+    return std::unique_ptr<AggregatingStep>(aggregating);
 }
 
 /// Two-stream pipeline over header-only sources, so the pre-aggregation resize is inserted.
-bool buildsGradualResize(IQueryPlanStep & step, const SharedHeader & header, ContextMutablePtr context)
+bool buildsGradualResize(AggregatingStep & step, const SharedHeader & header, ContextMutablePtr context)
 {
     QueryPipelineBuilder builder;
     Pipes pipes;
