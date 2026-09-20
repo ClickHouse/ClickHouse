@@ -512,8 +512,22 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
     server's side of the pty is gone by the time the line reader is destroyed.
     """
     # The daemon watchdog restarts the server after `std::terminate`, so "the
-    # server answers queries again" is not evidence of anything. Remember the
-    # uptime and require that it never goes backwards: a restart resets it.
+    # server answers queries again" is not evidence of anything, and neither is
+    # a growing `uptime()`: on a fresh cluster the uptime before the disconnect
+    # is only a few seconds, so a restarted server reaches a larger value well
+    # within the sampling window below. Pin the process identity instead: the
+    # watchdog restarts the server by forking a new child, so the set of
+    # `clickhouse-server` pids in the container changes and cannot recover.
+    # The pattern is anchored at argv0 so that the shell running `pgrep` (whose
+    # own command line contains the pattern) does not match itself.
+    def server_pids():
+        return instance.exec_in_container(
+            ["bash", "-c", "pgrep -f '^[^ ]*clickhouse(-| )server' | sort -n"],
+            nothrow=True,
+        ).split()
+
+    pids_before = server_pids()
+    assert pids_before, "no `clickhouse-server` process in the container"
     uptime_before = float(instance.query("SELECT uptime()").strip())
 
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
@@ -558,28 +572,41 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
     finally:
         client.close()
 
-    # The session teardown is asynchronous, so keep sampling for a while.
-    # Every successful sample must show a monotonic uptime, and at least one
-    # sample must succeed: a server that never answers again after the
-    # disconnect is as broken as one that restarted.
-    saw_success = False
+    # The session teardown is asynchronous, so keep sampling for a while. A
+    # sample that fails only means the teardown is still in flight, but the
+    # *last* sample of the window must succeed and must still show the very
+    # same process: the server that survived the disconnect, not a fresh one.
+    last_failure = None
+    last_uptime = None
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
             uptime = float(instance.query("SELECT uptime()").strip())
-        except Exception:  # the server is down or restarting — the next sample decides
+        except Exception as e:  # down or restarting — the next sample decides
+            last_failure = e
+            last_uptime = None
             time.sleep(0.5)
             continue
-        saw_success = True
+        last_uptime = uptime
+        pids = server_pids()
+        assert pids == pids_before, (
+            "the server process was replaced after the SSH disconnect, i.e. it "
+            "died while tearing the session down and was started again "
+            f"(pids {pids} != {pids_before})"
+        )
         assert uptime >= uptime_before, (
             "the server restarted after the SSH disconnect, i.e. it died while "
             f"tearing the session down (uptime {uptime} < {uptime_before})"
         )
         time.sleep(0.5)
 
-    assert saw_success, (
-        "the server never answered a query within 30 s after the SSH disconnect"
+    assert last_uptime is not None, (
+        "the server did not answer a query at the end of the 30 s window after "
+        f"the SSH disconnect, i.e. it died while tearing the session down: {last_failure}"
     )
+
+    # `from_host=True` also greps the rotated logs, so a restart cannot hide the
+    # fatal line by rotating it out of the active `clickhouse-server.log`.
     assert not instance.contains_in_log(
-        "std::terminate"
+        "std::terminate", from_host=True
     ), "the server called `std::terminate` while tearing down the SSH session"
