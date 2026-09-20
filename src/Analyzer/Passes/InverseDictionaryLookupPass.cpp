@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <limits>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -230,16 +229,30 @@ bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr &
     return supertype && supertype->equals(*stripped_key_col_type);
 }
 
-/// Check every normalized key component against its dictionary column type. The expression must have
-/// a valid key shape, with any single-column tuple wrapper already removed.
-bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols)
+/// The type of the key component a single-column complex key is compared with: the element type of
+/// the (possibly `Nullable`) one-element tuple wrapper, which `unwrapSingleColumnTupleKey` extracts
+/// once the rewrite is known to proceed, and the expression type otherwise. Computing it here lets
+/// the caller decide on the rewrite before building the `tupleElement` node.
+DataTypePtr singleColumnKeyProbeType(const QueryTreeNodePtr & key_expr_node)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    if (const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get()))
+    {
+        chassert(key_expr_tuple_type->getElements().size() == 1);
+        return key_expr_tuple_type->getElements().front();
+    }
+    return key_expr_node->getResultType();
+}
+
+/// Check every key component against its dictionary column type. The expression must have a valid
+/// key shape; for a single key column `key_expr_type` is the type of the (unwrapped) component.
+bool canCompareKeysWithoutCasts(const DataTypePtr & key_expr_type, const NamesAndTypes & key_cols)
 {
     if (key_cols.size() == 1)
-        return canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type);
+        return canCompareKeyWithoutCast(key_expr_type, key_cols.front().type);
 
     /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
-    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
-    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(key_expr_type).get());
     chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
@@ -254,16 +267,19 @@ bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const Na
 /// A simple key is looked up as `UInt64` whatever integer type it is declared with, so `dictGet`
 /// converts a signed probe with `castColumnAccurate`: a negative value throws `CANNOT_CONVERT_TYPE`.
 /// Mirror that conversion with `accurateCast` to `UInt64`, which for integer types is the same
-/// conversion: no setting takes part in it (the `Nullable` wrapper of a nullable probe is requested
-/// explicitly, so `cast_keep_nullable` cannot change the result type), it prepares successfully for
-/// every integer pair, so empty inputs and unselected branches behave as with the lookup, it is
-/// evaluated lazily under short-circuit evaluation like `dictGet`, and every server version that runs
-/// this pass knows the function, so the rewritten query can be shipped to remote servers.
+/// conversion: no setting takes part in it, it prepares successfully for every integer pair, so
+/// empty inputs and unselected branches behave as with the lookup, it is evaluated lazily under
+/// short-circuit evaluation like `dictGet`, and every server version that runs this pass knows the
+/// function, so the rewritten query can be shipped to remote servers.
 ///
-/// Only the native signed integers are converted. Their converted values lie below 2^63, which the
-/// zero-match rewrite relies on to build a comparison that is false on every row; the 128- and
-/// 256-bit integers can convert to any `UInt64` value and are left to the caller, which keeps the
-/// lookup for them, as it does for non-integer probes.
+/// A `Nullable` or `LowCardinality(Nullable)` probe is converted to `Nullable(UInt64)`, requested
+/// explicitly so that `cast_keep_nullable` cannot change the result type. That matches the lookup:
+/// `dictGet` receives a low-cardinality probe as a full column, strips the `Nullable`, converts the
+/// nested values (a negative one hidden under `NULL` throws in both) and yields `NULL` for the
+/// `NULL` rows, as the comparison with the converted `Nullable` probe does.
+///
+/// Only the native signed integers are converted; the 128- and 256-bit ones and the non-integer
+/// probes are left to the caller, which keeps the lookup for them.
 ///
 /// Returns false when the probe is not a native signed integer expression.
 bool convertSimpleKeyProbe(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
@@ -524,10 +540,13 @@ public:
         if (!keyExpressionMatchesDictionaryStructure(dictget_function_info.key_expr_node, dict_structure))
             return;
 
-        /// A complex-key dictionary with a single key column also accepts the `tuple`-wrapped
-        /// call form; normalize it to the bare key expression the rewrites compare against.
-        if (dict_structure.key && key_cols.size() == 1)
-            unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
+        /// A complex-key dictionary with a single key column also accepts the `tuple`-wrapped call
+        /// form. The rewrites compare against the bare key component, so the decision below is made
+        /// on the component type, and the wrapper is removed only once the rewrite is known to proceed.
+        const bool single_column_complex_key = dict_structure.key && key_cols.size() == 1;
+        const DataTypePtr probe_type = single_column_complex_key
+            ? singleColumnKeyProbeType(dictget_function_info.key_expr_node)
+            : dictget_function_info.key_expr_node->getResultType();
 
         /// `dictGet` converts each key column with `castColumnAccurate`. Keep the lookup when a comparison
         /// would need an explicit cast, such as `String` to `UUID` or `Int16` to `UInt8`.
@@ -540,14 +559,18 @@ public:
         /// `UInt64` by construction (`key_cols` above): a dictionary declared with a signed key and probed
         /// with that very type is the common case, and skipping it would switch the optimization off for
         /// all such dictionaries (`03906_dict_case_distributed_predicate_pushdown` depends on it firing).
-        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there. Only the constant-fold
-        /// rewrites are applied with an inserted conversion, see the subquery rewrite below.
-        bool key_conversion_inserted = false;
-        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
+        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there. Like any other expression
+        /// in the probe, the conversion is evaluated wherever the rewritten predicate is, and it is not
+        /// evaluated where the predicate is replaced without looking at the probe: the zero-match
+        /// constant fold below, and `IN` over a set that turns out empty.
+        if (!canCompareKeysWithoutCasts(probe_type, key_cols))
         {
             if (!dict_structure.id || !convertSimpleKeyProbe(dictget_function_info.key_expr_node, getContext()))
                 return;
-            key_conversion_inserted = true;
+        }
+        else if (single_column_complex_key)
+        {
+            unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
         }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
@@ -633,29 +656,8 @@ public:
                 ///
                 /// Like any constant fold, this replaces the predicate without evaluating the
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
-                /// cast, are therefore skipped together with the lookup.
-                ///
-                /// The conversion this pass inserted itself must keep running on every row, so the
-                /// predicate cannot fold to a constant, and `IN` with an empty set does not help
-                /// either: it is reported as a constant without evaluating its left operand (see
-                /// `FunctionIn::getConstantResultForNonConstArguments` and its empty-set execution).
-                /// Compare the converted probe with a `UInt64` value no native signed integer converts
-                /// to instead: false on every row, `NULL` for a `NULL` probe like the lookup, and the
-                /// conversion is evaluated.
-                if (keys_size == 0 && key_conversion_inserted)
-                {
-                    auto never_matching_key = std::make_shared<ConstantNode>(
-                        Field(std::numeric_limits<UInt64>::max()), std::make_shared<DataTypeUInt64>());
-
-                    auto equals_node = std::make_shared<FunctionNode>("equals");
-                    equals_node->markAsOperator();
-                    equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, never_matching_key};
-                    resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
-
-                    node = preserve_result_type(equals_node);
-                    return;
-                }
-
+                /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
+                /// are therefore skipped together with the lookup.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
@@ -704,13 +706,6 @@ public:
                 return;
             }
         }
-
-        /// An inserted conversion is preserved by the constant-fold rewrites only. The subquery form
-        /// below builds its set at execution, and when that set turns out empty `FunctionIn` returns a
-        /// constant without evaluating its left operand, so the conversion error would disappear for a
-        /// predicate that matches no key. Such a query keeps the lookup.
-        if (key_conversion_inserted)
-            return;
 
         /// The `IN (SELECT ... FROM dictionary(...))` rewrite below conflicts with a forced IN->JOIN
         /// rewrite and with the Cascades distributed planner's own IN handling, so skip it in those
