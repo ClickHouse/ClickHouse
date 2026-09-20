@@ -618,7 +618,14 @@
            the toolbar), not emoji: a colour glyph takes no text color, so it could not be muted
            when idle nor lit on hover the way every other control in the bar is. The page font is
            inherited (rather than the system button font) for the same reason as `#tab-add`: so
-           their line box matches the tabs' and they align on the strip's bottom line. */
+           their line box matches the tabs' and they align on the strip's bottom line.
+
+           Both icons are drawn to exactly the same vertical extent on their shared 24x24 grid -
+           y from 3 to 20, the floppy's body and the folder's back being the same 17 units tall -
+           so that side by side their tops and their bottoms fall on the same line. The stock
+           floppy is a unit taller than that (its body is square, 18x18); it is shortened here
+           rather than the folder being stretched, because the folder's height is set by two arcs
+           tangent to the box and moving those would reshape its corners. */
         #tab-save, #tab-load
         {
             display: flex;
@@ -2017,7 +2024,7 @@
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
             <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
             <div id="tab-io">
-                <button id="tab-save" type="button" title="Save all tabs and their queries as Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
+                <button id="tab-save" type="button" title="Save all tabs and their queries as Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v10a2 2 0 0 1-2 2z"/><polyline points="17 20 17 13 7 13 7 20"/><polyline points="7 3 7 8 15 8"/></svg></button>
                 <button id="tab-load" type="button" title="Load tabs and their queries from Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
             </div>
             <div id="connection-menu">
