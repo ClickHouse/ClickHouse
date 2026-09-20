@@ -194,6 +194,20 @@ def send_test_data():
                     140: float("nan"),
                 },
             ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
         ]
     )
 
@@ -918,6 +932,15 @@ def test_stale_markers():
         145,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
     )
 
     # Range selectors omit stale markers, so range functions can still see older real samples.
