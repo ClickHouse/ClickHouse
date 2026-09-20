@@ -1,5 +1,4 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
-#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -70,13 +69,12 @@ void FinishSortingTransform::consume(Chunk chunk)
 
     removeConstColumns(chunk);
 
-    /// Materialize sort-key columns before the cross-chunk `less()` below: it uses a raw
-    /// `IColumn::compareAt` that handles neither sparse nor replicated columns, including when
-    /// they are nested inside a tuple sort key.
+    /// The cross-chunk `less` below compares keys with a raw `IColumn::compareAt`, which handles
+    /// neither sparse nor replicated columns, at any nesting depth inside a composite key.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (const auto & desc : description_with_positions)
-        columns[desc.column_number] = materializeSortKeyColumn(columns[desc.column_number]);
+        columns[desc.column_number] = columns[desc.column_number]->convertToFullIfWrapped();
     chunk.setColumns(std::move(columns), num_rows);
 
     /// Compact the remaining duplicated columns.

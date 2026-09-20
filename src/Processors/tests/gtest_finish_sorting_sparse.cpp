@@ -106,7 +106,7 @@ ColumnPtr nullableUInt16(UInt16 value, size_t n)
 /// canonical representation wraps the nullable column in the sparse layer --
 /// `ColumnSparse(ColumnNullable(...))` -- because `ISerialization`'s SPARSE kind is applied outermost
 /// (`IDataType::createColumn`), and `ColumnNullable` rejects a sparse nested column
-/// (`ColumnSparse::canBeInsideNullable()` is false). So this is the shape a `Nullable(UInt16)` key
+/// (`ColumnSparse::canBeInsideNullable` is false). So this is the shape a `Nullable(UInt16)` key
 /// actually takes on the read-in-order path when it uses sparse serialization. Built as a fully
 /// default sparse column: a one-row nullable "values" column holding the default and empty offsets.
 ColumnPtr sparseNullableUInt16(UInt16 value, size_t n)
@@ -126,10 +126,10 @@ ColumnPtr denseUInt64Iota(size_t n)
 }
 
 /// Feed two chunks into FinishSortingTransform where the already-sorted prefix `x` holds the
-/// SAME key value in both, so consume() runs its cross-chunk binary-search `less()`. `key_type`
+/// SAME key value in both, so consume runs its cross-chunk binary-search `less`. `key_type`
 /// is the declared type of `x`; the stored chunk uses `first_prefix` and the current chunk uses
 /// `second_prefix`. Before the fix, a `second_prefix` carrying a sparse or replicated column
-/// (possibly nested in a tuple) makes the raw `compareAt` in `less()` bad-cast its rhs
+/// (possibly nested in a tuple) makes the raw `compareAt` in `less` bad-cast its rhs
 /// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
 void runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr second_prefix, size_t n)
 {
@@ -151,7 +151,7 @@ void runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr se
     }
 
     /// Second chunk: prefix `x` holds the SAME key value as `first_prefix`.
-    /// The equal prefix forces the cross-chunk `less()` comparison in consume().
+    /// The equal prefix forces the cross-chunk `less` comparison in consume.
     Chunk chunk_second;
     {
         Columns cols;
@@ -241,7 +241,7 @@ void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_
 }
 
 /// Regression test for STID 1499-2393: a dense sort-key column in the stored chunk and the same
-/// key as `ColumnSparse` in the next chunk made the cross-chunk `less()` in consume() bad-cast
+/// key as `ColumnSparse` in the next chunk made the cross-chunk `less` in consume bad-cast
 /// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
 ///
 /// Originally captured by the AST fuzzer on 02149_read_in_order_fixed_prefix over amd_msan: the
@@ -256,7 +256,7 @@ TEST(FinishSortingTransform, SparseSortKeyDoesNotBadCast)
 }
 
 /// The `Replicated(Sparse)` variant of the same bug: expanding the replicated wrapper leaves a
-/// plain ColumnSparse, so only materializing the replicated wrapper is not enough and `less()`
+/// plain ColumnSparse, so only materializing the replicated wrapper is not enough and `less`
 /// bad-casts again. The fix strips replicated then sparse.
 TEST(FinishSortingTransform, ReplicatedSparseSortKeyDoesNotBadCast)
 {
@@ -265,8 +265,8 @@ TEST(FinishSortingTransform, ReplicatedSparseSortKeyDoesNotBadCast)
     EXPECT_NO_THROW(runFinishSortingUInt16(replicatedSparseUInt16(0, n), n));
 }
 
-/// A tuple sort key whose child stays replicated in the next chunk (raised in review): only the
-/// top-level column was materialized, so a `Tuple(Replicated(UInt16))` reached `less()` and
+/// A tuple sort key whose child stays replicated in the next chunk: only the
+/// top-level column was materialized, so a `Tuple(Replicated(UInt16))` reached `less` and
 /// `ColumnTuple::compareAt` delegated to `ColumnVector::compareAt(..., ColumnReplicated)` -- the
 /// same bad cast one level deeper. The fix recurses into tuple children.
 TEST(FinishSortingTransform, TupleReplicatedChildSortKeyDoesNotBadCast)
@@ -282,7 +282,7 @@ TEST(FinishSortingTransform, TupleReplicatedChildSortKeyDoesNotBadCast)
 /// A `Nullable(UInt16)` sort key that is dense in the stored chunk and sparse in the next (raised in
 /// review). A sparse nullable column is `ColumnSparse(ColumnNullable(...))` (sparse is the OUTER
 /// wrapper -- see `sparseNullableUInt16`), so the top-level `convertToFullColumnIfSparse` in the fix
-/// densifies it before `less()`; `ColumnNullable::compareAt` then sees a dense nested rhs. Confirms
+/// densifies it before `less`; `ColumnNullable::compareAt` then sees a dense nested rhs. Confirms
 /// the reachable sparse-nullable shape does not bad-cast.
 TEST(FinishSortingTransform, NullableSparseSortKeyDoesNotBadCast)
 {
@@ -293,8 +293,8 @@ TEST(FinishSortingTransform, NullableSparseSortKeyDoesNotBadCast)
 
 /// The nesting the review worried about -- `ColumnNullable(ColumnSparse(...))`, a dense null map over
 /// a sparse nested values column -- is unconstructible: `ColumnNullable`'s constructor rejects a
-/// nested column whose `canBeInsideNullable()` is false, and `ColumnSparse` inherits the `false`
-/// default. So a `Nullable` sort key can never reach `less()` with a sparse nested column; the sparse
+/// nested column whose `canBeInsideNullable` is false, and `ColumnSparse` inherits the `false`
+/// default. So a `Nullable` sort key can never reach `less` with a sparse nested column; the sparse
 /// layer is always outside the nullable one (`NullableSparseSortKeyDoesNotBadCast`). This pins that
 /// invariant so a future change that makes sparse nullable-able would fail here loudly.
 TEST(FinishSortingTransform, NullableCannotWrapSparse)
@@ -324,7 +324,7 @@ TEST(FinishSortingTransform, NullableTupleSparseChildSortKeyDoesNotBadCast)
 
 /// The replicated sibling of the case above: `Nullable(Tuple(Replicated(UInt16)))`. Peeling only the
 /// top-level wrapper leaves the replicated column reachable through the nullable+tuple delegation.
-/// The generic walk expands the replicated child, so `less()` compares dense columns.
+/// The generic walk expands the replicated child, so `less` compares dense columns.
 TEST(FinishSortingTransform, NullableTupleReplicatedChildSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
@@ -337,11 +337,11 @@ TEST(FinishSortingTransform, NullableTupleReplicatedChildSortKeyDoesNotBadCast)
 }
 
 /// The same nested-replicated hazard on the ordinary merge-sort path (`MergeSortingTransform` ->
-/// `MergeSorter`), not just the read-in-order `FinishSortingTransform` (raised in review). Before
+/// `MergeSorter`), not just the read-in-order `FinishSortingTransform`. Before
 /// the fix `MergeSorter` peeled only a top-level `ColumnReplicated`, so a `Tuple(Replicated(UInt16))`
 /// sort key reached the merging cursors and `ColumnTuple::compareAt` delegated to
 /// `ColumnVector::compareAt(..., ColumnReplicated)` -- the same bad cast one level deeper. Both sort
-/// sites now share `materializeSortKeyColumn`, which recurses through composite children.
+/// sites now share `IColumn::convertToFullIfWrapped`, which recurses through composite children.
 TEST(MergeSorter, TupleReplicatedChildSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
@@ -469,7 +469,7 @@ void runPartialSorting(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr seco
 
 }
 
-/// CR1: the merge-algorithm path (`MergingSortedAlgorithm` and its `*SortedAlgorithm` siblings),
+/// the merge-algorithm path (`MergingSortedAlgorithm` and its `*SortedAlgorithm` siblings),
 /// which strip sort keys via `IMergingAlgorithm::removeReplicatedFromSortingColumns` +
 /// `removeConstAndSparse`. A `Tuple(Replicated(UInt16))` key reached the merging cursors with one
 /// side dense and the other replicated. `ColumnTuple::compareAt` delegated to
@@ -495,7 +495,7 @@ TEST(MergingSortedAlgorithm, NullableTupleSparseChildSortKeyDoesNotBadCast)
         key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(sparseUInt16(0, n), n), n));
 }
 
-/// CR2: the TopK/threshold path (`PartialSortingTransform`). The saved threshold row was normalized
+/// the TopK/threshold path (`PartialSortingTransform`). The saved threshold row was normalized
 /// with `removeSpecialRepresentations`, which keeps a sparse/replicated child under
 /// `Nullable`/`Array`/`Map`. On the next block the raw comparison against the dense live keys
 /// (`compareWithThreshold` / `getFilterMask`) bad-cast one level deeper for a

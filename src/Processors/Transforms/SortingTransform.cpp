@@ -4,7 +4,6 @@
 #include <type_traits>
 
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <Common/Exception.h>
@@ -51,7 +50,7 @@ MergeSorter::MergeSorter(
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = materializeSortKeyColumn(columns[column_number]);
+            columns[column_number] = columns[column_number]->convertToFullIfWrapped();
         }
         chunk.setColumns(std::move(columns), num_rows);
 
