@@ -14,6 +14,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageDummy.h>
 
 #include <Core/Streaming/StreamingVirtualColumns.h>
@@ -42,7 +43,21 @@ StorageMetadataPtr extendMetadataWithStream(const StorageMetadataPtr & metadata,
     time_attribute.default_desc.expression = make_intrusive<ASTIdentifier>(column->name);
 
     auto extended = std::make_shared<StorageInMemoryMetadata>(*metadata);
-    extended->virtuals.add(std::move(time_attribute));
+    extended->virtuals.add(time_attribute);
+
+    for (const auto & projection : metadata->projections)
+    {
+        if (!projection.sample_block.has(column->name))
+            continue;
+
+        auto projection_metadata = std::make_shared<StorageInMemoryMetadata>(*projection.metadata);
+        projection_metadata->virtuals.add(time_attribute);
+
+        auto extended_projection = projection.clone();
+        extended_projection.metadata = std::move(projection_metadata);
+        extended->projections.replace(std::move(extended_projection));
+    }
+
     return extended;
 }
 
