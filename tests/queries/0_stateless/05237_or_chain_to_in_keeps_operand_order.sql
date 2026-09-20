@@ -15,3 +15,11 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT (intDiv(1, number) != 0) O
 
 -- A guard written after the division does not protect it, with or without the rewrite.
 SELECT (intDiv(1, number) != 0) OR (number = 0) OR (number = 2) OR (number = 3) FROM numbers(4); -- { serverError ILLEGAL_DIVISION }
+
+-- A later equality behind a throwing operand: the short-circuit `or` evaluates its cheap arguments (the equalities)
+-- eagerly and a lazily evaluated argument only on the rows where they are all false, so `number = 2` protects
+-- `intDiv(1, number - 2)` whether it stands after it (no rewrite) or is merged into the leading `IN`.
+SELECT (number = 0) OR (intDiv(1, number - 2) != 0) OR (number = 2) OR (number = 3) FROM numbers(4);
+SELECT (number = 0) OR (intDiv(1, number - 2) != 0) OR (number = 2) OR (number = 3) FROM numbers(4) SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+SELECT (number = 0) OR (intDiv(1, number - 2) != 0) OR (number = 5) FROM numbers(4); -- { serverError ILLEGAL_DIVISION }
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT (number = 0) OR (intDiv(1, number - 2) != 0) OR (number = 2) OR (number = 3) FROM numbers(4);
