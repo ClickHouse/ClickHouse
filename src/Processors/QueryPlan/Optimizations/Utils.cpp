@@ -174,7 +174,7 @@ FilterResult filterResultForNotMatchedRows(
         }
 
         /// A not-matched row holds the column's own default, which for `Date32` is 0 (1970-01-01) and
-        /// not the type's `getDefault()` field (1900-01-01). Types whose default insertion is not
+        /// not the type's `getDefault` field (1900-01-01). Types whose default insertion is not
         /// trivial keep the type default: there the join's own fill sites disagree with each other.
         ColumnPtr constant_column;
         if (input->result_type->isDefaultInsertTrivial())

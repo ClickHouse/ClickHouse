@@ -3231,7 +3231,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
             continue;
 
         /// A not-matched row holds the column's own default, which differs from the type's
-        /// `getDefault()` field for `Date32`. Non-trivial default insertion keeps the type default.
+        /// `getDefault` field for `Date32`. Non-trivial default insertion keeps the type default.
         ColumnPtr constant_column;
         if (input->result_type->isDefaultInsertTrivial())
             constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());

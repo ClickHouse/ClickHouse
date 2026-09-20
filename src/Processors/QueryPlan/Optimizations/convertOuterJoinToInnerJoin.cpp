@@ -225,7 +225,7 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     /// Storage Join expects a particular join kind and cannot build not-matched rows for
     /// composite keys, so converting its outer join to inner is unsound (issue #106949).
-    /// A prepared key-value storage fills a missing key with the type default through a direct
+    /// A prepared key-value storage can fill a missing key with the type default through a direct
     /// lookup but with the column default when the same storage is read as an ordinary stream,
     /// and which of the two is used is decided after this pass has run.
     /// Earlier passes (filter push-down, runtime-filter build) can insert single-child steps

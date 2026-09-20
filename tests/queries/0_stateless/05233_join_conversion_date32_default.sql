@@ -1,10 +1,14 @@
 -- A not-matched row of an outer join carries the column default, which for `Date32` is 1970-01-01,
 -- while the type default is 1900-01-01. The outer-to-inner and any-to-semi/anti conversions decide
 -- whether the filter above the join rejects that row, so they must judge the value the join fills.
+-- The cutoffs are fixed rather than now(): the type default wraps to 2036-02-07 under toDateTime,
+-- so a now() predicate would stop detecting a reverted probe after that date.
 
 SET query_plan_enable_optimizations = 1;                   -- the two conversion passes are gated on it
 SET query_plan_convert_outer_join_to_inner_join = 1;       -- randomized off on ~5% of runs
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;  -- randomized off on ~5% of runs
+SET join_use_nulls = 0;                                    -- a not-matched row must carry the column
+                                                           -- default, not NULL
 SET enable_parallel_replicas = 0;                          -- the assertions below are about the local plan
 SET allow_suspicious_low_cardinality_types = 1;            -- for the LowCardinality(Date32) fixture
 SET session_timezone = 'UTC';                              -- east of UTC, toDateTime(Date32 '1970-01-01')
@@ -26,12 +30,12 @@ INSERT INTO kl_05233 VALUES ('2021-01-01', 1);
 
 SELECT 'ground truth, conversion disabled', count()
 FROM kr_05233 AS r LEFT JOIN kl_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.d) < now()
+WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00')
 SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
 
 SELECT 'LEFT JOIN, toDateTime', count()
 FROM kr_05233 AS r LEFT JOIN kl_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.d) < now();
+WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
 SELECT 'RIGHT JOIN, toDate', count()
 FROM kl_05233 AS l RIGHT JOIN kr_05233 AS r ON l.v = r.v
@@ -43,7 +47,7 @@ WHERE toDateTime(l.d) <= toDateTime('2020-07-25 12:00:00');
 
 SELECT 'ANY LEFT JOIN, toDateTime', count()
 FROM kr_05233 AS r ANY LEFT JOIN kl_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.d) < now();
+WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
 -- No conversion function at all: 1970-01-01 passes this predicate and 1900-01-01 does not.
 SELECT 'LEFT JOIN, no wrapper', count()
@@ -66,14 +70,14 @@ INSERT INTO kl_lc_05233 VALUES ('2021-01-01', 1);
 
 SELECT 'LowCardinality(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_lc_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.d) < now();
+WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
 CREATE TABLE kl_tup_05233 (t Tuple(Date32), v Int64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO kl_tup_05233 VALUES (tuple(toDate32('2021-01-01')), 1);
 
 SELECT 'Tuple(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.t.1) < now();
+WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00');
 
 -- `Date` agrees on both values, so neither its result nor its conversion may move.
 CREATE TABLE kl_date_05233 (d Date, v Int64) ENGINE = MergeTree ORDER BY d;
@@ -81,7 +85,7 @@ INSERT INTO kl_date_05233 VALUES ('2021-01-01', 1);
 
 SELECT 'Date is unaffected, rows', count()
 FROM kr_05233 AS r LEFT JOIN kl_date_05233 AS l ON l.v = r.v
-WHERE toDateTime(l.d) < now();
+WHERE toDateTime(l.d) < toDateTime('2020-07-25 12:00:00');
 
 SELECT 'Date is unaffected, plan', count() FROM (
     EXPLAIN actions = 1
