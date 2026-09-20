@@ -126,7 +126,8 @@ public:
 private:
     friend class KeeperRequestDispatcherTestAccessor;
 
-    static void initializeWaitForWriteSpan(const KeeperRequestForSession & read_request);
+    static void initializeWaitForWriteSpan(
+        const KeeperRequestForSession & read_request, UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now());
     static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
 
     /// Suppose we get a write request from some session and put it in batch B and send that
@@ -141,9 +142,14 @@ private:
         /// do the read right there.
         bool add(KeeperRequestForSession & request_for_session)
         {
+            /// The wait starts when the read arrives, not when the lock is acquired, so read the
+            /// clock here - it also keeps it out of a critical section that `dispatchThread` and
+            /// `onCommit` contend for.
+            const UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now();
+
             if (!lock())
                 return false;
-            initializeWaitForWriteSpan(request_for_session);
+            initializeWaitForWriteSpan(request_for_session, wait_start_us);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;

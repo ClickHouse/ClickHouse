@@ -1018,10 +1018,10 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     onResponse(std::move(response_for_session));
 }
 
-void KeeperRequestDispatcher::initializeWaitForWriteSpan(const KeeperRequestForSession & read_request)
+void KeeperRequestDispatcher::initializeWaitForWriteSpan(const KeeperRequestForSession & read_request, UInt64 wait_start_us)
 {
     read_request.request->spans.maybeInitialize(
-        KeeperSpan::ReadWaitForWrite, read_request.request->tracing_context.get());
+        KeeperSpan::ReadWaitForWrite, read_request.request->tracing_context.get(), wait_start_us);
 }
 
 void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads)
