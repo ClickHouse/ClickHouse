@@ -215,7 +215,7 @@ GROUP BY timeSeriesTagsToGroup(tags);
         )",
         R"(
 Received exception:
-Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
+Code: 785. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (PROMQL_QUERY_EXECUTION_ERROR)
         )",
     }};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
