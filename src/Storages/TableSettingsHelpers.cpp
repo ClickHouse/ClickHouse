@@ -53,7 +53,7 @@ SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const
 
 SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const SettingsChanges & stated)
 {
-    NameSet stated_in_definition;
+    NameSetWithViewLookup stated_in_definition;
     for (const auto & change : stated)
         stated_in_definition.insert(change.name);
 
@@ -64,7 +64,7 @@ SettingDescriptions withOriginFromDefinition(SettingDescriptions settings, const
         /// report the value as coming from somewhere unknown.
         const bool is_stated = stated_in_definition.contains(setting.name)
             || std::any_of(setting.aliases.begin(), setting.aliases.end(),
-                           [&](std::string_view alias) { return stated_in_definition.contains(String{alias}); });
+                           [&](std::string_view alias) { return stated_in_definition.contains(alias); });
         if (is_stated)
             setting.origin = SettingOrigin::Definition;
     }

@@ -171,15 +171,15 @@ namespace
 /// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
 /// `metadata` is any `Settings` instance: what is read from it - the default, type, description and tier - is
 /// compiled in, so every instance answers alike, and the caller always has one at hand.
-SettingDescription describeServerBackedJoinSetting(const Settings & metadata, std::string_view name, String value)
+SettingDescription describeServerBackedJoinSetting(const Settings & metadata, String name, String value)
 {
     SettingDescription described;
-    described.name = String{name};
     described.value = std::move(value);
     described.default_value = metadata.getDefaultValueString(name);
     described.type = metadata.getTypeName(name);
     described.comment = metadata.getDescription(name);
     described.tier = metadata.getTier(name);
+    described.name = std::move(name);
     described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
     return described;
 }
@@ -215,16 +215,17 @@ SettingDescriptions describeServerBackedJoinSettings(const Settings & metadata, 
 
 bool StorageJoin::hasBuiltinSetting(std::string_view name)
 {
-    static const NameSet names = []
+    /// Looked up by `std::string_view`, which is what `StorageFactory` asks with.
+    static const NameSetWithViewLookup names = []
     {
-        NameSet result;
+        NameSetWithViewLookup result;
         for (const auto & setting : describeServerBackedJoinSettings(Settings{}, {}))
             result.insert(setting.name);
         for (const auto & setting : persistenceSettingDefaults())
             result.insert(setting.name);
         return result;
     }();
-    return names.contains(String{name});
+    return names.contains(name);
 }
 
 SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Core/Names.h>
 #include <Storages/SettingDescription.h>
 
@@ -11,6 +12,11 @@ namespace DB
 {
 
 struct StorageID;
+
+/// A set of names a `std::string_view` can be looked up in without building a `String` for the lookup - which
+/// the settings paths would otherwise do per alias, per setting, per table.
+using NameSetWithViewLookup
+    = std::unordered_set<String, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
 /// Helpers for `IStorage::getTableSettings` overrides. Free functions, since none of them needs the storage
 /// beyond its id.

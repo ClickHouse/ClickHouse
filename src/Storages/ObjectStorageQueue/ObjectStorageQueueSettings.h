@@ -80,6 +80,8 @@ struct ObjectStorageQueueSettings
     /// The canonical name for a spelling the definition may use, or nullopt when it already is the
     /// canonical one. `loadFromQuery` rewrites these before applying them, so a stored `CREATE`
     /// query can name a setting in a form the settings struct does not know.
+    /// The canonical name of a setting this engine also accepts under an older spelling, or nothing where the name
+    /// needs no adjustment. The result may be a view into `name`, so it does not outlive the argument.
     static std::optional<std::string_view> adjustSettingName(std::string_view name);
     SettingDescriptions enumerateSettings() const;
 
