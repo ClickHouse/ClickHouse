@@ -701,6 +701,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         }
     }
 
+    bool order_by_has_collation = false;
     if (definition.order_by)
     {
         for (const auto & column_ast
@@ -709,6 +710,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             // Parser should have checked that we have a proper element here.
             const auto & order_by_element
                 = column_ast->as<ASTOrderByElement &>();
+            if (order_by_element.getCollation())
+                order_by_has_collation = true;
             // Ignore collation for now.
             desc.order_by.push_back(
                 SortColumnDescription(
@@ -755,6 +758,16 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.frame.end_type = definition.frame_end_type;
     desc.frame.end_preceding = definition.frame_end_preceding;
     desc.frame.exclusion = definition.frame_exclusion;
+
+    /// `WindowTransform` refuses a peer exclusion over a collated window order, because peers are
+    /// decided without consulting the collator. It cannot refuse it here: the collation is dropped
+    /// just above, so the transform never sees it on this path. Refuse it where it is still known.
+    if ((desc.frame.exclusion == WindowFrame::Exclusion::Group || desc.frame.exclusion == WindowFrame::Exclusion::Ties)
+        && order_by_has_collation)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window frame exclusion of the ordering peers is not supported with a COLLATE in the window ORDER BY");
+    }
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
