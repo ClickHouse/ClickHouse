@@ -50,6 +50,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool azure_use_native_copy;
     extern const SettingsUInt64 azure_max_single_part_upload_size;
     extern const SettingsUInt64 azure_max_single_read_retries;
     extern const SettingsUInt64 azure_list_object_keys_size;
