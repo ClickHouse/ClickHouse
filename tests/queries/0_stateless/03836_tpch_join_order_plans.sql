@@ -8,9 +8,12 @@
 -- twin of this test is `tpch_join_order_plans_aggregation_pushdown`.
 SET cascades_aggregation_pushdown = 0;
 
--- Pin the implicit min-max indices off: with `add_minmax_index_for_numeric_columns = 1` the Q20 distributed plan
--- prunes a coordinator-selected `lineitem` part by the skip index of `l_partkey` on the worker and fails with
--- `NO_SUCH_DATA_PART`, see https://github.com/ClickHouse/ClickHouse/pull/115514. Drop this pin once that fix is merged.
+-- Pin the implicit min-max indices off so that the injected SF100 hints stay the only source of
+-- cardinality estimates. The `NO_SUCH_DATA_PART` failure of the Q20 distributed plan that originally
+-- required this pin is fixed by https://github.com/ClickHouse/ClickHouse/pull/115514 and Q20 passes
+-- unpinned now, but the tables here hold one row each, so the implicit min-max indices give the
+-- optimizer real (single-row) column bounds that compete with the hints and change the chosen join
+-- strategies for Q02 and Q16.
 
 DROP TABLE IF EXISTS region;
 DROP TABLE IF EXISTS nation;

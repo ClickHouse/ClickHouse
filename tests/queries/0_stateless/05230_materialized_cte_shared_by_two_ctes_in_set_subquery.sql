@@ -10,12 +10,16 @@ SET enable_lightweight_update = 1;
 -- scheduled and the bug is invisible.
 SET max_threads = 3;
 
+-- Pin: the implicit min-max indices are disabled on the tables below. With an implicit index over `v`
+-- the `v IN (<set subquery>)` set is built for skip-index analysis outside the main query plan, so the
+-- `EXPLAIN` counts below no longer see the `MaterializingCTE` steps this test is about.
+
 DROP TABLE IF EXISTS t_05230;
 DROP TABLE IF EXISTS t_05230_union;
 DROP TABLE IF EXISTS t_05230_diamond;
 
 CREATE TABLE t_05230 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, add_minmax_index_for_numeric_columns = 0;
 -- Pin: one part per INSERT, kept separate, for the same reason as max_threads above.
 SYSTEM STOP MERGES t_05230;
 INSERT INTO t_05230 VALUES (1, 200);
@@ -73,7 +77,7 @@ SELECT count() FROM t_05230 WHERE v IN (
 
 -- The reported shape verbatim: a lightweight UPDATE whose predicate is that set subquery.
 CREATE TABLE t_05230_union (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_05230_union;
 INSERT INTO t_05230_union VALUES (1, 200);
 INSERT INTO t_05230_union VALUES (2, 1048578);
@@ -93,7 +97,7 @@ SELECT id, v FROM t_05230_union ORDER BY id;
 
 -- The diamond, as a lightweight UPDATE.
 CREATE TABLE t_05230_diamond (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_05230_diamond;
 INSERT INTO t_05230_diamond VALUES (1, 200);
 INSERT INTO t_05230_diamond VALUES (2, 1048578);
