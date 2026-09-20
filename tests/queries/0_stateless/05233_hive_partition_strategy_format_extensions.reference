@@ -14,6 +14,10 @@ jsonlines lake as JSONEachRow:
 9	6
 tsvwithnames lake as TabSeparatedWithNames:
 10	7
+gzipped jsonl lake:
+11	8
+gzipped jsonl lake with an explicit compression method:
+11	8
 jsonl lake after insert:
 1	1
 3	4

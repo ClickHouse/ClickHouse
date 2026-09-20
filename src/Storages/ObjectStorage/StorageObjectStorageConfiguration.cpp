@@ -277,7 +277,8 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         format,
         getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
-        partition_columns_in_data_file);
+        partition_columns_in_data_file,
+        compression_method);
 
     if (partition_strategy)
     {

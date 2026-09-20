@@ -25,7 +25,9 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <algorithm>
 #include <charconv>
+#include <span>
 #include <Poco/String.h>
 #include <string_view>
 
@@ -167,6 +169,89 @@ CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
     return CompressionMethod::None;
 }
 
+namespace
+{
+
+/// Every compression method except `None`, in no particular order.
+constexpr CompressionMethod compressing_methods[] =
+{
+    CompressionMethod::Gzip,
+    CompressionMethod::Zlib,
+    CompressionMethod::Brotli,
+    CompressionMethod::Xz,
+    CompressionMethod::Zstd,
+    CompressionMethod::Lz4,
+    CompressionMethod::Bzip2,
+    CompressionMethod::Snappy,
+};
+
+/// The single place where the spellings of the compression methods are listed. They serve both as
+/// the file name suffixes recognized by `chooseCompressionMethod` and as the accepted values of an
+/// explicit compression hint, so a glob built from them matches exactly the files that the reader
+/// would decompress.
+std::span<const std::string_view> getFileSuffixesForCompressionMethod(CompressionMethod method)
+{
+    static constexpr std::string_view gzip[] = {"gz", "gzip"};
+    static constexpr std::string_view zlib[] = {"deflate"};
+    static constexpr std::string_view brotli[] = {"br", "brotli"};
+    static constexpr std::string_view xz[] = {"xz", "lzma"};
+    static constexpr std::string_view zstd[] = {"zst", "zstd"};
+    static constexpr std::string_view lz4[] = {"lz4"};
+    static constexpr std::string_view bz2[] = {"bz2"};
+    static constexpr std::string_view snappy[] = {"snappy"};
+
+    switch (method)
+    {
+        case CompressionMethod::Gzip:
+            return gzip;
+        case CompressionMethod::Zlib:
+            return zlib;
+        case CompressionMethod::Brotli:
+            return brotli;
+        case CompressionMethod::Xz:
+            return xz;
+        case CompressionMethod::Zstd:
+            return zstd;
+        case CompressionMethod::Lz4:
+            return lz4;
+        case CompressionMethod::Bzip2:
+            return bz2;
+        case CompressionMethod::Snappy:
+            return snappy;
+        case CompressionMethod::None:
+            return {};
+    }
+}
+
+}
+
+Strings getFileSuffixesForCompressionMethodHint(const std::string & hint)
+{
+    std::string hint_lower = hint;
+    boost::algorithm::to_lower(hint_lower);
+
+    Strings result;
+
+    /// Autodetection: the file name decides, so every suffix has to be considered.
+    const bool autodetect = hint_lower.empty() || hint_lower == "auto";
+
+    for (auto method : compressing_methods)
+    {
+        const auto suffixes = getFileSuffixesForCompressionMethod(method);
+
+        if (!autodetect && std::ranges::find(suffixes, hint_lower) == suffixes.end())
+            continue;
+
+        for (const auto & suffix : suffixes)
+            result.emplace_back(suffix);
+
+        if (!autodetect)
+            break;
+    }
+
+    return result;
+}
+
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
 {
     /// Both the autodetection gate below and the uncompressed fallback must agree on the spelling.
@@ -190,22 +275,11 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 
     boost::algorithm::to_lower(method_str);
 
-    if (method_str == "gzip" || method_str == "gz")
-        return CompressionMethod::Gzip;
-    if (method_str == "deflate")
-        return CompressionMethod::Zlib;
-    if (method_str == "brotli" || method_str == "br")
-        return CompressionMethod::Brotli;
-    if (method_str == "lzma" || method_str == "xz")
-        return CompressionMethod::Xz;
-    if (method_str == "zstd" || method_str == "zst")
-        return CompressionMethod::Zstd;
-    if (method_str == "lz4")
-        return CompressionMethod::Lz4;
-    if (method_str == "bz2")
-        return CompressionMethod::Bzip2;
-    if (method_str == "snappy")
-        return CompressionMethod::Snappy;
+    for (auto method : compressing_methods)
+        for (const auto & suffix : getFileSuffixesForCompressionMethod(method))
+            if (method_str == suffix)
+                return method;
+
     if (hint_lower.empty() || hint_lower == "auto" || hint_lower == "none")
         return CompressionMethod::None;
 

@@ -4,6 +4,7 @@
 #include <string>
 
 #include <Core/Defines.h>
+#include <Core/Types.h>
 #include <IO/SnappyMode.h>
 
 namespace DB
@@ -46,6 +47,14 @@ std::string toContentEncodingName(CompressionMethod method);
   * path is arbitrary string that will be analyzed for file extension (gz, br...) that determines compression.
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
+
+/** File name suffixes that `chooseCompressionMethod` recognizes for the given compression method
+  * hint, e.g. `{"gz", "gzip"}` for `gzip`. An empty hint or `auto` yields the suffixes of every
+  * supported method, `none` yields nothing. An unrecognized hint also yields nothing: it is
+  * `chooseCompressionMethod` that reports it, when the data is actually read.
+  * Used to build globs that have to match compressed files by name.
+  */
+Strings getFileSuffixesForCompressionMethodHint(const std::string & hint);
 
 /** Choose a compression method from HTTP header list of supported compression methods.
   */

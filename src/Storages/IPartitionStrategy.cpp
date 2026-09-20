@@ -1,5 +1,6 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatFactory.h>
+#include <IO/CompressionMethod.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeRewriter.h>
@@ -129,7 +130,8 @@ namespace
         const std::string & file_format,
         bool globbed_path,
         bool contains_partition_wildcard,
-        bool partition_columns_in_data_file)
+        bool partition_columns_in_data_file,
+        const std::string & compression_method)
     {
         if (!partition_by)
         {
@@ -180,7 +182,8 @@ namespace
             sample_block,
             context,
             file_format,
-            partition_columns_in_data_file);
+            partition_columns_in_data_file,
+            compression_method);
     }
 
     std::shared_ptr<IPartitionStrategy> createWildcardPartitionStrategy(
@@ -250,7 +253,8 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                                                                  const std::string & file_format,
                                                                  bool globbed_path,
                                                                  bool contains_partition_wildcard,
-                                                                 bool partition_columns_in_data_file)
+                                                                 bool partition_columns_in_data_file,
+                                                                 const std::string & compression_method)
 {
     Block block;
     for (const auto & partition_column : partition_columns)
@@ -275,7 +279,8 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 file_format,
                 globbed_path,
                 contains_partition_wildcard,
-                partition_columns_in_data_file);
+                partition_columns_in_data_file,
+                compression_method);
         case StrategyType::NONE:
         {
             if (!partition_columns_in_data_file && strategy == PartitionStrategyFactory::StrategyType::NONE)
@@ -332,10 +337,12 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool partition_columns_in_data_file_)
+    bool partition_columns_in_data_file_,
+    const std::string & compression_method_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
-    partition_columns_in_data_file(partition_columns_in_data_file_)
+    partition_columns_in_data_file(partition_columns_in_data_file_),
+    compression_method(compression_method_)
 {
     const auto partition_columns = getPartitionColumns();
     for (const auto & partition_column : partition_columns)
@@ -362,10 +369,22 @@ std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefi
     /// ClickHouse itself writes (see getPathForWrite) keep matching.
     const auto extensions = FormatFactory::instance().getFileExtensionsForFormat(file_format);
 
-    if (extensions.size() == 1)
-        return prefix + "**." + extensions.front();
+    /// The glob is matched against the object key as it is stored, before anything decompresses it
+    /// (`GlobIterator` filters the listing, while the compression method is derived much later, in
+    /// `ReadBufferIterator`), so a compressed lake of `key=1/data.jsonl.gz` objects is invisible to
+    /// a glob of bare extensions. Spell out the compression suffixes the reader would accept.
+    /// An explicit compression method still needs the bare extensions, because it applies to files
+    /// named without any compression suffix - and that is what `getPathForWrite` produces.
+    Strings alternatives = extensions;
 
-    return prefix + "**.{" + boost::algorithm::join(extensions, ",") + "}";
+    for (const auto & compression_suffix : getFileSuffixesForCompressionMethodHint(compression_method))
+        for (const auto & extension : extensions)
+            alternatives.push_back(extension + "." + compression_suffix);
+
+    if (alternatives.size() == 1)
+        return prefix + "**." + alternatives.front();
+
+    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}";
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(

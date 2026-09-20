@@ -3,8 +3,9 @@
 # name. For any format whose name is not the extension real files carry (JSONEachRow over
 # .json / .jsonl, CSVWithNames over .csv, TabSeparated over .tsv, ...), the glob matched
 # nothing and the table was silently empty. The glob must match every file extension
-# registered for the format, and the files written by ClickHouse itself (named
-# <snowflake id>.<lowercased format name>) must keep matching.
+# registered for the format, together with the compression suffixes the reader would accept,
+# and the files written by ClickHouse itself (named <snowflake id>.<lowercased format name>)
+# must keep matching.
 # Tags: no-fasttest
 # Tag no-fasttest: Depends on S3
 
@@ -97,6 +98,26 @@ PARTITION BY key;
 SELECT 'tsvwithnames lake as TabSeparatedWithNames:';
 SELECT id, key FROM 05233_tsvwithnames_lake;
 
+-- Compressed lakes: the listing is filtered by the object key, long before anything
+-- decompresses it, so the glob has to spell out the compression suffixes as well.
+INSERT INTO FUNCTION s3('$path/gz_lake/key=8/data.jsonl.gz', 'test', 'testtest', 'JSONEachRow') SELECT 11 AS id;
+
+CREATE TABLE 05233_gz (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'gzipped jsonl lake:';
+SELECT id, key FROM 05233_gz;
+
+-- An explicit compression method names the suffixes of that method only, and it still has to
+-- match the files named without any suffix - that is what the table itself writes.
+CREATE TABLE 05233_gz_explicit (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'gzipped jsonl lake with an explicit compression method:';
+SELECT id, key FROM 05233_gz_explicit;
+
 -- Files written through the table itself are named <snowflake id>.<lowercased format name>
 -- and must still be read back together with the pre-existing files.
 INSERT INTO 05233_jsonl VALUES (3, 4);
@@ -112,4 +133,6 @@ DROP TABLE 05233_jsonlines;
 DROP TABLE 05233_tsvraw;
 DROP TABLE 05233_jsonlines_lake;
 DROP TABLE 05233_tsvwithnames_lake;
+DROP TABLE 05233_gz;
+DROP TABLE 05233_gz_explicit;
 "
