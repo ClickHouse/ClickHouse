@@ -27,4 +27,10 @@ SELECT '-- explain plan verifies join_group filter pushdown';
 SELECT countIf(explain LIKE '%JoinGroup%' OR explain LIKE '%timeSeriesRemoveAllTagsExcept%') > 0
 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) target_info', 110));
 
+SELECT '-- group_left with label_replace on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'label_replace(requests, "dc2", "$1", "dc", "(.*)") * on (dc2) group_left (env) label_replace(target_info, "dc2", "$1", "dc", "(.*)")', 110) ORDER BY tags;
+
+SELECT '-- group_left with vector(scalar(...)) on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on () group_left vector(scalar(sum(requests)))', 110) ORDER BY tags;
+
 DROP TABLE t_promql_dfp;

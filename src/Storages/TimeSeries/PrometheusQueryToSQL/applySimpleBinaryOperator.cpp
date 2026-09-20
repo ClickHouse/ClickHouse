@@ -10,6 +10,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
@@ -45,6 +48,43 @@ namespace
                     collectSelectQueries(child, result);
             }
         }
+    }
+
+    /// Checks if a node modifies labels or produces scalarizing results.
+    bool hasLabelModifyingOrScalarizingNode(const PrometheusQueryTree::Node * node)
+    {
+        if (!node)
+            return true;
+
+        using NodeType = PrometheusQueryTree::NodeType;
+        if (node->node_type == NodeType::InstantSelector || node->node_type == NodeType::RangeSelector)
+            return false;
+
+        if (node->node_type == NodeType::Function)
+        {
+            const auto * func = static_cast<const PrometheusQueryTree::Function *>(node);
+            const auto & name = func->function_name;
+            if (isLabelManipulationFunction(name) || isFunctionVector(name) || isFunctionScalar(name))
+                return true;
+            for (const auto * child : func->children)
+            {
+                if (hasLabelModifyingOrScalarizingNode(child))
+                    return true;
+            }
+            return false;
+        }
+
+        if (node->node_type == NodeType::UnaryOperator)
+        {
+            for (const auto * child : node->children)
+            {
+                if (hasLabelModifyingOrScalarizingNode(child))
+                    return true;
+            }
+            return false;
+        }
+
+        return true;
     }
 
     void checkVectorMatching(
@@ -152,7 +192,8 @@ namespace
             ASTPtr filter_condition = makeASTFunction("in", right_join_group->clone(), std::move(filter_subquery));
 
             /// Push down join_group restriction into selector and range-aggregation stages of right side.
-            if (right_argument.select_query)
+            if (right_argument.select_query && right_argument.store_method == StoreMethod::VECTOR_GRID
+                && !hasLabelModifyingOrScalarizingNode(right_argument.node))
             {
                 std::unordered_set<String> visited_subqueries;
 
@@ -162,6 +203,30 @@ namespace
                     collectSelectQueries(query_ast, select_queries);
                     for (auto * select_query : select_queries)
                     {
+                        bool has_group = false;
+                        if (auto select_list = select_query->select())
+                        {
+                            for (const auto & col : select_list->children)
+                            {
+                                if (col->tryGetAlias() == ColumnNames::Group)
+                                {
+                                    has_group = true;
+                                    break;
+                                }
+                                if (auto * id = col->as<ASTIdentifier>())
+                                {
+                                    if (id->shortName() == ColumnNames::Group)
+                                    {
+                                        has_group = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!has_group)
+                            continue;
+
                         ASTPtr existing_where = select_query->where();
                         if (existing_where)
                             select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
