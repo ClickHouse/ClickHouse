@@ -544,8 +544,29 @@ def create_daily_rmv(instance, name):
 
 
 def test_schedule_survives_restart(fn_setup_tables):
+    node.query("DROP TABLE IF EXISTS test_rmv_dep_child SYNC")
+    node.query("DROP TABLE IF EXISTS test_rmv_dep_tgt SYNC")
     names = ["test_rmv_restart_a", "test_rmv_restart_b"]
     before = {name: create_daily_rmv(node, name) for name in names}
+
+    # A third view depending on the first one. Its schedule anchor is not a timeslot but a per
+    # dependency threshold (last_success_dependencies), and an epoch threshold makes every
+    # dependency look advanced, so this arm covers a payload field the two views above do not.
+    node.query(
+        "CREATE TABLE test_rmv_dep_tgt (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    # REFRESH DEPENDS ON is the parser's shorthand for REFRESH AFTER 0 SECOND DEPENDS ON, so the
+    # child refreshes as soon as its prerequisite advances, with no period to wait out.
+    node.query(
+        f"CREATE MATERIALIZED VIEW test_rmv_dep_child REFRESH DEPENDS ON {names[0]} APPEND "
+        f"TO test_rmv_dep_tgt AS SELECT now() a, number b FROM numbers(2)"
+    )
+    child_before = get_rmv_info(
+        node,
+        "test_rmv_dep_child",
+        condition=lambda x: x["last_success_time"] is not None,
+    )["last_success_time"]
+    rows_before = int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip())
 
     node.restart_clickhouse()
 
@@ -559,7 +580,33 @@ def test_schedule_survives_restart(fn_setup_tables):
     for name in names:
         info = get_rmv_info(node, name)
         assert info["last_success_time"] == before[name], f"{name} refreshed at startup"
+
+    child = get_rmv_info(node, "test_rmv_dep_child")
+    assert child["last_success_time"] == child_before, "the child refreshed at startup"
+    assert (
+        int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip()) == rows_before
+    ), "the dependency checkpoint was lost, so the child re-ran and appended its result again"
+
+    # The other direction: a restored checkpoint must not stall the chain either.
+    node.query(f"SYSTEM REFRESH VIEW {names[0]}")
+    node.query(f"SYSTEM WAIT VIEW {names[0]}")
+    appended = node.query_with_retry(
+        "SELECT count() FROM test_rmv_dep_tgt",
+        check_callback=lambda x: int(x.strip()) == 2 * rows_before,
+        retry_count=60,
+        sleep_time=0.5,
+    ).strip()
+    assert int(appended) == 2 * rows_before, "the child did not follow its dependency"
+    time.sleep(3)
+    assert (
+        int(node.query("SELECT count() FROM test_rmv_dep_tgt").strip())
+        == 2 * rows_before
+    ), "the child refreshed more than once for one dependency refresh"
+
+    for name in names:
         node.query(f"DROP TABLE {name}")
+    node.query("DROP TABLE test_rmv_dep_child SYNC")
+    node.query("DROP TABLE test_rmv_dep_tgt SYNC")
 
 
 def test_incremental_cursor_survives_restart():

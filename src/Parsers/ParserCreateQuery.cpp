@@ -3415,7 +3415,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 
 Longer chains work as well.
 
-This only works well when refresh coordination is enabled, i.e. the views are in Replicated or Shared database. Without coordination, server restart breaks the cycle, requiring a manual `SYSTEM REFRESH VIEW` after each restart rather than once after creating the views.
+This only works well when refresh coordination is enabled, i.e. the views are in Replicated or Shared database. Without coordination the cycle survives a server restart too, as long as the views can persist their refresh state; views in an `Ordinary`, `Memory` or `Lazy` database cannot, and for those a server restart breaks the cycle, requiring a manual `SYSTEM REFRESH VIEW` after each restart rather than once after creating the views.
 
 ### Refresh Settings {#refresh-settings}
 

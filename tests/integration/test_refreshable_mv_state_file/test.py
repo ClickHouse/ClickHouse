@@ -365,5 +365,10 @@ def test_state_follows_the_owning_databases_disk():
         )
         time.sleep(3)
         assert refresh_info(name, "last_success_time", database=database) == before
+
+        # The state file has no removal hook of its own: it is removed with the store directory, by
+        # dropTableFinally, which DROP TABLE ... SYNC waits for. So this cannot race.
+        node.query(f"DROP TABLE {database}.{name} SYNC")
+        assert find_refresh_state_files(OTHER_DB_DISK_PATH) == []
     finally:
         node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
