@@ -45,6 +45,11 @@ namespace DB
     DECLARE(String, google_adc_client_id, "", "", 0) \
     DECLARE(String, google_adc_client_secret, "", "", 0) \
     DECLARE(String, google_adc_refresh_token, "", "", 0) \
+    DECLARE(String, impersonate_service_account, "", "", 0) \
+    DECLARE(String, impersonation_delegates, "", "", 0) \
+    DECLARE(String, impersonation_scopes, "", "", 0) \
+    DECLARE(UInt64, impersonation_lifetime_seconds, S3::DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS, "", 0) \
+    DECLARE(String, iam_credentials_endpoint, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
@@ -221,6 +226,22 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_client_id", "");
     impl->set("google_adc_client_secret", "");
     impl->set("google_adc_refresh_token", "");
+    clearGcpImpersonation();
+}
+
+void S3AuthSettings::clearGcpImpersonation()
+{
+    impl->set("impersonate_service_account", "");
+    impl->set("impersonation_delegates", "");
+    impl->set("impersonation_scopes", "");
+    impl->set("impersonation_lifetime_seconds", S3::DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS);
+    impl->set("iam_credentials_endpoint", "");
+}
+
+void S3AuthSettings::copyGcpImpersonationFrom(const S3AuthSettings & other)
+{
+    for (const auto & name : S3::GCP_IMPERSONATION_SETTING_NAMES)
+        impl->set(name, other.impl->get(name));
 }
 
 HTTPHeaderEntries S3AuthSettings::getHeaders() const
