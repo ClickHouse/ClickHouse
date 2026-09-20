@@ -450,6 +450,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
+    extern const int ILLEGAL_PROJECTION;
 }
 
 namespace FailPoints
@@ -1039,6 +1040,45 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
+/// A function that opts out of constant folding may do context-dependent work (an access check, a remote
+/// call) before it looks at the row count, and the expression here was analyzed with the context of the user
+/// running the DDL rather than the storage's, so probing such an expression could answer a different question.
+static bool indexExpressionMayBeProbed(const IndexDescription & index)
+{
+    if (!index.expression)
+        return false;
+
+    for (const auto & node : index.expression->getActionsDAG().getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION
+            && (!node.function_base || !node.function_base->isSuitableForConstantFolding()))
+            return false;
+
+    return true;
+}
+
+static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
+{
+    if (!indexExpressionMayBeProbed(index))
+        return {};
+
+    try
+    {
+        Block header;
+        for (const auto & column : index.expression->getRequiredColumnsWithTypes())
+            header.insert({column.type->createColumn(), column.type, column.name});
+
+        /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
+        /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
+        index.expression->getActionsDAG().updateHeader(header);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    return {};
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -1205,6 +1245,29 @@ void MergeTreeData::checkProperties(
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index the server generates from a setting is not the user's declaration, so it
+                /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
+                /// one it cannot validate instead of failing the statement.
+                if (!attach && !index.isImplicitlyCreated())
+                {
+                    if (auto failure = tryEvaluateIndexExpression(index))
+                    {
+                        const IndexDescription * old_index = nullptr;
+                        /// The create path and the projection recursion pass the same metadata object as both
+                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
+                        if (&old_metadata != &new_metadata)
+                            for (const auto & candidate : old_metadata.secondary_indices)
+                                if (candidate.name == index.name)
+                                    old_index = &candidate;
+
+                        const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
+
+                        if (!inherited)
+                            std::rethrow_exception(failure);
+                    }
+                }
             }
             catch (Exception & e)
             {
@@ -6221,6 +6284,35 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
+    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
+    /// info rather than in a ZooKeeper metadata transaction.
+    bool is_secondary_replay = is_replay_on_another_replica;
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_secondary_replay = true;
+#endif
+
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
+    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
+    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
+    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_PROJECTION)
+                continue;
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_PROJECTION,
+                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
+                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
+                "restarting the server may make the projection usable again; otherwise drop the declaration with "
+                "ALTER TABLE ... DROP PROJECTION",
+                getStorageID().getNameForLogs(),
+                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
+        }
+    }
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -10032,17 +10124,102 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// rewritten to literals on the initiator passes this check naturally. A function unknown
     /// to the factory (e.g. a user-defined function) is conservatively treated as
     /// non-deterministic.
+    /// A column definition is only followed once: the definitions form a directed acyclic graph,
+    /// but a diamond-shaped one (`c2 ALIAS c1 + c1`, `c3 ALIAS c2 + c2`, ...) would otherwise be
+    /// walked an exponential number of times. It doubles as a backstop against a cycle in
+    /// hand-edited metadata.
+    NameSet followed_column_definitions;
+    /// The parameters of the lambdas enclosing the node being visited. A lambda keeps its
+    /// parameters as plain identifiers in the AST, and inside its body such a name shadows a
+    /// storage column of the same name, so it must not be mistaken for that column.
+    std::vector<String> lambda_parameters;
     auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
     {
-        /// Being deterministic for a lambda expression is completely determined by the
-        /// contents of its definition, so just proceed to the children.
-        if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
+        if (const auto * function = ast->as<ASTFunction>())
         {
-            if (!FunctionFactory::instance().has(function->name))
-                return true;
+            /// Being deterministic for a lambda expression is completely determined by the
+            /// contents of its definition, so just proceed to the body, remembering the
+            /// parameters it binds. The parameter list itself contains only identifiers.
+            if (function->name == "lambda")
+            {
+                if (function->arguments && function->arguments->children.size() == 2)
+                {
+                    const auto & arguments = function->arguments->children;
+                    const size_t enclosing_parameters = lambda_parameters.size();
+                    const auto & parameters = arguments[0];
+                    if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
+                    {
+                        for (const auto & parameter : parameters_tuple->arguments->children)
+                            if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                                lambda_parameters.push_back(parameter_identifier->name());
+                    }
+                    else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>())
+                    {
+                        lambda_parameters.push_back(parameter_identifier->name());
+                    }
 
-            if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
-                return true;
+                    const bool body_is_nondeterministic = self(arguments[1], self);
+                    lambda_parameters.resize(enclosing_parameters);
+                    return body_is_nondeterministic;
+                }
+            }
+            else
+            {
+                if (!FunctionFactory::instance().has(function->name))
+                    return true;
+
+                if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+                    return true;
+            }
+        }
+
+        /// A non-deterministic function can also hide inside a column's own expression. The analysis
+        /// below resolves an `ALIAS` column against the storage - that is deliberate - so `now` inside
+        /// such a definition is folded here just the same, while the asynchronous execution re-expands
+        /// the definition and evaluates it again, later.
+        ///
+        /// Only a read-time carrier is re-expanded: `QueryAnalyzer` attaches an expression to `ALIAS`
+        /// columns alone, while a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so
+        /// its definition cannot diverge between this analysis and the execution and following it
+        /// would only lose pruning for a perfectly safe predicate. `EPHEMERAL` is a computed carrier
+        /// just like `ALIAS`, so it is followed for symmetry.
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            /// The identifier is the raw text of the predicate, so the column can be spelled
+            /// qualified (`db.table.column`) or addressed through a subcolumn (`column.subcolumn`),
+            /// while `getDefault` is keyed by the bare storage column name. Look up every
+            /// contiguous range of the name parts: an accidental match with an unrelated column of
+            /// that name only costs a pruning opportunity, whereas a miss hides the very expression
+            /// this check exists to find.
+            /// A name bound by an enclosing lambda (`arrayExists(x -> x = 1, arr)`) is that lambda's
+            /// parameter, or a subcolumn of it, and never a storage column - even if a column of the
+            /// same name exists.
+            const auto & name_parts = identifier->name_parts;
+            const bool is_lambda_parameter = !name_parts.empty()
+                && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end();
+            for (size_t begin = 0; !is_lambda_parameter && begin < name_parts.size(); ++begin)
+            {
+                String candidate;
+                for (size_t end = begin; end < name_parts.size(); ++end)
+                {
+                    if (end > begin)
+                        candidate += ".";
+                    candidate += name_parts[end];
+
+                    if (!followed_column_definitions.emplace(candidate).second)
+                        continue;
+
+                    auto column_default = metadata_snapshot->getColumns().getDefault(candidate);
+                    if (!column_default || !column_default->expression)
+                        continue;
+
+                    if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
+                        continue;
+
+                    if (self(column_default->expression, self))
+                        return true;
+                }
+            }
         }
 
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
