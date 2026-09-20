@@ -916,9 +916,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
             std::unordered_set<String> destinations;
             ChangedGeneration changed_generation;
-            auto request_settings = std::make_unique<AzureBlobStorage::RequestSettings>(*azure_storage->getSettings());
-            if (settings.use_native_copy)
-                request_settings->use_native_copy = true;
+            auto request_settings = azure_storage->getSettings();
             const auto read_settings = azure_storage->patchSettings(getReadSettings());
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(IObjectStorage::getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
             for (const auto & object_from : objects)
