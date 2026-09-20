@@ -35,29 +35,44 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & datab
     /// the columns that fit a terminal - `description` runs to paragraphs, so it is left out. Anything more is a
     /// query against the table.
     WriteBufferFromOwnString rewritten_query;
-    rewritten_query
-        << "SELECT name, value, changed, source FROM system.table_settings"
-        << " WHERE database = " << DB::quote << database
-        << " AND table = " << DB::quote << query.table
-        << " AND alias_for = ''";
-
-    if (query.changed)
-        rewritten_query << " AND changed";
 
     if (query.has_like)
     {
+        /// Match the pattern against every name a setting answers to, but print it under the one it is declared
+        /// under: the alias rows exist so that a lookup by an old name finds the setting. `NOT LIKE` drops a
+        /// setting when any of its names matches.
+        ///
+        /// Every row of a setting carries the same value, source and `changed` - only `alias_for` tells them apart
+        /// - so grouping them under the declared name and taking any of them answers in one reading of the table.
+        /// A second `SELECT` over it would read the table twice, which for a `S3Queue` table means fetching its
+        /// settings from Keeper twice.
         const std::string_view like = query.case_insensitive_like ? "ILIKE " : "LIKE ";
 
-        /// Match the pattern against every name a setting answers to, but print the canonical row: the alias rows
-        /// exist so that a lookup by an old name finds the setting. `NOT LIKE` drops a setting when any of its
-        /// names matches.
         rewritten_query
-            << " AND (name " << (query.not_like ? "NOT " : "") << like << DB::quote << query.like
-            << (query.not_like ? " AND name NOT IN (" : " OR name IN (")
-            << "SELECT alias_for FROM system.table_settings"
+            << "SELECT declared_name AS name, any(value) AS value, any(changed) AS changed, any(source) AS source"
+            << " FROM (SELECT if(alias_for = '', name, alias_for) AS declared_name, name AS answers_to,"
+            << " value, changed, source FROM system.table_settings"
+            << " WHERE database = " << DB::quote << database
+            << " AND table = " << DB::quote << query.table;
+
+        if (query.changed)
+            rewritten_query << " AND changed";
+
+        rewritten_query
+            << ") GROUP BY declared_name"
+            << " HAVING countIf(answers_to " << like << DB::quote << query.like << ") "
+            << (query.not_like ? "= 0" : "> 0");
+    }
+    else
+    {
+        rewritten_query
+            << "SELECT name, value, changed, source FROM system.table_settings"
             << " WHERE database = " << DB::quote << database
             << " AND table = " << DB::quote << query.table
-            << " AND alias_for != '' AND name " << like << DB::quote << query.like << "))";
+            << " AND alias_for = ''";
+
+        if (query.changed)
+            rewritten_query << " AND changed";
     }
 
     rewritten_query << " ORDER BY name";
