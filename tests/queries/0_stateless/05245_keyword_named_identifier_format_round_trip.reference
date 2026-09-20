@@ -16,5 +16,5 @@ SELECT plus(x, y) OVER ()
 1	2	3	4
 2	3	4
 1	2	3	4
-SELECT not(true)\nFROM system.one
+SELECT NOT x
 1	[]

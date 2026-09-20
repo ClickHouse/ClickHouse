@@ -4,13 +4,16 @@
 -- stored metadata:
 --   * a function named `COLUMNS` was re-read as the column matcher (`ParserColumnsMatcher`),
 --   * `EXCEPT `strict`` was re-read as the transformer's own STRICT modifier,
---   * a window function named `not` was printed as the `NOT` operator, which cannot carry `OVER`.
+--   * a window function marked as an operator was printed in the operator form, which cannot carry `OVER`.
 --
 -- A bare `not` in the *name* position is quoted by the global force-quote list in
--- `writeProbablyQuotedStringImpl`, not by the sites above, so `SELECT `not`(x) IGNORE NULLS`,
--- `SELECT `not`(x) RESPECT NULLS` and `SELECT `not`(x)(1)` still abort on this base and are
--- covered by https://github.com/ClickHouse/ClickHouse/pull/121054 instead. They are deliberately
--- absent here; the sweep at the end asserts they are the only remaining shapes.
+-- `writeProbablyQuotedStringImpl`, which this PR does not touch, so all five `not` shapes still
+-- abort on this base and are left to https://github.com/ClickHouse/ClickHouse/pull/121054:
+-- `SELECT `not`(x) IGNORE NULLS`, `RESPECT NULLS` and `SELECT `not`(x)(1)` need only that entry,
+-- while `SELECT `not`(x) OVER ()` and `OVER (PARTITION BY y)` need it alongside the window guard,
+-- because the guard moves them onto that same name path. All five are deliberately absent here,
+-- and the sweep at the end filters every `NOT` row out for the same reason, so it asserts only
+-- that no *other* keyword or position is broken.
 
 DROP TABLE IF EXISTS t_05245;
 CREATE TABLE t_05245 (a UInt8, b UInt8, x UInt8, y UInt8, `strict` UInt8) ENGINE = MergeTree ORDER BY tuple();
@@ -72,10 +75,10 @@ SELECT * EXCEPT (`strict`, a) FROM t_05245;
 SELECT * EXCEPT ('str.*') FROM t_05245;
 SELECT `COLUMNS`(*) FROM t_05245; -- { serverError UNKNOWN_FUNCTION }
 
--- `not` in the operator position still prints bare, so the existing `not(...)` references do not
--- move. If this starts printing `` `not` ``, the window guard has leaked into the context where
--- operators are disabled.
-EXPLAIN SYNTAX SELECT NOT true;
+-- A node without a window must still use the operator form. The operator form never prints the
+-- function name, so unlike the rows above this assertion is unaffected by the global force-quote
+-- list, and it stays valid when an entry for `not` is added there.
+SELECT formatQuerySingleLine('SELECT NOT x');
 
 -- A derived sweep over every keyword in the four affected positions, so a further keyword cannot
 -- land silently. The oracle is textual, and therefore blind to the silent matcher substitution the
