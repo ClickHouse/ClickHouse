@@ -549,7 +549,7 @@ inline void applyHmAvx2(float * block, size_t m, const UInt32 * col_masks)
         for (size_t j = 0; j < m; ++j)
         {
             const __m256 bj = _mm256_set1_ps(block[j]);
-            const __m256 mask = _mm256_loadu_ps(reinterpret_cast<const float *>(col_masks + j * m + i));
+            const __m256 mask = _mm256_castsi256_ps(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(col_masks + j * m + i)));
             acc = _mm256_add_ps(acc, _mm256_xor_ps(bj, mask));
         }
         _mm256_storeu_ps(z + i, acc);
@@ -560,7 +560,7 @@ inline void applyHmAvx2(float * block, size_t m, const UInt32 * col_masks)
     for (size_t j = 0; j < m; ++j)
     {
         const __m128 bj = _mm_set1_ps(block[j]);
-        const __m128 mask = _mm_loadu_ps(reinterpret_cast<const float *>(col_masks + j * m + i));
+        const __m128 mask = _mm_castsi128_ps(_mm_loadu_si128(reinterpret_cast<const __m128i *>(col_masks + j * m + i)));
         acc = _mm_add_ps(acc, _mm_xor_ps(bj, mask));
     }
     _mm_storeu_ps(z + i, acc);
