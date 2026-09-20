@@ -1,0 +1,8 @@
+-- a temporary table matched by the engine predicate alone
+1
+-- the same, where a catalog database holding that engine is read first
+1	1
+-- and a predicate about one database only reports no temporary table
+0
+-- every shape agrees with filtering after the fact
+1	1

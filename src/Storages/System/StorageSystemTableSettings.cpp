@@ -157,7 +157,6 @@ private:
                     database->isDatalakeCatalog()
                         ? database->getTablesIteratorWithHint(context, allowed, /* skip_not_loaded */ false, table_name_hint)
                         : database->getTablesIterator(context, allowed));
-                engine_filter_answers.clear();
             }
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
@@ -264,9 +263,17 @@ private:
 
     /// Whether the query's predicate on `engine` - which may involve `database` and `table` too - keeps this table.
     /// Evaluating it is a block and an `ExpressionActions` run per table, so where the predicate does not read
-    /// `table` the answer holds for every table of this database with that engine, and is remembered.
+    /// `table` the answer holds for every table of one database with that engine, and is remembered.
     bool engineFilterKeeps(const String & db_name, const String & tbl_name, const String & engine_name)
     {
+        /// The answer holds for one database, not for the server: the predicate may read `database` too, and the
+        /// session's temporary tables report an empty one. So the memo goes with the database it was built for.
+        if (engine_filter_answers_database != db_name)
+        {
+            engine_filter_answers.clear();
+            engine_filter_answers_database = db_name;
+        }
+
         if (!engine_filter_reads_table)
             if (const auto answered = engine_filter_answers.find(engine_name); answered != engine_filter_answers.end())
                 return answered->second;
@@ -367,8 +374,9 @@ private:
     ExpressionActionsPtr engine_filter;
     const bool engine_filter_reads_table;
     /// For `engineFilterKeeps`: the `engine` column's type, built once, and what the predicate answered for each
-    /// engine of the database being read - usable only while the predicate does not read `table`.
+    /// engine of one database - usable only while the predicate does not read `table`.
     const DataTypePtr engine_column_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    String engine_filter_answers_database;
     std::unordered_map<String, bool> engine_filter_answers;
     TablesFilter table_name_hint;
     ContextPtr context;
