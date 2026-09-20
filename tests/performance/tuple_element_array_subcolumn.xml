@@ -1,0 +1,52 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <optimize_functions_to_subcolumns>1</optimize_functions_to_subcolumns>
+        <max_threads>1</max_threads>
+        <max_insert_threads>4</max_insert_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>payload_size</name>
+            <values>
+                <value>64</value>
+                <value>256</value>
+                <value>1024</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE tuple_element_array_{payload_size}
+        (
+            a Array(Tuple(code UInt32, payload String))
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO tuple_element_array_{payload_size}
+        SELECT arrayMap(
+            i -> (
+                toUInt32(number * 8 + i),
+                randomString({payload_size})
+            ),
+            range(8)
+        )
+        FROM numbers_mt(50000)
+    </fill_query>
+
+    <query>
+        SELECT sum(arraySum(tupleElement(a, 'code')))
+        FROM tuple_element_array_{payload_size}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(arraySum(a.code))
+        FROM tuple_element_array_{payload_size}
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE tuple_element_array_{payload_size}</drop_query>
+</test>
