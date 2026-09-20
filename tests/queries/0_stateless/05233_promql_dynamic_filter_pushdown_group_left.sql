@@ -24,7 +24,7 @@ SELECT '-- group_left with empty left side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests{dc="nonexistent"} * on (dc) group_left (env) target_info', 110) ORDER BY tags;
 
 SELECT '-- explain plan verifies join_group filter pushdown';
-SELECT countIf(explain LIKE '%JoinGroup%' OR explain LIKE '%timeSeriesRemoveAllTagsExcept%') > 0
+SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) > 0
 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) target_info', 110));
 
 SELECT '-- group_left with label_replace on right side';
@@ -32,5 +32,16 @@ SELECT * FROM prometheusQuery('t_promql_dfp', 'label_replace(requests, "dc2", "$
 
 SELECT '-- group_left with vector(scalar(...)) on right side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on () group_left vector(scalar(sum(requests)))', 110) ORDER BY tags;
+
+SELECT '-- group_left with on(__name__) and rate';
+INSERT INTO t_promql_dfp (metric_name, tags, samples) VALUES
+    ('rate_target', map('dc', 'a', 'env', 'prod'), [(toDateTime64(100, 3), 2), (toDateTime64(110, 3), 4)]);
+SELECT * FROM prometheusQuery('t_promql_dfp', 'rate(requests{host="h1"}[50s]) * on (__name__) group_left rate(rate_target[50s])', 110) ORDER BY tags;
+
+SELECT '-- group_left with absent on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left absent(nonexistent_metric{dc="a"})', 110) ORDER BY tags;
+
+SELECT '-- group_left with absent returning empty';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left absent(target_info{dc="a"})', 110) ORDER BY tags;
 
 DROP TABLE t_promql_dfp;

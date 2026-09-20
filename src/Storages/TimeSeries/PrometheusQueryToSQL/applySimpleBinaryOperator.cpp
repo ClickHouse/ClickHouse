@@ -50,41 +50,27 @@ namespace
         }
     }
 
-    /// Checks if a node modifies labels or produces scalarizing results.
-    bool hasLabelModifyingOrScalarizingNode(const PrometheusQueryTree::Node * node)
+    /// Checks if a node preserves the time-series group without dropping or modifying labels.
+    bool isGroupPreservingNode(const PrometheusQueryTree::Node * node)
     {
         if (!node)
-            return true;
+            return false;
 
         using NodeType = PrometheusQueryTree::NodeType;
         if (node->node_type == NodeType::InstantSelector || node->node_type == NodeType::RangeSelector)
-            return false;
+            return true;
+
+        if (node->node_type == NodeType::Offset)
+            return !node->children.empty() && isGroupPreservingNode(node->children[0]);
 
         if (node->node_type == NodeType::Function)
         {
             const auto * func = static_cast<const PrometheusQueryTree::Function *>(node);
-            const auto & name = func->function_name;
-            if (isLabelManipulationFunction(name) || isFunctionVector(name) || isFunctionScalar(name))
-                return true;
-            for (const auto * child : func->children)
-            {
-                if (hasLabelModifyingOrScalarizingNode(child))
-                    return true;
-            }
-            return false;
+            if (func->function_name == "last_over_time")
+                return !func->children.empty() && isGroupPreservingNode(func->children[0]);
         }
 
-        if (node->node_type == NodeType::UnaryOperator)
-        {
-            for (const auto * child : node->children)
-            {
-                if (hasLabelModifyingOrScalarizingNode(child))
-                    return true;
-            }
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     void checkVectorMatching(
@@ -193,7 +179,7 @@ namespace
 
             /// Push down join_group restriction into selector and range-aggregation stages of right side.
             if (right_argument.select_query && right_argument.store_method == StoreMethod::VECTOR_GRID
-                && !hasLabelModifyingOrScalarizingNode(right_argument.node))
+                && isGroupPreservingNode(right_argument.node))
             {
                 std::unordered_set<String> visited_subqueries;
 
