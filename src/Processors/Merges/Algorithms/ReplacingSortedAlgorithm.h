@@ -58,6 +58,7 @@ public:
         bool read_in_reverse_ = false);
 
     const char * getName() const override { return "ReplacingSortedAlgorithm"; }
+    void initialize(Inputs inputs) override;
     Status merge() override;
 
 private:
@@ -67,6 +68,15 @@ private:
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
     bool read_in_reverse = false; /// Inputs are read in the reverse order relative to the storage order
+
+    /// Processing a row has no effects besides replacing `selected_row`, so the merge could jump
+    /// over runs of equal keys within a batch straight to the last row of the run (see `merge`).
+    /// Decided from the merge parameters in the constructor.
+    bool can_skip_to_run_end = false;
+
+    /// `can_skip_to_run_end` and the queue actually detects batches - the condition the merge
+    /// loop tests. Decided in `initialize`.
+    bool skip_runs_of_equal_keys = false;
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;

@@ -143,6 +143,18 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
+namespace
+{
+
+/// Custom-key parallel replicas evaluate a user-supplied expression over the body's columns; turn them off there.
+void dropParallelReplicasCustomKey(Context & body_context)
+{
+    body_context.setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    body_context.setSetting("parallel_replicas_custom_key", String{});
+}
+
+}
+
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
     if (!sql_security_type)
@@ -192,18 +204,37 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->hasClusterFunctionReadTaskCallback())
         new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
+    auto changed_settings = context->getSettingsRef().changes();
+    /// Invoker filters must not be injected into a DEFINER/NONE body.
+    changed_settings.removeSetting("additional_table_filters");
+
+    /// Internal initiator-set settings: kept for secondary queries so that followers read their slice of a body's SAMPLE,
+    /// dropped for an initial query where only the invoker could supply them. The query kind is client-declared, not authenticated.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        changed_settings.removeSetting("parallel_replicas_count");
+        changed_settings.removeSetting("parallel_replica_offset");
+    }
+
+    /// Drop the invoker's key even if only the definer's profile activates it.
+    const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        new_context->applySettingsChanges(changed_settings);
+        if (drop_custom_key)
+            dropParallelReplicasCustomKey(*new_context);
         return new_context;
     }
 
     new_context->setUser(getDefinerID(context));
 
-    auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
+    /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
+    if (drop_custom_key)
+        dropParallelReplicasCustomKey(*new_context);
 
     return new_context;
 }

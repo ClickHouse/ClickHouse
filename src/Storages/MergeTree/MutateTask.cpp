@@ -266,7 +266,6 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -283,7 +282,6 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
-        NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
@@ -345,14 +343,6 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
                 }
 
-                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
-                {
-                    for (const auto & col : part_columns)
-                    {
-                        if (!mutated_columns.contains(col.name))
-                            ignored_columns.emplace(col.name);
-                    }
-                }
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
                     const auto & all_indices = metadata_snapshot->getSecondaryIndices();
@@ -545,7 +535,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name) && !ignored_columns.contains(column.name))
+                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -554,8 +544,10 @@ static void splitAndModifyMutationCommands(
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
 
-                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
+                    /// `ATTACH`/`REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` stamp the destination's
+                    /// version on a part that keeps the source's columns and require matching structures, so
+                    /// an equal version with the column absent means it is in no schema at all.
+                    if (part_metadata_version <= table_metadata_version)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
@@ -569,6 +561,17 @@ static void splitAndModifyMutationCommands(
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+
+                    /// The part is ahead of a table that has no metadata version to reason with, so there is
+                    /// nothing else to go on: the column is on disk, the table does not have it, and reads and
+                    /// merges already ignore it. Reading it would add a `READ_COLUMN` command below, whose
+                    /// identifier the mutation then resolves against the table and fails with
+                    /// `UNKNOWN_IDENTIFIER` - for every mutation of that part, so the mutation queue stays
+                    /// wedged until the part is merged or dropped. Skip the column and let the rewrite drop it.
+                    LOG_WARNING(log, "Ignoring column {} from part {} because there is no such column in table {}. "
+                                     "Assuming the column was dropped", column.name, part->name,
+                                part->storage.getStorageID().getNameForLogs());
+                    continue;
                 }
 
                 for_interpreter.emplace_back(
@@ -735,28 +738,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -779,9 +760,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -790,9 +769,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -850,7 +826,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -1784,7 +1760,7 @@ static void finalizeMutatedPart(
         if (codec_is_approximate)
             DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
         else
-            DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
+            DB::writeText(codec->getFullCodecDescription()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -3348,6 +3324,15 @@ private:
                     ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
+            /// The same for a declaration that could not be analyzed: `prepare` left its directory out of this
+            /// part and nothing can rebuild it, so its inherited entry is always an orphan.
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+            {
+                const auto projection_file = projection_name + ".proj";
+                if (ctx->files_to_skip.contains(projection_file))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -4113,7 +4098,6 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
-        suitable_for_ttl_optimization,
         ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
@@ -4299,6 +4283,15 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
+        /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
+        /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
+        if (ctx->mutating_pipeline_builder.initialized())
+        {
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+                ctx->files_to_skip.insert(projection_name + ".proj");
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

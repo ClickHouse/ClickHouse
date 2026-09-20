@@ -160,10 +160,10 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
-                "Attempt {}/{} failed with retryable error: {}, {}",
+                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
-                static_cast<size_t>(error.GetResponseCode()),
+                error.GetResponseCode(),
                 error.GetMessage());
     }
 }
@@ -174,11 +174,11 @@ void Client::RetryStrategy::RequestBookkeeping(
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
             log,
-            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),
-            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
-            static_cast<size_t>(lastError.GetResponseCode()),
+            httpResponseOutcome.GetResult()->GetResponseCode(),
+            lastError.GetResponseCode(),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
 }
@@ -680,11 +680,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
-    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
     if (client_settings.is_s3express_bucket)
         request.setIsS3ExpressBucket();
-    else if (client_settings.disable_checksum)
-        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -908,7 +905,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }
@@ -979,12 +976,7 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
     if (api_mode == ApiMode::GCS)
-    {
-        /// some GCS requests don't like S3 specific headers that the client sets
-        /// all "x-amz-*" headers have to be either converted or deleted
-        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
-        httpRequest->DeleteHeader("x-amz-api-version");
-    }
+        translateHeadersToGCS(*httpRequest);
 }
 
 std::string Client::getGCSOAuthToken() const
@@ -1298,6 +1290,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     }
 
     // These will be added after request signing
+    normalizeHeaderNames(headers);
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
