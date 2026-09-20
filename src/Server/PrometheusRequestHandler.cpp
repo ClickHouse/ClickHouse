@@ -53,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CANNOT_CONVERT_TYPE;
     extern const int PROMQL_QUERY_EXECUTION_ERROR;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
@@ -477,6 +478,8 @@ public:
 
         response.setContentType("application/json");
 
+        bool is_promql_query_endpoint = false;
+
         try
         {
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
@@ -484,6 +487,7 @@ public:
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
             /// percent-encoded label name in ".../label/<name>/values" is read correctly.
             const String uri_path = Poco::URI(uri).getPath();
+            is_promql_query_endpoint = uri_path.ends_with("/query_range") || uri_path.ends_with("/query");
 
             if (uri_path.ends_with("/format_query"))
             {
@@ -616,7 +620,8 @@ public:
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                 writeString(R"({"status":"error","errorType":"internal","error":)", error_buf);
             }
-            else if (e.code() == ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR)
+            else if (e.code() == ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR
+                || (is_promql_query_endpoint && e.code() == ErrorCodes::CANNOT_CONVERT_TYPE))
             {
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY);
                 writeString(R"({"status":"error","errorType":"execution","error":)", error_buf);
