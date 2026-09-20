@@ -460,6 +460,17 @@ BlockIO InterpreterSystemQuery::execute()
         if (query.type == Type::FLUSH_ASYNC_INSERT_QUEUE)
             for (const auto & [database, table] : query.tables)
                 reject_if_read_only_overlay(database.empty() ? getContext()->getCurrentDatabase() : database);
+
+        /// `SYSTEM RELOAD DICTIONARY` / `SYSTEM UNLOAD DICTIONARY` keep their own unresolved name —
+        /// the canonicalization above deliberately skips them — so in the unqualified form
+        /// (`USE db_overlay; SYSTEM RELOAD DICTIONARY d`) neither `table_id` nor `query.database` is
+        /// set and the checks above do not see the facade, while the handler later qualifies the
+        /// name with the current database and reaches the source dictionary through it. A name that
+        /// belongs to an XML dictionary is never qualified with the current database (see
+        /// `ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog`), so it is left alone.
+        if ((query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY) && !query.database
+            && !getContext()->getExternalDictionariesLoader().has(query.getTable()))
+            reject_if_read_only_overlay(getContext()->getCurrentDatabase());
     }
 
     BlockIO result;

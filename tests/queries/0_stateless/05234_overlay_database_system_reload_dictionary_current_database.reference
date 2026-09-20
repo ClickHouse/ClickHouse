@@ -1,0 +1,12 @@
+qualified with the facade name: rejected
+1
+1
+unqualified with the facade as the current database: rejected
+1
+1
+a missing dictionary name behind the facade is rejected too, so the fence is not an existence oracle
+1
+the underlying database is not rejected, in both forms
+0
+0
+0
