@@ -1,6 +1,7 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <span>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
@@ -21,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -66,6 +68,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -869,6 +872,44 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
+static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
+{
+    if (pipelines.size() < 2)
+        return;
+
+    /// Children are converted to the common Merge header before being optimized, and are optimized
+    /// independently afterwards, so constant folding can leave a column Const in one sibling and not
+    /// in another. This is the only point at which every sibling's final header is known.
+    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
+    ColumnsWithTypeAndName common = reconcileConstness(
+        pipelines.front()->getHeader().getColumnsWithTypeAndName(),
+        pipelines.size(),
+        [&](size_t sibling, size_t, const String & name) { return pipelines[sibling]->getHeader().findByName(name); });
+
+    /// Every sibling needs comparing even when nothing was materialized above: the target is the
+    /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
+    /// full column.
+    auto target = std::make_shared<const Block>(std::move(common));
+    for (const auto & cur_pipeline : pipelines)
+    {
+        if (blocksHaveEqualStructure(cur_pipeline->getHeader(), *target))
+            continue;
+
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            cur_pipeline->getHeader().getColumnsWithTypeAndName(),
+            target->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
+
+        auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+        cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
+        {
+            return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
+        });
+    }
+}
+
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
@@ -904,6 +945,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    reconcileSiblingPipelineHeaders(pipelines);
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
@@ -2066,7 +2109,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                     ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
                     ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
                 };
-                filter->execute(block);
+
+                /// An `indexHint` argument contributes a second input for the same virtual column,
+                /// so the expression can ask for `_table` (or `_database`) more than once while the
+                /// block above holds it exactly once. Allow duplicate inputs to be bound to the same
+                /// block column - the value is the same for all of them. This is what every other
+                /// consumer of these split predicates does, see `filterBlockWithExpression`.
+                ///
+                /// The block must keep exactly one row, which the `getBool` below relies on. Deriving
+                /// it from the expression's own inputs instead would produce an empty block for a
+                /// predicate that needs no input at all, such as `indexHint(materialize(1))`, and a
+                /// filter evaluated over zero rows would read as false and deselect every table.
+                filter->execute(block, /*dry_run=*/false, /*allow_duplicates_in_input=*/true);
                 // Valid only when block has exactly one row.
                 return block.getByName(column_name).column->getBool(0);
             };
