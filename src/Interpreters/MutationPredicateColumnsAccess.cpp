@@ -2,9 +2,11 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Core/Names.h>
+#include <Dictionaries/IDictionary.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/misc.h>
@@ -248,10 +250,10 @@ private:
 
                 if (columns)
                     required_access.emplace_back(
-                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name, *columns);
+                        AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name, *columns);
                 else
                     required_access.emplace_back(
-                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name);
+                        AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name);
             }
         }
         else if (functionIsDictGet(function.name) && !arguments.empty())
@@ -261,8 +263,7 @@ private:
             if (unknown_object)
                 required_access.emplace_back(AccessType::dictGet);
             else if (dictionary_id)
-                required_access.emplace_back(
-                    AccessType::dictGet, databaseOrCurrent(*dictionary_id), dictionary_id->table_name);
+                required_access.emplace_back(dictionaryAccess(*dictionary_id));
         }
     }
 
@@ -329,7 +330,7 @@ private:
     /// then the requirement falls back to the whole table, which is a superset of what it reads.
     std::optional<Strings> tryGetJoinGetColumns(const StorageID & table_id, const String & attribute) const
     {
-        StorageID resolved{databaseOrCurrent(table_id), table_id.table_name};
+        StorageID resolved{databaseOfTable(table_id), table_id.table_name};
         if (resolved.database_name.empty())
             return {};
 
@@ -540,6 +541,11 @@ private:
         /// `visitSelect` pushes this level before it calls this, so the stack is never empty here.
         const NameSet & visible = subquery_levels.back();
 
+        /// The metadata of this level's table, when it can be looked up: a virtual column of it
+        /// needs no `SELECT` grant, exactly as in a plain `SELECT` from it, and requiring one on a
+        /// name like `_part` would ask for a grant that cannot be given.
+        const auto metadata = tryGetMetadata(table_id);
+
         /// The qualifications a reference to this table may carry.
         Strings prefixes;
         if (!alias.empty())
@@ -571,6 +577,9 @@ private:
             /// indistinguishable here, so stop attributing.
             if (bare.contains('.'))
                 return {};
+
+            if (metadata && !metadata->columns.has(String(bare)) && metadata->isVirtualColumn(String(bare)))
+                continue;
 
             columns.emplace_back(bare);
         }
@@ -630,6 +639,22 @@ private:
         return mutated_metadata->columns.has(name) || mutated_metadata->isVirtualColumn(name);
     }
 
+    /// The in-memory metadata of a table, when it is an ordinary table the catalog knows. Nothing
+    /// when it cannot be resolved here - then the columns it reads are required as written, which
+    /// asks for at least as much access as the read needs.
+    StorageMetadataHandle tryGetMetadata(const StorageID & table_id) const
+    {
+        StorageID resolved{databaseOfTable(table_id), table_id.table_name};
+        if (resolved.database_name.empty())
+            return {};
+
+        const auto storage = DatabaseCatalog::instance().tryGetTable(resolved, context);
+        if (!storage)
+            return {};
+
+        return storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    }
+
     /// Every name a column of the given tables can be written as at this level: bare, and qualified
     /// with the table's alias, its name and its database and name. Empty when a table expression at
     /// this level is not an ordinary named table, or when a table cannot be found in the catalog -
@@ -642,21 +667,17 @@ private:
 
         for (size_t i = 0; i < tables.size(); ++i)
         {
+            const auto metadata = tryGetMetadata(tables[i]);
+            if (!metadata)
+                return {};
+
             StorageID table_id{databaseOfTable(tables[i]), tables[i].table_name};
-            if (table_id.database_name.empty())
-                return {};
-
-            const auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
-            if (!storage)
-                return {};
-
             Strings prefixes{""};
             if (!aliases[i].empty())
                 prefixes.emplace_back(aliases[i] + ".");
             prefixes.emplace_back(table_id.table_name + ".");
             prefixes.emplace_back(table_id.database_name + "." + table_id.table_name + ".");
 
-            const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             for (const auto & column : metadata->columns)
                 for (const auto & prefix : prefixes)
                     names.insert(prefix + column.name);
@@ -691,6 +712,11 @@ private:
     /// session's `other`. Requiring the grant on the same table that is read leaves no room for a
     /// user who can read `current_db.other` but not `db1.other`.
     ///
+    /// The object of a `dictGet` / `joinGet` is qualified by the same visitor
+    /// (`visitFunctionTableNameArguments`) and with the same database, so it is resolved here the
+    /// same way: a session on `db2` mutating `db1.t` reads `db1.join_tab`, and requiring the grant
+    /// on `db2.join_tab` would leave this hole open for same-named objects in another database.
+    ///
     /// An empty database is kept when the mutated table's database is unknown and there is no
     /// current one: `executeDDLQueryOnCluster` expands an empty database in an access element to
     /// each host's default database, so the requirement travels with the query instead of being
@@ -704,14 +730,23 @@ private:
         return context->getCurrentDatabase();
     }
 
-    /// A dictionary or a Join table named by a `dictGet` / `joinGet` argument is resolved against
-    /// the current database, both by `AddDefaultDatabaseVisitor` (`qualifyDictionaryNameWithDatabase`)
-    /// and by the functions themselves, so its requirement is on the current database too.
-    String databaseOrCurrent(const StorageID & table_id) const
+    /// The access a `dictGet` needs on the dictionary its first argument names, resolved the same
+    /// way the mutation resolves it: an unqualified name is qualified with the database of the
+    /// mutated table when a dictionary of that name exists there, and names an XML dictionary
+    /// otherwise - which is granted under `IDictionary::NO_DATABASE_TAG`, as
+    /// `FunctionDictHelper::getDictionary` checks it.
+    AccessRightsElement dictionaryAccess(const StorageID & dictionary_id) const
     {
-        if (!table_id.database_name.empty())
-            return table_id.database_name;
-        return context->getCurrentDatabase();
+        if (!dictionary_id.database_name.empty())
+            return {AccessType::dictGet, dictionary_id.database_name, dictionary_id.table_name};
+
+        const auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(
+            dictionary_id.table_name, databaseOfTable(dictionary_id));
+
+        if (!qualified.database.empty())
+            return {AccessType::dictGet, qualified.database, qualified.table};
+
+        return {AccessType::dictGet, IDictionary::NO_DATABASE_TAG, qualified.table};
     }
 
     AccessRightsElements & required_access;

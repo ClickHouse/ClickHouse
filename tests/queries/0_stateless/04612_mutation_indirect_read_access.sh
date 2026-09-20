@@ -146,6 +146,17 @@ check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(pay
 check_access "DELETE FROM $CLICKHOUSE_DATABASE.tab WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
 check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
 
+# `dictGet` and `joinGet` name their object by an unqualified name as well, and the same visitor
+# qualifies that name with the database of the mutated table, so the object read is that database's
+# one - not the same-named one the session's current database may hold.
+echo "-- An unqualified dictGet / joinGet object is read from the mutated table's database too"
+$CLICKHOUSE_CLIENT -q "
+GRANT dictGet ON $other_db.dict TO $user_name;
+GRANT SELECT ON $other_db.join_tab TO $user_name;
+"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
+
 # A read named inside a subquery, or inside a `JOIN ... ON` condition, is invisible to a walk that
 # only looks at the subquery's `FROM` tables and at the clauses of its `SELECT`.
 echo "-- A named read below the top level is a read too, in a subquery and in a JOIN condition"
@@ -160,6 +171,11 @@ check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable ARRAY 
 # just as the mutated table's columns resolve it at the top level.
 echo "-- An array column of the subquery's own table on the right of IN is a column, not a table"
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT r.id FROM readable r WHERE 1 IN r.arr) AND 0 SETTINGS $off"
+
+# A virtual column of a subquery's table needs no grant of its own, exactly as in a plain `SELECT`
+# from that table, so requiring one would deny a mutation the equivalent `SELECT` is allowed to run.
+echo "-- A virtual column of a subquery's table needs no grant"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE _part != '') AND 0 SETTINGS $off"
 
 echo "-- dictGet and joinGet name their object instead of reading it as a column"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
@@ -216,6 +232,8 @@ check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN secret_set
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT secret FROM secret_tab) AND 0 SETTINGS $off" "$other_db"
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off" "$other_db"
 check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
 
 echo "-- The value of an unreadable table never reached a readable column"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
