@@ -200,6 +200,7 @@ protected:
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
     void findNATSTableEngineSecretArguments();
+    void findMaxComputeTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();

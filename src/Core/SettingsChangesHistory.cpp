@@ -43,6 +43,26 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            // `MaxCompute` is new in this release. Keep its defaults under `compatibility`:
+            // there is no earlier community engine behavior to restore.
+            {"allow_experimental_maxcompute_storage_engine", false, false, "New setting to enable creation of experimental `MaxCompute` and `MaxComputeRaw` tables."},
+            {"enable_insert_from_odps_exteranl_table", true, true, "New compatibility setting for legacy ODPS profiles; has no effect on `INSERT SELECT` planning."},
+            {"enable_insert_from_odps_external_table", true, true, "New compatibility setting with the corrected spelling; has no effect on `INSERT SELECT` planning."},
+            {"odps_parallel_distributed_insert_select", true, true, "New compatibility setting; `MaxCompute` uses standard distributed `INSERT SELECT` planning regardless of its value."},
+            {"odps_parallel_distributed_insert_select_start", 0, 0, "New internal setting for the starting row of a `MaxCompute` read range; zero uses the engine argument."},
+            {"odps_parallel_distributed_insert_select_count", 0, 0, "New internal setting for the row count of a `MaxCompute` read range; zero uses the engine argument."},
+            {"odps_download_id", "", "", "New internal setting for reusing an ODPS Tunnel download session; initial queries cannot supply a non-empty value."},
+            {"odps_parallel_local_insert_select", true, true, "New setting enabling local parallel reads from `MaxCompute` tables."},
+            {"odps_distributed_insert_select_convert_to_local", true, true, "New compatibility setting; does not rewrite distributed `INSERT SELECT` queries."},
+            {"odps_read_compress", true, true, "New setting enabling compression for ODPS Tunnel reads."},
+            {"maxcompute_columnar_max_batch_bytes", 0, 0, "New setting requesting an ODPS Arrow batch size limit in bytes; zero sends no limit."},
+            {"maxcompute_read_format", "inherit", "inherit", "New setting to inherit the `MaxCompute` table read format (default: `column`) or override it with `row` or `column` (Arrow IPC)."},
+            {"maxcompute_max_retries", 3, 3, "New setting limiting retries for retryable ODPS Tunnel reader failures."},
+            {"maxcompute_retry_initial_backoff_ms", 100, 100, "New setting specifying the initial ODPS Tunnel reader retry backoff in milliseconds."},
+            {"maxcompute_retry_max_backoff_ms", 5000, 5000, "New setting limiting ODPS Tunnel reader retry backoff in milliseconds."},
+            {"maxcompute_retry_max_elapsed_ms", 30000, 30000, "New setting bounding cumulative failed reader attempts and retry backoffs; not a query timeout."},
+            {"maxcompute_connect_timeout_ms", 10000, 10000, "New setting specifying the ODPS Tunnel connection timeout in milliseconds."},
+            {"maxcompute_request_timeout_ms", 300000, 300000, "New setting specifying the ODPS Tunnel socket timeout in milliseconds."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},

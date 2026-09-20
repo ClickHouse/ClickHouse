@@ -214,6 +214,7 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
+add_contrib (curl-cmake curl) # requires: c-ares; required by `aliyun-odps-sdk-cpp`
 
 add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
@@ -287,6 +288,7 @@ add_contrib (libcotp-cmake libcotp)
 
 add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
+add_contrib (odps-sdk-cpp-cmake odps-sdk-cpp)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)

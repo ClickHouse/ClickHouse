@@ -44,6 +44,7 @@ enum class Source : uint8_t
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(BIGQUERY, "BigQuery") \
+    M(MAXCOMPUTE, "MaxCompute,MaxComputeRaw") \
     M(DISK, "Disk") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
@@ -446,6 +447,7 @@ enum class AccessType : uint8_t
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(BIGQUERY, "", GLOBAL, ALL) \
+    M(MAXCOMPUTE, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \

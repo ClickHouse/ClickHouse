@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_maxcompute_storage_engine>1</allow_experimental_maxcompute_storage_engine>
+        </default>
+    </profiles>
+</clickhouse>
