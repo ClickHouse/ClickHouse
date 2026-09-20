@@ -173,11 +173,8 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        /// A not-matched row holds the column's own default, which for `Date32` is 0 (1970-01-01)
-        /// and not the `Field` from `getDefault` (1900-01-01). Where default insertion is not
-        /// trivial the join's own fill sites may disagree, so no probe value is guaranteed
-        /// faithful: leave the input unknown, as a column of the other side is, and let the
-        /// per-atom verdict decide.
+        /// A not-matched row holds the column's own default (1970-01-01 for `Date32`), not the `Field` of
+        /// `getDefault` (1900-01-01), and where default insertion is not trivial no probe value is faithful.
         if (!input->result_type->isDefaultInsertTrivial())
             continue;
 
