@@ -186,6 +186,16 @@ public:
     /// Returns nullptr when the key is absent.
     ASTPtr readPartitionListChild(const char * key) const;
 
+    /// Read a child that must be an expression node (see `isExpressionNode`). Returns nullptr when absent.
+    ASTPtr readExpressionChild(const char * key) const
+    {
+        ASTPtr child = readChild(key);
+        if (child && !isExpressionNode(*child))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an expression for key '{}' during AST JSON deserialization", key);
+        return child;
+    }
+
     /// Read the "children" array.
     ASTs readChildren() const
     {
@@ -327,6 +337,13 @@ public:
     }
 
     static Field readFieldFromObject(const Poco::JSON::Object & field_obj);
+
+    /// True for the node types the SQL parser produces in an expression position (a `SELECT` list
+    /// element, `WHERE`, `HAVING`, function arguments): functions (including lambdas and operators),
+    /// identifiers, literals, asterisks and column matchers, subqueries and query parameters. Anything
+    /// else (a `SelectQuery`, a `ViewTargets`, a `TablesInSelectQuery`, ...) formats as empty or foreign
+    /// text in such a slot and must be rejected at the `clickhouse_json` boundary.
+    static bool isExpressionNode(const IAST & node);
 
 private:
     /// Recursive worker for `readFieldFromObject`. `depth` tracks the nesting level of

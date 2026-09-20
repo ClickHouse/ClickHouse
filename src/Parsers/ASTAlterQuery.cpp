@@ -646,6 +646,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             break;
         default:
             break;
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+            require(constraint_decl, "constraint_decl");
+            break;
     }
 
     /// `IN PARTITION` is parser-produced only for the `CLEAR` forms (and the materialize forms), never for

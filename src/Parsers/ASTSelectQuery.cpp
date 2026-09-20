@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -749,11 +750,18 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     limit_by_all = r.getBool("limit_by_all");
     limit_after_all = r.getBool("limit_after_all");
 
+    /// Scalar clauses (`WHERE`, `HAVING`, `LIMIT` values, ...) and the `SELECT` list elements. The parser
+    /// never produces an `ASTExpressionList` in a scalar slot; one from `clickhouse_json` formats as
+    /// empty text (`SELECT ... WHERE  `) that does not parse back.
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
     {
         auto child = r.readChild(key);
-        if (child)
-            this->setExpression(expr, std::move(child));
+        if (!child)
+            return;
+        if (expr != Expression::SELECT && !JSONObjectReader::isExpressionNode(*child))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'{}' of `SelectQuery` must be a single expression during AST JSON deserialization", key);
+        this->setExpression(expr, std::move(child));
     };
 
     /// These clauses are parser-owned `ASTExpressionList`s that `formatImpl` formats via
@@ -766,7 +774,13 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     };
 
     setExprList("with", Expression::WITH);
-    setExpr("select", Expression::SELECT);
+    setExprList("select", Expression::SELECT);
+    /// The parser requires at least one element in the `SELECT` list; an empty one formats as `SELECT  FROM`.
+    if (!select() || select()->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SelectQuery` must have a non-empty 'select' list during AST JSON deserialization");
+    for (const auto & element : select()->children)
+        if (!element || !JSONObjectReader::isExpressionNode(*element))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SelectQuery` 'select' list elements must be expressions during AST JSON deserialization");
 
     /// `tables` is a parser-owned `ASTTablesInSelectQuery`. SELECT analysis and helpers
     /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast

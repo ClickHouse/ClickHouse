@@ -361,6 +361,11 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
                 param_reader.getString("value"));
         }
     }
+
+    /// `SET` and every `SETTINGS` clause carry at least one entry; an empty node formats as a bare
+    /// `SETTINGS` (or `SET`) that does not parse back.
+    if (changes.empty() && query_parameters.empty() && default_settings.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SetQuery` must have at least one setting, query parameter or default setting during AST JSON deserialization");
 }
 
 bool ASTSetQuery::hasSecretParts() const

@@ -425,6 +425,9 @@ void ASTTablesInSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// with `child->as<ASTTablesInSelectQueryElement &>()`, so a foreign child type must be
     /// rejected at the `clickhouse_json` boundary instead of reaching that downcast later.
     children = r.readChildrenOfType<ASTTablesInSelectQueryElement>("TablesInSelectQuery");
+    /// `FROM` has at least one table; an empty list formats as `SELECT ... FROM LIMIT 5`.
+    if (children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`TablesInSelectQuery` must have at least one element during AST JSON deserialization");
 }
 
 void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
@@ -465,6 +468,10 @@ void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
     if (table_join && !table_expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTTablesInSelectQueryElement has 'table_join' without 'table_expression' during AST JSON deserialization");
+    /// The parser produces an element with a table expression (optionally preceded by a join) or an
+    /// `ARRAY JOIN`; an element with neither formats as empty text.
+    if (!table_expression && !array_join)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`TablesInSelectQueryElement` must have a 'table_expression' or an 'array_join' during AST JSON deserialization");
 }
 
 void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
@@ -582,7 +589,7 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
         children.push_back(using_expression_list);
     }
 
-    child = r.readChild("on_expression");
+    child = r.readExpressionChild("on_expression");
     if (child)
     {
         on_expression = child;

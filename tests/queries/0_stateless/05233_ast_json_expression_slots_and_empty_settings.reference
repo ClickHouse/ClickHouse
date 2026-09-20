@@ -1,0 +1,3 @@
+SELECT a, t.*, COLUMNS(\'x\'), (SELECT 1), {p:UInt8}, (x -> (x + 1)), * EXCEPT b FROM t WHERE a > 1 SETTINGS max_threads = 1
+SET param_p = \'1\'
+SELECT * FROM s3(\'https://bucket.s3.amazonaws.com/f.csv\', SETTINGS s3_truncate_on_insert = 1)
