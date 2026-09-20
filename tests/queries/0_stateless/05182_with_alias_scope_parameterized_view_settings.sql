@@ -1,7 +1,8 @@
 -- A parameterized view keeps the query parameters of its `SETTINGS` clause unresolved until the
 -- view is called, so deciding the `WITH` alias scope of the stored body must not evaluate them.
--- The parser puts `name = {parameter:Type}` into `ASTSetQuery::query_parameters` rather than into
--- `ASTSetQuery::changes`, which is the list the alias scope reads.
+-- The parser stores `name = {parameter:Type}` in `ASTSetQuery::changes` as an `ASTQueryParameter`
+-- wrapped into a `Field`, and the constraints drop a change whose value the setting cannot take, so
+-- the alias scope of such a clause is the one of the enclosing `SELECT`.
 
 SET param_ver = '24.8';
 SET param_flag = 1;

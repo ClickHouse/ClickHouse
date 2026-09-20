@@ -46,8 +46,18 @@ std::pair<ContextPtr, bool> AddDefaultDatabaseVisitor::scopeSettings(const ASTSe
     /// reverts an outer one, and `profile` naming a group all resolve only by being applied. Clamped
     /// first, because a change the constraints drop is not in effect when the query is resolved.
     ContextMutablePtr scope_context = Context::createCopy(enclosing);
-    scope_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
-    scope_context->applySettingsChanges(changes);
+    try
+    {
+        scope_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
+        scope_context->applySettingsChanges(changes);
+    }
+    catch (...) // Ok: the clause is replayed to predict one setting, not to execute the query
+    {
+        /// Stored metadata is repaired, the startup dependency graph is built and a definition is
+        /// attached without the settings profiles its clauses name, so the walk keeps the enclosing
+        /// visibility there, and the copy takes any partially applied change away with it.
+        return {enclosing, enclosing->getSettingsRef()[Setting::enable_global_with_statement]};
+    }
     return {scope_context, scope_context->getSettingsRef()[Setting::enable_global_with_statement]};
 }
 

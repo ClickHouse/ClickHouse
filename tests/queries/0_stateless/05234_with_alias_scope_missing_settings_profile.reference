@@ -1,0 +1,7 @@
+read, profile present	7
+definition	v_profile_clause	CREATE VIEW DB.v_profile_clause (`id` UInt8) AS WITH src AS (SELECT 7 AS id) SELECT id FROM (SELECT id FROM src SETTINGS profile = \'p_05234\')
+definition	v_profile_clause_off	CREATE VIEW DB.v_profile_clause_off (`id` UInt8) AS WITH src AS (SELECT 7 AS id) SELECT id FROM (SELECT id FROM src SETTINGS profile = \'p_05234_off\')
+attached, profiles gone	2
+definition	v_profile_clause	CREATE VIEW DB.v_profile_clause (`id` UInt8) AS WITH src AS (SELECT 7 AS id) SELECT id FROM (SELECT id FROM src SETTINGS profile = \'p_05234\')
+definition	v_profile_clause_off	CREATE VIEW DB.v_profile_clause_off (`id` UInt8) AS WITH src AS (SELECT 7 AS id) SELECT id FROM (SELECT id FROM src SETTINGS profile = \'p_05234_off\')
+read, profiles back	7
