@@ -288,8 +288,8 @@ void buildQueryPlanForUncorrelatedInSubquery(
     for (size_t i = 0; i < key_column_names.size(); ++i)
     {
         std::vector<JoinActionRef> eq_arguments;
-        eq_arguments.push_back(join_expression_actions.findNode(key_column_names[i], /*is_input=*/true));
-        eq_arguments.push_back(join_expression_actions.findNode(subquery_column_names[i], /*is_input=*/true));
+        eq_arguments.push_back(join_expression_actions.findInput(key_column_names[i], JoinTableSide::Left));
+        eq_arguments.push_back(join_expression_actions.findInput(subquery_column_names[i], JoinTableSide::Right));
         predicates.push_back(
             JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
     }

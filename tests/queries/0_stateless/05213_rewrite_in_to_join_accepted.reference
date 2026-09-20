@@ -46,6 +46,10 @@
 1	0
 ['1','0','0']
 ['1','0','0']
+-- The subquery column carries the name of the key, which the join keys on by side
+1	0
+2
+2
 -- The subquery is a union
 1	0
 [1,1,1]

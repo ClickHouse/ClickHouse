@@ -103,6 +103,13 @@ FROM (EXPLAIN SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM
 SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- The subquery column carries the name of the key, which the join keys on by side';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s));
+
+SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 0;
+SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- The subquery is a union';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s UNION ALL SELECT k FROM w));
