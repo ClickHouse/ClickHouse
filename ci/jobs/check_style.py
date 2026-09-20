@@ -594,7 +594,8 @@ def check_no_server_data_manipulation(files):
 
 
 FAILPOINT_STATEMENT_RE = re.compile(
-    r"\bSYSTEM\s+(?P<action>ENABLE|DISABLE)\s+FAILPOINT\s+(?P<name>[^\s;'\")]+)",
+    r"\bSYSTEM\s+(?:(?P<disable_all>DISABLE\s+ALL\s+FAILPOINTS)"
+    r"|(?P<action>ENABLE|DISABLE)\s+FAILPOINT\s+(?P<name>[^\s;'\")]+))",
     re.IGNORECASE,
 )
 
@@ -612,10 +613,16 @@ SERVER_CLIENT_RE = re.compile(
 # statement is inspected, so a keyword from a neighbouring one cannot leak into the decision.
 FAILPOINT_STATEMENT_SEPARATORS = ";\"'`"
 
+# `SYSTEM DISABLE ALL FAILPOINTS` is server-wide in the other direction as well: it disarms the
+# fail points a concurrently running test armed, so it stands in for the per-name disables only in
+# a test that runs alone. `SYSTEM DROP` carries the same requirement, in `various_checks.sh`.
+NO_PARALLEL_TAG_RE = re.compile(r"(--|#)\s*[Tt]ags:.*\bno-parallel\b")
+
 
 def failpoint_statements(text):
     """
-    Yield `(action, name)` for every `SYSTEM ENABLE|DISABLE FAILPOINT` statement in `text`.
+    Yield `(action, name)` for every `SYSTEM ENABLE|DISABLE FAILPOINT` statement in `text`, and
+    `("disable_all", None)` for every `SYSTEM DISABLE ALL FAILPOINTS`, which takes no name.
 
     `EXPLAIN SYSTEM ENABLE FAILPOINT ...` is skipped: it prints the parsed statement and arms
     nothing, so it neither needs a disable nor stands in for one.
@@ -627,7 +634,10 @@ def failpoint_statements(text):
         )
         if "explain" in text[statement_start + 1 : match.start()].lower():
             continue
-        yield match.group("action").lower(), match.group("name")
+        if match.group("disable_all"):
+            yield "disable_all", None
+        else:
+            yield match.group("action").lower(), match.group("name")
 
 
 def check_failpoints_are_disabled(files):
@@ -644,6 +654,10 @@ def check_failpoints_are_disabled(files):
     The disable belongs on every path out of the test, not only the successful one - in a `.sh` test
     that means a `trap ... EXIT`, since an early `exit` or a failing command under `set -e` skips
     the rest of the file.
+
+    `SYSTEM DISABLE ALL FAILPOINTS` disarms everything the test armed, so it stands in for the
+    per-name disables - but only in a `no-parallel` test, because it disarms what the tests running
+    alongside armed as well.
     """
 
     errors = []
@@ -675,13 +689,19 @@ def check_failpoints_are_disabled(files):
 
         enabled = []
         disabled = set()
+        disables_all = False
         for action, name in failpoint_statements(content):
             if action == "enable":
                 enabled.append(name)
+            elif action == "disable_all":
+                disables_all = True
             else:
                 disabled.add(name)
 
         if not enabled:
+            continue
+
+        if disables_all and NO_PARALLEL_TAG_RE.search(file_content):
             continue
 
         # A name that comes from a shell variable cannot be resolved by a text check, on either
@@ -707,6 +727,14 @@ def check_failpoints_are_disabled(files):
                 ),
                 1,
             )
+            if disables_all:
+                errors.append(
+                    f"{test_case}:{line_number} enables the fail point `{name}` and clears it only "
+                    f"with `SYSTEM DISABLE ALL FAILPOINTS`, in a test that has no `no-parallel` "
+                    f"tag. That statement also disarms the fail points the tests running alongside "
+                    f"armed. Either disable `{name}` by name, or tag the test `no-parallel`."
+                )
+                continue
             errors.append(
                 f"{test_case}:{line_number} enables the fail point `{name}` and never disables it. "
                 f"Add `SYSTEM DISABLE FAILPOINT {name}` on every path out of the test (in a `.sh` "
