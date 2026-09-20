@@ -1,0 +1,7 @@
+Facade SHOW plus source SHOW DICTIONARIES: EXISTS DICTIONARY and plain EXISTS agree on the dictionary
+1
+1
+The same user does not see a source table: SHOW TABLES was granted on the facade only
+0
+A missing name still reports 0
+0

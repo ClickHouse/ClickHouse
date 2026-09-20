@@ -134,7 +134,29 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 /// grant, answering "does not exist" instead of throwing: a denial here would
                 /// itself leak existence.
                 if (facade)
+                {
                     result = facade->isSourceTableVisibleNoLoad(table, getContext(), AccessType::SHOW_TABLES);
+
+                    /// A caller granted `SHOW_TABLES` on the facade but only `SHOW_DICTIONARIES` on
+                    /// the source still sees the source dictionary through `EXISTS DICTIONARY`, so
+                    /// the plain form must not answer "does not exist" for it: the broader facade
+                    /// grant must not hide an object the narrower one shows. The dictionary path
+                    /// stays keyed to dictionary visibility on *both* sides, and fails closed
+                    /// exactly like the dictionary-only path above.
+                    if (!result && access->isGranted(AccessType::SHOW_DICTIONARIES, database, table)
+                        && facade->isSourceTableVisibleNoLoad(table, getContext(), AccessType::SHOW_DICTIONARIES))
+                    {
+                        auto storage = tryGetDictionaryFailClosed(dictionary_id);
+                        result = storage && storage->isDictionary();
+
+                        /// Re-verify against the loaded storage: the name could have started
+                        /// resolving to a different source between the check above and the lookup.
+                        if (result)
+                            if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(dictionary_id, storage))
+                                result = access->isGranted(
+                                    AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+                    }
+                }
                 else
                     result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
             }
