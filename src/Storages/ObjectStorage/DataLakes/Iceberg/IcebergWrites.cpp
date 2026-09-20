@@ -763,7 +763,8 @@ void generateManifestList(
     const std::unordered_set<String> & carry_forward_manifest_paths,
     const std::vector<Int64> & entry_partition_spec_ids,
     const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries,
-    const std::vector<Int64> & entry_row_counts)
+    const std::vector<Int64> & entry_row_counts,
+    const std::vector<Int64> & entry_file_counts)
 {
     chassert(
         per_entry_content_types.empty() || per_entry_content_types.size() == manifest_entry_names.size(),
@@ -784,6 +785,12 @@ void generateManifestList(
             ErrorCodes::LOGICAL_ERROR,
             "Iceberg manifest list needs one row count per manifest entry, got {} counts for {} entries",
             entry_row_counts.size(),
+            manifest_entry_names.size());
+    if (!manifest_rewrite && entry_file_counts.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest list needs one file count per manifest entry, got {} counts for {} entries",
+            entry_file_counts.size(),
             manifest_entry_names.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
@@ -996,9 +1003,11 @@ void generateManifestList(
             continue;
         }
 
+        const Int32 added_files_count = static_cast<Int32>(entry_file_counts[entry_idx]);
+
         if (version == 1)
         {
-            setVersionedField(entry, 1, Iceberg::f_added_files_count);
+            setVersionedField(entry, added_files_count, Iceberg::f_added_files_count);
             setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
@@ -1008,7 +1017,7 @@ void generateManifestList(
         }
         else
         {
-            entry.field(Iceberg::f_added_files_count) = 1;
+            entry.field(Iceberg::f_added_files_count) = added_files_count;
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
@@ -1337,6 +1346,7 @@ bool IcebergStorageSink::initializeMetadata()
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
@@ -1446,6 +1456,7 @@ bool IcebergStorageSink::initializeMetadata()
             for (UInt64 data_file_row_count : writer.getDataFileRowCounts())
                 manifest_row_count += static_cast<Int64>(data_file_row_count);
             manifest_entry_row_counts.push_back(manifest_row_count);
+            manifest_entry_file_counts.push_back(static_cast<Int64>(writer.getDataFiles().size()));
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (partitioner)
@@ -1528,7 +1539,8 @@ bool IcebergStorageSink::initializeMetadata()
                     /* carry_forward_manifest_paths = */ {},
                     /* entry_partition_spec_ids = */ {},
                     entry_partition_summaries,
-                    manifest_entry_row_counts);
+                    manifest_entry_row_counts,
+                    manifest_entry_file_counts);
                 buffer_manifest_list->finalize();
             }
             catch (...)
