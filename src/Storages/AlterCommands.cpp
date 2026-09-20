@@ -2087,10 +2087,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     NameSet renamed_columns;
     /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
     /// - `apply()` runs the commands one after another - so that a command is screened below only when
-    /// it will really install a declaration.
-    NameSet constraint_names;
+    /// it will really install a declaration. A name can be declared more than once, and a `DROP`
+    /// removes one declaration of it, so the names are counted rather than collected into a set.
+    Names constraint_names;
     for (const auto & constraint : metadata->constraints.getConstraints())
-        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
+        constraint_names.push_back(constraint->as<const ASTConstraintDeclaration &>().name);
+    auto constraint_name_is_taken = [&constraint_names](const String & name)
+    { return std::find(constraint_names.begin(), constraint_names.end(), name) != constraint_names.end(); };
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2111,17 +2114,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
         if (command.type == AlterCommand::ADD_CONSTRAINT)
         {
-            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
+            /// `apply()` stores nothing for a name that is taken: it keeps the declaration it has, or
+            /// refuses the command.
+            const bool name_is_taken = constraint_name_is_taken(command.constraint_name);
+            if (command.constraint_decl && !(command.if_not_exists && name_is_taken))
                 ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
-            constraint_names.insert(command.constraint_name);
+            if (!name_is_taken)
+                constraint_names.push_back(command.constraint_name);
         }
         else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
         {
-            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
+            if (command.constraint_decl && constraint_name_is_taken(command.constraint_name))
                 ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
         }
         else if (command.type == AlterCommand::DROP_CONSTRAINT)
-            constraint_names.erase(command.constraint_name);
+        {
+            if (auto it = std::find(constraint_names.begin(), constraint_names.end(), command.constraint_name);
+                it != constraint_names.end())
+                constraint_names.erase(it);
+        }
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
