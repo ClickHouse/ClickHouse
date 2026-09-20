@@ -428,6 +428,41 @@ SELECT 'plain_cross_numeric_merged', countIf(explain LIKE '%function_name: in,%'
     SELECT count() FROM (SELECT toInt64(number) AS v FROM numbers(10))
     WHERE v = toUInt64(1) OR v = toUInt64(2) OR v = toUInt64(3));
 
+-- An `Array` alternative is compared element-wise, so `Array(Int64)` against an `Array(UInt64)` constant
+-- executes although the pair has no common type. The set the rewrite would build cannot execute at any
+-- element type, because the `IN` type-depth arithmetic does not look inside a `Variant`. So on this shape
+-- the decline is what lets the chain answer at all, and the three rows below are 3, 3 and 0 rather than
+-- the trio above's fold-only cost.
+SELECT 'variant_array_cross_numeric_chain', count() FROM (
+    SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10))
+    WHERE v = [toUInt64(1)] OR v = [toUInt64(2)] OR v = [toUInt64(3)];
+SELECT 'variant_array_cross_numeric_above_threshold', count() FROM (
+    SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10))
+    WHERE v = [toUInt64(1)] OR v = [toUInt64(2)] OR v = [toUInt64(3)]
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+SELECT 'variant_array_cross_numeric_not_merged', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10))
+    WHERE v = [toUInt64(1)] OR v = [toUInt64(2)] OR v = [toUInt64(3)]);
+-- The same element pair carried by a `Variant` constant, the direction where the set is built from the
+-- carrier rather than from the expression.
+SELECT 'carrier_variant_array_cross_numeric_chain', count() FROM (
+    SELECT materialize([toInt64(number)]) AS a FROM numbers(10))
+    WHERE a = CAST([toUInt64(1)], 'Variant(Array(UInt64))') OR a = CAST([toUInt64(2)], 'Variant(Array(UInt64))')
+       OR a = CAST([toUInt64(3)], 'Variant(Array(UInt64))');
+SELECT 'carrier_variant_array_cross_numeric_above_threshold', count() FROM (
+    SELECT materialize([toInt64(number)]) AS a FROM numbers(10))
+    WHERE a = CAST([toUInt64(1)], 'Variant(Array(UInt64))') OR a = CAST([toUInt64(2)], 'Variant(Array(UInt64))')
+       OR a = CAST([toUInt64(3)], 'Variant(Array(UInt64))')
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+SELECT 'carrier_variant_array_cross_numeric_not_merged', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT materialize([toInt64(number)]) AS a FROM numbers(10))
+    WHERE a = CAST([toUInt64(1)], 'Variant(Array(UInt64))') OR a = CAST([toUInt64(2)], 'Variant(Array(UInt64))')
+       OR a = CAST([toUInt64(3)], 'Variant(Array(UInt64))'));
+-- The element pair alone does not stop a fold: with no `Variant` in the way the same chain is merged.
+SELECT 'plain_array_cross_numeric_merged', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT [toInt64(number)] AS v FROM numbers(10))
+    WHERE v = [toUInt64(1)] OR v = [toUInt64(2)] OR v = [toUInt64(3)]);
+
 -- A FixedString(16) is comparable with an IPv6 even though the two have no common type, so this pair
 -- must not be declined for that reason. The merge does not happen here for an unrelated reason (the
 -- IPv6 constant has no lossless FixedString(16) form), which is why the assertions are on results.
