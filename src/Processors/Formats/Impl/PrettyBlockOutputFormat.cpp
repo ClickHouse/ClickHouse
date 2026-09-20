@@ -992,7 +992,9 @@ SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-PRETTY_PICTURES_PLACEHOLDER
+┌─Escaping_test─────────────────┐
+│ String with a NUL ␀ character │
+└───────────────────────────────┘
 ```
 
 `TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
@@ -1004,9 +1006,9 @@ SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
-```response title="Response"
-PRETTY_RAW_PLACEHOLDER
-```
+The response then contains the raw `NUL` byte instead. A terminal swallows it, so the character
+is invisible and the row is one position wider than the border that was measured for it - the
+deformed table that displaying the Control Picture avoids.
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 
 If the number of rows is greater than or equal to `10,000`, the message "Showed first 10 000" is printed.

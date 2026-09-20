@@ -6,7 +6,7 @@ Row 1:
 value: ␁␂␃
 Row 1:
 ──────
-value: tab␉here
+value: tab	here
 Row 1:
 ──────
 value: line
@@ -41,12 +41,11 @@ value: tab	and
 newline
 Row 1:
 ──────
-tab␉here: 1
+tab	here: 1
 Row 1:
 ──────
-line
-break: 1
-ok:        2
+line␊break: 1
+ok:         2
 Row 1:
 ──────
 tab	here: 1

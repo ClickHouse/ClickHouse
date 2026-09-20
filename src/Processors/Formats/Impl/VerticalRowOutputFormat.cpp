@@ -286,7 +286,9 @@ SELECT 'string with a NUL \0 character' AS test FORMAT Vertical
 ```
 
 ```response
-VERTICAL_PICTURES_PLACEHOLDER
+Row 1:
+──────
+test: string with a NUL ␀ character
 ```
 
 `TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, a line feed breaks the line, and an ANSI escape sequence is what lets the data carry a visualization. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
@@ -299,9 +301,8 @@ FORMAT Vertical
 SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
-```response
-VERTICAL_RAW_PLACEHOLDER
-```
+The response then contains the raw `NUL` byte instead. A terminal swallows it, so the value
+reads as if the character were simply missing.
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
