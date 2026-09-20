@@ -1742,7 +1742,7 @@ TEST(PromQLParser, LineComments)
              "up # comment\n",
              "up # comment\r",
              "up # comment\r\n",
-             "up #comment",
+             "up #!comment",
              /// An empty comment is only accepted when an end of line terminates it.
              "up #\n",
              "up #\r",
@@ -1757,11 +1757,14 @@ TEST(PromQLParser, LineComments)
     EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
     EXPECT_EQ(error_pos, 9);
 
-    /// A bare `#` at the end of the query is a lexical error, not an empty comment. This keeps the
-    /// grammar in line with the shared SQL lexer, which recognizes only `# ` and `#!` as a comment,
-    /// so the `promql` dialect rejects the same input instead of silently ignoring a typo.
-    EXPECT_FALSE(query_tree.tryParse("up #", 0, &error_message, &error_pos));
-    EXPECT_EQ(error_pos, 3);
+    /// EOF comments use the same `# ` / `#!` prefix contract as the shared SQL lexer.
+    for (const auto * const query : {"up #", "up #comment"})
+    {
+        error_message.clear();
+        error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, 3) << query;
+    }
 }
 
 

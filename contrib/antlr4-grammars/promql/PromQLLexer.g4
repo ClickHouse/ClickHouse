@@ -224,9 +224,9 @@ METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;
 
 WS         : [\r\t\n ]+   -> channel(WHITESPACE);
-// A line comment runs to the end of the line, or to the end of the input if it is the last line.
-// At the end of the input it must not be empty: a bare trailing `#` stays a lexical error, the same
-// way the shared SQL lexer rejects it in the `promql` dialect (it only recognizes `# ` and `#!`).
+// Newline-terminated comments keep the grammar's existing behavior.
+// EOF comments are lexed here and then narrowed by PromQLLexerBailingOutOnError to the shared SQL
+// lexer's `# ` / `#!` prefix contract. A bare trailing `#` remains a lexical error.
 SL_COMMENT : '#' ( ~[\r\n]* [\r\n] | ~[\r\n]+ ) -> channel(COMMENTS);
 
 // Whitespace as a fragment (so it can be used as a part of another token).

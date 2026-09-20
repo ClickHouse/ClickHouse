@@ -161,6 +161,20 @@ namespace
                     }
                 }
             }
+            if (!error_listener.hasError() && next_token->getType() == SL_COMMENT)
+            {
+                const String token_text = next_token->getText();
+                const bool terminated_by_line_end
+                    = !token_text.empty() && (token_text.back() == '\r' || token_text.back() == '\n');
+                if (!terminated_by_line_end
+                    && (token_text.size() < 2 || (token_text[1] != ' ' && token_text[1] != '!')))
+                {
+                    const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
+                    error_listener.setError("PromQL line comment at end of input must start with '# ' or '#!'", token_pos);
+                    stopLexing();
+                }
+            }
+
             return next_token;
         }
 
