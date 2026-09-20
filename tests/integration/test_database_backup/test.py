@@ -12,6 +12,17 @@ instance = cluster.add_instance(
     with_minio=True,
 )
 
+# `test_database_backup_metadata_with_quoted_locator_loads_on_restart` rewrites a database metadata file
+# in place, and such a file only exists when the metadata lives on the local disk, so that test runs on an
+# instance which keeps the local database disk.
+instance_local_metadata = cluster.add_instance(
+    "instance_local_metadata",
+    main_configs=["configs/backups.xml"],
+    stay_alive=True,
+    with_minio=True,
+    with_remote_database_disk=False,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -279,6 +290,11 @@ def test_database_backup_metadata_with_quoted_locator_loads_on_restart():
     # string literal, and `ALTER DATABASE ... MODIFY COMMENT` wrote that back into `metadata/<db>.sql`.
     # The next start replays the stored full `ATTACH DATABASE ... ENGINE = Backup(...)` statement, which
     # is neither the short `ATTACH` nor a force-restore load, so it has to accept that form on its own.
+    #
+    # The metadata file is rewritten in place here, so this runs on the instance whose metadata is a file
+    # on the local disk rather than an object on a remote database disk.
+    instance = instance_local_metadata
+
     cleanup_backup_files(instance)
 
     instance.query(
