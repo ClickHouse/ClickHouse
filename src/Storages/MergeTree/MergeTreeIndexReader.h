@@ -3,7 +3,7 @@
 #include <memory>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Formats/MarkInCompressedFile.h>
 
 
@@ -19,7 +19,7 @@ public:
 
     MergeTreeIndexReader(
         MergeTreeIndexPtr index_,
-        MergeTreeData::DataPartPtr part_,
+        MergeTreeDataPartInfoForReaderPtr data_part_info_,
         size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
         MarkCache * mark_cache,
@@ -28,7 +28,7 @@ public:
         MergeTreeReaderSettings settings_);
     virtual ~MergeTreeIndexReader();
 
-    void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
+    void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
@@ -37,7 +37,7 @@ public:
 
 private:
     MergeTreeIndexPtr index;
-    MergeTreeData::DataPartPtr part;
+    MergeTreeDataPartInfoForReaderPtr data_part_info;
     size_t marks_count;
     MarkRanges all_mark_ranges;
     MarkCache * mark_cache;

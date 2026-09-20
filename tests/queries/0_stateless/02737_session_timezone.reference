@@ -1,8 +1,13 @@
 Pacific/Pitcairn	Pacific/Pitcairn
 Asia/Novosibirsk	Asia/Novosibirsk
+test simple queries
 2022-12-12 17:23:23
 2022-12-13 07:23:23.123
+subquery shall use main query session_timezone
 2022-12-13 07:23:23	2022-12-13 07:23:23
+test proper serialization
 2002-12-12 23:23:23	2002-12-12 23:23:23
 2002-12-12 23:23:23.123	2002-12-12 23:23:23.123
+Create a table and test that DateTimes are processed correctly on insert
+Test parsing in WHERE filter, shall have the same logic as insert
 2000-01-01 01:00:00

@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Tableau Online'
+slug: /integrations/tableau-online
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'الاتصال', 'الدمج', 'واجهة المستخدم']
+description: 'يوظّف Tableau Online قوة البيانات لتمكين الأفراد من اتخاذ قرارات أسرع وبثقة أكبر من أي مكان.'
+title: 'Tableau Online'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import MySQLCloudSetup from '/snippets/ar/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup.mdx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكن لـ Tableau Online الاتصال بـ ClickHouse Cloud أو ببيئة ClickHouse المحلية عبر واجهة MySQL باستخدام مصدر بيانات MySQL الرسمي.
+
+<div id="clickhouse-cloud-setup">
+  ## إعداد ClickHouse Cloud
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## إعداد خادم ClickHouse المحلي
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-tableau-online-to-clickhouse-on-premise-without-ssl">
+  ## ربط Tableau Online بـ ClickHouse (محليًا دون SSL)
+</div>
+
+سجّل الدخول إلى موقع Tableau Cloud الخاص بك وأضف مصدر بيانات منشورًا جديدًا.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="واجهة Tableau Online تعرض زر 'New' لإنشاء مصدر بيانات منشور" border />
+
+<br />
+
+حدّد &quot;MySQL&quot; من قائمة الموصلات المتاحة.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="شاشة اختيار الموصلات في Tableau Online مع تمييز خيار MySQL" border />
+
+<br />
+
+أدخِل تفاصيل الاتصال التي جمعتها أثناء إعداد ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="شاشة إعداد اتصال MySQL في Tableau Online مع حقول الخادم والمنفذ وقاعدة البيانات وبيانات الاعتماد" border />
+
+<br />
+
+سيقوم Tableau Online بفحص قاعدة البيانات وعرض قائمة بالجداول المتاحة. اسحب الجدول المطلوب إلى مساحة العمل على اليمين. بالإضافة إلى ذلك، يمكنك النقر على &quot;Update Now&quot; لمعاينة البيانات، وكذلك ضبط أنواع الحقول أو أسمائها التي اكتشفها بدقة أكبر.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="صفحة مصدر البيانات في Tableau Online تعرض جداول قاعدة البيانات على اليسار ومساحة العمل على اليمين مع وظيفة السحب والإفلات" border />
+
+<br />
+
+بعد ذلك، لن يتبقى سوى النقر على &quot;Publish As&quot; في الزاوية العلوية اليمنى، ومن المفترض أن تتمكن من استخدام مجموعة البيانات التي أنشأتها حديثًا في Tableau Online كالمعتاد.
+
+ملاحظة: إذا كنت تريد استخدام Tableau Online مع Tableau Desktop ومشاركة مجموعات بيانات ClickHouse بينهما، فتأكد من استخدام Tableau Desktop مع موصل MySQL الافتراضي أيضًا، باتباع دليل الإعداد المعروض [هنا](https://www.tableau.com/support/drivers) إذا اخترت MySQL من القائمة المنسدلة لـ Data Source. إذا كان لديك Mac بمعالج M1، فراجع [موضوع استكشاف الأخطاء وإصلاحها هذا](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) للاطلاع على حل بديل لتثبيت برنامج التشغيل.
+
+<div id="connecting-tableau-online-to-clickhouse-cloud-or-on-premise-setup-with-ssl">
+  ## توصيل Tableau Online بـ ClickHouse (إعداد Cloud أو محلي باستخدام SSL)
+</div>
+
+نظرًا لعدم إمكانية توفير شهادات SSL عبر معالج إعداد اتصال MySQL في Tableau Online،
+فالطريقة الوحيدة هي استخدام Tableau Desktop لإعداد الاتصال، ثم تصديره إلى Tableau Online. ومع ذلك، فإن هذه العملية سهلة إلى حد كبير.
+
+شغّل Tableau Desktop على جهاز Windows أو Mac، ثم اختر &quot;Connect&quot; -&gt; &quot;To a Server&quot; -&gt; &quot;MySQL&quot;.
+ومن المرجح أن تحتاج أولًا إلى تثبيت برنامج تشغيل MySQL على جهازك.
+يمكنك القيام بذلك باتباع دليل الإعداد المعروض [هنا](https://www.tableau.com/support/drivers) إذا اخترت MySQL من القائمة المنسدلة Data Source.
+إذا كان لديك جهاز Mac بمعالج M1، فراجع [سلسلة استكشاف الأخطاء وإصلاحها هذه](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) للاطلاع على حل بديل لتثبيت برنامج التشغيل.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="واجهة Tableau Desktop تعرض قائمة Connect مع تمييز خيار MySQL" border />
+
+<br />
+
+<Note>
+  في واجهة إعداد اتصال MySQL، تأكد من أن خيار &quot;SSL&quot; مفعّل.
+  شهادة SSL الخاصة بـ ClickHouse Cloud موقعة من [Let&#39;s Encrypt](https://letsencrypt.org/certificates/).
+  يمكنك تنزيل الشهادة الجذرية من [هنا](https://letsencrypt.org/certs/isrgrootx1.pem).
+</Note>
+
+أدخل بيانات اعتماد مستخدم MySQL الخاصة بمثيلك على ClickHouse Cloud، ومسار الشهادة الجذرية التي نزّلتها.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="مربع حوار اتصال MySQL في Tableau Desktop مع تمكين خيار SSL ووجود حقول للخادم واسم المستخدم وكلمة المرور والشهادة" border />
+
+<br />
+
+اختر الجداول المطلوبة كالمعتاد (على نحو مماثل لـ Tableau Online)،
+ثم اختر &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Tableau Desktop يعرض قائمة Server مع تمييز خيار Publish Data Source" border />
+
+<br />
+
+مهم: تحتاج إلى اختيار &quot;Embedded password&quot; ضمن خيارات &quot;Authentication&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="مربع حوار النشر في Tableau Desktop يعرض خيارات Authentication مع تحديد Embedded password" border />
+
+<br />
+
+بالإضافة إلى ذلك، اختر &quot;Update workbook to use the published data source&quot;.
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="مربع حوار النشر في Tableau Desktop مع تحديد خيار 'Update workbook to use the published data source'" border />
+
+<br />
+
+أخيرًا، انقر على &quot;Publish&quot;، وسيُفتح مصدر البيانات الخاص بك مع بيانات الاعتماد المضمنة تلقائيًا في Tableau Online.
+
+<div id="known-limitations-clickhouse-2311">
+  ## القيود المعروفة (ClickHouse 23.11)
+</div>
+
+تم إصلاح جميع القيود المعروفة في ClickHouse `23.11`. إذا واجهت أي حالات عدم توافق أخرى، فلا تتردد في [التواصل معنا](https://clickhouse.com/company/contact) أو إنشاء [تذكرة جديدة](https://github.com/ClickHouse/ClickHouse/issues).

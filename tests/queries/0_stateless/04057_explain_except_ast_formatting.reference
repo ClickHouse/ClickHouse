@@ -1,0 +1,5 @@
+EXPLAIN PIPELINE header = 1, compact = 1\n(\n    SELECT -2\n)\nEXCEPT ALL\n(\n    SELECT 1\n)
+EXPLAIN PIPELINE header = 1, compact = 1\n(\n    SELECT -2\n)\nEXCEPT ALL\n(\n    SELECT 1\n)
+EXPLAIN PIPELINE header = 1, compact = 1\n(\n    SELECT -2\n)\nEXCEPT ALL\n(\n    SELECT 1\n)
+EXPLAIN PIPELINE header = 1, compact = 1\nSELECT -2\nINTERSECT ALL\nSELECT 1
+EXPLAIN PIPELINE header = 1, compact = 1\nSELECT -2\nINTERSECT ALL\nSELECT 1

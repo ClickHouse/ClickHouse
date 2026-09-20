@@ -2,8 +2,8 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
 
 
@@ -16,6 +16,53 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
+}
+
+/// A read-only view of a native unsigned integer column.
+/// `width` is loop-invariant, so the switch in `operator[]` is an inlined predicted jump, not a call.
+/// `fallback` is the only correct accessor for a column whose values are not a contiguous
+/// fixed-width array (sparse, low-cardinality, nullable).
+struct UIntColumnSpan
+{
+    const void * data = nullptr;
+    const IColumn * fallback = nullptr;
+    size_t width = 0;
+
+    ALWAYS_INLINE UInt64 operator[](size_t row) const
+    {
+        switch (width)
+        {
+            case 8: return static_cast<const UInt64 *>(data)[row];
+            case 4: return static_cast<const UInt32 *>(data)[row];
+            case 2: return static_cast<const UInt16 *>(data)[row];
+            case 1: return static_cast<const UInt8 *>(data)[row];
+            default: return fallback->getUInt(row);
+        }
+    }
+};
+
+inline UIntColumnSpan makeUIntColumnSpan(const IColumn & column)
+{
+    UIntColumnSpan span;
+    span.fallback = &column;
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+            /// A `ColumnConst` forwards `getDataType`, `isFixedAndContiguous` and `getRawData` to its
+            /// single-row nested column, so a raw read would index one element `input_rows_count` times.
+            if (!isColumnConst(column) && column.isFixedAndContiguous())
+            {
+                span.data = column.getRawData().data();
+                span.width = column.sizeOfValueIfFixed();
+            }
+            break;
+        default:
+            break;
+    }
+    return span;
 }
 
 class FunctionSpaceFillingCurveEncode: public IFunction
@@ -34,6 +81,41 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// Range-mask `Tuple` accessor for the expanded mode of `mortonEncode` / `hilbertEncode`.
+    /// `is_const` selects between reading row 0 for every row or reading row `row_idx`.
+    struct RangeMask
+    {
+        const ColumnTuple * tuple = nullptr;
+        bool is_const = false;
+
+        UInt64 read(size_t col_idx, size_t row_idx) const
+        {
+            return tuple->getColumn(col_idx).getUInt(is_const ? 0 : row_idx);
+        }
+
+        size_t tupleSize() const { return tuple->tupleSize(); }
+
+        explicit operator bool() const { return tuple != nullptr; }
+    };
+
+    static RangeMask extractRangeMask(const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.empty())
+            return {};
+        const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+        if (const_col)
+        {
+            const auto * tuple = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
+            if (tuple)
+                return RangeMask{tuple, true};
+            return {};
+        }
+        const auto * tuple = typeid_cast<const ColumnTuple *>(arguments[0].column.get());
+        if (tuple)
+            return RangeMask{tuple, false};
+        return {};
+    }
 
     DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
     {

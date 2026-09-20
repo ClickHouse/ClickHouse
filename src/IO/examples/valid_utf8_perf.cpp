@@ -3,8 +3,9 @@
 #include <Common/Stopwatch.h>
 #include <string>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
-int main(int argc, char ** argv)
+int mainEntryExampleValidUtf8Perf(int argc, char ** argv)
 {
     try
     {
@@ -27,7 +28,7 @@ int main(int argc, char ** argv)
             }
         }
         double t = timer.elapsedSeconds();
-        std::cout << "Wrote to string in " << t << "s at " << text.size() / 1e6 * repeats / t << "MB/s." << std::endl;
+        std::cout << "Wrote to string in " << t << "s at " << static_cast<double>(text.size()) / 1e6 * static_cast<double>(repeats) / t << "MB/s." << std::endl;
         std::cout << "String length: " << str1.size() << "(" << (str1.size() == text.size() * repeats ? "as " : "un") << "expected)" << std::endl;
 
         timer.restart();
@@ -42,7 +43,7 @@ int main(int argc, char ** argv)
             }
         }
         t = timer.elapsedSeconds();
-        std::cout << "Wrote to UTF8 in " << t << "s at " << text.size() / 1e6 * repeats / t << "MB/s." << std::endl;
+        std::cout << "Wrote to UTF8 in " << t << "s at " << static_cast<double>(text.size()) / 1e6 * static_cast<double>(repeats) / t << "MB/s." << std::endl;
         std::cout << "String length: " << str2.size() << "(" << (str2.size() == text.size() * repeats ? "as " : "un") << "expected)" << std::endl;
     }
     catch (const DB::Exception & e)

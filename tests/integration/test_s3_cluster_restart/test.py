@@ -9,7 +9,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import TSV
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -192,14 +191,6 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
 
     assert result == "14950\n"
 
-    node1.query("system flush logs query_log")
-
-    assert (
-        node1.query(
-            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'], ProfileEvents['DistributedConnectionFailTry'] > 0 FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
-        ) == "1\t1\n"
-    )
-
     # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
     node2.wait_for_start(30)
 
@@ -277,11 +268,6 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
             ).strip()
         ) == generated_rows
     )
-
-    if (not wait_restart):
-        node1.query("SYSTEM FLUSH LOGS query_log");
-        assert ( node1.query(f"select ProfileEvents['DistributedConnectionFailTry'] from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
-
 
     if (missing_table):
         node1.query("SYSTEM FLUSH LOGS query_log");

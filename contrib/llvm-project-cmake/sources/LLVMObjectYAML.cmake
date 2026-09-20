@@ -1,0 +1,32 @@
+# Source files for LLVMObjectYAML
+set(LLVMOBJECTYAML_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ArchiveEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ArchiveYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLDebugSections.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLSymbols.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLTypeHashing.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/CodeViewYAMLTypes.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/COFFEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/COFFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DWARFEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DWARFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DXContainerEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/DXContainerYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ELFEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ELFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/GOFFEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/GOFFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/MachOEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/MachOYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/ObjectYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/MinidumpEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/MinidumpYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/OffloadEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/OffloadYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/WasmEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/WasmYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/XCOFFEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/XCOFFYAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/YAML.cpp
+    ${LLVM_SOURCE_DIR}/lib/ObjectYAML/yaml2obj.cpp
+)

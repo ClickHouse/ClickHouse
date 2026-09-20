@@ -20,15 +20,29 @@ class SettingsChanges;
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {
+
+    enum class CredentialsCheckResult : UInt8
+    {
+        Fail,
+        NeedSecondFactor,
+        Success
+    };
+
     /// Checks the credentials (passwords, readiness, etc.)
     /// If necessary, makes a request to external authenticators and fills in the session settings if they were
     /// returned by the authentication server
-    static bool areCredentialsValid(
+    static CredentialsCheckResult areCredentialsValid(
         const Credentials & credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
         const ClientInfo & client_info,
         SettingsChanges & settings);
+
+    /// Marks the one-time password contained in the credentials as used, enforcing single use
+    /// of the codes (RFC 6238, Section 5.2). Returns false if the code has already been used before.
+    /// Must be called exactly once after the whole authentication succeeds, so that a failed attempt
+    /// (e.g. a wrong password combined with a valid code) cannot consume the code.
+    static bool consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method);
 
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>
@@ -39,7 +53,7 @@ struct Authentication
         const String & getRealm() const;
 
         Require * clone() const override { return new Require(*this); }
-        void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+        void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
     private:
         const String realm;

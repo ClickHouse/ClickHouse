@@ -12,6 +12,8 @@ struct IHTTPContext
     virtual uint64_t getMaxFields() const = 0;
     virtual uint64_t getMaxFieldNameSize() const = 0;
     virtual uint64_t getMaxFieldValueSize() const = 0;
+    virtual uint64_t getMaxRequestHeaderSize() const = 0;
+    virtual Poco::Timespan getHeadersReadTimeout() const = 0;
     virtual Poco::Timespan getReceiveTimeout() const = 0;
     virtual Poco::Timespan getSendTimeout() const = 0;
 

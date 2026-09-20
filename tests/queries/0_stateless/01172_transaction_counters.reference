@@ -23,7 +23,6 @@
 3	Begin	1	1	1	1	
 3	AddPart	1	1	1	1	all_3_3_0
 3	Commit	1	1	1	0	
-1	LockPart	1	1	1	1	all_2_2_0
 4	Begin	1	1	1	1	
 4	AddPart	1	1	1	1	all_4_4_0
 4	Commit	1	1	1	0	

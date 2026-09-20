@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTCreateWorkloadQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateWorkloadQuery>(*this);
+    auto res = make_intrusive<ASTCreateWorkloadQuery>(*this);
     res->children.clear();
 
     res->workload_name = workload_name->clone();

@@ -101,7 +101,7 @@ protected:
     PeekableReadBuffer * buf;
 };
 
-class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class CSVSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);

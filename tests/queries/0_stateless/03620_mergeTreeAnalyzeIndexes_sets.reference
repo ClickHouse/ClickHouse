@@ -1,0 +1,9 @@
+-- { echo }
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (select key from data order by key limit 10));
+all_1_1_0	[(0,1)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (select key from data order by key desc limit 10));
+all_1_1_0	[(11,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in keys_1);
+all_1_1_0	[(0,1)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in keys_2);
+all_1_1_0	[(1,2)]

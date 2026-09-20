@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "_ch_rust_polyglot"
+version = "0.1.0"
+
+[dependencies]
+polyglot-sql = "0.1.13"
+
+[lib]
+crate-type = ["staticlib"]

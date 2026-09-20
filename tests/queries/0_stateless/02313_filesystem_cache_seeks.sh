@@ -14,7 +14,7 @@ client_opts=(
 
 for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+    $CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE"
 
     $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "DROP TABLE IF EXISTS test_02313" > /dev/null
 

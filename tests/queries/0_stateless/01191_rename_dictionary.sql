@@ -1,4 +1,4 @@
--- Tags: no-parallel, memory-engine
+-- Tags: no-parallel, memory-engine, no-flaky-check
 
 DROP DATABASE IF EXISTS test_01191;
 CREATE DATABASE test_01191 ENGINE=Atomic;

@@ -12,12 +12,16 @@ namespace DeltaLake
 class WriteTransaction
 {
 public:
-    explicit WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_);
+    WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_);
 
     const std::string & getDataPath() const;
 
-    /// Create a transcation.
-    void create();
+    /// Create a transaction for the target table using the schema passed at construction; see the
+    /// implementation for how partitioned vs unpartitioned tables derive the write context.
+    void create(const DB::Names & partition_columns);
+
+    /// Create a brand-new Delta table by writing the initial commit. Throws if `_delta_log` already has commits.
+    void createTable();
 
     struct CommitFile
     {
@@ -33,6 +37,10 @@ public:
     /// Validate if schema is consistent with the write schema of the transaction.
     void validateSchema(const DB::Block & header) const;
 
+    /// The Delta table's write schema (authoritative types and nullability, one entry per
+    /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
+    const DB::NamesAndTypesList & getWriteSchema() const;
+
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;
     using KernelExternEngine = DeltaLake::KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
@@ -40,13 +48,15 @@ private:
     using KernelEngineData = DeltaLake::KernelPointerWrapper<ffi::ExclusiveEngineData, ffi::free_engine_data>;
 
     const DeltaLake::KernelHelperPtr kernel_helper;
+    /// Table logical schema, provided at construction. Used to create the table and, for partitioned
+    /// tables, as the write schema (the kernel exposes no partitioned write context via FFI).
+    const DB::NamesAndTypesList table_schema;
     const LoggerPtr log;
-    std::string write_path;
     std::string path_prefix;
 
     KernelExternEngine engine;
     KernelTransaction transaction;
-    KernelWriteContext write_context;
+    KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;
 
     void assertTransactionCreated() const;

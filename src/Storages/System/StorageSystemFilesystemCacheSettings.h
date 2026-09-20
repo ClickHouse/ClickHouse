@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 namespace DB
 {

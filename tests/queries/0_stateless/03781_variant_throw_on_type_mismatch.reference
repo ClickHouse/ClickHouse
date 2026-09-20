@@ -1,0 +1,13 @@
+Compatible types work correctly
+3.14	4.140000000000001
+10	11
+20	21
+\N	\N
+Variant(Float64, UInt64)
+Multiple operations with compatible types
+3.14	6.28	2.14
+10	20	9
+20	40	19
+\N	\N	\N
+Incompatible types throw exceptions
+Test for issue 95839

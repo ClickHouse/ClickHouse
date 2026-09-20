@@ -1,0 +1,104 @@
+--- ROWS frame: PRECEDING + CURRENT ROW ---
+0	0
+1	1
+2	3
+3	6
+4	9
+--- ROWS frame: PRECEDING + FOLLOWING ---
+0	0.5
+1	1
+2	2
+3	3
+4	3.5
+--- ROWS frame: UNBOUNDED PRECEDING + CURRENT ROW (running total) ---
+0	0
+1	1
+2	3
+3	6
+4	10
+--- ROWS frame: CURRENT ROW + UNBOUNDED FOLLOWING ---
+0	10
+1	10
+2	9
+3	7
+4	4
+--- ROWS frame: PRECEDING + PRECEDING ---
+0	0
+1	0
+2	1
+3	3
+4	6
+--- ROWS frame: FOLLOWING + FOLLOWING ---
+0	6
+1	9
+2	7
+3	4
+4	0
+--- RANGE frame: PRECEDING + FOLLOWING ---
+0	3
+1	6
+2	10
+3	10
+4	9
+--- RANGE frame: UNBOUNDED PRECEDING + CURRENT ROW ---
+0	0
+1	1
+2	3
+3	6
+4	10
+--- PARTITION BY with ORDER BY ---
+0	0	0
+0	2	2
+0	4	6
+1	1	1
+1	3	4
+1	5	9
+--- row_number / rank / dense_rank / percent_rank / cume_dist ---
+1	0	1	1	1	0	0.3333333333333333
+1	1	2	1	1	0	0.3333333333333333
+2	2	3	3	2	0.4	0.5
+3	3	4	4	3	0.6	0.8333333333333334
+3	4	5	4	3	0.6	0.8333333333333334
+4	5	6	6	4	1	1
+--- ntile ---
+0	1
+1	1
+2	1
+3	1
+4	2
+5	2
+6	2
+7	3
+8	3
+9	3
+--- first_value / last_value / nth_value ---
+10	10	40	20
+20	10	40	20
+30	10	40	20
+40	10	40	20
+--- lag / lead with default ---
+1	0	0
+2	1	0
+3	2	0
+4	3	0
+5	4	0
+--- empty input ---
+--- nullable input ---
+1	1
+3	4
+\N	4
+--- aggregate over window w/ String type ---
+a	4	a	d	a
+b	4	a	d	a
+c	4	a	d	a
+d	4	a	d	a
+--- PARTITION BY + RANGE frame (group into stripes) ---
+0	0	0
+0	2	2
+0	4	4
+0	6	6
+1	1	1
+1	3	3
+1	5	5
+1	7	7
+--- Errors: PRECEDING with negative offset ---

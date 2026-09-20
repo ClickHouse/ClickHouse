@@ -1,0 +1,15 @@
+---
+name: gitlab_base.Ability
+description: |
+  Focus on the feature, not the user's capabilities.
+extends: existence
+message: "Try to replace ('%s') with more precise language, unless this content is about security. See the word list for details."
+ignorecase: true
+vocab: false
+level: suggestion
+link: https://docs.gitlab.com/development/documentation/styleguide/word_list/#ability-able
+tokens:
+  - ability to
+  - ability
+  - able to
+  - able

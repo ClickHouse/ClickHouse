@@ -1,0 +1,3 @@
+SYSTEM INSTRUMENT ADD \'QueryMetricLog::startQuery\' LOG ENTRY \'msg\'
+SYSTEM INSTRUMENT ADD \'QueryMetricLog::startQuery\' SLEEP ENTRY 0.1 0.5
+SYSTEM INSTRUMENT ADD \'QueryMetricLog::startQuery\' SLEEP ENTRY 1 2 3

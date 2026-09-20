@@ -1,0 +1,524 @@
+---
+title: 'Справочник по классам DataStore'
+sidebarTitle: 'Справочник по классам'
+slug: /chdb/datastore/class-reference
+description: 'Полный справочник API для классов DataStore, ColumnExpr, LazyGroupBy и LazySeries'
+keywords: ['chdb', 'datastore', 'class', 'reference', 'api', 'columnexpr', 'lazygroupby']
+doc_type: 'reference'
+---
+
+В этом справочнике описаны основные классы API DataStore.
+
+<div id="datastore">
+  ## DataStore
+</div>
+
+Основной класс для работы с данными, аналогичный DataFrame.
+
+```python
+from chdb.datastore import DataStore
+```
+
+<div id="datastore-constructor">
+  ### Конструктор
+</div>
+
+```python
+DataStore(data=None, columns=None, index=None, dtype=None, copy=None)
+```
+
+**Параметры:**
+
+| Параметр  | Тип                           | Описание             |
+| --------- | ----------------------------- | -------------------- |
+| `data`    | dict/list/DataFrame/DataStore | Входные данные       |
+| `columns` | list                          | Имена столбцов       |
+| `index`   | Index                         | Индекс строк         |
+| `dtype`   | dict                          | Типы данных столбцов |
+| `copy`    | bool                          | Копирование данных   |
+
+**Примеры:**
+
+```python
+# From dictionary
+ds = DataStore({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+
+# From pandas DataFrame
+import pandas as pd
+ds = DataStore(pd.DataFrame({'a': [1, 2, 3]}))
+
+# Empty DataStore
+ds = DataStore()
+```
+
+<div id="datastore-properties">
+  ### Свойства
+</div>
+
+| Свойство  | Тип       | Описание                        |
+| --------- | --------- | ------------------------------- |
+| `columns` | Index     | Имена столбцов                  |
+| `dtypes`  | Series    | Типы данных столбцов            |
+| `shape`   | tuple     | (строки, столбцы)               |
+| `size`    | int       | Общее количество элементов      |
+| `ndim`    | int       | Количество размерностей (2)     |
+| `empty`   | bool      | Пуст ли DataFrame               |
+| `values`  | ndarray   | Базовые данные как массив NumPy |
+| `index`   | Index     | Индекс строк                    |
+| `T`       | DataStore | Транспонированное представление |
+| `axes`    | list      | Список осей                     |
+
+<div id="datastore-factory">
+  ### Фабричные методы
+</div>
+
+| Метод                     | Описание                              |
+| ------------------------- | ------------------------------------- |
+| `uri(uri)`                | Универсальный фабричный метод для URI |
+| `from_file(path, ...)`    | Создать из файла                      |
+| `from_df(df)`             | Создать из pandas DataFrame           |
+| `from_s3(url, ...)`       | Создать из S3                         |
+| `from_gcs(url, ...)`      | Создать из Google Cloud Storage       |
+| `from_azure(url, ...)`    | Создать из Azure Blob                 |
+| `from_mysql(...)`         | Создать из MySQL                      |
+| `from_postgresql(...)`    | Создать из PostgreSQL                 |
+| `from_clickhouse(...)`    | Создать из ClickHouse                 |
+| `from_mongodb(...)`       | Создать из MongoDB                    |
+| `from_sqlite(...)`        | Создать из SQLite                     |
+| `from_iceberg(path)`      | Создать из таблицы Iceberg            |
+| `from_delta(path)`        | Создать из Delta Lake                 |
+| `from_numbers(n)`         | Создать с последовательными числами   |
+| `from_random(rows, cols)` | Создать со случайными данными         |
+| `run_sql(query)`          | Создать из SQL-запроса                |
+
+Подробности см. в разделе [Фабричные методы](/ru/chdb/datastore/factory-methods).
+
+<div id="datastore-query">
+  ### Методы запросов
+</div>
+
+| Метод                         | Возвращает  | Описание                            |
+| ----------------------------- | ----------- | ----------------------------------- |
+| `select(*cols)`               | DataStore   | Выбрать столбцы                     |
+| `filter(condition)`           | DataStore   | Отфильтровать строки                |
+| `where(condition)`            | DataStore   | Псевдоним для filter                |
+| `sort(*cols, ascending=True)` | DataStore   | Отсортировать строки                |
+| `orderby(*cols)`              | DataStore   | Псевдоним для sort                  |
+| `limit(n)`                    | DataStore   | Ограничить количество строк         |
+| `offset(n)`                   | DataStore   | Пропустить строки                   |
+| `distinct(subset=None)`       | DataStore   | Удалить дубликаты                   |
+| `groupby(*cols)`              | LazyGroupBy | Сгруппировать строки                |
+| `having(condition)`           | DataStore   | Отфильтровать группы                |
+| `join(right, ...)`            | DataStore   | Объединить DataStore с помощью JOIN |
+| `union(other, all=False)`     | DataStore   | Объединить DataStore                |
+| `when(cond, val)`             | CaseWhen    | CASE WHEN                           |
+
+Подробнее см. в разделе [Построение запросов](/ru/chdb/datastore/query-building).
+
+<div id="datastore-pandas">
+  ### Методы, совместимые с pandas
+</div>
+
+Полный список всех 209 методов см. в разделе [Совместимость с pandas](/ru/chdb/datastore/pandas-compat).
+
+**Индексация:**
+`head()`, `tail()`, `sample()`, `loc`, `iloc`, `at`, `iat`, `query()`, `isin()`, `where()`, `mask()`, `get()`, `xs()`, `pop()`
+
+**Агрегация:**
+`sum()`, `mean()`, `std()`, `var()`, `min()`, `max()`, `median()`, `count()`, `nunique()`, `quantile()`, `describe()`, `corr()`, `cov()`, `skew()`, `kurt()`
+
+**Манипуляции с данными:**
+`drop()`, `drop_duplicates()`, `dropna()`, `fillna()`, `replace()`, `rename()`, `assign()`, `astype()`, `copy()`
+
+**Сортировка:**
+`sort_values()`, `sort_index()`, `nlargest()`, `nsmallest()`, `rank()`
+
+**Преобразование формы:**
+`pivot()`, `pivot_table()`, `melt()`, `stack()`, `unstack()`, `transpose()`, `explode()`, `squeeze()`
+
+**Объединение:**
+`merge()`, `join()`, `concat()`, `append()`, `combine()`, `update()`, `compare()`
+
+**Применение/преобразование:**
+`apply()`, `applymap()`, `map()`, `agg()`, `transform()`, `pipe()`, `groupby()`
+
+**Временные ряды:**
+`rolling()`, `expanding()`, `ewm()`, `shift()`, `diff()`, `pct_change()`, `resample()`
+
+<div id="datastore-io">
+  ### Методы I/O
+</div>
+
+| Метод                   | Описание                          |
+| ----------------------- | --------------------------------- |
+| `to_csv(path, ...)`     | Экспорт в CSV                     |
+| `to_parquet(path, ...)` | Экспорт в Parquet                 |
+| `to_json(path, ...)`    | Экспорт в JSON                    |
+| `to_excel(path, ...)`   | Экспорт в Excel                   |
+| `to_df()`               | Преобразование в pandas DataFrame |
+| `to_pandas()`           | Псевдоним метода `to_df()`        |
+| `to_arrow()`            | Преобразование в Arrow Table      |
+| `to_dict(orient)`       | Преобразование в словарь          |
+| `to_records()`          | Преобразование в записи           |
+| `to_numpy()`            | Преобразование в массив NumPy     |
+| `to_sql()`              | Генерация SQL-строки              |
+| `to_string()`           | Строковое представление           |
+| `to_markdown()`         | Таблица Markdown                  |
+| `to_html()`             | Таблица HTML                      |
+
+Подробнее см. в разделе [Операции I/O](/ru/chdb/datastore/io).
+
+<div id="datastore-debug">
+  ### Методы отладки
+</div>
+
+| Метод                    | Описание                         |
+| ------------------------ | -------------------------------- |
+| `explain(verbose=False)` | Показать план выполнения         |
+| `clear_cache()`          | Очистить кэшированные результаты |
+
+Подробности см. в разделе [Отладка](/ru/chdb/debugging/index).
+
+<div id="datastore-magic">
+  ### Магические методы
+</div>
+
+| Метод                     | Описание                                       |            |
+| ------------------------- | ---------------------------------------------- | ---------- |
+| `__getitem__(key)`        | `ds['col']`, `ds[['a', 'b']]`, `ds[condition]` |            |
+| `__setitem__(key, value)` | `ds['col'] = value`                            |            |
+| `__delitem__(key)`        | `del ds['col']`                                |            |
+| `__len__()`               | `len(ds)`                                      |            |
+| `__iter__()`              | `for col in ds`                                |            |
+| `__contains__(key)`       | `'col' in ds`                                  |            |
+| `__repr__()`              | `repr(ds)`                                     |            |
+| `__str__()`               | `str(ds)`                                      |            |
+| `__eq__(other)`           | `ds == other`                                  |            |
+| `__ne__(other)`           | `ds != other`                                  |            |
+| `__lt__(other)`           | `ds < other`                                   |            |
+| `__le__(other)`           | `ds <= other`                                  |            |
+| `__gt__(other)`           | `ds > other`                                   |            |
+| `__ge__(other)`           | `ds >= other`                                  |            |
+| `__add__(other)`          | `ds + other`                                   |            |
+| `__sub__(other)`          | `ds - other`                                   |            |
+| `__mul__(other)`          | `ds * other`                                   |            |
+| `__truediv__(other)`      | `ds / other`                                   |            |
+| `__floordiv__(other)`     | `ds // other`                                  |            |
+| `__mod__(other)`          | `ds % other`                                   |            |
+| `__pow__(other)`          | `ds ** other`                                  |            |
+| `__and__(other)`          | `ds & other`                                   |            |
+| `__or__(other)`           | &#96;ds                                        | other&#96; |
+| `__invert__()`            | `~ds`                                          |            |
+| `__neg__()`               | `-ds`                                          |            |
+| `__pos__()`               | `+ds`                                          |            |
+| `__abs__()`               | `abs(ds)`                                      |            |
+
+***
+
+<div id="columnexpr">
+  ## ColumnExpr
+</div>
+
+Представляет собой выражение столбца для отложенного вычисления. Возвращается при обращении к столбцу.
+
+```python
+# ColumnExpr is returned automatically
+col = ds['name']  # Returns ColumnExpr
+```
+
+<div id="datastore-properties">
+  ### Свойства
+</div>
+
+| Свойство | Тип   | Описание    |
+| -------- | ----- | ----------- |
+| `name`   | str   | Имя столбца |
+| `dtype`  | dtype | Тип данных  |
+
+<div id="columnexpr-accessors">
+  ### Аксессоры
+</div>
+
+| Аксессор | Описание                                               | Методы      |
+| -------- | ------------------------------------------------------ | ----------- |
+| `.str`   | Строковые операции                                     | 56 методов  |
+| `.dt`    | Операции с датой и временем                            | 42+ методов |
+| `.arr`   | Операции с массивами                                   | 37 методов  |
+| `.json`  | Разбор JSON                                            | 13 методов  |
+| `.url`   | Разбор URL                                             | 15 методов  |
+| `.ip`    | Операции с IP-адресами                                 | 9 методов   |
+| `.geo`   | Геопространственные операции и операции с расстояниями | 14 методов  |
+
+См. [Аксессоры](/ru/chdb/datastore/accessors) для полной документации.
+
+<div id="columnexpr-arithmetic">
+  ### Арифметические операции
+</div>
+
+```python
+ds['total'] = ds['price'] * ds['quantity']
+ds['profit'] = ds['revenue'] - ds['cost']
+ds['ratio'] = ds['a'] / ds['b']
+ds['squared'] = ds['value'] ** 2
+ds['remainder'] = ds['value'] % 10
+```
+
+<div id="columnexpr-comparison">
+  ### Операции сравнения
+</div>
+
+```python
+ds[ds['age'] > 25]           # Greater than
+ds[ds['age'] >= 25]          # Greater or equal
+ds[ds['age'] < 25]           # Less than
+ds[ds['age'] <= 25]          # Less or equal
+ds[ds['name'] == 'Alice']    # Equal
+ds[ds['name'] != 'Bob']      # Not equal
+```
+
+<div id="columnexpr-logical">
+  ### Логические операции
+</div>
+
+```python
+ds[(ds['age'] > 25) & (ds['city'] == 'NYC')]    # AND
+ds[(ds['age'] > 25) | (ds['city'] == 'NYC')]    # OR
+ds[~(ds['status'] == 'inactive')]               # NOT
+```
+
+<div id="columnexpr-methods">
+  ### Методы
+</div>
+
+| Метод                        | Описание                |
+| ---------------------------- | ----------------------- |
+| `as_(alias)`                 | Задать псевдоним        |
+| `cast(dtype)`                | Привести к типу         |
+| `astype(dtype)`              | Псевдоним для cast      |
+| `isnull()`                   | Равно NULL              |
+| `notnull()`                  | Не равно NULL           |
+| `isna()`                     | Псевдоним для isnull    |
+| `notna()`                    | Псевдоним для notnull   |
+| `isin(values)`               | В списке значений       |
+| `between(low, high)`         | Между двумя значениями  |
+| `fillna(value)`              | Заполнить NULL-значения |
+| `replace(to_replace, value)` | Заменить значения       |
+| `clip(lower, upper)`         | Ограничить значения     |
+| `abs()`                      | Абсолютное значение     |
+| `round(decimals)`            | Округлить значения      |
+| `floor()`                    | Округлить вниз          |
+| `ceil()`                     | Округлить вверх         |
+| `apply(func)`                | Применить функцию       |
+| `map(mapper)`                | Сопоставить значения    |
+
+<div id="columnexpr-aggregation">
+  ### Методы агрегации
+</div>
+
+| Метод         | Описание                              |
+| ------------- | ------------------------------------- |
+| `sum()`       | Сумма                                 |
+| `mean()`      | Среднее                               |
+| `avg()`       | Псевдоним `mean()`                    |
+| `min()`       | Минимум                               |
+| `max()`       | Максимум                              |
+| `count()`     | Количество значений, отличных от NULL |
+| `nunique()`   | Количество уникальных значений        |
+| `std()`       | Стандартное отклонение                |
+| `var()`       | Дисперсия                             |
+| `median()`    | Медиана                               |
+| `quantile(q)` | Квантиль                              |
+| `first()`     | Первое значение                       |
+| `last()`      | Последнее значение                    |
+| `any()`       | Хотя бы одно значение `true`          |
+| `all()`       | Все значения `true`                   |
+
+***
+
+<div id="lazygroupby">
+  ## LazyGroupBy
+</div>
+
+Представляет собой DataStore с группировкой для операций агрегации.
+
+```python
+# LazyGroupBy is returned automatically
+grouped = ds.groupby('category')  # Returns LazyGroupBy
+```
+
+<div id="columnexpr-methods">
+  ### Методы
+</div>
+
+| Метод             | Возвращает | Описание                                  |
+| ----------------- | ---------- | ----------------------------------------- |
+| `agg(spec)`       | DataStore  | Агрегация                                 |
+| `aggregate(spec)` | DataStore  | Псевдоним для agg                         |
+| `sum()`           | DataStore  | Сумма по группам                          |
+| `mean()`          | DataStore  | Среднее по группам                        |
+| `count()`         | DataStore  | Количество по группам                     |
+| `min()`           | DataStore  | Минимум по группам                        |
+| `max()`           | DataStore  | Максимум по группам                       |
+| `std()`           | DataStore  | Стандартное отклонение по группам         |
+| `var()`           | DataStore  | Дисперсия по группам                      |
+| `median()`        | DataStore  | Медиана по группам                        |
+| `nunique()`       | DataStore  | Количество уникальных значений по группам |
+| `first()`         | DataStore  | Первое значение в каждой группе           |
+| `last()`          | DataStore  | Последнее значение в каждой группе        |
+| `nth(n)`          | DataStore  | N-е значение в каждой группе              |
+| `head(n)`         | DataStore  | Первые n значений в каждой группе         |
+| `tail(n)`         | DataStore  | Последние n значений в каждой группе      |
+| `apply(func)`     | DataStore  | Применяет функцию к каждой группе         |
+| `transform(func)` | DataStore  | Преобразует каждую группу                 |
+| `filter(func)`    | DataStore  | Фильтрует группы                          |
+
+<div id="lazygroupby-columns">
+  ### Выбор столбца
+</div>
+
+```python
+# Select column after groupby
+grouped['amount'].sum()     # Returns DataStore
+grouped[['a', 'b']].sum()   # Returns DataStore
+```
+
+<div id="lazygroupby-agg">
+  ### Спецификации агрегации
+</div>
+
+```python
+# Single aggregation
+grouped.agg({'amount': 'sum'})
+
+# Multiple aggregations per column
+grouped.agg({'amount': ['sum', 'mean', 'count']})
+
+# Named aggregations
+grouped.agg(
+    total=('amount', 'sum'),
+    average=('amount', 'mean'),
+    count=('id', 'count')
+)
+```
+
+***
+
+<div id="lazyseries">
+  ## LazySeries
+</div>
+
+Представляет собой отложенную Series (один столбец).
+
+<div id="datastore-properties">
+  ### Свойства
+</div>
+
+| Свойство | Тип   | Описание       |
+| -------- | ----- | -------------- |
+| `name`   | str   | Название серии |
+| `dtype`  | dtype | Тип данных     |
+
+<div id="columnexpr-methods">
+  ### Методы
+</div>
+
+Наследует большинство методов класса `ColumnExpr`. Основные методы:
+
+| Метод            | Описание                       |
+| ---------------- | ------------------------------ |
+| `value_counts()` | Частота значений               |
+| `unique()`       | Уникальные значения            |
+| `nunique()`      | Количество уникальных значений |
+| `mode()`         | Наиболее частое значение       |
+| `to_list()`      | Преобразует в список           |
+| `to_numpy()`     | Преобразует в массив           |
+| `to_frame()`     | Преобразует в DataStore        |
+
+***
+
+<div id="related">
+  ## Связанные классы
+</div>
+
+<div id="f-class">
+  ### F (Функции)
+</div>
+
+Пространство имен для функций ClickHouse.
+
+```python
+from chdb.datastore import F, Field
+
+# Aggregations
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+F.quantile(Field('value'), 0.95)
+
+# Conditional
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('active'))
+
+# Window
+F.row_number().over(order_by='date')
+F.lag('price', 1).over(partition_by='product', order_by='date')
+```
+
+Подробности см. в разделе [Агрегация](/ru/chdb/datastore/aggregation#f-namespace).
+
+<div id="field-class">
+  ### Поле
+</div>
+
+Ссылка на столбец по его имени.
+
+```python
+from chdb.datastore import Field
+
+# Create field reference
+amount = Field('amount')
+price = Field('price')
+
+# Use in expressions
+F.sum(Field('amount'))
+F.avg(Field('price'))
+```
+
+<div id="casewhen-class">
+  ### CaseWhen
+</div>
+
+Класс для построения выражений CASE WHEN.
+
+```python
+# Create case-when expression
+result = (ds
+    .when(ds['score'] >= 90, 'A')
+    .when(ds['score'] >= 80, 'B')
+    .when(ds['score'] >= 70, 'C')
+    .otherwise('F')
+)
+
+# Assign to column
+ds['grade'] = result
+```
+
+<div id="window-class">
+  ### Window
+</div>
+
+Спецификация окна для оконных функций.
+
+```python
+from chdb.datastore import F
+
+# Create window
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)
+)
+
+# Use with aggregation
+ds['rolling_avg'] = F.avg('price').over(window)
+```

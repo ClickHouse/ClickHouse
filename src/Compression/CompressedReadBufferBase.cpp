@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <cstring>
-#include <cassert>
 #include <city.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -159,11 +158,15 @@ static void readHeaderAndGetCodecAndSize(
     size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
 
     /// This is for clang static analyzer.
-    assert(size_decompressed > 0);
+    chassert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
                         "Most likely corrupted data.", size_compressed_without_checksum);
+
+    if (size_decompressed > DBMS_MAX_DECOMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_decompressed: {}. "
+                        "Most likely corrupted data.", size_decompressed);
 
     if (size_compressed_without_checksum < header_size)
         throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "

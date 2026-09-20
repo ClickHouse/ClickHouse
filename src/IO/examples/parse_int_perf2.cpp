@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace test
@@ -48,7 +49,7 @@ namespace test
 }
 
 
-int main(int, char **)
+int mainEntryExampleParseIntPerf2(int, char **)
 {
     try
     {
@@ -70,8 +71,8 @@ int main(int, char **)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
-            << "Read " << nums << " numbers (" << in.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-            << nums / watch.elapsedSeconds() << " num/sec. (" << in.count() / watch.elapsedSeconds() / 1000000 << " MB/s.)"
+            << "Read " << nums << " numbers (" << static_cast<double>(in.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+            << static_cast<double>(nums) / watch.elapsedSeconds() << " num/sec. (" << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
             << std::endl;
     }
     catch (const DB::Exception & e)

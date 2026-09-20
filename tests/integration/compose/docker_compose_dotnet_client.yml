@@ -4,3 +4,4 @@ services:
     # to keep container running
     command: sleep infinity
     stop_grace_period: 5s
+    cpus: 3

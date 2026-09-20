@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
 
-import gzip
-import io
-import json
 import logging
 import os
-import random
-import threading
-import time
 
 import pytest
-from azure.storage.blob import BlobServiceClient
 
-import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-from helpers.network import PartitionManager
-from helpers.test_tools import exec_query_with_retry
 from helpers.database_disk import replace_text_in_metadata
 
 
@@ -83,7 +73,7 @@ def test_cluster_alive_after_restart(cluster):
     )
 
     metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='default' AND name='test_table'"
+        "SELECT metadata_path FROM system.tables WHERE database='default' AND name='test_table'"
     ).strip()
 
     node.stop_clickhouse()

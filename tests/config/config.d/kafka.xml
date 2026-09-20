@@ -1,0 +1,8 @@
+<clickhouse>
+    <kafka>
+        <consumer>
+            <auto_offset_reset>earliest</auto_offset_reset>
+            <session_timeout_ms>10000</session_timeout_ms>
+        </consumer>
+    </kafka>
+</clickhouse>

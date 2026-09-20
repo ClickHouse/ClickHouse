@@ -104,8 +104,8 @@ inline bool compare64(const char * p1, const char * p2)
 inline bool memequalWide(const char * p1, const char * p2, size_t size)
 {
     /** The order of branches and the trick with overlapping comparisons
-      * are the same as in memcpy implementation.
-      * See the comments in base/glibc-compatibility/memcpy/memcpy.h
+      * are the same as in a typical `memcpy` implementation: copy possibly
+      * uneven chunks with two overlapping loads/stores.
       */
 
     if (size <= 16)
@@ -170,8 +170,14 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-inline bool operator== (std::string_view lhs, std::string_view rhs)
+constexpr bool operator== (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        /// `==` would recurse into the operator being defined; the standard specifies `compare` as its result.
+        return lhs.compare(rhs) == 0; // NOLINT(readability-string-compare)
+    }
+
     if (lhs.size() != rhs.size())
         return false;
 
@@ -185,19 +191,29 @@ inline bool operator== (std::string_view lhs, std::string_view rhs)
 #endif
 }
 
-inline bool operator!= (std::string_view lhs, std::string_view rhs)
+constexpr bool operator!= (std::string_view lhs, std::string_view rhs)
 {
     return !(lhs == rhs);
 }
 
-inline bool operator< (std::string_view lhs, std::string_view rhs)
+constexpr bool operator< (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        return lhs.compare(rhs) < 0;
+    }
+
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp < 0 || (cmp == 0 && lhs.size() < rhs.size());
 }
 
-inline bool operator> (std::string_view lhs, std::string_view rhs)
+constexpr bool operator> (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        return lhs.compare(rhs) > 0;
+    }
+
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp > 0 || (cmp == 0 && lhs.size() > rhs.size());
 }
@@ -292,18 +308,18 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        size_t res = -1U;
+        size_t res = static_cast<size_t>(-1U);
 
         do
         {
             UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = static_cast<unsigned>(CRC_INT(static_cast<UInt32>(res), word));
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = static_cast<unsigned>(CRC_INT(static_cast<UInt32>(res), word));
 
         // abseil-cpp and std require hash functions to return 64-bit values,
         // though we intentionally use crc32 for the sake of speed.

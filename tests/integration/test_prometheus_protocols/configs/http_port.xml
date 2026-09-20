@@ -1,0 +1,26 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url_prefix>/prometheus/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/v1/write</url>
+            <handler>
+                <type>prometheus_write</type>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/v1/read</url>
+            <handler>
+                <type>prometheus_read</type>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

@@ -1,0 +1,28 @@
+services:
+  # Service "prometheus_receiver" runs a prometheus server which accepts data sent by the RemoteWrite protocol to Prometheus to api/v1/write.
+  prometheus_receiver:
+    image: prom/prometheus:v3.5.0
+    hostname: ${PROMETHEUS_RECEIVER_HOSTNAME:-prometheus_receiver}
+    restart: always
+    entrypoint: |
+      /bin/sh -c '
+      cat << EOF > /etc/prometheus/prometheus.yml
+      storage:
+        tsdb:
+          out_of_order_time_window: 100y
+      EOF
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
+      '
+    expose:
+      - ${PROMETHEUS_RECEIVER_PORT}
+    healthcheck:
+      test: curl -f "http://localhost:${PROMETHEUS_RECEIVER_PORT}/api/v1/status/runtimeinfo" || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_RECEIVER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_RECEIVER_LOGS:-}
+        target: /var/log/prometheus
+    stop_grace_period: 5s
+    cpus: 3

@@ -5,10 +5,10 @@
 #include <Common/Exception.h>
 #include <IO/VarInt.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
+
 
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }

@@ -24,15 +24,15 @@ public:
 
     size_t readRows(
         size_t from_mark,
-        size_t current_task_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
-    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
+    bool canSkipMark(size_t mark) override;
+
+    bool canSkipAnyMark() const override;
 
     size_t getResultColumnCount() const override { return 1; }
 
@@ -40,13 +40,12 @@ public:
     bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr; }
 
 private:
-    /// Delegates to the main reader to determine if reading incomplete index granules is supported.
-    const IMergeTreeReader * main_reader;
-
     /// Used to filter data during merge tree reading.
     MergeTreeIndexReadResultPtr index_read_result;
 
     const PaddedPODArray<UInt64> * lazy_materializing_rows = nullptr;
+
+    const IMergeTreeReader * main_reader;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;

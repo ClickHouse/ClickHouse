@@ -52,6 +52,10 @@ REGISTER_FUNCTION(Minus)
 Calculates the difference of two values `a` and `b`. The result is always signed.
 Similar to plus, it is possible to subtract an integer from a date or date with time.
 Additionally, subtraction between date with time is supported, resulting in the time difference between them.
+It is also possible to subtract a `Time` or `Time64` from a `DateTime` or `DateTime64`;
+the time value is applied as an offset in seconds. `DateTime` minus `Time` produces
+a `DateTime`, any combination involving `DateTime64` or `Time64` produces a `DateTime64`
+with the maximum scale of the two arguments.
     )";
     FunctionDocumentation::Syntax syntax = "minus(x, y)";
     FunctionDocumentation::Arguments arguments =
@@ -65,8 +69,8 @@ Additionally, subtraction between date with time is supported, resulting in the 
         {"Subtracting an integer and a date", "SELECT minus(toDate('2025-01-01'),5)", "2024-12-27"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMinus>(documentation);
 }

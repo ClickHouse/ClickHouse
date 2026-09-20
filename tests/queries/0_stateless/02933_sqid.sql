@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET allow_suspicious_low_cardinality_types = 1;
+SET optimize_trivial_insert_select = 0;
 
 SELECT '-- negative tests';
 SELECT sqidEncode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

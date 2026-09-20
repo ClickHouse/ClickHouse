@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -31,6 +32,8 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname"},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date"},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time"},
         {"query_id", std::make_shared<DataTypeString>(), "Id of the query"},
@@ -42,7 +45,6 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         {"size", std::make_shared<DataTypeUInt64>(), "Read size"},
         {"read_type", std::make_shared<DataTypeString>(), "Read type: READ_FROM_CACHE, READ_FROM_FS_AND_DOWNLOADED_TO_CACHE, READ_FROM_FS_BYPASSING_CACHE"},
         {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>(), "Whether reading from cache was attempted"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
         {"read_buffer_id", std::make_shared<DataTypeString>(), "Internal implementation read buffer id"},
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
     };
@@ -53,6 +55,8 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
 
@@ -66,17 +70,6 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
     columns[i++]->insert(read_from_cache_attempted);
-
-    if (profile_counters)
-    {
-        auto * column = columns[i++].get();
-        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
-    }
-    else
-    {
-        columns[i++]->insertDefault();
-    }
-
     columns[i++]->insert(read_buffer_id);
     columns[i++]->insert(user_id);
 }

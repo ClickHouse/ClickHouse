@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -56,8 +54,8 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    output_stream << "See also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/reference/settings/session-settings.\n\n";
+    output_stream << "See also: https://clickhouse.com/docs/concepts/features/interfaces/client\n";
 }
 
 
@@ -182,7 +180,6 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -194,9 +191,10 @@ try
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getClientConfiguration().getBool("echo", false);
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
+
+    setupEchoAndHighlightSettings();
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
@@ -204,7 +202,7 @@ try
     prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
-    enable_highlight = getClientConfiguration().getBool("highlight", true);
+    enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);
     multiline = getClientConfiguration().has("multiline");
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     default_database = getClientConfiguration().getString("database", "");
@@ -261,5 +259,3 @@ catch (...)
 }
 
 }
-
-#endif

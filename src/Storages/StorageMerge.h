@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -11,6 +13,8 @@ namespace DB
 {
 
 struct QueryPlanResourceHolder;
+
+class ReadFromMergeTree;
 
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
@@ -44,21 +48,27 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return true; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    /// Fails closed: a Merge over a child that opts out (e.g. Distributed) must not let the
+    /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
+    bool supportsOptimizationToSubcolumns() const override;
+    bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -74,7 +84,7 @@ public:
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
@@ -86,6 +96,12 @@ public:
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+
+    /// True if any of the underlying tables matches `predicate`.
+    /// Used by the planner to decide whether filter analysis must be run when
+    /// a `Merge` wraps tables that would otherwise trigger it (`Distributed`,
+    /// `View`, `ObjectStorageCluster`, etc.) at the top level.
+    bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
@@ -139,6 +155,7 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
@@ -180,12 +197,29 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
+
+    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
+    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
+    std::vector<QueryPlan *> getAllChildPlans();
+
+    /// For parallel replicas only: the tables this `Merge` read would be expanded into, empty when it
+    /// cannot be expanded (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read,
+    /// or a read which `can_ship_read` - the caller's own rule for a read it would distribute - rejects).
+    /// Answering this without touching the plan lets the caller decide whether the query is distributed at
+    /// all before anything is rewritten. The answer is computed once and lives as long as this step.
+    const std::vector<StorageID> & getExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
+
+    /// Replace this opaque `Merge` read with a plan-level `UnionStep` over the per-table child plans, so
+    /// that the parallel-replicas plan transformation can coordinate the underlying `MergeTree` reads and
+    /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
+    /// plans are moved out of this step, which the caller then replaces.
+    QueryPlan expandForParallelReplicas();
 
     void addFilter(FilterDAGInfo filter);
 
@@ -196,9 +230,6 @@ private:
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
-    Names column_names;
-    bool has_database_virtual_column;
-    bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -244,13 +275,15 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPlan &, ContextPtr) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
+        /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        PreparedSetsPtr prepared_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
@@ -260,6 +293,12 @@ private:
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
     };
+
+    /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
+    /// whether the query would be distributed and then again when it expands, and the child plans it
+    /// inspects do not change in between. Assumes the same predicate on every call, which the single
+    /// caller satisfies.
+    std::optional<std::vector<StorageID>> expandable_reads;
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
@@ -284,18 +323,13 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
-    void addVirtualColumns(
-        ChildPlan & child,
-        SelectQueryInfo & modified_query_info,
-        QueryProcessingStage::Enum processed_stage,
-        const StorageWithLockAndName & storage_with_lock) const;
-
     QueryPipelineBuilderPtr buildPipeline(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
 
     static void convertAndFilterSourceStream(
         const Block & header,
+        const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
@@ -305,9 +339,7 @@ private:
         bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-        ContextPtr query_context,
-        bool filter_by_database_virtual_column,
-        bool filter_by_table_virtual_column) const;
+        ContextPtr query_context) const;
 };
 
 }

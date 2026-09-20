@@ -1,30 +1,31 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 01720_dictionary_db;
-CREATE DATABASE 01720_dictionary_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE TABLE 01720_dictionary_db.dictionary_source_table
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_source_table
 (
 	key UInt8,
     value String
 )
 ENGINE = TinyLog;
 
-INSERT INTO 01720_dictionary_db.dictionary_source_table VALUES (1, 'First');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_source_table VALUES (1, 'First');
 
-CREATE DICTIONARY 01720_dictionary_db.dictionary
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary
 (
     key UInt64,
     value String
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(DB '01720_dictionary_db' TABLE 'dictionary_source_table' HOST hostName() PORT tcpPort()))
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'dictionary_source_table' HOST hostName() PORT tcpPort()))
 LIFETIME(0)
 LAYOUT(FLAT());
 
-SELECT * FROM 01720_dictionary_db.dictionary;
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.dictionary;
 
-DROP DICTIONARY 01720_dictionary_db.dictionary;
-DROP TABLE 01720_dictionary_db.dictionary_source_table;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_source_table;
 
-DROP DATABASE 01720_dictionary_db;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

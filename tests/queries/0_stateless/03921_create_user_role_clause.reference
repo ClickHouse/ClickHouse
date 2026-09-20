@@ -1,0 +1,47 @@
+A
+CREATE USER user1_default IDENTIFIED WITH no_password
+role1_default	1
+role2_default	1
+CREATE USER user1_default IDENTIFIED WITH no_password
+role1_default	1
+role2_default	1
+role3_default	1
+
+B
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE role2_default
+role1_default	0
+role2_default	1
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE role2_default
+role1_default	0
+role2_default	1
+role3_default	0
+
+C
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE ALL EXCEPT role2_default
+role1_default	1
+role2_default	0
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE ALL EXCEPT role2_default
+role1_default	1
+role2_default	0
+role3_default	1
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE role3_default
+role1_default	0
+role2_default	0
+role3_default	1
+CREATE USER user1_default IDENTIFIED WITH no_password
+role1_default	1
+role2_default	1
+role3_default	1
+Syntax error
+
+D
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE role1_default, role2_default
+role1_default	1
+role2_default	1
+CREATE USER user1_default IDENTIFIED WITH no_password DEFAULT ROLE role1_default, role2_default
+role1_default	1
+role2_default	1
+role3_default	0
+
+E
+SET_NON_GRANTED_ROLE

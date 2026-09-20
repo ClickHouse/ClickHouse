@@ -1,0 +1,20 @@
+-- constant side on the right, no swap
+2	42	99
+2	42	99
+
+4	42	99
+-- constant side on the right, with swap
+2	42	99
+2	42	99
+
+4	42	99
+-- constant side on the left, no swap
+42	99	2
+42	99	2
+
+42	99	4
+-- constant side on the left, with swap
+42	99	2
+42	99	2
+
+42	99	4

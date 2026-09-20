@@ -45,6 +45,12 @@ $CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     create table data_r2 (key Int, value Int, index value_idx value type minmax) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', '{table}') order by key;
 
     insert into data_r1 (key) values (1); -- part all_0_0_0
+
+    -- Sync both replicas before enabling the failpoint, to ensure there are
+    -- no pending queue entries (e.g. GET_PART for data_r2) that could consume
+    -- the ONCE failpoint instead of the intended ALTER_METADATA entry.
+    system sync replica data_r1;
+    system sync replica data_r2;
 "
 
 # will fail ALTER_METADATA on one of replicas
@@ -78,6 +84,7 @@ esac
 mutations_on_failed_replica="$($CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = '$CLICKHOUSE_DATABASE' and table = '$failed_replica' and is_done = 0")"
 if [[ $mutations_on_failed_replica != 1 ]]; then
     echo "Wrong number of mutations on failed replica $failed_replica, mutations $mutations_on_failed_replica" >&2
+    exit 1
 fi
 
 # This will create MERGE_PARTS, on failed replica it will be fetched from source replica (since it does not have all parts to execute merge)
@@ -100,4 +107,4 @@ trap '' EXIT
 
 $CLICKHOUSE_CLIENT -q "system flush logs part_log"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
-$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"
+$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"

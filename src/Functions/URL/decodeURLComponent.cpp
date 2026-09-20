@@ -83,7 +83,7 @@ static size_t decodeURL(const char * __restrict src, size_t src_size, char * __r
 
             if (high != 0xFF && low != 0xFF)
             {
-                unsigned char octet = (high << 4) + low;
+                auto octet = static_cast<unsigned char>((high << 4) + low);
 
                 size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                 memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
@@ -143,7 +143,7 @@ struct CodeURLComponentImpl
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
-            size_t dst_size;
+            size_t dst_size = 0;
 
             if constexpr (code_strategy == encode)
             {

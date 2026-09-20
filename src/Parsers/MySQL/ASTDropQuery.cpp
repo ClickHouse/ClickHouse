@@ -14,7 +14,7 @@ namespace MySQLParser
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     res->children.clear();
     res->is_truncate = is_truncate;
     res->if_exists = if_exists;
@@ -38,7 +38,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_server(Keyword::SERVER);
     ParserKeyword s_trigger(Keyword::TRIGGER);
 
-    auto query = std::make_shared<ASTDropQuery>();
+    auto query = make_intrusive<ASTDropQuery>();
     node = query;
     ASTDropQuery::QualifiedNames names;
     bool if_exists = false;

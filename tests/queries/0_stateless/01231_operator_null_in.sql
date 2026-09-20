@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS null_in;
 CREATE TABLE null_in (dt DateTime, idx int, i Nullable(int), s Nullable(String)) ENGINE = MergeTree() PARTITION BY dt ORDER BY idx SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 

@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Escalonamento automático horizontal'
+slug: /cloud/features/autoscaling/horizontal-autoscaling
+description: 'Configure o escalonamento automático horizontal no ClickHouse Cloud'
+keywords: ['escalonamento automático horizontal', 'escalonamento automático', 'réplicas', 'consultas simultâneas', 'escalonamento']
+title: 'Escalonamento automático horizontal'
+doc_type: 'guide'
+---
+
+<Note>
+  O escalonamento automático horizontal está em Private Preview e está disponível nos planos Scale e Enterprise. Para solicitar acesso, entre em contato com a equipe da sua conta ClickHouse ou com o suporte.
+</Note>
+
+O escalonamento automático horizontal adiciona ou remove réplicas do seu serviço automaticamente em resposta à demanda da carga de trabalho. Enquanto o escalonamento automático vertical altera o tamanho de cada réplica, o escalonamento automático horizontal altera o número de réplicas, sendo adequado para cargas de trabalho cuja demanda decorre de um maior número de consultas, e não de consultas mais pesadas.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+O escalonador automático monitora continuamente seu serviço e faz recomendações de escalonamento horizontal a cada 10 minutos com base em três sinais:
+
+* **Consultas simultâneas:** Número máximo de consultas em execução entre as réplicas
+* **Utilização de CPU:** Uso máximo de CPU entre as réplicas
+* **Utilização de memória:** Uso máximo de memória entre as réplicas
+
+O escalonador automático busca manter 60% de utilização em todo o serviço:
+
+* **Aumentar a escala:** Quando a utilização ultrapassa o limite máximo de 80%, réplicas são adicionadas até o máximo configurado
+* **Reduzir a escala:** Quando a utilização fica abaixo do limite mínimo de 45%, réplicas são removidas até o mínimo configurado
+
+A diferença entre os limites fornece histerese para evitar que o serviço oscile entre aumentar e reduzir a escala. A redução de escala é intencionalmente mais conservadora do que o aumento de escala para proteger as cargas de trabalho em execução.
+
+<div id="enable-horizontal-autoscaling">
+  ## Habilitar o escalonamento automático horizontal
+</div>
+
+O escalonamento automático horizontal é configurado na página **Configurações** do seu serviço ou pela [API de escalonamento de réplicas do ClickHouse Cloud](/pt-BR/products/cloud/api-reference/service/update-service-auto-scaling-settings).
+
+Para habilitá-lo:
+
+1. Fixe o tamanho vertical das réplicas definindo a memória mínima igual à memória máxima. No momento, o escalonamento automático horizontal requer um tamanho de réplica fixo; os escalonamentos automáticos vertical e horizontal não podem estar ativos simultaneamente em um serviço.
+2. Defina o número máximo de réplicas como maior que o número mínimo de réplicas. O escalonador automático opera dentro desses limites. Definir os dois valores como iguais fixa o serviço em uma quantidade determinada de réplicas e desabilita o escalonamento automático horizontal.
+
+<Note>
+  Os serviços podem escalar horizontalmente para até 20 réplicas. Se precisar de réplicas adicionais, entre em contato com nossa equipe de suporte.
+</Note>
+
+<div id="configure-your-clients">
+  ## Configure seus clientes
+</div>
+
+Novas réplicas só ajudam se os clientes se conectarem a elas. Conexões de longa duração permanecem vinculadas às réplicas existentes quando foram abertas; portanto, os clientes devem renovar as conexões regularmente para identificar novas réplicas.
+
+Configure os clientes de uma das seguintes formas:
+
+* **Protocolo HTTP (recomendado):** Por padrão, as conexões são de curta duração, de modo que o tráfego é distribuído automaticamente entre novas réplicas.
+* **Protocolo nativo:** Defina o ciclo de vida máximo da conexão como aproximadamente 30 segundos para que as conexões sejam restabelecidas regularmente.
+
+<div id="choose-the-right-replica-size">
+  ## Escolha o tamanho de réplica adequado
+</div>
+
+O escalonamento automático horizontal funciona melhor quando cada réplica é grande o suficiente para executar suas consultas típicas sem dificuldades. Adicionar réplicas aumenta o número de consultas que o serviço pode executar em paralelo; não aumenta a memória disponível para uma única consulta.
+
+Abordagem recomendada:
+
+1. Encontre um tamanho vertical em que algumas de suas consultas típicas sejam executadas sem dificuldades e sem erros de memória.
+2. Fixe o serviço nesse tamanho.
+3. Deixe o escalonamento automático horizontal adicionar réplicas à medida que o volume de consultas aumentar.
+
+Se as réplicas forem pequenas demais para a carga de trabalho, o escalonador automático poderá adicionar réplicas que não conseguem atender às suas consultas. O escalonador automático inclui proteções contra isso — por exemplo, não aumentará a escala em resposta a uma única consulta grande demais, que não se beneficiaria de réplicas adicionais —, mas o dimensionamento correto continua sendo um fator importante.
+
+<div id="load-distribution">
+  ## Distribuição de carga
+</div>
+
+O escalonamento automático horizontal pressupõe que a carga seja distribuída uniformemente entre as réplicas. Se uma réplica estiver com 90% de utilização enquanto as outras permanecerem em 10%, adicionar réplicas não ajudará; primeiro, é preciso corrigir o desequilíbrio de carga. O escalonador automático detecta cargas desequilibradas e não recomendará o escalonamento horizontal enquanto esse desequilíbrio persistir.
+
+Entre as causas comuns de desequilíbrio estão conexões de longa duração concentradas em poucas réplicas (consulte [Configure seus clientes](#configure-your-clients)) e cargas de trabalho fixadas a sessões.
+
+<div id="observe-scaling-activity">
+  ## Monitore a atividade de scaling
+</div>
+
+Os eventos de scaling são visíveis no dashboard de métricas do serviço no console do ClickHouse Cloud, que mostra o número atual de réplicas e a alocação total de recursos.
+
+<div id="known-limitations">
+  ## Limitações conhecidas
+</div>
+
+* O escalonamento automático horizontal está em Private Preview e deve ser habilitado para sua organização pela equipe de suporte do ClickHouse.
+* O tamanho vertical da réplica deve ser fixado definindo a memória mínima como igual à memória máxima.
+* Cada serviço está limitado a, no máximo, 20 réplicas. Entre em contato com o suporte caso precise de réplicas adicionais.
+* As recomendações são feitas a cada 10 minutos; o escalonamento automático horizontal não foi projetado para lidar com picos de menos de um minuto. Para picos previsíveis, considere o [escalonamento agendado](/pt-BR/products/cloud/features/autoscaling/scheduled-scaling).

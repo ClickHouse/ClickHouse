@@ -276,7 +276,7 @@ class NetThroughput(object):
                         ]
                     ).strip()
                     break
-                except Exception as ex:
+                except Exception:
                     print(f"No interface eth{i}")
             else:
                 raise Exception(

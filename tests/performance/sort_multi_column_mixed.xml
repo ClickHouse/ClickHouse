@@ -1,0 +1,32 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE sort_mixed (
+            uint_col UInt64,
+            str_col String
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_mixed
+        SELECT
+            rand64() AS uint_col,
+            randomPrintableASCII(rand() % 32 + 1) AS str_col
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>SELECT * FROM sort_mixed ORDER BY uint_col, str_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_mixed ORDER BY str_col, uint_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_mixed ORDER BY uint_col ASC, str_col DESC FORMAT Null SETTINGS max_threads = {threads}</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_mixed</drop_query>
+</test>

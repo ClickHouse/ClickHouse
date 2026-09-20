@@ -1,19 +1,18 @@
 import dataclasses
 import json
-import os
 from pathlib import Path
 from typing import List
 
 from ._environment import _Environment
-from .gh import GH
 from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, StorageUsage
-from .utils import Shell, Utils
+from .host_metrics import HostMetricsCollector
+from .usage import ComputeUsage, PipelineUtilization, StorageUsage
+from .utils import Utils
 
 
 @dataclasses.dataclass
@@ -38,9 +37,7 @@ class GitCommit:
                 for commit in json_data
             ]
         except Exception as e:
-            print(
-                f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]"
-            )
+            print(f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]")
 
         return commits
 
@@ -54,24 +51,10 @@ class GitCommit:
         commits = cls.pull_from_s3()
         for commit in commits:
             if sha == commit.sha:
-                print(
-                    f"INFO: Sha already present in commits data [{sha}] - skip data update"
-                )
+                print(f"INFO: Sha already present in commits data [{sha}] - skip data update")
                 return
-        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
-        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
-            commit_message = Shell.get_output(
-                f"git log -1 --pretty=%s {sha}", verbose=True
-            )
-        else:
-            commit_message = Shell.get_output(
-                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
-                verbose=True,
-            )
-        commits.append(GitCommit(sha=sha, message=commit_message))
-        commits = commits[
-            -20:
-        ]  # limit maximum number of commits from the past to show in the report
+        commits.append(GitCommit(sha=sha, message=env.COMMIT_MESSAGE))
+        commits = commits[-20:]  # limit maximum number of commits from the past to show in the report
         cls.push_to_s3(commits)
         return
 
@@ -91,16 +74,14 @@ class GitCommit:
         else:
             assert env.BRANCH
             s3suffix = f"REFs/{env.BRANCH}"
-        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+        return f"{Settings.S3_REPORT_BUCKET}/{s3suffix}"
 
     @classmethod
     def pull_from_s3(cls):
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(
-            s3_path=s3_path, local_path=local_path, no_strict=True
-        ):
+        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path, no_strict=True):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -112,9 +93,7 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(
-            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
-        ):
+        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True, no_strict=True):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -133,59 +112,82 @@ class GitCommit:
 
 class HtmlRunnerHooks:
     @classmethod
-    def push_pending_ci_report(cls, _workflow):
-        # generate pending Results for all jobs in the workflow
+    def _build_pending_summary(cls, _workflow, config_job_running):
+        """Build the initial workflow report summary: every job PENDING, the
+        summary RUNNING with a fresh start_time and the standard header ext keys.
+        Returns ``(summary_result, report_url)``.
+
+        ``config_job_running`` reads the Config job's live Result from fs — true
+        when this runs *inside* the Config job (GitHub Actions). The orchestrator
+        creates the summary before the Config job runs and passes False, so the
+        Config job is seeded PENDING like every other job."""
         env = _Environment.get()
         results = []
         for job in _workflow.jobs:
-            if job.name == Settings.CI_CONFIG_JOB_NAME:
+            if config_job_running and job.name == Settings.CI_CONFIG_JOB_NAME:
                 # fetch running status with start_time for current job
                 result = Result.from_fs(job.name)
             else:
                 result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.create_new(
-            _workflow.name, Result.Status.RUNNING, results=results
-        )
-        summary_result.start_time = Utils.timestamp()
-        summary_result.links.append(env.CHANGE_URL)
-        summary_result.links.append(env.RUN_URL)
+        summary_result = Result.create_new(_workflow.name, Result.Status.RUNNING, results=results)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
-            "git_branch", info.git_branch
-        ).dump()
+        report_url_current_sha = info.get_report_url(latest=False)
+        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value("git_branch", info.git_branch).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
+            "commit_sha", env.SHA
+        ).add_ext_key_value("commit_message", env.COMMIT_MESSAGE).add_ext_key_value("repo_name", env.REPOSITORY).add_ext_key_value("pr_number", env.PR_NUMBER).add_ext_key_value(
+            "run_url", env.RUN_URL
+        ).add_ext_key_value("change_url", env.CHANGE_URL).add_ext_key_value("workflow_name", env.WORKFLOW_NAME).add_ext_key_value("base_branch", env.BASE_BRANCH)
+        return summary_result, report_url_current_sha
+
+    @classmethod
+    def _write_summary_to_s3(cls, summary_result, report_url_current_sha):
+        summary_result.dump()
+        # version=0 is a destructive create/reset; only a single exclusive writer
+        # may issue it. GitHub Actions: the Config job, once at workflow start.
+        # Native: the orchestrator, once at fresh-run start (see
+        # WorkflowState.create_initial_report / orchestrator/REPORT_OWNERSHIP.md).
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        report_url_latest_sha = Info().get_report_url(latest=True)
-        report_url_current_sha = Info().get_report_url(latest=False)
         print(f"CI Status page url [{report_url_current_sha}]")
-
-        if Settings.USE_CUSTOM_GH_AUTH:
-            from .gh_auth import GHAuth
-
-            pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-            app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-            GHAuth.auth(app_id=app_id, app_key=pem)
-
-        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
-        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
-        )
-        res1 = GH.post_commit_status(
-            name=_workflow.name,
-            status=Result.Status.PENDING,
-            description="",
-            url=report_url_current_sha,
-        )
-        if not (res1 or res2):
-            Utils.raise_with_error(
-                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
-            )
         GitCommit.update_s3_data()
 
     @classmethod
+    def push_pending_ci_report(cls, _workflow):
+        # Native path: the orchestrator OWNS the workflow report end to end — it
+        # creates the initial summary (WorkflowState.create_initial_report) and
+        # re-asserts every finished job's row each loop. The Config job must not
+        # touch the summary, or its version=0 write would race/wipe the
+        # orchestrator's rows. GitHub Actions has no orchestrator, so there the
+        # Config job stays the sole creator. See orchestrator/REPORT_OWNERSHIP.md.
+        env = _Environment.get()
+        if env.ORCHESTRATOR_OWNS_REPORT:
+            print("Skip pending CI report push — orchestrator owns the report")
+            return
+        summary_result, url = cls._build_pending_summary(
+            _workflow, config_job_running=True
+        )
+        cls._write_summary_to_s3(summary_result, url)
+
+    @classmethod
+    def create_initial_report(cls, _workflow):
+        """Orchestrator-owned creation of the initial report summary (native
+        path). Mirrors push_pending_ci_report but seeds the Config job PENDING
+        (it has not run yet); called once by the orchestrator at fresh-run start,
+        after which publish_report re-asserts each job row every loop."""
+        summary_result, url = cls._build_pending_summary(
+            _workflow, config_job_running=False
+        )
+        cls._write_summary_to_s3(summary_result, url)
+
+    @classmethod
     def configure(cls, _workflow):
-        # generate pending Results for all jobs in the workflow
+        # Generate initial Results for all jobs in the workflow
+        # Native path: Orchestrator is the single report writer
+        if _Environment.get().ORCHESTRATOR_OWNS_REPORT:
+            print("Skip configure SKIPPED-row write — orchestrator owns the report")
+            return
+        # GH Actions path:
         if _workflow.enable_cache:
             workflow_config = RunConfig.from_fs(_workflow.name)
             skipped_jobs = workflow_config.cache_success
@@ -217,18 +219,17 @@ class HtmlRunnerHooks:
                     )
                 results.append(result)
             if results:
-                assert (
-                    _ResultS3.update_workflow_results(
-                        _workflow.name, new_sub_results=results
-                    )
-                    is None
-                ), "Workflow status supposed to remain 'running'"
+                assert _ResultS3.update_workflow_results(_workflow.name, new_sub_results=results) is None, "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
+        # Clear stale workflow-level report messages from this job's previous
+        # run so that resolved warnings/errors don't persist after a rerun.
         _ResultS3.update_workflow_results(
-            workflow_name=_workflow.name, new_sub_results=result
+            workflow_name=_workflow.name,
+            new_sub_results=result,
+            clear_report_sources=[_job.name],
         )
 
     @classmethod
@@ -236,96 +237,83 @@ class HtmlRunnerHooks:
         pass
 
     @classmethod
-    def post_run(cls, _workflow, _job, info_errors):
+    def post_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
+        env = _Environment.get()
+        if env.WORKFLOW_JOB_DATA:
+            result.add_ext_key_value(
+                "run_url",
+                f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}",
+            )
         _ResultS3.upload_result_files_to_s3(result).dump()
         storage_usage = None
         if StorageUsage.exist():
-            StorageUsage.add_uploaded(
-                result.file_name()
-            )  # add Result file beforehand to upload actual storage usage data
+            StorageUsage.add_uploaded(result.file_name())  # add Result file beforehand to upload actual storage usage data
             print("Storage usage data found - add to Result")
             storage_usage = StorageUsage.from_fs()
             result.ext["storage_usage"] = storage_usage
+        # Accumulate the whole-pipeline utilization KPI from this job's host
+        # metrics, but only for jobs substantial enough to be worth right-sizing.
+        pipeline_utilization = None
+        job_metrics = result.ext.get("metrics")
+        if job_metrics and HostMetricsCollector.qualifies(job_metrics):
+            pipeline_utilization = PipelineUtilization.from_job_metrics(job_metrics)
+
+        report_messages = env.REPORT_MESSAGES
+        _ResultS3.append_report_messages(result, report_messages)
         _ResultS3.copy_result_to_s3(result)
 
-        env = _Environment.get()
-
         new_sub_results = [result]
-        new_result_info = ""
-        env_info = env.REPORT_INFO
-        if env_info:
-            print(
-                f"WARNING: some info lines are set in Environment - append to report [{env_info}]"
-            )
-            info_errors += env_info
-        if info_errors:
-            info_errors = [f"    |  {error}" for error in info_errors]
-            info_str = f"{_job.name}:\n"
-            info_str += "\n".join(info_errors)
-            print("Update workflow results with new info")
-            new_result_info = info_str
 
         if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
-            print(
-                "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
-            )
+            print("Current job failed - find dependee jobs in the workflow and set their statuses to dropped")
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
 
             dependees = set()
 
             def add_dependees(job_name):
                 for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
-                    if dependee_job.run_unless_cancelled:
+                    # GitHub still starts this job after a failed dependency, so
+                    # marking it DROPPED would overwrite a result it is about to
+                    # produce.
+                    if dependee_job.always_run:
                         continue
-                    if (
-                        job_name in dependee_job.needs
-                        and dependee_job.name not in dependees
-                    ):
+                    if job_name in dependee_job.needs and dependee_job.name not in dependees:
                         dependees.add(dependee_job.name)
                         add_dependees(dependee_job.name)
 
             add_dependees(_job.name)
 
             for dependee in dependees:
-                print(
-                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
+                print(f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure")
+                dropped_result = Result(
+                    name=dependee,
+                    status=Result.Status.DROPPED,
+                    start_time=Utils.timestamp(),
+                    duration=0,
                 )
-                new_sub_results.append(
-                    Result(
-                        name=dependee,
-                        status=Result.Status.DROPPED,
-                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
-                        + f" [{_job.name}]",
-                        start_time=Utils.timestamp(),
-                        duration=0,
-                    )
-                )
+                dropped_result.add_note(ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE + f" [{_job.name}]")
+                new_sub_results.append(dropped_result)
 
+        compute_usage = ComputeUsage().set_usage(
+            runner_str="_".join(_job.runs_on),
+            duration=result.duration,
+            job_name=_job.name,
+        )
+        if env.ORCHESTRATOR_OWNS_REPORT:
+            # The native orchestrator aggregates usage from each job's Result
+            # (result.ext still carries storage_usage/metrics, set above), so the
+            # runner must NOT also contribute it here or the workflow totals would
+            # double-count. Rows and report messages still flow from the runner.
+            storage_usage = None
+            compute_usage = None
+            pipeline_utilization = None
         updated_status = _ResultS3.update_workflow_results(
-            new_info=new_result_info,
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
-            compute_usage=ComputeUsage().set_usage(
-                runner_str="_".join(_job.runs_on),
-                duration=result.duration,
-                job_name=_job.name,
-            ),
+            compute_usage=compute_usage,
+            pipeline_utilization=pipeline_utilization,
+            report_messages=report_messages,
         )
-
-        if updated_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
-
-                pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
-
-            print(f"Update GH commit status [{result.name}]: [{updated_status}]")
-            GH.post_commit_status(
-                name=_workflow.name,
-                status=GH.convert_to_gh_status(updated_status),
-                description="",
-                url=Info().get_report_url(latest=False),
-            )
+        return updated_status

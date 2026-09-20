@@ -1,0 +1,358 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration-v1
+title: 'تهيئة Helm ‏(v1.x)'
+description: 'تهيئة مفاتيح API وكائنات Secret وIngress لعمليات نشر ClickStack عبر Helm في الإصدار v1.x'
+doc_type: 'دليل'
+keywords: ['تهيئة ClickStack', 'كائنات Secret في Helm', 'إعداد مفاتيح API', 'تهيئة Ingress', 'إعداد TLS']
+---
+
+<Warning>
+  **مهمل — مخطط Helm ‏v1.x**
+
+  توضح هذه الصفحة إعدادات التهيئة الخاصة بمخطط Helm **v1.x** ذي القالب المضمّن، وهو الآن في وضع الصيانة. للاطلاع على مخطط v2.x، انظر [تهيئة Helm](/ar/clickstack/deployment/helm-configuration). وللترحيل، راجع [دليل الترقية](/ar/clickstack/deployment/helm-upgrade).
+</Warning>
+
+يستعرض هذا الدليل خيارات التهيئة لعمليات نشر ClickStack عبر Helm. وللتثبيت الأساسي، راجع [دليل النشر الرئيسي باستخدام Helm](/ar/clickstack/deployment/helm-v1).
+
+<div id="api-key-setup">
+  ## إعداد مفتاح API
+</div>
+
+بعد نشر ClickStack بنجاح، قم بتهيئة مفتاح API لتمكين جمع بيانات القياس عن بُعد:
+
+1. **الوصول إلى مثيل HyperDX الخاص بك** عبر مورد الدخول المُعَدّ أو نقطة نهاية الخدمة
+2. **سجّل الدخول إلى لوحة معلومات HyperDX** وانتقل إلى إعدادات الفريق لإنشاء مفتاح API أو استعادته
+3. **حدّث الـ Deployment الخاص بك** باستخدام مفتاح API بإحدى الطرق التالية:
+
+<div id="api-key-values-file">
+  ### الطريقة 1: التحديث باستخدام Helm upgrade مع ملف values
+</div>
+
+أضف مفتاح API إلى ملف `values.yaml`:
+
+```yaml
+hyperdx:
+  apiKey: "your-api-key-here"
+```
+
+ثم قم بترقية عملية النشر الخاصة بك:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### الطريقة 2: التحديث باستخدام Helm upgrade مع الخيار --set
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### أعد تشغيل الكبسولات لتطبيق التغييرات
+</div>
+
+بعد تحديث مفتاح الـAPI، أعد تشغيل الكبسولات لتحميل التهيئة الجديدة:
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-clickstack-otel-collector
+```
+
+<Note>
+  ينشئ المخطط تلقائيًا Kubernetes secret (`<release-name>-app-secrets`) يتضمّن مفتاح API الخاص بك. ولا يلزم أي إعداد إضافي لهذا الـ secret إلا إذا كنت تريد استخدام secret خارجي.
+</Note>
+
+<div id="secret-management">
+  ## إدارة الأسرار
+</div>
+
+للتعامل مع بيانات حساسة مثل مفاتيح API أو بيانات اعتماد قاعدة البيانات، استخدم كائنات secrets في Kubernetes.
+
+<div id="using-pre-configured-secrets">
+  ### استخدام الأسرار المُهيّأة مسبقًا
+</div>
+
+يتضمّن مخطط Helm قالب Secret افتراضيًا موجودًا في [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml). يوفّر هذا الملف بنية أساسية لإدارة الأسرار.
+
+إذا كنت بحاجة إلى تطبيق كائن Secret يدويًا، فعدّل قالب `secrets.yaml` المتوفّر ثم طبّقه:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperdx-secret
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  API_KEY: <base64-encoded-api-key>
+```
+
+طبّق كائن Secret على العنقود:
+
+```shell
+kubectl apply -f secrets.yaml
+```
+
+<div id="creating-a-custom-secret">
+  ### إنشاء سرّ Kubernetes مخصّص
+</div>
+
+أنشئ سرّ Kubernetes مخصّصًا يدويًا:
+
+```shell
+kubectl create secret generic hyperdx-secret \
+  --from-literal=API_KEY=my-secret-api-key
+```
+
+<div id="referencing-a-secret">
+  ### الإشارة إلى secret في ملف values.yaml
+</div>
+
+```yaml
+hyperdx:
+  apiKey:
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: API_KEY
+```
+
+<div id="ingress-setup">
+  ## إعداد الدخول الوارد
+</div>
+
+لإتاحة واجهة HyperDX وواجهة برمجة التطبيقات عبر اسم نطاق، فعِّل الدخول الوارد في ملف `values.yaml`.
+
+<div id="general-ingress-configuration">
+  ### التهيئة العامة للوصول
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # Must match ingress host
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **ملاحظة مهمة حول الإعداد**
+
+  يجب أن يتطابق `hyperdx.frontendUrl` مع مضيف مورد الدخول وأن يتضمن البروتوكول (على سبيل المثال: `https://hyperdx.yourdomain.com`). وهذا يضمن عمل جميع الروابط وملفات تعريف الارتباط وعمليات إعادة التوجيه المُنشأة بشكل صحيح.
+</Info>
+
+<div id="enabling-tls">
+  ### تمكين TLS (HTTPS)
+</div>
+
+لتأمين عملية النشر باستخدام HTTPS:
+
+**1. أنشئ سر TLS باستخدام شهادتك ومفتاحك الخاص:**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. فعّل TLS في تكوين الـIngress لديك:**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### مثال على تهيئة مورد الإدخال
+</div>
+
+للمرجع، إليك كيف يبدو مورد الإدخال الذي تم إنشاؤه:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### المشكلات الشائعة في مورد الدخول
+</div>
+
+**إعدادات المسار وإعادة الكتابة:**
+
+* بالنسبة إلى Next.js وغيرها من التطبيقات أحادية الصفحة، استخدم دائمًا مسار regex وتعليمة إعادة الكتابة كما هو موضّح أعلاه
+* لا تستخدم فقط `path: /` من دون إعادة كتابة، لأن ذلك سيؤدي إلى تعطّل تقديم الملفات الثابتة
+
+**عدم تطابق `frontendUrl` و`ingress.host`:**
+
+* إذا لم يتطابقا، فقد تواجه مشكلات في ملفات تعريف الارتباط وعمليات إعادة التوجيه وتحميل الملفات الثابتة
+
+**سوء إعداد TLS:**
+
+* تأكّد من أن كائن Secret الخاص بـ TLS صالح ويُشار إليه بشكل صحيح في مورد الدخول
+* قد تحظر المتصفحات المحتوى غير الآمن إذا وصلت إلى التطبيق عبر HTTP عندما يكون TLS مفعّلًا
+
+**إصدار متحكّم Ingress:**
+
+* تتطلّب بعض الميزات (مثل مسارات regex وعمليات إعادة الكتابة) إصدارات حديثة من متحكّم nginx Ingress
+* تحقّق من إصدارك باستخدام:
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## ولوج OTEL collector
+</div>
+
+إذا كنت بحاجة إلى إتاحة endpoints الخاصة بـ OTEL collector (للـ traces والـ metrics والـ logs) عبر الولوج، فاستخدم إعداد `additionalIngresses`. ويكون ذلك مفيدًا لإرسال telemetry data من خارج الـ cluster أو لاستخدام domain مخصص لـ collector.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* يؤدي ذلك إلى إنشاء مورد إدخال منفصل لنقاط نهاية OTel collector
+* يمكنك استخدام نطاق مختلف، وتهيئة إعدادات TLS محددة، وتطبيق تعليقات توضيحية مخصصة
+* تتيح لك قاعدة مسار Regex توجيه جميع إشارات OTLP (التتبعات والمقاييس والسجلات) عبر قاعدة واحدة
+
+<Note>
+  إذا لم تكن بحاجة إلى إتاحة OTel collector خارجيًا، فيمكنك تخطي هذا الإعداد. وبالنسبة إلى معظم المستخدمين، يكون إعداد الإدخال العام كافيًا.
+</Note>
+
+<div id="troubleshooting-ingress">
+  ## استكشاف أخطاء الإدخال وإصلاحها
+</div>
+
+**تحقق من مورد الإدخال:**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**تحقق من سجلات متحكّم الدخول:**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**اختبار عناوين URL للملفات:**
+
+استخدم `curl` للتحقّق من أن الملفات الثابتة تُعرَض بصيغة JS لا HTML:
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Should return Content-Type: application/javascript
+```
+
+**أدوات المطوّر في المتصفح:**
+
+* تحقّق من علامة التبويب Network بحثًا عن حالات 404 أو الأصول التي تُرجِع HTML بدلًا من JS
+* ابحث عن أخطاء مثل `Unexpected token <` في وحدة التحكّم (وهذا يشير إلى أنّ HTML يُرجَع بدلًا من JS)
+
+**تحقّق من إعادة كتابة المسارات:**
+
+* تأكّد من أنّ مورد الإدخال لا يزيل مسارات الأصول أو يعيد كتابتها على نحو غير صحيح
+
+**امسح ذاكرة التخزين المؤقت للمتصفح وCDN:**
+
+* بعد إجراء التغييرات، امسح ذاكرة التخزين المؤقت للمتصفح وأي ذاكرة تخزين مؤقت لـ CDN/الوكيل لتجنّب استخدام أصول قديمة
+
+<div id="customizing-values">
+  ## تخصيص القيم
+</div>
+
+يمكنك تخصيص الإعدادات باستخدام وسيطات `--set`:
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+بدلًا من ذلك، أنشئ ملف `values.yaml` مخصصًا. لاسترجاع القيم الافتراضية:
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+مثال على التهيئة:
+
+```yaml
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+hyperdx:
+  ingress:
+    enabled: true
+    host: hyperdx.example.com
+```
+
+طبّق قيمك المخصّصة:
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [خيارات النشر (v1.x)](/ar/clickstack/deployment/helm-deployment-options-v1) - الأنظمة الخارجية وعمليات النشر الدنيا
+* [عمليات النشر على Cloud (v1.x)](/ar/clickstack/deployment/helm-cloud-v1) - تهيئات GKE وEKS وAKS
+* [دليل Helm الأساسي (v1.x)](/ar/clickstack/deployment/helm-v1) - التثبيت الأساسي
+* [تهيئة Helm (v2.x)](/ar/clickstack/deployment/helm-configuration) - دليل تهيئة v2.x
+* [دليل الترقية](/ar/clickstack/deployment/helm-upgrade) - الترحيل من v1.x إلى v2.x

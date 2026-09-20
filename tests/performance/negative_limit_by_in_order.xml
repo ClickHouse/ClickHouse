@@ -1,0 +1,45 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>card</name>
+            <values>
+                <value>10000000</value>
+                <value>1000000</value>
+                <value>100000</value>
+                <value>100</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE test_u64_{card} (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO test_u64_{card} SELECT number % {card} FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_u64_{card} FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_str (s String) ENGINE = MergeTree ORDER BY s</create_query>
+    <fill_query>INSERT INTO test_str SELECT toString(number % 100) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_str FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_lc (lc LowCardinality(String)) ENGINE = MergeTree ORDER BY lc</create_query>
+    <fill_query>INSERT INTO test_lc SELECT toLowCardinality(toString(number % 100)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_nullable (nk Nullable(UInt64)) ENGINE = MergeTree ORDER BY nk SETTINGS allow_nullable_key = 1</create_query>
+    <fill_query>INSERT INTO test_nullable SELECT if(number % 17 = 0, NULL, number % 100) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_nullable FINAL</fill_query>
+
+    <create_query>CREATE TABLE test_datetime (dt DateTime) ENGINE = MergeTree ORDER BY dt</create_query>
+    <fill_query>INSERT INTO test_datetime SELECT toDateTime(1700000000 + number % 100) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_datetime FINAL</fill_query>
+
+    <query>SELECT k FROM test_u64_{card} ORDER BY k LIMIT -1 BY k FORMAT Null</query>
+    <query>SELECT s FROM test_str ORDER BY s LIMIT -1 BY s FORMAT Null</query>
+    <query>SELECT lc FROM test_lc ORDER BY lc LIMIT -1 BY lc FORMAT Null</query>
+    <query>SELECT nk FROM test_nullable ORDER BY nk LIMIT -1 BY nk FORMAT Null</query>
+    <query>SELECT dt FROM test_datetime ORDER BY dt LIMIT -1 BY dt FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_u64_{card}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_datetime</drop_query>
+</test>

@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'Amostragem de traces'
+sidebarTitle: 'Amostragem de traces'
+description: 'Configure agregações ponderadas por amostra para dados de traces amostrados no ClickStack.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'amostragem de traces', 'tail sampling', 'taxa de amostragem', 'agregações ponderadas', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Serviços de alto throughput podem produzir milhões de spans por segundo. Armazenar cada span é caro, por isso as equipes costumam executar o [processador tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) do OpenTelemetry Collector para reter apenas 1 em cada N spans. Cada span retido carrega um atributo `SampleRate` que registra N.
+
+Depois que os dados são amostrados, agregações simples produzem resultados incorretos: `count()` retorna N vezes menos eventos do que os que realmente ocorreram, `sum()` e `avg()` ficam enviesados, e os percentis se distorcem. Os dashboards mostram contagens de requisições, throughput e taxas de erro artificialmente baixas.
+
+O ClickStack resolve isso com um engine de consulta sensível à amostragem. Quando você configura uma expressão de taxa de amostragem em uma fonte de traces, o construtor de consultas reescreve as agregações SQL para ponderar cada span pela sua taxa de amostragem — em dashboards, alertas e pesquisas ad hoc.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+Quando uma fonte de traces tem `sampleRateExpression` configurada, o ClickStack a encapsula assim:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+Spans sem o atributo `SampleRate` assumem peso 1 por padrão, portanto os dados não amostrados produzem resultados idênticos às consultas originais.
+
+O construtor de consultas então reescreve as agregações:
+
+| Agregação          | Antes              | Depois (corrigido para amostragem)        |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condição   | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | inalterado         | inalterado                                |
+| count&#95;distinct | inalterado         | inalterado                                |
+
+<Note>
+  Percentis com amostragem usam `quantileTDigestWeighted`, um sketch T-Digest aproximado. Os resultados ficam próximos, mas não exatos.
+</Note>
+
+<div id="configuring">
+  ## Configurando a expressão da taxa de amostragem
+</div>
+
+Abra sua fonte de traces em **Configurações da fonte** e insira, no campo **Expressão da taxa de amostragem**, a expressão do ClickHouse que resulte na taxa de amostragem por `span`.
+
+Por exemplo, se o processador tail-sampling do OpenTelemetry gravar a taxa em `SpanAttributes['SampleRate']`:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Campo Expressão da taxa de amostragem nas Configurações da fonte do ClickStack" size="lg" />
+
+Depois de configurar, todos os gráficos, dashboards, alertas e painéis do dashboard de serviço aplicam automaticamente agregações ponderadas por amostragem. Não é necessário alterar consultas individuais.

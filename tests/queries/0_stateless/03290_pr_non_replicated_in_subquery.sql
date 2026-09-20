@@ -10,6 +10,7 @@ FROM
 );
 
 -- check that parallel_replicas_for_non_replicated_merge_tree(off by default) is respected in subquery
+SET automatic_parallel_replicas_mode = 0;
 SELECT count()
 FROM
 (

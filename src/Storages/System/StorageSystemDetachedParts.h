@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts final : public IStorage
+class StorageSystemDetachedParts final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemDetachedParts(const StorageID & table_id_);
@@ -19,8 +19,10 @@ public:
     std::string getName() const override { return "SystemDetachedParts"; }
     bool isSystemStorage() const override { return true; }
 
+    static VirtualColumnsDescription createVirtuals();
+
 protected:
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & /* column_names */,
         const StorageSnapshotPtr & storage_snapshot,

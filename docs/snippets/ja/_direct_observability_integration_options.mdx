@@ -1,0 +1,47 @@
+---
+title: オブザーバビリティの直接インテグレーションのオプション
+---
+
+<div id="direct-grafana">
+  ### Grafanaプラグインとの直接インテグレーション
+</div>
+
+Grafana用のClickHouseデータソースプラグインを使用すると、システムテーブルを使ってClickHouseから直接データを可視化・分析できます。この方法は、パフォーマンスの監視や、システムを詳細に分析するためのカスタムダッシュボードの作成に適しています。
+プラグインのインストールと設定の詳細については、ClickHouseの[data source plugin](/ja/integrations/connectors/data-visualization/grafana/index)を参照してください。あらかじめ用意されたダッシュボードとアラートルールを含むPrometheus-Grafana mix-inを使用した完全な監視構成については、[Monitor ClickHouse with the new Prometheus-Grafana mix-in](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in)を参照してください。
+
+<div id="direct-datadog">
+  ### Datadog の直接インテグレーション
+</div>
+
+Datadog は、エージェント向けにシステムテーブルを直接クエリする ClickHouse 監視プラグインを提供しています。このインテグレーションにより、clusterAllReplicas 機能を通じてクラスターを認識した包括的なデータベース監視が可能になります。
+
+<Note>
+  このインテグレーションは、コスト最適化のためのアイドル時の挙動との非互換性に加え、Cloud のプロキシ層に運用上の制約があるため、ClickHouse Cloud へのデプロイには推奨されません。
+</Note>
+
+<div id="system-tables">
+  ### システムテーブルを直接使用する
+</div>
+
+ClickHouse のシステムテーブル、特に `system.query_log` を直接クエリすることで、クエリパフォーマンスを詳細に分析できます。SQL コンソールまたは ClickHouse client を使用すると、チームは低速なクエリを特定し、リソース使用状況を分析し、組織全体での利用パターンを追跡できます。
+
+**クエリパフォーマンス分析**
+
+システムテーブルのクエリログを使用して、クエリパフォーマンス分析を行えます。
+
+**クエリ例**: すべてのクラスター レプリカにわたって、実行時間の長いクエリの上位 5 件を見つけます。
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

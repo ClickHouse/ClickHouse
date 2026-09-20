@@ -1,0 +1,415 @@
+Direct column access
+1	(11,'alpha')	100	0	0
+2	\N	200	1	0
+3	(33,'gamma')	\N	0	1
+4	(44,'delta')	400	0	0
+5	(11,'beta')	500	0	0
+6	\N	\N	1	1
+Element access with dot notation
+1	11	alpha	Nullable(UInt64)	Nullable(String)
+2	\N	\N	Nullable(UInt64)	Nullable(String)
+3	33	gamma	Nullable(UInt64)	Nullable(String)
+4	44	delta	Nullable(UInt64)	Nullable(String)
+5	11	beta	Nullable(UInt64)	Nullable(String)
+6	\N	\N	Nullable(UInt64)	Nullable(String)
+Element access with tupleElement
+1	11	alpha
+2	\N	\N
+3	33	gamma
+4	44	delta
+5	11	beta
+6	\N	\N
+Element access by index
+1	11	alpha
+2	\N	\N
+3	33	gamma
+4	44	delta
+5	11	beta
+6	\N	\N
+WHERE - IS NULL
+2	\N
+6	\N
+WHERE - IS NOT NULL
+1	(11,'alpha')
+3	(33,'gamma')
+4	(44,'delta')
+5	(11,'beta')
+WHERE - Element comparison
+3	33
+4	44
+WHERE - Element IS NULL
+2	\N
+6	\N
+WHERE - Element IS NOT NULL
+1	(11,'alpha')
+3	(33,'gamma')
+4	(44,'delta')
+5	(11,'beta')
+WHERE - String element comparison
+1	alpha
+WHERE - Multiple conditions
+3	(33,'gamma')
+4	(44,'delta')
+WHERE - Combined with other nullable column
+1	(11,'alpha')	100
+2	\N	200
+3	(33,'gamma')	\N
+4	(44,'delta')	400
+5	(11,'beta')	500
+ORDER BY - Whole tuple ASC
+1	(11,'alpha')
+5	(11,'beta')
+3	(33,'gamma')
+4	(44,'delta')
+2	\N
+6	\N
+ORDER BY - Whole tuple DESC
+4	(44,'delta')
+3	(33,'gamma')
+5	(11,'beta')
+1	(11,'alpha')
+2	\N
+6	\N
+ORDER BY - Whole tuple NULLS FIRST
+2	\N
+6	\N
+1	(11,'alpha')
+5	(11,'beta')
+3	(33,'gamma')
+4	(44,'delta')
+ORDER BY - Whole tuple NULLS LAST
+1	(11,'alpha')
+5	(11,'beta')
+3	(33,'gamma')
+4	(44,'delta')
+2	\N
+6	\N
+ORDER BY - Element u ASC
+1	11
+5	11
+3	33
+4	44
+2	\N
+6	\N
+ORDER BY - Element u DESC
+4	44
+3	33
+1	11
+5	11
+2	\N
+6	\N
+ORDER BY - Element u NULLS FIRST
+2	\N
+6	\N
+1	11
+5	11
+3	33
+4	44
+ORDER BY - Element u NULLS LAST
+1	11
+5	11
+3	33
+4	44
+2	\N
+6	\N
+ORDER BY - Element s
+1	alpha
+5	beta
+4	delta
+3	gamma
+2	\N
+6	\N
+ORDER BY - Multiple elements
+1	11	alpha
+5	11	beta
+3	33	gamma
+4	44	delta
+2	\N	\N
+6	\N	\N
+ORDER BY - Mixed with other columns
+1	(11,'alpha')	100
+2	\N	200
+4	(44,'delta')	400
+5	(11,'beta')	500
+3	(33,'gamma')	\N
+6	\N	\N
+GROUP BY - Whole tuple
+(11,'alpha')	1
+(11,'beta')	1
+(33,'gamma')	1
+(44,'delta')	1
+\N	2
+GROUP BY - Element u
+11	2	600
+33	1	\N
+44	1	400
+\N	2	200
+GROUP BY - Element s
+alpha	1
+beta	1
+delta	1
+gamma	1
+\N	2
+GROUP BY - Multiple elements
+11	alpha	1
+11	beta	1
+33	gamma	1
+44	delta	1
+\N	\N	2
+GROUP BY - NULL handling
+0	4
+1	2
+GROUP BY - COALESCE with default
+0	2
+11	2
+33	1
+44	1
+HAVING - On count
+11	2
+\N	2
+HAVING - On aggregated value
+11	600
+HAVING - With element condition
+11	2
+33	1
+44	1
+Aggregation - count
+6	4	4
+Aggregation - min/max on elements
+11	44	alpha	gamma
+Aggregation - sum/avg on elements
+99	24.75
+Aggregation - groupArray
+[(11,'alpha'),(33,'gamma'),(44,'delta'),(11,'beta')]	[11,33,44,11]
+Aggregation - uniq/uniqExact
+4	3
+Aggregation - any/anyLast
+(11,'alpha')	11
+Aggregation - countIf
+2	2
+JOIN - Self join on tuple
+JOIN - On element
+1	5	11
+LEFT JOIN - With NULL handling
+1	(11,'alpha')	(11,'beta')
+2	\N	\N
+3	(33,'gamma')	\N
+4	(44,'delta')	\N
+5	(11,'beta')	(11,'alpha')
+6	\N	\N
+INNER JOIN - Exclude NULLs
+1	1
+3	3
+4	4
+5	5
+DISTINCT - On tuple
+(11,'alpha')
+(11,'beta')
+(33,'gamma')
+(44,'delta')
+\N
+DISTINCT - On element
+11
+33
+44
+\N
+DISTINCT - Multiple elements
+11	alpha
+11	beta
+33	gamma
+44	delta
+\N	\N
+UNION - Tuples
+(11,'alpha')
+(11,'beta')
+(33,'gamma')
+(33,'gamma')
+(44,'delta')
+\N
+\N
+UNION DISTINCT - Elements
+11
+33
+44
+100
+200
+400
+500
+\N
+INTERSECT - Elements
+EXCEPT - Elements
+11
+33
+44
+11
+Subquery - IN clause
+1	(11,'alpha')
+3	(33,'gamma')
+4	(44,'delta')
+5	(11,'beta')
+Subquery - EXISTS
+1	(11,'alpha')
+5	(11,'beta')
+Subquery - Scalar subquery
+1	11	44
+2	\N	44
+3	33	44
+4	44	44
+5	11	44
+6	\N	44
+Subquery - Correlated
+1	11	2
+2	\N	\N
+3	33	1
+4	44	1
+5	11	2
+6	\N	\N
+CASE - On NULL
+1	low
+2	null tuple
+3	high
+4	high
+5	low
+6	null tuple
+CASE - On element
+1	11	eleven
+2	\N	other
+3	33	thirty-three
+4	44	forty-four
+5	11	eleven
+6	\N	other
+IF function
+1	u=11
+2	NULL
+3	u=33
+4	u=44
+5	u=11
+6	NULL
+multiIf
+1	small
+2	null
+3	medium
+4	large
+5	small
+6	null
+Window - row_number
+1	11	1
+5	11	2
+3	33	3
+4	44	4
+2	\N	5
+6	\N	6
+Window - rank/dense_rank
+1	11	1	1
+2	\N	5	4
+3	33	3	2
+4	44	4	3
+5	11	1	1
+6	\N	5	4
+Window - PARTITION BY
+1	11	0	1
+5	11	0	2
+3	33	0	3
+4	44	0	4
+2	\N	1	1
+6	\N	1	2
+Window - Aggregate functions
+1	11	11	11
+2	\N	11	22
+3	33	44	38.5
+4	44	88	29.333333333333332
+5	11	99	27.5
+6	\N	99	11
+Comparison - Tuple equality
+1	1	1	0
+1	2	\N	\N
+1	3	0	1
+Comparison - Element equality
+1	1	1
+2	\N	\N
+3	0	0
+4	0	0
+5	1	0
+6	\N	\N
+Comparison - Greater/Less
+1	0	1	1
+2	\N	\N	\N
+3	1	1	1
+4	1	1	0
+5	0	1	1
+6	\N	\N	\N
+Comparison - String operations
+1	1	1
+2	\N	\N
+3	1	0
+4	1	0
+5	1	1
+6	\N	\N
+Type conversion - toString
+1	(11,\'alpha\')	11
+2	\N	\N
+3	(33,\'gamma\')	33
+4	(44,\'delta\')	44
+5	(11,\'beta\')	11
+6	\N	\N
+Type conversion - CAST element
+1	11	alpha\0\0\0\0\0
+3	33	gamma\0\0\0\0\0
+4	44	delta\0\0\0\0\0
+5	11	beta\0\0\0\0\0\0
+NULL functions - coalesce
+1	11	alpha
+2	999	N/A
+3	33	gamma
+4	44	delta
+5	11	beta
+6	999	N/A
+NULL functions - ifNull
+1	11	alpha
+2	0	empty
+3	33	gamma
+4	44	delta
+5	11	beta
+6	0	empty
+NULL functions - assumeNotNull
+1	11	UInt64
+3	33	UInt64
+4	44	UInt64
+5	11	UInt64
+NULL functions - isNull/isNotNull
+1	0	1	0
+2	1	0	1
+3	0	1	0
+4	0	1	0
+5	0	1	0
+6	1	0	1
+CTE - Basic
+1	11	alpha
+3	33	gamma
+4	44	delta
+5	11	beta
+CTE - Aggregation
+1	11	-13.75
+3	33	8.25
+4	44	19.25
+5	11	-13.75
+Array operations - groupArray
+[(11,'alpha'),(33,'gamma'),(44,'delta'),(11,'beta')]
+Array operations - arrayElement
+[(11,'alpha'),(33,'gamma'),(44,'delta'),(11,'beta')]	(11,'alpha')	11
+Array operations - arrayFilter
+[(11,'alpha'),(33,'gamma'),(44,'delta'),(11,'beta')]
+Array operations - arrayMap
+[11,33,44,11]
+Complex - Multiple operations
+11	2	600	300	[1,5]
+44	1	400	400	[4]
+Complex - Nested aggregation
+high	2	38.5
+low	2	11
+Multiple nullable tuple elements
+Alice	Alice	100
+\N	\N	\N
+Bob	Bob	200
+\N	\N	\N
+Charlie	Charlie	300

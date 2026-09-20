@@ -1,0 +1,30 @@
+<test>
+    <create_query>
+        CREATE TABLE string_subcolumn_tuple
+        (
+            t Tuple(
+                s0 String, s1 String, s2 String, s3 String, s4 String,
+                s5 String, s6 String, s7 String, s8 String, s9 String,
+                s10 String, s11 String, s12 String, s13 String, s14 String,
+                s15 String, s16 String, s17 String, s18 String, s19 String
+            )
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO string_subcolumn_tuple
+        SELECT tuple(
+            's', 's', 's', 's', 's',
+            's', 's', 's', 's', 's',
+            's', 's', 's', 's', 's',
+            's', 's', 's', 's', 's'
+        )
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT count() FROM string_subcolumn_tuple WHERE NOT ignore(t.s0)</query>
+    <query>SELECT count() FROM string_subcolumn_tuple WHERE NOT ignore(t.s19)</query>
+
+    <drop_query>DROP TABLE IF EXISTS string_subcolumn_tuple</drop_query>
+</test>

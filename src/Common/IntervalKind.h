@@ -33,6 +33,10 @@ struct IntervalKind
     /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.
     Int64 toAvgNanoseconds() const;
 
+    /// Returns number of milliseconds in one interval.
+    /// For `Month`, `Quarter` and `Year` the function returns an average number of milliseconds.
+    Int64 toAvgMilliseconds() const;
+
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
     Int32 toAvgSeconds() const;
@@ -66,6 +70,13 @@ struct IntervalKind
     /// For example, `IntervalKind{IntervalKind::Day}.getExtractTimePartFunctionName()`
     /// returns "toDayOfMonth".
     const char * toNameOfFunctionExtractTimePart() const;
+
+    /// Inverse of `toNameOfFunctionExtractTimePart`: given a function name like
+    /// "toYear", "toMonth", "toDayOfMonth", ... sets `result` to the matching
+    /// `IntervalKind` and returns true. Returns false for any other name.
+    /// Used to recognise calendar-field extractor functions whose `EXTRACT`-style
+    /// dispatch can be redirected onto an `Interval` operand.
+    static bool tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result);
 
     /// Converts the string representation of an interval kind to its IntervalKind equivalent.
     /// Returns false if the conversion did not succeed.

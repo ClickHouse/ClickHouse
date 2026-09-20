@@ -1,0 +1,13 @@
+dict2xml
+docker
+kazoo
+minio
+filelock
+requests
+urllib3
+PyYAML
+pytest
+pytest-xdist
+pytest-timeout
+numpy
+pandas

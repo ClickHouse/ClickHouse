@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Recommandations de mise à l’échelle'
+slug: /cloud/features/autoscaling/scaling-recommendations
+description: 'Comprendre les recommandations de mise à l’échelle dans ClickHouse Cloud'
+keywords: ['recommandations de mise à l’échelle', 'moteur de recommandation', '2-window', 'mise à l’échelle automatique', 'optimisation']
+title: 'Recommandations de mise à l’échelle'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+La mise à l’échelle automatique des ressources de la base de données exige un équilibre délicat : une montée en charge trop lente peut dégrader les performances, tandis qu’une réduction de capacité trop agressive peut provoquer des oscillations permanentes.
+
+ClickHouse Cloud permet des réductions de capacité plus rapides, limite les oscillations de mise à l’échelle et réduit sensiblement les coûts d’infrastructure pour les charges de travail variables, tout en maintenant la stabilité nécessaire aux bases de données de production
+grâce à l’association d’un cadre de recommandation à deux fenêtres et d’un système de recommandation CPU avec suivi d’objectif.
+
+<div id="cpu-based-scaling">
+  ## Mise à l’échelle basée sur le CPU
+</div>
+
+La mise à l’échelle du CPU repose sur le target tracking, qui calcule l’allocation de CPU exacte nécessaire pour maintenir l’utilisation à un niveau cible. Une action de mise à l’échelle n’est déclenchée que si l’utilisation actuelle du CPU sort d’une plage définie :
+
+| Paramètre         | Valeur | Signification                                                            |
+| ----------------- | ------ | ------------------------------------------------------------------------ |
+| Utilisation cible | 53%    | Le niveau d’utilisation que ClickHouse cherche à maintenir               |
+| Seuil haut        | 75%    | Déclenche une mise à l’échelle à la hausse si le CPU dépasse ce seuil    |
+| Seuil bas         | 37.5%  | Déclenche une mise à l’échelle à la baisse si le CPU passe sous ce seuil |
+
+Le recommandeur évalue l’utilisation du CPU à partir de l’historique d’utilisation et détermine une allocation CPU recommandée à l’aide de cette formule :
+
+```text
+recommended_cpu = max_cpu_usage / target_utilization
+```
+
+Si l’utilisation du CPU se situe entre 37,5 % et 75 % de la capacité allouée, aucune opération de mise à l’échelle n’est effectuée. En dehors de cette plage, le recommandeur calcule la taille exacte nécessaire pour ramener l’utilisation à 53 %, puis le service est mis à l’échelle en conséquence.
+
+<div id="cpu-scaling-example">
+  ### Exemple
+</div>
+
+Un service doté de 4 vCPU connaît un pic de consommation à 3,8 vCPU (~95 % d’utilisation), franchissant le seuil haut de 75 %.
+Le recommandeur calcule : `3.8 / 0.53 ≈ 7.2 vCPU`, puis arrondit à la taille disponible supérieure (8 vCPU). Une fois la charge retombée et l’utilisation redescendue sous 37,5 % (1,5 vCPU), le recommandeur réduit à nouveau la capacité proportionnellement.
+
+<div id="memory-based-recommendations">
+  ## Recommandations basées sur la mémoire
+</div>
+
+ClickHouse Cloud recommande automatiquement des tailles de mémoire en fonction des profils d&#39;utilisation réels de votre service.
+Le recommandeur analyse l&#39;utilisation sur une fenêtre d’observation et ajoute une marge de sécurité pour absorber les pics et éviter les erreurs de mémoire insuffisante (OOM).
+
+Le recommandeur s&#39;appuie sur trois signaux :
+
+* **Mémoire des requêtes** : la mémoire maximale utilisée pendant l&#39;exécution des requêtes
+* **Mémoire résidente** : la mémoire maximale utilisée par le processus dans son ensemble
+* **Événements OOM** : si des requêtes ou des répliques ont récemment manqué de mémoire
+
+<div id="how-headroom-is-calculated">
+  ### Comment la marge de sécurité est calculée
+</div>
+
+Pour les requêtes et la mémoire résidente, la marge de sécurité ajoutée dépend de la prévisibilité de votre utilisation :
+
+* **Utilisation stable (faible variation)** : multiplicateur de 1,25x — davantage de marge de sécurité, car l&#39;utilisation est régulière et peu susceptible de présenter des pics inattendus
+* **Utilisation irrégulière (forte variation)** : multiplicateur de 1,1x — moins de marge de sécurité, afin d&#39;éviter le surprovisionnement pour des charges de travail déjà très variables
+
+Si des événements OOM sont détectés, le recommandeur applique un **multiplicateur plus agressif de 1,5x** afin de garantir que le service dispose de suffisamment de mémoire pour se rétablir.
+
+<div id="final-recommendation">
+  ### Recommandation finale
+</div>
+
+Le système retient la valeur la plus élevée parmi tous les signaux :
+
+```text
+desired_memory = max(
+  query_memory × skew_multiplier,
+  resident_memory × skew_multiplier,
+  resident_memory × 1.5,   // if query OOMs detected
+  rss_at_crash × 1.5       // if pod OOMs detected
+)
+```
+
+<div id="two-window-recommender">
+  ## Recommandeur à deux fenêtres
+</div>
+
+Au lieu d’utiliser une seule fenêtre, ClickHouse Cloud s’appuie sur deux fenêtres d’observation avec des intervalles de temps différents :
+
+* **Petite fenêtre (3 heures)** : capture les schémas d’utilisation récents et permet une réduction plus rapide des ressources
+* **Grande fenêtre (30 heures)** : garantit une augmentation des ressources en une seule étape jusqu’au niveau d’utilisation maximal observé sur la fenêtre d’observation la plus longue, plutôt qu’au fil de plusieurs augmentations progressives. C’est essentiel, car la mise à l’échelle prend du temps et invalide les caches locaux ; il est donc plus sûr d’augmenter les ressources en une seule étape.
+
+Chaque fenêtre génère indépendamment une recommandation à partir d’une analyse de la mémoire et du CPU.
+Le système fusionne ensuite ces recommandations en fonction du sens de la mise à l’échelle suggéré par chaque fenêtre, comme illustré dans la figure ci-dessous :
+
+<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Logique de fusion du recommandeur à deux fenêtres" />
+
+Pour en savoir plus sur les choix de conception du recommandeur, consultez [&quot;Une mise à l’échelle automatique plus intelligente pour ClickHouse : l’approche à deux fenêtres
+&quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

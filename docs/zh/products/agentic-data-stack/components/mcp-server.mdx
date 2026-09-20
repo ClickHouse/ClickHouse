@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP 服务器'
+title: 'ClickHouse MCP 服务器'
+description: 'ClickHouse MCP 服务器如何为智能体数据技术栈提供基于开放标准的访问层'
+doc_type: 'guide'
+keywords: ['智能体数据技术栈', 'MCP', 'Model Context Protocol', 'ClickHouse MCP 服务器']
+---
+
+ClickHouse MCP 服务器是 [Agentic Data Stack](/zh/products/agentic-data-stack/overview) 的**开放标准访问层**：它通过 Model Context Protocol 将 ClickHouse 接入聊天前端，使智能体能够探索您的数据，并对其执行只读查询。
+
+在该技术栈中，这个开源服务器与 ClickHouse 一同运行，并已在 LibreChat 中预先配置。它向智能体公开三个工具：
+
+* **列出数据库** — 列出已连接的 ClickHouse 实例中的数据库。
+* **列出表** — 查看某个数据库中的表及其 schema。
+* **运行 SELECT 查询** — 执行只读查询并返回结果。
+
+如需将其作为该技术栈的一部分运行，请参阅 [Docker 设置指南](/zh/products/agentic-data-stack/docker-setup)。如需将 ClickHouse MCP 服务器与其他客户端和智能体框架配合使用，或查看其源代码和配置，请参阅：
+
+* [MCP 集成目录](/zh/guides/use-cases/ai-ml/MCP)：客户端和智能体库指南。
+* [MCP 仓库](https://github.com/ClickHouse/mcp-clickhouse)：源代码和配置。
+
+<Info>
+  **想要托管式 MCP 服务器？** ClickHouse Cloud 提供全托管的 [Remote MCP server](/zh/products/cloud/features/ai-ml/remote-mcp)——零安装、OAuth 身份验证，以及更丰富的工具集；除上述只读工具外，还增加了管理操作 (服务、计费、ClickPipes、备份) 。请参阅它与[开源服务器的对比](/zh/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss)。
+</Info>

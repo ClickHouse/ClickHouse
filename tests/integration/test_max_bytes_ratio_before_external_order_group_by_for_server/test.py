@@ -32,6 +32,8 @@ def start_cluster():
 def test_max_bytes_ratio_before_external_group_by(node):
     if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
     # Peak memory usage: 15-16GiB
     query = """

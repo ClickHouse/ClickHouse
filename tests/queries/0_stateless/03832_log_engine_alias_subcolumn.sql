@@ -1,0 +1,6 @@
+SET enable_analyzer=1;
+DROP TABLE IF EXISTS t0;
+CREATE TABLE t0 (c0 Int, c1 Nullable(Int) ALIAS 1) ENGINE = Log();
+INSERT INTO TABLE t0 (c0) VALUES (1);
+SELECT t0.c1.null FROM t0;
+DROP TABLE t0;

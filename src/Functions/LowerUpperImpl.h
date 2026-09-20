@@ -1,5 +1,6 @@
 #pragma once
 #include <Columns/ColumnString.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -25,13 +26,18 @@ struct LowerUpperImpl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
+    static void vectorRaw(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+    {
+        array(src, src_end, dst);
+    }
+
 private:
     static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
     {
         const auto flip_case_mask = 'A' ^ 'a';
 
 #if defined(__AVX512F__) && defined(__AVX512BW__) /// check if avx512 instructions are compiled
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
             const auto byte_avx512 = sizeof(__m512i);

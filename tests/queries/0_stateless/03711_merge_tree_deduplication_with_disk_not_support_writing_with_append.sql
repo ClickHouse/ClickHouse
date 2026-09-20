@@ -2,7 +2,7 @@
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 -- Suppress error logs because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day).
--- And when a part is duplicated, it will be removed. However, because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day), 
+-- And when a part is duplicated, it will be removed. However, because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day),
 -- it might be removed by `MergeTreeData::clearOldTemporaryDirectories` thread.
 -- `IMergeTreeDataPart::removeIfNeeded` will fail to remove the part, causing it to have some error logs.
 SET send_logs_level = 'fatal';
@@ -18,7 +18,7 @@ CREATE TABLE merge_tree_deduplication
 ENGINE=MergeTree()
 ORDER BY key
 PARTITION BY part
-SETTINGS non_replicated_deduplication_window=3, disk='s3_plain_rewritable';
+SETTINGS non_replicated_deduplication_window=6, disk='s3_plain_rewritable';
 
 SYSTEM STOP MERGES merge_tree_deduplication;
 
@@ -113,7 +113,7 @@ SELECT part, key, value FROM merge_tree_deduplication ORDER BY key, part;
 
 -- Alters....
 
-ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 2;
+ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 4;
 
 SELECT '===============';
 
@@ -138,7 +138,7 @@ SELECT * FROM merge_tree_deduplication WHERE part = 33 ORDER BY key;
 
 SELECT '===============';
 
-ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 3;
+ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 6;
 
 INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
 
@@ -180,7 +180,7 @@ SELECT * FROM merge_tree_no_deduplication ORDER BY key;
 
 SELECT '===============';
 
-ALTER TABLE merge_tree_no_deduplication MODIFY SETTING non_replicated_deduplication_window = 3;
+ALTER TABLE merge_tree_no_deduplication MODIFY SETTING non_replicated_deduplication_window = 6;
 
 INSERT INTO merge_tree_no_deduplication (key, value) VALUES (1, '1');
 INSERT INTO merge_tree_no_deduplication (key, value) VALUES (2, '2');

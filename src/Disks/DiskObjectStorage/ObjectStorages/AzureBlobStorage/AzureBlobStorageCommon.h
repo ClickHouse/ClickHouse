@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -11,15 +12,11 @@
 
 #endif
 
-
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <filesystem>
-#include <variant>
-
-namespace fs = std::filesystem;
+#include <mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -55,17 +52,26 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+    /// Reject upload size settings that would otherwise produce an internal error
+    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
+    /// Invoked only when the multipart blob writer (`WriteBufferFromAzureBlobStorage`) is
+    /// constructed, so it is never applied to endpoints that route to
+    /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
+    void validateUploadSettings() const;
 };
 
 struct Endpoint
 {
     String storage_account_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
     String sas_auth;
     String additional_params;
     std::optional<bool> container_already_exists;
+    std::optional<bool> add_account_name_to_url;
 
     String getContainerEndpoint() const
     {
@@ -73,7 +79,7 @@ struct Endpoint
         if (url.ends_with('/'))
           url.pop_back();
 
-        if (!account_name.empty())
+        if (!account_name.empty() && add_account_name_to_url.value_or(true))
             url += "/" + account_name;
 
         if (!container_name.empty())
@@ -92,7 +98,7 @@ struct Endpoint
     {
         String url = storage_account_url;
 
-        if (!account_name.empty())
+        if (!account_name.empty() && add_account_name_to_url.value_or(true))
             url += "/" + account_name;
 
         if (!sas_auth.empty())
@@ -113,7 +119,10 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
+using Azure::Storage::Blobs::BlobContainerBatch;
 using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
+using BlobBatchResultResponse = Azure::Response<Azure::Storage::Blobs::Models::SubmitBlobBatchResult>;
+using DeleteBlobResultDeferredResponse = Azure::Storage::DeferredResponse<Azure::Storage::Blobs::Models::DeleteBlobResult>;
 
 /// A wrapper for ContainerClient that correctly handles the prefix of blobs.
 /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
@@ -128,9 +137,13 @@ public:
     BlobContainerPropertiesRespones GetProperties() const;
     ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
+    BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
+    String GetBlobPath(const String & blob_name) const;
+
 private:
     RawContainerClient client;
-    fs::path blob_prefix;
+    String blob_prefix;
 };
 
 using ContainerClient = ContainerClientWrapper;
@@ -161,6 +174,41 @@ BlobClientOptions getClientOptions(
     bool for_disk);
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` is not compiled out with
+/// `NDEBUG`. Never call it directly on a value that comes from a remote endpoint: the endpoint is
+/// under no obligation to send the header, and one that does not must not take the server down.
+inline String getETagOrEmpty(const Azure::ETag & etag)
+{
+    return etag.HasValue() ? etag.ToString() : "";
+}
+
+/// The same `ETag` reaches us in two spellings: the `Etag` element of a blob listing carries the
+/// bare tag (`0x8D...`), while the `ETag` header of a download or a `HEAD` response carries it
+/// quoted (`"0x8D..."`), as RFC 7232 requires of an entity-tag. Comparing the two spellings
+/// literally would report every object as replaced during the read, so the tag is reduced to its
+/// opaque part first: the surrounding quotes and a `W/` weak-validator prefix are dropped.
+inline String normalizeETag(const String & etag)
+{
+    std::string_view tag = etag;
+    if (tag.starts_with("W/"))
+        tag.remove_prefix(2);
+    if (tag.size() >= 2 && tag.front() == '"' && tag.back() == '"')
+    {
+        tag.remove_prefix(1);
+        tag.remove_suffix(1);
+    }
+    return String(tag);
+}
+
+/// The quoted entity-tag form of `etag`, which is the form a conditional header such as
+/// `If-Match` requires: an `ETag` taken from a listing is bare and must be quoted before it goes
+/// into a request.
+inline String toQuotedETag(const String & etag)
+{
+    return "\"" + normalizeETag(etag) + "\"";
+}
 
 #endif
 

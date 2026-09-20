@@ -1,0 +1,44 @@
+1
+1
+x	b
+y	a
+LEFT use_nulls=0
+a	q	a	x	\N
+b	q	b	y	b
+c	q	a	x	\N
+a	q	a	x	\N
+b	q	b	y	b
+c	q	a	x	\N
+RIGHT use_nulls=0
+b	q	b	y	b
+	p	a	x	\N
+b	q	b	y	b
+	p	a	x	\N
+FULL use_nulls=0
+	p	a	x	\N
+a	q	a	x	\N
+b	q	b	y	b
+c	q	a	x	\N
+	p	a	x	\N
+a	q	a	x	\N
+b	q	b	y	b
+c	q	a	x	\N
+FULL use_nulls=1
+a	q	\N	\N	\N
+b	q	b	y	b
+c	q	\N	\N	\N
+\N	\N	a	x	\N
+a	q	\N	\N	\N
+b	q	b	y	b
+c	q	\N	\N	\N
+\N	\N	a	x	\N
+USING FULL
+x	b
+y	a
+x	b
+y	a
+ASOF LEFT
+1	b
+2	a
+1	b
+2	a

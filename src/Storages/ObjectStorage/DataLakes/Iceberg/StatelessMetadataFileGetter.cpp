@@ -1,4 +1,3 @@
-
 #include "config.h"
 #if USE_AVRO
 
@@ -7,11 +6,12 @@
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 
 #include <Core/NamesAndTypes.h>
@@ -32,6 +32,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -40,10 +41,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Interpreters/IcebergMetadataLog.h>
 
 
 #include <Common/ProfileEvents.h>
@@ -58,6 +58,11 @@ namespace ErrorCodes
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace FailPoints
+{
+extern const char iceberg_slow_manifest_read[];
+}
+
 namespace Setting
 {
 extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
@@ -65,14 +70,66 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 
 namespace Iceberg
 {
-Iceberg::ManifestFilePtr getManifestFile(
+
+namespace
+{
+
+PartitionFieldSummaries parsePartitionFieldSummaries(const AvroForIcebergDeserializer & manifest_list_deserializer, size_t row)
+{
+    if (!manifest_list_deserializer.hasPath(c_partitions_contains_null))
+        return {};
+
+    auto get_array = [&](const char * path) -> Array
+    {
+        if (!manifest_list_deserializer.hasPath(path))
+            return {};
+        auto value = manifest_list_deserializer.getValueFromRowByName(row, path);
+        if (value.getType() != Field::Types::Array)
+            return {};
+        return value.safeGet<Array>();
+    };
+
+    const auto contains_null = get_array(c_partitions_contains_null);
+    const auto contains_nan = get_array(c_partitions_contains_nan);
+    const auto lower_bounds = get_array(c_partitions_lower_bound);
+    const auto upper_bounds = get_array(c_partitions_upper_bound);
+
+    if (contains_null.empty() || lower_bounds.size() != contains_null.size() || upper_bounds.size() != contains_null.size())
+        return {};
+
+    auto get_optional_string = [](const Array & array, size_t index) -> std::optional<String>
+    {
+        if (array[index].getType() != Field::Types::String)
+            return std::nullopt;
+        return array[index].safeGet<String>();
+    };
+
+    auto get_flag = [](const Array & array, size_t index) -> bool
+    {
+        if (index >= array.size() || array[index].getType() != Field::Types::UInt64)
+            return false;
+        return array[index].safeGet<UInt64>() != 0;
+    };
+
+    PartitionFieldSummaries summaries(contains_null.size());
+    for (size_t field_index = 0; field_index < summaries.size(); ++field_index)
+    {
+        summaries[field_index].contains_null = get_flag(contains_null, field_index);
+        summaries[field_index].contains_nan = get_flag(contains_nan, field_index);
+        summaries[field_index].lower_bound = get_optional_string(lower_bounds, field_index);
+        summaries[field_index].upper_bound = get_optional_string(upper_bounds, field_index);
+    }
+    return summaries;
+}
+
+}
+
+Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const String & filename,
-    Int64 inherited_sequence_number,
-    Int64 inherited_snapshot_id)
+    const IcebergPathFromMetadata & filename)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -81,43 +138,75 @@ Iceberg::ManifestFilePtr getManifestFile(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
-        RelativePathWithMetadata manifest_object_info(filename);
+        RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
+        // Test-only: simulate per-object latency.
+        fiu_do_on(FailPoints::iceberg_slow_manifest_read,
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        });
 
-        return std::make_shared<Iceberg::ManifestFileContent>(
-            manifest_file_deserializer,
-            filename,
-            persistent_table_components.format_version,
-            persistent_table_components.table_path,
-            *persistent_table_components.schema_processor,
-            inherited_sequence_number,
-            inherited_snapshot_id,
-            persistent_table_components.table_location,
-            local_context,
-            filename);
+        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
+        auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
+            std::move(buffer), filename, getFormatSettings(local_context));
+
+        const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
         return manifest_file;
     }
     return create_fn();
+}
+
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    LoggerPtr log,
+    const ManifestFileCacheKey & cache_key,
+    Int32 table_snapshot_schema_id)
+{
+    auto cacheable_info = getManifestFile(
+        object_storage,
+        persistent_table_components,
+        local_context,
+        log,
+        cache_key.manifest_file_path);
+
+    auto iterator = Iceberg::ManifestFileIterator::create(
+        cacheable_info.deserializer,
+        cache_key.manifest_file_path,
+        persistent_table_components.path_resolver,
+        *persistent_table_components.schema_processor,
+        cache_key.added_sequence_number,
+        cache_key.added_snapshot_id,
+        cache_key.first_row_id,
+        local_context,
+        nullptr,
+        table_snapshot_schema_id);
+
+    while (iterator->next())
+    {
+    }
+
+    return iterator->getFilesWithoutDeletedHandle();
 }
 
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
-    const String & filename,
+    const IcebergPathFromMetadata & filename,
     LoggerPtr log)
 {
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
@@ -127,7 +216,7 @@ ManifestFileCacheKeys getManifestList(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
-        RelativePathWithMetadata object_info(filename);
+        RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -137,23 +226,27 @@ ManifestFileCacheKeys getManifestList(
         auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
+        /// The manifest list's own Avro metadata governs how it is parsed. A table whose
+        /// `format-version` was upgraded from v1 to v2 by an external tool (e.g. Spark) may
+        /// still reference v1 manifest lists, and those do not carry the v2-only
+        /// `sequence_number`/`content` columns.
+        const Int64 manifest_list_format_version = manifest_list_deserializer.getFormatVersionFromManifestFileMetadata();
+
         ManifestFileCacheKeys manifest_file_cache_keys;
 
         insertRowToLogTable(
             local_context,
-            manifest_list_deserializer.getMetadataContent(),
+            [&] { return manifest_list_deserializer.getMetadataContent(); },
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
-            persistent_table_components.table_path,
+            persistent_table_components.path_resolver.getTableRoot(),
             filename,
             std::nullopt,
             std::nullopt);
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
-            const std::string file_path
-                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
-            const auto manifest_file_name = getProperFilePathFromMetadataInfo(
-                file_path, persistent_table_components.table_path, persistent_table_components.table_location);
+            const IcebergPathFromMetadata manifest_file_name = IcebergPathFromMetadata::deserialize(
+                manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>());
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -164,21 +257,71 @@ ManifestFileCacheKeys getManifestList(
                     f_added_snapshot_id);
 
             ManifestFileContentType content_type = ManifestFileContentType::DATA;
-            if (persistent_table_components.format_version > 1)
+            Int64 manifest_length
+                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_length, TypeIndex::Int64).safeGet<Int64>();
+            if (manifest_length < 0)
             {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has negative value for field '{}', but it is required",
+                    i,
+                    f_manifest_length);
+            }
+            if (manifest_list_format_version > 1 && manifest_list_deserializer.hasPath(f_sequence_number))
                 added_sequence_number
                     = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
-                content_type = Iceberg::ManifestFileContentType(
-                    manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
+            if (manifest_list_format_version > 1 && manifest_list_deserializer.hasPath(f_content))
+            {
+                /// The value comes from the file: casting an arbitrary integer to the enum and
+                /// comparing it with the enumerators below would be undefined behaviour, and an
+                /// out-of-range value would be silently treated as a data manifest.
+                const auto content_type_value
+                    = manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>();
+                if (content_type_value < Int32(Iceberg::ManifestFileContentType::DATA)
+                    || content_type_value > Int32(Iceberg::ManifestFileContentType::DELETE))
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Manifest list entry at index {} has an unexpected value {} of the field '{}'",
+                        i,
+                        content_type_value,
+                        f_content);
+                content_type = Iceberg::ManifestFileContentType(content_type_value);
             }
+            if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} is missing required field '{}'",
+                    i,
+                    f_partition_spec_id);
+            Int32 partition_spec_id = static_cast<Int32>(
+                manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
+            Int64 live_files_count = 0;
+            for (const auto * count_field : {f_added_files_count, f_existing_files_count})
+            {
+                if (!manifest_list_deserializer.hasPath(count_field))
+                    continue;
+                auto count = manifest_list_deserializer.getValueFromRowByName(i, count_field);
+                if (!count.isNull())
+                    live_files_count += std::max<Int64>(0, count.safeGet<Int64>());
+            }
+
+            std::optional<UInt64> first_row_id;
+            if (manifest_list_format_version > 2 && manifest_list_deserializer.hasPath(f_manifest_first_row_id))
+            {
+                auto first_row_id_value = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_first_row_id);
+                if (!first_row_id_value.isNull())
+                    first_row_id = first_row_id_value.safeGet<Int64>();
+            }
+
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
+                partition_spec_id, parsePartitionFieldSummaries(manifest_list_deserializer, i), live_files_count, first_row_id);
 
             insertRowToLogTable(
                 local_context,
-                manifest_list_deserializer.getContent(i),
+                [&] { return manifest_list_deserializer.getContent(i); },
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
-                persistent_table_components.table_path,
+                persistent_table_components.path_resolver.getTableRoot(),
                 filename,
                 i,
                 std::nullopt);
@@ -192,7 +335,7 @@ ManifestFileCacheKeys getManifestList(
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;

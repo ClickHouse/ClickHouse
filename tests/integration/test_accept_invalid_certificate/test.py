@@ -1,5 +1,6 @@
+import os
 import os.path
-from os import remove
+import tempfile
 
 import pytest
 
@@ -62,27 +63,27 @@ config_connection_accept = """<clickhouse>
 
 
 def execute_query_native(node, query, config):
-    config_path = f"{SCRIPT_DIR}/configs/client.xml"
-
-    file = open(config_path, "w")
-    file.write(config)
-    file.close()
-
-    client = Client(
-        node.ip_address,
-        9440,
-        command=cluster.client_bin_path,
-        secure=True,
-        config=config_path,
+    fd, config_path = tempfile.mkstemp(
+        prefix="client_", suffix=".xml", dir=f"{SCRIPT_DIR}/configs"
     )
-
     try:
-        result = client.query(query)
-        remove(config_path)
-        return result
-    except:
-        remove(config_path)
-        raise
+        with os.fdopen(fd, "w") as f:
+            f.write(config)
+
+        client = Client(
+            node.ip_address,
+            9440,
+            command=cluster.client_bin_path,
+            secure=True,
+            config=config_path,
+        )
+
+        return client.query(query)
+    finally:
+        try:
+            os.remove(config_path)
+        except FileNotFoundError:
+            pass
 
 
 def test_default():
@@ -115,7 +116,12 @@ def test_strict_reject():
 def test_strict_reject_with_config():
     with pytest.raises(Exception) as err:
         execute_query_native(node1, "SELECT 1", config_accept)
-    assert "alert certificate required" in str(err.value)
+    # Accept both error messages due to race condition in SSL handshake:
+    # - "alert certificate required": TCP layer transmits Alert before close() executes
+    # - "Connection reset by peer": close() executes before TCP layer transmits Alert from send buffer
+    # Race condition: send() is async (returns after copying to kernel buffer), close() may execute
+    # before TCP layer actually sends the Alert packet, causing RST to be sent instead
+    assert "alert certificate required" in str(err.value) or "Connection reset by peer" in str(err.value)
 
 
 def test_strict_connection_reject():

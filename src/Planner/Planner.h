@@ -11,6 +11,7 @@
 namespace DB
 {
 
+class ActionsDAG;
 class QueryNode;
 
 class GlobalPlannerContext;
@@ -24,7 +25,8 @@ class Planner
 public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
-        SelectQueryOptions & select_query_options_);
+        SelectQueryOptions & select_query_options_,
+        const ActionsDAG * post_filter_ = nullptr);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,

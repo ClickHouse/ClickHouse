@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}
 function create_or_replace_view_thread
 {
     for _ in {1..20}; do
-        $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
     done
 }
 export -f create_or_replace_view_thread;
@@ -23,7 +23,7 @@ export -f create_or_replace_view_thread;
 function select_view_thread
 {
     for _ in {1..20}; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL" 2>&1 | tr '\n' ' ' | grep -v -P 'Code: (60|741)'
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL" 2>&1 | grep -v -P 'Code: (60|741)'
     done
 }
 export -f select_view_thread;

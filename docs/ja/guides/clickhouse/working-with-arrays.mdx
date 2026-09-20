@@ -1,0 +1,567 @@
+---
+title: 'ClickHouseで配列を使う'
+description: 'ClickHouseで配列を使うための入門ガイド'
+keywords: ['配列']
+sidebarTitle: 'ClickHouseで配列を使う'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+> このガイドでは、ClickHouseで配列を使用する方法と、よく使われる[配列関数](/ja/reference/functions/regular-functions/array-functions)の一部を紹介します。
+
+<div id="array-basics">
+  ## Array の概要
+</div>
+
+Array は、値をまとめて保持するインメモリのデータ構造です。
+これらは配列の*要素*と呼ばれ、各要素は索引で参照できます。索引は、このまとまりの中での要素の位置を表します。
+
+ClickHouse では、[`array`](/ja/reference/data-types/array) 関数を使って Array を作成できます。
+
+```sql
+array(T)
+```
+
+または、`[]` を使用することもできます:
+
+```sql
+[]
+```
+
+たとえば、数値のArrayを作成できます。
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+または String の配列:
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+または、[タプル](/ja/reference/data-types/tuple) などのネストした型の配列:
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+このように、異なる型の値を持つ配列を作りたくなるかもしれません。
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+ただし、配列の要素は常に共通のスーパータイプを持っている必要があります。共通のスーパータイプとは、2つ以上の異なる型の値を欠損なく表現でき、それらを一緒に扱える最小のデータ型です。
+共通のスーパータイプがない場合、配列を作成しようとすると例外が発生します。
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+配列をその場で作成する場合、ClickHouse はすべての要素を格納できる最も狭い型を選択します。
+たとえば、整数と浮動小数点数を含む配列を作成すると、浮動小数点数の上位型が選択されます。
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="異なる型の配列を作成する">
+  上で説明したデフォルトの動作は、`use_variant_as_common_type` 設定を使って変更できます。
+  これにより、引数の型に共通の型がない場合でも、`if`/`multiIf`/`array`/`map` 関数の結果型として [Variant](/ja/reference/data-types/variant) 型を使用できます。
+
+  例えば、次のとおりです。
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  また、型名を指定して配列から各型の値を取り出すこともできます。
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+`[]` を使った索引指定は、配列要素にアクセスする便利な方法です。
+ClickHouse では、配列の索引は常に **1** から始まる点を理解しておくことが重要です。
+これは、配列の索引が 0 から始まる他のプログラミング言語とは異なる場合があります。
+
+たとえば、配列がある場合、次のように記述すると最初の要素を選択できます。
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+負の索引を使用することもできます。
+これにより、末尾の要素を基準に要素を選択できます。
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+配列は 1 始まりで索引付けされていますが、それでも位置 0 の要素にアクセスできます。
+返される値は、その配列型の*デフォルト値*です。
+以下の例では、String データ型のデフォルト値が空文字列であるため、空文字列が返されます。
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## 配列関数
+</div>
+
+ClickHouse には、配列を操作する便利な関数が数多く用意されています。
+このセクションでは、最も基本的なものから始めて、徐々に複雑なものへ進みながら、特に有用な関数をいくつか見ていきます。
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### length、arrayEnumerate、indexOf、has* 関数
+</div>
+
+`length` 関数は、配列の要素数を返すために使用します。
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+[`arrayEnumerate`](/ja/reference/functions/regular-functions/array-functions#arrayEnumerate) 関数を使うと、要素の索引からなる配列を返すこともできます：
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+特定の値の索引を見つけたい場合は、`indexOf` 関数を使用できます。
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+配列内に同じ値が複数ある場合、この関数は最初に見つかった索引を返します。
+配列の要素が昇順にソートされている場合は、[`indexOfAssumeSorted`](/ja/reference/functions/regular-functions/array-functions#indexOfAssumeSorted) 関数を使用できます。
+
+関数 `has`、`hasAll`、`hasAny` は、配列に指定した値が含まれているかどうかを判定する際に便利です。
+次の例を見てみましょう。
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## 配列関数を使ったフライトデータの分析
+</div>
+
+ここまでは、かなり単純な例を見てきました。
+配列の真価は、実際のデータセットで使うとよくわかります。
+
+ここでは、米国運輸統計局のフライトデータを含む [ontimeデータセット](/ja/get-started/sample-datasets/ontime) を使用します。
+このデータセットは [SQL playground](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K) でも確認できます。
+
+このデータセットを選んだのは、配列が時系列データの処理によく適しており、
+複雑になりがちなクエリを簡潔にできるためです。
+
+<Tip>
+  下の &quot;play&quot; ボタンをクリックすると、ドキュメント内でクエリを直接実行し、結果をその場で確認できます。
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+このデータセットには多くのカラムがありますが、ここではその一部に注目します。
+以下のクエリを実行して、データがどのようなものか確認してみましょう。
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+ランダムに選んだ特定の日、たとえば &#39;2024-01-01&#39; の米国内で最も混雑する空港の上位 10 件を見てみましょう。
+ここで知りたいのは、各空港から何便が出発しているかです。
+このデータにはフライトごとに 1 行ありますが、出発空港ごとにデータをグループ化し、宛先を配列にまとめられると便利です。
+
+これを実現するには、[`groupArray`](/ja/reference/functions/aggregate-functions/groupArray) 集約関数を使用できます。これは各行の指定したカラムの値を取り出し、配列としてまとめるものです。
+
+以下のクエリを実行して、どのように動作するかを確認しましょう。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+上のクエリにある [`toStringCutToZero`](/ja/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) は、一部の空港の 3 文字コードの末尾に現れる null 文字を取り除くために使用しています。
+
+データがこのフォーマットになっていれば、まとめた &quot;Destinations&quot; 配列の長さを調べることで、混雑する空港の順位を簡単に求められます。
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap と arrayZip
+</div>
+
+前のクエリでは、今回選択した日において、Denver International Airport が出発便数の最も多い空港であることを確認しました。
+では、それらの便のうち、定時だったもの、15〜30 分遅延したもの、30 分を超えて遅延したものがそれぞれ何便あるのかを見てみましょう。
+
+ClickHouse の配列関数の多くは、いわゆる [&quot;higher-order functions&quot;](/ja/reference/functions/regular-functions/overview#higher-order-functions) であり、第 1 引数としてラムダ関数を受け取ります。
+[`arrayMap`](/ja/reference/functions/regular-functions/array-functions#arrayMap) 関数はそのような高階関数の一例で、元の配列の各要素にラムダ関数を適用して、指定した配列から新しい配列を返します。
+
+以下のクエリを実行すると、`arrayMap` 関数を使って、どの便が遅延し、どの便が定時だったかを確認できます。
+出発地と到着地の組ごとに、各便の機体記号とステータスが表示されます。
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+上記のクエリでは、`arrayMap` 関数が単一要素の配列 `[DepDelayMinutes]` を受け取り、ラムダ関数 `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'` を適用して分類します。
+その後、結果の配列の最初の要素が `[DepDelayMinutes][1]` で取り出されます。
+[`arrayZip`](/ja/reference/functions/regular-functions/array-functions#arrayZip) 関数は、`Tail_Number` 配列と `statuses` 配列を 1 つの配列にまとめます。
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+次に、空港 `DEN`、`ATL`、`DFW` について、30分以上遅延したフライト数のみを見てみましょう。
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+上のクエリでは、[`arrayFilter`](/ja/reference/functions/regular-functions/array-functions#arrayFilter) 関数の第1引数としてラムダ関数を渡しています。
+このラムダ関数は、遅延時間 (分) を表す `d` を受け取り、条件を満たす場合は `1`、そうでない場合は `0` を返します。
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort と arrayIntersect
+</div>
+
+次に、[`arraySort`](/ja/reference/functions/regular-functions/array-functions#arraySort) 関数と [`arrayIntersect`](/ja/reference/functions/regular-functions/array-functions#arrayIntersect) 関数を使って、米国の主要空港のどの組み合わせが最も多くの共通宛先に就航しているかを調べます。
+`arraySort` は Array を受け取り、デフォルトでは要素を昇順にソートしますが、ソート順を定義するためにラムダ関数を渡すこともできます。
+`arrayIntersect` は複数の Array を受け取り、すべての Array に共通して含まれる要素を持つ Array を返します。
+
+以下のクエリを実行して、これら 2 つの配列関数の動作を確認してください。
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+このクエリは、大きく 2 つの段階で処理されます。
+まず、Common Table Expression (CTE) を使って `airport_routes` という一時的な dataset を作成します。ここでは、2024 年 1 月 1 日のすべてのフライトを対象に、各出発空港について、その空港が就航している一意な宛先をソート済みのリストとしてまとめます。
+たとえば `airport_routes` の result set では、DEN は `['ATL', 'BOS', 'LAX', 'MIA', ...]` のように、その空港から就航しているすべての都市を含む Array を持つことになります。
+
+第 2 段階では、米国の 5 つの主要ハブ空港 (`DEN`、`ATL`、`DFW`、`ORD`、`LAS`) を取り上げ、それらのすべての組み合わせを比較します。
+これは cross join を使って行われ、これらの空港の全組み合わせを生成します。
+次に、各組み合わせについて `arrayIntersect` 関数を使い、両方の空港のリストに含まれる共通の宛先を求めます。
+length 関数は、それらの共通宛先の数を数えます。
+
+条件 `a1.Origin < a2.Origin` によって、各組み合わせは 1 回だけ現れるようになります。
+これがないと、JFK-LAX と LAX-JFK の両方が別々の結果として返されますが、同じ比較を表しているため冗長です。
+最後に、このクエリは共通する宛先数が多い順に結果をソートし、上位 10 件だけを返します。
+これにより、どの主要ハブ同士が最も重複した路線ネットワークを持っているかがわかります。これは、複数の航空会社が同じ都市ペアに就航している競争の激しい市場や、似た地理的エリアをカバーしていて、旅行者にとって代替の乗り継ぎ拠点になり得るハブを示している可能性があります。
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+遅延を見ているので、さらにもう 1 つの高階配列関数 `arrayReduce` を使って、Denver International Airport 発の各路線について平均遅延と最大遅延を求めてみましょう。
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+上の例では、`DEN` から出発する各便について、`arrayReduce` を使って平均遅延と最大遅延を求めました。
+`arrayReduce` は、関数の第 1 パラメータで指定した集約関数を、関数の第 2 パラメータで指定した配列の要素に適用します。
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+ClickHouse の通常の関数には、受け取ったのと同じ数の行を返すという性質があります。
+しかし、このルールを破る、知っておく価値のある興味深くユニークな関数が 1 つあります。それが `arrayJoin` 関数です。
+
+`arrayJoin` は配列を「展開」し、各要素ごとに個別の行を作成します。
+これは、他のデータベースにおける `UNNEST` や `EXPLODE` SQL 関数に似ています。
+
+配列やスカラー値を返すほとんどの配列関数とは異なり、`arrayJoin` は行数を増やすことで結果セットを根本的に変化させます。
+
+以下のクエリは、0 から 100 までを 10 刻みで並べた値の配列を返します。
+この配列は、0 分、10 分、20 分といった遅延時間だと考えることができます。
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+`arrayJoin` を使うと、2 つの空港間でその分数以下の遅延が何件あったかを求めるクエリを書けます。
+以下のクエリは、累積遅延バケットを使って、2024 年 1 月 1 日の Denver (DEN) から Miami (MIA) へのフライト遅延の分布を示すヒストグラムを作成します。
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+上のクエリでは、CTE 句 (`WITH` 句) を使って遅延の配列を返しています。
+`Destination` は宛先コードを文字列に変換します。
+
+`arrayJoin` を使って、遅延の配列を個別の行に展開します。
+`delay` 配列の各値は、それぞれ別名 `del` を持つ独立した行になり、
+`del=0` の行、`del=10` の行、`del=20` の行、というように 10 行が得られます。
+各遅延しきい値 (`del`) について、クエリは `countIf(DepDelayMinutes >= del)` を使って、
+そのしきい値以上の遅延だったフライト数を数えます。
+
+`arrayJoin` には、これに相当する SQL コマンド `ARRAY JOIN` もあります。
+比較のため、上のクエリを同等の SQL コマンドで書き直したものを以下に示します。
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+おめでとうございます！ClickHouse での配列の扱い方について、基本的な配列の作成やインデックス指定から、`groupArray`、`arrayFilter`、`arrayMap`、`arrayReduce`、`arrayJoin` といった強力な関数まで学びました。
+さらに学習を進めるには、配列関数の完全なリファレンスを参照して、`arrayFlatten`、`arrayReverse`、`arrayDistinct` などの追加の関数を確認してみてください。
+また、配列と相性のよい関連データ構造として、[`タプル`](/ja/reference/data-types/tuple#creating-tuples)、[JSON](/ja/reference/data-types/newjson)、[Map](/ja/reference/data-types/map) 型について学ぶのもおすすめです。
+これらの概念を自分のデータセットに適用して練習し、SQL playground やその他のサンプルデータセットでさまざまなクエリを試してみてください。
+
+配列は ClickHouse の基本的な機能の 1 つであり、効率的な分析クエリを実現します。配列関数に慣れてくると、複雑な集計や時系列分析を大幅に簡素化できることがわかるでしょう。
+配列をもっと楽しく学びたい方には、ClickHouse のデータエキスパートである Mark による以下の YouTube 動画がおすすめです。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

@@ -110,7 +110,7 @@ def test_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -141,7 +141,7 @@ def test_empty_replicated_table():
     )
 
     # Drop table on both nodes.
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     # Restore from backup on node2.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -270,6 +270,38 @@ def test_different_tables_on_nodes():
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
 
 
+def test_embedded_rocksdb_same_name_on_nodes():
+    # Same local EmbeddedRocksDB table name on two hosts. Each host has its own host-local
+    # rocksdb_dir (the default dir derived from the table name is the same STRING on both hosts),
+    # so the backup/restore coordination election_id is identical across hosts. This exercises the
+    # OnCluster RocksDB coordination path: without host-qualified znode names the second host's
+    # registration would collide (ZNODEEXISTS) and lose its data entry. Each host must back up and
+    # restore its own rows.
+    node1.query(
+        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+    node2.query(
+        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (1, 'node1_a'), (2, 'node1_b')")
+    node2.query("INSERT INTO tbl VALUES (10, 'node2_a'), (20, 'node2_b'), (30, 'node2_c')")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+
+    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY key") == TSV(
+        [[1, "node1_a"], [2, "node1_b"]]
+    )
+    assert node2.query("SELECT * FROM tbl ORDER BY key") == TSV(
+        [[10, "node2_a"], [20, "node2_b"], [30, "node2_c"]]
+    )
+
+
 def test_backup_restore_on_single_replica():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
@@ -365,6 +397,47 @@ def test_replicated_table_with_uuid_in_zkpath():
         )
 
 
+def test_replicated_table_restore_keeps_duplicate_parts():
+    try:
+        node1.query(
+            "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+            "key UInt64, value String, array Array(String)"
+            ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}', '{replica}')"
+            "ORDER BY tuple() SETTINGS replicated_deduplication_window = 0, "
+            "replicated_deduplication_window_for_async_inserts = 0"
+        )
+
+        node1.query("SYSTEM STOP MERGES ON CLUSTER 'cluster' tbl")
+
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query("INSERT INTO tbl VALUES (0, 'same', ['same'])")
+        node1.query(
+            "ALTER TABLE tbl ON CLUSTER 'cluster' MODIFY SETTING "
+            "replicated_deduplication_window = 10000, "
+            "replicated_deduplication_window_for_async_inserts = 10000"
+        )
+
+        assert node1.query("SELECT count() FROM tbl") == "2\n"
+        assert (
+            node1.query("SELECT count() FROM system.parts WHERE table = 'tbl' AND active")
+            == "2\n"
+        )
+
+        backup_name = new_backup_name()
+        node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+        node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+        expected = node1.query("SELECT count(), sum(sipHash64(*)) FROM tbl")
+        for instance in [node1, node2]:
+            assert instance.query("SELECT count() FROM tbl2") == "2\n"
+            assert instance.query("SELECT count(), sum(sipHash64(*)) FROM tbl2") == expected
+    finally:
+        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster' SYNC")
+
+
 def test_replicated_table_with_not_synced_insert():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
@@ -385,7 +458,7 @@ def test_replicated_table_with_not_synced_insert():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -415,7 +488,7 @@ def test_replicated_table_with_not_synced_merge():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -587,7 +660,7 @@ def test_keeper_value_max_size():
         settings={"backup_restore_keeper_value_max_size": 50},
     )
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
@@ -691,6 +764,8 @@ def test_required_privileges():
 
     node1.query("CREATE USER u1")
     node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have the grant BACKUP ON default.tbl"
@@ -701,7 +776,7 @@ def test_required_privileges():
     node1.query("GRANT BACKUP ON tbl TO u1")
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
@@ -716,8 +791,10 @@ def test_required_privileges():
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
-    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
+    # REVOKE ALL took the DISK grant too; the RESTORE below still needs the read direction.
+    node1.query("GRANT READ ON DISK TO u1")
 
     expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl"
     assert expected_error in node1.query_and_get_error(
@@ -738,6 +815,8 @@ def test_system_users():
     backup_name = new_backup_name()
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
     node1.query("GRANT CLUSTER ON *.* TO u2")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u2")
 
     expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(
@@ -830,10 +909,10 @@ def test_projection():
         "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
         "ORDER BY y PARTITION BY x%10"
     )
-    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
 
     node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
-    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+    node1.query("INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
 
     assert (
         node1.query(
@@ -845,7 +924,7 @@ def test_projection():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
     assert (
         node1.query(
@@ -893,7 +972,7 @@ def test_file_deduplication():
 
     # Unique data.
     node1.query(
-        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+        "INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
     )
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
@@ -1143,11 +1222,11 @@ def test_tables_dependency():
         "Table mydb.clusterfunc10 has no dependencies (level 0)",
     ]
     for expect in expect_in_logs_1:
-        assert node1.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node1.contains_in_log(f"BackupMetadataFinder: {expect}")
     for expect in expect_in_logs_2:
-        assert node2.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node2.contains_in_log(f"BackupMetadataFinder: {expect}")
     for expect in expect_in_logs_3:
-        assert node3.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node3.contains_in_log(f"BackupMetadataFinder: {expect}")
 
 
 def test_get_error_from_other_host():

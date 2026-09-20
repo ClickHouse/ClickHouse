@@ -1,4 +1,3 @@
-set allow_suspicious_primary_key = 1;
 drop table if exists src;
 create table src (x UInt64) engine=MergeTree order by tuple();
 insert into src select 0 from numbers(1000000);

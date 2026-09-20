@@ -10,6 +10,7 @@ avro-tools fromjson  --schema-file empty.avsc empty.json > empty.avro
 avro-tools fromjson  --schema-file references.avsc references.json >  references.avro
 avro-tools fromjson  --schema-file nested.avsc nested.json > nested.avro
 avro-tools fromjson  --schema-file nested_complex.avsc nested_complex.json > nested_complex.avro
+avro-tools fromjson  --schema-file fixed.avsc fixed.json > fixed.avro
 
 #compression
 avro-tools fromjson --codec null  --schema-file simple.avsc simple.json > simple.null.avro

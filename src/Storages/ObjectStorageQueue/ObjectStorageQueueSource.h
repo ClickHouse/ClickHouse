@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
@@ -9,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -17,9 +17,36 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class IStreamingStorage;
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource : public ISource, WithContext
+/// Whether the `after_processing` step of the table acts on the generation of every object it
+/// ingested. An Azure `MOVE` copies and deletes exactly the generation that was read, an Azure
+/// `DELETE` deletes exactly that generation, and the copy of an S3 `MOVE` is pinned to it as well,
+/// so all of them have to know that generation - the `ETag` of the object - for every file before
+/// the file is committed as processed. Otherwise an object overwritten after it was read would be
+/// moved or deleted by path, and the newer generation would be gone without ever having been
+/// ingested. The read of such a file is pinned to that generation independently of
+/// `s3_validate_etag_on_read`: were it not, a read that served a newer generation `B` would still be
+/// recorded as an ingestion of the listed generation `A`, the post-processing pinned to `A` would
+/// refuse the object, and `B` would be ingested a second time on the next pass. An S3 `DELETE`
+/// is pinned as well (`If-Match` on the `DeleteObject`, the `ETag` element of a `DeleteObjects`),
+/// so it needs the ingested generation for the same reason.
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
+
+/// Makes `object_info` carry the generation (`etag`) that the read of the object is then pinned
+/// to (see `StorageObjectStorageSource::createReadBuffer`), so that the generation the read
+/// verified and the generation the post-processing acts on are one and the same. It is the
+/// generation the listing reported: a `HEAD` made after the object was listed and claimed could
+/// name a generation that replaced the listed one, and moving or deleting that one while the path
+/// is marked processed would skip the listed generation forever. The read is pinned through
+/// `RelativePathWithMetadata::require_read_pinned_to_generation`, so it does not depend on
+/// `s3_validate_etag_on_read`, which only governs plain reads. Returns whether the generation is
+/// known: it is not when the listing reports no `ETag`, and a table whose post-processing needs it
+/// must then refuse the file rather than read it.
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info);
+
+class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -28,6 +55,8 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
@@ -49,6 +78,7 @@ public:
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
             const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
             ContextPtr context_,
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
@@ -71,6 +101,13 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        /// Refresh bucket locks which were not refreshed for more than a quarter of
+        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
+        /// meant to remove locks of dead servers).
+        void refreshExpiringBucketLocks();
+
+        bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -79,11 +116,13 @@ public:
         const ObjectStoragePtr object_storage;
         const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
+        const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
-        size_t buckets_num = 0;
+        const bool use_buckets_for_processing;
+        const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -118,6 +157,12 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
+        /// next() stops returning keys, isFinished returns true.
+        std::atomic_bool iterator_invalidated = false;
+
+        bool is_path_with_hive_partitioning = false;
+
         /// Only for processing without buckets.
         std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
 
@@ -129,6 +174,7 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,
@@ -174,15 +220,19 @@ public:
         std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
-        bool commit_once_processed_);
+        bool commit_once_processed_,
+        bool is_direct_select_,
+        bool add_deduplication_info_,
+        bool is_deduplication_v2_,
+        IStreamingStorage & streaming_storage_);
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+    static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
     String getName() const override;
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -190,8 +240,20 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
+        PartitionLastProcessedFileInfoMap & file_map,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
+
+    static void preparePartitionProcessedRequests(
+        Coordination::Requests & requests,
+        const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
+
+    /// Mark all processed files' metadata so that their destructors check ownership
+    /// before removing the processing node (rather than asserting).
+    /// Called when a commit may have succeeded in ZK but the connection was lost before
+    /// we received the response ("failed after operation").
+    void setUncertainCommit();
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
@@ -199,7 +261,8 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
 
 private:
     Chunk generateImpl();
@@ -213,7 +276,7 @@ private:
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool insert_succeeded, const std::string & exception_message = {});
+    void commit(bool insert_succeeded, const std::string & exception_message = {}, int error_code = 0);
 
     const String name;
     const size_t processor_id;
@@ -235,6 +298,12 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    const bool is_direct_select;
+    IStreamingStorage & streaming_storage;
+    const UInt64 cancel_epoch;
+    const bool add_deduplication_info;
+    /// Effective dedup: gates whether shutdown can abort mid-file.
+    const bool is_deduplication_v2;
     time_t transaction_start_time;
 
     LoggerPtr log;
@@ -254,6 +323,16 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
+        /// The object's own last-modified time, if object storage reported one.
+        /// Used to update the "newest object committed" pipeline-lag watermark.
+        time_t last_modified = 0;
+        /// The generation of the object the reader was opened on: the size and the `ETag` of its
+        /// listing entry. The `after_processing` step is pinned to exactly this generation, so an
+        /// object overwritten after it was ingested is neither moved nor deleted as if the newer
+        /// generation had been ingested.
+        uint64_t bytes_size = StoredObject::UnknownSize;
+        String etag;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

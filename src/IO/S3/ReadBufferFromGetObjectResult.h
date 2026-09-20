@@ -6,32 +6,29 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <aws/s3/model/GetObjectResult.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/Stopwatch.h>
 
 namespace DB::S3
 {
-/// Wrapper for ReadBufferFromIStream to store GetObjectResult (session holder) with corresponding response body stream
+/// Wrapper for ReadBufferFromIStream to store GetObjectResult (session holder) with corresponding response body stream.
+/// Tracks per-connection metrics: duration and bytes read.
 class ReadBufferFromGetObjectResult : public ReadBufferFromIStream
 {
     std::optional<Aws::S3::Model::GetObjectResult> result;
     ObjectMetadata metadata;
 
-public:
-    ReadBufferFromGetObjectResult(Aws::S3::Model::GetObjectResult && result_, size_t size_)
-        : ReadBufferFromIStream(result_.GetBody(), size_), result(std::move(result_))
-    {
-        metadata.size_bytes = result->GetContentLength();
-        metadata.last_modified = Poco::Timestamp::fromEpochTime(result->GetLastModified().Seconds());
-        metadata.etag = result->GetETag();
-        metadata.attributes = result->GetMetadata();
-    }
+    Stopwatch watch;
+    size_t bytes_read = 0;
+    bool metrics_observed = false;
 
-    /// Allows to safely release the result and detach the underlying body stream from the buffer.
-    /// The buffer can still be used, but subsequent reads won't return any more data.
-    void releaseResult()
-    {
-        detachStream();
-        result.reset();
-    }
+    void observeMetrics();
+    bool nextImpl() override;
+
+public:
+    ReadBufferFromGetObjectResult(Aws::S3::Model::GetObjectResult && result_, size_t size_, Stopwatch && watch_);
+    ~ReadBufferFromGetObjectResult() override;
+
+    void releaseResult();
 
     bool isResultReleased() const { return !result; }
 

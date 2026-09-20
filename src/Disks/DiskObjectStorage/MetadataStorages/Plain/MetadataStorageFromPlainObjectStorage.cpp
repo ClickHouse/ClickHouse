@@ -1,19 +1,16 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
-
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
+
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-
 #include <Common/filesystemHelpers.h>
+
 #include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
-
 
 namespace DB
 {
@@ -21,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_RMDIR;
 }
 
 namespace
@@ -114,7 +112,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 
     RelativePathsWithMetadata files;
     std::string absolute_key = key_prefix;
-    if (!absolute_key.ends_with('/'))
+    if (!absolute_key.empty() && !absolute_key.ends_with('/'))
         absolute_key += '/';
 
     object_storage->listObjects(absolute_key, files, 0);
@@ -193,17 +191,16 @@ MetadataStorageFromPlainObjectStorageTransaction::MetadataStorageFromPlainObject
 {
 }
 
-const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
+void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionCommitOptionsVariant &)
 {
-    return metadata_storage;
 }
 
-std::optional<StoredObjects> MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+TransactionCommitOutcomeVariant MetadataStorageFromPlainObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant &)
 {
-    return metadata_storage.getStorageObjectsIfExist(path);
+    return true;
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/)
 {
     if (metadata_storage.object_metadata_cache)
     {
@@ -215,29 +212,35 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 
     auto object_key = getKeyForPath(object_storage->getCommonKeyPrefix(), path);
     metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
-}
-
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
-{
-    unlinkFile(path);
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    objects_to_remove.push_back(StoredObject(object_key.serialize()));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-        metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
+    if (metadata_storage.iterateDirectory(path)->isValid())
+        throw Exception(ErrorCodes::CANNOT_RMDIR, "Cannot remove non-empty directory {} on {}", path, object_storage->getName());
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
-    /// TODO: Implement recursive listing.
-    removeDirectory(path);
+    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+    {
+        const auto & child = it->path();
+        if (metadata_storage.existsFile(child))
+            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true);
+        else
+            removeRecursive(child, should_remove_objects);
+    }
 }
 
 ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
     return getKeyForPath(object_storage->getCommonKeyPrefix(), path);
+}
+
+StoredObjects MetadataStorageFromPlainObjectStorageTransaction::getSubmittedForRemovalBlobs()
+{
+    return objects_to_remove;
 }
 
 }

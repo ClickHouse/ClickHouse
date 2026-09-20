@@ -19,6 +19,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int BAD_ARGUMENTS;
 }
 
 void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr)
@@ -40,6 +41,26 @@ void LocalStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
+}
+
+ObjectStoragePtr StorageLocalConfiguration::createObjectStorage(
+    ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback /*refresh_credentials_callback*/)
+{
+    String path_prefix;
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+    {
+        path_prefix = "/";
+    }
+    else
+    {
+        chassert(context->getApplicationType() == Context::ApplicationType::SERVER);
+        path_prefix = context->getUserFilesPath();
+        if (path_prefix.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "User files path is not properly set, cannot use LocalObjectStorage in this server configuration at all");
+    }
+    return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, path_prefix, /* read_only */ false));
 }
 
 void LocalStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -105,10 +126,11 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     initializeFromParsedArguments(parsed_arguments);
     paths = {path};
 }
-void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
 {
+    disk_name = disk_name_;
     LocalStorageParsedArguments parsed_arguments;
-    auto disk = context->getDisk(disk_name);
+    auto disk = context->getDisk(disk_name_);
     parsed_arguments.fromDisk(disk, args, context, with_structure);
     fs::path root = disk->getPath();
     fs::path suffix = parsed_arguments.path_suffix;

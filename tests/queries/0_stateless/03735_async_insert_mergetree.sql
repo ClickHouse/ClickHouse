@@ -2,7 +2,6 @@ set async_insert = 1;
 set wait_for_async_insert = 0;
 set async_insert_deduplicate = 1;
 set deduplicate_blocks_in_dependent_materialized_views = 1;
-set throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert = 0;
 
 set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=5000;
 
@@ -107,7 +106,7 @@ select query, query_kind, exception_code,
     ProfileEvents['SelfDuplicatedAsyncInserts'] as SelfDuplicatedAsyncInserts,
     ProfileEvents['DuplicatedAsyncInserts'] as DuplicatedAsyncInserts
 from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     has(databases, currentDatabase())
     and has(tables, currentDatabase() || '.src_table')
     and type != 'QueryStart'

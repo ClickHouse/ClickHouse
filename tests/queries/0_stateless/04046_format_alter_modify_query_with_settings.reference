@@ -1,0 +1,7 @@
+ALTER TABLE v1\n    (MODIFY QUERY\n    SELECT 1\n    SETTINGS max_threads = 1)
+1
+ALTER TABLE v1\n    (MODIFY QUERY\n    SELECT 1)
+ALTER TABLE v1\n    (MODIFY QUERY\n    SELECT 1\n    UNION ALL\n    SELECT 2\n    SETTINGS max_threads = 1)
+1
+ALTER TABLE v1\n    (MODIFY QUERY\n(    SELECT c0\n    FROM\n    (\n        SELECT 1 AS c0\n        INTERSECT DISTINCT\n        SELECT 2 AS c0\n    )))\nSETTINGS max_threads = 1
+1

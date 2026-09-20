@@ -1,0 +1,1 @@
+SELECT toDecimalString(toDecimal128(*, 37), 2);

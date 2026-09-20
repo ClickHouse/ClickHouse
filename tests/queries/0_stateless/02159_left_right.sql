@@ -84,3 +84,18 @@ SELECT rightUTF8('Привет', -number) FROM numbers(10);
 
 SELECT rightUTF8('Привет', number % 3 = 0 ? NULL : (number % 2 ? toInt64(number) : -number)) FROM numbers(10);
 SELECT rightUTF8(number < 5 ? 'Hello' : 'Привет', number % 3 = 0 ? NULL : (number % 2 ? toInt64(number) : -number)) FROM numbers(10);
+
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/99725
+-- right() with INT64_MIN must raise an overflow exception
+-- Const-length path (string is non-const so useDefaultImplementationForConstants does not apply)
+SELECT right(materialize('Hello'), -9223372036854775808); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT rightUTF8(materialize('Привет'), -9223372036854775808); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Dynamic-length path: bitNot(INT64_MAX) == INT64_MIN
+SELECT right('Hello', materialize(bitNot(toInt64(9223372036854775807)))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT rightUTF8('Привет', materialize(bitNot(toInt64(9223372036854775807)))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- substring with negative offset=INT64_MIN: abs(offset) overflows in sliceDynamicOffsetBoundedImpl
+-- materialize() prevents constant-folding so the dynamic code path is taken
+SELECT substring('Hello', materialize(bitNot(toInt64(9223372036854775807))), -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- substring with large positive offset: adjustment=element_size-(offset-1) is very negative,
+-- and size+adjustment underflows Int64
+SELECT substring('Hello', materialize(toInt64(9223372036854775807)), -8); -- { serverError ARGUMENT_OUT_OF_BOUND }

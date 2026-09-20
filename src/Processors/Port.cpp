@@ -27,4 +27,22 @@ void connect(OutputPort & output, InputPort & input, bool reconnect)
     output.state = input.state;
 }
 
+void disconnect(OutputPort & output, InputPort & input)
+{
+    if (output.input_port != &input || input.output_port != &output)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot disconnect ports that are not connected to each other");
+
+    /// Disconnect from pipeline edges
+    input.update_info = nullptr;
+    output.update_info = nullptr;
+
+    /// Disconnect from each other
+    input.output_port = nullptr;
+    output.input_port = nullptr;
+
+    /// Reset shared State on both sides
+    input.state.reset();
+    output.state.reset();
+}
+
 }

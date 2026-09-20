@@ -41,7 +41,7 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
 
         ++port;
 
-        UInt16 port_number;
+        UInt16 port_number = 0;
         ReadBufferFromMemory port_buf(port, end - port);
         if (!tryReadText(port_number, port_buf) || !port_buf.eof())
         {

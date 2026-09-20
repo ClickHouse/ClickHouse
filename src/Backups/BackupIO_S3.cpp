@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -13,11 +14,14 @@
 #include <IO/S3/deleteFileFromS3.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Disks/IDisk.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <aws/core/auth/AWSCredentials.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <filesystem>
 
@@ -34,10 +38,10 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
-    extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ServerSetting
@@ -58,10 +62,15 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -75,8 +84,9 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int S3_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -91,7 +101,7 @@ public:
             .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
             .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
             .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
-            .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
+            .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])};
         slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
     }
 
@@ -117,15 +127,41 @@ private:
         const String & secret_access_key,
         String role_arn,
         String role_session_name,
+        String external_id,
+        bool gcp_oauth_supplied_by_query,
+        bool from_named_collection,
         const S3Settings & settings,
         const ContextPtr & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
+        String session_token = settings.auth_settings[S3AuthSetting::session_token];
+        String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+        S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
+        /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
+        const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
             headers = settings.auth_settings.headers;
+        }
+
+        /// The explicit `BACKUP ... TO S3(url, ak, sk)` form supplies its own keys but has no way to supply a
+        /// session_token, so any token here was inherited from the server `<s3>`/endpoint config. Clear it so
+        /// the server's temporary token is not sent with the query's keys (a named collection carries its own).
+        if (base_keys_supplied_by_query && !from_named_collection)
+            session_token.clear();
+
+        /// Neither the explicit `url, ak, sk` form nor the bare `url` form can supply request-auth material, so
+        /// under the restriction any headers / SSE-C / SSE-KMS here came from the server `<s3>`/endpoint config.
+        /// Drop them: the explicit-key form must not send the server's material alongside the query's keys, and
+        /// the bare-URL form that resolves to an anonymous/NOSIGN client must stay genuinely anonymous rather
+        /// than still sending operator headers or encryption keys. A named collection is handled by its caller.
+        if (!from_named_collection && context->shouldRestrictUserQueryS3Credentials())
+        {
+            sse_customer_key.clear();
+            sse_kms_config = {};
+            headers.clear();
         }
 
         const auto & request_settings = settings.request_settings;
@@ -133,10 +169,36 @@ private:
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
+        /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
+        const bool role_arn_supplied_by_query = !role_arn.empty();
         if (role_arn.empty())
         {
             role_arn = settings.auth_settings[S3AuthSetting::role_arn];
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
+            external_id = settings.auth_settings[S3AuthSetting::external_id];
+        }
+
+        /// Under the restriction a query-supplied role_arn is honored (STS assume-role is the documented way
+        /// to grant ClickHouse Cloud access to a private bucket), but it may be assumed only with the request's
+        /// own base keys or the server's ambient identity, never the server `<s3>` static keys as the STS base;
+        /// and a server-configured role is not applied to user requests at all. So drop a server-inherited
+        /// role, and (positional/`extra_credentials` form only) drop server-config base keys that a query role
+        /// would otherwise pick up, letting the assume-role call fall through to the ambient provider chain.
+        /// A named-collection role keeps its keys from the collection (a query-overridden role is handled in
+        /// registerBackupEngineS3).
+        if (context->shouldRestrictUserQueryS3Credentials())
+        {
+            if (!role_arn.empty() && !role_arn_supplied_by_query)
+            {
+                role_arn.clear();
+                role_session_name.clear();
+                external_id.clear();
+            }
+            else if (!from_named_collection && role_arn_supplied_by_query && !base_keys_supplied_by_query)
+            {
+                credentials = Aws::Auth::AWSCredentials();
+                session_token.clear();
+            }
         }
 
 
@@ -148,7 +210,7 @@ private:
                 .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
                 .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
                 .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
-                .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
+                .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])},
 
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
@@ -174,44 +236,109 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
+        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
+        client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
+        client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
+        client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
+        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
+        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
+        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
+        /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
+        /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth")
+            && !gcp_oauth_supplied_by_query && context->shouldRestrictUserQueryS3Credentials())
+        {
+            client_configuration.http_client.clear();
+            client_configuration.service_account.clear();
+            client_configuration.metadata_service.clear();
+            client_configuration.request_token_path.clear();
+            client_configuration.google_adc_client_id.clear();
+            client_configuration.google_adc_client_secret.clear();
+            client_configuration.google_adc_refresh_token.clear();
+        }
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
-            .disable_checksum = local_settings[Setting::s3_disable_checksum],
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
+
+        S3::CredentialsConfiguration credentials_configuration
+        {
+            settings.auth_settings[S3AuthSetting::use_environment_credentials],
+            settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
+            settings.auth_settings[S3AuthSetting::expiration_window_seconds],
+            settings.auth_settings[S3AuthSetting::no_sign_request],
+            std::move(role_arn),
+            std::move(role_session_name),
+            std::move(external_id),
+            /*sts_endpoint_override=*/""
+        };
+
+        /// BACKUP/RESTORE TO S3 is driven by user SQL, so it must not be able to reuse the server's own
+        /// S3 credentials.
+        credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
+
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
 
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
-            settings.auth_settings.server_side_encryption_kms_config,
+            sse_customer_key,
+            sse_kms_config,
             std::move(headers),
-            S3::CredentialsConfiguration
-            {
-                settings.auth_settings[S3AuthSetting::use_environment_credentials],
-                settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
-                settings.auth_settings[S3AuthSetting::expiration_window_seconds],
-                settings.auth_settings[S3AuthSetting::no_sign_request],
-                std::move(role_arn),
-                std::move(role_session_name),
-                /*sts_endpoint_override=*/""
-            });
+            std::move(credentials_configuration),
+            session_token,
+            shared_cache);
     }
 
-    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
+    String getS3BackupObjectKey(const S3::URI & s3_uri, const String & file_name)
     {
-        S3::ListObjectsRequest request;
-        request.SetBucket(s3_uri.bucket);
-        request.SetPrefix(fs::path{s3_uri.key} / file_name);
-        request.SetMaxKeys(1);
-        auto outcome = client.ListObjects(request);
-        if (!outcome.IsSuccess())
-            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-        return outcome.GetResult().GetContents();
+        return fs::path{s3_uri.key} / file_name;
+    }
+
+    /// Serializes the S3 request settings effectively used by the backup. The HTTP-client-level values
+    /// that makeS3Client overrides (retries, redirects, timeout, slow-thread/logging behavior) are
+    /// replaced with the authoritative values from the client configuration; the throttle fields with the
+    /// resolved client throttlers (S3RequestSettings::finishInit derives bursts from rps); and the seek
+    /// threshold with the read setting (remote_read_min_bytes_for_seek) actually used by ReadBufferFromS3.
+    std::map<String, String> serializeBackupS3RequestSettings(
+        const S3::S3RequestSettings & request_settings, const S3::PocoHTTPClientConfiguration & client_config,
+        const ReadSettings & read_settings)
+    {
+        auto res = request_settings.getSettingsRepresentation();
+
+        res["retry_attempts"] = std::to_string(client_config.retry_strategy.max_retries);
+        res["retry_initial_delay_ms"] = std::to_string(client_config.retry_strategy.initial_delay_ms);
+        res["retry_max_delay_ms"] = std::to_string(client_config.retry_strategy.max_delay_ms);
+        res["max_redirects"] = std::to_string(client_config.s3_max_redirects);
+        res["request_timeout_ms"] = std::to_string(client_config.requestTimeoutMs);
+        res["slow_all_threads_after_network_error"] = client_config.s3_slow_all_threads_after_network_error ? "1" : "0";
+        res["slow_all_threads_after_retryable_error"] = client_config.s3_slow_all_threads_after_retryable_error ? "1" : "0";
+        res["enable_request_logging"] = client_config.enable_s3_requests_logging ? "1" : "0";
+        res["min_bytes_for_seek"] = std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek);
+
+        const auto & get_throttler = client_config.request_throttler.get_throttler;
+        const auto & put_throttler = client_config.request_throttler.put_throttler;
+        res["max_get_rps"] = std::to_string(get_throttler ? get_throttler->getMaxSpeed() : 0UL);
+        res["max_get_burst"] = std::to_string(get_throttler ? get_throttler->getMaxBurst() : 0UL);
+        res["max_put_rps"] = std::to_string(put_throttler ? put_throttler->getMaxSpeed() : 0UL);
+        res["max_put_burst"] = std::to_string(put_throttler ? put_throttler->getMaxBurst() : 0UL);
+
+        /// Drop request settings that backup S3 IO never consumes, so the map reflects only what the
+        /// backup engine actually uses:
+        ///  - objects_chunk_size_to_delete: `removeFiles` always deletes in chunks of 1000 (the S3
+        ///    DeleteObjects API limit), ignoring this setting;
+        ///  - list_object_keys_size: `fileExists`/`getFileSize` use HeadObject, backup never lists keys;
+        ///  - read_only, throw_on_zero_files_match: disk/storage configuration not used by backup IO.
+        for (const auto * key : {"objects_chunk_size_to_delete", "list_object_keys_size", "read_only", "throw_on_zero_files_match"})
+            res.erase(key);
+
+        return res;
     }
 }
 
@@ -247,6 +374,8 @@ BackupReaderS3::BackupReaderS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    const String & external_id,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -255,6 +384,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , pin_plain_reads_to_generation(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -264,10 +394,25 @@ BackupReaderS3::BackupReaderS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
+
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -275,27 +420,160 @@ BackupReaderS3::BackupReaderS3(
 
 BackupReaderS3::~BackupReaderS3() = default;
 
+std::map<String, String> BackupReaderS3::getSerializedSettings() const
+{
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
+}
+
 bool BackupReaderS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name, std::optional<size_t> expected_file_size)
 {
+    return readFilePinnedToGeneration(file_name, expected_file_size, /*generation=*/ {});
+}
+
+String BackupReaderS3::getFileGeneration(const String & file_name)
+{
+    /// A read of a versioned URI is already pinned to the version the whole backup is read at, and
+    /// the `ETag` of the current version is not the one of that version, so nothing is named here.
+    if (!s3_uri.version_id.empty())
+        return {};
+
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    String generation = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id).etag;
+
+    /// The caller reads this file through more than one buffer (an archive, reopened for every
+    /// handle) and needs every one of them to land on the same generation. An empty token would
+    /// pin none of them, and `s3_validate_etag_on_read` cannot make up for it: it only opts a plain
+    /// read out of the pinning, and an archive whose generation cannot be named would be read as
+    /// two archives by two handles if it were replaced in place between them. So the file is
+    /// refused up front, before the first handle is opened.
+    if (generation.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the reads "
+            "of the backup cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return generation;
+}
+
+BackupReaderS3::CheckedBackupFile BackupReaderS3::checkBackupFile(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation) const
+{
+    /// A plain read that is neither measured nor pinned needs no `HeadObject`, and neither does a
+    /// read that is pinned by its caller and has no size to check: its `GET` carries the generation
+    /// as `If-Match`, and the endpoint refuses another generation itself.
+    const bool pin_here = generation.empty() && pin_plain_reads_to_generation && s3_uri.version_id.empty();
+    if (!expected_file_size && !pin_here)
+        return {.generation = generation, .size = std::nullopt};
+
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    const S3::ObjectInfo object = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id);
+
+    /// Every restore path that reads through the buffer - the buffered fallback of `copyFileToDisk`,
+    /// and `BackupImpl::copyFileToDisk` with `sync` - copies exactly the number of bytes the backup
+    /// metadata records, so a backup file that has been replaced by a longer object since the backup
+    /// was made would be restored as its first bytes and pass unnoticed, and the native copy of the
+    /// whole object would restore the whole replacement. It is refused here, before a single byte is
+    /// read or copied, and with the same `HeadObject` that names the generation the read is pinned
+    /// to: what is measured is what is read.
+    ///
+    /// That last sentence holds for a pinned read only. With `s3_validate_etag_on_read = 0` the
+    /// size check stays on, but it measures the object at the instant of this `HeadObject` and
+    /// nothing more: a replacement that lands between it and the `GET` of the buffered restore (or
+    /// the `CopyObject` of the native one, which copies the whole object whatever size the caller
+    /// names) is read or copied under the recorded size, because the read carries no generation to
+    /// refuse it by. That window is exactly what opting out of the pinning gives up, for the reads of
+    /// a backup as for every other S3 read; what the check still catches is the replacement that is
+    /// already there when the restore starts - the one a backup made some time ago meets.
+    if (expected_file_size && object.size != *expected_file_size)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} is {} bytes long, while the file {} of the backup is {} bytes long: "
+            "the object was replaced after the backup was made",
+            s3_uri.bucket, key, object.size, file_name, *expected_file_size);
+
+    /// A caller that names a generation has read other bytes of this file already - the `.backup`
+    /// entry of an archive, read through a buffer that is long gone by the time the archive reader
+    /// opens the next handle - and every later read has to land on the same generation. An object
+    /// that holds another generation now is refused, including when it is of the very same size.
+    if (!generation.empty() && !object.etag.empty() && object.etag != generation)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} of the backup was replaced while the backup was open: its `ETag` is {} instead of {}",
+            s3_uri.bucket, key, object.etag, generation);
+
+    if (pin_here && object.etag.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the read "
+            "cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return {.generation = pin_here ? object.etag : generation, .size = object.size};
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGeneration(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation)
+{
+    /// `generation` is an `ETag`: every `GET` of the buffer carries it as `If-Match`, so an object
+    /// replaced in place since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather
+    /// than read. A versioned URI is pinned by its version and gets no token.
+    ///
+    /// An ordinary read of an unversioned backup names the generation in `checkBackupFile`, with one
+    /// `HeadObject` that also checks the size the backup metadata records, the same way the Azure
+    /// reader does: a buffer makes more than one request - the retries of a failed one, and the
+    /// reopen after a `seek` - and without the token a key rewritten between two of them would be
+    /// restored as the first bytes of one generation followed by the rest of the other, without any
+    /// error. `s3_validate_etag_on_read` opts a plain read out of it, as for every other S3 read; a
+    /// caller that already names a generation (an archive session) is pinned regardless, because its
+    /// other handles have read that generation already.
+    const CheckedBackupFile checked = checkBackupFile(file_name, expected_file_size, generation);
+
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        s3_uri.version_id,
+        s3_settings.request_settings,
+        read_settings,
+        /*use_external_buffer=*/ false,
+        /*offset=*/ 0,
+        /*read_until_position=*/ 0,
+        /*restricted_seek=*/ false,
+        /*file_size=*/ checked.size,
+        /*credentials_refresh_callback=*/ [] { return nullptr; },
+        /*blob_storage_log=*/ nullptr,
+        /*expected_etag=*/ checked.generation);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
+{
+    copyToDiskImpl(path_in_backup, /* offset= */ 0, file_size, file_size, /* is_range= */ false, encrypted_in_backup,
+                   destination_disk, destination_path, write_mode);
+}
+
+void BackupReaderS3::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                         WriteMode write_mode)
+{
+    copyToDiskImpl(path_in_backup, offset, size, file_size, /* is_range= */ true, encrypted_in_backup,
+                   destination_disk, destination_path, write_mode);
+}
+
+void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
+                                    bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                    WriteMode write_mode)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
@@ -312,23 +590,39 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                                 "Blob writing function called with unexpected blob_path.size={} or mode={}",
                                 blob_path.size(), mode);
 
-            copyS3File(
-                client,
-                s3_uri.bucket,
-                fs::path(s3_uri.key) / path_in_backup,
-                0,
-                file_size,
-                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
-                /* dest_bucket= */ blob_path[1],
-                /* dest_key= */ blob_path[0],
-                s3_settings.request_settings,
-                read_settings,
-                blob_storage_log,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER),
-                [&, this] { return readFile(path_in_backup); },
-                object_attributes);
+            const auto src_key = fs::path(s3_uri.key) / path_in_backup;
+            auto dest_client = destination_disk->getS3StorageClient();
+            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
 
-            return file_size;
+            /// One `HeadObject` checks that the object is still as long as the backup metadata says
+            /// the file is - a whole-object `CopyObject` of a longer replacement would restore the
+            /// replacement - and names the generation the copy and its read-and-write fallback are
+            /// both pinned to, the one an ordinary read of the file would be pinned to (see
+            /// `checkBackupFile`): the native copy carries it as `x-amz-copy-source-if-match`, and
+            /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version, which
+            /// the native copy addresses (`?versionId=` on the copy source, the version the fallback
+            /// reads too), and gets no token; `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
+            /// it does every other plain read of the backup, but not out of the size check - which
+            /// then holds for the object at the `HeadObject` only; a replacement between it and the
+            /// copy is not caught with the pinning off (see `checkBackupFile`).
+            const String src_etag = checkBackupFile(path_in_backup, file_size, /*generation=*/ {}).generation;
+            auto create_read_buffer = [&, this]
+            {
+                return readFilePinnedToGeneration(path_in_backup, file_size, src_etag);
+            };
+
+            if (is_range)
+                copyS3FileRange(
+                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size, src_etag, s3_uri.version_id,
+                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
+            else
+                copyS3File(
+                    client, s3_uri.bucket, src_key, size, src_etag, s3_uri.version_id,
+                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
+
+            return size;
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
@@ -336,7 +630,10 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     }
 
     /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    if (is_range)
+        BackupReaderDefault::copyFileRangeToDisk(path_in_backup, offset, size, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    else
+        BackupReaderDefault::copyFileToDisk(path_in_backup, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 BackupWriterS3::BackupWriterS3(
@@ -345,6 +642,8 @@ BackupWriterS3::BackupWriterS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    const String & external_id,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -354,6 +653,7 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , pin_copies_to_generation(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
@@ -365,11 +665,26 @@ BackupWriterS3::BackupWriterS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
+
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
@@ -379,42 +694,139 @@ BackupWriterS3::BackupWriterS3(
     }
 }
 
-void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                      bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterS3::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto source_data_source_description = src_disk->getDataSourceDescription();
     if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
-        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in S3 bucket.
+        /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in S3 bucket.
         /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
-            /// Use storage client with overridden retry strategy settings.
-            copyS3File(
-                /* src_s3_client */ disk_client_factory.getOrCreate(src_disk),
-                /* src_bucket */ blob_path[1],
-                /* src_key= */ blob_path[0],
-                start_pos,
-                length,
-                /* dest_s3_client= */ client,
-                /* dest_bucket= */ s3_uri.bucket,
-                /* dest_key= */ fs::path(s3_uri.key) / path_in_backup,
-                s3_settings.request_settings,
-                read_settings,
-                blob_storage_log,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-                [&]
+
+            const String & src_bucket = blob_path[1];
+            const String & src_key = blob_path[0];
+            auto src_client = disk_client_factory.getOrCreate(src_disk);
+            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
+
+            /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
+            /// test, because a prefix [0, length) of a bigger file is a range too. `length` counts the bytes
+            /// actually copied, so an encrypted source must be measured with its encrypted size.
+            const size_t source_size
+                = copy_encrypted ? src_disk->getEncryptedFileSize(src_path) : src_disk->getFileSize(src_path);
+            const bool whole_object = (start_pos == 0) && (length == source_size);
+
+            /// One `HeadObject` measures the object and names its generation. The measure is taken
+            /// whatever the settings say: the copy depends on the size the disk reported - `length` bytes
+            /// are copied, and the backup metadata records that many - so an object of another size is
+            /// already another generation, whose whole-object `CopyObject` would back up the replacement
+            /// and whose read-and-write fallback would back up its first `length` bytes, both under the
+            /// old size and without any error. The generation is used for every request of the copy: the
+            /// native copy carries it as `x-amz-copy-source-if-match` on the `CopyObject` and on every
+            /// `UploadPartCopy`, and the fallback below carries it as `If-Match` on every `GET`. An object
+            /// replaced in place between this `HeadObject` and any of them is refused with
+            /// `S3_OBJECT_CHANGED_DURING_READ` rather than backed up as a newer whole object or as parts
+            /// of two generations stitched into one entry. `s3_validate_etag_on_read = 0` opts the copy
+            /// out of the pinning only, as it does every other S3 read, and not out of the size check,
+            /// the same way it does not for the reads of `BackupReaderS3` (see `checkBackupFile`). The
+            /// check then holds for the object at this `HeadObject` only: an object replaced between
+            /// it and the `CopyObject` or the `GET`s of the fallback is backed up under `length` with
+            /// the pinning off, the copy having no generation to refuse it by.
+            const S3::ObjectInfo src_object = S3::getObjectInfo(*src_client, src_bucket, src_key);
+            if (src_object.size != source_size)
+                throw Exception(
+                    ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                    "S3 object {}/{} is {} bytes long, while the file {} being backed up is {} bytes long: "
+                    "the object was replaced after the size of the file was taken",
+                    src_bucket, src_key, src_object.size, src_path, source_size);
+
+            String src_etag;
+            if (pin_copies_to_generation)
+            {
+                if (src_object.etag.empty())
+                    throw Exception(
+                        ErrorCodes::S3_ERROR,
+                        "S3 object {}/{} was not backed up: the endpoint reports no `ETag` for it, so the copy "
+                        "cannot be pinned to the generation of the object that is being backed up",
+                        src_bucket, src_key);
+                src_etag = src_object.etag;
+            }
+
+            /// The fallback reads through the disk when it can: the disk read honours `read_settings`, so
+            /// a backup with `read_from_filesystem_cache` is served from the filesystem cache of the disk
+            /// (and one without it does not pollute the cache), and on a disk with generated object keys
+            /// the read is pinned by the key itself - such a disk never writes an object in place, a file
+            /// rewritten on it is a new object under a new key, so the object under `src_key` can only
+            /// stay as it was measured above or be gone. The disk read, though, resolves the objects of
+            /// `src_path` from the metadata of the disk when the buffer is built, not when `src_key` was
+            /// taken above, and a file rewritten in between names another key by then: the buffer would
+            /// read an object that was never measured nor named. So the metadata is consulted once more
+            /// after the buffer is built. While it still names `src_key`, the buffer holds that object (a
+            /// rewrite after this point cannot reach a buffer already built); a file that names another
+            /// key was rewritten, and its backup is refused the same way a replaced object is.
+            /// Only a `plain` or `plain_rewritable` disk names its objects by path and rewrites them in
+            /// place, and its read through the disk would be unpinned; that one reads the object itself,
+            /// with the generation named above as `If-Match` on every `GET`. The object holds exactly the
+            /// bytes the disk read would deliver: an encrypted file is copied in its encrypted form, which
+            /// is the object as it is stored.
+            auto create_read_buffer = [&, this]() -> std::unique_ptr<SeekableReadBuffer>
+            {
+                if (!src_disk->isPlain())
                 {
                     LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 
-                    if (copy_encrypted)
-                        return src_disk->readEncryptedFile(src_path, read_settings);
+                    std::unique_ptr<SeekableReadBuffer> buffer = copy_encrypted
+                        ? src_disk->readEncryptedFile(src_path, read_settings)
+                        : src_disk->readFile(src_path, read_settings);
 
-                    return src_disk->readFile(src_path, read_settings);
-                });
+                    const Strings blob_path_now = src_disk->getBlobPath(src_path);
+                    if (blob_path_now.size() != 2 || blob_path_now[0] != src_key || blob_path_now[1] != src_bucket)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "File {} on disk {} was rewritten after its object {}/{} was measured: it is not stored as that "
+                            "object any more, so the object measured is not the file being backed up",
+                            src_path, src_disk->getName(), src_bucket, src_key);
+
+                    return buffer;
+                }
+
+                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through a read of the object{}",
+                    src_path, src_disk->getName(), src_etag.empty() ? "" : " pinned to the generation with `ETag` " + src_etag);
+
+                return std::make_unique<ReadBufferFromS3>(
+                    src_client,
+                    src_bucket,
+                    src_key,
+                    /*version_id=*/ "",
+                    s3_settings.request_settings,
+                    read_settings,
+                    /*use_external_buffer=*/ false,
+                    /*offset=*/ 0,
+                    /*read_until_position=*/ 0,
+                    /*restricted_seek=*/ false,
+                    /*file_size=*/ source_size,
+                    /*credentials_refresh_callback=*/ [] { return nullptr; },
+                    blob_storage_log,
+                    /*expected_etag=*/ src_etag);
+            };
+
+            if (whole_object)
+                copyS3File(
+                    src_client, src_bucket, src_key, length, src_etag, /* src_version_id= */ "",
+                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
+                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
+            else
+                copyS3FileRange(
+                    src_client, src_bucket, src_key, start_pos, length,
+                    /* src_object_size= */ source_size, src_etag, /* src_version_id= */ "",
+                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
+                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
             return; /// copied!
         }
     }
@@ -428,12 +840,39 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
     LOG_TRACE(log, "Copying file inside backup from {} to {}", source, destination);
 
     const auto source_key = fs::path(s3_uri.key) / source;
+
+    /// The same measure and pinning as in `copyFileFromDisk`: one `HeadObject` measures the source (a
+    /// file this backup has just written) against the size the backup metadata records for it, whatever
+    /// the settings say, and names its generation, which the copy and its fallback both carry when
+    /// `s3_validate_etag_on_read` is on; with it off, the measure holds for the object at this
+    /// `HeadObject` only.
+    const S3::ObjectInfo src_object = S3::getObjectInfo(*client, s3_uri.bucket, source_key, s3_uri.version_id);
+    if (src_object.size != size)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} is {} bytes long, while the file {} of the backup is {} bytes long: "
+            "the object was replaced after it was written",
+            s3_uri.bucket, source_key, src_object.size, source, size);
+
+    String src_etag;
+    if (pin_copies_to_generation)
+    {
+        if (src_object.etag.empty())
+            throw Exception(
+                ErrorCodes::S3_ERROR,
+                "S3 object {}/{} was not copied inside the backup: the endpoint reports no `ETag` for it, so "
+                "the copy cannot be pinned to the generation of the object that is being copied",
+                s3_uri.bucket, source_key);
+        src_etag = src_object.etag;
+    }
+
     copyS3File(
         client,
         /* src_bucket */ s3_uri.bucket,
         /* src_key= */ source_key,
-        0,
         size,
+        src_etag,
+        /* src_version_id= */ s3_uri.version_id,
         /* dest_s3_client= */ client,
         /* dest_bucket= */ s3_uri.bucket,
         /* dest_key= */ fs::path(s3_uri.key) / destination,
@@ -445,7 +884,20 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         {
             LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
             return std::make_unique<ReadBufferFromS3>(
-                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
+                client,
+                s3_uri.bucket,
+                source_key,
+                s3_uri.version_id,
+                s3_settings.request_settings,
+                read_settings,
+                /*use_external_buffer=*/ false,
+                /*offset=*/ 0,
+                /*read_until_position=*/ 0,
+                /*restricted_seek=*/ false,
+                /*file_size=*/ size,
+                /*credentials_refresh_callback=*/ [] { return nullptr; },
+                /*blob_storage_log=*/ nullptr,
+                /*expected_etag=*/ src_etag);
         });
 }
 
@@ -458,17 +910,19 @@ void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateR
 
 BackupWriterS3::~BackupWriterS3() = default;
 
+std::map<String, String> BackupWriterS3::getSerializedSettings() const
+{
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
+}
+
 bool BackupWriterS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, size_t expected_file_size)
@@ -490,6 +944,22 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         std::nullopt,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
         write_settings);
+}
+
+std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String & file_name)
+{
+    WriteSettings conditional_write_settings = write_settings;
+    conditional_write_settings.object_storage_write_if_none_match = "*";
+    return std::make_unique<WriteBufferFromS3>(
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        s3_settings.request_settings,
+        blob_storage_log,
+        std::nullopt,
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
+        conditional_write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

@@ -37,7 +37,7 @@ protected:
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.
 /// Calculates subtotals and grand totals values for a set of columns.
-class RollupTransform : public GroupByModifierTransform
+class RollupTransform final : public GroupByModifierTransform
 {
 public:
     RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_);

@@ -128,9 +128,9 @@ SELECT arrayElementOrNull(([[['a'], ['b', 'c']], [['d', 'e', 'f'], ['g', 'h', 'i
 []	[]	\N
 []	[]	\N
 SELECT arrayElementOrNull([1, 2], 3), arrayElementOrNull([1, NULL, 2], 4), arrayElementOrNull([('1', 1), ('2', 2)], -3);
-\N	\N	('',0)
+\N	\N	\N
 select groupArray(a) as b, arrayElementOrNull(b, 1), arrayElementOrNull(b, 0) from (select (1, 2) as a);
-[(1,2)]	(1,2)	(0,0)
+[(1,2)]	(1,2)	\N
 SELECT [toNullable(1)] AS x, arrayElementOrNull(x, toNullable(1)) AS y;
 [1]	1
 SELECT materialize([toNullable(1)]) AS x, arrayElementOrNull(x, toNullable(1)) AS y;

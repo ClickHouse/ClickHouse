@@ -105,7 +105,7 @@ namespace
             if (!ParserKeyword{Keyword::EXCEPT}.ignore(pos, expected))
                 return false;
 
-            bool unused;
+            bool unused = false;
             return parseBeforeExcept(pos, expected, id_mode, false, false, allow_current_user, unused, except_names, except_current_user);
         });
     }
@@ -128,7 +128,7 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (all)
         names.clear();
 
-    auto result = std::make_shared<ASTRolesOrUsersSet>();
+    auto result = make_intrusive<ASTRolesOrUsersSet>();
     result->names = std::move(names);
     result->current_user = current_user;
     result->all = all;

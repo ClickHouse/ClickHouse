@@ -2,7 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query cache (QC).
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- By default, don't write query result into QC.
 SELECT 1;
@@ -30,10 +30,10 @@ SELECT COUNT(*) FROM system.query_cache;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase()
   /* NOTE: client incorrectly join comments from the previous line into query, hence LIKE */
   AND query LIKE '%\nSELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;'
 ORDER BY event_time_microseconds;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

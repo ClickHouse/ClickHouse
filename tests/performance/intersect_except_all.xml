@@ -1,0 +1,14 @@
+<test>
+    <!-- INTERSECT ALL / EXCEPT ALL build a multiset (occurrence counts) of the right side
+         and decrement it while filtering the left side. The counting hash map is keyed on the
+         row value, exercising the key64 / keys128 / key_string dispatch. -->
+
+    <!-- Single UInt64 key (key64). -->
+    <query>SELECT count() FROM (SELECT number FROM numbers(2500000) INTERSECT ALL SELECT number FROM numbers(2500000))</query>
+
+    <!-- Two fixed columns packed into a 128-bit key (keys128). -->
+    <query>SELECT count() FROM (SELECT number AS a, number + 1 AS b FROM numbers(2000000) INTERSECT ALL SELECT number AS a, number + 1 AS b FROM numbers(2000000))</query>
+
+    <!-- String key (key_string). -->
+    <query>SELECT count() FROM (SELECT toString(number) AS s FROM numbers(2000000) EXCEPT ALL SELECT toString(number) AS s FROM numbers(1000000))</query>
+</test>

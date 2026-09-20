@@ -6,9 +6,12 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/Stopwatch.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/BlobStorageLog.h>
 
 
 #if USE_HDFS
@@ -22,6 +25,38 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+}
+
+/// HDFS has no native ETag, so we synthesise a version identifier from the
+/// attributes available in `hdfsFileInfo`: the last modification time and the size.
+///
+/// This token is NOT a strong content identifier and therefore must never be used
+/// as a content-cache key (see `ObjectMetadata::etag_is_strong`, which we set to
+/// `false`). Its precision is only one second: although the HDFS NameNode keeps the
+/// modification time in milliseconds, libhdfs3 truncates it to seconds when
+/// populating `hdfsFileInfo::mLastMod` (it computes `getModificationTime() / 1000`),
+/// and the public C API exposes no other field (no file id, no checksum) that
+/// changes on a content rewrite. Consequently a rewrite within the same wall-clock
+/// second that keeps the exact same byte size yields the same token for different
+/// content. That is acceptable for the informational `_etag` virtual column, but if
+/// it keyed the Parquet metadata / filesystem / page caches it could serve stale
+/// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
+/// millisecond modification time (or a real version token).
+std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
+{
+    return fmt::format("{}_{}", last_modified, size);
+}
+
+ObjectMetadata HDFSObjectStorage::makeObjectMetadata(Int64 last_modified, Int64 size)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<uint64_t>(size);
+    metadata.last_modified = Poco::Timestamp::fromEpochTime(last_modified);
+    metadata.etag = makeETag(last_modified, size);
+    /// The HDFS etag is only a second-precision (mtime, size) token, so it must not key
+    /// a content cache. See `makeETag` for the precision caveat.
+    metadata.etag_is_strong = false;
+    return metadata;
 }
 
 void HDFSObjectStorage::initializeHDFSFS() const
@@ -74,17 +109,32 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>) const
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool /* restrict_seek */) const
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromHDFS>(
         fs::path(url_without_path) / "",
         fs::path(data_directory) / path,
         config,
         patchSettings(read_settings),
         /* read_until_position */0,
-        read_settings.remote_read_buffer_use_external_buffer);
+        use_external_buffer,
+        /// `bytes_size` may be `StoredObject::UnknownSize` when the object size is not known; it is a
+        /// sentinel, not a real size, so map it (and the legacy `0`) to `std::nullopt` (read to EOF).
+        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        std::move(blob_storage_log));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
@@ -94,6 +144,23 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
+    /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
+    /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
+    /// (`contrib/libhdfs3/src/client/Hdfs.cpp:663-674`). If-Match has no equivalent at all: renames
+    /// are unconditional and the only synthesisable etag is weak. Writing anyway would downgrade the
+    /// CAS to a plain overwrite, so two concurrent writers would both be acknowledged while one of
+    /// them, and all of its rows, is silently discarded; honouring only the expressible half would
+    /// leave the other silently degraded. So both are refused, and exclusive create is the sanctioned
+    /// way to support the If-None-Match half later. Checked before `initializeHDFSFS` so no NameNode
+    /// contact is needed to reject a request that cannot be satisfied.
+    if (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "HDFSObjectStorage does not support conditional writes (If-None-Match / If-Match), so the "
+            "requested compare-and-swap on {} cannot be performed atomically",
+            object.remote_path);
+
     initializeHDFSFS();
     if (attributes.has_value())
         throw Exception(
@@ -101,15 +168,36 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto path = extractObjectKeyFromURL(object);
+
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
+    const auto file_path = fs::path(data_directory) / path;
+
+    /// Unlike blob storages, HDFS has real directories, and a file cannot be created in a
+    /// directory that does not exist. The generated object keys contain a nested prefix
+    /// (e.g. `abc/xyzxyzxyz...`), so create the parent first; `hdfsCreateDirectory` creates all
+    /// missing path components and is a no-op if the directory already exists.
+    const auto parent_path = file_path.parent_path();
+    if (!parent_path.empty() && parent_path != "/")
+    {
+        int res = wrapErr<int>(hdfsCreateDirectory, hdfs_fs.get(), parent_path.string().c_str());
+        if (res == -1)
+            throw Exception(ErrorCodes::HDFS_ERROR,
+                "Cannot create directory: {} error: {}", parent_path.string(), std::string(hdfsGetLastError()));
+    }
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
         url_without_path,
-        fs::path(data_directory) / path,
+        file_path,
         config,
         settings->replication,
         patchSettings(write_settings),
         buf_size,
-        mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
+        mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND,
+        std::move(blob_storage_log));
 }
 
 
@@ -121,11 +209,35 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+
+    Stopwatch watch;
+    Int32 error_code = 0;
+    String error_message;
+
     /// Add path from root to file name
     int res = wrapErr<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
+    {
+        error_code = errno;
+        error_message = hdfsGetLastError();
+    }
 
+    auto elapsed = watch.elapsedMicroseconds();
+
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ url_without_path,
+            /* remote_path */ path,
+            /* local_path */ object.local_path,
+            /* data_size */ object.bytes_size,
+            elapsed,
+            error_code,
+            error_message);
+
+    if (res == -1)
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 }
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
@@ -142,11 +254,18 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     initializeHDFSFS();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
@@ -161,8 +280,9 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bo
 std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
-    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
-    if (!file_info)
+    HDFSFileInfo file_info;
+    file_info.file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
+    if (!file_info.file_info)
     {
         if (errno == ENOENT)
             return {};
@@ -170,13 +290,11 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
     }
+    /// Tells `~HDFSFileInfo` how many records to free; the default 0 would free the array
+    /// but leak the inner `mName` / `mOwner` / `mGroup` strings of this single record.
+    file_info.length = 1;
 
-    ObjectMetadata metadata;
-    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
-    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
-
-    hdfsFreeFileInfo(file_info, 1);
-    return metadata;
+    return makeObjectMetadata(file_info.file_info->mLastMod, file_info.file_info->mSize);
 }
 
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -217,12 +335,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
-                ObjectMetadata{
-                    static_cast<uint64_t>(ls.file_info[i].mSize),
-                    Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    "",
-                    {},
-                    {}}));
+                makeObjectMetadata(ls.file_info[i].mLastMod, ls.file_info[i].mSize)));
         }
 
         if (max_keys && children.size() >= max_keys)
@@ -230,7 +343,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     }
 }
 
-void HDFSObjectStorage::copyObject( /// NOLINT
+String HDFSObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -247,6 +360,8 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
+    /// HDFS names no generations.
+    return {};
 }
 
 

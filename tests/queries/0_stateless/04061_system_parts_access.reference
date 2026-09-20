@@ -1,0 +1,7 @@
+=== Per-db SHOW TABLES grant user sees all tables in the granted database ===
+visible_table_1
+visible_table_2
+=== Per-db SHOW TABLES grant user does NOT see tables in other databases ===
+0
+=== Per-table SHOW TABLES grant user sees only the granted table ===
+visible_table_1

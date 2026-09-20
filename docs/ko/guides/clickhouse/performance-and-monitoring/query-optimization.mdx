@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: '개요'
+title: '쿼리 최적화'
+description: '느린 ClickHouse 쿼리를 진단하고, 병목 지점을 파악하며, 적절한 최적화를 선택하는 방법을 알아봅니다'
+doc_type: 'guide'
+keywords: ['쿼리 최적화', '성능', '모범 사례', '쿼리 튜닝', '효율성', '쿼리 로그', 'EXPLAIN']
+---
+
+이 가이드는 ClickHouse에서 느린 쿼리를 조사하고 개선하기 위한 워크플로를 제공합니다. 반복적으로 느린 쿼리를 식별하고 병목 지점을 파악한 후, 적절한 최적화를 선택하고 재현 가능한 기준선과 결과를 비교하십시오.
+
+<div id="choose-where-to-start">
+  ## 시작할 위치 선택
+</div>
+
+처음 3개의 가이드는 엔드투엔드 워크플로를 구성하지만, 이미 알고 있는 내용에 따라 적절한 단계에서 시작할 수도 있습니다.
+
+<CardGroup cols={1}>
+  <Card title="느린 쿼리 진단" icon="magnifying-glass" href="/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    반복적으로 발생하는 느린 쿼리 패턴을 파악해야 할 때 여기서 시작하십시오. 로컬 또는 클러스터 전체 쿼리 이력을 사용해 대표적인 실행을 선택하고, 리소스 사용량을 살펴본 뒤 초기 가설을 세우십시오.
+  </Card>
+
+  <Card title="쿼리 병목 지점 파악" icon="layer-group" href="/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    느린 쿼리가 있지만 어떤 작업이 성능에 가장 큰 영향을 미치는지 아직 모를 때 여기서 시작하십시오. 통제된 조건에서 쿼리를 점진적으로 단순화한 형태를 비교하십시오.
+  </Card>
+
+  <Card title="최적화 접근 방식 선택" icon="sliders" href="/ko/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    병목 지점에 대한 근거가 있고 이를 해결하기 위한 변경을 선택해야 할 때 여기서 시작하십시오. 읽는 데이터 양을 줄이거나, 데이터 레이아웃을 쿼리에 맞추거나, 반복되는 작업을 사전 계산하는 방법을 비교하십시오.
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## 예시
+</div>
+
+<Card title="최적화 단계별 예시" icon="flask" href="/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  NYC Taxi dataset에 워크로드 쿼리를 실행하는 것으로 시작한 후, 스키마와 정렬 키를 변경하고 각 단계를 동일한 기준선과 비교해 측정합니다.
+</Card>

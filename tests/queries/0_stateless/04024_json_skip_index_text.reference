@@ -1,0 +1,75 @@
+text equals
+Skip
+Parts: 1/2
+Granules: 1/4
+text non-existing
+Skip
+Parts: 0/2
+Granules: 0/4
+text typed subcolumn
+Skip
+Parts: 1/2
+Granules: 1/4
+text CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+text CAST default unsafe
+text typed zero safe
+Skip
+Parts: 1/2
+Granules: 1/4
+text reversed equals
+Skip
+Parts: 1/2
+Granules: 1/4
+text IN typed subcolumn
+Skip
+Parts: 1/2
+Granules: 1/4
+text IN subquery
+Skip
+Parts: 1/2
+Granules: 1/4
+text IN CAST with zero unsafe
+text IS NOT NULL safe
+Skip
+Parts: 1/2
+Granules: 1/4
+text IS NOT NULL CAST unsafe
+text sub-object ^ not used
+text AND both paths
+Skip
+Parts: 1/2
+Granules: 1/4
+text OR different paths
+Skip
+Parts: 2/2
+Granules: 2/4
+text AND one non-existing
+Skip
+Parts: 0/2
+Granules: 0/4
+text dotted column name
+Skip
+Parts: 1/2
+Granules: 1/4
+text Tuple(JSON) subcolumn
+Skip
+Parts: 1/2
+Granules: 1/4
+result: text equals
+1
+result: text non-existing
+result: text CAST
+1
+result: text AND
+1
+result: text OR
+1
+3
+result: text AND nonexistent
+result: text IN
+1
+result: text IN subquery
+1

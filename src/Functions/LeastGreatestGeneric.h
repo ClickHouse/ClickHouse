@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -31,7 +32,7 @@ enum class LeastGreatest : uint8_t
 
 
 template <LeastGreatest kind>
-class FunctionLeastGreatestGeneric : public IFunction
+class FunctionLeastGreatestGeneric final : public IFunction
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
@@ -65,43 +66,103 @@ private:
         if (arguments.size() == 1)
             return arguments[0].column;
 
-        Columns converted_columns;
+        struct ConvertedColumn
+        {
+            ColumnPtr column = nullptr;
+            bool is_const = false;
+        };
+
+        VectorWithMemoryTracking<ConvertedColumn> converted_columns;
+        converted_columns.reserve(arguments.size());
+        bool has_const_column = false;
         for (const auto & argument : arguments)
         {
             if (!legacy_null_behavior && argument.type->onlyNull())
                 continue; /// ignore NULL arguments
-            auto converted_col = castColumn(argument, result_type)->convertToFullColumnIfConst();
-            converted_columns.push_back(converted_col);
+
+            auto converted_col = castColumn(argument, result_type);
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(converted_col.get()))
+            {
+                converted_columns.push_back({const_column->getDataColumnPtr(), true});
+                has_const_column = true;
+            }
+            else
+            {
+                converted_columns.push_back({converted_col->convertToFullColumnIfConst(), false});
+            }
         }
 
         if (!legacy_null_behavior && converted_columns.empty())
             return arguments[0].column;
         else if (!legacy_null_behavior && converted_columns.size() == 1)
-            return converted_columns[0];
+        {
+            if (converted_columns[0].is_const)
+                return ColumnConst::create(converted_columns[0].column, input_rows_count);
+            return converted_columns[0].column;
+        }
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
 
+        if (!has_const_column)
+        {
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            {
+                size_t best_arg = 0;
+                for (size_t arg = 1; arg < converted_columns.size(); ++arg)
+                {
+                    if constexpr (kind == LeastGreatest::Least)
+                    {
+                        auto cmp_result = converted_columns[arg].column->compareAt(
+                            row_num, row_num, *converted_columns[best_arg].column, 1);
+                        if (cmp_result < 0)
+                            best_arg = arg;
+                    }
+                    else
+                    {
+                        auto cmp_result = converted_columns[arg].column->compareAt(
+                            row_num, row_num, *converted_columns[best_arg].column, -1);
+                        if (cmp_result > 0)
+                            best_arg = arg;
+                    }
+                }
+
+                result_column->insertFrom(*converted_columns[best_arg].column, row_num);
+            }
+
+            return result_column;
+        }
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
+            size_t best_row = converted_columns[0].is_const ? 0 : row_num;
             for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
+                const auto & current = converted_columns[arg];
+                const size_t current_row = current.is_const ? 0 : row_num;
+
                 if constexpr (kind == LeastGreatest::Least)
                 {
-                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, 1);
                     if (cmp_result < 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
                 else
                 {
-                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, -1);
                     if (cmp_result > 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
             }
 
-            result_column->insertFrom(*converted_columns[best_arg], row_num);
+            result_column->insertFrom(*converted_columns[best_arg].column, best_row);
         }
 
         return result_column;
@@ -111,15 +172,15 @@ private:
 };
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
+class LeastGreatestOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context_); }
 
     explicit LeastGreatestOverloadResolver(ContextPtr context_)
         : context(context_)
-        , legacy_null_behavior(context->getSettingsRef()[Setting::least_greatest_legacy_null_behavior])
+        , legacy_null_behavior(context_->getSettingsRef()[Setting::least_greatest_legacy_null_behavior])
     {
     }
 

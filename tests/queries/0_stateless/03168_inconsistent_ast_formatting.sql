@@ -12,7 +12,7 @@ SELECT formatQuery('SELECT NOT 1');
 SELECT formatQuery('SELECT NOT (1)');
 
 SELECT '--';
-SELECT NOT (1, 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT NOT (1, 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatQuery('SELECT NOT (1, 1, 1)');
 SELECT formatQuery('SELECT not(1, 1, 1)');
 

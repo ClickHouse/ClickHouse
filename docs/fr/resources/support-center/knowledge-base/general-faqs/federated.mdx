@@ -1,0 +1,28 @@
+---
+title: "ClickHouse prend-il en charge les requêtes fédérées ?"
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/federated
+description: "ClickHouse prend en charge un large éventail de requêtes fédérées et hybrides"
+doc_type: 'reference'
+keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']
+---
+
+ClickHouse offre la prise en charge la plus complète des requêtes fédérées et de l&#39;exécution hybride des requêtes parmi les bases de données analytiques.
+
+Il permet d&#39;interroger des bases de données externes :
+
+* PostgreSQL
+* MySQL
+* MongoDB
+* Redis
+* toute source de données ODBC
+* toute source de données JDBC
+* toute source de données Arrow Flight
+* des sources de données en streaming, telles que Kafka et RabbitMQ
+* des data lakes, comme Iceberg, Delta Lake, Apache Hudi et Apache Paimon
+* des fichiers externes situés sur un stockage partagé, comme AWS S3, GCS, Minio, Cloudflare R2, Azure Blob Storage, Alicloud OSS et Tencent COS, ainsi que sur un stockage local, dans un large éventail de formats de données
+
+ClickHouse peut combiner plusieurs sources de données différentes dans une seule requête. Il propose également une option d&#39;exécution hybride des requêtes, en combinant des ressources locales et en déléguant une partie de la requête à des machines distantes.
+
+Fait intéressant, ClickHouse peut accélérer les requêtes sur des sources de données externes sans déplacer les données. Par exemple, une requête d&#39;agrégation sur MySQL sera traitée plus rapidement si elle est exécutée dans ClickHouse, car le surcoût lié au déplacement des données est compensé par un moteur de requête plus rapide.

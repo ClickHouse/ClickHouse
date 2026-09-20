@@ -3,16 +3,20 @@
 #include <optional>
 #include <Parsers/IAST_fwd.h>
 
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Parsers/ASTRefreshStrategy.h>
 
 namespace DB
 {
 
-class StorageMaterializedView final : public IStorage, WithMutableContext
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {
 public:
     StorageMaterializedView(
@@ -33,16 +37,31 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    /// Unlike `supportsPrewhere()`, this defaults to `supportsPrewhere()` rather than to something
+    /// forwarding would match, so a target that supports PREWHERE but refuses the automatic
+    /// WHERE -> PREWHERE move (`Distributed`, or a `Merge` over one) would have that refusal
+    /// silently dropped by the view.
+    bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override;
+    /// readImpl forwards the already-analyzed query tree straight to the target table, so the
+    /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
+    bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+
+    /// Forward the size guard onto the inner target table that `dropInnerTableIfAny`
+    /// will actually drop, so `CREATE OR REPLACE MATERIALIZED VIEW` cannot delete an
+    /// over-limit inner table that plain `DROP TABLE mv` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -56,7 +75,7 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
@@ -86,9 +105,9 @@ public:
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -119,6 +138,7 @@ public:
     }
 
     bool isRefreshable() const { return refresher.ptr != nullptr; }
+    bool isAppendRefreshStrategy() const { return isRefreshable() && fixed_uuid; }
 
 private:
     mutable std::mutex target_table_id_mutex;
@@ -143,8 +163,9 @@ private:
     /// form the insert-select query.
     /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
     /// must drop the temp table before rethrowing.
-    std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
-    prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
+    std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
+    prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
+        const CursorTreeNodePtr & stream_cursor) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
 

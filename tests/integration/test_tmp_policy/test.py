@@ -41,10 +41,10 @@ def test_multiple_local_disk():
     }
 
     assert node_local.contains_in_log(
-        "Setting up .*disk1.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk1'"
     )
     assert node_local.contains_in_log(
-        "Setting up .*disk2.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk2'"
     )
 
     node_local.query(query, settings=settings)

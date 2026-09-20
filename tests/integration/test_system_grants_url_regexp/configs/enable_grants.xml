@@ -1,0 +1,6 @@
+<clickhouse>
+    <access_control_improvements>
+        <enable_read_write_grants>1</enable_read_write_grants>
+    </access_control_improvements>
+</clickhouse>
+

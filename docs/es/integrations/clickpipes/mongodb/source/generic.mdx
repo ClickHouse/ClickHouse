@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB genérico'
+description: 'Configura cualquier instancia de MongoDB como origen para ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/generic
+title: 'Guía de configuración del origen genérico de MongoDB'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Info>
+  Si usas MongoDB Atlas, consulta la guía específica [aquí](/es/integrations/clickpipes/mongodb/source/atlas).
+</Info>
+
+<div id="enable-oplog-retention">
+  ## Habilitar la retención del oplog
+</div>
+
+Se requiere una retención mínima del oplog de 24 horas para la replicación. Recomendamos configurar la retención del oplog en 72 horas o más para garantizar que no se trunque antes de que finalice el snapshot inicial.
+
+Puede consultar la retención actual del oplog ejecutando el siguiente comando en el shell de MongoDB (debe tener el rol `clusterMonitor` para ejecutar este comando):
+
+```javascript
+db.getSiblingDB("admin").serverStatus().oplogTruncation.oplogMinRetentionHours
+```
+
+Para configurar la retención del oplog en 72 horas, ejecute el siguiente comando en cada nodo del conjunto de réplicas como usuario administrador:
+
+```javascript
+db.adminCommand({
+    "replSetResizeOplog" : 1,
+    "minRetentionHours": 72
+})
+```
+
+Para obtener más información sobre el comando `replSetResizeOplog` y la retención del oplog, consulta la [documentación de MongoDB](https://www.mongodb.com/docs/manual/reference/command/replSetResizeOplog/).
+
+<div id="configure-database-user">
+  ## Configurar un usuario de base de datos
+</div>
+
+Conéctese a su instancia de MongoDB con un usuario administrador y ejecute el siguiente comando para crear un usuario para ClickPipes de CDC de MongoDB:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  Asegúrese de sustituir `clickpipes_user` y `some_secure_password` por el nombre de usuario y la contraseña que prefiera.
+</Note>
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ahora puedes [crear tu ClickPipe](/es/integrations/clickpipes/mongodb/index) y empezar a ingestar datos de tu instancia de MongoDB en ClickHouse Cloud.
+Asegúrate de tomar nota de los datos de conexión que usaste al configurar tu instancia de MongoDB, ya que los necesitarás durante el proceso de creación del ClickPipe.

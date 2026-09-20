@@ -5,6 +5,9 @@ if (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER AND CMAKE_CXX_COMPIL
     add_library(_simsimd ${SIMSIMD_SRCS})
     target_include_directories(_simsimd SYSTEM PUBLIC "${SIMSIMD_PROJECT_DIR}/include")
     target_compile_definitions(_simsimd PUBLIC SIMSIMD_DYNAMIC_DISPATCH)
+    # Disable SVE: LLVM's MemorySanitizer cannot instrument SVE scalable vector types,
+    # emitting unconditional `__msan_warning_noreturn` at every SVE function entry.
+    target_compile_definitions(_simsimd PRIVATE SIMSIMD_TARGET_SVE=0 SIMSIMD_TARGET_SVE2=0)
     add_library(ch_contrib::simsimd ALIAS _simsimd)
 else()
     # The latter requires Clang 19 because older versions had a buggy bf16 implementation.

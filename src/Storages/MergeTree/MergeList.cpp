@@ -4,6 +4,7 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
 #include <Common/logger_useful.h>
@@ -58,7 +59,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
-        total_rows_count += source_part->index_granularity->getTotalRows();
+        total_rows_count += source_part->rows_count;
     }
 
     if (!future_part->parts.empty())
@@ -109,6 +110,18 @@ MergeInfo MergeListElement::getInfo() const
 
     for (const auto & source_part_path : source_part_paths)
         res.source_part_paths.emplace_back(source_part_path);
+
+    {
+        std::lock_guard lock(projection_introspection_mutex);
+        res.current_projection = current_projection;
+        for (const auto & name : projections_done)
+            res.projections_completed.emplace_back(name);
+        for (const auto & name : projections_pending)
+            res.projections_remaining.emplace_back(name);
+    }
+    res.current_projection_progress = current_projection_progress.load(std::memory_order_relaxed);
+    res.current_projection_parts_merging = current_projection_parts_merging.load(std::memory_order_relaxed);
+    res.current_projection_parts_remaining = current_projection_parts_remaining.load(std::memory_order_relaxed);
 
     return res;
 }

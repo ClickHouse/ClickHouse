@@ -11,6 +11,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)
+{
+    if (send_over_whole_archive && object_info->isArchive())
+        return object_info->getIdentifierForPath(object_info->getPathToArchive());
+
+    return object_info->getIdentifier();
+}
+
+}
+
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
@@ -81,7 +94,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-        auto file_identifier = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getIdentifier();
+        auto file_identifier = getSchedulingIdentifier(next_file, send_over_whole_archive);
         auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
@@ -128,7 +141,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         String file_identifier;
         if (send_over_whole_archive && object_info->isArchive())
         {
-            file_identifier = object_info->getPathOrPathToArchiveIfArchive();
+            file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
                      "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
@@ -177,7 +190,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         auto next_file = it->second;
         unprocessed_files.erase(it);
 
-        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        auto file_path = getSchedulingIdentifier(next_file, send_over_whole_archive);
         LOG_TRACE(
             log,
             "Iterator exhausted. Assigning unprocessed file {} to replica {}",

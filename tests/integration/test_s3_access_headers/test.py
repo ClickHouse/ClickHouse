@@ -96,7 +96,7 @@ def test_custom_access_header(
         ENGINE={engine};
         """
     )
-    instance.query("SYSTEM DROP QUERY CACHE")
+    instance.query("SYSTEM CLEAR QUERY CACHE")
 
     assert instance.query(f"SELECT count(*) FROM {table_name}") == "3\n"
 

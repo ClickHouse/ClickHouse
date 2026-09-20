@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS test_02559;
 
 CREATE TABLE test_02559 (id1 UInt64, id2 UInt64) ENGINE=MergeTree ORDER BY id1 SETTINGS min_bytes_for_wide_part = 0;

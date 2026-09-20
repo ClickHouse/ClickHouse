@@ -1,0 +1,68 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: 'Пример применения комбинатора uniqArray'
+keywords: ['uniq', 'array', 'combinator', 'examples', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`Array`](/ru/reference/functions/aggregate-functions/combinators#-array)
+можно применять к функции [`uniq`](/ru/reference/functions/aggregate-functions/uniq),
+чтобы вычислить приблизительное количество уникальных элементов во всех массивах
+с помощью функции агрегатного комбинатора `uniqArray`.
+
+Функция `uniqArray` полезна, когда нужно подсчитать уникальные элементы в
+нескольких массивах набора данных. Она эквивалентна использованию `uniq(arrayJoin())`, где
+`arrayJoin` сначала разворачивает массивы, а затем `uniq` подсчитывает уникальные элементы.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+В этом примере мы используем набор данных с интересами пользователей по разным
+категориям, чтобы показать, как работает `uniqArray`. Мы сравним его с
+`uniq(arrayJoin())`, чтобы показать разницу в подсчёте уникальных элементов.
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+Функция `uniqArray` подсчитывает количество уникальных элементов во всех массивах, взятых вместе, аналогично `uniq(arrayJoin())`.
+В этом примере:
+
+* `uniqArray` возвращает 5, потому что у всех пользователей в совокупности 5 уникальных интересов: &#39;reading&#39;, &#39;gaming&#39;, &#39;music&#39;, &#39;sports&#39;, &#39;cooking&#39;
+* `uniq(arrayJoin())` тоже возвращает 5, показывая, что обе функции подсчитывают уникальные элементы по всем массивам
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`uniq`](/ru/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/ru/reference/functions/regular-functions/array-join)
+* [`Array комбинатор`](/ru/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/ru/reference/functions/aggregate-functions/uniqCombined)

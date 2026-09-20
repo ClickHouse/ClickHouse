@@ -29,7 +29,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parseIntervalKind(pos, expected, kind))
             return false;
 
-        UInt64 val;
+        UInt64 val = 0;
         if (!value->as<ASTLiteral &>().value.tryGet(val))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
         intervals.emplace_back(kind, val);
@@ -52,7 +52,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!options.allow_mixing_calendar_and_clock_units)
         interval.assertSingleUnit();
 
-    auto time_interval = std::make_shared<ASTTimeInterval>();
+    auto time_interval = make_intrusive<ASTTimeInterval>();
     time_interval->interval = interval;
 
     node = time_interval;

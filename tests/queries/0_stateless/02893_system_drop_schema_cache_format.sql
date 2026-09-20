@@ -1,1 +1,1 @@
-explain syntax system drop schema cache for hdfs;
+explain syntax system clear schema cache for hdfs;

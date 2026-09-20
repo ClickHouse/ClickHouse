@@ -1,0 +1,12 @@
+-- { echo }
+select part_name from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 1000);
+all_1_1_0
+all_2_2_0
+select ranges from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 1000);
+[(0,12)]
+[(0,24)]
+select arraySum(arrayMap(e -> ((e.2) - (e.1)), ranges)) as ranges_size from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 1000);
+12
+24
+select sum(arraySum(arrayMap(e -> ((e.2) - (e.1)), ranges))) as ranges_size from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 1000);
+36

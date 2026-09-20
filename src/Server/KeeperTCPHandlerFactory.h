@@ -43,7 +43,7 @@ public:
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         try
         {

@@ -1,0 +1,28 @@
+-- { echo }
+
+SELECT 'Large mt, last 1 with ties';
+Large mt, last 1 with ties
+SELECT intDiv(number, 2) AS x FROM numbers_mt(1000000) ORDER BY x LIMIT -1 WITH TIES;
+499999
+499999
+SELECT 'Large mt, intDiv 500000';
+Large mt, intDiv 500000
+SELECT intDiv(number, 500000) AS x FROM numbers_mt(1000001) ORDER BY x LIMIT -1 WITH TIES;
+2
+SELECT 'Zero limit with ties';
+Zero limit with ties
+SELECT 0 AS x FROM numbers(100) ORDER BY x LIMIT -0 WITH TIES;
+SELECT 'All same value, large';
+All same value, large
+SELECT count() FROM (SELECT 0 AS x FROM numbers_mt(100000) ORDER BY x LIMIT -1 WITH TIES);
+100000
+SET max_block_size = 2;
+SELECT 'Small blocks, large data';
+Small blocks, large data
+SELECT intDiv(number, 2) AS x FROM numbers(1000) ORDER BY x LIMIT -1 WITH TIES;
+499
+499
+SELECT 'Small blocks, all same';
+Small blocks, all same
+SELECT count() FROM (SELECT 0 AS x FROM numbers(100) ORDER BY x LIMIT -3 WITH TIES);
+100

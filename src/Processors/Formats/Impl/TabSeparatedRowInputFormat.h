@@ -92,7 +92,7 @@ private:
     bool first_row = true;
 };
 
-class TabSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class TabSeparatedSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);

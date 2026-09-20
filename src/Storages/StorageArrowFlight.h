@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -11,14 +11,17 @@ namespace DB
 class ArrowFlightConnection;
 class NamedCollection;
 class StorageFactory;
+struct StorageID;
 
-class StorageArrowFlight : public IStorage, protected WithContext
+class StorageArrowFlight : public StorageWithCommonVirtualColumns, protected WithContext
 {
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     struct Configuration
     {
         String host;
-        int port;
+        int port{};
         String dataset_name;
         /// Whether the client should authenticate to the server with HTTP basic authentication.
         bool use_basic_authentication = false;
@@ -31,7 +34,7 @@ public:
         String ssl_override_hostname;
     };
 
-    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context);
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id = nullptr);
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection);
 
     StorageArrowFlight(
@@ -43,6 +46,8 @@ public:
         ContextPtr context_);
 
     String getName() const override { return "ArrowFlight"; }
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

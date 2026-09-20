@@ -1,0 +1,16 @@
+trailing chars - parseDateTimeOrNull (MySQL)
+1
+trailing chars - parseDateTimeOrZero (MySQL)
+1
+trailing chars - parseDateTimeInJodaSyntaxOrNull
+1
+trailing chars - parseDateTimeInJodaSyntaxOrZero
+1
+negative seconds_since_epoch - parseDateTimeOrNull (MySQL)
+1
+negative seconds_since_epoch - parseDateTimeOrZero (MySQL)
+1
+negative seconds_since_epoch - parseDateTimeInJodaSyntaxOrNull
+1
+negative seconds_since_epoch - parseDateTimeInJodaSyntaxOrZero
+1

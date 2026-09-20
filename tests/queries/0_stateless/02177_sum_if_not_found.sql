@@ -22,8 +22,6 @@ SELECT
 FROM data
 GROUP BY t; -- { serverError UNKNOWN_FUNCTION}
 
-SET allow_suspicious_primary_key = 1;
-
 CREATE TABLE agg
 ENGINE = AggregatingMergeTree
 ORDER BY tuple() AS

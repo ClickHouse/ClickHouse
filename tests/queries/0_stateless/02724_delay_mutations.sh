@@ -53,7 +53,7 @@ SELECT
     ProfileEvents['DelayedMutations'],
     ProfileEvents['DelayedMutationsMilliseconds'] BETWEEN 10 AND 1000
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' AND
     current_database = '$CLICKHOUSE_DATABASE' AND
     query ILIKE 'ALTER TABLE t_delay_mutations UPDATE%'

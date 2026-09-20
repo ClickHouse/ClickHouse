@@ -1,0 +1,298 @@
+// SampleDatasetExplorer
+// A 3x2 grid of sample-dataset *categories*. Clicking a category expands it into
+// a grid of image cards for that category's child dataset pages. The two views
+// swap instantly - the documentation has no motion anywhere.
+//
+// NOTE: Mintlify eval's ONLY the exported component function, so every constant
+// (ACCENT, CATEGORIES) and helper MUST live inside the component body — module-level
+// declarations are not in scope at render time and throw "X is not defined".
+
+export const SampleDatasetExplorer = ({ categories }) => {
+  const ACCENT = '#FAFF69';
+  const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+
+  // Each category: id, title (shown beneath the banner image), an icon used for
+  // its child cards, the two banner images, and the child dataset pages.
+  const CATEGORIES = [
+    {
+      id: 'benchmarks',
+      title: 'Benchmarks',
+      icon: 'gauge',
+      imgLight: '/images/sample-datasets-grid/benchmarks-light.jpg',
+      imgDark: '/images/sample-datasets-grid/benchmarks-dark.jpg',
+      datasets: [
+        { title: 'AMPLab Big Data Benchmark', href: '/get-started/sample-datasets/amplab-benchmark', imgLight: '/images/sample-datasets-grid/amplab-benchmark-light.jpg', imgDark: '/images/sample-datasets-grid/amplab-benchmark-dark.jpg' },
+        { title: 'Brown University Benchmark', href: '/get-started/sample-datasets/brown-benchmark', imgLight: '/images/sample-datasets-grid/brown-benchmark-light.jpg', imgDark: '/images/sample-datasets-grid/brown-benchmark-dark.jpg' },
+        { title: 'Criteo terabyte click logs', href: '/get-started/sample-datasets/criteo', imgLight: '/images/sample-datasets-grid/criteo-light.jpg', imgDark: '/images/sample-datasets-grid/criteo-dark.jpg' },
+        { title: 'JOB benchmark', href: '/get-started/sample-datasets/job', imgLight: '/images/sample-datasets-grid/benchmarks-light.jpg', imgDark: '/images/sample-datasets-grid/benchmarks-dark.jpg' },
+        { title: 'Star Schema Benchmark (SSB)', href: '/get-started/sample-datasets/star-schema', imgLight: '/images/sample-datasets-grid/star-schema-light.jpg', imgDark: '/images/sample-datasets-grid/star-schema-dark.jpg' },
+        { title: 'TPC-DS', href: '/get-started/sample-datasets/tpcds', imgLight: '/images/sample-datasets-grid/tpcds-light.jpg', imgDark: '/images/sample-datasets-grid/tpcds-dark.jpg' },
+        { title: 'TPC-H', href: '/get-started/sample-datasets/tpch', imgLight: '/images/sample-datasets-grid/tpch-light.jpg', imgDark: '/images/sample-datasets-grid/tpch-dark.jpg' },
+      ],
+    },
+    {
+      id: 'geo-location',
+      title: 'Geo & location',
+      icon: 'map-pin',
+      imgLight: '/images/sample-datasets-grid/geo-location-light.jpg',
+      imgDark: '/images/sample-datasets-grid/geo-location-dark.jpg',
+      datasets: [
+        { title: 'Cell towers (OpenCelliD)', href: '/get-started/sample-datasets/cell-towers', imgLight: '/images/sample-datasets-grid/cell-towers-light.jpg', imgDark: '/images/sample-datasets-grid/cell-towers-dark.jpg' },
+        { title: 'Foursquare places', href: '/get-started/sample-datasets/foursquare-os-places', imgLight: '/images/sample-datasets-grid/foursquare-places-light.jpg', imgDark: '/images/sample-datasets-grid/foursquare-places-dark.jpg' },
+        { title: 'New York taxi data', href: '/get-started/sample-datasets/nyc-taxi', imgLight: '/images/sample-datasets-grid/nyc-taxi-light.jpg', imgDark: '/images/sample-datasets-grid/nyc-taxi-dark.jpg' },
+      ],
+    },
+    {
+      id: 'public-records',
+      title: 'Public records & open data',
+      icon: 'landmark',
+      imgLight: '/images/sample-datasets-grid/public-records-light.jpg',
+      imgDark: '/images/sample-datasets-grid/public-records-dark.jpg',
+      datasets: [
+        { title: 'COVID-19 open data', href: '/get-started/sample-datasets/covid19', imgLight: '/images/sample-datasets-grid/covid19-light.jpg', imgDark: '/images/sample-datasets-grid/covid19-dark.jpg' },
+        { title: "What's on the Menu? (NYPL)", href: '/get-started/sample-datasets/menus', imgLight: '/images/sample-datasets-grid/menus-light.jpg', imgDark: '/images/sample-datasets-grid/menus-dark.jpg' },
+        { title: 'NYPD complaint data', href: '/get-started/sample-datasets/nypd-complaint-data', imgLight: '/images/sample-datasets-grid/nypd-complaint-data-light.jpg', imgDark: '/images/sample-datasets-grid/nypd-complaint-data-dark.jpg' },
+        { title: 'OnTime (airline flights)', href: '/get-started/sample-datasets/ontime', imgLight: '/images/sample-datasets-grid/ontime-light.jpg', imgDark: '/images/sample-datasets-grid/ontime-dark.jpg' },
+        { title: 'UK property prices', href: '/get-started/sample-datasets/uk-price-paid', imgLight: '/images/sample-datasets-grid/uk-price-paid-light.jpg', imgDark: '/images/sample-datasets-grid/uk-price-paid-dark.jpg' },
+      ],
+    },
+    {
+      id: 'time-series-sensors',
+      title: 'Time series & sensors',
+      icon: 'activity',
+      imgLight: '/images/sample-datasets-grid/time-series-sensors-light.jpg',
+      imgDark: '/images/sample-datasets-grid/time-series-sensors-dark.jpg',
+      datasets: [
+        { title: 'Environmental sensors data', href: '/get-started/sample-datasets/environmental-sensors', imgLight: '/images/sample-datasets-grid/environmental-sensors-light.jpg', imgDark: '/images/sample-datasets-grid/environmental-sensors-dark.jpg' },
+        { title: 'NOAA Global Historical Climatology Network', href: '/get-started/sample-datasets/noaa', imgLight: '/images/sample-datasets-grid/noaa-light.jpg', imgDark: '/images/sample-datasets-grid/noaa-dark.jpg' },
+        { title: 'Taiwan historical weather', href: '/get-started/sample-datasets/tw-weather', imgLight: '/images/sample-datasets-grid/tw-weather-light.jpg', imgDark: '/images/sample-datasets-grid/tw-weather-dark.jpg' },
+        { title: 'WikiStat', href: '/get-started/sample-datasets/wikistat', imgLight: '/images/sample-datasets-grid/wikistat-light.jpg', imgDark: '/images/sample-datasets-grid/wikistat-dark.jpg' },
+      ],
+    },
+    {
+      id: 'vector-search',
+      title: 'Vector search & embeddings',
+      icon: 'search',
+      imgLight: '/images/sample-datasets-grid/vector-search-light.jpg',
+      imgDark: '/images/sample-datasets-grid/vector-search-dark.jpg',
+      datasets: [
+        { title: 'dbpedia dataset', href: '/get-started/sample-datasets/dbpedia', imgLight: '/images/sample-datasets-grid/dbpedia-light.jpg', imgDark: '/images/sample-datasets-grid/dbpedia-dark.jpg' },
+        { title: 'Hacker News vector search', href: '/get-started/sample-datasets/hacker-news-vector-search', imgLight: '/images/sample-datasets-grid/hacker-news-vector-search-light.jpg', imgDark: '/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg' },
+        { title: 'Laion-400M dataset', href: '/get-started/sample-datasets/laion', imgLight: '/images/sample-datasets-grid/laion-400m-light.jpg', imgDark: '/images/sample-datasets-grid/laion-400m-dark.jpg' },
+        { title: 'LAION 5B dataset', href: '/get-started/sample-datasets/laion5b', imgLight: '/images/sample-datasets-grid/laion5b-light.jpg', imgDark: '/images/sample-datasets-grid/laion5b-dark.jpg' },
+      ],
+    },
+    {
+      id: 'web-social',
+      title: 'Web & social analytics',
+      icon: 'globe',
+      imgLight: '/images/sample-datasets-grid/web-social-analytics-light.jpg',
+      imgDark: '/images/sample-datasets-grid/web-social-analytics-dark.jpg',
+      datasets: [
+        { title: 'Amazon customer reviews', href: '/get-started/sample-datasets/amazon-reviews', imgLight: '/images/sample-datasets-grid/amazon-reviews-light.jpg', imgDark: '/images/sample-datasets-grid/amazon-reviews-dark.jpg' },
+        { title: 'Anonymized web analytics', href: '/get-started/sample-datasets/anon-web-analytics-metrica', imgLight: '/images/sample-datasets-grid/anon-web-analytics-light.jpg', imgDark: '/images/sample-datasets-grid/anon-web-analytics-dark.jpg' },
+        { title: 'Querying GitHub data', href: '/get-started/sample-datasets/github', imgLight: '/images/sample-datasets-grid/github-light.jpg', imgDark: '/images/sample-datasets-grid/github-dark.jpg' },
+        { title: 'GitHub events dataset', href: '/get-started/sample-datasets/github-events', imgLight: '/images/sample-datasets-grid/github-events-light.jpg', imgDark: '/images/sample-datasets-grid/github-events-dark.jpg' },
+        { title: 'Hacker News dataset', href: '/get-started/sample-datasets/hacker-news', imgLight: '/images/sample-datasets-grid/hacker-news-light.jpg', imgDark: '/images/sample-datasets-grid/hacker-news-dark.jpg' },
+        { title: 'Analyzing Stack Overflow data', href: '/get-started/sample-datasets/stackoverflow', imgLight: '/images/sample-datasets-grid/stackoverflow-light.jpg', imgDark: '/images/sample-datasets-grid/stackoverflow-dark.jpg' },
+        { title: 'YouTube dataset of dislikes', href: '/get-started/sample-datasets/youtube-dislikes', imgLight: '/images/sample-datasets-grid/youtube-dislikes-light.jpg', imgDark: '/images/sample-datasets-grid/youtube-dislikes-dark.jpg' },
+      ],
+    },
+  ];
+
+  // Keep the explorer in the same order as the sidebar. The playground is a
+  // standalone page link above the explorer, followed by these categories.
+  const categoryOrder = ['benchmarks', 'vector-search', 'web-social', 'geo-location', 'time-series-sensors', 'public-records'];
+  const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id));
+
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = cats.find((c) => c.id === selectedId) || null;
+
+  // The colour scheme is intentionally reversed: light mode shows the dark
+  // artwork and dark mode shows the light artwork. CSS keys directly off the
+  // docs theme class during SSR and only resolves the active custom-property
+  // URL, so a theme override cannot cause both variants to download.
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, '.webp'));
+  const ThemeImage = ({ item, className }) => (
+    <span
+      className={`sde-theme-image ${className || ''}`}
+      role="img"
+      aria-label={item.title}
+      style={{
+        '--sde-image-light-mode': `url("${webpFor(item.imgDark)}")`,
+        '--sde-image-dark-mode': `url("${webpFor(item.imgLight)}")`,
+      }}
+    />
+  );
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />;
+
+  return (
+    <div className="sde-root my-8">
+      <style dangerouslySetInnerHTML={{ __html: `
+        .sde-tile {
+          display: block;
+          width: 100%;
+          padding: 0;
+          border: none;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+        }
+        .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
+        .sde-tile:active { transform: translateY(-1px) scale(0.995); }
+        /* Border matches the HeroCard cards on index.mdx:
+           border-[#e5e7eb] dark:border-[#3c3c3c], 8px radius */
+        .sde-tile-media {
+          display: block;
+          position: relative;
+          aspect-ratio: 4 / 3;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
+        .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
+        .sde-theme-image {
+          display: block;
+          width: 100%;
+          height: 100%;
+          background-image: var(--sde-image-light-mode);
+          background-position: center;
+          background-size: cover;
+          pointer-events: none;
+        }
+        .dark .sde-root .sde-theme-image {
+          background-image: var(--sde-image-dark-mode);
+        }
+        /* hover hint: translucent strip along the bottom of the image */
+        .sde-tile-hint {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 10px 14px;
+          background: rgba(0,0,0,0.45);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          opacity: 0;
+          pointer-events: none;
+        }
+        .sde-tile:hover .sde-tile-hint { opacity: 1; }
+        @media (max-width: 639px), (any-hover: none) {
+          .sde-tile-hint { opacity: 1; }
+        }
+        .sde-tile-title {
+          display: block;
+          margin-top: 0.65rem;
+          font-size: 0.95rem;
+          font-weight: 600;
+          line-height: 1.3;
+          color: inherit;
+        }
+        .sde-count {
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: #fff;
+        }
+        .sde-explore {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: ${ACCENT};
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .sde-back {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+          background: transparent;
+          border: none;
+          padding: 0;
+          color: inherit;
+          opacity: 0.5;
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+        .sde-back:hover { opacity: 1; }
+        .sde-detail-title {
+          font-size: 1.5rem;
+          font-weight: 600;
+          line-height: 1.3;
+          margin: 0 0 1.25rem 0;
+        }
+      `}} />
+
+      {!selected ? (
+        <div className="sde-view">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+            {cats.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                className="sde-tile"
+                onClick={() => setSelectedId(cat.id)}
+                aria-label={`Explore ${cat.title} datasets`}
+              >
+                <span className="sde-tile-media">
+                  <Banner cat={cat} />
+                  <span className="sde-tile-hint">
+                    <span className="sde-count">
+                      {cat.datasets.length} dataset{cat.datasets.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="sde-explore">
+                      Explore
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  </span>
+                </span>
+                <span className="sde-tile-title">{cat.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="sde-view" key={selected.id}>
+          <div className="mb-6">
+            <button type="button" className="sde-back" onClick={() => setSelectedId(null)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              All categories
+            </button>
+          </div>
+
+          <h2 className="sde-detail-title">{selected.title}</h2>
+
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+            {selected.datasets.map((ds) => (
+              <a key={ds.href} href={withBase(ds.href)} className="sde-tile">
+                <span className="sde-tile-media">
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
+                  <span className="sde-tile-hint">
+                    <span className="sde-explore">
+                      View dataset
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  </span>
+                </span>
+                <span className="sde-tile-title">{ds.title}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

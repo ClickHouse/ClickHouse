@@ -1,0 +1,72 @@
+interpret_expressions=0
+Map(String, Float32) - basic insert and order by key
+{'key1':1,'key2':10}
+{'key1':2,'key2':20}
+Map with nested quoting (key contains apostrophe)
+{'it\'s':1}
+Empty Map
+{}
+Array(UInt32) - with empty array
+[]
+[1,2,3]
+Tuple(String, UInt32)
+('hello',42)
+Multiple columns: one complex, one simple
+1	{'a':1}
+2	{'b':2}
+Array of Maps (nested complex types)
+[{'a':1},{'b':2}]
+Map with Array values (nested complex types)
+{'key':[1,2,3]}
+Map with LowCardinality key type
+{'a':1}
+{'b':2}
+Nested (Array(Tuple(...)) internally)
+['a','b']	[1,2]
+Multiple rows in single INSERT (batch)
+{'a':1}
+{'b':2}
+{'c':3}
+SQL-style doubled single quote escape (Map)
+{'key1':1,'key2':2}
+SQL-style doubled single quote escape (Array)
+['a','b','c']
+SQL-style doubled single quote escape (Tuple)
+('hello',42)
+interpret_expressions=1
+Map(String, Float32) - basic insert and order by key
+{'key1':1,'key2':10}
+{'key1':2,'key2':20}
+Map with nested quoting (key contains apostrophe)
+{'it\'s':1}
+Empty Map
+{}
+Array(UInt32) - with empty array
+[]
+[1,2,3]
+Tuple(String, UInt32)
+('hello',42)
+Multiple columns: one complex, one simple
+1	{'a':1}
+2	{'b':2}
+Array of Maps (nested complex types)
+[{'a':1},{'b':2}]
+Map with Array values (nested complex types)
+{'key':[1,2,3]}
+Map with LowCardinality key type
+{'a':1}
+{'b':2}
+Nested (Array(Tuple(...)) internally)
+['a','b']	[1,2]
+Multiple rows in single INSERT (batch)
+{'a':1}
+{'b':2}
+{'c':3}
+SQL-style doubled single quote escape (Map)
+{'key1':1,'key2':2}
+SQL-style doubled single quote escape (Array)
+['a','b','c']
+SQL-style doubled single quote escape (Tuple)
+('hello',42)
+Native syntax - verify no regression
+{'key1':1,'key2':10}

@@ -39,7 +39,7 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }

@@ -2,12 +2,15 @@
 
 #include "config.h"
 #include <Backups/BackupOperationInfo.h>
+#include <Common/Logger_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <chrono>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
@@ -46,11 +49,16 @@ struct ZooKeeperRetriesInfo;
 class BackupsWorker
 {
 public:
+    using TimePoint = std::chrono::steady_clock::time_point;
+
     BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads);
     ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
     void shutdown();
+
+    /// Makes start() refuse new operations from now on. Never reset.
+    void stopAcceptingNewOperations();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
     /// For asynchronous operations the function throws no exceptions on failure usually,
@@ -69,10 +77,18 @@ public:
     BackupStatus cancel(const BackupOperationID & backup_or_restore_id, bool wait_ = true);
 
     /// Cancels all running backup and restore operations.
-    void cancelAll(bool wait_ = true);
+    /// Returns false if `deadline` was reached while some of them were still running.
+    bool cancelAll(bool wait_ = true, std::optional<TimePoint> deadline = {});
+
+    /// Returns true if some operation has not reached a final status yet. Never waits.
+    bool hasUnfinishedOperations() const;
 
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
+
+#if CLICKHOUSE_CLOUD
+    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
+#endif
 
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
@@ -86,20 +102,21 @@ private:
 
     void doBackup(
         BackupMutablePtr backup,
-        const std::shared_ptr<ASTBackupQuery> & backup_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
+    enum class ThreadPoolId : uint8_t;
+
     /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, QueryStatusPtr process_list_element);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     std::pair<BackupOperationID, BackupStatus> startRestoring(const ASTPtr & query, ContextMutablePtr context);
     struct RestoreStarter;
@@ -111,13 +128,12 @@ private:
 #endif
 
     void doRestore(
-        const std::shared_ptr<ASTBackupQuery> & restore_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
@@ -130,18 +146,27 @@ private:
         size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
         const ZooKeeperRetriesInfo & retries_info) const;
 
-    /// Run data restoring tasks which insert data to tables.
-    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
-
     std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status);
+                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
+
+    /// Waits for one operation. `reached_final_status` is set to false if `deadline` was reached first.
+    BackupStatus waitImpl(const BackupOperationID & backup_or_restore_id, bool rethrow_exception,
+                          std::optional<TimePoint> deadline, bool & reached_final_status);
+
+    /// `infos_mutex` must be locked.
+    std::vector<BackupOperationID> getUnfinishedOperations() const;
+
+    /// Waits for each of `operations`. Returns false and logs the stragglers if `deadline` was reached.
+    bool waitForOperations(const std::vector<BackupOperationID> & operations, std::optional<TimePoint> deadline);
+
+    /// Stores the settings effectively used by the backup engine's reader/writer for the given operation.
+    void setEngineSettings(const BackupOperationID & id, std::map<String, String> engine_settings);
 
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    enum class ThreadPoolId : uint8_t;
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
 
     /// Waits for some time if `test_inject_sleep` is true.
@@ -166,6 +191,10 @@ private:
     };
 
     std::unordered_map<BackupOperationID, ExtendedOperationInfo> infos;
+
+    /// Guarded by `infos_mutex`, so that it is read in the same critical section as the `infos`
+    /// insertion it gates: once set, nothing can be added to `infos` afterwards.
+    bool refuse_new_operations = false;
 
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;

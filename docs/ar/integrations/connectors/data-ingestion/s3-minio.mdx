@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'MinIO'
+slug: /integrations/minio
+description: 'صفحة تشرح كيفية استخدام MinIO مع ClickHouse'
+title: 'استخدام MinIO'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+keywords: ['s3', 'minio', 'تخزين الكائنات', 'تحميل البيانات', 'تخزين متوافق']
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+جميع دوال S3 والجداول متوافقة مع [MinIO](https://min.io/). وقد تلاحظ معدل نقل أعلى عند استخدام مخازن MinIO المستضافة ذاتيًا، خاصةً عند توفر تقارب شبكي مثالي.
+
+كما أن إعدادات MergeTree المعتمدة على التخزين الخلفي متوافقة أيضًا، مع بعض التغييرات الطفيفة في الإعدادات:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://min.io/tables//</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  لاحظ الشرطتين المائلتين في وسم endpoint؛ فهما مطلوبتان لتحديد الجذر الخاص بـ bucket.
+</Tip>

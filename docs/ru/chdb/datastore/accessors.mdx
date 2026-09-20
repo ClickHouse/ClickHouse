@@ -1,0 +1,640 @@
+---
+title: 'Аксессоры DataStore'
+sidebarTitle: 'Аксессоры'
+slug: /chdb/datastore/accessors
+description: 'Аксессоры String, DateTime, Array, JSON, URL, IP и Geo: более 185 методов'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+DataStore предоставляет 7 пространств имен аксессоров с более чем 185 методами для предметно-ориентированных операций.
+
+| Аксессор | Методы | Описание                                                          |
+| -------- | ------ | ----------------------------------------------------------------- |
+| `.str`   | 56     | Операции со строками                                              |
+| `.dt`    | 42+    | Операции с DateTime                                               |
+| `.arr`   | 37     | Операции с массивами (специфичные для ClickHouse)                 |
+| `.json`  | 13     | Разбор JSON (специфичный для ClickHouse)                          |
+| `.url`   | 15     | Разбор URL (специфичный для ClickHouse)                           |
+| `.ip`    | 9      | Операции с IP-адресами (специфичные для ClickHouse)               |
+| `.geo`   | 14     | Геооперации и операции с расстоянием (специфичные для ClickHouse) |
+
+***
+
+<div id="str">
+  ## Аксессор строк (`.str`)
+</div>
+
+Поддерживаются все 56 методов pandas `.str`, а также строковые функции ClickHouse.
+
+<div id="str-case">
+  ### Преобразование регистра
+</div>
+
+| Метод          | ClickHouse  | Описание                       |
+| -------------- | ----------- | ------------------------------ |
+| `upper()`      | `upper()`   | Перевести в верхний регистр    |
+| `lower()`      | `lower()`   | Перевести в нижний регистр     |
+| `capitalize()` | `initcap()` | Сделать первую букву заглавной |
+| `title()`      | `initcap()` | Каждое слово с заглавной буквы |
+| `swapcase()`   | -           | Инвертировать регистр          |
+| `casefold()`   | `lower()`   | Сворачивание регистра          |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### Длина и размер
+</div>
+
+| Метод           | ClickHouse      | Описание                |
+| --------------- | --------------- | ----------------------- |
+| `len()`         | `length()`      | Длина строки (в байтах) |
+| `char_length()` | `char_length()` | Длина в символах        |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### Подстрока и срезы
+</div>
+
+| Метод                | ClickHouse    | Описание             |
+| -------------------- | ------------- | -------------------- |
+| `slice(start, stop)` | `substring()` | Извлечь подстроку    |
+| `slice_replace()`    | -             | Заменить срез        |
+| `left(n)`            | `left()`      | Первые n символов    |
+| `right(n)`           | `right()`     | Последние n символов |
+| `get(i)`             | -             | Символ по индексу    |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### Удаление пробелов
+</div>
+
+| Метод      | ClickHouse    | Описание                 |
+| ---------- | ------------- | ------------------------ |
+| `strip()`  | `trim()`      | Удалить пробелы          |
+| `lstrip()` | `trimLeft()`  | Удалить пробелы в начале |
+| `rstrip()` | `trimRight()` | Удалить пробелы в конце  |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### Поиск и сопоставление
+</div>
+
+| Метод             | ClickHouse     | Описание                                      |
+| ----------------- | -------------- | --------------------------------------------- |
+| `contains(pat)`   | `position()`   | Содержит подстроку                            |
+| `startswith(pat)` | `startsWith()` | Начинается с префикса                         |
+| `endswith(pat)`   | `endsWith()`   | Заканчивается суффиксом                       |
+| `find(sub)`       | `position()`   | Находит позицию                               |
+| `rfind(sub)`      | -              | Находит с конца                               |
+| `index(sub)`      | `position()`   | Находит или вызывает исключение               |
+| `rindex(sub)`     | -              | Находит с конца или вызывает исключение       |
+| `match(pat)`      | `match()`      | Сопоставление по регулярному выражению        |
+| `fullmatch(pat)`  | -              | Полное сопоставление по регулярному выражению |
+| `count(pat)`      | -              | Подсчитывает вхождения                        |
+
+```python
+# Проверка наличия подстроки
+ds['has_john'] = ds['name'].str.contains('John')
+
+# Совпадение по регулярному выражению
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### Замена
+</div>
+
+| Метод                            | ClickHouse           | Описание                        |
+| -------------------------------- | -------------------- | ------------------------------- |
+| `replace(pat, repl)`             | `replace()`          | Замена вхождений                |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | Замена по регулярному выражению |
+| `removeprefix(prefix)`           | -                    | Удаление префикса               |
+| `removesuffix(suffix)`           | -                    | Удаление суффикса               |
+| `translate(table)`               | -                    | Преобразование символов         |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### Разбиение
+</div>
+
+| Метод             | ClickHouse        | Описание                  |
+| ----------------- | ----------------- | ------------------------- |
+| `split(sep)`      | `splitByString()` | Разбить на массив         |
+| `rsplit(sep)`     | -                 | Разбить справа            |
+| `partition(sep)`  | -                 | Разбить на 3 части        |
+| `rpartition(sep)` | -                 | Разбить справа на 3 части |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### Заполнение
+</div>
+
+| Method          | ClickHouse          | Описание                     |
+| --------------- | ------------------- | ---------------------------- |
+| `pad(width)`    | `leftPad()`         | Заполнение слева             |
+| `ljust(width)`  | `rightPad()`        | Выравнивание по правому краю |
+| `rjust(width)`  | `leftPad()`         | Выравнивание по левому краю  |
+| `center(width)` | -                   | Выравнивание по центру       |
+| `zfill(width)`  | `leftPad(..., '0')` | Заполнение нулями            |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### Проверки символов
+</div>
+
+| Метод         | Описание                  |
+| ------------- | ------------------------- |
+| `isalpha()`   | Только буквы              |
+| `isdigit()`   | Только цифры              |
+| `isalnum()`   | Буквы и цифры             |
+| `isspace()`   | Только пробельные символы |
+| `isupper()`   | Только верхний регистр    |
+| `islower()`   | Только нижний регистр     |
+| `istitle()`   | Регистр заголовка         |
+| `isnumeric()` | Числовые символы          |
+| `isdecimal()` | Десятичные символы        |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### Другие
+</div>
+
+| Метод              | Описание                             |
+| ------------------ | ------------------------------------ |
+| `repeat(n)`        | Повторить n раз                      |
+| `reverse()`        | Развернуть строку                    |
+| `wrap(width)`      | Перенести текст по строкам           |
+| `encode(enc)`      | Закодировать                         |
+| `decode(enc)`      | Декодировать                         |
+| `normalize(form)`  | Нормализовать Unicode                |
+| `extract(pat)`     | Извлечь группы регулярного выражения |
+| `extractall(pat)`  | Извлечь все совпадения               |
+| `cat(sep)`         | Объединить всё                       |
+| `get_dummies(sep)` | Фиктивные переменные                 |
+
+***
+
+<div id="dt">
+  ## Аксессор DateTime (`.dt`)
+</div>
+
+Все 42+ методов pandas `.dt`, а также функции ClickHouse для работы с датой и временем.
+
+<div id="dt-components">
+  ### Компоненты даты
+</div>
+
+| Свойство        | ClickHouse        | Описание           |
+| --------------- | ----------------- | ------------------ |
+| `year`          | `toYear()`        | Год                |
+| `month`         | `toMonth()`       | Месяц (1-12)       |
+| `day`           | `toDayOfMonth()`  | День (1-31)        |
+| `hour`          | `toHour()`        | Час (0-23)         |
+| `minute`        | `toMinute()`      | Минута (0-59)      |
+| `second`        | `toSecond()`      | Секунда (0-59)     |
+| `millisecond`   | `toMillisecond()` | Миллисекунда       |
+| `microsecond`   | `toMicrosecond()` | Микросекунда       |
+| `quarter`       | `toQuarter()`     | Квартал (1-4)      |
+| `dayofweek`     | `toDayOfWeek()`   | День недели (0=Пн) |
+| `dayofyear`     | `toDayOfYear()`   | День года          |
+| `week`          | `toWeek()`        | Номер недели       |
+| `days_in_month` | -                 | Дней в месяце      |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### Усечение
+</div>
+
+| Метод                   | ClickHouse           | Описание        |
+| ----------------------- | -------------------- | --------------- |
+| `to_start_of_day()`     | `toStartOfDay()`     | Начало дня      |
+| `to_start_of_week()`    | `toStartOfWeek()`    | Начало недели   |
+| `to_start_of_month()`   | `toStartOfMonth()`   | Начало месяца   |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | Начало квартала |
+| `to_start_of_year()`    | `toStartOfYear()`    | Начало года     |
+| `to_start_of_hour()`    | `toStartOfHour()`    | Начало часа     |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | Начало минуты   |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### Арифметика
+</div>
+
+| Метод                | ClickHouse         | Описание           |
+| -------------------- | ------------------ | ------------------ |
+| `add_years(n)`       | `addYears()`       | Добавление лет     |
+| `add_months(n)`      | `addMonths()`      | Добавление месяцев |
+| `add_weeks(n)`       | `addWeeks()`       | Добавление недель  |
+| `add_days(n)`        | `addDays()`        | Добавление дней    |
+| `add_hours(n)`       | `addHours()`       | Добавление часов   |
+| `add_minutes(n)`     | `addMinutes()`     | Добавление минут   |
+| `add_seconds(n)`     | `addSeconds()`     | Добавление секунд  |
+| `subtract_years(n)`  | `subtractYears()`  | Вычитание лет      |
+| `subtract_months(n)` | `subtractMonths()` | Вычитание месяцев  |
+| `subtract_days(n)`   | `subtractDays()`   | Вычитание дней     |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### Булевы проверки
+</div>
+
+| Метод                | Описание                |
+| -------------------- | ----------------------- |
+| `is_month_start()`   | Первый день месяца      |
+| `is_month_end()`     | Последний день месяца   |
+| `is_quarter_start()` | Первый день квартала    |
+| `is_quarter_end()`   | Последний день квартала |
+| `is_year_start()`    | Первый день года        |
+| `is_year_end()`      | Последний день года     |
+| `is_leap_year()`     | Високосный год          |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### Форматирование
+</div>
+
+| Метод           | ClickHouse         | Описание                |
+| --------------- | ------------------ | ----------------------- |
+| `strftime(fmt)` | `formatDateTime()` | Форматирование в строку |
+| `day_name()`    | -                  | Название дня            |
+| `month_name()`  | -                  | Название месяца         |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### Часовой пояс
+</div>
+
+| Метод             | ClickHouse     | Описание                      |
+| ----------------- | -------------- | ----------------------------- |
+| `tz_convert(tz)`  | `toTimezone()` | Преобразование часового пояса |
+| `tz_localize(tz)` | -              | Назначить часовой пояс        |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## Аксессор массива (`.arr`)
+</div>
+
+Операции с массивами, специфичные для ClickHouse (37 методов).
+
+<div id="arr-properties">
+  ### Свойства
+</div>
+
+| Свойство    | ClickHouse   | Описание           |
+| ----------- | ------------ | ------------------ |
+| `length`    | `length()`   | Длина массива      |
+| `size`      | `length()`   | Псевдоним `length` |
+| `empty`     | `empty()`    | Массив пуст        |
+| `not_empty` | `notEmpty()` | Массив не пуст     |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### Доступ к элементам
+</div>
+
+| Метод                   | ClickHouse              | Описание          |
+| ----------------------- | ----------------------- | ----------------- |
+| `array_first()`         | `arrayElement(..., 1)`  | Первый элемент    |
+| `array_last()`          | `arrayElement(..., -1)` | Последний элемент |
+| `array_element(n)`      | `arrayElement()`        | N-й элемент       |
+| `array_slice(off, len)` | `arraySlice()`          | Срез массива      |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### Агрегации
+</div>
+
+| Метод             | ClickHouse       | Описание               |
+| ----------------- | ---------------- | ---------------------- |
+| `array_sum()`     | `arraySum()`     | Сумма элементов        |
+| `array_avg()`     | `arrayAvg()`     | Среднее значение       |
+| `array_min()`     | `arrayMin()`     | Минимальное значение   |
+| `array_max()`     | `arrayMax()`     | Максимальное значение  |
+| `array_product()` | `arrayProduct()` | Произведение элементов |
+| `array_uniq()`    | `arrayUniq()`    | Количество уникальных  |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### Преобразования
+</div>
+
+| Метод                  | ClickHouse           | Описание                          |
+| ---------------------- | -------------------- | --------------------------------- |
+| `array_sort()`         | `arraySort()`        | Сортировка по возрастанию         |
+| `array_reverse_sort()` | `arrayReverseSort()` | Сортировка по убыванию            |
+| `array_reverse()`      | `arrayReverse()`     | Обратный порядок                  |
+| `array_distinct()`     | `arrayDistinct()`    | Уникальные элементы               |
+| `array_compact()`      | `arrayCompact()`     | Удаление подряд идущих дублей     |
+| `array_flatten()`      | `arrayFlatten()`     | Разворачивание вложенных массивов |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### Изменения
+</div>
+
+| Метод                    | ClickHouse         | Описание                  |
+| ------------------------ | ------------------ | ------------------------- |
+| `array_push_back(elem)`  | `arrayPushBack()`  | Добавить в конец          |
+| `array_push_front(elem)` | `arrayPushFront()` | Добавить в начало         |
+| `array_pop_back()`       | `arrayPopBack()`   | Удалить последний элемент |
+| `array_pop_front()`      | `arrayPopFront()`  | Удалить первый элемент    |
+| `array_concat(other)`    | `arrayConcat()`    | Объединить                |
+
+<div id="arr-search">
+  ### Поиск
+</div>
+
+| Метод               | ClickHouse     | Описание               |
+| ------------------- | -------------- | ---------------------- |
+| `has(elem)`         | `has()`        | Содержит элемент       |
+| `index_of(elem)`    | `indexOf()`    | Находит индекс         |
+| `count_equal(elem)` | `countEqual()` | Подсчитывает вхождения |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### Операции со строками
+</div>
+
+| Method                     | ClickHouse            | Description          |
+| -------------------------- | --------------------- | -------------------- |
+| `array_string_concat(sep)` | `arrayStringConcat()` | Объединение в строку |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## JSON-аксессор (`.json`)
+</div>
+
+Парсинг JSON в ClickHouse (13 методов).
+
+| Метод              | ClickHouse            | Описание                          |
+| ------------------ | --------------------- | --------------------------------- |
+| `get_string(path)` | `JSONExtractString()` | Извлечь строку                    |
+| `get_int(path)`    | `JSONExtractInt()`    | Извлечь целое число               |
+| `get_float(path)`  | `JSONExtractFloat()`  | Извлечь число с плавающей запятой |
+| `get_bool(path)`   | `JSONExtractBool()`   | Извлечь логическое значение       |
+| `get_raw(path)`    | `JSONExtractRaw()`    | Извлечь необработанный JSON       |
+| `get_keys()`       | `JSONExtractKeys()`   | Получить ключи                    |
+| `get_type(path)`   | `JSONType()`          | Получить тип                      |
+| `get_length(path)` | `JSONLength()`        | Получить длину                    |
+| `has_key(key)`     | `JSONHas()`           | Проверить наличие ключа           |
+| `is_valid()`       | `isValidJSON()`       | Проверить корректность JSON       |
+| `to_json_string()` | `toJSONString()`      | Преобразовать в JSON              |
+
+```python
+# Разбор JSON-столбцов
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## URL-аксессор (`.url`)
+</div>
+
+Разбор URL, специфичный для ClickHouse (15 методов).
+
+| Method                        | ClickHouse               | Description               |
+| ----------------------------- | ------------------------ | ------------------------- |
+| `domain()`                    | `domain()`               | Извлечь домен             |
+| `domain_without_www()`        | `domainWithoutWWW()`     | Домен без `www`           |
+| `top_level_domain()`          | `topLevelDomain()`       | Домен верхнего уровня     |
+| `protocol()`                  | `protocol()`             | Протокол (`http`/`https`) |
+| `path()`                      | `path()`                 | Путь URL                  |
+| `path_full()`                 | `pathFull()`             | Путь со строкой запроса   |
+| `query_string()`              | `queryString()`          | Строка запроса            |
+| `fragment()`                  | `fragment()`             | Фрагмент (`#...`)         |
+| `port()`                      | `port()`                 | Номер порта               |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | Получить параметр запроса |
+| `extract_url_parameters()`    | `extractURLParameters()` | Все параметры             |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | Удалить параметр          |
+| `decode_url_component()`      | `decodeURLComponent()`   | Декодировать URL          |
+| `encode_url_component()`      | `encodeURLComponent()`   | Закодировать URL          |
+
+```python
+# Разбор URL-адресов
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## IP-аксессор (`.ip`)
+</div>
+
+Операции ClickHouse для работы с IP-адресами (9 методов).
+
+| Метод                      | ClickHouse          | Описание                          |
+| -------------------------- | ------------------- | --------------------------------- |
+| `to_ipv4()`                | `toIPv4()`          | Преобразовать в IPv4              |
+| `to_ipv6()`                | `toIPv6()`          | Преобразовать в IPv6              |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | Преобразовать число в строку      |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | Преобразовать строку в число      |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | Преобразовать число IPv6 в строку |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | Преобразовать в IPv6              |
+| `is_ipv4_string()`         | `isIPv4String()`    | Проверить IPv4                    |
+| `is_ipv6_string()`         | `isIPv6String()`    | Проверить IPv6                    |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | Преобразовать CIDR в диапазон     |
+
+```python
+# Операции с IP-адресами
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## Аксессор Geo (`.geo`)
+</div>
+
+Специфичные для ClickHouse геооперации и операции с расстояниями (14 методов).
+
+<div id="geo-distance">
+  ### Функции расстояния
+</div>
+
+| Метод                         | ClickHouse              | Описание                          |
+| ----------------------------- | ----------------------- | --------------------------------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | расстояние по дуге большого круга |
+| `geo_distance(...)`           | `geoDistance()`         | расстояние по WGS-84              |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | манхэттенское расстояние          |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | евклидово расстояние              |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | квадрат евклидова расстояния      |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | расстояние Чебышёва               |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | косинусное расстояние             |
+
+<div id="geo-vector">
+  ### Операции с векторами
+</div>
+
+| Метод                 | ClickHouse      | Описание               |
+| --------------------- | --------------- | ---------------------- |
+| `dot_product(v1, v2)` | `dotProduct()`  | Скалярное произведение |
+| `l2_norm(vec)`        | `L2Norm()`      | Норма вектора          |
+| `l2_normalize(vec)`   | `L2Normalize()` | Нормализация           |
+
+<div id="geo-h3">
+  ### Функции H3
+</div>
+
+| Метод                      | ClickHouse  | Описание                                      |
+| -------------------------- | ----------- | --------------------------------------------- |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | Преобразование Geo в индекс H3                |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | Преобразование H3 в географические координаты |
+
+<div id="geo-point">
+  ### Операции над точками
+</div>
+
+| Метод                        | ClickHouse          | Описание              |
+| ---------------------------- | ------------------- | --------------------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | Точка внутри полигона |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | Точка внутри эллипсов |
+
+```python
+from chdb.datastore import F
+
+# Вычисление расстояний
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# Векторное сходство
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## Работа с аксессорами
+</div>
+
+<div id="lazy">
+  ### Отложенное вычисление
+</div>
+
+Большинство методов-аксессоров вычисляются отложенно — они возвращают выражения, которые вычисляются позже:
+
+```python
+# Всё это — ленивые вычисления
+ds['name_upper'] = ds['name'].str.upper()  # Ещё не выполнено
+ds['year'] = ds['date'].dt.year            # Ещё не выполнено
+ds['domain'] = ds['url'].url.domain()      # Ещё не выполнено
+
+# Выполнение происходит при обращении к результатам
+df = ds.to_df()  # Теперь всё выполняется
+```
+
+<div id="execute-immediately">
+  ### Методы, которые выполняются сразу
+</div>
+
+Некоторые методы `.str` должны выполняться сразу, поскольку они изменяют структуру:
+
+| Метод              | Возвращает             | Почему                           |
+| ------------------ | ---------------------- | -------------------------------- |
+| `partition(sep)`   | DataStore (3 столбца)  | Создаёт несколько столбцов       |
+| `rpartition(sep)`  | DataStore (3 столбца)  | Создаёт несколько столбцов       |
+| `get_dummies(sep)` | DataStore (N столбцов) | Динамическое количество столбцов |
+| `extractall(pat)`  | DataStore              | Результат с MultiIndex           |
+| `cat(sep)`         | str                    | Агрегация (N строк → 1)          |
+
+<div id="chaining">
+  ### Цепочки аксессоров
+</div>
+
+Методы аксессоров можно вызывать цепочкой:
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

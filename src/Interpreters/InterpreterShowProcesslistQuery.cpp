@@ -39,6 +39,7 @@ BlockIO InterpreterShowProcesslistQuery::execute()
     return executeQuery(query, query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory);
 void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

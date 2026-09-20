@@ -1,0 +1,45 @@
+UInt64	String	Float64
+UInt64	String	Float64
+1	hello	3.140000104904175
+2	world	2.7200000286102295
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        a UInt64
+      PROJECTION
+        LIST id: 4, nodes: 1
+          FUNCTION id: 5, alias: a, function_name: _CAST, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 6, nodes: 2
+                COLUMN id: 7, column_name: a, result_type: UInt16, source_id: 8
+                CONSTANT id: 9, constant_value: \'UInt64\', constant_value_type: String
+      JOIN TREE
+        QUERY id: 8, alias: __table2, is_subquery: 1
+          PROJECTION COLUMNS
+            a UInt16
+          PROJECTION
+            LIST id: 10, nodes: 1
+              COLUMN id: 11, column_name: a, result_type: UInt16, source_id: 12
+          JOIN TREE
+            TABLE id: 12, alias: __table3, table_name: default.view_types_src
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt16
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: a, result_type: UInt16, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        a UInt16
+      PROJECTION
+        LIST id: 4, nodes: 1
+          COLUMN id: 5, column_name: a, result_type: UInt16, source_id: 6
+      JOIN TREE
+        TABLE id: 6, alias: __table2, table_name: default.view_types_src

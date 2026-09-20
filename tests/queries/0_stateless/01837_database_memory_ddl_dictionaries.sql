@@ -1,32 +1,33 @@
 -- Tags: no-parallel, no-fasttest
 
-DROP DATABASE IF EXISTS 01837_db;
-CREATE DATABASE 01837_db ENGINE = Memory;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-DROP TABLE IF EXISTS 01837_db.simple_key_dictionary_source;
-CREATE TABLE 01837_db.simple_key_dictionary_source
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source
 (
     id UInt64,
     value String
 ) ENGINE = TinyLog;
 
-INSERT INTO 01837_db.simple_key_dictionary_source VALUES (1, 'First');
-INSERT INTO 01837_db.simple_key_dictionary_source VALUES (2, 'Second');
-INSERT INTO 01837_db.simple_key_dictionary_source VALUES (3, 'Third');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source VALUES (1, 'First');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source VALUES (2, 'Second');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source VALUES (3, 'Third');
 
-DROP DICTIONARY IF EXISTS 01837_db.simple_key_direct_dictionary;
-CREATE DICTIONARY 01837_db.simple_key_direct_dictionary
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_direct_dictionary;
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_direct_dictionary
 (
     id UInt64,
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB '01837_db' TABLE 'simple_key_dictionary_source'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB currentDatabase() TABLE 'simple_key_dictionary_source'))
 LAYOUT(DIRECT());
 
-SELECT * FROM 01837_db.simple_key_direct_dictionary ORDER BY ALL;
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_direct_dictionary ORDER BY ALL;
 
-DROP DICTIONARY 01837_db.simple_key_direct_dictionary;
-DROP TABLE 01837_db.simple_key_dictionary_source;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_direct_dictionary;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.simple_key_dictionary_source;
 
-DROP DATABASE 01837_db;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

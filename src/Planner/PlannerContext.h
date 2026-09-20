@@ -19,6 +19,7 @@ namespace DB
 
 class QueryNode;
 class TableNode;
+class UnionNode;
 
 struct FiltersForTableExpression
 {
@@ -39,9 +40,11 @@ public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
         const TableNode * parallel_replicas_table_,
+        const UnionNode * parallel_replicas_table_union_,
         FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
         , parallel_replicas_table(parallel_replicas_table_)
+        , parallel_replicas_table_union(parallel_replicas_table_union_)
         , filters_for_table_expressions(std::move(filters_for_table_expressions_))
     {
     }
@@ -58,6 +61,10 @@ public:
       */
     const ColumnIdentifier & createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
 
+    /** Create column identifier for column and column source, or return existing one if already registered.
+      */
+    const ColumnIdentifier & createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
+
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
@@ -71,14 +78,21 @@ public:
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
-    /// Table which is used with parallel replicas reading. Now, only one table is supported by the protocol.
+    /// Table which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
     const TableNode * const parallel_replicas_table = nullptr;
+    /// UNION node whose every child query reads from a table eligible for parallel replicas.
+    /// When set, each branch retains parallel replicas reading instead of having it disabled.
+    const UnionNode * const parallel_replicas_table_union = nullptr;
 
     const FiltersForTableExpressionMap filters_for_table_expressions;
 
+    /// Generate a unique integer id, used to disambiguate temporary table expressions
+    size_t nextUniqueId() { return next_unique_id++; }
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
+    size_t next_unique_id = 0;
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;

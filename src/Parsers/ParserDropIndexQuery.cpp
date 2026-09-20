@@ -10,7 +10,7 @@ namespace DB
 
 bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTDropIndexQuery>();
+    auto query = make_intrusive<ASTDropIndexQuery>();
     node = query;
 
     ParserKeyword s_drop(Keyword::DROP);

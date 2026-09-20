@@ -33,18 +33,14 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
-
-    /// Tries to commit all accumulated operations simultaneously.
-    /// If something fails rollback and throw exception.
-    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    virtual void commit() { commit(NoCommitOptions{}); }
-
-    virtual void undo() noexcept = 0;
+    virtual void commit() = 0;
 
     virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
     }
+
+    virtual void undo() noexcept = 0;
 
     virtual ~IDiskTransaction() = default;
 
@@ -142,6 +138,18 @@ public:
 
     /// Truncate file to the target size.
     virtual void truncateFile(const std::string & src_path, size_t size) = 0;
+
+    /// Increment the reference count of a data blob shared between metadata files.
+    virtual void incrementBlobRefCount(const std::string & /* blob */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Blob reference counting is not implemented for this disk transaction");
+    }
+
+    /// Decrement the reference count of a data blob; at zero the blob becomes eligible for removal.
+    virtual void decrementBlobRefCount(const std::string & /* blob */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Blob reference counting is not implemented for this disk transaction");
+    }
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

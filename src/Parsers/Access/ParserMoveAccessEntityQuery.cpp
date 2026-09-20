@@ -6,6 +6,8 @@
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/range.h>
 
 
@@ -44,12 +46,12 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!ParserKeyword{Keyword::MOVE}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type;
+    AccessEntityType type = {};
     if (!parseEntityType(pos, expected, type))
         return false;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     String storage_name;
     String cluster;
 
@@ -65,7 +67,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         parser.allowOnCluster();
         if (!parser.parse(pos, ast, expected))
             return false;
-        row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+        row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
         cluster = std::exchange(row_policy_names->cluster, "");
     }
     else
@@ -80,7 +82,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTMoveAccessEntityQuery>();
+    auto query = make_intrusive<ASTMoveAccessEntityQuery>();
     node = query;
 
     query->type = type;
@@ -91,4 +93,46 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     return true;
 }
+}
+
+namespace DB
+{
+
+void registerStatementMoveAccessEntity(StatementFactory & factory)
+{
+    factory.registerStatement("MOVE",
+    {
+        .description = R"DOCS_MD(
+This statement allows to move an access entity from one access storage to another.
+
+Syntax:
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+Currently, there are five access storages in ClickHouse:
+- `local_directory`
+- `memory`
+- `replicated`
+- `users_xml` (ro)
+- `ldap` (ro)
+
+Examples:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```
+)DOCS_MD",
+        .syntax = R"(
+MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
+)",
+        .related = {"CREATE USER", "CREATE ROLE", "SHOW"},
+    });
+}
+
 }

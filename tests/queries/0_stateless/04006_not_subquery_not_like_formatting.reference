@@ -1,0 +1,7 @@
+SELECT (NOT ((\n        SELECT 1\n    ))) NOT LIKE \'x\'
+SELECT (NOT ((\n        SELECT 1\n    ))) LIKE \'x\'
+SELECT (NOT ((\n        SELECT 1\n    ))) NOT ILIKE \'x\'
+SELECT (NOT ((\n        SELECT 1\n    ))) ILIKE \'x\'
+SELECT (NOT ((\n        SELECT 1\n    ))) IN (1, 2, 3)
+SELECT (NOT ((\n        SELECT 1\n    ))) NOT IN (1, 2, 3)
+SELECT (NOT ((\n        SELECT 1\n    ))) = 1

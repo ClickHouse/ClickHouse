@@ -1,0 +1,4 @@
+CREATE USER user_03822_default IDENTIFIED WITH no_password DEFAULT ROLE role_03822_default
+role_03822_default	0	1
+After revoke:
+CREATE USER user_03822_default IDENTIFIED WITH no_password DEFAULT ROLE NONE

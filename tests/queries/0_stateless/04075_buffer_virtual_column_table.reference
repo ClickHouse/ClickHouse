@@ -1,0 +1,16 @@
+buffer_virtual_dst
+buffer_virtual_dst
+buffer_virtual_buf
+buffer_virtual_buf
+a	buffer_virtual_dst
+b	buffer_virtual_dst
+c	buffer_virtual_buf
+d	buffer_virtual_buf
+a	1	buffer_virtual_dst
+b	2	buffer_virtual_dst
+c	3	buffer_virtual_buf
+d	4	buffer_virtual_buf
+buffer_no_dst
+buffer_no_dst
+x	buffer_no_dst
+y	buffer_no_dst

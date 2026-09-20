@@ -1,5 +1,6 @@
 set allow_suspicious_low_cardinality_types=1;
 set enable_analyzer=1;
+set optimize_trivial_insert_select=0;
 
 create table tab (x LowCardinality(Nullable(Float64))) engine = MergeTree order by x settings allow_nullable_key=1;
 insert into tab select number from numbers(2);

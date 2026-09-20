@@ -1,0 +1,10 @@
+CREATE TABLE default.t_21389_dst
+(
+    `rank` UInt32,
+    `domain` String,
+    `log` String CODEC(ZSTD(6)),
+    `content` String CODEC(ZSTD(6))
+)
+ENGINE = MergeTree
+ORDER BY domain
+SETTINGS max_compress_block_size = 65536, index_granularity = 8192

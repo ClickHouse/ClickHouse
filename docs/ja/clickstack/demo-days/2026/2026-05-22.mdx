@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: 'デモデイズ - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'ClickStack デモデイズ - 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="clickcannon-data-generation-update">
+  ## ClickCannon のデータ生成アップデート
+</div>
+
+*デモ: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) は、社内でサイジング検証に使っているツールです。大量の OpenTelemetry データを生成しつつ同時にクエリを発行し、特定の取り込み量とクエリワークロードに対して顧客に必要なリソースを見積もります。OpenHouse ではこれを一般公開として発表し、Spencer がその最新バージョンを紹介しました。
+
+これまではディスク上のデータを事前に用意する必要がありましたが、現在はジェネレーターをインラインで設定できるようになりました。有効化したうえで、スレッド数、1 block あたりの行数、全体の毎秒行数、さらにいくつかのメモリー制約を設定できます。まず 2 テラバイト分のテストデータをディスクに準備しておく必要がなくなり、以前はそれがこのツールを共有しにくい要因になっていました。
+
+今後は、独自のサイジング作業に向けて、より多くのユーザーに ClickCannon を案内していく予定です。リポジトリはこちらです: [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon)。
+
+<div id="date-input-for-full-screen-tiles-and-source-scoped-filters">
+  ## 全画面タイルとログソース単位フィルターの日付入力
+</div>
+
+*デモ: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="YouTube ビデオ プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+関連する2つのダッシュボード改善が同時に導入されました。単一のタイルを全画面表示すると、ダッシュボード全体の時間範囲とは独立した専用の時間ピッカーと粒度セレクターを使えるようになりました。これにより、1つの特定のメトリクス (たとえば ClickHouse クラスターのダッシュボード上の1つのグラフ) の長期間の履歴を詳しく見たい場合でも、ダッシュボード上の他のすべてのタイルを更新させずに済みます。さらに、ブラウザーのタブタイトルにダッシュボード名が表示されるようになりました。
+
+もう1つは、ダッシュボードフィルターのログソーススコープです。フィルターは、すべてのタイルにグローバルに適用するのではなく、特定のログソースに紐づくタイルにのみ配信されるよう制限できます。たとえば、ログとトレースを組み合わせた複数ログソースのダッシュボードでは、適用先ではないタイルにフィルターが及ばないようにできます。
+
+**関連PR:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: 軽微なダッシュボード改善, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: ダッシュボードフィルターにログソーススコープを追加
+
+<div id="text-index-recognised-on-lower-body">
+  ## `lower(Body)` のテキスト索引が認識されるようになりました
+</div>
+
+*デモ: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+小さな変更ですが、大文字・小文字を区別しない検索の正しさに関わる実際的な修正です。ログソースで `lower(Body)` に対してプリプロセッサ引数なしのテキスト索引を定義している場合、以前はクエリプランナーが `hasAllTokens(Body, ...)` という条件を生成していました。この式は索引式と一致しなかったため、テキスト索引は使用されず、クエリはスキャンにフォールバックしていました。
+
+現在は `hasAllTokens(lower(Body), ...)` としてクエリが生成されるため、索引式と一致します。このように設定されたログソースでは、大文字・小文字を区別しない検索がテキスト索引によって正しく高速化されるようになりました。
+
+**関連 PR:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: プリプロセッサなしの lower(Body) に対するテキスト索引をサポート
+
+<div id="simpler-event-deltas-experience">
+  ## よりシンプルなイベントデルタ体験
+</div>
+
+*デモ：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+イベントデルタでは、以前はひと手間余分に必要でした。ヒートマップ上で範囲をドラッグする前に、まずボタンをクリックして比較モードに入る必要がありました。現在はその手順がなくなり、読み込み直後から分布バーが表示されます。さらに、ヒートマップ上で領域をドラッグすると、バーはすぐに選択範囲と背景を比較するモードに切り替わります。選択範囲の外側をクリックすると、全スパン表示に戻ります。
+
+この変更自体は数週間前に OSS に取り込まれていましたが、その一部が Managed ClickStack には反映されていませんでした。現在はその差も解消され、よりシンプルな操作フローが両エディションで共通になっています。
+
+**関連PR:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: 属性の分布モードを常時有効化
+
+<div id="dashboard-table-of-contents-and-bulk-collapse">
+  ## ダッシュボードの目次と一括折りたたみ
+</div>
+
+*デモ: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードのセクションが数個を超えると (それ自体は望ましいことです。大規模なダッシュボードを整理するにはセクションが重要だからです) 、目的の場所へ移動しづらくなります。Tom は右側のレールに目次を追加し、すべてのセクションを一覧表示して、そこから直接ジャンプできるようにしました。さらに、一括で折りたたみ・展開できるコントロールも追加され、すべてのセクションの内容を一度に隠せるため、長いダッシュボード全体をスクロールしなくても構成を確認できます。
+
+まだドラフト段階ではありますが、ClickHouse クラスター ビューや Kubernetes ビュー向けに提供している複数セクションのダッシュボードですでに役立っています。
+
+**関連PR:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): 右側レールへの目次追加と一括折りたたみ/展開
+
+<div id="column-resize-persisted-across-sessions">
+  ## セッションをまたいでカラムのサイズ変更を保持
+</div>
+
+*[@teeohhem](https://github.com/teeohhem) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+昨日寄せられた顧客からの報告です。結果テーブルでカラム幅を変更したら、その設定が保持されるべきだというものでした。現在はそのとおりになっています。変更した幅はテーブル ID ごとにローカルストレージへ保存されるため、テーブルごとに独立したカラムレイアウトが維持されます。ブラウザーを閉じて後で戻ってきても、カラムは前回の状態のままです。さらに、テーブルにカラムを追加または削除しても、ほかのカラムの幅はリセットされません。
+
+**関連 PR:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) 修正: 検索結果テーブルでカラム幅を保持

@@ -33,7 +33,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
            ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
            ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
     FROM system.query_log
-    WHERE query_id='$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     ORDER BY query_start_time DESC
@@ -55,7 +55,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
            ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
            ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
     FROM system.query_log
-    WHERE query_id='$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     ORDER BY query_start_time DESC
@@ -77,7 +77,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
            ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
            ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
     FROM system.query_log
-    WHERE query_id='$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     ORDER BY query_start_time DESC
@@ -92,7 +92,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     TRUNCATE TABLE test_02226;
     SELECT count() FROM test_02226;
 
-    SYSTEM DROP FILESYSTEM CACHE;
+    SYSTEM CLEAR FILESYSTEM CACHE;
 
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """

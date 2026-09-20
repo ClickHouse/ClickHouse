@@ -125,6 +125,13 @@ public:
 
     virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
+    /// Whether updatePrewhereInfo() may be invoked more than once on this step.
+    /// The base implementation rebuilds the output header from the full sample block, so it is
+    /// idempotent. Format-based steps (file/url/object storage) shrink their header incrementally
+    /// and can only accept a single prewhere update, so they return false to opt out of the
+    /// optimize_prewhere_after_pushdown second pass.
+    virtual bool canUpdatePrewhereInfoMultipleTimes() const { return true; }
+
     void describeActions(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;

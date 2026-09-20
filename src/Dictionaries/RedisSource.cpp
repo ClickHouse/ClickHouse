@@ -1,6 +1,5 @@
 #include <Dictionaries/RedisSource.h>
 
-#include <vector>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -27,7 +26,7 @@ namespace DB
         const RedisStorageType & storage_type_,
         SharedHeader sample_block,
         size_t max_block_size_)
-        : ISource(sample_block)
+        : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
         , connection(std::move(connection_))
         , keys(keys_)
         , storage_type(storage_type_)
@@ -134,7 +133,7 @@ namespace DB
             {
                 ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
-                column_nullable.getNullMapData().emplace_back(0);
+                column_nullable.getNullMapData().emplace_back(false);
             }
             else
                 insertValue(*columns[idx], description.types[idx].first, value);

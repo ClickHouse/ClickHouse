@@ -1,0 +1,34 @@
+---
+date: 2023-06-07
+title: 为什么推荐使用 ClickHouse Keeper 而非 ZooKeeper？
+description: 相比 ZooKeeper，ClickHouse Keeper 在减少磁盘空间占用、加快恢复速度和降低内存消耗等方面都有改进，能为 ClickHouse 集群带来更好的性能。
+tags: ['核心数据概念']
+keywords: ['ClickHouse Keeper', 'ZooKeeper']
+---
+
+***
+
+<div id="question">
+  ## 问题
+</div>
+
+ClickHouse Keeper 为数据复制和分布式 DDL 查询的执行提供协调机制。ClickHouse Keeper 与 ZooKeeper 兼容，但你可能不太清楚为什么应使用 ClickHouse Keeper 而不是 ZooKeeper。本文将介绍 Keeper 的一些优势。
+
+<div id="answer">
+  ## 答案
+</div>
+
+[ClickHouse Cloud](https://console.clickhouse.cloud/) 在多租户环境中大规模使用 `clickhouse-keeper`，为数千个服务提供支持。我们设计并构建 Keeper，是为了摆脱对基于 Java 的 ZooKeeper 实现的依赖。ClickHouse Keeper 解决了 ZooKeeper 的许多已知缺陷，并进一步改进了以下方面：
+
+* 由于采用了更高效的压缩，快照和日志占用的磁盘空间大幅减少
+* 默认的数据包和节点数据大小没有限制 (ZooKeeper 中为 1 MB)
+* 不存在 `zxid` 溢出问题 (ZooKeeper 中每处理 20 亿个事务就会被迫重启一次)
+* 由于采用了更优的分布式共识协议，在发生网络分区后恢复更快
+* 在相同数据量下，内存占用更少
+* 更容易设置，且无需指定 JVM 堆大小或自定义垃圾回收实现
+* 协议中的一些自定义命令可让 `ReplicatedMergeTree` 表的操作更快
+* Jepsen 测试覆盖范围更广
+
+此外，ClickHouse Support 还观察到：与使用 ZooKeeper 的站点相比，使用 `clickhouse-keeper` 的站点集群问题明显减少。
+
+更多关于如何配置和运行 ClickHouse Keeper 的信息，请参阅 [Keeper 文档页面](/zh/guides/oss/deployment-and-scaling/keeper/index)。

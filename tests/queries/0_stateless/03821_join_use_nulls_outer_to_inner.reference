@@ -1,0 +1,35 @@
+a_3Nullable(UInt64)_2Nullable(Int64)
+a_3Nullable(UInt64)_3Nullable(Int64)
+a_3Nullable(UInt64)_4Nullable(Int64)
+Type: LEFT
+Type: INNER
+Prewhere filter column: greater(__table2.val, 1_UInt8) (removed)
+a_2Nullable(UInt64)_2Nullable(Int64)
+a_2Nullable(UInt64)_3Nullable(Int64)
+a_2Nullable(UInt64)_4Nullable(Int64)
+a_3Nullable(UInt64)_2Nullable(Int64)
+a_3Nullable(UInt64)_3Nullable(Int64)
+a_3Nullable(UInt64)_4Nullable(Int64)
+\N
+Type: LEFT
+Type: RIGHT
+Prewhere filter column: isNotNull(__table2.val) (removed)
+a_2Nullable(UInt64)_4Nullable(Int64)
+a_3Nullable(UInt64)_4Nullable(Int64)
+Type: INNER
+Type: RIGHT
+Prewhere filter column: isNotNull(__table2.val) (removed)
+Prewhere filter column: and(isNotNull(__table2.val), equals(__table3.val2, 3_UInt8)) (removed)
+a_3Nullable(UInt64)_2Nullable(Int64)
+a_3Nullable(UInt64)_3Nullable(Int64)
+a_3Nullable(UInt64)_4Nullable(Int64)
+\N
+\N
+Type: LEFT
+Type: FULL
+2
+a_2Nullable(UInt64)
+a_3Nullable(UInt64)
+a_2Nullable(UInt64)
+a_3Nullable(UInt64)
+OK

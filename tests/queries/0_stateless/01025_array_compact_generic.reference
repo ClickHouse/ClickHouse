@@ -1,6 +1,6 @@
 []
 [1,nan,2]
-[1,nan,nan,2]
+[1,nan,2]
 [1,NULL,2]
 [1,NULL,nan,2]
 ['hello','','world']

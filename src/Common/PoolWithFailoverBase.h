@@ -349,7 +349,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     std::erase_if(try_results, [&](const TryResult & r) { return isTryResultInvalid(r, skip_read_only_replicas); });
 
     /// Sort so that preferred items are near the beginning.
-    std::stable_sort(
+    ::stableSort(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {

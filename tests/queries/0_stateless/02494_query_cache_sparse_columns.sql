@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 
 DROP TABLE IF EXISTS t_cache_sparse;
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 CREATE TABLE t_cache_sparse (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id

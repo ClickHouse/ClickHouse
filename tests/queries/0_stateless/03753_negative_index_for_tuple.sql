@@ -1,8 +1,8 @@
 -- { echo }
 
 select (1, 2).-1, (1, 2).-2;
-select ().-1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
-select (1, 2, 3).-4; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+select ().-1; -- { serverError ARGUMENT_OUT_OF_BOUND }
+select (1, 2, 3).-4; -- { serverError ARGUMENT_OUT_OF_BOUND }
 select (1, 2).-1000000000000000000000000000000000000000000; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tupleElement((1, 'hello'), -10, 2);
 

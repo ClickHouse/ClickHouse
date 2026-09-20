@@ -8,7 +8,7 @@ FROM system.query_log
 WHERE query like '%SELECT ''SLEEP #1 TEST''%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 SELECT 'SLEEP #2 TEST', sleep(0.001) FROM numbers(2) FORMAT Null;
@@ -18,7 +18,7 @@ FROM system.query_log
 WHERE query like '%SELECT ''SLEEP #2 TEST''%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 SELECT 'SLEEP #3 TEST', sleepEachRow(0.001) FORMAT Null;
@@ -28,7 +28,7 @@ FROM system.query_log
 WHERE query like '%SELECT ''SLEEP #3 TEST''%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 SELECT 'SLEEP #4 TEST', sleepEachRow(0.001) FROM numbers(2) FORMAT Null;
@@ -38,7 +38,7 @@ FROM system.query_log
 WHERE query like '%SELECT ''SLEEP #4 TEST''%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 
@@ -49,7 +49,7 @@ FROM system.query_log
 WHERE query like '%CREATE VIEW sleep_view AS%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 SELECT 'SLEEP #6 TEST', sleepEachRow(0.001) FROM sleep_view LIMIT 10 FORMAT Null;
@@ -59,7 +59,7 @@ FROM system.query_log
 WHERE query like '%SELECT ''SLEEP #6 TEST''%'
   AND type > 1
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
     FORMAT JSONEachRow;
 
 DROP TABLE sleep_view;

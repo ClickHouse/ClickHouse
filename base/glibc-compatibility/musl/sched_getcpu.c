@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <sched.h>
+#include <stdint.h>
+#include <stddef.h>
 #include "syscall.h"
 #include "atomic.h"
 
@@ -28,11 +30,18 @@ static void *volatile vdso_func = (void *)getcpu_init;
 
 #endif
 
+extern int32_t rseq_cpu_id(void);
+
 int sched_getcpu(void)
 {
+	{
+		int32_t rseq_cpu = rseq_cpu_id();
+		if (rseq_cpu >= 0)
+			return rseq_cpu;
+	}
+
 	int r;
 	unsigned cpu = 0;
-
 #ifdef VDSO_GETCPU_SYM
 	getcpu_f f = (getcpu_f)vdso_func;
 	if (f) {
@@ -46,10 +55,10 @@ int sched_getcpu(void)
 	if (!r) {
 #if defined(__has_feature)
 #if __has_feature(memory_sanitizer)
-        __msan_unpoison(&cpu, sizeof(cpu));
+		__msan_unpoison(&cpu, sizeof(cpu));
 #endif
 #endif
-        return cpu;
-    }
+		return cpu;
+	}
 	return __syscall_ret(r);
 }

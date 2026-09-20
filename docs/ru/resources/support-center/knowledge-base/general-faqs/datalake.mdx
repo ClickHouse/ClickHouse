@@ -1,0 +1,17 @@
+---
+title: 'Поддерживает ли ClickHouse озера данных?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse поддерживает озера данных, включая Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive'
+doc_type: 'reference'
+keywords: ['озера данных', 'lakehouse']
+---
+
+ClickHouse поддерживает озера данных, включая Iceberg, Delta Lake, Apache Hudi, Apache Paimon и Hive.
+
+Поддерживаются **чтение** и **запись**, полная совместимость с отсечением партиций, отсечением на основе статистики, эволюцией схемы, positional deletes, equality deletes, time travel и introspection.
+
+Для озер данных в ClickHouse поддерживаются каталоги **Unity**, **AWS Glue**, **Rest**, **Polaris** и **Hive Metastore**, а также отдельные таблицы.
+
+Производительность запросов к озерам данных — на высочайшем уровне благодаря распределённой обработке, эффективному ридеру Parquet и кэшированию файлов данных.

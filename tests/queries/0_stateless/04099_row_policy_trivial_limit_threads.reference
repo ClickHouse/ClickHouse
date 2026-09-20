@@ -1,0 +1,22 @@
+no_row_policy
+  (Limit)
+  Limit
+    (ReadFromMergeTree)
+    Concat 4 → 1
+      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 4 0 → 1
+row_policy
+  (Limit)
+  Limit 4 → 4
+    (ReadFromMergeTree)
+    MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+row_policy_always_true
+  (Limit)
+  Limit
+    (ReadFromMergeTree)
+    Concat 4 → 1
+      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 4 0 → 1
+additional_filter
+  (Limit)
+  Limit 4 → 4
+      (ReadFromMergeTree)
+      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1

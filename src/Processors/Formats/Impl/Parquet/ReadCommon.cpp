@@ -10,7 +10,7 @@ SharedResourcesExt::Limits SharedResourcesExt::getLimitsPerReader(const FormatPa
 {
     const SharedResourcesExt & ext = *static_cast<const SharedResourcesExt *>(parser_shared_resources.opaque.get());
     size_t n = parser_shared_resources.num_streams.load(std::memory_order_relaxed);
-    fraction /= std::max(n, size_t(1));
+    fraction /= static_cast<double>(std::max(n, size_t(1)));
     return Limits {
         .memory_low_watermark = size_t(ext.total_memory_low_watermark * fraction),
         .memory_high_watermark = size_t(ext.total_memory_high_watermark * fraction),

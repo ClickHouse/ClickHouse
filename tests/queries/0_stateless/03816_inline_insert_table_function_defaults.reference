@@ -1,0 +1,11 @@
+-- remote() table function: explicit NULL -> DEFAULT, matches plain table
+7
+7
+-- file() CSV: explicit NULL -> DEFAULT (Int)
+4	77
+-- file() CSV: Nullable column keeps explicit NULL (null_as_default does not force default)
+4	\N
+-- file() CSV: explicit NULL -> DEFAULT (LowCardinality(String))
+1	x
+-- file() CSV: explicit NULL -> DEFAULT (Array(Int))
+1	[1,2]

@@ -4,28 +4,38 @@
 #include <algorithm>
 #include <utility>
 
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
 #include <Common/iota.h>
 
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
+/// Matches the `largestTriangleThreeBuckets` contract (its `MAX_ARRAY_SIZE`), so no state readable today is rejected.
+static constexpr size_t MAX_STATISTICS_STATE_SIZE = 1ULL << 30;
+
 /// Because ranks are adjusted, we have to store each of them in Float type.
-using RanksArray = std::vector<Float64>;
+using RanksArray = VectorWithMemoryTracking<Float64>;
 
 template <typename Values>
 std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values)
 {
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
-    std::vector<size_t> indexes(size);
+    VectorWithMemoryTracking<size_t> indexes(size);
     iota(indexes.data(), indexes.size(), size_t(0));
     std::sort(indexes.begin(), indexes.end(),
         [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
@@ -38,10 +48,10 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         size_t right = left;
         while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        auto adjusted = (left + right + 1.) / 2.;
+        auto adjusted = (static_cast<Float64>(left) + static_cast<Float64>(right) + 1.) / 2.;
         auto count_equal = right - left;
 
-        tie_numenator += std::pow(count_equal, 3) - count_equal;
+        tie_numenator += std::pow(count_equal, 3) - static_cast<Float64>(count_equal);
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
         left = right;
@@ -51,7 +61,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     Float64 tie_correction = 1.0;
     if (size > 1)
     {
-        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - size));
+        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - static_cast<Float64>(size)));
     }
 
     return {out, tie_correction};
@@ -106,14 +116,40 @@ struct StatisticalSample
         buf.write(reinterpret_cast<const char *>(y.data()), size_y * sizeof(y[0]));
     }
 
+    /// Grows `sample` by what the buffer already holds; `MixedAlignedArenaAllocator` reallocates and frees for real at these sizes.
+    template <typename Sample>
+    static void readSample(Sample & sample, size_t count, ReadBuffer & buf, Arena * arena)
+    {
+        using Element = typename Sample::value_type;
+
+        size_t bytes = 0;
+        if (common::mulOverflow(count, sizeof(Element), bytes))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
+
+        sample.clear();
+        while (sample.size() < count)
+        {
+            if (buf.eof())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.", sample.size() * sizeof(Element), bytes);
+
+            const size_t done = sample.size();
+            const size_t batch = std::min(count - done, std::max<size_t>(1, buf.available() / sizeof(Element)));
+            sample.resize(done + batch, arena);
+            buf.readStrict(reinterpret_cast<char *>(sample.data() + done), batch * sizeof(Element));
+        }
+    }
+
     void read(ReadBuffer & buf, Arena * arena)
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
-        x.resize(size_x, arena);
-        y.resize(size_y, arena);
-        buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
-        buf.readStrict(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
+        if (size_x > MAX_STATISTICS_STATE_SIZE || size_y > MAX_STATISTICS_STATE_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
+        readSample(x, size_x, buf, arena);
+        readSample(y, size_y, buf, arena);
     }
 };
 

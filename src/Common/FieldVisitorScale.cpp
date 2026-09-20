@@ -8,11 +8,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FieldVisitorScale::FieldVisitorScale(Int32 rhs_) : rhs(rhs_) {}
+FieldVisitorScale::FieldVisitorScale(Int64 rhs_) : rhs(rhs_) {}
 
-void FieldVisitorScale::operator() (Int64 & x) const { x *= rhs; }
-void FieldVisitorScale::operator() (UInt64 & x) const { x *= rhs; }
-void FieldVisitorScale::operator() (Float64 & x) const { x *= rhs; }
+// Multiply through unsigned to get well-defined wraparound (FillingRow::doLongJump relies on it to detect overflow).
+void FieldVisitorScale::operator() (Int64 & x) const { reinterpret_cast<UInt64 &>(x) *= static_cast<UInt64>(rhs); }
+void FieldVisitorScale::operator() (UInt64 & x) const { x *= static_cast<UInt64>(rhs); }
+void FieldVisitorScale::operator() (Float64 & x) const { x *= static_cast<Float64>(rhs); }
 void FieldVisitorScale::operator() (Null &) const { /*Do not scale anything*/ }
 
 void FieldVisitorScale::operator() (String &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Strings"); }

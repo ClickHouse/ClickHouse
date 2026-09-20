@@ -1,0 +1,115 @@
+<test>
+    <create_query>
+        CREATE TABLE short_agg_test (time DateTime, path String, hits UInt64) ENGINE = MergeTree ORDER BY (path, time)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO short_agg_test VALUES (now(), '', 0)
+    </fill_query>
+
+    <!-- 100 UNION ALL of short queries with GROUP BY + ORDER BY that return no rows.
+         Tests the overhead of pipeline construction (transforms, resize) when there is no data to process. -->
+    <query>
+        SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        UNION ALL SELECT time::Date AS d, sum(hits), count() FROM short_agg_test WHERE path = 'nonexistent' GROUP BY d ORDER BY d
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS short_agg_test</drop_query>
+</test>

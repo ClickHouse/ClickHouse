@@ -1,0 +1,10 @@
+before rename, count in dst	1
+before rename, deps of a	['mv']
+after rename, name exists for a	0
+after rename, deps of c	['mv']
+after rename, mv still exists	1
+after rename, mv as_select	SELECT id, key FROM default.a
+after rename, select * from mv reads dst	1	a-before
+after insert into c, count in dst	1
+after recreating a, deps of new a	[]
+after insert into recreated a, count in dst	1

@@ -1,0 +1,18 @@
+
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>POST</methods>
+            <url>/insert_rowbinary</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <!-- This query has intentional leading and trailing whitespace from XML indentation.
+                     The fix ensures this whitespace is trimmed and not interpreted as binary data. -->
+                <query>
+                    INSERT INTO test_table FORMAT RowBinary
+                </query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

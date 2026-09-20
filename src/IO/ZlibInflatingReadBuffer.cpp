@@ -67,6 +67,14 @@ bool ZlibInflatingReadBuffer::nextImpl()
             zstr.avail_in = static_cast<BufferSizeType>(std::min(
                 static_cast<UInt64>(in->buffer().end() - in->position()),
                 static_cast<UInt64>(max_buffer_size)));
+
+            /// If the inner stream is completely empty (e.g. a URL returned 404
+            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
+            if (!zstr.avail_in && in->eof() && zstr.total_in == 0)
+            {
+                eof_flag = true;
+                return false;
+            }
         }
 
         /// init output bytes (place, where decompressed data will be)

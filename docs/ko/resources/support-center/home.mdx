@@ -1,0 +1,32 @@
+---
+slug: support
+title: 지원 센터
+description: 'ClickHouse 지식 베이스를 살펴보고 검색하세요'
+keywords: ['지원', '지식 베이스', 'kb', '문서', 'FAQ']
+mode: 'custom'
+hideNext: true
+---
+
+import { KBExplorer } from '/snippets/ko/components/KBExplorer/KBExplorer.jsx'
+import { kbIndex } from '/snippets/ko/components/KBExplorer/kb-data.jsx'
+
+{/* 추천 문서 - 각 문서에는 문서 ID(knowledge-base 아래의 상대 경로, 확장자 없음)
+    및 배너 이미지가 있습니다(문서 제목이 이미지에 표시됩니다) */}
+
+export const featuredArticles = [
+  { id: 'cloud-services/aws-privatelink-setup-for-clickpipes' },
+  { id: 'tables-schema/schema-migration-tools' },
+  { id: 'data-management/read-consistency' }
+];
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+  </div>
+
+  {/* kbIndex는 생성된 kb-data.jsx에서 가져오며, featuredArticles는 수동으로 관리합니다. */}
+
+  <KBExplorer index={kbIndex} featured={featuredArticles} />
+</div>

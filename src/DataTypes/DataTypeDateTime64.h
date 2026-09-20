@@ -38,7 +38,7 @@ public:
     bool isSummable() const override { return false; }
 
 protected:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 std::string getDateTimeTimezone(const IDataType & data_type);

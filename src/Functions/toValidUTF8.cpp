@@ -1,9 +1,15 @@
+#include "config.h"
+
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
 
 #include <string_view>
 
@@ -35,6 +41,25 @@ struct ToValidUTF8Impl
 {
     static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
     {
+#if USE_SIMDUTF
+        /// Avoid runtime dispatch overhead on short strings.
+        static constexpr size_t SIMDUTF_MIN_SIZE = 128;
+        const size_t size = static_cast<size_t>(end - begin);
+        if (size >= SIMDUTF_MIN_SIZE)
+        {
+            const auto validation = simdutf::validate_utf8_with_errors(begin, size);
+            if (validation.error == simdutf::SUCCESS)
+            {
+                write_buffer.write(begin, size);
+                return;
+            }
+
+            if (validation.count != 0)
+                write_buffer.write(begin, validation.count);
+            begin += validation.count;
+        }
+#endif
+
         static constexpr std::string_view replacement = "\xEF\xBF\xBD";
 
         const char * p = begin;
@@ -177,10 +202,7 @@ When multiple consecutive invalid characters are found, they are collapsed into 
     {
         "Usage example",
         R"(SELECT toValidUTF8('\\x61\\xF0\\x80\\x80\\x80b'))",
-        R"(c
-┌─toValidUTF8('a����b')─┐
-│ a�b                   │
-└───────────────────────┘
+        R"(\\x61\\xF0\\x80\\x80\\x80b
         )"
     }
     };

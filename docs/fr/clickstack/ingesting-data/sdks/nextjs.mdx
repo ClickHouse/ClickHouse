@@ -1,0 +1,121 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nextjs
+description: 'SDK Next.js pour ClickStack - La stack d’observabilité ClickHouse'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'journalisation', 'intégration', 'supervision des applications']
+---
+
+ClickStack peut ingérer des traces OpenTelemetry natives à partir de vos
+[fonctions serverless Next.js](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
+avec Next 13.2 et versions ultérieures.
+
+Ce guide intègre :
+
+* **Logs de la console**
+* **Traces**
+
+<Note>
+  Si vous recherchez la session replay ou la supervision côté navigateur, installez plutôt l’[intégration Browser](/fr/clickstack/ingesting-data/sdks/browser).
+</Note>
+
+<div id="installing">
+  ## Installation
+</div>
+
+<div id="enable-instrumentation-hook">
+  ### Activer le hook d’instrumentation (obligatoire pour la v15 et les versions antérieures)
+</div>
+
+Pour commencer, vous devez activer le hook d’instrumentation de Next.js en définissant `experimental.instrumentationHook = true;` dans votre fichier `next.config.js`.
+
+**Exemple :**
+
+```javascript
+const nextConfig = {
+  experimental: {
+    instrumentationHook: true,
+  },
+  // Ignore otel pkgs warnings 
+  // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
+  webpack: (
+    config,
+    { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+  ) => {
+    if (isServer) {
+      config.ignoreWarnings = [{ module: /opentelemetry/ }];
+    }
+    return config;
+  },
+};
+
+module.exports = nextConfig;
+```
+
+<div id="install-sdk">
+  ### Installer le SDK OpenTelemetry de ClickHouse
+</div>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+<div id="create-instrumentation-files">
+  ### Créer les fichiers d’instrumentation
+</div>
+
+Créez un fichier nommé `instrumentation.ts` (ou `.js`) à la racine de votre projet Next.js avec le contenu suivant :
+
+```javascript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@hyperdx/node-opentelemetry');
+    init({
+      apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
+      service: '<MY_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      additionalInstrumentations: [], // optional, default: []
+    });
+  }
+}
+```
+
+Cela permettra à Next.js d’importer l’instrumentation OpenTelemetry pour chaque invocation d’une fonction serverless.
+
+<div id="configure-environment-variables">
+  ### Configurer les variables d&#39;environnement
+</div>
+
+Si vous envoyez des traces directement à ClickStack via OpenTelemetry, vous devrez démarrer votre serveur Next.js
+avec les variables d&#39;environnement suivantes afin d&#39;envoyer les spans vers l’OTel collector :
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```sh copy
+    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    npm run dev
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```sh copy
+    HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
+    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    npm run dev
+    ```
+  </Tab>
+</Tabs>
+
+Si vous effectuez le déploiement sur Vercel, assurez-vous que toutes les variables d&#39;environnement ci-dessus sont bien configurées
+pour votre déploiement.

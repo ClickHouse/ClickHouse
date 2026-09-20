@@ -1,0 +1,47 @@
+---
+title: Opções de integração direta para observabilidade
+---
+
+<div id="direct-grafana">
+  ### Integração direta com o plugin do Grafana
+</div>
+
+O plugin de fonte de dados do ClickHouse para Grafana permite visualizar e explorar dados diretamente no ClickHouse usando tabelas de sistema. Essa abordagem funciona bem para monitorar o desempenho e criar dashboards personalizados para análises detalhadas do sistema.
+Para detalhes sobre a instalação e a configuração do plugin, consulte o [plugin de fonte de dados](/pt-BR/integrations/connectors/data-visualization/grafana/index) do ClickHouse. Para uma configuração completa de monitoramento usando o mix-in Prometheus-Grafana com dashboards pré-configurados e regras de alerta, consulte [Monitor ClickHouse with the new Prometheus-Grafana mix-in](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in).
+
+<div id="direct-datadog">
+  ### Integração direta com o Datadog
+</div>
+
+O Datadog oferece um plugin de monitoramento do ClickHouse para seu agente, que consulta tabelas de sistema diretamente. Essa integração fornece monitoramento abrangente do banco de dados com reconhecimento do cluster por meio da funcionalidade clusterAllReplicas.
+
+<Note>
+  Essa integração não é recomendada para implantações no ClickHouse Cloud devido à incompatibilidade com o comportamento de inatividade usado para otimizar custos e às limitações operacionais da camada de proxy da Cloud.
+</Note>
+
+<div id="system-tables">
+  ### Usando tabelas de sistema diretamente
+</div>
+
+Você pode realizar uma análise aprofundada do desempenho de consultas conectando-se às tabelas de sistema do ClickHouse, especialmente à `system.query_log`, e consultando-as diretamente. Usando o Console SQL ou o clickhouse client, as equipes podem identificar consultas lentas, analisar o uso de recursos e acompanhar padrões de uso em toda a organização.
+
+**Análise de desempenho de consultas**
+
+Você pode usar os logs de consulta da tabela de sistema para realizar uma análise de desempenho de consultas.
+
+**Consulta de exemplo**: encontre as 5 consultas com maior tempo de execução em todas as réplicas do cluster:
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

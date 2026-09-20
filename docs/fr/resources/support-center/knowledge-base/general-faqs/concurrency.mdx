@@ -1,0 +1,15 @@
+---
+title: 'ClickHouse prend-il en charge un grand nombre de requêtes simultanées ?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/concurrency
+description: 'ClickHouse prend en charge un QPS élevé et une forte concurrence'
+doc_type: 'reference'
+keywords: ['concurrency', 'QPS']
+---
+
+ClickHouse est conçu pour les applications analytiques en temps réel capables de servir directement des utilisateurs externes. Il peut traiter des requêtes analytiques avec une faible latence (moins de 10 millisecondes) et une forte concurrence (plus de 10 000 requêtes par seconde) sur des bases de données à l’échelle du pétaoctet, en combinant données historiques et insertions en temps réel.
+
+Cela est possible grâce à une structure d’indexation efficace, à une mise en cache flexible et à des fonctionnalités telles que les projections et les vues matérialisées.
+
+Le contrôle d’accès basé sur les rôles intégré, les quotas d’utilisation des ressources, les garde-fous configurables sur la complexité des requêtes et le planificateur de charge de travail font de ClickHouse une couche de service idéale pour les données analytiques.

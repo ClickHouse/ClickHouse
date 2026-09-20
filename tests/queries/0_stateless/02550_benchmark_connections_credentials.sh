@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-llvm-coverage
 # - no-fasttest: require SSL
+# - no-llvm-coverage: flaky under coverage instrumentation, clickhouse-benchmark
+#   can finish before the slow server emits the expected error text, causing
+#   missing lines in the captured output (e.g. "MySQL: Authentication failed").
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -116,7 +119,7 @@ $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT * FROM one" --config $CONFIG --connec
 echo 'user'
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_user |& grep -m1 -F -o 'MySQL: Authentication failed'
 echo 'password'
-$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_password |& grep -m1 -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG --connection test_password |& grep -m1 -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name'
 
 # Just in case
 unset CLICKHOUSE_USER
@@ -126,6 +129,6 @@ echo 'root overrides (not supported)'
 # this ignores default values in config and only uses values from incorrect_auth connection, so it works correctly
 $CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth |& grep -F -e Exception
 # this one due to override explicitly via cli args, fails due to foo2 user does not exist
-$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG_ROOT_OVERRIDES --connection default --user foo2 |& grep -m1 -F -o 'foo2: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_BENCHMARK -i 1 --query "SELECT 1" --config $CONFIG_ROOT_OVERRIDES --connection default --user foo2 |& grep -m1 -F -o 'foo2: Authentication failed: password is incorrect, or there is no user with such name'
 
 rm -f "${CONFIG:?}"

@@ -37,10 +37,12 @@ public:
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
-        bool lazy_initialize)
+        bool lazy_initialize,
+        const String & disk_name_ = {})
         : HDFSErrorWrapper(hdfs_root_path_, config_)
         , config(config_)
         , settings(std::move(settings_))
+        , disk_name(disk_name_)
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
         const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
@@ -55,7 +57,9 @@ public:
             initializeHDFSFS();
     }
 
-    std::string getName() const override { return "HDFSObjectStorage"; }
+    std::string getName() const override { return "HDFS"; }
+
+    std::string getDiskName() const override { return disk_name; }
 
     std::string getCommonKeyPrefix() const override { return url; }
 
@@ -68,7 +72,9 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -80,13 +86,22 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    void copyObject( /// NOLINT
+    /// Build the `ObjectMetadata` for an HDFS file from the only fields `hdfsFileInfo`
+    /// exposes: the modification time (in seconds) and the size. The synthesised etag is
+    /// always marked non-strong (`ObjectMetadata::etag_is_strong = false`), so it powers
+    /// the `_etag` virtual column but is never used as a content-cache key. Exposed (and
+    /// `static`) so this contract can be unit-tested without a live NameNode.
+    static ObjectMetadata makeObjectMetadata(Int64 last_modified, Int64 size);
+
+    String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -109,6 +124,8 @@ private:
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
 
+    static std::string makeETag(Int64 last_modified, Int64 size);
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object);
 
@@ -122,6 +139,7 @@ private:
     mutable std::atomic_bool initialized{false};
 
     SettingsPtr settings;
+    std::string disk_name;
     std::string url;
     std::string url_without_path;
     std::string data_directory;

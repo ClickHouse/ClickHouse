@@ -118,7 +118,7 @@ def test_DROP_DNS_CACHE(started_cluster):
         privileged=True,
         user="root",
     )
-    instance.query("SYSTEM DROP DNS CACHE")
+    instance.query("SYSTEM CLEAR DNS CACHE")
 
     with pytest.raises(QueryRuntimeException):
         instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
@@ -143,7 +143,7 @@ def test_DROP_DNS_CACHE(started_cluster):
         privileged=True,
         user="root",
     )
-    instance.query("SYSTEM DROP DNS CACHE")
+    instance.query("SYSTEM CLEAR DNS CACHE")
 
     instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
     instance.query("SELECT * FROM distributed_lost_host")

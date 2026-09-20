@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['政府', 'fips', 'fedramp', '政府向けクラウド']
+description: 'ClickHouse Government の提供内容の概要'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse Government は、ClickHouse Cloud で稼働しているものと同じプロプライエタリ版の ClickHouse と ClickHouse Operator で構成されるセルフデプロイ型パッケージです。コンピュートとストレージの分離に対応するよう構成されており、政府機関や公共部門の組織に求められる厳格な要件を満たせるよう強化されています。
+
+<Info>
+  **注**
+
+  ClickHouse Government は、政府機関、公共部門の組織、またはそうした機関・組織向けにサービスを提供するクラウドソフトウェア企業向けに設計されており、専用インフラストラクチャを全面的に制御・管理できます。最小デプロイメントサイズは 2 TB です。このオプションは、[お問い合わせ](https://clickhouse.com/government)いただいた場合にのみご利用いただけます。
+</Info>
+
+<div id="benefits-over-os">
+  ## オープンソース版に対する利点
+</div>
+
+以下の機能により、ClickHouse Government はセルフマネージドのオープンソースデプロイメントとの差別化を図っています。
+
+* コンピュートとストレージのネイティブな分離
+* [shared merge tree](/ja/products/cloud/features/infrastructure/shared-merge-tree) や [warehouse](/ja/products/cloud/features/infrastructure/warehouses) などの Cloud 独自機能
+* ClickHouse Cloud で十分にテストおよび検証された ClickHouse データベースと ClickHouse Operator のバージョン
+* 運用認可 (ATO) の取得を迅速化するための [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) ドキュメント
+* バックアップやスケーリングなどの運用をプログラムで実行するための API
+
+<div id="architecture">
+  ## アーキテクチャ
+</div>
+
+ClickHouse Government はお客様のデプロイ環境内で完全に自己完結しており、当社のクラウドネイティブなコンピュートとストレージの分離アーキテクチャを提供します。
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Government アーキテクチャ" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## サポートされている構成
+</div>
+
+ClickHouse Government は現在、以下の構成でサポートされています。
+
+| 環境  | オーケストレーション                       | ストレージ                       | ステータス |
+| :-- | :------------------------------- | :-------------------------- | :---- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 利用可能  |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | プレビュー |
+
+<div id="onboarding-process">
+  ## オンボーディングプロセス
+</div>
+
+お客様は、[お問い合わせ](https://clickhouse.com/company/contact?loc=nav)から、ご利用のユースケースに ClickHouse Government が適しているかを確認するための打ち合わせを依頼できます。最小規模要件を満たし、サポート対象の構成にデプロイされるユースケースが審査対象となります。オンボーディングには制限があります。インストールプロセスでは、AWS ECR からダウンロードしたイメージと Helm チャートを使用して ClickHouse をデプロイする対象環境向けのインストールガイドに従います。

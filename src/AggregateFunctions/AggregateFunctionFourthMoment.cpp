@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T> using AggregateFunctionFourthMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 4>>;
 
+void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_samp = R"(
@@ -18,7 +19,7 @@ It represents an unbiased estimate of the kurtosis of a random variable if passe
 kurtSamp(expr)
     )";
     FunctionDocumentation::Arguments arguments_samp = {
-        {"expr", "[Expression](/sql-reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "[Expression](/reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value_samp = {"Returns the kurtosis of the given distribution. If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.", {"Float64"}};
@@ -42,7 +43,7 @@ SELECT kurtSamp(x) FROM test_data;
     FunctionDocumentation::Category category_samp = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_samp = {description_samp, syntax_samp, arguments_samp, {}, returned_value_samp, examples_samp, introduced_in_samp, category_samp};
 
-    factory.registerFunction("kurtSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtSamp>, {}, documentation_samp});
+    factory.registerFunction("kurtSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtSamp>, documentation_samp});
 
     FunctionDocumentation::Description description = R"(
 Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
@@ -51,7 +52,7 @@ Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 kurtPop(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "[Expression](/sql-reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "[Expression](/reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the kurtosis of the given distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -74,7 +75,7 @@ SELECT kurtPop(x) FROM test_data;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("kurtPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtPop>, {}, documentation});
+    factory.registerFunction("kurtPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtPop>, documentation});
 }
 
 }

@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'MinIO'
+slug: /integrations/minio
+description: 'Página que describe cómo usar MinIO con ClickHouse'
+title: 'Cómo usar MinIO'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+keywords: ['s3', 'minio', 'almacenamiento de objetos', 'carga de datos', 'almacenamiento compatible']
+---
+
+import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+Todas las funciones y tablas de S3 son compatibles con [MinIO](https://min.io/). Puede obtener un mayor rendimiento en implementaciones autogestionadas de MinIO, especialmente si la proximidad de red es óptima.
+
+La configuración de MergeTree con respaldo también es compatible, con algunos cambios menores de configuración:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://min.io/tables//</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  Observa la doble barra en la etiqueta endpoint; es necesaria para indicar la raíz del bucket.
+</Tip>

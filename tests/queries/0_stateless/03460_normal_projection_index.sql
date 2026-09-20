@@ -1,5 +1,8 @@
+SET explain_query_plan_default = 'legacy';
 -- { echo ON }
 
+SET optimize_use_projections = 1;
+SET optimize_use_projection_filtering = 1;
 SET enable_analyzer = 1;
 -- enable projection for parallel replicas
 SET parallel_replicas_local_plan = 1;

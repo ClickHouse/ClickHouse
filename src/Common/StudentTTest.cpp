@@ -34,9 +34,12 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
 
     double table_value = impl::students_table[degrees_of_freedom > 100 ? 0 : degrees_of_freedom][confidence_level_index];
 
-    double pooled_standard_deviation = sqrt(((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var()) / degrees_of_freedom);
+    double pooled_standard_deviation = sqrt(
+        (static_cast<double>(data[0].size - 1) * data[0].var() + static_cast<double>(data[1].size - 1) * data[1].var())
+        / static_cast<double>(degrees_of_freedom));
 
-    double t_statistic = pooled_standard_deviation * sqrt(1.0 / data[0].size + 1.0 / data[1].size);
+    double t_statistic
+        = pooled_standard_deviation * sqrt(1.0 / static_cast<double>(data[0].size) + 1.0 / static_cast<double>(data[1].size));
 
     double mean_difference = fabs(data[0].avg() - data[1].avg());
 

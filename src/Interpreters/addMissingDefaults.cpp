@@ -4,6 +4,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
@@ -19,28 +20,34 @@ ActionsDAG addMissingDefaults(
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
     ContextPtr context,
-    bool null_as_default)
+    bool null_as_default,
+    bool share_nested_offsets)
 {
     ActionsDAG actions(header.getColumnsWithTypeAndName());
     auto & index = actions.getOutputs();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
+    /// When share_nested_offsets is disabled, sibling Array columns are independent
+    /// and missing ones should be filled with empty arrays, not replicated from siblings.
     std::map<String, ActionsDAG::NodeRawConstPtrs> nested_groups;
 
-    for (size_t i = 0, size = header.columns(); i < size; ++i)
+    if (share_nested_offsets)
     {
-        const auto & elem = header.getByPosition(i);
-
-        if (typeid_cast<const ColumnArray *>(&*elem.column))
+        for (size_t i = 0, size = header.columns(); i < size; ++i)
         {
-            String offsets_name = Nested::extractTableName(elem.name);
+            const auto & elem = header.getByPosition(i);
 
-            auto & group = nested_groups[offsets_name];
-            if (group.empty())
-                group.push_back(nullptr);
+            if (typeid_cast<const ColumnArray *>(&*elem.column))
+            {
+                String offsets_name = Nested::extractTableName(elem.name);
 
-            group.push_back(actions.getInputs()[i]);
+                auto & group = nested_groups[offsets_name];
+                if (group.empty())
+                    group.push_back(nullptr);
+
+                group.push_back(actions.getInputs()[i]);
+            }
         }
     }
 
@@ -61,8 +68,8 @@ ActionsDAG addMissingDefaults(
         if (array_type && nested_groups.contains(offsets_name))
         {
             const auto & nested_type = array_type->getNestedType();
-            ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
-            const auto & constant = actions.addColumn({nested_column, nested_type, column.name});
+            auto nested_column = nested_type->createColumnConstWithDefaultValue(0);
+            const auto & constant = actions.addColumn(std::move(nested_column), nested_type, column.name);
 
             auto & group = nested_groups[offsets_name];
             group[0] = &constant;
@@ -75,7 +82,7 @@ ActionsDAG addMissingDefaults(
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * col = &actions.addColumn({new_column, column.type, column.name});
+        const auto * col = &actions.addColumn(std::move(new_column), column.type, column.name);
         index.push_back(&actions.materializeNode(*col));
     }
 

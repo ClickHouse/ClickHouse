@@ -2,8 +2,11 @@
  * Name mangling for public symbols is controlled by --with-mangling and
  * --with-jemalloc-prefix.  With default settings the je_ prefix is stripped by
  * these macro definitions.
+ *
+ * When JEMALLOC_PREFIX is defined (i.e. jemalloc is built with je_ prefix),
+ * no renaming is needed — je_malloc IS the canonical symbol name.
  */
-#ifndef JEMALLOC_NO_RENAME
+#if !defined(JEMALLOC_NO_RENAME) && !defined(JEMALLOC_PREFIX)
 #  define je_aligned_alloc aligned_alloc
 #  define je_calloc calloc
 #  define je_dallocx dallocx

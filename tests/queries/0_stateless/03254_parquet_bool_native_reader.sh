@@ -17,5 +17,4 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/nullbool.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
-${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id SETTINGS input_format_parquet_use_native_reader=false;"
-${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id SETTINGS input_format_parquet_use_native_reader=true;"
+${CLICKHOUSE_CLIENT} --query="select id, bool from file('${DATA_FILE_USER_PATH}', Parquet) order by id;"

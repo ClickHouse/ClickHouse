@@ -3,6 +3,7 @@
 
 set allow_experimental_dynamic_type = 1;
 set max_block_size = 1000;
+set optimize_trivial_insert_select = 0;
 
 drop table if exists test;
 

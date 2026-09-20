@@ -7,7 +7,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <memory>
 
@@ -47,7 +46,7 @@ struct RadixSortFloatTransform
 
     static KeyBits forward(KeyBits x)
     {
-        return x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)));
+        return static_cast<KeyBits>(x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1))));
     }
 
     static KeyBits backward(KeyBits x)
@@ -243,7 +242,7 @@ private:
         {
             if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
-                Element * j;
+                Element * j = nullptr;
                 Element tmp = *i;
                 *i = *(i - 1);
                 for (j = i - 1; j > arr && Traits::less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)
@@ -279,7 +278,7 @@ private:
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
 
             for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+                ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
         }
 
         {
@@ -314,7 +313,7 @@ private:
                     size_t positions[UNROLL_DISTANCE];
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                        positions[p] = extractPart(pass, reader[i + p]);
+                        positions[p] = static_cast<size_t>(extractPart(pass, reader[i + p]));
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
                     {
@@ -335,7 +334,7 @@ private:
             for (; i < size; i++)
             {
                 auto element = reader[i];
-                size_t pos = extractPart(pass, element);
+                auto pos = static_cast<size_t>(extractPart(pass, element));
 
                 if constexpr (SOFTWARE_PREFETCH)
                 {
@@ -343,7 +342,7 @@ private:
                     /// when we actually need it. This depends on CPU and memory subsystem.
                     if (i + PREFETCH_DISTANCE < size) [[likely]]
                     {
-                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                         __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                     }
                 }
@@ -370,12 +369,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size) [[likely]]
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }
@@ -388,12 +387,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size)
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }
@@ -494,7 +493,7 @@ private:
 
         for (ssize_t i = 0; /* guarded by 'finish' */; ++i)
         {
-            assert(i < buckets_for_recursion);
+            chassert(i < buckets_for_recursion);
 
             /// We look at i-1th index, because bucket pointers are shifted right on every loop iteration,
             ///  and all buckets before i was completely shifted to the beginning of the next bucket.
@@ -511,7 +510,7 @@ private:
                 if (tag != KeyBits(i))
                 {
                     /// Invariant: tag > i, because the elements with less tags are already at the right places.
-                    assert(tag > KeyBits(i));
+                    chassert(tag > KeyBits(i));
 
                     /// While the tag (digit) of the element is not that we need,
                     /// swap the element with the next element in the bucket for that tag.

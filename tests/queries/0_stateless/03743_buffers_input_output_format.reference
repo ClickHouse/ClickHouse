@@ -1,9 +1,9 @@
 Simple Table
-62a8c4dbc0018c44b25de3417cac6ad7
+78eb001e49242f8d06dbae8dd000aaf9
 1	10	0.5
 2	-20	-1.25
 3	0	42
-62a8c4dbc0018c44b25de3417cac6ad7
+78eb001e49242f8d06dbae8dd000aaf9
 1	10	0.5
 2	-20	-1.25
 3	0	42
@@ -33,25 +33,25 @@ Buffers via file() source and INSERT
 8	name_8
 9	name_9
 JSON, Variant, Dynamic
-eb7dcb1cf18f876189baf7dd7954aca6
+9da23da0fd661fb07f68b73441470192
 {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
 {"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
 {"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]
-eb7dcb1cf18f876189baf7dd7954aca6
+9da23da0fd661fb07f68b73441470192
 {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
 {"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
 {"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]
 3	85	6	2	42	6	['Array(UInt64)','String','UInt64']	42	6	['Array(Int64)','Int64','String']	[{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))'},{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))','d':'Date'},{'a.b':'UInt32','d':'Date','f':'String'}]
 3	85	6	2	42	6	['Array(UInt64)','String','UInt64']	42	6	['Array(Int64)','Int64','String']	[{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))'},{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))','d':'Date'},{'a.b':'UInt32','d':'Date','f':'String'}]
 LowCardinality / Nullable / Array
-fae661fe9b092474922100b7e0fb43d0
-fae661fe9b092474922100b7e0fb43d0
+537b0dfdb0e30ccdb3b78ef23db4a873
+537b0dfdb0e30ccdb3b78ef23db4a873
 3	['a','b']	1	[['a','c'],['b','c'],['a','b']]
 Decimal / Date / DateTime64
-36a884b74399ccc46a7b3888e6fbd1d2
-36a884b74399ccc46a7b3888e6fbd1d2
+031b06d2585adeceb93eaa7def6acb07
+031b06d2585adeceb93eaa7def6acb07
 3	115.956	43.424244	2025-01-01	2025-01-03	2025-01-01 00:00:00.123	2025-01-03 23:59:59.000
 Nested / Map-like
-c34deb3b4b3883257dde108350eb4b60
-c34deb3b4b3883257dde108350eb4b60
+0d574ad397d24c6473e02c3a512e9a43
+0d574ad397d24c6473e02c3a512e9a43
 2	[[1,2],[3]]	[['a','b'],['c']]	10	25	7

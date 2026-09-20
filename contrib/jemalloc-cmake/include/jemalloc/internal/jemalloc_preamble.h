@@ -229,7 +229,7 @@ static const bool config_enable_cxx =
 #endif
 ;
 
-#if defined(_WIN32) || defined(JEMALLOC_HAVE_SCHED_GETCPU)
+#if defined(_WIN32) || defined(__APPLE__) || defined(JEMALLOC_HAVE_SCHED_GETCPU)
 /* Currently percpu_arena depends on sched_getcpu. */
 #define JEMALLOC_PERCPU_ARENA
 #endif

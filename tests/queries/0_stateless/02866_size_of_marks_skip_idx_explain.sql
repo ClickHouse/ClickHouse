@@ -1,10 +1,13 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- no-parallel-replicas - because explain produced different plan
+
 
 SET optimize_move_to_prewhere = 1;
 SET convert_query_to_cnf = 0;
 SET optimize_read_in_order = 1;
 
 SET enable_analyzer = 1; -- slightly different operator names than w/o
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_skip_idx;
 

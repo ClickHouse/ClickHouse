@@ -1,0 +1,63 @@
+---
+slug: /integrations/integration-development/testing-your-integration
+sidebarTitle: '测试你的集成'
+title: '测试你的 ClickHouse 集成'
+description: '面向 ClickHouse Cloud 和自托管开源版本集成的入门级验证矩阵。'
+keywords: ['合作伙伴', '集成', '测试', '验证', '示例数据集', 'ClickHouse Cloud', '开源']
+doc_type: 'guide'
+---
+
+在提交审核之前，请针对 ClickHouse 的两种部署模式，以及能以足够规模有效检验 ClickHouse 类型系统的数据集，对你的集成进行验证。本页定义了入门级标准下“已测试”的含义。正式验证属于单独的流程，适用于要晋升到更高合作伙伴层级的合作伙伴。
+
+有关摄取路径和使用路径，请参阅 [构建集成](/zh/resources/develop-contribute/integrations/building-integrations)；有关如何发布结果，请参阅 [为你的集成编写文档](/zh/resources/develop-contribute/integrations/documenting-your-integration)。
+
+<div id="test-matrix">
+  ## 测试矩阵
+</div>
+
+覆盖两种部署模式。大多数客户通常只运行其中一种，而且在某些方面 (身份验证、网络、可用功能) 会存在差异。
+
+* **ClickHouse Cloud：**注册[免费试用](https://clickhouse.com/cloud)。Development 层级无需提供信用卡
+* **自托管 (开源) ：**使用 [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases) 中最新的稳定版本。[安装指南](/zh/get-started/setup/install) 是借助 Docker 获取本地实例的最快方式
+
+针对这两种模式都进行测试，并在集成页面中记录任何功能缺口。
+
+<div id="what-to-test">
+  ## 测试内容
+</div>
+
+**功能正确性。** 覆盖你的集成暴露出的每一条代码路径：摄取、查询、schema 发现、错误处理以及重新连接。如果你的产品会向终端用户暴露 SQL，请确认 UI 生成的查询能够完整往返且不出问题。
+
+**类型系统覆盖。** ClickHouse 支持数组、元组、Map、JSON、Nested、LowCardinality、Decimal、Date 和 DateTime 变体、UUID、IPv4 和 IPv6、枚举以及聚合函数类型。集成通常会在嵌套数组、深度嵌套元组和 JSON 列上遇到问题。你的客户端库和 UI 应当能够妥善处理这些情况；至少也要返回可读的错误信息，而不是静默截断或错误渲染。
+
+**规模。** 按照客户实际会运行的结果集大小和行数进行测试。对于面向用户的 BI，这通常意味着包含数亿到数十亿行的表，以及从单个聚合结果到数万行不等的结果集。不受限制的读取 (`SELECT *`) 应当以可预期的方式失败或进行分页，而不是卡住。
+
+**身份验证。** 至少验证一种启用 TLS 的连接。如果你暴露了身份验证配置，请测试文档中列出的每一种模式 (通过 TLS 使用用户名和密码、mTLS、SSL 客户端证书) 。
+
+**连接生命周期。** 确认在连接中断、服务器重启和慢查询情况下，系统行为仍然合理。许多问题处理最终都可追溯到连接处理，而不是查询语义本身。
+
+<div id="recommended-example-datasets">
+  ## 推荐的示例数据集
+</div>
+
+完整集合见 [**示例数据集**](/zh/get-started/sample-datasets/index) 部分。以下四个数据集涵盖了大多数集成测试需求：
+
+* **[GitHub events](/zh/get-started/sample-datasets/github-events)：** 31 亿行，包含嵌套事件载荷。最适合用于测试 数组、元组 和嵌套类型
+* **[NYC taxi data](/zh/get-started/sample-datasets/nyc-taxi)：** 数十亿行，schema 广为人知。适合用于吞吐量和读路径测试
+* **[Stack Overflow](/zh/get-started/sample-datasets/stackoverflow)：** 多表关系型数据，适用于以 JOIN 为主的 BI 场景
+* **[Hacker News](/zh/get-started/sample-datasets/hacker-news)：** 2800 万行，加载速度快，适合快速迭代
+
+如需验证极大规模场景，请使用 **[WikiStat](/zh/get-started/sample-datasets/wikistat)** (约 0.5 万亿条记录) 。
+
+<div id="what-to-capture-from-your-testing">
+  ## 测试中需提供的内容
+</div>
+
+提交集成以供审核时，请提供：
+
+* 已测试的 ClickHouse 版本 (Cloud 和 open source)
+* 数据集及其大致规模 (行数、磁盘占用大小)
+* 你的集成支持和不支持的类型 (这会成为文档中的 **Known limits** 部分)
+* 需要特别说明的性能特征，例如会导致行为变化的结果集阈值
+
+一份简短的测试报告可以减少审核轮次。一个段落加一张表就足够了。

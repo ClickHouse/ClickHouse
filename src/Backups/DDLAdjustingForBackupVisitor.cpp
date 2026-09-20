@@ -1,5 +1,6 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -65,6 +66,7 @@ namespace
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
+                engine.setNoEmptyArgs(true);
             }
         }
     }

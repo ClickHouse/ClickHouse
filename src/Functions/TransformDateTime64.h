@@ -124,7 +124,13 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// Round towards negative infinity, same as in `execute`. Without this a value in the last
+            /// fractional second before a day boundary is attributed to the next day, which disagrees
+            /// with `execute` and breaks monotonicity analysis that compares factors across both paths.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
+
             return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }

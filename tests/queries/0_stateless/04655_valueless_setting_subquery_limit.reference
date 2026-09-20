@@ -1,0 +1,21 @@
+-- The shorthand is rejected for the `limit` setting of a top-level query
+ok
+-- And for `offset`
+ok
+-- The same inside a subquery, where nothing has checked the clause before the analyzer
+ok
+-- And with `offset` inside a subquery
+ok
+-- A shorthand for some other non-Bool setting in a subquery is rejected as well
+ok
+-- With a value, `limit` and `offset` still work in both positions
+1
+2
+3
+1
+2
+3
+ok
+-- A Bool setting written as a shorthand in a subquery is accepted
+1
+ok

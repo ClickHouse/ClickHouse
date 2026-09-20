@@ -1,5 +1,6 @@
-#include <Dictionaries/DictionarySource.h>
+#include <Core/NamesAndTypes.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/DictionarySource.h>
 #include <Processors/ISource.h>
 
 
@@ -29,18 +30,19 @@ private:
         ColumnsWithTypeAndName key_columns_to_read;
         ColumnsWithTypeAndName data_columns;
 
-        if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns))
+        size_t block_number = 0;
+        if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns, block_number))
             return {};
 
         const auto & header = coordinator->getHeader();
 
-        std::vector<ColumnPtr> key_columns;
-        std::vector<DataTypePtr> key_types;
+        Columns key_columns;
+        DataTypes key_types;
 
         key_columns.reserve(key_columns_to_read.size());
         key_types.reserve(key_columns_to_read.size());
 
-        std::unordered_map<std::string_view, ColumnPtr> name_to_column;
+        UnorderedMapWithMemoryTracking<std::string_view, ColumnPtr> name_to_column;
 
         for (const auto & key_column_to_read : key_columns_to_read)
         {
@@ -75,7 +77,7 @@ private:
             name_to_column.emplace(attribute_name, attributes_columns[i]);
         }
 
-        std::vector<ColumnPtr> result_columns;
+        Columns result_columns;
         result_columns.reserve(header->columns());
 
         for (const auto & column_with_type : *header)
@@ -89,15 +91,18 @@ private:
         }
 
         size_t rows_size = result_columns[0]->size();
-        return Chunk(result_columns, rows_size);
+        Chunk chunk(result_columns, rows_size);
+        chunk.getChunkInfos().add(std::make_shared<DictionaryBlockNumber>(block_number));
+        return chunk;
     }
 
     std::shared_ptr<DictionarySourceCoordinator> coordinator;
 };
 
-bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
+bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns, size_t & block_number)
 {
     size_t read_block_index = parallel_read_block_index++;
+    block_number = read_block_index;
 
     size_t start = max_block_size * read_block_index;
     size_t end = max_block_size * (read_block_index + 1);
@@ -199,6 +204,15 @@ DictionarySourceCoordinator::cutColumns(const ColumnsWithTypeAndName & columns_w
 
 Pipe DictionarySourceCoordinator::read(size_t num_streams)
 {
+    /// Limit the number of streams to the number of data blocks,
+    /// because creating more streams is useless and may cause excessive memory usage.
+    if (!key_columns_with_type.empty() && max_block_size > 0)
+    {
+        size_t keys_size = key_columns_with_type[0].column->size();
+        size_t num_blocks = (keys_size + max_block_size - 1) / max_block_size;
+        num_streams = std::min(num_streams, std::max<size_t>(1, num_blocks));
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
 

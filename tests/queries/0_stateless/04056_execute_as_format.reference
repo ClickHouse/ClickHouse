@@ -1,0 +1,13 @@
+--- FORMAT JSON ---
+1
+--- FORMAT CSV ---
+"hello",42
+--- FORMAT TabSeparatedWithNames ---
+a	b
+1	2
+--- INTO OUTFILE with FORMAT CSV ---
+"file",100
+--- SETTINGS clause ---
+1
+--- INTO OUTFILE with COMPRESSION ---
+"compressed",200

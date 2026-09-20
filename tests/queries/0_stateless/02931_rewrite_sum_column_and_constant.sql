@@ -76,22 +76,22 @@ EXPLAIN SYNTAX (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having
 EXPLAIN SYNTAX (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0);
 EXPLAIN SYNTAX (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0);
 
-SELECT sum(uint64 + 2.11) From test_table;
-SELECT sum(2.11 + uint64) From test_table;
-SELECT sum(uint64 - 2.11) From test_table;
-SELECT sum(2.11 - uint64) From test_table;
-SELECT sum(uint64) + 2.11 * count(uint64) From test_table;
-SELECT 2.11 * count(uint64) + sum(uint64) From test_table;
-SELECT sum(uint64) - 2.11 * count(uint64) From test_table;
-SELECT 2.11 * count(uint64) - sum(uint64) From test_table;
-EXPLAIN SYNTAX (SELECT sum(uint64 + 2.11) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.11 + uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64 - 2.11) From test_table);
-EXPLAIN SYNTAX (SELECT sum(2.11 - uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) + sum(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT sum(uint64) - 2.11 * count(uint64) From test_table);
-EXPLAIN SYNTAX (SELECT 2.11 * count(uint64) - sum(uint64) From test_table);
+SELECT sum(uint64 + 2.125) From test_table;
+SELECT sum(2.125 + uint64) From test_table;
+SELECT sum(uint64 - 2.125) From test_table;
+SELECT sum(2.125 - uint64) From test_table;
+SELECT sum(uint64) + 2.125 * count(uint64) From test_table;
+SELECT 2.125 * count(uint64) + sum(uint64) From test_table;
+SELECT sum(uint64) - 2.125 * count(uint64) From test_table;
+SELECT 2.125 * count(uint64) - sum(uint64) From test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 2.125) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.125 + uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64 - 2.125) From test_table);
+EXPLAIN SYNTAX (SELECT sum(2.125 - uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) + 2.125 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) + sum(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) - 2.125 * count(uint64) From test_table);
+EXPLAIN SYNTAX (SELECT 2.125 * count(uint64) - sum(uint64) From test_table);
 
 SELECT sum(uint64 + 2) From test_table;
 SELECT sum(2 + uint64) From test_table;

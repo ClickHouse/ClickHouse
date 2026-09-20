@@ -3,7 +3,8 @@
 #include "config.h"
 
 #if USE_SQLITE
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/TableNameOrQuery.h>
 
 #include <sqlite3.h>
 
@@ -15,7 +16,7 @@ class Logger;
 namespace DB
 {
 
-class StorageSQLite final : public IStorage, public WithContext
+class StorageSQLite final : public StorageWithCommonVirtualColumns, public WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -24,13 +25,17 @@ public:
         const StorageID & table_id_,
         SQLitePtr sqlite_db_,
         const String & database_path_,
-        const String & remote_table_name_,
+        const TableNameOrQuery & remote_table_or_query_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_);
 
     std::string getName() const override { return "SQLite"; }
+
+    static VirtualColumnsDescription createVirtuals();
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,
@@ -45,12 +50,12 @@ public:
 
     static ColumnsDescription getTableStructureFromData(
         const SQLitePtr & sqlite_db_,
-        const String & table);
+        const TableNameOrQuery & table_or_query);
 
 private:
     friend class SQLiteSink; /// for write_context
 
-    String remote_table_name;
+    TableNameOrQuery remote_table_or_query;
     String database_path;
     SQLitePtr sqlite_db;
     LoggerPtr log;

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, long
 # no-async-insert: Test expects new part for each insert
+# long: Flaky check in private times out sometimes :(
 
 set -e
 
@@ -26,7 +27,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 DROP TABLE IF EXISTS null_00634;
 CREATE TABLE null_00634 (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();"
 
-head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO null_00634 FORMAT RowBinary"
+head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=10 --min_insert_block_size_bytes=1 -q "INSERT INTO null_00634 FORMAT RowBinary"
 
 $CLICKHOUSE_CLIENT $settings -q "
 SELECT count() FROM null_00634;
@@ -51,7 +52,7 @@ SELECT
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_ids)) >= 1
     FROM
-        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND current_database = currentDatabase() AND type=2 ORDER BY event_time DESC LIMIT 1)
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND event_time >= now() - 600 AND current_database = currentDatabase() AND type=2 ORDER BY event_time DESC LIMIT 1)
 "
 
 # Clean

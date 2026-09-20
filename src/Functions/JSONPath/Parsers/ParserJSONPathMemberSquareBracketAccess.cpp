@@ -25,7 +25,7 @@ bool ParserJSONPathMemberSquareBracketAccess::parseImpl(Pos & pos, ASTPtr & node
         ReadBufferFromMemory in(pos->begin, pos->size());
         String name;
         readQuotedStringWithSQLStyle(name, in);
-        member_name = std::make_shared<ASTIdentifier>(name);
+        member_name = make_intrusive<ASTIdentifier>(name);
         ++pos;
     }
     else
@@ -37,7 +37,7 @@ bool ParserJSONPathMemberSquareBracketAccess::parseImpl(Pos & pos, ASTPtr & node
         return false;
     }
     ++pos;
-    auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
+    auto member_access = make_intrusive<ASTJSONPathMemberAccess>();
     node = member_access;
     return tryGetIdentifierNameInto(member_name, member_access->member_name);
 }

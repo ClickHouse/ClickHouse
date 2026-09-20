@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: '쿼리 최적화 예시'
+title: '쿼리 최적화 예시'
+description: '스키마와 순서 지정 키를 변경하여 ClickHouse 쿼리 성능을 개선하는 예시를 살펴봅니다'
+doc_type: 'guide'
+keywords: ['쿼리 최적화', '성능', 'NYC Taxi', '데이터 타입', '순서 지정 키']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
+
+이 가이드에서는 NYC Taxi 데이터셋에 두 가지 최적화 방식을 적용합니다. 먼저 더 적합한 컬럼 타입을 선택해 저장 및 처리되는 데이터 양을 줄입니다. 다음으로 선택적 쿼리에서 ClickHouse가 불필요한 데이터를 건너뛸 수 있도록 순서 지정 키를 도입합니다. 각 변경 사항은 동일한 기준선을 바탕으로 측정합니다. 이 예시에서 따르는 전반적인 워크플로는 [쿼리 최적화 개요](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)를 참조하십시오.
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+예시에서는 `nyc_taxi.trips_small_inferred` 테이블을 사용합니다. 아직 테이블을 생성하고 데이터를 로드하지 않았다면 다음을 수행하십시오:
+
+<Accordion title="예시 데이터셋 설정">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+원본 Parquet 파일에는 약 3억 2,900만 개의 행이 포함되어 있습니다. 이 가이드의 소요 시간은 하나의 배포 환경에서 측정한 값이며, 사용 가능한 컴퓨트 리소스에 따라 달라질 수 있습니다. 동일한 소요 시간을 기대하기보다는 단계 간 상대적인 변화를 비교하십시오.
+
+이 메서드를 자체 워크로드에 적용할 때는 쿼리나 스키마를 변경하기 전에 [느린 쿼리 진단](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)을 사용하여 반복되는 쿼리 패턴을 식별하고 대표적인 실행 사례를 선택하십시오.
+
+<div id="process-overview">
+  ## 프로세스 개요
+</div>
+
+이 예시는 다음 3단계로 진행됩니다.
+
+1. 기준선을 설정하기 위해 추론된 스키마를 대상으로 독립적인 워크로드 쿼리 3개를 실행합니다.
+2. 더 정확한 컬럼 타입을 사용해 테이블을 생성하고, 동일한 데이터를 로드한 후 쿼리를 다시 실행합니다.
+3. 동일하게 최적화된 스키마와 순서 지정 키를 사용해 다른 테이블을 생성한 후 쿼리를 다시 실행합니다.
+
+스키마와 순서 지정 키를 별도 단계에서 변경하면 각각의 영향을 더 쉽게 구분할 수 있습니다. [최적화 접근 방식](/ko/guides/clickhouse/performance-and-monitoring/optimization-approaches)에서는 이러한 변경을 고려할 시점과 검증 방법을 설명합니다. 비교 가능한 측정값을 수집하는 방법은 [쿼리 병목 현상 격리](/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)를 참조하십시오.
+
+<div id="define-the-baseline-workload">
+  ## 기준 워크로드 정의
+</div>
+
+워크로드를 실행한 클라이언트 세션에서 원격 데이터의 파일 시스템 캐시, 쿼리 캐시, 쿼리 조건 캐시를 비활성화합니다:
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  이러한 설정을 사용하면 테스트 중 반복 실행 결과를 비교할 수 있습니다. 측정이 끝나면 이전 값으로 복원하십시오.
+</Note>
+
+다음 3개의 독립적인 쿼리가 기준 워크로드를 구성합니다. 다음 단계에서 생성하는 각 테이블에 대해 세 쿼리를 모두 실행하십시오. 비교 가능한 조건에서 각 쿼리를 여러 번 실행하고, 중앙값 등 대표적인 소요 시간과 읽은 행 수, 최대 메모리 사용량을 기록하십시오. `system.query_log`에서 이러한 값을 가져오는 방법을 포함한 전체 측정 워크플로는 [반복 가능한 기준 설정](/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline)를 참조하십시오.
+
+<div id="calculated-speed-filter">
+  ### 계산된 이동 속도 필터링
+</div>
+
+이 쿼리는 이동 시간과 속도를 계산한 다음 시속 30마일을 초과하는 운행의 이동 거리 분포를 구합니다:
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### 특정 날짜 범위의 운행 집계
+</div>
+
+이 쿼리는 2009년 1분기의 운행 건수, 거리, 평균 결제 금액을 계산합니다:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### 승객 수로 필터링
+</div>
+
+이 쿼리는 승객 수가 1명 또는 2명인 운행의 평균 운행 시간을 계산합니다:
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+원래 측정값은 다음과 같습니다.
+
+| 워크로드      | Duration |         읽은 행 수 | Peak memory |
+| --------- | -------: | -------------: | ----------: |
+| 계산된 속도 필터 |   1.699초 | 329.04 million |  440.24 MiB |
+| 날짜 범위 집계  |   1.419초 | 329.04 million |  546.75 MiB |
+| 승객 수 필터   |   1.414초 | 329.04 million |  451.53 MiB |
+
+세 쿼리 모두 테이블의 전체 행 수에 가까운 약 3억 2,900만 행을 읽습니다. 따라서 워크로드는 두 가지 측면에서 개선할 수 있습니다. 먼저 선택한 컬럼의 처리 비용을 줄이고, 필터가 허용하는 경우 선택되는 행 수를 줄입니다.
+
+<div id="optimize-the-schema">
+  ## 스키마 최적화
+</div>
+
+스키마 추론은 데이터셋 탐색을 시작하는 실용적인 방법이지만, 추론된 타입은 워크로드에 필요한 것보다 더 광범위하거나 허용 범위가 넓을 수 있습니다. 추론된 타입이 불필요하다고 단정하지 말고, 스키마를 변경하기 전에 데이터를 검토하십시오.
+
+<div id="nullable">
+  ### 불필요한 널 허용 컬럼 피하기
+</div>
+
+[`Nullable`](/ko/reference/data-types/nullable) 컬럼은 값 외에 널 마스크도 저장합니다. 널 값과 타입의 기본값을 구분해야 하는 경우에는 `Nullable`을 사용하되, 값이 항상 존재하는 컬럼에는 사용하지 마십시오.
+
+예시 스키마에서 사용된 컬럼의 널 값 개수를 계산합니다:
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+이 데이터셋에서 null 값을 포함하는 컬럼은 `ratecode_id`, `mta_tax`, `payment_type`뿐입니다. 최적화된 스키마에서는 해당 컬럼에만 `Nullable`을 유지하고, 나머지 컬럼에서는 제거합니다.
+
+<div id="low-cardinality">
+  ### 반복 값에 LowCardinality 사용
+</div>
+
+[`LowCardinality`](/ko/reference/data-types/lowcardinality)는 딕셔너리 인코딩을 사용하며, 반복 값이 많은 컬럼의 저장 공간 사용량과 처리 비용을 줄일 수 있습니다. 적용하기 전에 고유 값의 수를 확인하십시오:
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+이 4개 컬럼은 행 수에 비해 고유 값의 수가 상당히 적습니다. `LowCardinality` 적용을 고려할 만하지만, 워크로드에 미치는 효과는 반드시 측정해야 합니다. 약 10,000개의 고유 값은 적용 후보를 찾는 데 유용한 출발점일 뿐, 고정된 기준은 아닙니다.
+
+<div id="optimize-data-type">
+  ### 더 정밀한 데이터 타입 선택
+</div>
+
+필요한 범위와 정밀도를 안전하게 보존할 수 있는 가장 작은 타입을 사용하십시오. 예를 들어, 추론된 `Int64` 또는 `Float64`를 대체하기 전에 숫자 컬럼의 최솟값과 최댓값을 확인하십시오:
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+두 정수 컬럼은 모두 [`UInt8`](/ko/reference/data-types/int-uint) 범위에 들어가지만, `passenger_count`는 최대값인 255에 이릅니다. 이 예시에서는 `trip_distance`에 [`Float32`](/ko/reference/data-types/float)를 사용하고 금액 값에는 [`Decimal32`](/ko/reference/data-types/decimal)를 사용합니다. 이 데이터셋의 모든 값은 대상 범위에 들어가며, 워크로드가 집계 결과를 비교하므로 이 예시에서는 낮아진 부동 소수점 정밀도와 센트 단위의 금액 정밀도를 허용합니다. 정확한 원본 값이 필요한 경우에는 더 넓은 원본 타입을 유지하십시오. 예시 쿼리에는 초 미만 정밀도가 필요하지 않으므로, 예시에서는 동일한 `UTC` 시간대의 추론된 [`DateTime64`](/ko/reference/data-types/datetime64) 컬럼을 [`DateTime`](/ko/reference/data-types/datetime)으로 대체합니다.
+
+이러한 선택은 이 데이터셋에만 적용됩니다. 동일한 변경 사항을 적용하기 전에 프로덕션 데이터의 범위, 정밀도, NULL 허용 여부 요구 사항을 확인하십시오.
+
+<div id="apply-the-optimizations">
+  ### 스키마 변경 사항 적용
+</div>
+
+이 단계에서 스키마 변경 사항을 독립적으로 측정할 수 있도록 순서 지정 키 없이 테이블을 생성합니다:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+각 워크로드 쿼리에서 `nyc_taxi.trips_small_inferred`를 `nyc_taxi.trips_small_no_pk`로 바꾼 후 세 쿼리를 모두 다시 실행합니다. 원래 예시에서는 다음과 같은 대표 결과가 나왔습니다.
+
+| 워크로드      | 추론된 스키마 | 최적화된 스키마 |     읽은 행 수 | 최적화된 최대 메모리 |
+| --------- | ------: | -------: | ---------: | ----------: |
+| 계산된 속도 필터 |  1.699초 |   1.353초 | 3억 2904만 행 |  337.12 MiB |
+| 날짜 범위 집계  |  1.419초 |   1.171초 | 3억 2904만 행 |  531.09 MiB |
+| 승객 수 필터   |  1.414초 |   1.188초 | 3억 2904만 행 |  265.05 MiB |
+
+쿼리가 읽는 행 수는 동일하지만, 최적화된 스키마는 해당 행이 나타내는 데이터 양을 줄입니다. 따라서 선택되는 데이터를 변경하지 않고도 쿼리 실행 시간과 최대 메모리 사용량이 개선됩니다.
+
+두 테이블의 디스크상 크기를 비교합니다.
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+이 데이터셋에서는 최적화된 스키마를 적용하면 압축 저장 공간이 약 34% 감소하여 7.38 GiB에서 4.89 GiB로 줄어듭니다.
+
+<div id="optimize-the-ordering-key">
+  ## 순서 지정 키 최적화
+</div>
+
+[`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 제품군에서 순서 지정 키는 행이 디스크에 정렬되는 방식을 결정합니다. ClickHouse는 이 순서를 기반으로 희소 프라이머리 인덱스를 구축하여 쿼리 필터 조건을 충족할 수 없는 그래뉼을 건너뜁니다. 많은 트랜잭션 데이터베이스의 프라이머리 키와 달리 고유성을 보장하지는 않습니다.
+
+순서 지정 키는 중요한 반복 쿼리에서 사용하는 필터를 반영해야 합니다. 컬럼 순서도 중요합니다. 쿼리가 유용한 접두사로 필터링할 때 키의 효과가 가장 큽니다. 카디널리티가 낮은 컬럼은 자주 필터링된다면 효과적인 선행 항목이 될 수 있으며, 시간 기반 워크로드에서는 시간 구성 요소도 유용한 경우가 많습니다. 자세한 선택 지침은 [프라이머리 키 선택](/ko/best-practices/choosing-a-primary-key)을 참조하십시오.
+
+이 예시에서는 `(passenger_count, pickup_datetime, dropoff_datetime)`를 사용합니다. `passenger_count`는 고유값이 적고 승객 수 필터에 사용되며, `pickup_datetime`는 날짜 범위 집계에 사용됩니다. `pickup_datetime`가 첫 번째 컬럼은 아니지만, 선행 컬럼에 조건이 없더라도 ClickHouse는 뒤쪽 키 컬럼의 값을 사용해 데이터를 제외할 수 있습니다. 일반적으로 순서 지정 키의 유용한 접두사로 필터링하면 더 효과적으로 프루닝할 수 있습니다.
+
+<div id="apply-the-ordering-key-change">
+  ### 순서 지정 키 변경 적용
+</div>
+
+이전 단계에서 사용한 최적화된 스키마와 동일하게 테이블을 생성합니다. 순서 지정 키만 변경합니다:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+각 워크로드 쿼리에서 테이블 이름을 `nyc_taxi.trips_small_pk`로 바꾼 후, 세 쿼리를 모두 다시 실행하십시오.
+
+<div id="compare-the-results">
+  ## 결과 비교
+</div>
+
+원본 가이드에서는 세 단계에 걸쳐 다음과 같은 측정값을 기록했습니다.
+
+| 워크로드     | 측정값         |        추론된 스키마 |       최적화된 스키마 | 최적화된 스키마 및 순서 지정 키 |
+| -------- | ----------- | -------------: | -------------: | -----------------: |
+| 계산된 속도 필터 | Duration    |      1.699 sec |      1.353 sec |          0.765 sec |
+|          | 읽은 행 수        | 329.04 million | 329.04 million |     329.04 million |
+|          | Peak memory |     440.24 MiB |     337.12 MiB |         444.19 MiB |
+| 날짜 범위 집계 | Duration    |      1.419 sec |      1.171 sec |          0.248 sec |
+|          | 읽은 행 수        | 329.04 million | 329.04 million |      41.46 million |
+|          | Peak memory |     546.75 MiB |     531.09 MiB |         173.50 MiB |
+| 승객 수 필터  | Duration    |      1.414 sec |      1.188 sec |          0.431 sec |
+|          | 읽은 행 수        | 329.04 million | 329.04 million |     276.99 million |
+|          | Peak memory |     451.53 MiB |     265.05 MiB |         197.38 MiB |
+
+스키마 최적화는 저장 공간을 줄이고 선택한 값을 더 적은 비용으로 처리할 수 있게 합니다. 날짜 범위 집계에서는 ClickHouse가 날짜 범위 밖의 그래뉼을 건너뛸 수 있으므로 순서 지정 키가 가장 큰 추가 개선 효과를 제공합니다. 승객 수 필터도 첫 번째 키 컬럼을 기준으로 필터링하므로 더 적은 행을 읽습니다. 계산 속도 필터는 순서 지정 키의 유용한 접두사가 아닌 `pickup_datetime`, `dropoff_datetime`, `trip_distance`를 기반으로 하므로 여전히 전체 테이블을 읽습니다.
+
+`EXPLAIN indexes = 1`을 사용하여 날짜 범위 집계를 확인합니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  ClickHouse 25.9 이상에서는 이러한 설정을 통해 `EXPLAIN`이 사용된 인덱스와 제외된 파트 및 그래뉼을 보고하도록 합니다.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+프라이머리 인덱스는 40,167개의 그래뉼 중 5,061개를 선택합니다. 이로 인해 날짜 범위 집계는 전체 3억 2,904만 행이 아닌 4,146만 행만 처리합니다.
+
+<div id="apply-the-method-to-your-workload">
+  ## 워크로드에 메서드 적용하기
+</div>
+
+자체 워크로드에도 다음 순서를 적용하십시오:
+
+1. 기준 기간, 읽은 행 수와 바이트 수, 피크 메모리를 기록합니다.
+2. 선택한 컬럼에 불필요하게 큰 범위이거나 지나치게 허용적인 타입이 사용되었는지 확인합니다.
+3. 데이터 레이아웃은 변경하지 않고 스키마 변경을 적용한 후 측정합니다.
+4. 중요한 반복 쿼리에서 사용하는 필터를 기반으로 순서 지정 키를 테스트합니다.
+5. `EXPLAIN indexes = 1`로 선택되는 데이터를 비교한 다음, 비교 가능한 조건에서 기준 쿼리를 다시 실행합니다.
+
+이 예시의 타입이나 순서 지정 키가 다른 데이터셋에도 적합하다고 가정하지 마십시오. 관찰된 값과 쿼리 필터를 바탕으로 결정하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+스키마 및 순서 지정 키를 변경해도 확인된 병목 현상이 해결되지 않으면 [최적화 접근 방식](/ko/guides/clickhouse/performance-and-monitoring/optimization-approaches)으로 돌아가 프로젝션, materialized view, 데이터 스키핑 인덱스 또는 사전 계산을 검토하십시오.

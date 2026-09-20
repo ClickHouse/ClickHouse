@@ -3,7 +3,7 @@
 -- no-replicated-database:
 --   The number of replicas is doubled, so `SYSTEM STOP FETCHES` stop not enough replicas.
 -- no-shared-merge-tree: no quorum inserts
--- no-async-insert: async inserts are not supported with quorum inserts
+--- Tag no-async-insert: async inserts are not supported with non-parallel quorum inserts
 
 SET insert_quorum_parallel = false;
 

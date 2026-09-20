@@ -1,3 +1,9 @@
+#include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <boost/program_options.hpp>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
@@ -22,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Poco/Net/MessageHeader.h>
 
 
@@ -30,38 +37,61 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_max_multipart_form_data_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
-/// Parsing a list of types with `,` as separator. For example, `Int, Enum('foo'=1,'bar'=2), Double`
-/// Used in `parseStructureFromTypesField`
-class ParserTypeList : public IParserBase
+static Block materializeScalar(InputFormatPtr input)
 {
-protected:
-    const char * getName() const override { return "type pair list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
-    }
-};
+    Pipe pipe(std::move(input));
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    Block block;
+    while (block.rows() == 0 && executor.pull(block)) {}
+    if (block.rows() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar input returned {} rows", block.rows());
+
+    Block tmp_block;
+    while (tmp_block.rows() == 0 && executor.pull(tmp_block)) {}
+    if (tmp_block.rows() > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar input returned more than one block");
+
+    if (block.columns() == 1)
+        return block;
+
+    return Block(ColumnsWithTypeAndName{{
+        ColumnTuple::create(block.getColumns()),
+        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+        "tuple"
+    }});
+}
 
 ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").safeGet<UInt64>());
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef()[Setting::max_block_size]);
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
-    data->pipe->init(Pipe(std::move(input)));
     data->table_name = name;
+    data->pipe->init(Pipe(std::move(input)));
 
     return data;
+}
+
+Block BaseExternalTable::getScalar(ContextPtr context)
+{
+    initReadBuffer();
+    initSampleBlock();
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef()[Setting::max_block_size]);
+    return materializeScalar(std::move(input));
 }
 
 void BaseExternalTable::clear()
@@ -237,7 +267,24 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
     }
 
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+
+    /// The schema of an external table is bound once, by the first part that names it (see the branch above),
+    /// and the `_structure` / `_types` fields of every later part with the same name must describe that same
+    /// schema. The input format parses the part with the schema its own fields declare, and the columns then
+    /// reach the table as a `Chunk`, which carries no types at all: `MemorySink::consume` labels them with the
+    /// table header again. A part declaring other types would therefore not be rejected anywhere, and its data
+    /// would later be read as the type the header names - a type confusion on data the client controls.
+    if (resolved && !isCompatibleHeader(sample_block, metadata_snapshot->getSampleBlock()))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Structure of the data for external table {} does not match the structure of the table. "
+            "Received:\n{}\nExpected:\n{}",
+            backQuoteIfNeed(temporary_id.table_name),
+            sample_block.dumpStructure(),
+            metadata_snapshot->getSampleBlock().dumpStructure());
+
+    auto sink = storage->write(ASTPtr(), metadata_snapshot, getContext(), /*async_insert=*/false);
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

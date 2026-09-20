@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -42,13 +41,16 @@ public:
             std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
     }
 
+    /// A read always produces exactly one `NullSource`.
+    size_t getMaxReadStreams(size_t /*num_streams*/, ContextPtr) override { return 1; }
+
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
@@ -57,7 +59,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override
     {

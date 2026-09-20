@@ -1,5 +1,6 @@
 #include <Parsers/ParserCopyQuery.h>
 
+#include <Common/quoteString.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -47,7 +48,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserSubquery s_subquery;
 
-    auto copy_element = std::make_shared<ASTCopyQuery>();
+    auto copy_element = make_intrusive<ASTCopyQuery>();
     node = copy_element;
 
     if (!s_copy.ignore(pos, expected))
@@ -57,7 +58,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!open_bracket.ignore(pos, expected))
     {
-        ParserIdentifier s_table_identifier;
+        ParserCompoundIdentifier s_table_identifier;
         ASTPtr table_name;
         if (!s_table_identifier.parse(pos, table_name, expected))
             return false;
@@ -71,11 +72,23 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!close_bracket.ignore(pos, expected))
                 return false;
 
+            /// Preserve each column as one quoted SQL identifier.
             for (const auto & column_ast : columns->children)
-                copy_element->column_names.push_back(column_ast->as<ASTIdentifier>()->full_name);
+                copy_element->column_names.push_back(backQuoteIfNeed(column_ast->as<ASTIdentifier>()->full_name));
         }
         saved_pos = pos;
-        copy_element->table_name = table_name->as<ASTIdentifier>()->full_name;
+        /// Quote each part of a compound table name separately.
+        {
+            const auto & id = table_name->as<ASTIdentifier &>();
+            String rendered;
+            for (const auto & part : id.name_parts)
+            {
+                if (!rendered.empty())
+                    rendered += '.';
+                rendered += backQuoteIfNeed(part);
+            }
+            copy_element->table_name = rendered;
+        }
 
         if (s_to.ignore(pos, expected))
         {
@@ -119,7 +132,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return parseOptions(pos, copy_element, expected);
 }
 
-bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node, Expected & expected)
+bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
     ParserIdentifier s_output_identifier;
     ASTPtr output_name;

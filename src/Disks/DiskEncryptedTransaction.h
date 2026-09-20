@@ -21,8 +21,8 @@ struct DiskEncryptedSettings
     DiskPtr wrapped_disk;
     String disk_path;
     String current_key;
-    UInt128 current_key_fingerprint;
-    FileEncryption::Algorithm current_algorithm;
+    UInt128 current_key_fingerprint{};
+    FileEncryption::Algorithm current_algorithm{};
     std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
@@ -52,16 +52,13 @@ public:
             delegate_disk->getName(), disk_path);
     }
 
-    /// Tries to commit all accumulated operations simultaneously.
-    /// If something fails rollback and throw exception.
-    void commit(const TransactionCommitOptionsVariant & options) override
+    void commit() override
     {
-        delegate_transaction->commit(options);
+        delegate_transaction->commit();
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
             "Commit DiskEncryptedTransaction for delegating disk {} at path {}",
             delegate_disk->getName(), disk_path);
     }
-    void commit() override { commit(NoCommitOptions{}); }
 
     void undo() noexcept override
     {

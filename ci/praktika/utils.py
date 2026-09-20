@@ -9,20 +9,22 @@ import re
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
+import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="MetaClasses.Serializable")
 
 
 class MetaClasses:
@@ -32,6 +34,7 @@ class MetaClasses:
 
     @dataclasses.dataclass
     class Serializable(ABC):
+        # TODO: make it non-static to do self.to_dict()
         @classmethod
         def to_dict(cls, obj):
             if dataclasses.is_dataclass(obj):
@@ -172,24 +175,31 @@ class Shell:
         return cls.get_output(command, verbose=verbose, strict=True).strip()
 
     @classmethod
-    def get_output(cls, command, strict=False, verbose=False):
+    def get_output(cls, command, strict=False, verbose=False, retries=1, delay=2):
         if verbose:
             print(f"Run command [{command}]")
-        res = subprocess.run(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            executable="/bin/bash",
-            errors="ignore",
-        )
-        if res.stderr:
-            print(f"WARNING: stderr: {res.stderr.strip()}")
-        if strict and res.returncode != 0:
-            raise RuntimeError(
-                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+        for attempt in range(retries):
+            res = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                executable="/bin/bash",
+                errors="ignore",
             )
+            if res.stderr:
+                print(f"WARNING: stderr: {res.stderr.strip()}")
+            if strict and res.returncode != 0:
+                raise RuntimeError(
+                    f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+                )
+            if res.returncode == 0:
+                return res.stdout.strip()
+            if attempt < retries - 1:
+                print(f"WARNING: command failed (attempt {attempt + 1}/{retries}), retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(2 * delay, 60)
         return res.stdout.strip()
 
     @classmethod
@@ -271,10 +281,14 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, finished) -> None:
         if not timeout:
             return
-        time.sleep(timeout)
+        # Waits on the caller being done with the process, not on the leader exiting: a background
+        # descendant holding stdout keeps the reader threads blocked past the leader's exit, and
+        # that group is exactly what the timeout has to reach.
+        if finished.wait(timeout):
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -284,22 +298,21 @@ class Shell:
             print("Process already terminated.")
             return
 
-        time_wait = 0
-        wait_interval = 5
+        # Grace period keyed on the readers finishing (`finished`), not on the
+        # leader's own exit. The leader may already be dead while a backgrounded
+        # descendant keeps stdout/stderr open; polling process.poll() here would
+        # return immediately and skip the SIGKILL, leaving a SIGTERM-ignoring
+        # descendant to block the reader threads forever.
+        if finished.wait(100):
+            return
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
-            print("Waiting for process to exit...")
-            time.sleep(wait_interval)
-            time_wait += wait_interval
-
-        # Force kill if still running
-        if process.poll() is None:
-            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        # Still not done after the grace period: escalate to SIGKILL on the whole
+        # group, even when the leader itself has already exited.
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def run(
@@ -307,12 +320,14 @@ class Shell:
         command,
         log_file=None,
         strict=False,
-        verbose=False,
+        verbose=True,
         dry_run=False,
         stdin_str=None,
         timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        on_retry=None,
+        retry_deadline=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -326,12 +341,62 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            print(f"Run command: [{command}]")
+            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
+            print(wrapped)
 
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        delay = 1
+        # Anchored at the first retryable failure rather than at command start: an
+        # attempt may legitimately run for its whole per-attempt bound before failing.
+        ladder_start = None
+        attempt_end = time.monotonic()
+        pending_notice = None
+        deadline_cancelled = False
+
+        def _wake_at(next_delay):
+            # The back-off runs from the end of the attempt, so what the ladder itself
+            # spends between attempts is inside it rather than added to it.
+            return max(time.monotonic(), attempt_end + next_delay)
+
+        def _another_attempt_follows(next_delay):
+            if retry >= retries - 1:
+                return False
+            if retry_deadline is None or ladder_start is None:
+                return True
+            return _wake_at(next_delay) - ladder_start < retry_deadline
+
+        def _announce(matched, attempt):
+            # A reporting failure must never fail the command the retry is rescuing.
+            try:
+                on_retry(matched, attempt, retries - 1)
+            except Exception as e:  # noqa: BLE001
+                print(f"WARNING: on_retry callback failed, ex [{e}]")
+
+        def _deadline_passed():
+            return (
+                retry_deadline is not None
+                and ladder_start is not None
+                and time.monotonic() - ladder_start >= retry_deadline
+            )
+
         for retry in range(retries):
+
+            if retry > 0:
+                delay = min(2 * delay, 60)
+                if verbose:
+                    print(f"Retrying in {delay}s...")
+                time.sleep(max(0.0, _wake_at(delay) - time.monotonic()))
+                # Last thing before the attempt: `time.sleep` may return late.
+                if _deadline_passed():
+                    if verbose:
+                        print(
+                            f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                        )
+                    deadline_cancelled = True
+                    break
+
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -349,8 +414,11 @@ class Shell:
                     )
 
                     # Start the timeout thread if specified
+                    finished = Event()
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout, args=(timeout, proc, finished)
+                        )
                         t.daemon = True
                         t.start()
 
@@ -362,7 +430,8 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
-                            sys.stdout.write(line)
+                            if verbose:
+                                sys.stdout.write(line)
                             output_fp.write(line)
                             if output is not None:
                                 output.append(line)
@@ -378,49 +447,133 @@ class Shell:
                     stdout_thread.start()
                     stderr_thread.start()
 
-                    stdout_thread.join()
-                    stderr_thread.join()
+                    try:
+                        stdout_thread.join()
+                        stderr_thread.join()
 
-                    proc.wait()  # Wait for the process to finish
+                        proc.wait()  # Wait for the process to finish
+                        # Close the pipe FDs Popen opened so the GC doesn't
+                        # log ResourceWarning for "unclosed file" later.
+                        proc.stdout.close()
+                        proc.stderr.close()
+                        if proc.stdin is not None:
+                            proc.stdin.close()
+                    finally:
+                        # Only here: the readers return when the last writer closes the pipe, so
+                        # setting this at the leader's exit would retire the watchdog while a
+                        # descendant it must still reach keeps this call blocked.
+                        finished.set()
 
-                    if proc.returncode == 0:
-                        break  # Exit retry loop if success
-                    else:
-                        if verbose:
+                attempt_end = time.monotonic()
+                if pending_notice is not None:
+                    # Only past here is a deadline-cancellable retry certain to have run,
+                    # and the child is already reaped, so caller code cannot strand it.
+                    _announce(pending_notice, retry)
+                    pending_notice = None
+
+                if proc.returncode == 0:
+                    return 0
+
+                if verbose and retries > 1:
+                    print(
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                    )
+
+                if not retry_errors:
+                    # No retry errors specified, just retry on any failure
+                    if retry_deadline is not None and ladder_start is None:
+                        ladder_start = time.monotonic()
+                    if not _another_attempt_follows(min(2 * delay, 60)):
+                        if verbose and retry < retries - 1:
                             print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
+                                f"Retry deadline of {retry_deadline}s reached, stopping retries"
                             )
-                        if retry_errors:
-                            should_retry = False
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
-            except Exception as e:
+                        break
+                    continue
+
+                if not any(
+                    err in err_line for err_line in err_output for err in retry_errors
+                ):
+                    if verbose:
+                        print("No retryable errors found, stopping retries")
+                    break
+
+                matched = next(
+                    (
+                        err
+                        for err in retry_errors
+                        if any(err in line for line in err_output)
+                    ),
+                    "",
+                )
                 if verbose:
                     print(
-                        f"ERROR: command failed, exception: {e}, retry: {retry}/{retries}"
+                        f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
+                if retry_deadline is not None and ladder_start is None:
+                    ladder_start = time.monotonic()
+                if not _another_attempt_follows(min(2 * delay, 60)):
+                    if verbose and retry < retries - 1:
+                        print(
+                            f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                        )
+                    break
+                if on_retry:
+                    # Deferral is part of the deadline: without one, the attempt this
+                    # announces cannot be cancelled, so announce it where it always was.
+                    if retry_deadline is None:
+                        _announce(matched, retry + 1)
+                    else:
+                        pending_notice = matched
+            except Exception as e:
+                # A failed spawn ends an attempt too: the next back-off runs from here.
+                attempt_end = time.monotonic()
+                if retry_deadline is not None and ladder_start is None:
+                    ladder_start = time.monotonic()
+                # An exception announces nothing.
+                pending_notice = None
+                terminal = not _another_attempt_follows(min(2 * delay, 60))
+                if verbose:
+                    if retries == 1:
+                        print(f"ERROR: exception {e}")
+                    else:
+                        print(f"Retry {retry+1}/{retries}: exception {e}")
+                        if terminal and retry < retries - 1:
+                            print(
+                                f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                            )
+                        elif terminal:
+                            print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
-                if strict and retry == retries - 1:
-                    raise e
+                    # Reap it here or a later exit code read below is `None`: the kill
+                    # only signals, and a cancelled retry never reaches `proc.wait`.
+                    proc.wait()
+                if terminal:
+                    if strict:
+                        raise
+                    else:
+                        return 1  # Return non-zero for failure
 
-        if strict and (not proc or proc.returncode != 0):
-            err = "\n   ".join(err_output).strip()
-            raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+        # There is no exit code when every attempt failed before `Popen` (a log-file or
+        # spawn error); 1 is what the exception path returns for that.
+        returncode = 1 if proc is None else proc.returncode
+
+        if verbose:
+            # A deadline cancellation happens before `Popen`, so that iteration counts an
+            # attempt that never ran; the exit code is still the last one that did.
+            attempts = retry if deadline_cancelled else retry + 1
+            print(
+                f"ERROR: command failed after {attempts}/{retries} attempt(s), exit code: {returncode}"
             )
 
-        return proc.returncode if proc else 1  # Return 1 if the process never started
+        if strict:
+            err = "\n   ".join(err_output).strip()
+            raise RuntimeError(
+                f"command failed, exit code {returncode},\nstderr:\n>>>\n{err}\n<<<"
+            )
+
+        return returncode
 
     @classmethod
     def run_async(
@@ -541,6 +694,11 @@ class Utils:
     def cpu_count():
         return multiprocessing.cpu_count()
 
+    @staticmethod
+    def exit_with_error(error_message: str) -> None:
+        print(f"ERROR: {error_message}")
+        sys.exit(1)
+
     # deprecated: unnecessary lines in traceback + ide linting issues
     # switch to regular raise Ex() inplace
     @staticmethod
@@ -553,8 +711,19 @@ class Utils:
         return datetime.now().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    def to_datetime(value, input_format="unix"):
+        if input_format == "unix":
+            return datetime.fromtimestamp(value, timezone.utc)
+        if input_format == "iso":
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Unsupported datetime input format [{input_format}]")
+
+    @staticmethod
+    def timestamp_to_str(timestamp, input_format="unix"):
+        dt = Utils.to_datetime(timestamp, input_format=input_format)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:
@@ -575,8 +744,9 @@ class Utils:
         return False
 
     @staticmethod
-    def clear_dmesg():
-        Shell.check("sudo dmesg --clear", verbose=True)
+    def clear_dmesg() -> bool:
+        """True when the ring buffer was cleared, so a later read holds only this run's records."""
+        return Shell.check("sudo dmesg --clear", verbose=True)
 
     @staticmethod
     def to_base64(value):
@@ -585,6 +755,11 @@ class Utils:
         base64_bytes = base64.b64encode(string_bytes)
         base64_string = base64_bytes.decode("utf-8")
         return base64_string
+
+    @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        return base64.b64decode(value.encode("utf-8")).decode("utf-8")
 
     @staticmethod
     def is_hex(s):
@@ -679,7 +854,24 @@ class Utils:
         return res
 
     @classmethod
-    def compress_zst(cls, path):
+    def compress_zst(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using zstd.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.zst; for files, .zst
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If zstd is not installed.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -690,23 +882,76 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.zst"
+                archive_name = f"{name}.tar.zst"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.zst"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.zst"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / f"{path_obj.name}.zst")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
         return path_out
 
+    @staticmethod
+    def fix_ownership_after_docker(path, docker_image: str) -> None:
+        uid = os.getuid()
+        gid = os.getgid()
+        Shell.run(
+            f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
+            verbose=True,
+        )
+
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
+    def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 or a leading newline, which breaks
+        # openssl enc -pass file: (it reads only the first line as the password).
+        if not Path(f"{aes_key_path}.rsa").exists():
+            Shell.run(f"""
+openssl rand -base64 32 >{aes_key_path}
+openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
+    -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+""")
+
+        Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
+        return f"{path}.enc"
+
+    @classmethod
+    def compress_files_gz(cls, files, archive_name, timeout=None, strict=True):
+        """Archive `files` into `archive_name`, returning the path, or `None` if it did not.
+
+        `timeout` bounds the `tar`; `strict=False` turns a failed archive into that `None` instead
+        of raising. A caller whose job is already being torn down wants both: an archive it cannot
+        finish is worth abandoning, and abandoning it must not lose the caller's remaining work.
+        """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
@@ -716,15 +961,34 @@ class Utils:
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
             f.flush()
-            Shell.check(
+            if not Shell.check(
                 f"tar -cf - -T {f.name} | gzip > {archive_name}",
                 verbose=True,
-                strict=True,
-            )
+                strict=strict,
+                timeout=timeout,
+            ):
+                return None
         return archive_name
 
     @classmethod
-    def compress_gz(cls, path):
+    def compress_gz(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using gzip.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.gz; for files, .gz
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If gzip is not installed or if the path doesn't exist.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -735,15 +999,38 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.gz"
                 archive_name = f"{name}.tar.gz"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
+                    f"cd {quote(parent)} && tar -cf - {quote(name)} | gzip > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.gz"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.gz"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory
+                        path_out = str(dest_path_obj / f"{path_obj.name}.gz")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
                     f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
@@ -856,6 +1143,17 @@ class Utils:
         def __exit__(self, exc_type, exc_val, exc_tb):
             sys.stdout = self.original_stdout
 
+    @staticmethod
+    def link(src: Path, dst: Path) -> None:
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(src)
+
+    @staticmethod
+    def clean_dir(path: Path) -> None:
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
+
 
 class TeePopen:
     def __init__(
@@ -879,20 +1177,28 @@ class TeePopen:
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
         self.preserve_stdio = preserve_stdio
+        self.finished = Event()
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
-        time.sleep(self.timeout)
+        if self.finished.wait(self.timeout):
+            return
+        if self.process.poll() is not None:
+            return
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
-        if self.timeout_shell_cleanup:
-            Shell.check(self.timeout_shell_cleanup, verbose=True)
-            return
-
         self.send_signal(signal.SIGTERM)
         print(f"Send SIGTERM to [{self.process.pid}]")
+
+        if self.timeout_shell_cleanup:
+            Thread(
+                target=Shell.check,
+                args=(self.timeout_shell_cleanup,),
+                kwargs={"verbose": True, "timeout": 120},
+                daemon=True,
+            ).start()
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 100:
@@ -954,15 +1260,18 @@ class TeePopen:
             self.log_file.close()
 
     def wait(self) -> int:
-        # If preserving stdio, we don't have our own stdout pipe; just wait
-        if not self.preserve_stdio and self.process.stdout is not None:
-            for line in self.process.stdout:
-                sys.stdout.write(line)
+        try:
+            # If preserving stdio, we don't have our own stdout pipe; just wait
+            if not self.preserve_stdio and self.process.stdout is not None:
+                for line in self.process.stdout:
+                    sys.stdout.write(line)
 
-                if self.log_file:
-                    self.log_file.write(line)
-                self.log_rolling_buffer.append(line)
-        return self.process.wait()
+                    if self.log_file:
+                        self.log_file.write(line)
+                    self.log_rolling_buffer.append(line)
+            return self.process.wait()
+        finally:
+            self.finished.set()
 
     def poll(self):
         return self.process.poll()

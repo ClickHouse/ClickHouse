@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 nodes = [
@@ -9,7 +9,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="library/clickhouse",
-        tag="25.1",
+        tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         stay_alive=True,
         with_installed_binary=True,
     )

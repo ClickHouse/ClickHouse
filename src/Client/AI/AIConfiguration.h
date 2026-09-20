@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 namespace DB
@@ -20,8 +21,11 @@ struct AIConfiguration
     /// Model to use (e.g., "gpt-4", "claude-3-opus-20240229")
     std::string model;
 
-    /// Temperature for generation (0.0 = deterministic, higher = more creative)
-    double temperature = 0.0;
+    /// Temperature for generation (0.0 = deterministic, higher = more creative).
+    /// Left unset by default: some models (e.g. reasoning models served behind
+    /// OpenAI-compatible gateways) reject the `temperature` parameter, so it is
+    /// only sent when explicitly configured via `ai.temperature`.
+    std::optional<double> temperature;
 
     /// Maximum tokens to generate
     size_t max_tokens = 1000;

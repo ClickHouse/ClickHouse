@@ -1,0 +1,18 @@
+-- ORDER BY category LIMIT 5
+0	a	y
+3	a	y
+6	a	y
+9	a	y
+12	a	y
+0	a	y
+3	a	y
+6	a	y
+9	a	y
+12	a	y
+-- plan has lazy read
+1
+-- is_deleted with lazy materialization
+500	x
+400	y
+500	x
+400	y

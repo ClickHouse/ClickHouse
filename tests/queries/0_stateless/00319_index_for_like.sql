@@ -1,4 +1,5 @@
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET use_primary_key = 1; -- test relies on PK index for LIKE prefix pruning and max_rows_to_read limits
 
 DROP TABLE IF EXISTS index_for_like;
 set allow_deprecated_syntax_for_merge_tree=1;

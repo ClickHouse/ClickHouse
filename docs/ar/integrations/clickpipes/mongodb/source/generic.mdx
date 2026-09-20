@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB العام'
+description: 'إعداد أي مثيل من MongoDB كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mongodb/source/generic
+title: 'دليل إعداد مصدر MongoDB العام'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'المزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Info>
+  إذا كنت تستخدم MongoDB Atlas، فيُرجى الرجوع إلى الدليل المخصّص [هنا](/ar/integrations/clickpipes/mongodb/source/atlas).
+</Info>
+
+<div id="enable-oplog-retention">
+  ## فعّل مدة الاحتفاظ بـ oplog
+</div>
+
+يتطلب النسخ المتماثل مدة احتفاظ بـ oplog لا تقل عن 24 ساعة. ونوصي بضبط مدة الاحتفاظ بـ oplog على 72 ساعة أو أكثر لضمان عدم اقتطاع `oplog` قبل اكتمال اللقطة الأولية.
+
+يمكنك التحقق من مدة الاحتفاظ الحالية بـ oplog عبر تشغيل الأمر التالي في بيئة MongoDB shell (يجب أن تكون لديك صلاحية `clusterMonitor` لتشغيل هذا الأمر):
+
+```javascript
+db.getSiblingDB("admin").serverStatus().oplogTruncation.oplogMinRetentionHours
+```
+
+لتعيين فترة الاحتفاظ بـ `oplog` على 72 ساعة، شغّل الأمر التالي على كل عقدة في مجموعة النسخ المتماثلة بصفتك مستخدمًا إداريًا:
+
+```javascript
+db.adminCommand({
+    "replSetResizeOplog" : 1,
+    "minRetentionHours": 72
+})
+```
+
+لمزيد من التفاصيل حول الأمر `replSetResizeOplog` وإعداد الاحتفاظ بـ `oplog`، راجع [وثائق MongoDB](https://www.mongodb.com/docs/manual/reference/command/replSetResizeOplog/).
+
+<div id="configure-database-user">
+  ## تكوين مستخدم قاعدة بيانات
+</div>
+
+اتصل بمثيل MongoDB الخاص بك باستخدام مستخدم إداري، ثم نفّذ الأمر التالي لإنشاء مستخدم لـ ClickPipes الخاصة بـ MongoDB CDC:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  تأكد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور المطلوبين.
+</Note>
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mongodb/index) وبدء إدخال البيانات من مثيل MongoDB الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل MongoDB الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

@@ -1,0 +1,9 @@
+single trace
+main;a;b 1
+aggregated traces
+main;a 2
+main;b 1
+alloc/dealloc by ptr
+main;b 30
+pointer mode
+1

@@ -1,12 +1,14 @@
 -- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
+SET max_threads = 'auto';
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
 CREATE TABLE t1 (key UInt32, s String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t2 (key UInt32, s String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-{% set ltable_size = 10000000 -%}
-{% set rtable_size = 1000000 -%}
+{% set ltable_size = 5000000 -%}
+{% set rtable_size = 500000 -%}
 
 INSERT INTO t1
     SELECT

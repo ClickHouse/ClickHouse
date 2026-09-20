@@ -34,7 +34,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
         /// we need to keep and restore it.
         auto format = select_union->format_ast;
         visit(*select_union, data);
-        select_union->format_ast = format;
+        select_union->reset(select_union->format_ast);
+        select_union->set(select_union->format_ast, std::move(format));
     }
 }
 
@@ -71,8 +72,13 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             else if (data.union_default_mode == SetOperationMode::DISTINCT)
                 union_modes[i] = SelectUnionMode::UNION_DISTINCT;
             else
+                /// Say what to write: this is the wall that everyone coming from a database where a bare
+                /// UNION means UNION DISTINCT runs into, and `SelectWithUnion` is the name of an AST class
+                /// rather than of anything the query says.
                 throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty");
+                    "Expected ALL or DISTINCT after UNION. Write `UNION ALL` to keep duplicate rows or "
+                    "`UNION DISTINCT` to remove them, or set `union_default_mode` to choose what a bare "
+                    "UNION means");
         }
 
         if (union_modes[i] == SelectUnionMode::UNION_ALL)
@@ -91,8 +97,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
         /// flatten all left nodes and current node to a UNION DISTINCT list
         else if (union_modes[i] == SelectUnionMode::UNION_DISTINCT)
         {
-            auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
-            distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
+            auto distinct_list = make_intrusive<ASTSelectWithUnionQuery>();
+            distinct_list->list_of_selects = make_intrusive<ASTExpressionList>();
             distinct_list->children.push_back(distinct_list->list_of_selects);
 
             for (int j = 0; j <= i + 1; ++j)

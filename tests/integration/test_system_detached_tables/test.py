@@ -32,13 +32,6 @@ def start_cluster():
             id="Atomic db with MergeTree table",
         ),
         pytest.param(
-            "test_db_lazy",
-            "Lazy(60)",
-            "Log",
-            "",
-            id="Lazy db with Log table",
-        ),
-        pytest.param(
             "test_db_repl",
             "Replicated('/clickhouse/tables/test_table','shard1', 'replica1')",
             "ReplicatedMergeTree",
@@ -50,7 +43,8 @@ def start_cluster():
 def test_system_detached_tables(
     start_cluster, db_name, db_engine, table_engine, table_engine_params
 ):
-    node.query(f"CREATE DATABASE IF NOT EXISTS {db_name} ENGINE={db_engine};")
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name} ENGINE={db_engine};")
 
     node.query(
         f"CREATE TABLE {db_name}.test_table (n Int64) ENGINE={table_engine} {table_engine_params};"
@@ -91,9 +85,6 @@ def test_system_detached_tables(
         expected_before_restart = f"('{db_name}','test_table',0,'{test_table_uuid}','{test_table_metadata_path}'),('{db_name}','test_table_perm',1,'{test_table_perm_uuid}','{test_table_perm_metadata_path}')"
 
     assert result == expected_before_restart
-
-    if db_engine.startswith("Lazy"):
-        return
 
     node.restart_clickhouse()
 

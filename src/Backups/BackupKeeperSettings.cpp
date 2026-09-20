@@ -51,7 +51,7 @@ BackupKeeperSettings::BackupKeeperSettings(const ContextPtr & context)
     value_max_size = settings[Setting::backup_restore_keeper_value_max_size];
     batch_size_for_multi = settings[Setting::backup_restore_batch_size_for_keeper_multi];
     batch_size_for_multiread = settings[Setting::backup_restore_batch_size_for_keeper_multiread];
-    fault_injection_probability = settings[Setting::backup_restore_keeper_fault_injection_probability];
+    fault_injection_probability = static_cast<double>(settings[Setting::backup_restore_keeper_fault_injection_probability]);
     fault_injection_seed = settings[Setting::backup_restore_keeper_fault_injection_seed];
 }
 

@@ -1,4 +1,3 @@
-import pytest
 import os
 
 from helpers.iceberg_utils import (
@@ -34,7 +33,7 @@ def test_restart_broken_s3(started_cluster_iceberg_with_spark):
         format_version="1",
     )
 
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         "s3",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -66,7 +65,7 @@ def test_restart_broken_s3(started_cluster_iceberg_with_spark):
 
     minio_client.make_bucket(bucket)
 
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         "s3",
         f"/iceberg_data/default/{TABLE_NAME}/",

@@ -1,0 +1,253 @@
+---
+title: ¿Por qué no se usa mi clave primaria? ¿Cómo puedo comprobarlo?
+description: "Aborda una razón común por la que no se utiliza la clave primaria en la ordenación y cómo podemos comprobarlo"
+date: 2024-12-12
+tags: ['Rendimiento y optimizaciones']
+keywords: ['Clave primaria']
+---
+
+<div id="checking-your-primary-key">
+  ## Comprobar la clave primaria
+</div>
+
+En algunos casos, los usuarios pueden observar que una consulta es más lenta de lo esperado, pese a creer que están ordenando o filtrando por una clave primaria. En este artículo mostramos cómo confirmar que la clave se está usando y destacamos los motivos más habituales por los que no ocurre.
+
+<div id="create-table">
+  ## Crear una tabla
+</div>
+
+Considere la siguiente tabla sencilla:
+
+```sql
+CREATE TABLE logs
+(
+    `code` LowCardinality(String),
+    `timestamp` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY (code, toUnixTimestamp(timestamp))
+```
+
+Observa que nuestra clave de ordenación incluye `toUnixTimestamp(timestamp)` como segundo elemento.
+
+<div id="populate-data">
+  ## Cargar datos
+</div>
+
+Carga esta tabla con 100 millones de filas:
+
+```sql
+INSERT INTO logs SELECT
+ ['200', '404', '502', '403'][toInt32(randBinomial(4, 0.1)) + 1] AS code,
+    now() + toIntervalMinute(number) AS timestamp
+FROM numbers(100000000)
+
+0 rows in set. Elapsed: 15.845 sec. Processed 100.00 million rows, 800.00 MB (6.31 million rows/s., 50.49 MB/s.)
+
+SELECT count()
+FROM logs
+
+┌───count()─┐
+│ 100000000 │ -- 100.00 millones
+└───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="basic-filtering">
+  ## Filtrado básico
+</div>
+
+Si filtramos por código, podemos ver en el resultado el número de filas escaneadas: `49,15 mil`. Observa que esto es un subconjunto del total de 100m filas.
+
+```sql
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌────────c─┐
+│ 65607542 │ -- 65,61 millones
+└──────────┘
+
+1 fila en el conjunto. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
+Peak memory usage: 92.70 KiB.
+```
+
+Además, podemos confirmar que se usa el índice con la cláusula `EXPLAIN indexes=1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   AggregatingProjection                                            │
+│     Expression (Before GROUP BY)                                   │
+│       Filter ((WHERE + Change column names to column identifiers)) │
+│         ReadFromMergeTree (default.logs)                           │
+│         Indexes:                                                   │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               code                                                 │
+│             Condition: (code in ['200', '200'])                    │
+│             Parts: 3/3 │
+│             Granules: 8012/12209 │
+│     ReadFromPreparedSource (_minmax_count_projection)              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Observe cómo el número de gránulos analizados, `8012`, es una fracción del total, `12209`. La sección resaltada a continuación confirma el uso de la clave primaria `code`.
+
+```bash
+PrimaryKey
+  Keys: 
+   code 
+```
+
+Los gránulos son la unidad de procesamiento de datos en ClickHouse, y cada uno suele contener 8192 filas. Para obtener más información sobre los gránulos y cómo se filtran, le recomendamos leer [esta guía](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules).
+
+<Note>
+  Filtrar por claves situadas más adelante en una clave de ordenación no será tan eficiente como filtrar por las que aparecen antes en la tupla. Para saber por qué, consulte [aquí](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
+</Note>
+
+<div id="multi-key-filtering">
+  ## Filtrado por varias claves
+</div>
+
+Supongamos que filtramos por `code` y `timestamp`:
+
+```sql
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─count()─┐
+│  689742 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 712.70 thousand rows, 6.41 MB (88.92 million rows/s., 799.27 MB/s.)
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                                                                                         │
+│   Aggregating                                                                                                                                                     │
+│     Expression (Before GROUP BY)                                                                                                                                  │
+│       Expression                                                                                                                                                  │
+│         ReadFromMergeTree (default.logs)                                                                                                                          │
+│         Indexes:                                                                                                                                                  │
+│           PrimaryKey                                                                                                                                              │
+│             Keys:                                                                                                                                                 │
+│               code                                                                                                                                                │
+│               toUnixTimestamp(timestamp)                                                                                                                          │
+│             Condition: and((toUnixTimestamp(timestamp) in (-Inf, 1767225600]), and((toUnixTimestamp(timestamp) in [1735689600, +Inf)), (code in ['200', '200']))) │
+│             Parts: 3/3 │
+│             Granules: 87/12209 │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.002 sec.
+
+```
+
+En este caso, ambas claves de ordenación se utilizan para filtrar filas, por lo que solo es necesario leer `87` gránulos.
+
+<div id="using-keys-in-sorting">
+  ## Uso de claves en la ordenación
+</div>
+
+ClickHouse también puede aprovechar las claves de ordenación para ordenar de forma eficiente. En concreto,
+
+Cuando la configuración [optimize&#95;read&#95;in&#95;order](/es/reference/statements/select/order-by#optimization-of-data-reading) está habilitada (de forma predeterminada), el servidor de ClickHouse utiliza el índice de la tabla y lee los datos siguiendo el orden de la clave ORDER BY. Esto permite evitar leer todos los datos cuando se especifica un LIMIT. Por tanto, las consultas sobre grandes volúmenes de datos con LIMIT pequeños se procesan más rápido. Consulta [aquí](/es/reference/statements/select/order-by#optimization-of-data-reading) y [aquí](/es/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order#what-about-optimize_read_in_order) para obtener más información.
+
+Sin embargo, esto requiere que las claves utilizadas estén alineadas.
+
+Por ejemplo, considera esta consulta:
+
+```sql
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─code─┬───────────────timestamp─┐
+│ 200 │ 2025-01-01 00:00:01.000 │
+│ 200 │ 2025-01-01 00:00:45.000 │
+│ 200 │ 2025-01-01 00:01:01.000 │
+│ 200 │ 2025-01-01 00:01:45.000 │
+│ 200 │ 2025-01-01 00:02:01.000 │
+│ 200 │ 2025-01-01 00:03:01.000 │
+│ 200 │ 2025-01-01 00:03:45.000 │
+│ 200 │ 2025-01-01 00:04:01.000 │
+│ 200 │ 2025-01-01 00:05:45.000 │
+│ 200 │ 2025-01-01 00:06:01.000 │
+└──────┴─────────────────────────
+
+10 rows in set. Elapsed: 0.009 sec. Processed 712.70 thousand rows, 6.41 MB (80.13 million rows/s., 720.27 MB/s.)
+Peak memory usage: 125.50 KiB.
+```
+
+Podemos confirmar que la optimización no se ha aplicado aquí mediante `EXPLAIN pipeline`:
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─explain───────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                  │
+│ ExpressionTransform                                                           │
+│   (Limit)                                                                     │
+│   Limit │
+│     (Sorting)                                                                 │
+│     MergingSortedTransform 12 → 1 │
+│       MergeSortingTransform × 12 │
+│         LimitsCheckingTransform × 12 │
+│           PartialSortingTransform × 12 │
+│             (Expression)                                                      │
+│             ExpressionTransform × 12 │
+│               (Expression)                                                    │
+│               ExpressionTransform × 12 │
+│                 (ReadFromMergeTree)                                           │
+│                 MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 12 0 → 1 │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+15 rows in set. Elapsed: 0.004 sec.
+```
+
+La línea `MergeTreeSelect(pool: ReadPool, algorithm: Thread)` aquí no indica que se esté usando la optimización, sino una lectura estándar. Esto se debe a que la clave de ordenación de nuestra tabla usa `toUnixTimestamp(Timestamp)`, **NO** `timestamp`. Corregir esta discrepancia resuelve el problema:
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY toUnixTimestamp(timestamp) ASC
+LIMIT 10
+
+┌─explain──────────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                     │
+│ ExpressionTransform                                                              │
+│   (Limit)                                                                        │
+│   Limit │
+│     (Sorting)                                                                    │
+│     MergingSortedTransform 3 → 1 │
+│       BufferChunks × 3 │
+│         (Expression)                                                             │
+│         ExpressionTransform × 3 │
+│           (Expression)                                                           │
+│           ExpressionTransform × 3 │
+│             (ReadFromMergeTree)                                                  │
+│             MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.003 sec.
+```

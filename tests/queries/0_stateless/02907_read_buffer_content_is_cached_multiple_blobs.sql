@@ -13,5 +13,5 @@ INSERT INTO t SELECT number FROM numbers_mt(1e6);
 -- First of all the cache should be warmed up
 SELECT * FROM t FORMAT Null;
 
--- Now we can do the actual test. All we need is successfull completion w/o expections
+-- Now we can do the actual test. All we need is successful completion w/o exceptions
 SELECT * FROM t FORMAT Null;

@@ -13,3 +13,7 @@ SELECT n, number+5 AS inter FROM (  -- { serverError NOT_AN_AGGREGATE }
 
 -- https://github.com/ClickHouse/ClickHouse/issues/64636
 select sum(number) as s from remote('127.0.0.{1,2}', numbers(10)) where (intDiv(number, 2) as key) != 1 group by key order by key with fill interpolate (s as 100500);
+
+-- https://github.com/ClickHouse/ClickHouse/issues/71858
+-- https://github.com/ClickHouse/clickhouse-core-incidents/issues/381
+select number as ad, number, number as pd from numbers(5) order by number*10 with fill interpolate (pd as pd+100, ad as ad+1000);

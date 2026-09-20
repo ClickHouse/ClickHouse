@@ -1,0 +1,94 @@
+---
+slug: /operations/utilities/static-files-disk-uploader
+title: 'clickhouse-static-files-disk-uploader'
+keywords: ['clickhouse-static-files-disk-uploader', 'utility', 'disk', 'uploader']
+description: 'Описание утилиты clickhouse-static-files-disk-uploader'
+doc_type: 'guide'
+---
+
+Создает каталог данных с метаданными для указанной таблицы ClickHouse. Эти метаданные можно использовать для создания таблицы ClickHouse на другом сервере с набором данных в режиме только для чтения на основе диска `web`.
+
+Не используйте этот инструмент для миграции данных. Вместо этого используйте [команды `BACKUP` и `RESTORE`](/ru/concepts/features/backup-restore/overview).
+
+<div id="usage">
+  ## Использование
+</div>
+
+```bash
+$ clickhouse static-files-disk-uploader [args]
+```
+
+<div id="commands">
+  ## Команды
+</div>
+
+| Команда                  | Описание                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `-h`, `--help`           | Выводит справочную информацию                                                                   |
+| `--metadata-path [path]` | Путь к метаданным указанной таблицы                                                             |
+| `--test-mode`            | Включает режим `test`, в котором на указанный URL отправляется PUT-запрос с метаданными таблицы |
+| `--link`                 | Создаёт символические ссылки вместо копирования файлов в выходной каталог                       |
+| `--url [url]`            | URL веб-сервера для режима `test`                                                               |
+| `--output-dir [dir]`     | Каталог, в который выводятся файлы в режиме `non-test`                                          |
+
+<div id="retrieve-metadata-path-for-the-specified-table">
+  ## Получение пути к метаданным для указанной таблицы
+</div>
+
+При использовании `clickhouse-static-files-disk-uploader` необходимо получить путь к метаданным нужной таблицы.
+
+1. Выполните следующий запрос, указав целевую таблицу и базу данных:
+
+<br />
+
+```sql
+SELECT data_paths
+  FROM system.tables
+  WHERE name = 'mytable' AND database = 'default';
+```
+
+2. В результате должен вернуться путь к каталогу данных указанной таблицы:
+
+<br />
+
+```response
+┌─data_paths────────────────────────────────────────────┐
+│ ['./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/'] │
+└───────────────────────────────────────────────────────┘
+```
+
+<div id="output-table-metadata-directory-to-the-local-filesystem">
+  ## Вывод каталога метаданных таблицы в локальную файловую систему
+</div>
+
+Указав целевой каталог вывода `output` и путь к метаданным, выполните следующую команду:
+
+```bash
+$ clickhouse static-files-disk-uploader --output-dir output --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+Если всё прошло успешно, вы увидите следующее сообщение, а в каталоге `output` будут содержаться метаданные указанной таблицы:
+
+```repsonse
+Data path: "/Users/john/store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee", destination path: "output"
+```
+
+<div id="output-table-metadata-directory-to-an-external-url">
+  ## Вывод каталога метаданных таблицы на внешний URL
+</div>
+
+Этот шаг аналогичен выводу каталога данных в локальную файловую систему, но с добавлением флага `--test-mode`. Вместо указания выходного каталога нужно указать целевой URL с помощью флага `--url`.
+
+Когда включен режим `test`, каталог метаданных таблицы отправляется на указанный URL через PUT-запрос.
+
+```bash
+$ clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+<div id="using-the-table-metadata-directory-to-create-a-clickhouse-table">
+  ## Использование каталога метаданных таблицы для создания таблицы ClickHouse
+</div>
+
+Получив каталог метаданных таблицы, вы можете использовать его для создания таблицы ClickHouse на другом сервере.
+
+См. [этот репозиторий на GitHub](https://github.com/ClickHouse/web-tables-demo) с демонстрационным примером. В этом примере мы создаем таблицу с использованием диска `web`, что позволяет подключить таблицу к набору данных на другом сервере.

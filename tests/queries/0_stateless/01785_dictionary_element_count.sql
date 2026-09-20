@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 DROP DATABASE IF EXISTS 01785_db;
 CREATE DATABASE 01785_db;

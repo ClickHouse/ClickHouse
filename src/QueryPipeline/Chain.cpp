@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
 #include <Core/Block.h>
@@ -43,7 +44,7 @@ static void checkTransform(const IProcessor & transform)
     checkSingleOutput(transform);
 }
 
-static void checkInitialized(const std::list<ProcessorPtr> & processors)
+static void checkInitialized(const Processors & processors)
 {
     if (processors.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chain is not initialized");
@@ -55,7 +56,7 @@ Chain::Chain(ProcessorPtr processor)
     processors.emplace_back(std::move(processor));
 }
 
-Chain::Chain(std::list<ProcessorPtr> processors_) : processors(std::move(processors_))
+Chain::Chain(Processors processors_) : processors(std::move(processors_))
 {
     if (processors.empty())
         return;

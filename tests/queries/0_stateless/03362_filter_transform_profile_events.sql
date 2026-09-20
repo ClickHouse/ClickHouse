@@ -3,4 +3,4 @@ SELECT count() = 2 AS assert_exists FROM system.events WHERE name IN ('FilterTra
 
 SELECT * FROM system.numbers WHERE number % 2 = 0 LIMIT 100 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['FilterTransformPassedRows'] > 0, ProfileEvents['FilterTransformPassedBytes'] > 0 FROM system.query_log WHERE (type = 'QueryFinish') AND (current_database = currentDatabase()) AND (query = 'SELECT * FROM system.numbers WHERE number % 2 = 0 LIMIT 100 FORMAT Null;');
+SELECT ProfileEvents['FilterTransformPassedRows'] > 0, ProfileEvents['FilterTransformPassedBytes'] > 0 FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'QueryFinish') AND (current_database = currentDatabase()) AND (query = 'SELECT * FROM system.numbers WHERE number % 2 = 0 LIMIT 100 FORMAT Null;');

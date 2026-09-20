@@ -135,7 +135,7 @@ public:
     TMapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) TMapped();

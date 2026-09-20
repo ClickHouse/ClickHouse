@@ -84,8 +84,8 @@ do
     ${CLICKHOUSE_CLIENT} -m --query="""
     SELECT '${i}',
            peak_threads_usage <= ${expected_peak_threads[i - 1]},
-           (select uniqExact(thread_id) from system.query_thread_log WHERE system.query_thread_log.query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()) = length(thread_ids),
+           (select uniqExact(thread_id) from system.query_thread_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND system.query_thread_log.query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()) = length(thread_ids),
            length(thread_ids) >= peak_threads_usage
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()"
 done

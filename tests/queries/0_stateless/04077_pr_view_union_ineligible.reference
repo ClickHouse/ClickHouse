@@ -1,0 +1,16 @@
+-- mixed union: inner query sent over t_mt1
+t_mt1
+-- same table union: inner query sent over t_mt1
+t_mt1
+t_mt1
+-- diff mergetree union: query sent over view
+v_diff_mt
+-- correctness: mixed view
+198000
+198000
+-- correctness: same table view
+99000
+99000
+-- correctness: diff mergetree view
+148500
+148500

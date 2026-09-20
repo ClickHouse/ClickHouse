@@ -1,9 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Common/WKB.h>
 
 #include <Poco/Dynamic/Var.h>
@@ -29,16 +25,30 @@ enum class GeoEncoding : uint8_t
 enum class GeoType : uint8_t
 {
     Point,
+    MultiPoint,
     LineString,
     Polygon,
     MultiLineString,
-    MultiPolygon
+    MultiPolygon,
+    /// Mixed means the column has multiple or unknown geometry types.
+    /// It maps to the Geometry type (Variant of all geo types).
+    Mixed,
 };
 
 struct GeoColumnMetadata
 {
-    GeoEncoding encoding;
-    GeoType type;
+    GeoEncoding encoding = GeoEncoding::WKT;
+    GeoType type = GeoType::Mixed;
+
+    /// GeoParquet covering.bbox: names of the four Float64 scalar columns that store per-row
+    /// bounding box coordinates. Row group min/max statistics on these columns give the spatial
+    /// extent of each row group, enabling spatial predicate pushdown.
+    struct BboxCovering
+    {
+        String xmin_column, ymin_column;
+        String xmax_column, ymax_column;
+    };
+    std::optional<BboxCovering> covering_bbox;
 };
 
 #if USE_ARROW
@@ -52,6 +62,6 @@ DataTypePtr getGeoDataType(GeoType type);
 /// `col` must match getGeoDataType(type). Create it using getGeoDataType(type)->createColumn().
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col);
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer);
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing);
 
 }

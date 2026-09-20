@@ -31,7 +31,7 @@ public:
     AccessRightsElements collectRequiredGrants(AccessType access_type);
 
     String getID(char) const override { return "RolesOrUsersSet"; }
-    ASTPtr clone() const override { return std::make_shared<ASTRolesOrUsersSet>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTRolesOrUsersSet>(*this); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

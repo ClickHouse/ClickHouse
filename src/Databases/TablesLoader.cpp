@@ -57,11 +57,10 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     for (auto & database_name : databases_to_load)
     {
         databases[database_name]->beforeLoadingMetadata(global_context, strictness_mode);
-        bool is_startup = LoadingStrictnessLevel::FORCE_ATTACH <= strictness_mode;
-        databases[database_name]->loadTablesMetadata(global_context, metadata, is_startup);
+        databases[database_name]->loadTablesMetadata(global_context, metadata, isLoadingFromExistingMetadata(strictness_mode));
     }
 
-    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
+    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {:.3f} sec",
              metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
 
     stopwatch.restart();
@@ -118,7 +117,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     {
         auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
         for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(storage_id, table_id);
+            all_startup_dependencies.addDependency(table_id, storage_id);
     }
     for (const auto & table_id : mv_from_dependencies.getTables())
     {
@@ -169,7 +168,7 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())
@@ -212,7 +211,7 @@ void TablesLoader::removeUnresolvableDependencies()
             /// Tables depend on a XML dictionary.
             LOG_WARNING(
                 log,
-                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
+                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently. "
                 "Consider converting it to DDL dictionary.",
                 fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
                 table_id);
@@ -229,11 +228,11 @@ void TablesLoader::removeUnresolvableDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies = 0;
+        size_t num_dependents = 0;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to. "
                                                        "It's a bug", table_id);
 
         return true; /// Exclude this dependency.

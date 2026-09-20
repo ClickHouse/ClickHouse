@@ -8,7 +8,7 @@ void LocalDateTime::init(time_t time, const DateLUTImpl & time_zone)
     m_year = components.date.year;
     m_month = components.date.month;
     m_day = components.date.day;
-    m_hour = components.time.hour;
+    m_hour = static_cast<UInt8>(components.time.hour);
     m_minute = components.time.minute;
     m_second = components.time.second;
 

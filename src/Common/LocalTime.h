@@ -20,9 +20,9 @@ class LocalTime
 {
 private:
     bool is_negative = false;
-    uint64_t m_hour; /// NOLINT             /// Hours (0-999)
-    unsigned char m_minute;                 /// Minutes (0-59)
-    unsigned char m_second;                 /// Seconds (0-59)
+    uint64_t m_hour{}; /// NOLINT             /// Hours (0-999)
+    unsigned char m_minute{};                 /// Minutes (0-59)
+    unsigned char m_second{};                 /// Seconds (0-59)
 
     /**
      * Initializes time from `time_t` and time zone.
