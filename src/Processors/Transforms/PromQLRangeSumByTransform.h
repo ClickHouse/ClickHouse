@@ -11,6 +11,7 @@
 #include <Common/PODArray.h>
 
 #include <memory>
+#include <vector>
 
 
 namespace DB
@@ -38,6 +39,7 @@ public:
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
         size_t max_output_groups_,
+        size_t max_output_block_size_,
         /// Optional query-wide output-group limit shared by parallel lanes and their merge.
         PromQLGroupLimitPtr group_limit_ = nullptr);
 
@@ -63,6 +65,7 @@ private:
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
     const size_t max_output_groups;
+    const size_t max_output_block_size;
     const PromQLGroupLimitPtr group_limit;
 
     size_t id_position = 0;
@@ -74,11 +77,13 @@ private:
     std::unique_ptr<Arena> group_arena;
     HashMap<Group, AggregateDataPtr, HashCRC32<Group>> group_states;
     PaddedPODArray<Group> full_groups;
+    std::vector<Group> generated_groups;
+    size_t next_generated_group = 0;
 
     Group current_output_group = Collector::getGroupForNoTags();
     bool rate_state_created = false;
     bool has_current_series = false;
-    bool generated = false;
+    bool generation_started = false;
 };
 
 }

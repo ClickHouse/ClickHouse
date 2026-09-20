@@ -4,13 +4,16 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/PromQLRangeRateStep.h>
 #include <Processors/QueryPlan/PromQLRangeSumByStep.h>
+#include <Processors/QueryPlan/PromQLTwoRangeRatesStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <fmt/format.h>
@@ -150,7 +153,8 @@ bool canSplitByID(const ReadFromMergeTree & reading)
     return true;
 }
 
-bool tryOptimize(QueryPlan::Node & node, PromQLRangeSumByStep & promql_step)
+template <typename PromQLStep>
+bool tryOptimize(QueryPlan::Node & node, PromQLStep & promql_step)
 {
     const auto log = getLogger("optimizePromQLRangeSumByShards");
     if (!promql_step.isParallelProcessingRequested() || promql_step.isParallelProcessingEnabled())
@@ -223,9 +227,12 @@ bool tryOptimize(QueryPlan::Node & node, PromQLRangeSumByStep & promql_step)
         return false;
     }
 
+    const size_t max_layers = promql_step.getMaxParallelLanes()
+        ? std::min(source->reading->getNumStreams(), promql_step.getMaxParallelLanes())
+        : source->reading->getNumStreams();
     auto split = splitIntersectingPartsRangesIntoLayers(
         analysis_result->parts_with_ranges,
-        source->reading->getNumStreams(),
+        max_layers,
         /*max_columns_in_index=*/1,
         /*in_reverse_order=*/false,
         log);
@@ -263,6 +270,10 @@ void optimizePromQLRangeSumByShards(QueryPlan::Node & root)
 
         if (auto * promql_step = typeid_cast<PromQLRangeSumByStep *>(node->step.get()))
             tryOptimize(*node, *promql_step);
+        else if (auto * promql_rate_step = typeid_cast<PromQLRangeRateStep *>(node->step.get()))
+            tryOptimize(*node, *promql_rate_step);
+        else if (auto * promql_two_rates_step = typeid_cast<PromQLTwoRangeRatesStep *>(node->step.get()))
+            tryOptimize(*node, *promql_two_rates_step);
 
         stack.insert(stack.end(), node->children.begin(), node->children.end());
     }

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Logger.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Common/Logger.h>
 
 
 namespace DB
@@ -18,6 +18,12 @@ public:
     {
         Unordered,
         IdBucket,
+    };
+
+    enum class SamplesReadMode
+    {
+        Sliced,
+        Raw,
     };
 
     struct Configuration
@@ -72,7 +78,9 @@ public:
         size_t max_block_size,
         size_t num_streams,
         SamplesReadOrder samples_read_order,
-        bool enable_whole_metric_id_range_optimization = true);
+        bool enable_whole_metric_id_range_optimization = true,
+        SamplesReadMode samples_read_mode = SamplesReadMode::Sliced,
+        const Names & exact_metric_names_for_whole_metric_id_range = {});
 
     void readImpl(
         QueryPlan & query_plan,

@@ -36,10 +36,12 @@ PromQLPartialGroupMergeTransform::PromQLPartialGroupMergeTransform(
     SharedHeader input_header_,
     AggregateFunctionPtr sum_function_,
     size_t max_output_groups_,
+    size_t max_output_block_size_,
     PromQLGroupLimitPtr group_limit_)
     : IAccumulatingTransform(input_header_, transformHeader(sum_function_))
     , sum_function(std::move(sum_function_))
     , max_output_groups(max_output_groups_)
+    , max_output_block_size(max_output_block_size_)
     , group_limit(std::move(group_limit_))
     , group_arena(std::make_unique<Arena>())
 {
@@ -48,6 +50,8 @@ PromQLPartialGroupMergeTransform::PromQLPartialGroupMergeTransform(
             ErrorCodes::BAD_ARGUMENTS, "PromQL partial group merge expects sumForEach, got {}", sum_function->getName());
     if (max_output_groups == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL partial group merge requires a positive output group limit");
+    if (max_output_block_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL partial group merge requires a positive output block size");
 
     if (!input_header_->has(TimeSeriesColumnNames::Group) || !input_header_->has(TimeSeriesColumnNames::Values))
         throw Exception(
@@ -155,30 +159,38 @@ AggregateDataPtr PromQLPartialGroupMergeTransform::getOrCreateGroupState(UInt64 
 
 Chunk PromQLPartialGroupMergeTransform::generate()
 {
-    if (generated)
+    if (!generation_started)
+    {
+        generation_started = true;
+        generated_groups.reserve(group_states.size());
+        for (const auto & entry : group_states)
+            generated_groups.push_back(entry.getKey());
+        std::sort(generated_groups.begin(), generated_groups.end());
+    }
+
+    if (next_generated_group == generated_groups.size())
         return {};
 
-    generated = true;
-    if (group_states.empty())
-        return {};
-
-    std::vector<UInt64> groups;
-    groups.reserve(group_states.size());
-    for (const auto & entry : group_states)
-        groups.push_back(entry.getKey());
-    std::sort(groups.begin(), groups.end());
+    const size_t output_rows = std::min(max_output_block_size, generated_groups.size() - next_generated_group);
 
     auto group_column = ColumnUInt64::create();
     auto values_column = sum_function->getResultType()->createColumn();
-    for (UInt64 group : groups)
+    group_column->reserve(output_rows);
+    values_column->reserve(output_rows);
+    const size_t output_end = next_generated_group + output_rows;
+    for (; next_generated_group < output_end; ++next_generated_group)
     {
+        const UInt64 group = generated_groups[next_generated_group];
         group_column->insertValue(group);
         sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, group_arena.get());
     }
 
-    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
-    destroyStates();
-    group_arena = std::make_unique<Arena>();
+    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, output_rows);
+    if (next_generated_group == generated_groups.size())
+    {
+        destroyStates();
+        group_arena = std::make_unique<Arena>();
+    }
     return result;
 }
 

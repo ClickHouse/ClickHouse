@@ -13,20 +13,27 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Set.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/Prometheus/PrometheusQueryClassifier.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/PromQLRangeTopKByStep.h>
+#include <Processors/QueryPlan/PromQLRangeRateStep.h>
 #include <Processors/QueryPlan/PromQLRangeSumByStep.h>
+#include <Processors/QueryPlan/PromQLRangeTopKByStep.h>
+#include <Processors/QueryPlan/PromQLTwoRangeRatesStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Common/re2.h>
+
+#include <fmt/format.h>
 
 
 namespace DB
@@ -40,6 +47,11 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool enable_promql_native_parallel_processing;
+extern const SettingsBool enable_promql_native_raw_samples;
+extern const SettingsUInt64 max_promql_native_parallel_lanes;
+extern const SettingsUInt64 max_promql_native_rate_samples_per_series;
+extern const SettingsUInt64 max_promql_native_rate_series;
+extern const SettingsUInt64 max_promql_native_vector_grid_cells;
 }
 
 namespace
@@ -50,25 +62,25 @@ constexpr auto nonempty_filter_column = "__promql_native_nonempty";
 bool hasCompatibleEvaluationSettings(const PrometheusQueryEvaluationSettings & evaluation_settings)
 {
     return !evaluation_settings.use_current_time && evaluation_settings.start_time && evaluation_settings.end_time
-        && evaluation_settings.step && evaluation_settings.step->value > 0
-        && isDateTime64(evaluation_settings.timestamp_data_type);
+        && evaluation_settings.step && evaluation_settings.step->value > 0 && isDateTime64(evaluation_settings.timestamp_data_type);
 }
 
-StorageTimeSeriesSelector::Configuration makeRangeSumSelectorConfiguration(
+StorageTimeSeriesSelector::Configuration makeRangeSelectorConfiguration(
     ContextPtr context,
     const PrometheusQueryTree & promql_query,
     const PrometheusQueryEvaluationSettings & evaluation_settings,
-    const PromQLRangeSumByQuery & range_sum_query)
+    const PrometheusQueryTree::MatcherList & matchers,
+    PrometheusQueryTree::DurationType window)
 {
-    auto time_series_storage = storagePtrToTimeSeries(
-        DatabaseCatalog::instance().getTable(evaluation_settings.time_series_storage_id, context));
+    auto time_series_storage
+        = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto tags_metadata = tags_target->getInMemoryMetadataPtr(context, false);
 
     auto selector_node = std::make_unique<PrometheusQueryTree::InstantSelector>();
-    selector_node->matchers = range_sum_query.matchers;
+    selector_node->matchers = matchers;
 
     StorageTimeSeriesSelector::Configuration selector_config;
     selector_config.time_series_storage_id = evaluation_settings.time_series_storage_id;
@@ -76,28 +88,28 @@ StorageTimeSeriesSelector::Configuration makeRangeSumSelectorConfiguration(
     selector_config.timestamp_data_type = evaluation_settings.timestamp_data_type;
     selector_config.scalar_data_type = evaluation_settings.scalar_data_type;
     selector_config.selector = PrometheusQueryTree(std::move(selector_node), promql_query.getTimestampScale());
-    selector_config.min_time = *evaluation_settings.start_time - range_sum_query.window + 1;
+    selector_config.min_time = *evaluation_settings.start_time - window + 1;
     selector_config.max_time = *evaluation_settings.end_time;
     return selector_config;
 }
 
-std::shared_ptr<StorageTimeSeriesSelector> makeRangeSumSelectorStorage(
-    const StorageTimeSeriesSelector::Configuration & selector_config)
+std::shared_ptr<StorageTimeSeriesSelector> makeRangeSelectorStorage(
+    const StorageTimeSeriesSelector::Configuration & selector_config, StorageTimeSeriesSelector::SamplesReadMode samples_read_mode)
 {
     auto time_series_data_type = std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(
-            DataTypes{selector_config.timestamp_data_type, selector_config.scalar_data_type}));
+        std::make_shared<DataTypeTuple>(DataTypes{selector_config.timestamp_data_type, selector_config.scalar_data_type}));
     ColumnsDescription selector_columns({
         {TimeSeriesColumnNames::ID, selector_config.id_data_type},
         {TimeSeriesColumnNames::Bucket, selector_config.timestamp_data_type},
-        {TimeSeriesColumnNames::TimeSeries, time_series_data_type},
+        {samples_read_mode == StorageTimeSeriesSelector::SamplesReadMode::Raw ? TimeSeriesColumnNames::Samples
+                                                                              : TimeSeriesColumnNames::TimeSeries,
+         time_series_data_type},
     });
 
-    return std::make_shared<StorageTimeSeriesSelector>(
-        StorageID{"", "_promql_native_selector"}, selector_columns, selector_config);
+    return std::make_shared<StorageTimeSeriesSelector>(StorageID{"", "_promql_native_selector"}, selector_columns, selector_config);
 }
 
-bool tryBuildPromQLRangeSumSelectorPlan(
+bool tryBuildPromQLRangeSelectorPlan(
     QueryPlan & selector_plan,
     ContextPtr & selector_context,
     SelectQueryInfo & query_info,
@@ -107,11 +119,14 @@ bool tryBuildPromQLRangeSumSelectorPlan(
     size_t num_streams,
     const PrometheusQueryTree & promql_query,
     const PrometheusQueryEvaluationSettings & evaluation_settings,
-    const PromQLRangeSumByQuery & range_sum_query,
-    bool enable_whole_metric_id_range_optimization)
+    const PrometheusQueryTree::MatcherList & matchers,
+    PrometheusQueryTree::DurationType window,
+    bool enable_whole_metric_id_range_optimization,
+    StorageTimeSeriesSelector::SamplesReadMode samples_read_mode = StorageTimeSeriesSelector::SamplesReadMode::Sliced,
+    const Names & exact_metric_names_for_whole_metric_id_range = {})
 {
-    auto selector_config = makeRangeSumSelectorConfiguration(context, promql_query, evaluation_settings, range_sum_query);
-    auto selector_storage = makeRangeSumSelectorStorage(selector_config);
+    auto selector_config = makeRangeSelectorConfiguration(context, promql_query, evaluation_settings, matchers, window);
+    auto selector_storage = makeRangeSelectorStorage(selector_config, samples_read_mode);
 
     selector_storage->startup();
     auto selector_metadata = selector_storage->getInMemoryMetadataPtr(context, false);
@@ -122,11 +137,15 @@ bool tryBuildPromQLRangeSumSelectorPlan(
     /// cache which can skip execution of that subquery while still returning a prepared set.
     auto mutable_selector_context = Context::createCopy(context);
     mutable_selector_context->setPreparedSetsCache(nullptr);
+    mutable_selector_context->setSetting("max_block_size", UInt64{max_block_size});
     selector_context = std::move(mutable_selector_context);
 
+    const char * samples_column_name = samples_read_mode == StorageTimeSeriesSelector::SamplesReadMode::Raw
+        ? TimeSeriesColumnNames::Samples
+        : TimeSeriesColumnNames::TimeSeries;
     if (!selector_storage->buildQueryPlan(
             selector_plan,
-            Names{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Bucket, TimeSeriesColumnNames::TimeSeries},
+            Names{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Bucket, samples_column_name},
             selector_snapshot,
             query_info,
             selector_context,
@@ -134,7 +153,9 @@ bool tryBuildPromQLRangeSumSelectorPlan(
             max_block_size,
             num_streams,
             StorageTimeSeriesSelector::SamplesReadOrder::IdBucket,
-            enable_whole_metric_id_range_optimization))
+            enable_whole_metric_id_range_optimization,
+            samples_read_mode,
+            exact_metric_names_for_whole_metric_id_range))
         return false;
 
     selector_plan.addStorageHolder(selector_storage);
@@ -143,9 +164,7 @@ bool tryBuildPromQLRangeSumSelectorPlan(
 }
 
 bool materializeIdentifierSet(
-    QueryPlan & selector_plan,
-    const ContextPtr & selector_context,
-    const BuiltSetsByHashPtr & prepared_identifier_sets)
+    QueryPlan & selector_plan, const ContextPtr & selector_context, const BuiltSetsByHashPtr & prepared_identifier_sets)
 {
     /// Hybrid admission materializes the exact selector set once. The fragment must adopt that
     /// same ready SetAndKey, so duplicate-tag validation and sample reads use one selector result.
@@ -186,6 +205,42 @@ bool hasUniqueIdentifiersPerFullTagSet(const ContextPtr & context)
     return !context->getQueryContext()->getTimeSeriesTagsCollector()->hasMultipleIdentifiersForSameTags();
 }
 
+AggregateFunctionPtr makeRangeRateFunction(
+    const PrometheusQueryEvaluationSettings & evaluation_settings, PrometheusQueryTree::DurationType window, bool reads_raw_samples = false)
+{
+    const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
+    Array rate_parameters{
+        DecimalField<DateTime64>(*evaluation_settings.start_time, timestamp_scale),
+        DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale),
+        DecimalField<Decimal64>(*evaluation_settings.step, timestamp_scale),
+        DecimalField<Decimal64>(window, timestamp_scale),
+    };
+
+    AggregateFunctionProperties rate_properties;
+    DataTypes rate_arguments;
+    if (reads_raw_samples)
+        rate_arguments = DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type};
+    else
+    {
+        rate_arguments = DataTypes{std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type}))};
+    }
+    return AggregateFunctionFactory::instance().get(
+        "timeSeriesRateToGrid", NullsAction::EMPTY, rate_arguments, rate_parameters, rate_properties);
+}
+
+PrometheusQueryTree::MatcherList makeTwoRangeRatesUnionMatchers(const PromQLTwoRangeRatesQuery & query)
+{
+    auto matchers = query.rates[0].common_matchers;
+    matchers.push_back(
+        PrometheusQueryTree::Matcher{
+            .label_name = TimeSeriesTagNames::MetricName,
+            .label_value = fmt::format("(?:{}|{})", RE2::QuoteMeta(query.rates[0].metric_name), RE2::QuoteMeta(query.rates[1].metric_name)),
+            .matcher_type = PrometheusQueryTree::MatcherType::RE,
+        });
+    return matchers;
+}
+
 bool tryBuildPromQLRangeSumByPlan(
     QueryPlan & native_plan,
     SelectQueryInfo & query_info,
@@ -200,7 +255,7 @@ bool tryBuildPromQLRangeSumByPlan(
     BuiltSetsByHashPtr prepared_identifier_sets)
 {
     ContextPtr selector_context;
-    if (!tryBuildPromQLRangeSumSelectorPlan(
+    if (!tryBuildPromQLRangeSelectorPlan(
             native_plan,
             selector_context,
             query_info,
@@ -210,56 +265,164 @@ bool tryBuildPromQLRangeSumByPlan(
             num_streams,
             promql_query,
             evaluation_settings,
-            range_sum_query,
+            range_sum_query.matchers,
+            range_sum_query.window,
             /* enable_whole_metric_id_range_optimization = */ true))
         return false;
 
-    if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets)
-        || !hasUniqueIdentifiersPerFullTagSet(context))
+    if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
         return false;
 
-    const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
-    auto time_series_data_type = std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type}));
-    Array rate_parameters{
-        DecimalField<DateTime64>(*evaluation_settings.start_time, timestamp_scale),
-        DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale),
-        DecimalField<Decimal64>(*evaluation_settings.step, timestamp_scale),
-        DecimalField<Decimal64>(range_sum_query.window, timestamp_scale),
-    };
-
-    AggregateFunctionProperties rate_properties;
-    auto rate_function = AggregateFunctionFactory::instance().get(
-        "timeSeriesRateToGrid",
-        NullsAction::EMPTY,
-        DataTypes{time_series_data_type},
-        rate_parameters,
-        rate_properties);
+    auto rate_function = makeRangeRateFunction(evaluation_settings, range_sum_query.window);
 
     AggregateFunctionProperties sum_properties;
     auto sum_function = AggregateFunctionFactory::instance().get(
-        "sumForEach",
-        NullsAction::EMPTY,
-        DataTypes{rate_function->getResultType()},
-        {},
-        sum_properties);
+        "sumForEach", NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, sum_properties);
 
-    native_plan.addStep(std::make_unique<PromQLRangeSumByStep>(
-        native_plan.getCurrentHeader(),
-        context->getQueryContext()->getTimeSeriesTagsCollector(),
-        rate_function,
-        sum_function,
-        std::move(range_sum_query.labels_to_keep),
-        max_output_groups,
-        context->getSettingsRef()[Setting::enable_promql_native_parallel_processing]));
+    native_plan.addStep(
+        std::make_unique<PromQLRangeSumByStep>(
+            native_plan.getCurrentHeader(),
+            context->getQueryContext()->getTimeSeriesTagsCollector(),
+            rate_function,
+            sum_function,
+            std::move(range_sum_query.labels_to_keep),
+            max_output_groups,
+            max_block_size,
+            context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
+            context->getSettingsRef()[Setting::max_promql_native_parallel_lanes]));
 
     return true;
 }
 
-const ActionsDAG::Node & addNullableValues(
-    ActionsDAG & dag,
+bool tryBuildPromQLRangeRatePlan(
+    QueryPlan & native_plan,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams,
+    const PrometheusQueryTree & promql_query,
     const PrometheusQueryEvaluationSettings & evaluation_settings,
-    ContextPtr context)
+    const PromQLRangeRateQuery & range_rate_query,
+    BuiltSetsByHashPtr prepared_identifier_sets)
+{
+    const bool reads_raw_samples = context->getSettingsRef()[Setting::enable_promql_native_raw_samples];
+    ContextPtr selector_context;
+    if (!tryBuildPromQLRangeSelectorPlan(
+            native_plan,
+            selector_context,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams,
+            promql_query,
+            evaluation_settings,
+            range_rate_query.matchers,
+            range_rate_query.window,
+            /* enable_whole_metric_id_range_optimization = */ true,
+            reads_raw_samples ? StorageTimeSeriesSelector::SamplesReadMode::Raw : StorageTimeSeriesSelector::SamplesReadMode::Sliced))
+        return false;
+
+    if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
+        return false;
+
+    const auto max_samples_per_series = context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series];
+    if (!max_samples_per_series)
+        return false;
+
+    std::optional<Field> raw_min_time;
+    std::optional<Field> raw_max_time;
+    if (reads_raw_samples)
+    {
+        const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
+        raw_min_time = DecimalField<DateTime64>(*evaluation_settings.start_time - range_rate_query.window + 1, timestamp_scale);
+        raw_max_time = DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale);
+    }
+
+    native_plan.addStep(
+        std::make_unique<PromQLRangeRateStep>(
+            native_plan.getCurrentHeader(),
+            context->getQueryContext()->getTimeSeriesTagsCollector(),
+            makeRangeRateFunction(evaluation_settings, range_rate_query.window, reads_raw_samples),
+            max_samples_per_series,
+            max_block_size,
+            context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
+            context->getSettingsRef()[Setting::max_promql_native_parallel_lanes],
+            std::move(raw_min_time),
+            std::move(raw_max_time)));
+    return true;
+}
+
+bool tryBuildPromQLTwoRangeRatesPlan(
+    QueryPlan & native_plan,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams,
+    const PrometheusQueryTree & promql_query,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    const PromQLTwoRangeRatesQuery & two_rates_query,
+    size_t max_output_groups,
+    BuiltSetsByHashPtr prepared_identifier_sets)
+{
+    const bool reads_raw_samples = context->getSettingsRef()[Setting::enable_promql_native_raw_samples];
+    ContextPtr selector_context;
+    if (!tryBuildPromQLRangeSelectorPlan(
+            native_plan,
+            selector_context,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams,
+            promql_query,
+            evaluation_settings,
+            makeTwoRangeRatesUnionMatchers(two_rates_query),
+            two_rates_query.rates[0].window,
+            /* enable_whole_metric_id_range_optimization = */ true,
+            reads_raw_samples ? StorageTimeSeriesSelector::SamplesReadMode::Raw : StorageTimeSeriesSelector::SamplesReadMode::Sliced,
+            Names{two_rates_query.rates[0].metric_name, two_rates_query.rates[1].metric_name}))
+        return false;
+
+    if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
+        return false;
+
+    const auto max_samples_per_series = context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series];
+    const auto max_grid_cells = context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells];
+    if (!max_samples_per_series || !max_grid_cells || !max_output_groups)
+        return false;
+
+    std::optional<Field> raw_min_time;
+    std::optional<Field> raw_max_time;
+    if (reads_raw_samples)
+    {
+        const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
+        raw_min_time = DecimalField<DateTime64>(*evaluation_settings.start_time - two_rates_query.rates[0].window + 1, timestamp_scale);
+        raw_max_time = DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale);
+    }
+
+    native_plan.addStep(
+        std::make_unique<PromQLTwoRangeRatesStep>(
+            native_plan.getCurrentHeader(),
+            context->getQueryContext()->getTimeSeriesTagsCollector(),
+            makeRangeRateFunction(evaluation_settings, two_rates_query.rates[0].window, reads_raw_samples),
+            two_rates_query.rates[0].metric_name,
+            two_rates_query.rates[1].metric_name,
+            max_samples_per_series,
+            max_block_size,
+            max_output_groups,
+            max_grid_cells,
+            context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
+            context->getSettingsRef()[Setting::max_promql_native_parallel_lanes],
+            std::move(raw_min_time),
+            std::move(raw_max_time)));
+    return true;
+}
+
+const ActionsDAG::Node &
+addNullableValues(ActionsDAG & dag, const PrometheusQueryEvaluationSettings & evaluation_settings, ContextPtr context)
 {
     const auto & values = dag.findInOutputs(TimeSeriesColumnNames::Values);
     const auto nullable_scalar_type = makeNullable(evaluation_settings.scalar_data_type);
@@ -267,11 +430,7 @@ const ActionsDAG::Node & addNullableValues(
     return dag.addCast(values, nullable_values_type, "__promql_native_nullable_values", context);
 }
 
-void convertToTargetHeader(
-    QueryPlan & plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    ContextPtr context)
+void convertToTargetHeader(QueryPlan & plan, const Names & column_names, const StorageSnapshotPtr & storage_snapshot, ContextPtr context)
 {
     const auto target_header = storage_snapshot->getSampleBlockForColumns(column_names);
     auto convert_actions = ActionsDAG::makeConvertingActions(
@@ -285,17 +444,25 @@ void convertToTargetHeader(
 }
 
 bool canBuildPromQLNativeVectorGridPlan(
-    const PrometheusQueryTree & promql_query,
-    const PrometheusQueryEvaluationSettings & evaluation_settings,
-    ContextPtr context)
+    const PrometheusQueryTree & promql_query, const PrometheusQueryEvaluationSettings & evaluation_settings, ContextPtr context)
 {
-    auto native_query = extractPromQLRangeSumByQuery(
-        promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    if (!native_query || !hasCompatibleEvaluationSettings(evaluation_settings))
+    auto range_sum_query
+        = extractPromQLRangeSumByQuery(promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto range_rate_query
+        = extractPromQLRangeRateQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto two_rates_query
+        = extractPromQLTwoRangeRatesQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    if ((!range_sum_query && !range_rate_query && !two_rates_query) || !hasCompatibleEvaluationSettings(evaluation_settings))
+        return false;
+    if ((range_rate_query || two_rates_query)
+        && (!context->getSettingsRef()[Setting::max_promql_native_rate_series]
+            || !context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series]))
+        return false;
+    if (two_rates_query && !context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells])
         return false;
 
-    auto time_series_storage = storagePtrToTimeSeries(
-        DatabaseCatalog::instance().getTable(evaluation_settings.time_series_storage_id, context));
+    auto time_series_storage
+        = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
     const auto can_read_target_in_order = [&](ViewTarget::Kind target_kind)
@@ -311,11 +478,10 @@ bool canBuildPromQLNativeVectorGridPlan(
     /// fragment admission and pipeline construction. Require both possible
     /// targets to preserve `(id, bucket)` so a valid query always falls back
     /// to SQL before the external native fragment is installed.
-    return can_read_target_in_order(ViewTarget::Samples)
-        && can_read_target_in_order(ViewTarget::RecentSamples);
+    return can_read_target_in_order(ViewTarget::Samples) && can_read_target_in_order(ViewTarget::RecentSamples);
 }
 
-BuiltSetsByHashPtr tryPreparePromQLNativeVectorGridPlan(
+std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGridPlan(
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -324,17 +490,25 @@ BuiltSetsByHashPtr tryPreparePromQLNativeVectorGridPlan(
     const PrometheusQueryTree & promql_query,
     const PrometheusQueryEvaluationSettings & evaluation_settings)
 {
-    if (!canBuildPromQLNativeVectorGridPlan(promql_query, evaluation_settings, context)
-        || !hasUniqueIdentifiersPerFullTagSet(context))
-        return nullptr;
+    if (!canBuildPromQLNativeVectorGridPlan(promql_query, evaluation_settings, context) || !hasUniqueIdentifiersPerFullTagSet(context))
+        return {};
 
-    auto native_query = extractPromQLRangeSumByQuery(
-        promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    chassert(native_query);
+    auto range_sum_query
+        = extractPromQLRangeSumByQuery(promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto range_rate_query
+        = extractPromQLRangeRateQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto two_rates_query
+        = extractPromQLTwoRangeRatesQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    chassert(range_sum_query || range_rate_query || two_rates_query);
 
     QueryPlan selector_plan;
     ContextPtr selector_context;
-    if (!tryBuildPromQLRangeSumSelectorPlan(
+    auto two_rates_matchers = two_rates_query ? makeTwoRangeRatesUnionMatchers(*two_rates_query) : PrometheusQueryTree::MatcherList{};
+    const auto & matchers
+        = range_sum_query ? range_sum_query->matchers : (range_rate_query ? range_rate_query->matchers : two_rates_matchers);
+    const auto window
+        = range_sum_query ? range_sum_query->window : (range_rate_query ? range_rate_query->window : two_rates_query->rates[0].window);
+    if (!tryBuildPromQLRangeSelectorPlan(
             selector_plan,
             selector_context,
             query_info,
@@ -344,13 +518,13 @@ BuiltSetsByHashPtr tryPreparePromQLNativeVectorGridPlan(
             num_streams,
             promql_query,
             evaluation_settings,
-            *native_query,
+            matchers,
+            window,
             /* enable_whole_metric_id_range_optimization = */ false))
-        return nullptr;
+        return {};
 
-    if (!materializeIdentifierSet(selector_plan, selector_context, nullptr)
-        || !hasUniqueIdentifiersPerFullTagSet(context))
-        return nullptr;
+    if (!materializeIdentifierSet(selector_plan, selector_context, nullptr) || !hasUniqueIdentifiersPerFullTagSet(context))
+        return {};
 
     auto built_sets = collectBuiltSets(selector_plan);
     if (built_sets->sets.size() != 1)
@@ -358,7 +532,18 @@ BuiltSetsByHashPtr tryPreparePromQLNativeVectorGridPlan(
             ErrorCodes::LOGICAL_ERROR,
             "Expected one materialized identifier set for a native PromQL fragment, found {}",
             built_sets->sets.size());
-    return built_sets;
+    const auto & set_and_key = built_sets->sets.begin()->second;
+    if (!set_and_key || !set_and_key->set)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The materialized native PromQL identifier set is missing");
+
+    const size_t selected_series = set_and_key->set->getTotalRowCount();
+    if ((range_rate_query || two_rates_query) && selected_series > context->getSettingsRef()[Setting::max_promql_native_rate_series])
+        return {};
+
+    return PromQLNativeVectorGridPreparation{
+        .identifier_sets = std::move(built_sets),
+        .selected_series = selected_series,
+    };
 }
 
 bool tryBuildPromQLNativePlan(
@@ -374,41 +559,67 @@ bool tryBuildPromQLNativePlan(
     const PrometheusQueryEvaluationSettings & evaluation_settings,
     size_t max_output_groups)
 {
-    auto native_query = extractPromQLRangeSumByQuery(
-        promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    auto topk_query = extractPromQLRangeTopKByQuery(
-        promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    if ((!native_query && !topk_query) || !hasCompatibleEvaluationSettings(evaluation_settings))
+    auto native_query = extractPromQLRangeSumByQuery(promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto topk_query = extractPromQLRangeTopKByQuery(promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto range_rate_query
+        = extractPromQLRangeRateQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    if ((!native_query && !topk_query && !range_rate_query) || !hasCompatibleEvaluationSettings(evaluation_settings))
         return false;
 
     QueryPlan native_plan;
-    auto range_sum_query = topk_query ? topk_query->range_sum : *native_query;
-    if (!tryBuildPromQLRangeSumByPlan(
-            native_plan,
+    if (range_rate_query)
+    {
+        auto preparation = tryPreparePromQLNativeVectorGridPlan(
             query_info,
             context,
             processed_stage,
             max_block_size,
             num_streams,
             promql_query,
-            evaluation_settings,
-            std::move(range_sum_query),
-            max_output_groups,
-            /* prepared_identifier_sets = */ nullptr))
-        return false;
+            evaluation_settings);
+        if (!preparation
+            || !tryBuildPromQLRangeRatePlan(
+                native_plan,
+                query_info,
+                context,
+                processed_stage,
+                max_block_size,
+                num_streams,
+                promql_query,
+                evaluation_settings,
+                *range_rate_query,
+                std::move(preparation->identifier_sets)))
+            return false;
+    }
+    else
+    {
+        auto range_sum_query = topk_query ? topk_query->range_sum : *native_query;
+        if (!tryBuildPromQLRangeSumByPlan(
+                native_plan,
+                query_info,
+                context,
+                processed_stage,
+                max_block_size,
+                num_streams,
+                promql_query,
+                evaluation_settings,
+                std::move(range_sum_query),
+                max_output_groups,
+                /* prepared_identifier_sets = */ nullptr))
+            return false;
+    }
 
     if (topk_query)
-        native_plan.addStep(std::make_unique<PromQLRangeTopKByStep>(
-            native_plan.getCurrentHeader(), topk_query->k, topk_query->bottomk));
+        native_plan.addStep(
+            std::make_unique<PromQLRangeTopKByStep>(
+                native_plan.getCurrentHeader(), topk_query->k, topk_query->bottomk, max_block_size));
 
     const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
     ActionsDAG finalize_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());
     const auto & group = finalize_dag.findInOutputs(TimeSeriesColumnNames::Group);
     const auto & nullable_values = addNullableValues(finalize_dag, evaluation_settings, context);
     const auto & tags = finalize_dag.addFunction(
-        FunctionFactory::instance().get("timeSeriesGroupToTags", context),
-        {&group},
-        TimeSeriesColumnNames::Tags);
+        FunctionFactory::instance().get("timeSeriesGroupToTags", context), {&group}, TimeSeriesColumnNames::Tags);
     const auto & start = finalize_dag.addColumn(
         evaluation_settings.timestamp_data_type->createColumnConst(
             0, DecimalField<DateTime64>(*evaluation_settings.start_time, timestamp_scale)),
@@ -433,21 +644,18 @@ bool tryBuildPromQLNativePlan(
 
     ActionsDAG filter_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());
     const auto & filter_time_series = filter_dag.findInOutputs(TimeSeriesColumnNames::TimeSeries);
-    const auto & nonempty = filter_dag.addFunction(
-        FunctionFactory::instance().get("notEmpty", context),
-        {&filter_time_series},
-        nonempty_filter_column);
+    const auto & nonempty
+        = filter_dag.addFunction(FunctionFactory::instance().get("notEmpty", context), {&filter_time_series}, nonempty_filter_column);
     filter_dag.getOutputs().push_back(&nonempty);
-    native_plan.addStep(std::make_unique<FilterStep>(
-        native_plan.getCurrentHeader(), std::move(filter_dag), nonempty_filter_column, true));
+    native_plan.addStep(std::make_unique<FilterStep>(native_plan.getCurrentHeader(), std::move(filter_dag), nonempty_filter_column, true));
 
     SortDescription sort_description;
     sort_description.emplace_back(TimeSeriesColumnNames::Tags, 1, 1);
-    native_plan.addStep(std::make_unique<SortingStep>(
-        native_plan.getCurrentHeader(),
-        std::move(sort_description),
-        0,
-        SortingStep::Settings(context->getSettingsRef())));
+    auto sort_settings = SortingStep::Settings(context->getSettingsRef());
+    sort_settings.max_block_size = max_block_size;
+    native_plan.addStep(
+        std::make_unique<SortingStep>(
+            native_plan.getCurrentHeader(), std::move(sort_description), 0, std::move(sort_settings)));
 
     convertToTargetHeader(native_plan, column_names, storage_snapshot, context);
 
@@ -472,12 +680,19 @@ bool tryBuildPromQLNativeVectorGridPlan(
     if (!canBuildPromQLNativeVectorGridPlan(promql_query, evaluation_settings, context))
         return false;
 
-    auto native_query = extractPromQLRangeSumByQuery(
-        promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    chassert(native_query);
+    auto range_sum_query
+        = extractPromQLRangeSumByQuery(promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto range_rate_query
+        = extractPromQLRangeRateQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    auto two_rates_query
+        = extractPromQLTwoRangeRatesQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
+    chassert(range_sum_query || range_rate_query || two_rates_query);
 
     QueryPlan native_plan;
-    if (!tryBuildPromQLRangeSumByPlan(
+    bool built = false;
+    if (range_sum_query)
+    {
+        built = tryBuildPromQLRangeSumByPlan(
             native_plan,
             query_info,
             context,
@@ -486,9 +701,40 @@ bool tryBuildPromQLNativeVectorGridPlan(
             num_streams,
             promql_query,
             evaluation_settings,
-            std::move(*native_query),
+            std::move(*range_sum_query),
             max_output_groups,
-            std::move(prepared_identifier_sets)))
+            std::move(prepared_identifier_sets));
+    }
+    else if (range_rate_query)
+    {
+        built = tryBuildPromQLRangeRatePlan(
+            native_plan,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams,
+            promql_query,
+            evaluation_settings,
+            *range_rate_query,
+            std::move(prepared_identifier_sets));
+    }
+    else
+    {
+        built = tryBuildPromQLTwoRangeRatesPlan(
+            native_plan,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams,
+            promql_query,
+            evaluation_settings,
+            *two_rates_query,
+            max_output_groups,
+            std::move(prepared_identifier_sets));
+    }
+    if (!built)
         return false;
 
     ActionsDAG output_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());

@@ -9312,8 +9312,32 @@ Enables a native query plan for supported PromQL expressions instead of transpil
 Enables primary-key range sharding for supported native PromQL plans. The samples table must be ordered by `(id, bucket)` so that every physical series is processed by exactly one parallel stream.
 )", PRIVATE_PREVIEW) \
     \
+    DECLARE(Bool, enable_promql_native_raw_samples, false, R"(
+Enables native PromQL `rate` fragments to read raw `samples` arrays and slice their nested timestamp/value columns directly in the native transform. Disabled preserves selector-side `timeSeriesSliceSortedArray` materialization.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_parallel_lanes, 0, R"(
+Maximum number of primary-key ID range layers used by a native PromQL plan. Zero uses the automatically selected number of read streams and does not lower `max_threads`.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_query_block_size, 0, R"(
+Maximum number of rows in one block produced inside the query plan generated for PromQL evaluation. Zero uses `max_block_size`; a positive value caps the generated SQL and native fragment plans without changing the caller's outer query plan.
+)", PRIVATE_PREVIEW) \
+    \
     DECLARE(UInt64, max_promql_native_output_groups, 1000000, R"(
 Maximum number of output label groups held in memory by a native PromQL query plan.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_rate_series, 1000000, R"(
+Maximum number of physical series admitted into one native PromQL `rate` fragment. Zero disables native `rate` fragments.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_vector_grid_cells, 200000000, R"(
+Maximum combined number of series-by-evaluation-point cells admitted across native PromQL fragments in one query. Zero disables multi-fragment native plans.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_rate_samples_per_series, 1000000, R"(
+Maximum cumulative number of raw samples accepted for one physical series by a native PromQL `rate` fragment. Zero disables native `rate` fragments.
 )", PRIVATE_PREVIEW) \
     \
     DECLARE(UInt64, min_promql_native_query_range_points, 0, R"(

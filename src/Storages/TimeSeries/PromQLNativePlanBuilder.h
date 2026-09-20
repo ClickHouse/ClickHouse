@@ -7,6 +7,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -14,7 +16,13 @@ namespace DB
 class PrometheusQueryTree;
 class QueryPlan;
 
-/// Checks whether an exact range-sum subtree and every samples target which the
+struct PromQLNativeVectorGridPreparation
+{
+    BuiltSetsByHashPtr identifier_sets;
+    size_t selected_series = 0;
+};
+
+/// Checks whether an exact supported subtree and every samples target which the
 /// selector may choose satisfy the native `VECTOR_GRID` contract.
 bool canBuildPromQLNativeVectorGridPlan(
     const PrometheusQueryTree & promql_query,
@@ -25,7 +33,7 @@ bool canBuildPromQLNativeVectorGridPlan(
 /// Returns null when the fragment is unsupported or its selected identifiers do not satisfy
 /// the native one-identifier-per-full-tag-set invariant. The returned ready set is reused by
 /// the fragment plan, so admission and execution observe the same identifier snapshot.
-BuiltSetsByHashPtr tryPreparePromQLNativeVectorGridPlan(
+std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGridPlan(
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -49,7 +57,7 @@ bool tryBuildPromQLNativePlan(
     const PrometheusQueryEvaluationSettings & evaluation_settings,
     size_t max_output_groups);
 
-/// Builds the native plan for one exact range-sum subtree and exposes its
+/// Builds the native plan for one exact supported subtree and exposes its
 /// internal `VECTOR_GRID` contract: `group UInt64`, `values Array(Nullable(T))`.
 bool tryBuildPromQLNativeVectorGridPlan(
     QueryPlan & query_plan,

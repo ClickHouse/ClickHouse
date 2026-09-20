@@ -40,6 +40,7 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
     size_t max_output_groups_,
+    size_t max_output_block_size_,
     PromQLGroupLimitPtr group_limit_)
     : IAccumulatingTransform(input_header, transformHeader(sum_function_))
     , collector(std::move(collector_))
@@ -47,6 +48,7 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
     , max_output_groups(max_output_groups_)
+    , max_output_block_size(max_output_block_size_)
     , group_limit(std::move(group_limit_))
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
     , group_arena(std::make_unique<Arena>())
@@ -64,6 +66,8 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a rate state independent of Arena memory");
     if (max_output_groups == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a positive output group limit");
+    if (max_output_block_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a positive output block size");
 
     id_position = input_header->getPositionByName(TimeSeriesColumnNames::ID);
     time_series_position = input_header->getPositionByName(TimeSeriesColumnNames::TimeSeries);
@@ -217,31 +221,39 @@ AggregateDataPtr PromQLRangeSumByTransform::getOrCreateGroupState(Group group)
 
 Chunk PromQLRangeSumByTransform::generate()
 {
-    if (generated)
+    if (!generation_started)
+    {
+        finishSeries();
+        generation_started = true;
+        generated_groups.reserve(group_states.size());
+        for (const auto & entry : group_states)
+            generated_groups.push_back(entry.getKey());
+        std::sort(generated_groups.begin(), generated_groups.end());
+    }
+
+    if (next_generated_group == generated_groups.size())
         return {};
 
-    finishSeries();
-    generated = true;
-    if (group_states.empty())
-        return {};
-
-    std::vector<Group> groups;
-    groups.reserve(group_states.size());
-    for (const auto & entry : group_states)
-        groups.push_back(entry.getKey());
-    std::sort(groups.begin(), groups.end());
+    const size_t output_rows = std::min(max_output_block_size, generated_groups.size() - next_generated_group);
 
     auto group_column = ColumnUInt64::create();
     auto values_column = sum_function->getResultType()->createColumn();
-    for (Group group : groups)
+    group_column->reserve(output_rows);
+    values_column->reserve(output_rows);
+    const size_t output_end = next_generated_group + output_rows;
+    for (; next_generated_group < output_end; ++next_generated_group)
     {
+        const Group group = generated_groups[next_generated_group];
         group_column->insertValue(group);
         sum_function->insertResultInto(group_states.find(group)->getMapped(), *values_column, group_arena.get());
     }
 
-    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, groups.size());
-    destroyStates();
-    group_arena = std::make_unique<Arena>();
+    auto result = Chunk(Columns{std::move(group_column), std::move(values_column)}, output_rows);
+    if (next_generated_group == generated_groups.size())
+    {
+        destroyStates();
+        group_arena = std::make_unique<Arena>();
+    }
     return result;
 }
 

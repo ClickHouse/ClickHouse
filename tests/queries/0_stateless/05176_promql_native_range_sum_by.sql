@@ -118,6 +118,35 @@ FROM prometheusQueryRange(
     110, 130, 10)
 SETTINGS enable_promql_native_plan = 1;
 
+-- The native output cap is an execution contract, not merely a readable setting:
+-- both the serial kernel and the parallel final merge must emit at most one row
+-- per block when requested.
+SELECT max(source_block_size), count()
+FROM
+(
+    SELECT blockSize() AS source_block_size
+    FROM prometheusQueryRange(
+        promql_native_range_sum_by,
+        'sum by (dc) (rate(m{job="api"}[20]))',
+        110, 130, 10)
+)
+SETTINGS enable_promql_native_plan = 1, max_promql_query_block_size = 1;
+
+SELECT max(source_block_size), count()
+FROM
+(
+    SELECT blockSize() AS source_block_size
+    FROM prometheusQueryRange(
+        promql_native_range_sum_by,
+        'sum by (dc) (rate(m{job="api"}[20]))',
+        110, 130, 10)
+)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_parallel_processing = 1,
+    max_promql_query_block_size = 1,
+    max_threads = 4;
+
 -- A supported subtree can be evaluated natively while the ordinary SQL analyzer
 -- composes the unsupported parent around its `VECTOR_GRID` output.
 CREATE TEMPORARY TABLE promql_clamp_max_transpiled AS

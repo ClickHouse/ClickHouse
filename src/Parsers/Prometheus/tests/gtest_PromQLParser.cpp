@@ -1633,6 +1633,130 @@ TEST(PromQLClassifier, ExtractsNativeRangeSumByInputs)
     EXPECT_EQ(extracted->matchers[1].matcher_type, PrometheusQueryTree::MatcherType::EQ);
 }
 
+TEST(PromQLClassifier, ExtractsTwoNativeRateLeavesUnderSQLParent)
+{
+    PrometheusQueryTree query{
+        "ceil(sum by (namespace, pod) (rate(reads_total{job=\"cadvisor\",instance!=\"test\"}[5m]) + "
+        "rate(writes_total{instance!=\"test\",job=\"cadvisor\"}[5m])))"};
+    const auto extracted = extractPromQLTwoRangeRatesSumByQuery(query, /* is_query_range = */ true);
+
+    ASSERT_TRUE(extracted.has_value());
+    EXPECT_EQ(extracted->labels_to_keep, (Strings{"namespace", "pod"}));
+    ASSERT_NE(extracted->binary_node, nullptr);
+    EXPECT_EQ(extracted->binary_node->node_type, PrometheusQueryTree::NodeType::BinaryOperator);
+    EXPECT_EQ(extracted->rates[0].window.value, 300000);
+    EXPECT_EQ(extracted->rates[1].window.value, 300000);
+    ASSERT_NE(extracted->rates[0].node, nullptr);
+    ASSERT_NE(extracted->rates[1].node, nullptr);
+    EXPECT_EQ(extracted->rates[0].metric_name, "reads_total");
+    EXPECT_EQ(extracted->rates[1].metric_name, "writes_total");
+    ASSERT_EQ(extracted->rates[0].common_matchers.size(), 2);
+    ASSERT_EQ(extracted->rates[1].common_matchers.size(), 2);
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].label_name, "instance");
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].label_value, "test");
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].matcher_type, PrometheusQueryTree::MatcherType::NE);
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].label_name, "job");
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].label_value, "cadvisor");
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].matcher_type, PrometheusQueryTree::MatcherType::EQ);
+    for (size_t i = 0; i != extracted->rates[0].common_matchers.size(); ++i)
+    {
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].label_name, extracted->rates[1].common_matchers[i].label_name);
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].label_value, extracted->rates[1].common_matchers[i].label_value);
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].matcher_type, extracted->rates[1].common_matchers[i].matcher_type);
+    }
+
+    const auto island = extractPromQLTwoRangeRatesQuery(extracted->binary_node, /* is_query_range = */ true);
+    ASSERT_TRUE(island.has_value());
+    EXPECT_EQ(island->binary_node, extracted->binary_node);
+    EXPECT_EQ(island->rates[0].metric_name, "reads_total");
+    EXPECT_EQ(island->rates[1].metric_name, "writes_total");
+    EXPECT_FALSE(extractPromQLTwoRangeRatesQuery(extracted->binary_node, /* is_query_range = */ false).has_value());
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridOutsideQueryRangeOrOuterShape)
+{
+    const auto classify = [](std::string_view query, bool is_query_range = true)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, is_query_range).has_value(); };
+
+    for (const auto * const query : {
+             "sum by (job) (rate(reads_total[5m]) + rate(writes_total[5m]))",
+             "ceil(avg by (job) (rate(reads_total[5m]) + rate(writes_total[5m])))",
+             "ceil(sum without (job) (rate(reads_total[5m]) + rate(writes_total[5m])))",
+             "ceil(sum by (job) (irate(reads_total[5m]) + rate(writes_total[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+
+    EXPECT_FALSE(classify("ceil(sum by (job) (rate(reads_total[5m]) + rate(writes_total[5m])))", false));
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithoutExactlyOneEqualityMetricMatcher)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             "ceil(sum by (job) (rate({job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+             "ceil(sum by (job) (rate({__name__=\"reads_total\",__name__=\"reads_total\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+             "ceil(sum by (job) (rate({__name__=~\"reads_.*\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+             "ceil(sum by (job) (rate({__name__!=\"reads_total\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+             "ceil(sum by (job) (rate({__name__=\"\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithSameMetricOrDifferentWindows)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(reads_total{job=\"cadvisor\"}[5m])))",
+             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[10m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithDifferentCommonMatchers)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"other\"}[5m])))",
+             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\",instance=\"one\"}[5m])))",
+             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\",instance!=\"one\"}[5m]) + rate(writes_total{job=\"cadvisor\",instance=\"one\"}[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithBinaryOperatorsOrVectorMatching)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             "ceil(sum by (job) (rate(reads_total[5m]) - rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) * rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) / rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + on(job) rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + ignoring(instance) rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + on(job) group_left rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + ignoring(job) group_right rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) > bool rate(writes_total[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
 TEST(PromQLClassifier, SupportsOnlyBoundedConstantRangeTopK)
 {
     const auto classify = [](std::string_view query, bool is_query_range = true)

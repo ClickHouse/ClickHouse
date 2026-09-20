@@ -199,6 +199,7 @@ QueryPipeline makePipeline(
     const AggregateFunctionPtr & sum_function,
     Strings labels_to_keep,
     size_t max_output_groups = 1024,
+    size_t max_output_block_size = 1024,
     PromQLGroupLimitPtr group_limit = nullptr)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
@@ -208,6 +209,7 @@ QueryPipeline makePipeline(
         sum_function,
         std::move(labels_to_keep),
         max_output_groups,
+        max_output_block_size,
         std::move(group_limit));
     Pipe pipe(source);
     pipe.addTransform(transform);
@@ -236,20 +238,22 @@ QueryPipeline makePartialGroupMergePipeline(
     Chunks chunks,
     const AggregateFunctionPtr & sum_function,
     size_t max_output_groups = 1024,
+    size_t max_output_block_size = 1024,
     PromQLGroupLimitPtr group_limit = nullptr)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
     auto transform = std::make_shared<PromQLPartialGroupMergeTransform>(
-        header, sum_function, max_output_groups, std::move(group_limit));
+        header, sum_function, max_output_groups, max_output_block_size, std::move(group_limit));
     Pipe pipe(source);
     pipe.addTransform(transform);
     return QueryPipeline(std::move(pipe));
 }
 
-QueryPipeline makeRangeTopKPipeline(const SharedHeader & header, Chunks chunks, UInt64 k, bool bottomk)
+QueryPipeline makeRangeTopKPipeline(
+    const SharedHeader & header, Chunks chunks, UInt64 k, bool bottomk, size_t max_output_block_size = 1024)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
-    auto transform = std::make_shared<PromQLRangeTopKByTransform>(header, k, bottomk);
+    auto transform = std::make_shared<PromQLRangeTopKByTransform>(header, k, bottomk, max_output_block_size);
     Pipe pipe(source);
     pipe.addTransform(transform);
     return QueryPipeline(std::move(pipe));
@@ -449,6 +453,44 @@ TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
+TEST(PromQLRangeSumByTransform, CapsOutputBlockSize)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type);
+    const auto collector = makeCollector();
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function);
+
+    Chunks chunks;
+    chunks.emplace_back(makeSamplesChunk(
+        samples_type,
+        {1, 3},
+        {{{0, 0.0}, {10, 10.0}, {20, 20.0}}, {{0, 0.0}, {10, 20.0}, {20, 40.0}}}));
+    auto pipeline = makePipeline(
+        header,
+        std::move(chunks),
+        collector,
+        rate_function,
+        sum_function,
+        Strings{"namespace"},
+        /*max_output_groups=*/1024,
+        /*max_output_block_size=*/1);
+
+    PullingPipelineExecutor executor(pipeline);
+    Chunk first;
+    Chunk second;
+    Chunk tail;
+    ASSERT_TRUE(executor.pull(first));
+    ASSERT_TRUE(executor.pull(second));
+    ASSERT_FALSE(executor.pull(tail));
+    ASSERT_EQ(first.getNumRows(), 1);
+    ASSERT_EQ(second.getNumRows(), 1);
+
+    const auto & first_groups = assert_cast<const ColumnUInt64 &>(*first.getColumns().at(0));
+    const auto & second_groups = assert_cast<const ColumnUInt64 &>(*second.getColumns().at(0));
+    EXPECT_LT(first_groups.getElement(0), second_groups.getElement(0));
+}
+
 TEST(PromQLRangeSumByTransform, UsesPopulatedTagsCollector)
 {
     const auto samples_type = makeSamplesType();
@@ -498,7 +540,14 @@ TEST(PromQLRangeSumByStep, BuildsAndRunsSingleStreamPipeline)
     auto builder = std::make_unique<QueryPipelineBuilder>();
     builder->init(Pipe(std::make_shared<ChunksSource>(header, std::move(chunks))));
 
-    PromQLRangeSumByStep step(header, collector, rate_function, sum_function, Strings{"namespace"}, /*max_output_groups=*/1024);
+    PromQLRangeSumByStep step(
+        header,
+        collector,
+        rate_function,
+        sum_function,
+        Strings{"namespace"},
+        /*max_output_groups=*/1024,
+        /*max_output_block_size=*/1024);
     QueryPipelineBuilders inputs;
     inputs.emplace_back(std::move(builder));
     BuildQueryPipelineSettings settings(getContext().context);
@@ -566,7 +615,14 @@ TEST(PromQLRangeSumByStep, MergesSortedInputStreamsBeforeNativeKernel)
         auto builder = std::make_unique<QueryPipelineBuilder>();
         builder->init(Pipe::unitePipes(std::move(pipes)));
 
-        PromQLRangeSumByStep step(header, collector, rate_function, sum_function, Strings{"namespace"}, /*max_output_groups=*/1024);
+        PromQLRangeSumByStep step(
+            header,
+            collector,
+            rate_function,
+            sum_function,
+            Strings{"namespace"},
+            /*max_output_groups=*/1024,
+            /*max_output_block_size=*/1024);
         QueryPipelineBuilders inputs;
         inputs.emplace_back(std::move(builder));
         BuildQueryPipelineSettings settings(getContext().context);
@@ -655,7 +711,13 @@ TEST(PromQLRangeSumByStep, ParallelLanesShareOneOutputGroupAtLimit)
     builder->init(Pipe::unitePipes(std::move(pipes)));
 
     PromQLRangeSumByStep step(
-        header, collector, rate_function, sum_function, Strings{"namespace"}, /*max_output_groups=*/1);
+        header,
+        collector,
+        rate_function,
+        sum_function,
+        Strings{"namespace"},
+        /*max_output_groups=*/1,
+        /*max_output_block_size=*/1024);
     step.enableParallelProcessing();
     QueryPipelineBuilders inputs;
     inputs.emplace_back(std::move(builder));
@@ -719,6 +781,37 @@ TEST(PromQLPartialGroupMergeTransform, EnforcesGlobalOutputGroupLimit)
     PullingPipelineExecutor executor(pipeline);
     Chunk output;
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
+}
+
+TEST(PromQLPartialGroupMergeTransform, CapsOutputBlockSize)
+{
+    const auto samples_type = makeSamplesType();
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function);
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+
+    Chunks chunks;
+    chunks.emplace_back(makePartialGroupsChunk(
+        header,
+        {30, 10, 20},
+        {Array{Field{3.0}}, Array{Field{1.0}}, Array{Field{2.0}}}));
+    auto pipeline = makePartialGroupMergePipeline(
+        header,
+        std::move(chunks),
+        sum_function,
+        /*max_output_groups=*/1024,
+        /*max_output_block_size=*/1);
+
+    PullingPipelineExecutor executor(pipeline);
+    std::vector<UInt64> groups;
+    Chunk output;
+    while (executor.pull(output))
+    {
+        ASSERT_EQ(output.getNumRows(), 1);
+        const auto & group_column = assert_cast<const ColumnUInt64 &>(*output.getColumns().at(0));
+        groups.push_back(group_column.getElement(0));
+    }
+    EXPECT_EQ(groups, (std::vector<UInt64>{10, 20, 30}));
 }
 
 TEST(PromQLRangeTopKByTransform, SelectsPerStepWithDeterministicPromQLSemantics)
@@ -789,6 +882,37 @@ TEST(PromQLRangeTopKByTransform, ZeroKProducesNoRows)
     PullingPipelineExecutor executor(pipeline);
     Chunk output;
     EXPECT_FALSE(executor.pull(output));
+}
+
+TEST(PromQLRangeTopKByTransform, CapsOutputBlockSizeAcrossStepUnion)
+{
+    const auto samples_type = makeSamplesType();
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function);
+    const auto header = PromQLRangeSumByTransform::transformHeader(sum_function);
+
+    Chunks chunks;
+    chunks.emplace_back(makePartialGroupsChunk(
+        header,
+        {30, 20, 10},
+        {
+            Array{Field{3.0}, Field{1.0}, Field{1.0}},
+            Array{Field{1.0}, Field{3.0}, Field{1.0}},
+            Array{Field{1.0}, Field{1.0}, Field{3.0}},
+        }));
+    auto pipeline = makeRangeTopKPipeline(
+        header, std::move(chunks), /*k=*/1, /*bottomk=*/false, /*max_output_block_size=*/1);
+    PullingPipelineExecutor executor(pipeline);
+
+    std::vector<UInt64> groups;
+    Chunk output;
+    while (executor.pull(output))
+    {
+        ASSERT_EQ(output.getNumRows(), 1);
+        const auto & group_column = assert_cast<const ColumnUInt64 &>(*output.getColumns().at(0));
+        groups.push_back(group_column.getElement(0));
+    }
+    EXPECT_EQ(groups, (std::vector<UInt64>{10, 20, 30}));
 }
 
 }

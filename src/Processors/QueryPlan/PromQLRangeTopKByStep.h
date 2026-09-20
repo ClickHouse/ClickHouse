@@ -12,7 +12,7 @@ namespace DB
 class PromQLRangeTopKByStep final : public ITransformingStep
 {
 public:
-    PromQLRangeTopKByStep(SharedHeader input_header_, UInt64 k_, bool bottomk_);
+    PromQLRangeTopKByStep(SharedHeader input_header_, UInt64 k_, bool bottomk_, size_t max_output_block_size_);
 
     String getName() const override { return "PromQLRangeTopKBy"; }
     bool isInputOrderDependent() const override { return false; }
@@ -24,6 +24,7 @@ private:
 
     const UInt64 k;
     const bool bottomk;
+    const size_t max_output_block_size;
 };
 
 }

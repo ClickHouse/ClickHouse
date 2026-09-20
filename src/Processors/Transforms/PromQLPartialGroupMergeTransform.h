@@ -7,6 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 
 #include <memory>
+#include <vector>
 
 
 namespace DB
@@ -24,6 +25,7 @@ public:
         SharedHeader input_header_,
         AggregateFunctionPtr sum_function_,
         size_t max_output_groups_,
+        size_t max_output_block_size_,
         PromQLGroupLimitPtr group_limit_ = nullptr);
 
     ~PromQLPartialGroupMergeTransform() override;
@@ -42,6 +44,7 @@ private:
 
     AggregateFunctionPtr sum_function;
     const size_t max_output_groups;
+    const size_t max_output_block_size;
     const PromQLGroupLimitPtr group_limit;
 
     size_t group_position = 0;
@@ -49,7 +52,9 @@ private:
 
     std::unique_ptr<Arena> group_arena;
     HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> group_states;
-    bool generated = false;
+    std::vector<UInt64> generated_groups;
+    size_t next_generated_group = 0;
+    bool generation_started = false;
 };
 
 }

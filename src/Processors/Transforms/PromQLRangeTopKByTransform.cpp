@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
-#include <numeric>
 
 
 namespace DB
@@ -33,11 +32,16 @@ SharedHeader PromQLRangeTopKByTransform::transformHeader(const SharedHeader & in
     return input_header;
 }
 
-PromQLRangeTopKByTransform::PromQLRangeTopKByTransform(SharedHeader input_header_, UInt64 k_, bool bottomk_)
+PromQLRangeTopKByTransform::PromQLRangeTopKByTransform(
+    SharedHeader input_header_, UInt64 k_, bool bottomk_, size_t max_output_block_size_)
     : IAccumulatingTransform(input_header_, transformHeader(input_header_))
     , k(k_)
     , bottomk(bottomk_)
+    , max_output_block_size(max_output_block_size_)
 {
+    if (max_output_block_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range topk requires a positive output block size");
+
     if (!input_header_->has(TimeSeriesColumnNames::Group) || !input_header_->has(TimeSeriesColumnNames::Values))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -140,54 +144,63 @@ void PromQLRangeTopKByTransform::consume(Chunk chunk)
 
 Chunk PromQLRangeTopKByTransform::generate()
 {
-    if (generated)
-        return {};
-    generated = true;
-
     if (rows.empty() || k == 0)
         return {};
 
-    std::vector<std::vector<UInt8>> selected(rows.size(), std::vector<UInt8>(num_steps, 0));
-    for (size_t step = 0; step < num_steps; ++step)
+    if (!generation_started)
     {
-        std::vector<size_t> candidates;
-        candidates.reserve(rows.size());
+        generation_started = true;
+        selected.assign(rows.size(), std::vector<UInt8>(num_steps, 0));
+        for (size_t step = 0; step < num_steps; ++step)
+        {
+            std::vector<size_t> candidates;
+            candidates.reserve(rows.size());
+            for (size_t row = 0; row < rows.size(); ++row)
+            {
+                if (!rows[row].values[step].isNull())
+                    candidates.push_back(row);
+            }
+
+            const size_t selected_count = std::min<UInt64>(k, candidates.size());
+            if (selected_count)
+            {
+                std::partial_sort(
+                    candidates.begin(),
+                    candidates.begin() + selected_count,
+                    candidates.end(),
+                    [&](size_t lhs, size_t rhs)
+                    {
+                        return isBetter(rows[lhs].values[step], rows[lhs].group, rows[rhs].values[step], rows[rhs].group, bottomk);
+                    });
+            }
+            for (size_t index = 0; index < selected_count; ++index)
+                selected[candidates[index]][step] = 1;
+        }
+
+        generated_rows.reserve(rows.size());
         for (size_t row = 0; row < rows.size(); ++row)
         {
-            if (!rows[row].values[step].isNull())
-                candidates.push_back(row);
+            if (std::any_of(selected[row].begin(), selected[row].end(), [](UInt8 value) { return value != 0; }))
+                generated_rows.push_back(row);
         }
-
-        const size_t selected_count = std::min<UInt64>(k, candidates.size());
-        if (selected_count)
-        {
-            std::partial_sort(
-                candidates.begin(),
-                candidates.begin() + selected_count,
-                candidates.end(),
-                [&](size_t lhs, size_t rhs)
-                {
-                    return isBetter(rows[lhs].values[step], rows[lhs].group, rows[rhs].values[step], rows[rhs].group, bottomk);
-                });
-        }
-        for (size_t index = 0; index < selected_count; ++index)
-            selected[candidates[index]][step] = 1;
+        std::sort(
+            generated_rows.begin(),
+            generated_rows.end(),
+            [&](size_t lhs, size_t rhs) { return rows[lhs].group < rows[rhs].group; });
     }
 
-    std::vector<size_t> ordered_rows(rows.size());
-    std::iota(ordered_rows.begin(), ordered_rows.end(), 0);
-    std::sort(
-        ordered_rows.begin(),
-        ordered_rows.end(),
-        [&](size_t lhs, size_t rhs) { return rows[lhs].group < rows[rhs].group; });
+    if (next_generated_row == generated_rows.size())
+        return {};
 
     auto group_column = ColumnUInt64::create();
     auto values_column = input.getSharedHeader()->getByPosition(values_position).type->createColumn();
-    size_t output_rows = 0;
-    for (size_t row : ordered_rows)
+    const size_t output_rows = std::min(max_output_block_size, generated_rows.size() - next_generated_row);
+    group_column->reserve(output_rows);
+    values_column->reserve(output_rows);
+    const size_t output_end = next_generated_row + output_rows;
+    for (; next_generated_row < output_end; ++next_generated_row)
     {
-        if (std::none_of(selected[row].begin(), selected[row].end(), [](UInt8 value) { return value != 0; }))
-            continue;
+        const size_t row = generated_rows[next_generated_row];
 
         Array output_values;
         output_values.reserve(num_steps);
@@ -196,7 +209,6 @@ Chunk PromQLRangeTopKByTransform::generate()
 
         group_column->insertValue(rows[row].group);
         values_column->insert(output_values);
-        ++output_rows;
     }
 
     return Chunk(Columns{std::move(group_column), std::move(values_column)}, output_rows);

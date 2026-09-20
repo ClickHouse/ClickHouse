@@ -19,7 +19,7 @@ namespace DB
 class PromQLRangeTopKByTransform final : public IAccumulatingTransform
 {
 public:
-    PromQLRangeTopKByTransform(SharedHeader input_header_, UInt64 k_, bool bottomk_);
+    PromQLRangeTopKByTransform(SharedHeader input_header_, UInt64 k_, bool bottomk_, size_t max_output_block_size_);
 
     String getName() const override { return "PromQLRangeTopKBy"; }
 
@@ -41,13 +41,17 @@ private:
 
     const UInt64 k;
     const bool bottomk;
+    const size_t max_output_block_size;
     size_t group_position = 0;
     size_t values_position = 0;
     size_t num_steps = 0;
     bool has_num_steps = false;
-    bool generated = false;
+    bool generation_started = false;
+    size_t next_generated_row = 0;
 
     std::vector<Row> rows;
+    std::vector<std::vector<UInt8>> selected;
+    std::vector<size_t> generated_rows;
     HashSet<UInt64, HashCRC32<UInt64>> seen_groups;
 };
 

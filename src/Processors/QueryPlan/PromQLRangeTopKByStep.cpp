@@ -30,10 +30,12 @@ ITransformingStep::Traits getTraits()
 
 }
 
-PromQLRangeTopKByStep::PromQLRangeTopKByStep(SharedHeader input_header_, UInt64 k_, bool bottomk_)
+PromQLRangeTopKByStep::PromQLRangeTopKByStep(
+    SharedHeader input_header_, UInt64 k_, bool bottomk_, size_t max_output_block_size_)
     : ITransformingStep(input_header_, PromQLRangeTopKByTransform::transformHeader(input_header_), getTraits())
     , k(k_)
     , bottomk(bottomk_)
+    , max_output_block_size(max_output_block_size_)
 {
 }
 
@@ -47,8 +49,8 @@ void PromQLRangeTopKByStep::transformPipeline(QueryPipelineBuilder & pipeline, c
             pipeline.getNumStreams());
 
     pipeline.addSimpleTransform(
-        [limit = this->k, is_bottomk = this->bottomk](const SharedHeader & header)
-        { return std::make_shared<PromQLRangeTopKByTransform>(header, limit, is_bottomk); });
+        [limit = this->k, is_bottomk = this->bottomk, block_size = this->max_output_block_size](const SharedHeader & header)
+        { return std::make_shared<PromQLRangeTopKByTransform>(header, limit, is_bottomk, block_size); });
 }
 
 void PromQLRangeTopKByStep::updateOutputHeader()

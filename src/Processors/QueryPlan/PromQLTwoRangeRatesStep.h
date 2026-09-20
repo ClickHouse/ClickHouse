@@ -1,31 +1,35 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/Transforms/PromQLRangeSumByTransform.h>
+#include <Processors/Transforms/PromQLTwoRangeRatesTransform.h>
 
 
 namespace DB
 {
 
-/// Merges streams ordered by `(id, bucket)` and adds the single-stream native
-/// kernel for `sum by (...) (rate(selector[window]))` to a query pipeline.
-class PromQLRangeSumByStep final : public ITransformingStep
+/// Merges streams ordered by `(id, bucket)` and evaluates the exact native
+/// `rate(metric_a[window]) + rate(metric_b[window])` vector-matching island.
+class PromQLTwoRangeRatesStep final : public ITransformingStep
 {
 public:
-    using CollectorPtr = PromQLRangeSumByTransform::CollectorPtr;
+    using CollectorPtr = PromQLTwoRangeRatesTransform::CollectorPtr;
 
-    PromQLRangeSumByStep(
+    PromQLTwoRangeRatesStep(
         SharedHeader input_header_,
         CollectorPtr collector_,
         AggregateFunctionPtr rate_function_,
-        AggregateFunctionPtr sum_function_,
-        Strings labels_to_keep_,
-        size_t max_output_groups_,
+        String first_metric_name_,
+        String second_metric_name_,
+        size_t max_samples_per_series_,
         size_t max_output_block_size_,
+        size_t max_output_groups_,
+        size_t max_grid_cells_,
         bool parallel_processing_requested_ = false,
-        size_t max_parallel_lanes_ = 0);
+        size_t max_parallel_lanes_ = 0,
+        std::optional<Field> raw_min_time_ = {},
+        std::optional<Field> raw_max_time_ = {});
 
-    String getName() const override { return "PromQLRangeSumBy"; }
+    String getName() const override { return "PromQLTwoRangeRates"; }
     bool isInputOrderDependent() const override { return true; }
 
     bool isParallelProcessingRequested() const { return parallel_processing_requested; }
@@ -40,13 +44,17 @@ private:
 
     CollectorPtr collector;
     AggregateFunctionPtr rate_function;
-    AggregateFunctionPtr sum_function;
-    Strings labels_to_keep;
-    size_t max_output_groups;
+    String first_metric_name;
+    String second_metric_name;
+    size_t max_samples_per_series;
     size_t max_output_block_size;
+    size_t max_output_groups;
+    size_t max_grid_cells;
     size_t max_parallel_lanes;
     bool parallel_processing_requested;
     bool parallel_processing_enabled = false;
+    std::optional<Field> raw_min_time;
+    std::optional<Field> raw_max_time;
 };
 
 }
