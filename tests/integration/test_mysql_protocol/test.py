@@ -630,6 +630,11 @@ def test_mysql_replacement_query_injection(started_cluster):
     # "^[0-9]" check silently dropped every multi-digit id. A single trailing ';' is accepted
     # (programmatic clients pass it through), but a non-numeric tail or a second statement is not,
     # so it stays injection-safe and never falls through to the unsupported raw "KILL QUERY <id>".
+    with pytest.raises(pymysql.Error) as exc_info:
+        cursor.execute(f"KILL QUERY {client.thread_id()}")
+    assert "No query to kill" in str(exc_info.value)
+
+    cursor.execute("SET kill_throw_if_noop = 0")
     cursor.execute("KILL QUERY 12")
     cursor.execute("KILL QUERY 12;")
     with pytest.raises(pymysql.Error):

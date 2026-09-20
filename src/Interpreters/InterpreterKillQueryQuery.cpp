@@ -230,6 +230,8 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         ProcessList & process_list = getContext()->getProcessList();
         QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
+        if (queries_to_stop.empty() && kill_throw_if_noop)
+            throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
 
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});

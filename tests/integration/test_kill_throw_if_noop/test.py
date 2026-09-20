@@ -24,12 +24,19 @@ def test_kill_throw_if_noop(start_cluster):
     assert "No query to kill" in str(exc.value)
 
     with pytest.raises(QueryRuntimeException) as exc:
+        node.query("KILL QUERY WHERE user = currentUser()")
+    assert "No query to kill" in str(exc.value)
+
+    with pytest.raises(QueryRuntimeException) as exc:
         node.query("KILL mutation where is_done = 0;")
     assert "No query to kill" in str(exc.value)
 
 
 def test_kill_not_throw_if_noop(start_cluster):
     node.query("KILL query where query_id = '123' SETTINGS kill_throw_if_noop = 0;")
+    node.query(
+        "KILL QUERY WHERE user = currentUser() SETTINGS kill_throw_if_noop = 0"
+    )
 
     node.query(
         "KILL mutation where is_done = 0 SETTINGS kill_throw_if_noop = 0;"
