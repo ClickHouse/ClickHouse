@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the selector check below parses PromQL, which needs ANTLR4, disabled in the fast-test build.
+
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_cache;
