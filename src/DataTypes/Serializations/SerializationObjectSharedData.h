@@ -243,9 +243,9 @@ private:
     {
         /// Mark of the ObjectSharedDataData stream for this path.
         MarkInCompressedFile data_mark{};
-        /// End of this path's data in the ObjectSharedDataData stream, used to bound the read so it does not
-        /// run into the following paths. Points to the first following path not read together with this one;
-        /// empty when the run reaches the chunk end (then the read is bounded to the next chunk/granule).
+        /// First compressed block of the ObjectSharedDataData stream after this path that contains no
+        /// requested data, used to bound the read so it does not run into the following paths. Empty when
+        /// the read should extend to the range end.
         std::optional<MarkInCompressedFile> data_end_mark;
         /// Mark of the substreams list in ObjectSharedDataSubstreams stream for this path.
         MarkInCompressedFile substreams_mark{};

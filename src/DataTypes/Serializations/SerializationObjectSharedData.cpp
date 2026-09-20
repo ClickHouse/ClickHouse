@@ -1181,33 +1181,63 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
     if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, paths_infos_path))
         return assert_cast<SubstreamsCachePathsInfosElement *>(cached_paths_infos)->paths_infos_chunks;
 
-    /// Deserialize paths infos chunk by chunk.
+    /// A path's read in the data stream is bounded to the first compressed block after it that contains no
+    /// requested data, so it does not read forward into the following paths. Blocks holding requested data are
+    /// read in one go, across chunks too, since chunk data in the stream is contiguous.
     auto paths_infos_chunks = std::make_shared<PathsInfosChunks>();
     paths_infos_chunks->reserve(chunk_structures.size());
+
+    /// Offsets of the compressed blocks in the data stream that contain no requested data.
+    std::vector<size_t> compressed_blocks_without_requested_data;
+
+    std::optional<size_t> current_compressed_block_offset;
+    bool current_compressed_block_has_requested_data = false;
+    bool previous_path_requested = false;
+
+    auto finish_current_compressed_block = [&]
+    {
+        if (current_compressed_block_offset && !current_compressed_block_has_requested_data)
+            compressed_blocks_without_requested_data.push_back(*current_compressed_block_offset);
+    };
+
+    /// Marks come in ascending order, so a different compressed offset means a new compressed block.
+    auto add_mark = [&](const MarkInCompressedFile & mark, bool requested)
+    {
+        if (current_compressed_block_offset != mark.offset_in_compressed_file)
+        {
+            finish_current_compressed_block();
+            current_compressed_block_offset = mark.offset_in_compressed_file;
+            current_compressed_block_has_requested_data = false;
+        }
+
+        /// The compressed block contains requested data if a requested path starts in it, or if the previous
+        /// path is requested and continues into it - which is the case when this mark is not at a block start.
+        if (requested || (previous_path_requested && mark.offset_in_decompressed_block != 0))
+            current_compressed_block_has_requested_data = true;
+
+        previous_path_requested = requested;
+    };
+
     for (const auto & chunk_structure : chunk_structures)
     {
         auto & path_to_info = (*paths_infos_chunks).emplace_back().path_to_info;
 
-        /// If there is nothing to read from this chunk, just skip it.
-        if (chunk_structure.limit == 0 || chunk_structure.position_to_requested_path.empty())
+        /// Chunks outside the read window contribute nothing.
+        if (chunk_structure.limit == 0)
             continue;
 
-        bool need_subcolumns_info = false;
-        for (const auto & [_, requested_path] : chunk_structure.position_to_requested_path)
+        /// A chunk with no requested paths is a single not requested region: represent it by its data mark
+        /// alone, without reading its path marks.
+        if (chunk_structure.position_to_requested_path.empty())
         {
-            if (structure_state.requested_paths_subcolumns.contains(requested_path))
-            {
-                need_subcolumns_info = true;
-                break;
-            }
+            add_mark(chunk_structure.data_stream_mark, /*requested=*/false);
+            continue;
         }
 
         if (!settings.seek_stream_to_mark_callback)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
 
-        /// Read marks of all paths (not only requested ones) to know each requested path's data mark and
-        /// where its data ends, so a path read can be bounded to its end instead of running to the end of
-        /// the chunk. Marks are non-decreasing by offset, so boundary_marks stays sorted.
+        /// Read marks of all paths: which compressed blocks contain requested data follows from all marks.
         {
             settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
             auto * paths_marks_stream = settings.getter(settings.path);
@@ -1218,11 +1248,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
             /// We don't read data from marks stream continuously, so we need to seek to the start of this chunk.
             settings.seek_stream_to_mark_callback(settings.path, chunk_structure.paths_marks_stream_mark);
 
-            /// Marks of paths not read as a whole (not requested, or requested only for subcolumns). A path's
-            /// read ends at the next such path: paths in between are read fully, so reading them ahead reuses
-            /// their data, while a path not read as a whole would only contribute data we never decode.
-            std::vector<MarkInCompressedFile> boundary_marks;
-            boundary_marks.reserve(chunk_structure.num_paths);
             for (size_t i = 0; i != chunk_structure.num_paths; ++i)
             {
                 MarkInCompressedFile mark{};
@@ -1233,22 +1258,21 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
                 bool requested = path_it != chunk_structure.position_to_requested_path.end();
                 if (requested)
                     path_to_info[path_it->second].data_mark = mark;
-                if (!requested || structure_state.requested_paths_subcolumns.contains(path_it->second))
-                    boundary_marks.push_back(mark);
-            }
 
-            /// End of a path's data: the first not-read-as-a-whole path starting in a strictly greater
-            /// compressed block (strictly greater keeps paths sharing a block together).
-            for (const auto & [_, requested_path] : chunk_structure.position_to_requested_path)
-            {
-                auto & path_info = path_to_info[requested_path];
-                auto it = std::upper_bound(boundary_marks.begin(), boundary_marks.end(), path_info.data_mark.offset_in_compressed_file,
-                    [](size_t offset, const MarkInCompressedFile & boundary) { return offset < boundary.offset_in_compressed_file; });
-                if (it != boundary_marks.end())
-                    path_info.data_end_mark = *it;
+                add_mark(mark, requested);
             }
 
             settings.path.pop_back();
+        }
+
+        bool need_subcolumns_info = false;
+        for (const auto & [_, requested_path] : chunk_structure.position_to_requested_path)
+        {
+            if (structure_state.requested_paths_subcolumns.contains(requested_path))
+            {
+                need_subcolumns_info = true;
+                break;
+            }
         }
 
         if (need_subcolumns_info)
@@ -1337,6 +1361,24 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
         }
     }
 
+    finish_current_compressed_block();
+
+    /// Bound each requested path to the first compressed block without requested data after it, which can be
+    /// dropped from the read entirely. path_to_info contains only requested paths.
+    for (auto & paths_infos : *paths_infos_chunks)
+    {
+        for (auto & [_, path_info] : paths_infos.path_to_info)
+        {
+            auto it = std::upper_bound(
+                compressed_blocks_without_requested_data.begin(),
+                compressed_blocks_without_requested_data.end(),
+                path_info.data_mark.offset_in_compressed_file);
+
+            if (it != compressed_blocks_without_requested_data.end())
+                path_info.data_end_mark = MarkInCompressedFile{*it, 0};
+        }
+    }
+
     addElementToSubstreamsCache(cache, paths_infos_path, std::make_unique<SubstreamsCachePathsInfosElement>(paths_infos_chunks));
     return paths_infos_chunks;
 }
@@ -1383,17 +1425,13 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
     stream_file_name_settings.escape_variant_substreams = false;
 
     /// Bound the read of a path in the data stream to its end, so the buffer does not read ahead into the
-    /// following paths. Must be called before seeking to the path. When the path's data runs to the end of
-    /// the chunk, bound to the next chunk's data if it is read here, otherwise to the end of the range.
-    auto bound_read_to_path_end = [&](size_t chunk_idx, const PathInfo & path_info)
+    /// following paths. Must be called before seeking to the path.
+    auto bound_read_to_path_end = [&](const PathInfo & path_info)
     {
         if (!settings.set_stream_read_until_mark_callback)
             return;
         if (path_info.data_end_mark)
             settings.set_stream_read_until_mark_callback(settings.path, *path_info.data_end_mark);
-        else if (chunk_idx + 1 != chunk_structures.size()
-            && chunk_structures[chunk_idx + 1].data_stream_mark.offset_in_compressed_file > path_info.data_mark.offset_in_compressed_file)
-            settings.set_stream_read_until_mark_callback(settings.path, chunk_structures[chunk_idx + 1].data_stream_mark);
         else if (settings.set_stream_read_until_to_range_end_callback)
             settings.set_stream_read_until_to_range_end_callback(settings.path);
     };
@@ -1450,7 +1488,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
 
                 /// The subcolumns are located by their own marks inside this path's data, so bound the read
                 /// to the path's end before seeking to them.
-                bound_read_to_path_end(chunk_idx, path_info);
+                bound_read_to_path_end(path_info);
 
                 /// First, deserialize prefixes for all subcolumns.
                 SubstreamsDeserializeStatesCache deserialize_states_cache;
@@ -1485,7 +1523,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
             {
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 /// Bound the read to this path's end before seeking (setReadUntilPosition must precede the seek).
-                bound_read_to_path_end(chunk_idx, path_info);
+                bound_read_to_path_end(path_info);
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
                 auto dynamic_column = dynamic_type->createColumn();
