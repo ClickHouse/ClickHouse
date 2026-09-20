@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 /// Validate that a discriminator value is within bounds (< num_variants) or is NULL_DISCRIMINATOR.
@@ -90,6 +91,11 @@ SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, 
             return std::shared_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_));
     }
     return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
+}
+
+bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
+{
+    return !path.empty() && path.back().type == Substream::VariantElement && path.back().variant_element_name == element_name;
 }
 
 SerializationVariant::SerializationVariant(
@@ -685,8 +691,7 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
     DeserializeBinaryBulkStateVariantDiscriminators & state,
     const DeserializeBinaryBulkSettings & settings) const
 {
-    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column);
-    auto & discriminators_data = discriminators.getData();
+    auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column).getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
     if (!continuous_reading)
@@ -709,16 +714,19 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
         if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         {
-            auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
+            discriminators_data.resize_fill(discriminators_data.size() + limit_in_granule, state.compact_discr);
 
             if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
                 variant_limits[state.compact_discr] += limit_in_granule;
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
-            size_t start = discriminators_data.size() - limit_in_granule;
+            size_t start = discriminators_data.size();
+            SerializationNumber<ColumnVariant::Discriminator>::deserializeBinaryBulk(discriminators_data, *stream, limit_in_granule);
+            size_t num_read = discriminators_data.size() - start;
+            if (num_read != limit_in_granule)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
 
             for (size_t i = start; i != discriminators_data.size(); ++i)
             {
