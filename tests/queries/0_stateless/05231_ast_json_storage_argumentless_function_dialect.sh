@@ -31,6 +31,8 @@ send() {
         grep -oEm1 "for key '[a-z_]+' has no 'arguments' list"
 }
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tkd"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tk2"
 
@@ -78,6 +80,8 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tkd AS tk ENGINE = Distributed(test_s
 send "$(payload "CREATE VIEW vk AS SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "ALTER TABLE mvk MODIFY QUERY SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
 send "$(payload "INSERT INTO tkd SELECT a FROM tk WHERE a IN (1)" "$ARGS_A_1")"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE mvk"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE tkd"
 
 # The mutation predicate of `ALTER ... UPDATE`/`DELETE` reaches it too, through
 # `replaceNonDeterministicToScalars`, which `InterpreterAlterQuery` runs when
