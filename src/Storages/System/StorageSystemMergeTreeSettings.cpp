@@ -25,7 +25,9 @@ void SystemMergeTreeSettings<replicated>::fillData(
         ? MergeTreeSettings::enumerateReplicatedEngineSettings(context)
         : MergeTreeSettings::enumerateEngineSettings(context);
 
-    SettingRowWriter writer(res_columns, columns_mask, canDisplaySecrets(context));
+    /// An engine's own settings hold nothing a named collection supplied - a collection belongs to a table - so the
+    /// gate that decides those is the secrets gate alone.
+    SettingRowWriter writer(res_columns, columns_mask, canDisplaySecrets(context), /* show_named_collection_values */ false);
     for (const auto & setting : settings)
         writeSettingRows(writer, setting, [](SettingRowWriter &) {}, [](SettingRowWriter &) {});
 }

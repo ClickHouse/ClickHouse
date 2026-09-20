@@ -1,5 +1,5 @@
 -- the collection, the clause, an engine-argument override, the session and the default
-postgresql_connection_attempt_timeout	2	named_collection
+postgresql_connection_attempt_timeout	[HIDDEN]	named_collection
 postgresql_connection_pool_auto_close_connection	0	default
 postgresql_connection_pool_retries	9	definition
 postgresql_connection_pool_size	42	other

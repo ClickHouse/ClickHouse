@@ -228,9 +228,11 @@ def test_table_settings_for_mysql_database_from_named_collection(started_cluster
                 "WHERE database = 'test_settings_nc_database' AND table = 't' "
                 "AND name IN ('connection_pool_size', 'connection_max_tries', 'connection_wait_timeout') ORDER BY name"
             ) == (
-                # `3` is the compiled-in default of `connection_max_tries`: the collection still supplied it.
-                "connection_max_tries\t3\tnamed_collection\n"
-                "connection_pool_size\t7\tnamed_collection\n"
+                # A value the collection supplied is hidden, as `system.named_collections` hides it - including
+                # `connection_max_tries`, which the collection sets to the compiled-in default `3`, and which no
+                # comparison of values could have attributed to it.
+                "connection_max_tries\t[HIDDEN]\tnamed_collection\n"
+                "connection_pool_size\t[HIDDEN]\tnamed_collection\n"
                 "connection_wait_timeout\t11\tother\n"
             )
         finally:

@@ -2,6 +2,9 @@
 # Tags: no-fasttest
 # Tag justification: needs the Kafka engine, which is an optional build.
 #
+# A value a named collection supplied is hidden, as `system.named_collections` hides it, so these rows read
+# `[HIDDEN]`; a setting the engine pinned is the engine's own value and is shown.
+#
 # A setting a named collection supplied is reported as `named_collection` - unless something replaced it
 # afterwards. With `kafka_handle_error_mode = 'stream'` the engine pins `input_format_allow_errors_num` to 0
 # whatever it was given, so a collection's value for it is not what the table works with, and the row has to

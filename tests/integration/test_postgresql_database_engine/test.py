@@ -912,7 +912,8 @@ def test_table_settings_of_a_database_table(started_cluster):
                 "SELECT value, source FROM system.table_settings WHERE database = 'postgres_database' "
                 "AND table = 'test_settings_table' AND name = 'postgresql_connection_pool_size'"
             ).strip()
-            == "16\tnamed_collection"
+            # The collection's value is hidden, as `system.named_collections` hides it; the source is the point.
+            == "[HIDDEN]\tnamed_collection"
         )
     finally:
         # `test_postgresql_fetch_tables` asserts the exact public-schema table list, so this table must not

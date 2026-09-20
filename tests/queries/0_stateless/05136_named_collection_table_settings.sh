@@ -5,6 +5,9 @@
 # A named collection is a source of its own in `system.table_settings`: the settings object records
 # which of its values the collection supplied, so the table can say so for exactly those settings.
 #
+# The values themselves are hidden as `system.named_collections` hides them - the whole of a collection is secret,
+# not only the keys a masking rule knows - so the rows read `[HIDDEN]`; which settings it supplied is the point.
+#
 # A shell test rather than a `.sql` one because named collections are server-wide: the name has to
 # carry this test's database so two parallel runs do not collide on it, and `CREATE NAMED COLLECTION`
 # does not accept a query parameter in the name position.

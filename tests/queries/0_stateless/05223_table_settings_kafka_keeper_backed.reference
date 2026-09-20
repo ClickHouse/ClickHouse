@@ -13,6 +13,6 @@ kafka_replica_name	r1	definition
 kafka_client_id	1	other
 -- a named collection is reported as the source of what it supplies, and the definition still wins
 kafka_max_block_size	17	definition
-kafka_topic_list	t	named_collection
+kafka_topic_list	[HIDDEN]	named_collection
 -- no row claims the default source for a value that is not the default
 0

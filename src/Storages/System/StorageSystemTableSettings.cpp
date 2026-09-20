@@ -111,9 +111,15 @@ protected:
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
-        /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE`
-        /// decides it, so the two surfaces cannot disagree.
-        SettingRowWriter writer(res_columns, column_mask, canDisplaySecrets(context));
+        /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE` decides
+        /// it - and what a named collection supplied, decided as `system.named_collections` decides it, so no
+        /// surface disagrees with another.
+        const bool show_secrets = canDisplaySecrets(context);
+        SettingRowWriter writer(
+            res_columns,
+            column_mask,
+            show_secrets,
+            show_secrets && access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS));
 
         /// Phase 1: catalog databases
         while (rows_count < max_block_size)

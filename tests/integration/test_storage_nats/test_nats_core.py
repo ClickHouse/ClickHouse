@@ -1681,6 +1681,7 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
     # Stated by the clause, supplied by the collection, and left at the engine's default. The collection
     # holds `nats_max_rows_per_message` too, so this also pins that the clause wins over the collection -
     # and it holds it at the compiled-in default, which no comparison of values could have attributed.
+    # A value the collection supplied is hidden, as `system.named_collections` hides it.
     rows = instance.query(
         "SELECT name, value, source FROM system.table_settings "
         "WHERE database = 'test' AND table = 'nats_collection' "
@@ -1688,8 +1689,8 @@ def test_nats_table_settings_report_the_named_collection(nats_cluster):
     )
     assert TSV(rows) == TSV(
         "nats_max_rows_per_message\t7\tdefinition\n"
-        "nats_skip_broken_messages\t111\tnamed_collection\n"
-        "nats_subjects\tnamed\tnamed_collection\n"
+        "nats_skip_broken_messages\t[HIDDEN]\tnamed_collection\n"
+        "nats_subjects\t[HIDDEN]\tnamed_collection\n"
     )
 
     # An engine argument overriding a collection key is not the collection either: the engine took the

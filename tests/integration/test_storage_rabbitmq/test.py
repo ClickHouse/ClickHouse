@@ -3846,6 +3846,7 @@ def test_rabbitmq_table_settings_report_the_named_collection(rabbitmq_cluster, d
     )
 
     # Stated by the clause, supplied by the collection (`named_collection.xml`), and left at the engine's default.
+    # A value the collection supplied is hidden, as `system.named_collections` hides it.
     rows = instance.query(
         f"SELECT name, value, source FROM system.table_settings "
         f"WHERE database = '{db}' AND table = 'rabbitmq_collection' "
@@ -3853,9 +3854,9 @@ def test_rabbitmq_table_settings_report_the_named_collection(rabbitmq_cluster, d
         f"ORDER BY name"
     )
     assert TSV(rows) == TSV(
-        "rabbitmq_exchange_name\tnamed\tnamed_collection\n"
+        "rabbitmq_exchange_name\t[HIDDEN]\tnamed_collection\n"
         "rabbitmq_max_rows_per_message\t7\tdefinition\n"
-        "rabbitmq_skip_broken_messages\t111\tnamed_collection\n"
+        "rabbitmq_skip_broken_messages\t[HIDDEN]\tnamed_collection\n"
     )
 
     # An engine argument overriding a collection key is not the collection either: the engine took the

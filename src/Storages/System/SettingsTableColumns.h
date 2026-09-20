@@ -29,14 +29,41 @@ DataTypePtr settingOriginEnum();
 class SettingRowWriter
 {
 public:
-    /// `show_secrets` is whether this reader sees the real value of a setting that holds one.
-    SettingRowWriter(MutableColumns & res_columns_, const std::vector<UInt8> & columns_mask_, bool show_secrets_)
-        : res_columns(res_columns_), columns_mask(columns_mask_), show_secrets(show_secrets_)
+    /// `show_secrets` is whether this reader sees the real value of a setting that holds one, and
+    /// `show_named_collection_values` whether it sees what a named collection supplied - which is the whole of a
+    /// collection, not only the keys a masking rule knows, exactly as `system.named_collections` decides it.
+    SettingRowWriter(
+        MutableColumns & res_columns_,
+        const std::vector<UInt8> & columns_mask_,
+        bool show_secrets_,
+        bool show_named_collection_values_)
+        : res_columns(res_columns_)
+        , columns_mask(columns_mask_)
+        , show_secrets(show_secrets_)
+        , show_named_collection_values(show_named_collection_values_)
     {
     }
 
     /// Whether this setting's value is reported as a placeholder rather than as it is.
-    bool masks(const SettingDescription & setting) const { return !show_secrets && !setting.masked_value.empty(); }
+    bool masks(const SettingDescription & setting) const
+    {
+        /// A collection's contents are secret as a whole: `SHOW CREATE TABLE` prints the collection's name rather
+        /// than what it holds, and `system.named_collections` hides every key without the grant. So a value this
+        /// reader could not read there must not be readable here either, whether or not a masking rule knows the
+        /// name - a broker address or a database name says as much as a password does about where a table points.
+        if (setting.origin == SettingOrigin::NamedCollection)
+            return !show_named_collection_values;
+        return !show_secrets && !setting.masked_value.empty();
+    }
+
+    /// The value as this reader may see it.
+    std::string_view reportedValue(const SettingDescription & setting) const
+    {
+        if (!masks(setting))
+            return setting.value;
+        /// A collection's value has no masked form of its own: nothing of it may be shown.
+        return setting.masked_value.empty() ? std::string_view{"[HIDDEN]"} : std::string_view{setting.masked_value};
+    }
 
     /// Whether the query reads the next column - for a value that is work to build.
     bool wants() const { return columns_mask[src_index]; }
@@ -70,6 +97,7 @@ private:
     MutableColumns & res_columns;
     const std::vector<UInt8> & columns_mask;
     const bool show_secrets;
+    const bool show_named_collection_values;
     size_t src_index = 0;
     size_t res_index = 0;
 };
