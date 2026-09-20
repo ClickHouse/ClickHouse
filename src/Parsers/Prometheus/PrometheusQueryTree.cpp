@@ -467,10 +467,14 @@ String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
     {
-        /// A literal written with time units is printed back with them, as Prometheus prints one. The
-        /// grammar spells whole milliseconds, which a double holds exactly for any duration it accepts.
+        /// A literal written with time units is printed back with them, as Prometheus prints one.
         if (is_duration)
-            return formatDuration(DurationType{std::llround(scalar * 1000)}, 3);
+        {
+            if (!duration_str.empty())
+                return duration_str;
+            if (std::abs(scalar) <= static_cast<ScalarType>(std::numeric_limits<Int64>::max() / 1000))
+                return formatDuration(DurationType{std::llround(scalar * 1000)}, 3);
+        }
         return ::DB::toString(scalar);
     }
     else if (std::isinf(scalar))

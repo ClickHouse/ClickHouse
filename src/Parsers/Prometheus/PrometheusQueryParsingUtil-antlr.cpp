@@ -349,6 +349,8 @@ namespace
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
             new_node->is_duration = is_duration;
+            if (is_duration)
+                new_node->duration_str = getText(ctx);
             return addNode(std::move(new_node));
         }
 

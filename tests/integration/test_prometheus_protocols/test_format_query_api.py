@@ -89,6 +89,7 @@ def format_query(query):
         # A scalar written with time units keeps them too, instead of becoming a number of seconds.
         ("rate(foo[5m]) / 1m", "rate(foo[5m]) / 1m"),
         ("3h20m10s5ms", "3h20m10s5ms"),
+        ("9223372036854776s", "9223372036854776s"),
         # Numeric literals are canonicalized, and a hexadecimal one is not a duration even when its
         # digits contain the letter of a time unit.
         ("100 * 0x1F", "100 * 31"),
