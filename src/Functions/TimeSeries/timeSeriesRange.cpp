@@ -324,14 +324,10 @@ public:
                 num_steps = static_cast<size_t>(num_points);
             }
 
-            total_points += num_steps;
-            if (total_points > max_elements)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "A call to function {} would produce {} array elements, which is greater than the allowed maximum of {} "
-                    "(setting 'function_range_max_elements_in_block')",
-                    name, total_points, max_elements);
-
             size_t values_base_offset = 0;
+            bool row_has_no_nulls = true;
+            /// The number of array elements this row appends: `timeSeriesFromGrid` skips the NULL values.
+            size_t row_points = num_steps;
             if constexpr (with_values)
             {
                 values_base_offset = (*values_offsets)[i - 1];
@@ -339,8 +335,26 @@ public:
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
 
-                bool row_has_no_nulls = !null_map
+                row_has_no_nulls = !null_map
                     || memoryIsZero(null_map->data(), values_base_offset, values_base_offset + num_steps);
+                if (!row_has_no_nulls)
+                    row_points = num_steps - countBytesInFilter(null_map->data() + values_base_offset, 0, num_steps);
+            }
+
+            /// Bounded like `range`: the sum over the block of the array sizes, checked for overflow.
+            const size_t points_before = total_points;
+            total_points += row_points;
+            if (total_points < points_before)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} overflows, investigate the values of arguments you are passing", name);
+            if (total_points > max_elements)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} would produce {} array elements, which is greater than the allowed maximum of {} "
+                    "(setting 'function_range_max_elements_in_block')",
+                    name, total_points, max_elements);
+
+            if constexpr (with_values)
+            {
 
                 if (row_has_no_nulls)
                 {
