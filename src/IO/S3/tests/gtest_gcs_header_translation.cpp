@@ -14,6 +14,9 @@
 #include <Common/ProxyConfiguration.h>
 #include <Common/RemoteHostFilter.h>
 
+#include <Poco/String.h>
+
+#include <aws/core/http/standard/StandardHttpRequest.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 #include <mutex>
@@ -25,6 +28,20 @@ std::string headerOrEmpty(const Aws::Http::HeaderValueCollection & headers, cons
 {
     auto it = headers.find(name);
     return it == headers.end() ? "" : it->second;
+}
+
+/// The method-aware overload takes a whole request, so these tests need one. Only the method and the
+/// headers are read; the uri is never resolved.
+Aws::Http::Standard::StandardHttpRequest makeRequest(Aws::Http::HttpMethod method)
+{
+    return Aws::Http::Standard::StandardHttpRequest(Aws::Http::URI("https://storage.googleapis.com/bucket/key"), method);
+}
+
+/// `HttpRequest::GetHeaderValue` asserts the header is present, so reading a value that a regression
+/// removed would abort the whole test binary and hide every test after it. Read values through this.
+std::string requestHeaderOrEmpty(const Aws::Http::HttpRequest & request, const char * name)
+{
+    return request.HasHeader(name) ? request.GetHeaderValue(name) : "";
 }
 
 }
@@ -139,6 +156,62 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
     EXPECT_EQ(headers[2].name, "custom-auth-token");
     /// Values are untouched.
     EXPECT_EQ(headers[2].value, "KeepTheValue");
+}
+
+/// `x-goog-if-generation-match` names a generation, and an etag is not one, so an etag-valued
+/// precondition has no counterpart to be rewritten into and is left as it is.
+TEST(GCSHeaderTranslation, LeavesAnEtagValuedPreconditionAlone)
+{
+    auto put_if_none_match = makeRequest(Aws::Http::HttpMethod::HTTP_PUT);
+    put_if_none_match.SetHeaderValue("if-none-match", "\"d41d8cd98f00b204e9800998ecf8427e\"");
+
+    DB::S3::translateHeadersToGCS(put_if_none_match);
+
+    EXPECT_EQ(requestHeaderOrEmpty(put_if_none_match, "if-none-match"), "\"d41d8cd98f00b204e9800998ecf8427e\"");
+    EXPECT_FALSE(put_if_none_match.HasHeader("x-goog-if-generation-match"));
+
+    auto put_if_match = makeRequest(Aws::Http::HttpMethod::HTTP_PUT);
+    put_if_match.SetHeaderValue("if-match", "\"d41d8cd98f00b204e9800998ecf8427e\"");
+
+    DB::S3::translateHeadersToGCS(put_if_match);
+
+    EXPECT_EQ(requestHeaderOrEmpty(put_if_match, "if-match"), "\"d41d8cd98f00b204e9800998ecf8427e\"");
+    EXPECT_FALSE(put_if_match.HasHeader("x-goog-if-generation-match"));
+}
+
+/// GCS evaluates `x-goog-if-generation-match` on a `PUT`, honours the standard spelling on a read, and
+/// supports no precondition on the `POST` that completes a multipart upload. So the rewrite is a `PUT`
+/// rule: on any other method the header has to leave exactly as it arrived.
+TEST(GCSHeaderTranslation, RewritesNothingOnAnyOtherMethod)
+{
+    for (const auto method : {Aws::Http::HttpMethod::HTTP_POST, Aws::Http::HttpMethod::HTTP_GET,
+                              Aws::Http::HttpMethod::HTTP_HEAD, Aws::Http::HttpMethod::HTTP_DELETE})
+    {
+        auto request = makeRequest(method);
+        request.SetHeaderValue("if-none-match", "*");
+
+        DB::S3::translateHeadersToGCS(request);
+
+        EXPECT_EQ(requestHeaderOrEmpty(request, "if-none-match"), "*") << "method " << static_cast<int>(method);
+        EXPECT_FALSE(request.HasHeader("x-goog-if-generation-match")) << "method " << static_cast<int>(method);
+    }
+}
+
+/// The rewrite adds one `x-goog-` header; it does not make the request coherently `x-goog-`. Everything
+/// outside the rename list still survives, server-side encryption included, so a GCS deployment that
+/// configures SSE-KMS keeps sending the `x-amz-` spelling of it alongside the new precondition.
+TEST(GCSHeaderTranslation, ServerSideEncryptionHeadersSurviveTheRewrite)
+{
+    auto request = makeRequest(Aws::Http::HttpMethod::HTTP_PUT);
+    request.SetHeaderValue("if-none-match", "*");
+    request.SetHeaderValue("x-amz-server-side-encryption", "aws:kms");
+    request.SetHeaderValue("x-amz-server-side-encryption-aws-kms-key-id", "some-key");
+
+    DB::S3::translateHeadersToGCS(request);
+
+    EXPECT_EQ(requestHeaderOrEmpty(request, "x-goog-if-generation-match"), "0");
+    EXPECT_EQ(requestHeaderOrEmpty(request, "x-amz-server-side-encryption"), "aws:kms");
+    EXPECT_EQ(requestHeaderOrEmpty(request, "x-amz-server-side-encryption-aws-kms-key-id"), "some-key");
 }
 
 
@@ -319,6 +392,86 @@ TEST(GCSHeaderTranslation, ResponseMetadataReachesTheSDK)
     const auto it = metadata.find("owner");
     ASSERT_NE(it, metadata.end());
     EXPECT_EQ(it->second, "analytics");
+}
+
+/// The commit fence of an Iceberg snapshot or a backup lock file,
+/// as the real client puts it on the wire: it has to arrive as the precondition GCS evaluates, because
+/// the spelling it replaces is one GCS accepts on a write and then ignores.
+TEST(GCSHeaderTranslation, ConditionalCreateLeavesInTheGoogleSpelling)
+{
+    MockGCSServer mock_gcs;
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(mock_gcs.getPort(), remote_host_filter);
+    ASSERT_TRUE(client);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    DB::S3::PutObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("metadata/v2.metadata.json");
+    request.SetIfNoneMatch("*");
+    request.SetBody(std::make_shared<Aws::StringStream>("content"));
+
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto headers = mock_gcs.getLastRequestHeader();
+    EXPECT_EQ(headers.get("x-goog-if-generation-match", ""), "0");
+    EXPECT_FALSE(headers.has("if-none-match"));
+}
+
+/// The write token that tells a replayed conditional write apart from a lost race rides on custom
+/// object metadata, which the rename list already covers, so the request that carries the new
+/// precondition carries no `x-amz-` name either. Asserted for the request ClickHouse builds in the
+/// default configuration; it is not a global property of the GCS api mode, see
+/// `ServerSideEncryptionHeadersSurviveTheRewrite`.
+TEST(GCSHeaderTranslation, ConditionalCreateRequestCarriesNoAmzExtensionHeader)
+{
+    MockGCSServer mock_gcs;
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(mock_gcs.getPort(), remote_host_filter);
+    ASSERT_TRUE(client);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    DB::S3::PutObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("metadata/v2.metadata.json");
+    request.SetIfNoneMatch("*");
+    request.SetMetadata({{"clickhouse-write-token", "t"}});
+    request.SetBody(std::make_shared<Aws::StringStream>("content"));
+
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto headers = mock_gcs.getLastRequestHeader();
+    EXPECT_EQ(headers.get("x-goog-if-generation-match", ""), "0");
+    EXPECT_EQ(headers.get("x-goog-meta-clickhouse-write-token", ""), "t");
+
+    for (const auto & [name, value] : headers)
+        EXPECT_FALSE(Poco::toLower(name).starts_with("x-amz-")) << "unexpected " << name << ": " << value;
+}
+
+/// The other side of the `PUT`-only rule: GCS honours an etag precondition on a request that retrieves
+/// data, so the read pin must reach it in the standard spelling. Rewriting on every method would send a
+/// generation precondition GCS cannot match an etag against.
+TEST(GCSHeaderTranslation, ConditionalReadKeepsTheStandardSpelling)
+{
+    MockGCSServer mock_gcs;
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(mock_gcs.getPort(), remote_host_filter);
+    ASSERT_TRUE(client);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    DB::S3::GetObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("test.txt");
+    request.SetIfMatch("\"d41d8cd98f00b204e9800998ecf8427e\"");
+
+    const auto outcome = client->GetObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto headers = mock_gcs.getLastRequestHeader();
+    EXPECT_EQ(headers.get("if-match", ""), "\"d41d8cd98f00b204e9800998ecf8427e\"");
+    EXPECT_FALSE(headers.has("x-goog-if-generation-match"));
 }
 
 #endif
