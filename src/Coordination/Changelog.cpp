@@ -3157,21 +3157,14 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t reader_id, const std::shared_
 
                 if (!ready)
                 {
-                    /// Accepted: on sustained slow storage this duplicate-read fallback can fire on every
-                    /// batch; log_readahead_serve_wait_timeout_ms is the operator lever for that case.
+                    /// Serve directly but leave the fill running: resetting it here made every entry
+                    /// lose on storage slower than the deadline, restarting the fill from nothing on
+                    /// each serve. advance_reader_to below moves the deque past what we serve, so the
+                    /// next request pops from it. Overlap is clamped by appendChunk, and a concurrent
+                    /// writeAt closes every reader in cleanAfter rather than relying on this reset.
                     fill_serve_lock.unlock();
                     ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks);
-                    auto fallback_result = fallback_from(item_idx, consumed);
-                    if (fallback_result)
-                    {
-                        /// The fill may still be decoding the range just served directly above; fast-forward
-                        /// the reader past it (bumping generation discards any in-flight stale chunk) so the
-                        /// fill parks with nothing to do until the next plan resumes it from here.
-                        const uint64_t end_of_result = plan.start_index + fallback_result->size();
-                        std::lock_guard reset_lock(reader->fill_serve_mutex);
-                        reader->resetToIndexLocked(end_of_result);
-                    }
-                    return fallback_result;
+                    return fallback_from(item_idx, consumed);
                 }
             }
         }
