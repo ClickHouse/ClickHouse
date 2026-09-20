@@ -1,0 +1,9 @@
+1	foo
+1	foo
+stable
+2
+source settings restored before delayed returning
+unset
+1	foo
+2	bar
+103	baz
