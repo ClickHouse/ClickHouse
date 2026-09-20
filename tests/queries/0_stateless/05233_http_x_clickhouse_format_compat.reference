@@ -1,0 +1,26 @@
+-- default: the header overrides the FORMAT clause of the query
+{"x":1}
+-- default: the header applies when the query has no FORMAT clause
+{"x":1}
+-- default: the header overrides the output_format URL parameter
+{"x":1}
+-- default: the response header reports the effective format
+X-ClickHouse-Format: JSONEachRow
+-- disabled: the header only sets default_format, so the FORMAT clause wins
+1
+-- disabled: the header applies when the query has no FORMAT clause
+{"x":1}
+-- disabled: the header overrides the default_format URL parameter
+{"x":1}
+-- disabled: an explicit output_format URL parameter wins over the header
+1
+-- disabled: the response header reports the effective format
+X-ClickHouse-Format: CSV
+-- disabled: works on a read-only GET request too
+1
+-- disabled: the header does not change the input format of an INSERT body
+{"s":"a","n":1}
+-- disabled via the session (as a profile would): the FORMAT clause wins
+1
+-- compatibility with a version before 26.8 restores the old header behavior
+1
