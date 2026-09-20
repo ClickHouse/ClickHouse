@@ -1,11 +1,9 @@
 #include <Storages/System/extractTableNameFilter.h>
 
 #include <Columns/ColumnConst.h>
-#include <Common/typeid_cast.h>
-#include <Core/Field.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
-#include <optional>
 
 namespace DB
 {
@@ -16,7 +14,7 @@ namespace
 /// Try to read a constant string from `node` and return its single value.
 /// Unwraps aliases and reads the value via `ColumnConst::getField`, which works
 /// even for a `ColumnConst` of logical size 0 (a "pure" constant, as produced by
-/// the analyzer) — unlike `column[0]`, which an `empty()` check has to guard.
+/// the analyzer) — unlike `column[0]`, which an `empty` check has to guard.
 std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
@@ -61,7 +59,7 @@ String escapeForLikeLiteral(const String & s)
 
 }
 
-TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::string_view name_column)
+TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, const String & column_name)
 {
     if (!predicate)
         return {};
@@ -72,9 +70,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
     while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
         node = node->children[0];
 
-    if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "and")
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
     {
         for (const auto * child : node->children)
             conjuncts.push_back(child);
@@ -90,48 +86,44 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
         while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
             conjunct = conjunct->children[0];
 
-        if (conjunct->type != ActionsDAG::ActionType::FUNCTION
-            || !conjunct->function_base
-            || conjunct->children.size() != 2)
+        if (conjunct->type != ActionsDAG::ActionType::FUNCTION || !conjunct->function_base || conjunct->children.size() != 2)
             continue;
 
-        const auto & fn_name = conjunct->function_base->getName();
+        const auto & function_name = conjunct->function_base->getName();
 
         const auto * lhs = skipAliases(conjunct->children[0]);
         const auto * rhs = skipAliases(conjunct->children[1]);
 
-        /// The table-name column reads as an INPUT named `name_column` once aliases are
-        /// unwrapped. (A constant carries `column`; the column reference does not.)
-        auto is_name_column = [name_column](const ActionsDAG::Node * n)
-        {
-            return n && n->result_name == name_column && !n->column;
-        };
-        const bool lhs_is_name = is_name_column(lhs);
-        const bool rhs_is_name = is_name_column(rhs);
-        if (!lhs_is_name && !rhs_is_name)
+        /// The filtered column reads as an INPUT named `column_name` once aliases
+        /// are unwrapped. A constant carries `column`; the column reference does not.
+        auto is_filtered_column = [&](const ActionsDAG::Node * current_node)
+        { return current_node && current_node->result_name == column_name && !current_node->column; };
+        const bool lhs_is_filtered_column = is_filtered_column(lhs);
+        const bool rhs_is_filtered_column = is_filtered_column(rhs);
+        if (!lhs_is_filtered_column && !rhs_is_filtered_column)
             continue;
 
-        if (fn_name == "equals")
+        if (function_name == "equals")
         {
             /// `equals` is symmetric (literal either side); prefer it — most selective.
-            if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
+            if (auto literal = tryReadConstString(lhs_is_filtered_column ? rhs : lhs))
                 return {TablesFilter::Kind::Equals, std::move(*literal)};
         }
-        else if (fn_name == "like")
+        else if (function_name == "like")
         {
-            /// Not symmetric: only `<column> LIKE 'pattern'` (column on lhs) constrains the column.
+            /// Not symmetric: only `column LIKE 'pattern'` constrains the column.
             /// Keep the first such pattern if no `equals` is found.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
+            if (lhs_is_filtered_column && like_filter.kind == TablesFilter::Kind::None)
             {
                 if (auto literal = tryReadConstString(rhs))
                     like_filter = {TablesFilter::Kind::Like, std::move(*literal)};
             }
         }
-        else if (fn_name == "startsWith")
+        else if (function_name == "startsWith")
         {
-            /// Analyzer rewrite of a perfect-prefix `<column> LIKE 'prefix%'`. The literal
+            /// Analyzer rewrite of a perfect-prefix `column LIKE 'prefix%'`. The literal
             /// is a plain prefix, so escape it and append `%` to recover the LIKE pattern.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
+            if (lhs_is_filtered_column && like_filter.kind == TablesFilter::Kind::None)
             {
                 if (auto literal = tryReadConstString(rhs))
                     like_filter = {TablesFilter::Kind::Like, escapeForLikeLiteral(*literal) + "%"};
@@ -141,4 +133,5 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate, std::str
 
     return like_filter;
 }
+
 }
