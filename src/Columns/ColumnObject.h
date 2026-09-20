@@ -129,11 +129,12 @@ public:
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
-    /// TODO: implement more optimal insertManyFrom
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
 

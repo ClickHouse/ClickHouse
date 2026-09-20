@@ -1,9 +1,10 @@
+#include <limits>
+#include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
-#include <DataTypes/DataTypeDynamic.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnCompressed.h>
-#include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -867,6 +868,56 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
     else
         insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnObject::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnObject::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (length == 0)
+        return;
+
+    if (length == 1)
+    {
+        insertFrom(src, position);
+        return;
+    }
+
+    if (length > std::numeric_limits<size_t>::max() - size())
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too many rows in ColumnObject::insertManyFrom: {} + {}", size(), length);
+
+    const auto & src_object = assert_cast<const ColumnObject &>(src);
+    takeMaxDynamicPathsUpperBoundFrom(src_object);
+
+    /// Copying shared data directly must not skip promotion into dynamic paths.
+    bool can_insert_directly
+        = &src != this && dynamicStructureEquals(src) && (!canAddNewDynamicPath() || src_object.shared_data->isDefaultAt(position));
+
+    if (can_insert_directly)
+    {
+        /// A shared descendant can alias the source even when the top-level columns differ.
+        forEachSubcolumnRecursively(
+            [&](const IColumn & column)
+            {
+                if (column.use_count() > 1)
+                    can_insert_directly = false;
+            });
+    }
+
+    if (!can_insert_directly)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+        return;
+    }
+
+    for (const auto & [path, column] : src_object.typed_paths)
+        typed_paths.find(path)->second->insertManyFrom(*column, position, length);
+    for (const auto & [path, column] : src_object.dynamic_paths)
+        dynamic_paths_ptrs.find(path)->second->insertManyFrom(*column, position, length);
+    shared_data->insertManyFrom(*src_object.shared_data, position, length);
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
