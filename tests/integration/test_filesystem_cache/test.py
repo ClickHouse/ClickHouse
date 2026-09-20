@@ -2169,6 +2169,35 @@ def test_dynamic_settings_apply(cluster):
         )
         node.query("SYSTEM RELOAD CONFIG")
 
+    # `system.filesystem_cache_settings` reads the settings copy `FileCacheFactory` holds, so on its
+    # own it would also be satisfied by a reload that refreshed that copy and applied nothing. Each
+    # of these log lines is written by the `FileCache` object itself, inside the `if` that performs
+    # the change, so their presence is what says the live cache adopted the value: in particular
+    # `background_download_threads` is logged only when `CacheMetadata::setBackgroundDownloadThreads`
+    # reports that it really started or joined threads.
+    LOGGED_SETTINGS = [
+        "reserve_granularity",
+        "background_download_threads",
+        "background_download_queue_size_limit",
+        "background_download_max_file_segment_size",
+        "idle_client_ttl_sec",
+        "idle_client_check_interval_sec",
+    ]
+
+    def assert_logged(before, after):
+        for setting in LOGGED_SETTINGS:
+            # The queue size limit is logged under its shorter name.
+            logged_name = (
+                "background_download_queue_size"
+                if setting == "background_download_queue_size_limit"
+                else setting
+            )
+            message = (
+                f"FileCache({cache_name}): Changed {logged_name}"
+                f" from {before[setting]} to {after[setting]}"
+            )
+            assert node.contains_in_log(message), message
+
     def assert_applied(settings):
         columns = ", ".join(settings)
         actual = node.query(
@@ -2187,6 +2216,7 @@ def test_dynamic_settings_apply(cluster):
 
         reload(DYNAMIC_SETTINGS_CHANGED)
         assert_applied(DYNAMIC_SETTINGS_CHANGED)
+        assert_logged(DYNAMIC_SETTINGS_BASELINE, DYNAMIC_SETTINGS_CHANGED)
 
         # `max_size` and `max_elements` were held constant across the reload, so no resize was
         # attempted and the cache still reports the limits it was created with.
@@ -2197,6 +2227,7 @@ def test_dynamic_settings_apply(cluster):
 
         reload(DYNAMIC_SETTINGS_BASELINE)
         assert_applied(DYNAMIC_SETTINGS_BASELINE)
+        assert_logged(DYNAMIC_SETTINGS_CHANGED, DYNAMIC_SETTINGS_BASELINE)
     finally:
         node.replace_config(
             "/etc/clickhouse-server/config.d/cache_dynamic_resize.xml",
