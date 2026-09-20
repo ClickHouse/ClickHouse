@@ -21,6 +21,7 @@ release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="CreateRelease",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],

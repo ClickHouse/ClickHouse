@@ -3,9 +3,11 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
@@ -16,6 +18,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -70,6 +73,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
@@ -97,6 +101,9 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
@@ -131,6 +138,18 @@ size_t DictionarySparseIndex::size() const
         return *tokens_column ? (*tokens_column)->size() : 0;
 
     return std::get<BitPackedStringArray>(tokens).size();
+}
+
+size_t DictionarySparseIndex::lowerBound(std::string_view token) const
+{
+    auto range = collections::range(0, size());
+
+    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, std::string_view rhs)
+    {
+        return getToken(lhs_idx) < rhs;
+    });
+
+    return it - range.begin();
 }
 
 size_t DictionarySparseIndex::upperBound(std::string_view token) const
@@ -479,6 +498,49 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
     return tokens_column;
 }
 
+using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
+
+/// Ascending, non-overlapping, half-open block ranges.
+DictionaryBlockRanges blocksMatchingTokenKeyRanges(
+    const DictionarySparseIndex & sparse_index, const std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> & key_ranges)
+{
+    if (!key_ranges)
+        return {{0, sparse_index.size()}};
+
+    DictionaryBlockRanges block_ranges;
+    block_ranges.reserve(key_ranges->size());
+
+    for (const auto & key_range : *key_ranges)
+    {
+        /// A block is indexed by its first token, so the last block starting at or before `begin` may still hold `begin`.
+        size_t first_block_after_begin = sparse_index.upperBound(key_range.begin);
+        size_t range_begin = first_block_after_begin != 0 ? first_block_after_begin - 1 : 0;
+
+        /// `end` is exclusive: a block whose first token is `end` holds no key of it. Equal bounds are the single key `begin`.
+        size_t range_end = sparse_index.size();
+        if (!key_range.end.empty())
+            range_end = key_range.end == key_range.begin ? first_block_after_begin : sparse_index.lowerBound(key_range.end);
+
+        if (range_begin < range_end)
+            block_ranges.emplace_back(range_begin, range_end);
+    }
+
+    std::sort(block_ranges.begin(), block_ranges.end());
+
+    DictionaryBlockRanges merged_ranges;
+    merged_ranges.reserve(block_ranges.size());
+
+    for (const auto & block_range : block_ranges)
+    {
+        if (!merged_ranges.empty() && block_range.first <= merged_ranges.back().second)
+            merged_ranges.back().second = std::max(merged_ranges.back().second, block_range.second);
+        else
+            merged_ranges.push_back(block_range);
+    }
+
+    return merged_ranges;
+}
+
 }
 
 MergeTreeIndexGranuleText::~MergeTreeIndexGranuleText() = default;
@@ -655,49 +717,63 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         return;
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
+    const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
-    for (size_t block_idx = 0; block_idx < sparse_index.size(); ++block_idx)
+    PaddedPODArray<UInt8> candidate_marks;
+    for (const auto & [range_begin, range_end] : block_ranges)
     {
-        /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
-        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
-        dictionary_stream.seekToMark({offset_in_file, 0});
-        auto * data_buffer = dictionary_stream.getDataBuffer();
-
-        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
-        const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
-        size_t num_tokens = block_tokens.size();
-
-        matched_indices.clear();
-
-        for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+        for (size_t block_idx = range_begin; block_idx < range_end; ++block_idx)
         {
-            const auto & token = block_tokens.getDataAt(token_idx);
-            if (analyzer->addTokenToPatterns(token))
-                matched_indices.emplace_back(token_idx);
-        }
+            /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
+            UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
+            dictionary_stream.seekToMark({offset_in_file, 0});
+            auto * data_buffer = dictionary_stream.getDataBuffer();
 
-        if (matched_indices.empty())
-            continue;
+            ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
+            auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
+            const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
+            size_t num_tokens = block_tokens.size();
 
-        /// Deserialize only the token infos for matched tokens.
-        auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
+            matched_indices.clear();
 
-        for (size_t i = 0; i < matched_indices.size(); ++i)
-        {
-            String token(block_tokens.getDataAt(matched_indices[i]));
-            postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
-            analyzer->addTokenInfo(token, infos[i]);
-        }
+            if (filter_tokens_by_literals)
+            {
+                analyzer->matchTokensByLiterals(block_tokens, candidate_marks, matched_indices);
+            }
+            else
+            {
+                for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+                {
+                    const auto & token = block_tokens.getDataAt(token_idx);
+                    if (analyzer->addTokenToPatterns(token))
+                        matched_indices.emplace_back(token_idx);
+                }
+            }
 
-        if (postings_to_read > max_postings_to_read)
-        {
-            /// Too many large-posting tokens matched.
-            /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
-            analyzer->bypassPatternQueries();
-            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
-            return;
+            if (matched_indices.empty())
+                continue;
+
+            /// Deserialize only the token infos for matched tokens.
+            auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
+
+            for (size_t i = 0; i < matched_indices.size(); ++i)
+            {
+                String token(block_tokens.getDataAt(matched_indices[i]));
+                postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
+                analyzer->addTokenInfo(token, infos[i]);
+            }
+
+            if (postings_to_read > max_postings_to_read)
+            {
+                /// Too many large-posting tokens matched.
+                /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
+                analyzer->bypassPatternQueries();
+                ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
+                return;
+            }
         }
     }
 }
@@ -864,13 +940,7 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
-    size_t result = sizeof(*this);
-
-    if (analyzer)
-        result += analyzer->memoryUsageBytes();
-
-    result += index_id_for_caches.capacity();
-    return result;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method memoryUsageBytes is not implemented for MergeTreeIndexGranuleText");
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
@@ -1240,7 +1310,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
 
-        if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+        if (!isValidPostingListCodecType(codec_type))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
@@ -1577,25 +1647,7 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
 
 size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 {
-    size_t posting_lists_size = 0;
-    for (const auto & plist : posting_lists)
-        posting_lists_size += plist.getSizeInBytes();
-
-    size_t position_map_size = 0;
-    if (position_map)
-    {
-        position_map_size = position_map->getBufferSizeInBytes();
-        position_map_size += std::accumulate(sorted_tokens.begin(), sorted_tokens.end(), size_t{0},
-            [](size_t acc, const auto & token) { return acc + (token.positions ? token.positions->allocatedBytes() : size_t{0}); });
-    }
-
-    return sizeof(*this)
-        /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
-        + sorted_tokens.capacity() * sizeof(SortedToken)
-        + tokens_map.getBufferSizeInBytes()
-        + posting_lists_size
-        + position_map_size
-        + arena->allocatedBytes();
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method memoryUsageBytes is not implemented for MergeTreeIndexGranuleTextWritable");
 }
 
 MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
@@ -1884,6 +1936,10 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
+    else if (isMap(index_column.type) && tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        addDocumentsFromMap(preprocessed_column, offset, rows_read);
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -1929,6 +1985,39 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             else
                 granule_builder.addToken(ref, token_position++);
         }
+        granule_builder.incrementCurrentRow();
+    }
+}
+
+void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    const auto & column_offsets = column_map.getNestedColumn().getOffsets();
+    const auto & tuple = column_map.getNestedData();
+    const auto & keys = tuple.getColumn(0);
+    const auto & values = tuple.getColumn(1);
+
+    /// addToken hashes through StringHashTable, which reads past both ends of the key, so the scratch
+    /// buffer must be padded: PaddedPODArray is, std::string is not.
+    PaddedPODArray<UInt8> token;
+    /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
+    absl::flat_hash_set<std::string_view> keys_in_row;
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        keys_in_row.clear();
+
+        /// One position per map entry, in stored order, as the Array path does.
+        UInt32 token_position = 0;
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            const std::string_view key = keys.getDataAt(element_idx);
+            const bool is_rest = !keys_in_row.insert(key).second;
+
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
+        }
+
         granule_builder.incrementCurrentRow();
     }
 }
@@ -2053,7 +2142,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(
+        predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
+        preprocessor, postprocessor, params.positions, getColumnsShadowingMapSubcolumns());
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2231,7 +2322,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
@@ -2260,8 +2351,23 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    /// The `text_index_serialization_version` setting is not validated against the index features:
-    /// it is a preference, and `textIndexCreator` raises it to a version that can represent them.
+    /// The keyValuePairs tokenizer cannot be combined with a preprocessor, a postprocessor or positions.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        auto reject_argument = [](const String & argument)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
+                argument, KeyValuePairsTokenizer::getExternalName());
+        };
+
+        if (preprocessor_ast)
+            reject_argument(ARGUMENT_PREPROCESSOR);
+        if (postprocessor_ast)
+            reject_argument(ARGUMENT_POSTPROCESSOR);
+        if (positions)
+            reject_argument(ARGUMENT_POSITIONS);
+    }
+
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
@@ -2273,15 +2379,29 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
-
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
+    const auto & index_data_type = index.data_types[0];
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
+        /// FixedString is rejected: the column stores padding bytes a searched constant does not, so
+        /// lookups would silently miss rows. Nullable has no representation in the token.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
+        if (!map_type
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a Map column with String or "
+                "LowCardinality(String) keys and values, got: {}",
+                KeyValuePairsTokenizer::getExternalName(), index_data_type->getName());
+    }
+    else
+    {
+        WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+        if (!which_data_type.isString() && !which_data_type.isFixedString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+                index_data_type->getName());
     }
 
     /// Create the preprocessor for validation.
