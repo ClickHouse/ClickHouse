@@ -756,21 +756,21 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             const auto & data = col_u32->getData();
             roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
             for (auto val : data)
-                roaring_bitmap->add(val);
+                roaring_bitmap->add(static_cast<uint64_t>(val));
         }
         else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(ordered_set[0].get()))
         {
             const auto & data = col_u16->getData();
             roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
             for (auto val : data)
-                roaring_bitmap->add(val);
+                roaring_bitmap->add(static_cast<uint64_t>(val));
         }
         else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(ordered_set[0].get()))
         {
             const auto & data = col_u8->getData();
             roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
             for (auto val : data)
-                roaring_bitmap->add(val);
+                roaring_bitmap->add(static_cast<uint64_t>(val));
         }
     }
 }
