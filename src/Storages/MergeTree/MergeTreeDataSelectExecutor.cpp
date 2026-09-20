@@ -682,6 +682,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     auto start_time = std::chrono::steady_clock::now();
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
+
+    /// The surviving parts are identified by name, so a physical column named `_part` shadowing the
+    /// virtual one - which leaves it out of the block - makes this filtering unavailable. Keep every
+    /// part; the predicate is still applied to the rows themselves.
+    if (!virtual_columns_block.has("_part"))
+        return {};
+
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
@@ -689,6 +696,24 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
 
     return result;
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
+    const RangesInDataParts & parts,
+    const ReadFromMergeTree::Indexes & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    auto res = filterPartsByPartition(
+        parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
+    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
