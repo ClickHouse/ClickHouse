@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 namespace
@@ -1019,6 +1020,13 @@ namespace
         insert_query = ast->as<ASTInsertQuery>();
         if (insert_query)
         {
+            /// `COMPRESSION` next to `FORMAT`/`input()` is decompressed by clickhouse-client/clickhouse-local
+            /// before sending the query, never by the server. gRPC has its own, separate compression field
+            /// (`input_compression_type`, handled below) and does not go through `getSourceFromASTInsertQuery`,
+            /// so it needs its own copy of this guard.
+            if (query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
+                throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
+
             if (const String & input_format_setting = settings[Setting::input_format]; !input_format_setting.empty())
                 input_format = input_format_setting;
             else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
