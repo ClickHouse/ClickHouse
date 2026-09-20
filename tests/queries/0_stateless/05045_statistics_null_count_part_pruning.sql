@@ -124,10 +124,11 @@ SELECT 'Test 15: `use_statistics_for_part_pruning = 0` disables pruning';
 SELECT countIf(explain LIKE '%Statistics%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value IS NULL SETTINGS use_statistics_for_part_pruning = 0);
 
-SELECT 'Test 18: unanalyzable predicate on `Nullable(String)` does not activate statistics pruning';
--- `LIKE` is unknown to `KeyCondition`, so a NULL count on `value_lc` must not load per-part statistics.
+SELECT 'Test 18: `LIKE` / `!=` on `Nullable(String)` do not activate statistics pruning';
 SELECT countIf(explain LIKE '%Statistics%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_lc LIKE '%x%');
+SELECT countIf(explain LIKE '%Statistics%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_lc != 'x');
 
 DROP TABLE test_nullcount_pruning;
 

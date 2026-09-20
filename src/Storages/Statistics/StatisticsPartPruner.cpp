@@ -277,9 +277,6 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
             }
             else if (hasBasicStatsOnNullableType(*col))
             {
-                /// Candidate for NULL-count pruning. Do not mark useful yet: wait for a recognized
-                /// `IS NULL` / `IS NOT NULL` conjunct or a non-trivial `KeyCondition` (native
-                /// `isNull` atoms, or a range that can exclude the NULL sentinel).
                 nullable_only_columns[col->name] = col->type;
             }
         }
@@ -306,16 +303,26 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
 
         if (KeyCondition * key_condition = getKeyConditionForEstimates(probe_columns))
         {
-            const auto column_names = probe_columns.getNames();
-            for (size_t col_idx : key_condition->getUsedColumns())
+            DataTypes types;
+            for (const auto & col : probe_columns)
+                types.push_back(col.type);
+
+            const Hyperrectangle all_null(types.size(), Range(POSITIVE_INFINITY, true, POSITIVE_INFINITY, true));
+            const Hyperrectangle no_null(types.size(), Range::createWholeUniverseWithoutNull());
+            if (!key_condition->checkInHyperrectangle(all_null, types).can_be_true
+                || !key_condition->checkInHyperrectangle(no_null, types).can_be_true)
             {
-                if (col_idx >= column_names.size())
-                    continue;
-                auto it = nullable_only_columns.find(column_names[col_idx]);
-                if (it != nullable_only_columns.end())
+                const auto column_names = probe_columns.getNames();
+                for (size_t col_idx : key_condition->getUsedColumns())
                 {
-                    stats_column_name_to_type_map[it->first] = it->second;
-                    useless = false;
+                    if (col_idx >= column_names.size())
+                        continue;
+                    auto it = nullable_only_columns.find(column_names[col_idx]);
+                    if (it != nullable_only_columns.end())
+                    {
+                        stats_column_name_to_type_map[it->first] = it->second;
+                        useless = false;
+                    }
                 }
             }
         }

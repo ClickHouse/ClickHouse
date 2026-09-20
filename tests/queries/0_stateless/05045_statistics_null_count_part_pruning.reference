@@ -47,7 +47,8 @@ Test 13: `optimize_functions_to_subcolumns = 0` `IS NULL` on `LowCardinality(Nul
 4
 Test 15: `use_statistics_for_part_pruning = 0` disables pruning
 0
-Test 18: unanalyzable predicate on `Nullable(String)` does not activate statistics pruning
+Test 18: `LIKE` / `!=` on `Nullable(String)` do not activate statistics pruning
+1
 1
 Test 14a: real +Inf max does not disable tightened-range pruning
 1
