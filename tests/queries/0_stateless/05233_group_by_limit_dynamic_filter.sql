@@ -32,7 +32,7 @@ SET log_queries = 1;
 DROP TABLE IF EXISTS t_gb_dyn;
 DROP TABLE IF EXISTS ref_a;
 DROP TABLE IF EXISTS ref_b;
-DROP TABLE IF EXISTS ref_as;
+DROP TABLE IF EXISTS ref_ab;
 DROP TABLE IF EXISTS ref_n;
 
 CREATE TABLE t_gb_dyn (a UInt32, b UInt32, s String, n Nullable(UInt32))
@@ -48,7 +48,7 @@ FROM numbers(100000);
 
 CREATE TABLE ref_a ENGINE = Memory AS SELECT a, count() AS c, sum(b) AS sb FROM t_gb_dyn GROUP BY a;
 CREATE TABLE ref_b ENGINE = Memory AS SELECT b, count() AS c, sum(a) AS sa FROM t_gb_dyn GROUP BY b;
-CREATE TABLE ref_as ENGINE = Memory AS SELECT a, s, count() AS c FROM t_gb_dyn GROUP BY a, s;
+CREATE TABLE ref_ab ENGINE = Memory AS SELECT a, intDiv(b, 100) AS bb, count() AS c FROM t_gb_dyn GROUP BY a, bb;
 CREATE TABLE ref_n ENGINE = Memory AS SELECT n, count() AS c FROM t_gb_dyn GROUP BY n;
 
 -- Every returned group must carry its complete aggregates.
@@ -61,7 +61,7 @@ SETTINGS log_comment = '05233_a';
 
 SELECT 'plan: the read is filtered by the boundary';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT a, count() FROM t_gb_dyn GROUP BY a LIMIT 3)
-WHERE explain LIKE '%Prewhere filter column: \_\_topKFilter(a)%';
+WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(a)%';
 
 SELECT 'second primary key column, no ORDER BY';
 SELECT count(), countIf(l.c = r.c AND l.sa = r.sa)
@@ -79,7 +79,7 @@ FROM (SELECT a, count() AS c, sum(b) AS sb FROM t_gb_dyn WHERE s != '' GROUP BY 
 INNER JOIN ref_a AS r USING (a);
 
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT a, count() FROM t_gb_dyn WHERE s != '' GROUP BY a LIMIT 3)
-WHERE explain LIKE '%Prewhere filter column: and(%\_\_topKFilter(a)%';
+WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(a)%' AND explain LIKE '% AND %';
 
 SELECT 'explicit PREWHERE';
 SELECT count(), countIf(c = 500)
@@ -87,9 +87,9 @@ FROM (SELECT a, count() AS c FROM t_gb_dyn PREWHERE b < 500 GROUP BY a LIMIT 3);
 
 SELECT 'composite key: the boundary of the first key column';
 SELECT count(), countIf(l.c = r.c)
-FROM (SELECT a, s, count() AS c FROM t_gb_dyn GROUP BY a, s LIMIT 5) AS l
-INNER JOIN ref_as AS r USING (a, s)
-SETTINGS log_comment = '05233_as';
+FROM (SELECT a, intDiv(b, 100) AS bb, count() AS c FROM t_gb_dyn GROUP BY a, bb LIMIT 5) AS l
+INNER JOIN ref_ab AS r USING (a, bb)
+SETTINGS log_comment = '05233_ab';
 
 SELECT 'Nullable key outside the primary key: filtered, not skipped';
 SELECT count(), countIf(l.c = r.c)
@@ -97,7 +97,7 @@ FROM (SELECT n, count() AS c FROM t_gb_dyn GROUP BY n LIMIT 3) AS l
 INNER JOIN ref_n AS r ON l.n IS NOT DISTINCT FROM r.n;
 
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT n, count() FROM t_gb_dyn GROUP BY n LIMIT 3)
-WHERE explain LIKE '%Prewhere filter column: \_\_topKFilter(n)%';
+WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(n)%';
 
 SELECT 'several aggregation streams publish into one tracker';
 SELECT count(), countIf(l.c = r.c AND l.sa = r.sa)
@@ -126,11 +126,11 @@ SELECT 'granules skipped by the primary key';
 SELECT log_comment, read_rows < 50000, ProfileEvents['TopKGranulesSkippedByPrimaryKey'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05233_a', '05233_b', '05233_b_desc', '05233_as', '05233_sort')
+    AND log_comment IN ('05233_a', '05233_ab', '05233_b', '05233_b_desc', '05233_sort')
 ORDER BY log_comment;
 
 DROP TABLE t_gb_dyn;
 DROP TABLE ref_a;
 DROP TABLE ref_b;
-DROP TABLE ref_as;
+DROP TABLE ref_ab;
 DROP TABLE ref_n;

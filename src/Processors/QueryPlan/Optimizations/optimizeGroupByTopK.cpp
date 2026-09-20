@@ -17,6 +17,8 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
+#include <optional>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -54,6 +56,23 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 }
 
 
+/// The input column an output of the DAG is a plain copy of, through aliases only (the analyzer renames
+/// `a` to `__table1.a` this way); nothing if the output is computed.
+static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name)
+{
+    const auto * node = dag.tryFindInOutputs(output_name);
+    if (!node)
+        return std::nullopt;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+
+    return node->result_name;
+}
+
 /// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
 ///
 /// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
@@ -83,10 +102,13 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     if (aggregating_node->children.size() != 1)
         return nullptr;
 
-    const String & key_name = aggregating_step.getParams().keys.front();
+    /// The name of the key column at the current step; it changes on the way down, as the steps
+    /// may alias the column (`__table1.a` at the aggregation is `a` at the read).
+    String key_name = aggregating_step.getParams().keys.front();
+    auto log = getLogger("optimizeGroupByTopK");
 
-    /// Descend through the steps that pass the key column through unchanged, by name and without
-    /// rewriting it (`isSortKeyPassThrough`), down to the reading step.
+    /// Descend through the steps that pass the key column through without computing anything
+    /// over it, down to the reading step.
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
@@ -95,13 +117,23 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     {
         if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
-            if (!isSortKeyPassThrough(expression_step->getExpression(), key_name))
+            auto input_name = findPassedThroughInput(expression_step->getExpression(), key_name);
+            if (!input_name)
+            {
+                LOG_TRACE(log, "No dynamic filter: the expression step does not pass the key {} through", key_name);
                 return nullptr;
+            }
+            key_name = std::move(*input_name);
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
-            if (!isSortKeyPassThrough(filter_step->getExpression(), key_name))
+            auto input_name = findPassedThroughInput(filter_step->getExpression(), key_name);
+            if (!input_name)
+            {
+                LOG_TRACE(log, "No dynamic filter: the filter step does not pass the key {} through", key_name);
                 return nullptr;
+            }
+            key_name = std::move(*input_name);
             closest_filter_step = filter_step;
         }
         else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
@@ -110,7 +142,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             break;
         }
         else
+        {
+            LOG_TRACE(log, "No dynamic filter: step {} between the aggregation and the reading step", node->step->getName());
             return nullptr;
+        }
 
         if (node->children.size() != 1)
             return nullptr;
@@ -120,28 +155,33 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// FINAL deduplicates rows by the sorting key while reading; dropping a row before that can change which
     /// version of another row survives. Parallel replicas run the query text remotely, where nothing knows the tracker.
     if (read_step->isQueryWithFinal() || read_step->isParallelReadingFromReplicas())
+    {
+        LOG_TRACE(log, "No dynamic filter: the read is FINAL or from parallel replicas");
         return nullptr;
+    }
 
     const auto & read_columns = read_step->getAllColumnNames();
-    if (std::find(read_columns.begin(), read_columns.end(), key_name) == read_columns.end())
-        return nullptr;
+    const auto & header = *read_step->getOutputHeader();
 
     /// A physical column of the table, not a virtual one: `__topKFilter` runs as a PREWHERE over the stored column.
-    if (!read_step->getStorageMetadata()->getColumns().hasPhysical(key_name))
+    if (std::find(read_columns.begin(), read_columns.end(), key_name) == read_columns.end() || !header.has(key_name)
+        || !read_step->getStorageMetadata()->getColumns().hasPhysical(key_name))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} is not a physical column read from the table", key_name);
         return nullptr;
+    }
 
-    const auto & header = *read_step->getOutputHeader();
-    if (!header.has(key_name))
-        return nullptr;
     const auto & key_column = header.getByName(key_name);
 
     /// The same type restrictions as `tryOptimizeTopK`: `__topKFilter` cannot compare `Dynamic`, `Variant`
     /// and empty tuples, and comparing variable-length values row by row may cost more than it saves.
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_column.type.get());
-    if (isDynamic(key_column.type) || isVariant(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty()))
+    if (isDynamic(key_column.type) || isVariant(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
+        || (!key_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
         return nullptr;
-    if (!key_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types)
-        return nullptr;
+    }
 
     SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
     auto threshold_tracker = std::make_shared<TopKThresholdTracker>(key_sort_description);
@@ -210,7 +250,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             closest_filter_step->resetConditionForQueryConditionCache();
     }
 
-    LOG_TRACE(getLogger("optimizeGroupByTopK"), "Filtering and skipping granules of {} by the top-K boundary of the aggregation", key_name);
+    LOG_TRACE(log, "Filtering and skipping granules of {} by the top-K boundary of the aggregation", key_name);
     return threshold_tracker;
 }
 
