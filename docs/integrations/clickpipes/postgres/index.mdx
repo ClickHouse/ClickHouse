@@ -26,7 +26,7 @@ import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx
 <Visibility for="humans">
 <View title="Cloud UI">
 
-You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
+You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be [ClickHouse Managed Postgres](/products/managed-postgres/overview), or hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
 
 Postgres ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
@@ -34,23 +34,25 @@ Postgres ClickPipes can be deployed and managed manually using the ClickPipes UI
 
 To get started, you first need to make sure that your Postgres database is set up correctly. Depending on your source Postgres instance, you may follow any of the following guides:
 
-1. [Amazon RDS Postgres](/integrations/clickpipes/postgres/source/rds)
+1. [ClickHouse Managed Postgres](/integrations/clickpipes/postgres/source/managed-postgres), which has logical replication enabled and ClickPipes access allowed out of the box.
 
-2. [Amazon Aurora Postgres](/integrations/clickpipes/postgres/source/aurora)
+2. [Amazon RDS Postgres](/integrations/clickpipes/postgres/source/rds)
 
-3. [Supabase Postgres](/integrations/clickpipes/postgres/source/supabase)
+3. [Amazon Aurora Postgres](/integrations/clickpipes/postgres/source/aurora)
 
-4. [Google Cloud SQL Postgres](/integrations/clickpipes/postgres/source/google-cloudsql)
+4. [Supabase Postgres](/integrations/clickpipes/postgres/source/supabase)
 
-5. [Azure Flexible Server for Postgres](/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+5. [Google Cloud SQL Postgres](/integrations/clickpipes/postgres/source/google-cloudsql)
 
-6. [Neon Postgres](/integrations/clickpipes/postgres/source/neon-postgres)
+6. [Azure Flexible Server for Postgres](/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-7. [Crunchy Bridge Postgres](/integrations/clickpipes/postgres/source/crunchy-postgres)
+7. [Neon Postgres](/integrations/clickpipes/postgres/source/neon-postgres)
 
-8. [Generic Postgres Source](/integrations/clickpipes/postgres/source/generic), if you're using any other Postgres provider or using a self-hosted instance.
+8. [Crunchy Bridge Postgres](/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-9. [TimescaleDB](/integrations/clickpipes/postgres/source/timescale), if you're using the TimescaleDB extension on a managed service or self-hosted instance.
+9. [Generic Postgres Source](/integrations/clickpipes/postgres/source/generic), if you're using any other Postgres provider or using a self-hosted instance.
+
+10. [TimescaleDB](/integrations/clickpipes/postgres/source/timescale), if you're using the TimescaleDB extension on a managed service or self-hosted instance.
 
 <Warning>
 

@@ -114,6 +114,25 @@
           "products/cloud/api-reference/backup/backup-bucket-update",
           "products/cloud/api-reference/backup/backup-bucket-delete"
         ]
+      },
+      {
+        "group": "Snapshot",
+        "pages": [
+          "products/cloud/api-reference/snapshot/snapshot-get-list",
+          "products/cloud/api-reference/snapshot/snapshot-get",
+          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
+          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+        ]
+      },
+      {
+        "group": "Query API endpoints",
+        "pages": [
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+        ]
       }
     ]
   },
@@ -131,7 +150,7 @@
     "group": "Prometheus",
     "pages": [
       "products/cloud/api-reference/prometheus/organization-prometheus-get",
-      "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "GET /v1/organizations/{organizationId}/prometheus/discovery",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"

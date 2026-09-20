@@ -52,7 +52,7 @@ from ci.praktika.utils import Shell
 
 CHANGELOG_FILE = "CHANGELOG.md"
 BRANCH_PREFIX = "auto/changelog-"
-RAW_BEGIN = "<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->"
+RAW_BEGIN = "<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->"
 RAW_BEGIN_PREFIX = "<!-- CHANGELOG-RAW-BEGIN"
 RAW_END = "<!-- CHANGELOG-RAW-END -->"
 STATE_TRAILER = "Changelog-generated-up-to:"
@@ -447,8 +447,149 @@ _REVERT_NUMBER_TITLE_RE = re.compile(
 _REVERT_TITLE_RE = re.compile(r"(?i)^\s*revert(s|ed)?\b")
 
 
-def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
-    """Find the reverts among `raw_prs` and bind each to what it reverts.
+# The line GitHub puts into the body of a revert pull request, naming what it
+# reverts: `Reverts owner/repo#N`. A revert opened by hand often spells the
+# same thing as a link, `Reverts https://github.com/owner/repo/pull/N`, which
+# is the same relation and is read the same way.
+_REVERTS_MARKER_RE = re.compile(
+    r"(?i)reverts\s+(?:https?://github\.com/[\w.-]+/[\w.-]+/pull/|[\w.-]+/[\w.-]+#)(\d+)"
+)
+
+
+def _is_revert(title, body):
+    return bool(_REVERT_TITLE_RE.match(title) or _REVERTS_MARKER_RE.search(body))
+
+
+def _bind_revert(pr, title, body, candidates):
+    """The pull requests that revert `pr` reverts, from its metadata, or an
+    empty set when they cannot be told.
+
+    Three forms, tried in order. The body marker GitHub writes into a revert
+    (`Reverts owner/repo#N`, or the link spelling of it). A title that names
+    the number outright (`Revert #N`). And a title that nests the reverted
+    title: a revert of a revert made with the web UI carries no marker in its
+    body (the button restores the change, GitHub words the body differently),
+    but the target of `Revert "Revert "X""` is the revert titled `Revert "X"`,
+    which is looked up among `candidates` (pull request -> title).
+
+    A revert is always merged after what it reverts, so it always has the
+    higher number. That is the invariant `revert_net_effect` settles whole
+    chains in a single descending pass with, so a relation that breaks it is
+    not one: it is dropped and the other forms get their turn.
+
+    Revert titles are not unique - the same change can be reverted more than
+    once in a cycle, and every one of those reverts is titled `Revert "X"` -
+    so a title matching several earlier candidates identifies none of them.
+    Only an unambiguous match binds; anything else stays unresolved, which
+    grants no deletion credit at all."""
+    older = _older_than(_REVERTS_MARKER_RE.findall(body), pr)
+    if older:
+        return older
+    numbered = _REVERT_NUMBER_TITLE_RE.match(title)
+    if numbered:
+        older = _older_than([numbered.group(1)], pr)
+        if older:
+            return older
+    nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', title)
+    if not nested:
+        return set()
+    matched = {
+        p
+        for p, t in candidates.items()
+        if t == nested.group(1) and int(p) < int(pr)
+    }
+    return matched if len(matched) == 1 else set()
+
+
+# How many search hits to weigh when looking a revert up by its title. The
+# nested title of a revert of a revert is a long phrase, so the search returns
+# a handful of candidates at most; the cap only bounds a pathological query.
+TITLE_SEARCH_LIMIT = 50
+
+
+def search_pull_requests_by_title(title, before):
+    """The merged pull requests of this repository titled exactly `title` and
+    numbered below `before`, as {number: (title, body)}.
+
+    The chain of a revert of a revert is followed through `targets`, which
+    requires knowing the intermediate revert. When it arrived before the
+    ledger existed and is outside the current raw blocks, nothing names its
+    number: a `Revert "Revert "X""` made with the web UI carries no
+    `Reverts owner/repo#N` marker in its body, and a hand-made one quotes only
+    the commit. Its title, though, is written out in full inside the title of
+    the outer revert, so it can be searched for.
+
+    Issue search has no exact-title operator and no way to quote the `"` a
+    nested revert title is full of, so the quotes are dropped and the words are
+    searched as a phrase in the title; the exact match is made here, by the
+    caller comparing titles. A transport failure raises, like
+    `fetch_pull_requests`: a lookup that quietly came back empty would leave a
+    revert chain half-followed."""
+    owner, _, name = Info().repo_name.partition("/")
+    phrase = " ".join(title.replace('"', " ").split())
+    search = f"repo:{owner}/{name} is:pr is:merged in:title {json.dumps(phrase)}"
+    query = (
+        f"{{ search(query: {json.dumps(search)}, type: ISSUE, "
+        f"first: {TITLE_SEARCH_LIMIT}) {{ nodes {{ ... on PullRequest "
+        f"{{ number title body }} }} }} }}"
+    )
+    out = Shell.get_output(f"gh api graphql -f query={shlex.quote(query)}", retries=3)
+    try:
+        nodes = json.loads(out)["data"]["search"]["nodes"]
+    except (KeyError, TypeError, ValueError) as e:
+        raise RuntimeError(
+            f"Cannot search for pull requests titled {title!r}: the GraphQL "
+            f"query returned no search data. Refusing to classify reverts "
+            f"without it."
+        ) from e
+    if len(nodes) >= TITLE_SEARCH_LIMIT:
+        # The hits were cut off, so a second pull request with this very title
+        # may be sitting beyond the cap and the one hit that matches exactly
+        # would look unique while it is not. Nothing is returned: a title this
+        # common identifies nothing, and a wrong binding would license the
+        # deletion of an entry that ships.
+        print(f"WARNING: too many pull requests match the title {title!r}")
+        return {}
+    found = {}
+    for node in nodes:
+        number = str(node.get("number") or "")
+        if not number or int(number) >= int(before):
+            continue
+        found[number] = (
+            " ".join((node.get("title") or "").split()),
+            node.get("body") or "",
+        )
+    return found
+
+
+def _lookup_nested_revert(pr, title):
+    """The reverts that the nested title of `pr` may name, as
+    {number: (title, body)}, for a revert whose target none of the raw blocks,
+    the ledger or its own metadata identify.
+
+    Both links of a chain need it. The intermediate revert of a
+    `Revert "Revert "X""` is the one the outer revert has to bind to, and that
+    intermediate revert, reached this way, has no metadata naming `X` either -
+    it quotes only a commit - so its own target is looked up the same way.
+    Leaving the second lookup out would stop the chain one step short: the
+    intermediate revert would not be a revert as far as `revert_net_effect` is
+    concerned, and the outer one would be read as cancelling nothing.
+
+    The hits are handed to `_bind_revert` as candidates rather than bound
+    here, so the exact-title and unambiguity rules that govern every other
+    nested match govern these too: a title several merged pull requests share
+    identifies none of them."""
+    nested = re.match(r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', title)
+    if not nested:
+        return {}
+    return search_pull_requests_by_title(nested.group(1), before=pr)
+
+
+def resolve_revert_targets(
+    raw_prs, text_reverts=(), known_titles=None, known_targets=None
+):
+    """Find the reverts among `raw_prs` and bind each to what it reverts,
+    following the chain down to a pull request that is not a revert.
 
     A pull request is a revert when its title announces one, when its body
     carries the `Reverts owner/repo#N` line GitHub puts into revert bodies, or
@@ -456,13 +597,31 @@ def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
     The metadata decides, not the bullet: the bullet is the author's own
     changelog entry and need not mention the revert at all.
 
+    The target of a revert can itself be a revert - `Revert "Revert "X""`
+    re-applies `X` - and what that means for the changelog depends on the
+    whole chain: the entry of `X` stays and records the re-apply, and neither
+    revert has an entry of its own (skill section 2.5). The intermediate
+    revert is usually not in the current raw blocks: it arrived on an earlier
+    day and was consumed then. `known_targets` (revert -> what it reverts) is
+    what earlier runs recorded about it in the ledger; a target that neither
+    the raw blocks nor the ledger know is looked up on GitHub, and if it turns
+    out to be a revert, so is its target, until the chain ends. Without this
+    the verifier would read a revert of a revert as a plain revert of a pull
+    request without an entry and demand that no trace of it remain - while
+    the editing rules put its link on the entry it brought back. That
+    contradiction wedged the 26.9 changelog for a week in September 2026, for
+    a chain whose first revert predated the ledger. When the intermediate
+    revert is not even named - the outer revert carries no marker and quotes
+    only its title - it is searched for by that title
+    (`search_pull_requests_by_title`), so the chain is followed from either
+    end.
+
     `known_titles` supplies the titles of the reverts earlier runs already
-    resolved, so a revert of a revert binds to its target even when that target
-    is not in the current raw block. Returns (targets, titles, unresolved):
+    resolved, for the nested-title form. Returns (targets, titles, unresolved):
     `targets` maps a revert to the pull requests it reverts, `titles` holds the
     titles looked up here, and `unresolved` lists the reverts whose target
     stayed unknown (a manual revert without the marker, or a nested title that
-    fits several earlier reverts equally well) — those grant no deletion
+    fits several earlier reverts equally well) - those grant no deletion
     credit, and the caller fails closed on any disappearance it cannot bind to
     a resolved, uncancelled revert."""
     metadata = fetch_pull_requests(raw_prs)
@@ -471,64 +630,65 @@ def resolve_revert_targets(raw_prs, text_reverts=(), known_titles=None):
         (
             pr
             for pr, (title, body) in metadata.items()
-            if _REVERT_TITLE_RE.match(title)
-            or re.search(r"(?i)reverts\s+[\w.-]+/[\w.-]+#\d+", body)
-            or pr in text_reverts
+            if _is_revert(title, body) or pr in text_reverts
         ),
         key=int,
     )
+    known_targets = known_targets or {}
     targets = {}
-    for pr in revert_prs:
-        found = re.findall(
-            r"(?i)reverts\s+[\w.-]+/[\w.-]+#(\d+)", metadata[pr][1]
-        )
-        # A revert is always merged after what it reverts, so it always has the
-        # higher number. That is the invariant `revert_net_effect` settles
-        # whole chains in a single descending pass with, so a relation that
-        # breaks it is not one: drop it and let the other forms try.
-        older = _older_than(found, pr)
-        if older:
-            targets[pr] = older
-    # A revert of a revert made with the web UI carries no `Reverts ...#N`
-    # marker in its body (the button restores the change, GitHub words the
-    # body differently), but its title nests the reverted title: the target
-    # of `Revert "Revert "X""` is the revert titled `Revert "X"` — which this
-    # job may have processed days ago, hence `known_titles`.
-    candidates = {**(known_titles or {}), **titles}
     unresolved = []
-    for pr in revert_prs:
-        if pr in targets:
-            continue
-        # The skill's other common form, and an exact one: no title matching
-        # needed, and nothing to be ambiguous about.
-        numbered = _REVERT_NUMBER_TITLE_RE.match(titles.get(pr, ""))
-        if numbered:
-            older = _older_than([numbered.group(1)], pr)
-            if older:
-                targets[pr] = older
-                continue
-        nested = re.match(
-            r'(?is)revert(?:s|ed)?\s+"(.+)"\s*$', titles.get(pr, "")
-        )
-        matched = (
+    # The reverts to bind, in waves: the ones from the raw blocks first, then
+    # the reverts discovered while binding them - the targets that are reverts
+    # themselves, and the intermediate reverts a nested title named - as long
+    # as nobody has bound them yet.
+    pending = revert_prs
+    seen = set()
+    while pending:
+        candidates = {**(known_titles or {}), **titles}
+        discovered = {}
+        for pr in pending:
+            seen.add(pr)
+            title, body = metadata[pr]
+            bound = _bind_revert(pr, title, body, candidates)
+            if not bound:
+                # Nothing the run already knows names the target. A nested
+                # title still spells it out, so look the intermediate revert
+                # up by it and bind against that.
+                found = {
+                    p: v for p, v in _lookup_nested_revert(pr, title).items()
+                    if p not in metadata
+                }
+                if found:
+                    metadata.update(found)
+                    titles.update({p: t for p, (t, _) in found.items()})
+                    discovered.update(found)
+                    candidates = {**candidates, **titles}
+                    bound = _bind_revert(pr, title, body, candidates)
+            if bound:
+                targets[pr] = bound
+            else:
+                unresolved.append(pr)
+        unknown = sorted(
             {
-                p
-                for p, t in candidates.items()
-                if t == nested.group(1) and int(p) < int(pr)
-            }
-            if nested
-            else set()
+                target
+                for pr in pending
+                for target in targets.get(pr, ())
+                if target not in metadata and target not in known_targets
+            },
+            key=int,
         )
-        # Revert titles are not unique — the same change can be reverted more
-        # than once in a cycle, and every one of those reverts is titled
-        # `Revert "X"` — so a title matching several earlier reverts
-        # identifies none of them. Bind only an unambiguous match; anything
-        # else stays unresolved, which grants no credit at all.
-        if len(matched) == 1:
-            targets[pr] = matched
-        else:
-            unresolved.append(pr)
-    return targets, titles, unresolved
+        fetched = fetch_pull_requests(unknown) if unknown else {}
+        metadata.update(fetched)
+        titles.update({pr: title for pr, (title, _) in fetched.items()})
+        pending = sorted(
+            (
+                pr
+                for pr, (title, body) in {**fetched, **discovered}.items()
+                if pr not in seen and _is_revert(title, body)
+            ),
+            key=int,
+        )
+    return targets, titles, sorted(set(unresolved), key=int)
 
 
 def revert_net_effect(targets):
@@ -772,7 +932,7 @@ def analyze_reverts(text, anchor, range_prs=()):
     ledger_targets, ledger_titles, deleted, integrated = read_revert_ledger()
     all_prs, strict_prs, text_reverts = raw_prs_and_reverts(text)
     new_targets, titles, unresolved = resolve_revert_targets(
-        all_prs, text_reverts, ledger_titles
+        all_prs, text_reverts, ledger_titles, ledger_targets
     )
     targets = {pr: set(reverted) for pr, reverted in ledger_targets.items()}
     for pr, reverted in new_targets.items():
@@ -1214,7 +1374,7 @@ def generate_raw_entries(version, from_ref, to_sha):
         f"Update changelog for {version}: generate raw entries "
         f"({from_short}..{to_short})\n\n"
         f"{entries} raw entries generated with tests/ci/changelog.py "
-        f"by the NightlyChangelog CI job.\n\n"
+        f"by the nightly changelog CI job.\n\n"
         f"{STATE_TRAILER} {to_sha}\n"
     )
     Shell.check(f"git add {CHANGELOG_FILE}", strict=True)
@@ -1729,7 +1889,7 @@ def edit_raw_entries(version):
     ]
     message = (
         f"Update changelog for {version}: edit new entries\n\n"
-        f"Edited by the NightlyChangelog CI job following {EDIT_SKILL}.\n"
+        f"Edited by the nightly changelog CI job following {EDIT_SKILL}.\n"
         + ("\n" + "\n".join(trailers) + "\n" if trailers else "")
     )
     Shell.check(f"git add {CHANGELOG_FILE}", strict=True)
@@ -1779,7 +1939,7 @@ def ensure_pr(branch, version):
     body = f"""\
 Automated daily preparation of `CHANGELOG.md` for the upcoming {version} release.
 
-Every day the `NightlyChangelog` CI job appends the raw changelog entries for the pull requests newly merged into `master` (generated with `utils/changelog/changelog.py`) as one commit, and edits them following `.claude/skills/edit-changelog/SKILL.md` as a separate commit, so both the raw and the edited state stay reviewable. The point up to which entries were generated is recorded as a `{STATE_TRAILER}` trailer in the generate commits.
+Every day the nightly changelog CI job appends the raw changelog entries for the pull requests newly merged into `master` (generated with `utils/changelog/changelog.py`) as one commit, and edits them following `.claude/skills/edit-changelog/SKILL.md` as a separate commit, so both the raw and the edited state stay reviewable. The point up to which entries were generated is recorded as a `{STATE_TRAILER}` trailer in the generate commits.
 
 This pull request stays a draft until the release. The release manager finalizes it manually: fills in the release date and the presentation/video links (the `FIXME` placeholders), reviews the entries, and marks it ready.
 

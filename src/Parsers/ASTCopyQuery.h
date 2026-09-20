@@ -32,6 +32,9 @@ public:
         Binary
     } format = Formats::TSV;
 
+    /// `HEADER` of the option list: the first line of the data is the column names.
+    bool header = false;
+
     String getID(char) const override { return "CopyQuery"; }
 
     ASTPtr clone() const override;
@@ -43,5 +46,8 @@ protected:
 };
 
 String toString(ASTCopyQuery::Formats format);
+
+/// The ClickHouse input/output format the data of this `COPY` is written in.
+String getFormatName(const ASTCopyQuery & query);
 
 }

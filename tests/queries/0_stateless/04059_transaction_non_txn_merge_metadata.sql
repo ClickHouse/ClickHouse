@@ -21,20 +21,20 @@ SYSTEM START MERGES t;
 OPTIMIZE TABLE t FINAL;
 
 -- After non-transactional merge, source parts must have:
---   removal_tid = NonTransactionalTID = (1,1,'00000000-0000-0000-0000-000000000000')
+--   removal_tid = NonTransactionalTID = (1,1,'00000000-0000-0000-0000-000000000000',0)
 --   removal_csn = NonTransactionalCSN = 1
 SELECT 'source_removal_tid_is_non_transactional',
-    removal_tid = (1, 1, '00000000-0000-0000-0000-000000000000'),
+    removal_tid = (1, 1, '00000000-0000-0000-0000-000000000000', 0),
     removal_csn = 1
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't'
     AND active = 0
-    AND removal_tid = (1, 1, '00000000-0000-0000-0000-000000000000')
+    AND removal_tid = (1, 1, '00000000-0000-0000-0000-000000000000', 0)
 ORDER BY name;
 
 -- The merged result part must also use NonTransactionalTID / NonTransactionalCSN
 SELECT 'merged_creation_is_non_transactional',
-    creation_tid = (1, 1, '00000000-0000-0000-0000-000000000000'),
+    creation_tid = (1, 1, '00000000-0000-0000-0000-000000000000', 0),
     creation_csn = 1
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't' AND active;
