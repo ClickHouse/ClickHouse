@@ -32,6 +32,13 @@ public:
         Range,
     };
 
+    enum class QueryStatsMode
+    {
+        None,
+        Basic,
+        All,
+    };
+
     struct Params
     {
         Type type;
@@ -43,8 +50,9 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
-        /// Include ClickHouse query statistics in the response when the Prometheus `stats` parameter is non-empty.
-        bool include_stats = false;
+        /// Preserve the Prometheus `stats` mode. Prometheus only adds per-step fields for `all`
+        /// when its per-step statistics feature is enabled; ClickHouse currently exposes aggregate stats only.
+        QueryStatsMode stats_mode = QueryStatsMode::None;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)

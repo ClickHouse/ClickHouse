@@ -467,6 +467,21 @@ public:
         return static_cast<UInt64>(parsed_limit);
     }
 
+    static PrometheusHTTPProtocolAPI::QueryStatsMode parseStatsParam(const String & stats_param)
+    {
+        if (stats_param.empty())
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::None;
+        if (stats_param == "true")
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::Basic;
+        if (stats_param == "all")
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::All;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid value of the 'stats' parameter: '{}', expected 'true' or 'all'",
+            stats_param);
+    }
+
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
@@ -522,7 +537,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
-                    .include_stats = !stats.empty(),
+                    .stats_mode = parseStatsParam(stats),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -545,7 +560,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
-                    .include_stats = !stats.empty(),
+                    .stats_mode = parseStatsParam(stats),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);

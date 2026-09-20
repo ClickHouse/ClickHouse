@@ -170,6 +170,20 @@ def test_query_stats():
     assert instant_empty_stats.status_code == requests.codes.ok, instant_empty_stats.text
     assert "stats" not in instant_empty_stats.json()["data"]
 
+    invalid_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "banana"},
+    )
+    assert invalid_stats.status_code == requests.codes.bad_request, invalid_stats.text
+    invalid_stats_error = invalid_stats.json()
+    assert invalid_stats_error["status"] == "error"
+    assert invalid_stats_error["errorType"] == "bad_data"
+    assert "expected 'true' or 'all'" in invalid_stats_error["error"]
+
     range_with_stats = get_response_to_http_api_range_query(
         node.ip_address,
         9093,

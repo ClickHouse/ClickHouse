@@ -207,10 +207,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params,
     QueryFinishCallback query_finish_callback)
 {
+    const bool include_stats = params.stats_mode != QueryStatsMode::None;
     std::optional<Stopwatch> evaluation_watch;
     ThreadGroupPtr thread_group;
     std::optional<ProfileEvents::Counters::Snapshot> counters_before;
-    if (params.include_stats)
+    if (include_stats)
     {
         evaluation_watch.emplace();
         thread_group = CurrentThread::getGroup();
@@ -274,7 +275,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     query_context->setSetting("allow_experimental_analyzer", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    if (params.include_stats)
+    if (include_stats)
         counters_before.emplace(thread_group->performance_counters.getPartiallyAtomicSnapshot());
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
@@ -284,7 +285,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
         QueryStatsCallback query_stats_callback;
-        if (params.include_stats)
+        if (include_stats)
         {
             query_stats_callback = [thread_group, initial_counters = std::move(counters_before), &evaluation_watch](WriteBuffer & output)
             {
