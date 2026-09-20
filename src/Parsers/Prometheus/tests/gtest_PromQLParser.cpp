@@ -505,13 +505,13 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse(R"(
-        {__name__=~".*"}
+        {__name__=~".+"}
         )"), R"(
-{__name__=~".*"}
+{__name__=~".+"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
-        __name__ RE '.*'
+        __name__ RE '.+'
 )");
 
     /// Aggregation operators.
