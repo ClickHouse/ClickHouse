@@ -1174,9 +1174,6 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (storage)
         storage->format(ostr, settings, state, frame);
 
-    if (!as_table.empty() && as_table_after_storage)
-        write_as_table();
-
     if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {
         ostr << " " << toStringView(Keyword::INNER);
@@ -1198,6 +1195,11 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
                 ASTViewTargets::formatTarget(target, ostr, settings, state, frame, time_series_version);
         }
     }
+
+    /// After the storage and its target clauses (`ENGINE = TimeSeries TAGS tg`), which the parser consumes
+    /// right after the engine.
+    if (!as_table.empty() && as_table_after_storage)
+        write_as_table();
 
     if (dictionary)
         dictionary->format(ostr, settings, state, frame);

@@ -139,6 +139,9 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// A bare `not` is read as the prefix operator: `SELECT NOT `not`` formatted as `SELECT NOT not`
         /// does not parse back (the only keyword of `system.keywords` with this problem as of 2026-09).
         && !isCaseInsensitiveEqual(s, "not")
+        /// A bare `cube` or `rollup` in GROUP BY is read as the grouping-set modifier.
+        && !isCaseInsensitiveEqual(s, "cube")
+        && !isCaseInsensitiveEqual(s, "rollup")
         /// `INSERT INTO function SELECT ...` is read as `INSERT INTO FUNCTION`.
         && !isCaseInsensitiveEqual(s, "function"))
     {

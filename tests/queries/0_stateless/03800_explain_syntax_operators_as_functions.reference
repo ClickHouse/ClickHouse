@@ -6,7 +6,7 @@ SELECT divide(10, 2)\nFROM system.one
 SELECT modulo(10, 3)\nFROM system.one
 Unary operators
 SELECT -5\nFROM system.one
-SELECT not(true)\nFROM system.one
+SELECT `not`(true)\nFROM system.one
 Comparison operators
 SELECT equals(1, 1)\nFROM system.one
 SELECT notEquals(1, 2)\nFROM system.one
@@ -28,13 +28,13 @@ SELECT plus(1, multiply(2, 3))\nFROM system.one
 SELECT multiply(plus(1, 2), plus(3, 4))\nFROM system.one
 SELECT minus(divide(10, 2), 3)\nFROM system.one
 Complex multi-operator expressions
-SELECT\n    plus(1, multiply(2, 3)),\n    minus(5, 1),\n    not(true),\n    -10\nFROM system.one
+SELECT\n    plus(1, multiply(2, 3)),\n    minus(5, 1),\n    `not`(true),\n    -10\nFROM system.one
 SELECT and(equals(1, 1), less(2, 3))\nFROM system.one
-SELECT not(equals(1, 2))\nFROM system.one
+SELECT `not`(equals(1, 2))\nFROM system.one
 Nested unary operators
-SELECT not(not(true))\nFROM system.one
+SELECT `not`(`not`(true))\nFROM system.one
 SELECT negate(-5)\nFROM system.one
-SELECT not(not(not(false)))\nFROM system.one
+SELECT `not`(`not`(`not`(false)))\nFROM system.one
 LIKE operator
 SELECT like(\'test\', \'te%\')\nFROM system.one
 SELECT notLike(\'test\', \'x%\')\nFROM system.one
@@ -53,7 +53,7 @@ SELECT divide(multiply(plus(1, 2), minus(3, 4)), minus(plus(5, 6), multiply(7, 8
 Mixed logical and comparison
 SELECT or(and(less(1, 2), greater(3, 2)), equals(4, 4))\nFROM system.one
 All common operators in one query
-SELECT\n    plus(1, 2),\n    minus(3, 4),\n    multiply(5, 6),\n    divide(7, 8),\n    modulo(9, 2),\n    -10,\n    not(true),\n    equals(11, 11),\n    notEquals(12, 13),\n    less(14, 15),\n    greater(16, 15),\n    lessOrEquals(17, 18),\n    greaterOrEquals(19, 18),\n    and(true, false),\n    or(true, false)\nFROM system.one
+SELECT\n    plus(1, 2),\n    minus(3, 4),\n    multiply(5, 6),\n    divide(7, 8),\n    modulo(9, 2),\n    -10,\n    `not`(true),\n    equals(11, 11),\n    notEquals(12, 13),\n    less(14, 15),\n    greater(16, 15),\n    lessOrEquals(17, 18),\n    greaterOrEquals(19, 18),\n    and(true, false),\n    or(true, false)\nFROM system.one
 Edge case: operator with column reference
 SELECT plus(number, 1)\nFROM system.numbers\nLIMIT 1
 Edge case: operators in WHERE clause

@@ -9,3 +9,6 @@ SELECT formatQuerySingleLine('CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURC
 SELECT formatQuerySingleLine(formatQuerySingleLine('CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(`my src`(`my key` (`my nested`(x 1)))) LAYOUT(`my layout`()) LIFETIME(0)'));
 -- Plain names keep the upper-cased form.
 SELECT formatQuerySingleLine('CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(clickhouse(host ''localhost'' port 9000)) LAYOUT(flat()) LIFETIME(MIN 1 MAX 2)');
+
+-- A registered source named like a keyword keeps its spelling (`isValidIdentifier` would back-quote `null`).
+SELECT formatQuerySingleLine('CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)');

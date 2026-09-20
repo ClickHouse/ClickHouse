@@ -4,6 +4,7 @@
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <algorithm>
 #include <IO/WriteHelpers.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
@@ -75,7 +76,11 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 /// keep its quotes and its case, otherwise the formatted query does not parse back.
 void writeKeyValueName(WriteBuffer & ostr, const String & name)
 {
-    if (isValidIdentifier(name))
+    /// A single bare word, as `ParserIdentifier` reads it back (no keyword filter there: `SOURCE(NULL())`
+    /// is a registered source and must keep its spelling, `isValidIdentifier` would back-quote `null`).
+    const bool bare_word = !name.empty() && isValidIdentifierBegin(name[0])
+        && std::all_of(name.begin(), name.end(), [](char c) { return isWordCharASCII(c); });
+    if (bare_word)
         ostr << Poco::toUpper(name);
     else
         writeBackQuotedString(name, ostr);

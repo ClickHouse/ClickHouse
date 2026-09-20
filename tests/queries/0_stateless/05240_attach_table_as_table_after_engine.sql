@@ -9,3 +9,7 @@ SELECT formatQuerySingleLine('CREATE TABLE l ENGINE = Memory AS t');
 SELECT formatQuerySingleLine('CREATE TABLE l AS t ENGINE = Memory');
 SELECT formatQuerySingleLine('ATTACH TABLE l AS REPLICATED');
 SELECT formatQuerySingleLine('ATTACH TABLE l AS NOT REPLICATED');
+
+-- With target clauses the AS clause follows them, because the parser consumes the targets right after the engine.
+SELECT formatQuerySingleLine('ATTACH TABLE l ENGINE = TimeSeries TAGS tg AS t');
+SELECT formatQuerySingleLine(formatQuerySingleLine('ATTACH TABLE l ENGINE = TimeSeries DATA dt TAGS tg METRICS mt AS t SETTINGS x = 1'));
