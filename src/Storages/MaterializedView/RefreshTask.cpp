@@ -15,7 +15,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Streaming/CursorTree.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -340,7 +339,7 @@ void RefreshTask::startup()
 
     /// Must precede RefreshSet::emplace, which notifies dependent views, and those read
     /// last_completed_timeslot. Reading a file is also not allowed while holding `mutex`.
-    auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState(context);
+    auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState();
 
     if (start_paused || context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
@@ -1868,9 +1867,9 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
     }
-    /// Not on the transition that starts a refresh: it publishes nothing this feature reloads, and
-    /// its caller clears `execution.interrupt_execution` immediately afterwards, so persisting here
-    /// would only open a window for a lost SYSTEM STOP VIEW.
+    /// Not on the transition that starts a refresh: a restart recomputes everything it publishes from
+    /// the state the previous finish persisted, and its caller clears `execution.interrupt_execution`
+    /// immediately afterwards, so persisting here would only open a window for a lost SYSTEM STOP VIEW.
     else if (!local_state_path.empty() && !running)
     {
         const String data = root.toString();
@@ -1922,7 +1921,7 @@ void RefreshTask::resolveLocalStateLocation(const ContextPtr & context)
         / fmt::format("refresh_state.{}.txt", server_uuid);
 }
 
-RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const ContextPtr & context)
+RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState()
 {
     LoadedLocalState result;
     try
@@ -1934,9 +1933,7 @@ RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const Cont
 
         if (local_state_disk->existsFile(local_state_path))
         {
-            String data;
-            auto in = local_state_disk->readFile(local_state_path, context->getReadSettings());
-            readStringUntilEOF(data, *in);
+            const String data = readMetadataFile(local_state_disk, local_state_path);
 
             CoordinationZnode znode;
             znode.parse(data, /*running_znode_exists=*/ false, getLogger());

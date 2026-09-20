@@ -452,9 +452,9 @@ private:
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     /// Assign `local_state_disk`/`local_state_path`, or leave them unset to disable persistence.
     void resolveLocalStateLocation(const ContextPtr & context);
-    /// Read/write `local_state_path`. Callers must not hold `mutex`, and pass the context rather
-    /// than letting these touch `view`, which a parallel shutdown() may null. Neither throws.
-    LoadedLocalState loadLocalCoordinationState(const ContextPtr & context);
+    /// Read/write `local_state_path`. Callers must not hold `mutex`; the save side takes the context
+    /// instead of touching `view`, which a parallel shutdown() may null. Neither throws.
+    LoadedLocalState loadLocalCoordinationState();
     bool saveLocalCoordinationState(const ContextPtr & context, const String & data);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.

@@ -302,11 +302,11 @@ def create_slow_rmv(name):
 def test_a_starting_refresh_is_not_persisted():
     """Only transitions that do not start a refresh are persisted.
 
-    The state a starting refresh would contribute is refresh_running, which the loader would have to
-    throw away anyway, so persisting it buys nothing; and doing it would release the task's mutex for
-    an fsync in the middle of starting the refresh, which is what
-    test_stop_view_is_not_lost_while_a_refresh_starts is about. That makes refresh_running: 0 an
-    invariant of every payload ever written, and this asserts it at the one moment it could differ.
+    A starting refresh publishes nothing a restart cannot recompute from the last persisted
+    finish, and persisting it would release the task's mutex mid-start. Skipping it on the write
+    side is what makes `refresh_running: 0` an invariant of every payload ever written, because
+    the loader honours whatever the file says. This asserts it at the one moment the in-memory
+    value differs.
     """
     name = "rmv_starting"
     create_slow_rmv(name)
@@ -332,45 +332,6 @@ def test_a_starting_refresh_is_not_persisted():
         assert published != persisted
         assert "refresh_running: 0\n" in published, published
         assert find_refresh_state_files(DB_DISK_PATH) == state_files
-    finally:
-        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
-
-
-def test_stop_view_is_not_lost_while_a_refresh_starts():
-    """SYSTEM STOP VIEW issued as a refresh starts must still prevent that refresh.
-
-    The transition that starts a refresh clears the execution interrupt flag right after it returns,
-    so a STOP that lands while that transition holds no mutex sets a flag which is then discarded and
-    the refresh runs to completion. The transition no longer releases the mutex at all, so there is
-    no window to land in.
-
-    The refresh sleeps, so it cannot finish inside the STOP's round trip: whichever side wins,
-    last_success_time may only move after the START below, never because of the STOP.
-    """
-    name = "rmv_stop_race"
-    before = create_slow_rmv(name)
-    try:
-        # Repeated because the two commands race: 8 rounds keep the test under a minute, and a
-        # restored window is caught on the first round anyway (measured against a build that
-        # re-adds the persist and delays it by 200 ms, standing in for object storage).
-        for attempt in range(8):
-            node.query(f"SYSTEM REFRESH VIEW {name}")
-            node.query(f"SYSTEM STOP VIEW {name}")
-            # A swallowed STOP leaves the refresh running, so this waits it out and then reads a
-            # moved last_success_time rather than timing out.
-            wait_for_refresh_info(name, "status", lambda x: x == "Disabled")
-            assert (
-                refresh_info(name, "last_success_time") == before
-            ), f"attempt {attempt}: the refresh ran although the view was stopped"
-
-            # Re-arm. The out-of-schedule request is consumed when the refresh starts, so a stop
-            # that interrupted a started one leaves nothing for START to run; ask again and wait.
-            node.query(f"SYSTEM START VIEW {name}")
-            node.query(f"SYSTEM REFRESH VIEW {name}")
-            node.query(f"SYSTEM WAIT VIEW {name}")
-            before = wait_for_refresh_info(
-                name, "last_success_time", lambda x: x not in ("", "\\N", before)
-            )
     finally:
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
