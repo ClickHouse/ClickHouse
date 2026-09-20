@@ -441,9 +441,7 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     }
 }
 
-/// `tryGetLeastSupertype` reports the absence of a common type by returning null for every pair except
-/// two `Interval`s whose groups differ, where it throws, and it recurses, so such a pair counts at any
-/// depth.
+/// `tryGetLeastSupertype` throws instead of returning null for two `Interval`s of different groups, at any depth.
 static bool containsInterval(const DataTypePtr & type)
 {
     if (isInterval(type))
@@ -453,18 +451,14 @@ static bool containsInterval(const DataTypePtr & type)
     return found;
 }
 
-/// `FunctionComparison` admits a `String`/`FixedString` operand against an operand of any other type,
-/// and admits two tuples of equal size whatever their elements are, but at execution only a constant
-/// `String` is coerced; with the constant on the other side the comparison needs the two types to have
-/// a common string type, and throws without one. Tuples are compared element by element, so one such
-/// position makes the whole comparison throw.
+/// `FunctionComparison` resolves a `String`/`FixedString` operand against any other type, and equal-size
+/// tuples whatever their elements, but at execution it coerces only a constant string and otherwise throws.
 static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression_type, const DataTypePtr & constant_type)
 {
     const auto expression = removeLowCardinalityAndNullable(expression_type);
     const auto constant = removeLowCardinalityAndNullable(constant_type);
 
-    /// A constant that only carries its value chooses the type per row, and the adaptor that dispatches
-    /// on it materializes the constant, so a constant string in it is not coerced the way a plain one is.
+    /// A string a `Dynamic` or `Variant` constant merely carries is materialized, so it is not coerced.
     if (constant->hasDynamicStructure() || isVariant(constant))
         return true;
 
@@ -474,7 +468,6 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
     {
         const auto & expression_elements = expression_tuple->getElements();
         const auto & constant_elements = constant_tuple->getElements();
-        /// An unequal size is refused when the comparison is resolved, so it never reaches this point.
         if (expression_elements.size() != constant_elements.size())
             return false;
         for (size_t i = 0; i < expression_elements.size(); ++i)
@@ -483,17 +476,12 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
         return false;
     }
 
-    /// An array pair is admitted when its elements compare, and each element pair is resolved when the
-    /// comparison is, so an element that refuses is refused there too. An element that defers its
-    /// refusal to the rows it holds is not, and reaches execution through the array.
     const auto * expression_array = typeid_cast<const DataTypeArray *>(expression.get());
     const auto * constant_array = typeid_cast<const DataTypeArray *>(constant.get());
     if (expression_array && constant_array)
         return comparisonWithConstantIsNotExecutable(expression_array->getNestedType(), constant_array->getNestedType());
 
-    /// A `Variant` expression is compared alternative by alternative, on the value each row holds, so an
-    /// alternative that cannot be compared with the constant refuses the comparison for those rows.
-    /// A fixed alternative set reports no dynamic structure, so the chain sites do not bail out on it.
+    /// A `Variant` is compared on the alternative each row holds, so an incomparable one refuses those rows.
     if (const auto * expression_variant = typeid_cast<const DataTypeVariant *>(expression.get()))
     {
         for (const auto & alternative : expression_variant->getVariants())
@@ -501,8 +489,6 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
             if (comparisonWithConstantIsNotExecutable(alternative, constant))
                 return true;
 
-            /// Declines a non-string alternative that has no common type with the constant; only here is
-            /// such a refusal deferred to the rows. Wider than executability, so it can cost a fold.
             const auto bare_alternative = removeLowCardinalityAndNullable(alternative);
             if (!isStringOrFixedString(bare_alternative) && !isStringOrFixedString(constant)
                 && (containsInterval(bare_alternative) || containsInterval(constant)
@@ -518,18 +504,13 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
     if (containsInterval(expression) || containsInterval(constant))
         return true;
 
-    /// A least supertype is not by itself proof that the comparison can run. For every pair
-    /// `getLeastSupertype` considers compatible with a string it returns `String`; a different common
-    /// type comes from an earlier rule, and with a `Dynamic` operand it is `Dynamic`, where the
-    /// comparison is dispatched on the value that is stored and refuses a stored non-string.
+    /// `getLeastSupertype` returns `String` for every string-compatible pair, and `Dynamic` with a `Dynamic` operand.
     const auto supertype = tryGetLeastSupertype(DataTypes{expression, constant});
     return !supertype || !isStringOrFixedString(supertype);
 }
 
-/// Try to convert a constant to the expression's (column) type using strict (lossless) conversion, and
-/// require the comparison that the converted constant would stand in for to be executable.
-/// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails, or if
-/// that comparison could not have been executed.
+/// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
+/// Returns the converted Field, or std::nullopt if the conversion is lossy or fails, or the comparison cannot run.
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
 {
     const auto & from_type = constant_node->getResultType();
