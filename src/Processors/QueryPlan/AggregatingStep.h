@@ -118,7 +118,13 @@ public:
     /// predates the serialized bit keeps the strict resize.
     void enableGradualResize() { gradual_resize_enabled = true; }
     bool isGradualResizeEnabled() const { return gradual_resize_enabled; }
-    void setLimitHint(size_t limit) { limit_hint = limit; }
+    /// `prefix_columns` is the number of leading columns of the group-by sort description
+    /// the query is ordered by; the in-order streams may stop only at a boundary of them.
+    void setLimitHint(size_t limit, size_t prefix_columns)
+    {
+        limit_hint = limit;
+        limit_hint_prefix_columns = prefix_columns;
+    }
     size_t getLimitHint() const { return limit_hint; }
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
@@ -212,6 +218,7 @@ private:
     bool explicit_sorting_required_for_aggregation_in_order;
 
     size_t limit_hint = 0;
+    size_t limit_hint_prefix_columns = 0;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;
