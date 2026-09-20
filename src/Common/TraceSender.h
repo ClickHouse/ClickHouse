@@ -25,7 +25,8 @@ enum class TraceType : uint8_t
     ProfileEvent,
     JemallocSample,
     MemoryAllocatedWithoutCheck,
-    Instrumentation
+    Instrumentation,
+    MemoryLargeAllocation
 };
 
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.
@@ -61,6 +62,12 @@ public:
     /// Send an ordering marker from a regular thread, waiting for pipe space until the deadline.
     /// Not signal-safe. A timeout stops trace delivery without failing the query.
     static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
+
+    /// True when a `TraceCollector` is running, i.e. when `send` can deliver rather than discard.
+    static bool isCollecting()
+    {
+        return pipe.fds_rw[1] >= 0 && !shutdown.load();
+    }
 
 private:
     friend class TraceCollector;

@@ -28,13 +28,13 @@ SELECT 'greedy', t1.k, t2.k, t3.k FROM t1 LEFT JOIN t2 ON t2.a = 5 JOIN t3 ON t1
 SELECT 'dpsub', t1.k, t2.k, t3.k FROM t1 LEFT JOIN t2 ON t2.a = 5 JOIN t3 ON t1.k = t3.k AND t2.k = t3.k ORDER BY ALL
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
 SELECT 'cdc', t1.k, t2.k, t3.k FROM t1 LEFT JOIN t2 ON t2.a = 5 JOIN t3 ON t1.k = t3.k AND t2.k = t3.k ORDER BY ALL
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1;
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c';
 SELECT 'cda', t1.k, t2.k, t3.k FROM t1 LEFT JOIN t2 ON t2.a = 5 JOIN t3 ON t1.k = t3.k AND t2.k = t3.k ORDER BY ALL
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
 
 -- A pure cross product feeding an inner join must plan under a detector too.
 SELECT 'cross cdc', count() FROM t1 CROSS JOIN t2 JOIN t3 ON t1.k = t3.k AND t2.k = t3.k
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1;
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c';
 
 DROP TABLE t1;
 DROP TABLE t2;
@@ -59,7 +59,7 @@ INSERT INTO t3 SELECT number FROM numbers(6);
 SELECT 'four-table noopt', count() FROM t0 JOIN t1 ON t0.k = t1.k LEFT JOIN t2 ON t2.a = 3 JOIN t3 ON t2.k = t3.k AND t0.k = t3.k
     SETTINGS query_plan_optimize_join_order_limit = 0;
 SELECT 'four-table cdc', count() FROM t0 JOIN t1 ON t0.k = t1.k LEFT JOIN t2 ON t2.a = 3 JOIN t3 ON t2.k = t3.k AND t0.k = t3.k
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1;
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c';
 
 DROP TABLE t0;
 DROP TABLE t1;
@@ -82,7 +82,7 @@ SET enable_join_transitive_predicates = 1;
 SELECT 'transitive off', count() FROM a JOIN b ON a.k = b.k JOIN c ON b.k = c.k
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
 SELECT 'transitive cdc', count() FROM a JOIN b ON a.k = b.k JOIN c ON b.k = c.k
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1;
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c';
 
 DROP TABLE a;
 DROP TABLE b;
