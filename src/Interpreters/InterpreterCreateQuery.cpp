@@ -1807,7 +1807,7 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
 
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
@@ -1815,7 +1815,7 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
@@ -2067,6 +2067,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// SQL UDF expansion can introduce unqualified table names into persisted metadata. Resolve
+    /// them in the query's current database without revisiting scalar aliases generated during
+    /// query normalization.
+    AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+    if (create.select && create.isView())
+        visitor.visitTableExpressions(*create.select);
+    if (create.columns_list)
+        visitor.visitTableExpressions(*create.columns_list);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -3481,7 +3490,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     auto context = getContext();
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto source_uuid = source->getStorageID().uuid;
 
     /// Subscribe the view to new inserts and capture a snapshot of the existing source data together, under
@@ -3795,6 +3804,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
+    /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
+    /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
+    /// `CREATE TABLE` on a table of their own would let a user read or consume any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
 
     return required_access;
 }
