@@ -177,6 +177,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which appends the
+/// read-in-order soft-limit threshold (`query_task_size_limit`) to the read-in-order contract of a
+/// bucketed read. Without it a worker rebuilds the read with a zero threshold and sizes the first
+/// in-order task as a full range where the coordinator had chosen a single range for an outer `LIMIT`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT = 19;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

@@ -1,0 +1,60 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <!-- Read-in-order over a table whose rows are expensive to materialize: with twenty
+         `String` columns the per-stream reading and decompression, not the final merge, is what
+         bounds the query. `read_in_order_multi_part.xml` covers the opposite, merge-bound shape.
+
+         Two parts and `max_threads = 8` give four streams per part, so each part's streams are
+         concatenated by `PrefetchingConcatProcessor` with more inputs than a single chunk of
+         read-ahead can cover. That is the shape which regresses if the processor keeps only a
+         fixed number of its inputs running instead of letting all of them read within a shared
+         read-ahead budget: the merge then waits on a part whose remaining streams were not
+         allowed to start. -->
+    <create_query>
+        CREATE TABLE read_in_order_wide (key String, payload UInt64, c1 String, c2 String, c3 String, c4 String, c5 String, c6 String, c7 String, c8 String, c9 String, c10 String, c11 String, c12 String, c13 String, c14 String, c15 String, c16 String, c17 String, c18 String, c19 String, c20 String)
+        ENGINE = MergeTree PARTITION BY intDiv(payload, 5000000) ORDER BY key
+        AS SELECT
+            concat('k/', toString(number % 100000), '/v') AS key,
+            number AS payload,
+            concat('c1-', toString(number % 1000)) AS c1,
+            concat('c2-', toString(number % 1000)) AS c2,
+            concat('c3-', toString(number % 1000)) AS c3,
+            concat('c4-', toString(number % 1000)) AS c4,
+            concat('c5-', toString(number % 1000)) AS c5,
+            concat('c6-', toString(number % 1000)) AS c6,
+            concat('c7-', toString(number % 1000)) AS c7,
+            concat('c8-', toString(number % 1000)) AS c8,
+            concat('c9-', toString(number % 1000)) AS c9,
+            concat('c10-', toString(number % 1000)) AS c10,
+            concat('c11-', toString(number % 1000)) AS c11,
+            concat('c12-', toString(number % 1000)) AS c12,
+            concat('c13-', toString(number % 1000)) AS c13,
+            concat('c14-', toString(number % 1000)) AS c14,
+            concat('c15-', toString(number % 1000)) AS c15,
+            concat('c16-', toString(number % 1000)) AS c16,
+            concat('c17-', toString(number % 1000)) AS c17,
+            concat('c18-', toString(number % 1000)) AS c18,
+            concat('c19-', toString(number % 1000)) AS c19,
+            concat('c20-', toString(number % 1000)) AS c20
+        FROM numbers_mt(10000000)
+    </create_query>
+
+    <!-- One part per partition, two parts in total. -->
+    <fill_query>OPTIMIZE TABLE read_in_order_wide FINAL</fill_query>
+
+    <!-- Full ordered scan: every column stream of every part is read. -->
+    <query>SELECT * FROM read_in_order_wide ORDER BY key FORMAT Null</query>
+
+    <!-- Same, with a filter the primary key cannot answer, so nothing is pruned and PREWHERE
+         adds a second pass over the key column on top of the reading above. -->
+    <query>SELECT * FROM read_in_order_wide WHERE key LIKE '%/v' ORDER BY key FORMAT Null</query>
+
+    <!-- Reverse direction over the same reading-bound shape. -->
+    <query>SELECT * FROM read_in_order_wide ORDER BY key DESC FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_wide</drop_query>
+</test>
