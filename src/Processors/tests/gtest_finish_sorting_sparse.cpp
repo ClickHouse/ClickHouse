@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
@@ -102,17 +104,57 @@ ColumnPtr nullableUInt16(UInt16 value, size_t n)
     return ColumnNullable::create(denseUInt16(value, n), std::move(null_map));
 }
 
-/// A sparse `Nullable(UInt16)` sort key where every row holds the default (non-null `value`). The
-/// canonical representation wraps the nullable column in the sparse layer --
-/// `ColumnSparse(ColumnNullable(...))` -- because `ISerialization`'s SPARSE kind is applied outermost
-/// (`IDataType::createColumn`), and `ColumnNullable` rejects a sparse nested column
-/// (`ColumnSparse::canBeInsideNullable` is false). So this is the shape a `Nullable(UInt16)` key
-/// actually takes on the read-in-order path when it uses sparse serialization. Built as a fully
-/// default sparse column: a one-row nullable "values" column holding the default and empty offsets.
+/// A sparse `Nullable(UInt16)` sort key where every row holds a non-null `value`. Sparse is the
+/// OUTER layer -- `ColumnSparse(ColumnNullable(...))` -- because `ISerialization`'s SPARSE kind is
+/// applied outermost (`IDataType::createColumn`), and `ColumnNullable` rejects a sparse nested column
+/// (`ColumnSparse::canBeInsideNullable` is false).
+///
+/// Slot zero of a sparse column is its implicit default, which for `Nullable(UInt16)` is `NULL`, so
+/// the non-null rows are the ones stored at the offsets.
 ColumnPtr sparseNullableUInt16(UInt16 value, size_t n)
 {
+    auto values = ColumnUInt16::create();
+    auto null_map = ColumnUInt8::create();
     auto offsets = ColumnUInt64::create();
-    return ColumnSparse::create(nullableUInt16(value, 1)->assumeMutable(), std::move(offsets), n);
+
+    values->getData().push_back(static_cast<UInt16>(0));
+    null_map->getData().push_back(static_cast<UInt8>(1));
+    for (size_t i = 0; i < n; ++i)
+    {
+        values->getData().push_back(value);
+        null_map->getData().push_back(static_cast<UInt8>(0));
+        offsets->getData().push_back(i);
+    }
+
+    return ColumnSparse::create(
+        ColumnNullable::create(std::move(values), std::move(null_map)), std::move(offsets), n);
+}
+
+/// The `y` payload values of every output block, in output order.
+std::vector<UInt64> collectPayload(const Block & block)
+{
+    std::vector<UInt64> result;
+    if (!block.has("y"))
+        return result;
+    const auto & column = *block.getByName("y").column;
+    result.reserve(column.size());
+    for (size_t i = 0; i < column.size(); ++i)
+        result.push_back(column.getUInt(i));
+    return result;
+}
+
+/// Sorting two n-row inputs by (`x`, `y`) where every `x` is equal and each input carries
+/// `y` = 0..n-1 puts the two copies of each `y` next to each other: 0, 0, 1, 1, ... n-1, n-1.
+std::vector<UInt64> payloadOfBothInputsPaired(size_t n)
+{
+    std::vector<UInt64> expected;
+    expected.reserve(2 * n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        expected.push_back(i);
+        expected.push_back(i);
+    }
+    return expected;
 }
 
 ColumnPtr denseUInt64Iota(size_t n)
@@ -130,8 +172,10 @@ ColumnPtr denseUInt64Iota(size_t n)
 /// is the declared type of `x`; the stored chunk uses `first_prefix` and the current chunk uses
 /// `second_prefix`. Before the fix, a `second_prefix` carrying a sparse or replicated column
 /// (possibly nested in a tuple) makes the raw `compareAt` in `less` bad-cast its rhs
-/// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
-void runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr second_prefix, size_t n)
+/// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`). Returns the `y`
+/// payload in output order: `compareAt` only checks its operand type in debug and sanitizer builds,
+/// so the sort result is what pins the comparison in a release build too.
+std::vector<UInt64> runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr second_prefix, size_t n)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
 
@@ -184,15 +228,20 @@ void runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr se
     QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
 
     PullingPipelineExecutor executor(pipeline);
+    std::vector<UInt64> payload;
     Block block;
     while (executor.pull(block))
-        ;
+    {
+        auto block_payload = collectPayload(block);
+        payload.insert(payload.end(), block_payload.begin(), block_payload.end());
+    }
+    return payload;
 }
 
 /// Shorthand: a plain `UInt16` sort key, dense in the stored chunk and `second_prefix` in the next.
-void runFinishSortingUInt16(ColumnPtr second_prefix, size_t n)
+std::vector<UInt64> runFinishSortingUInt16(ColumnPtr second_prefix, size_t n)
 {
-    runFinishSorting(std::make_shared<DataTypeUInt16>(), denseUInt16(0, n), std::move(second_prefix), n);
+    return runFinishSorting(std::make_shared<DataTypeUInt16>(), denseUInt16(0, n), std::move(second_prefix), n);
 }
 
 /// Drive `MergeSorter` (the ordinary merge-sort path used by `MergeSortingTransform`) directly with
@@ -200,7 +249,7 @@ void runFinishSortingUInt16(ColumnPtr second_prefix, size_t n)
 /// merging queue exercises the cross-cursor `compareAt`. `first_key`/`second_key` are the `x` column
 /// of each chunk; before the fix a `second_key` carrying a replicated column nested in a tuple made
 /// `ColumnTuple::compareAt` delegate to `ColumnVector::compareAt(..., ColumnReplicated)` and bad-cast.
-void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+std::vector<UInt64> runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
 
@@ -234,8 +283,13 @@ void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_
     description.emplace_back("y");
 
     MergeSorter merge_sorter(shared_header, std::move(chunks), description, /*max_merged_block_size=*/8192, /*limit=*/0);
-    while (merge_sorter.read())
-        ;
+    std::vector<UInt64> payload;
+    while (Chunk chunk = merge_sorter.read())
+    {
+        auto block_payload = collectPayload(shared_header->cloneWithColumns(chunk.detachColumns()));
+        payload.insert(payload.end(), block_payload.begin(), block_payload.end());
+    }
+    return payload;
 }
 
 }
@@ -251,8 +305,10 @@ void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_
 TEST(FinishSortingTransform, SparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
+    std::vector<UInt64> payload;
     /// Before the fix this aborts with `Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSortingUInt16(sparseUInt16(0, n), n));
+    ASSERT_NO_THROW(payload = runFinishSortingUInt16(sparseUInt16(0, n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// The `Replicated(Sparse)` variant of the same bug: expanding the replicated wrapper leaves a
@@ -261,8 +317,10 @@ TEST(FinishSortingTransform, SparseSortKeyDoesNotBadCast)
 TEST(FinishSortingTransform, ReplicatedSparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
+    std::vector<UInt64> payload;
     /// Before the fix this aborts with the same `Bad cast ... ColumnSparse to ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSortingUInt16(replicatedSparseUInt16(0, n), n));
+    ASSERT_NO_THROW(payload = runFinishSortingUInt16(replicatedSparseUInt16(0, n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// A tuple sort key whose child stays replicated in the next chunk: only the
@@ -274,39 +332,29 @@ TEST(FinishSortingTransform, TupleReplicatedChildSortKeyDoesNotBadCast)
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
     /// Stored chunk: dense `Tuple(UInt16)`. Next chunk: same key as `Tuple(Replicated(UInt16))`.
+    std::vector<UInt64> payload;
     /// Before the fix this aborts with the same `Bad cast ... ColumnReplicated ... ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSorting(
+    ASSERT_NO_THROW(payload = runFinishSorting(
         key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
-/// A `Nullable(UInt16)` sort key that is dense in the stored chunk and sparse in the next (raised in
-/// review). A sparse nullable column is `ColumnSparse(ColumnNullable(...))` (sparse is the OUTER
-/// wrapper -- see `sparseNullableUInt16`), so the top-level `convertToFullColumnIfSparse` in the fix
-/// densifies it before `less`; `ColumnNullable::compareAt` then sees a dense nested rhs. Confirms
-/// the reachable sparse-nullable shape does not bad-cast.
+/// A `Nullable(UInt16)` sort key that is dense in the stored chunk and sparse in the next. A sparse
+/// nullable column is `ColumnSparse(ColumnNullable(...))`, sparse being the OUTER wrapper (see
+/// `sparseNullableUInt16`), so the top-level sparse strip densifies it before `less` and
+/// `ColumnNullable::compareAt` sees a dense nested rhs. Without the strip its own `assert_cast` of
+/// the rhs fails first: `Bad cast from type DB::ColumnSparse to DB::ColumnNullable`.
 TEST(FinishSortingTransform, NullableSparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>());
-    EXPECT_NO_THROW(runFinishSorting(key_type, nullableUInt16(0, n), sparseNullableUInt16(0, n), n));
+    std::vector<UInt64> payload;
+    ASSERT_NO_THROW(payload = runFinishSorting(key_type, nullableUInt16(0, n), sparseNullableUInt16(0, n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
-/// The nesting the review worried about -- `ColumnNullable(ColumnSparse(...))`, a dense null map over
-/// a sparse nested values column -- is unconstructible: `ColumnNullable`'s constructor rejects a
-/// nested column whose `canBeInsideNullable` is false, and `ColumnSparse` inherits the `false`
-/// default. So a `Nullable` sort key can never reach `less` with a sparse nested column; the sparse
-/// layer is always outside the nullable one (`NullableSparseSortKeyDoesNotBadCast`). This pins that
-/// invariant so a future change that makes sparse nullable-able would fail here loudly.
-TEST(FinishSortingTransform, NullableCannotWrapSparse)
-{
-    constexpr size_t n = 8;
-    auto null_map = ColumnUInt8::create();
-    null_map->getData().assign(n, static_cast<UInt8>(0));
-    EXPECT_ANY_THROW(ColumnNullable::create(sparseUInt16(0, n)->assumeMutable(), std::move(null_map)));
-}
-
-/// `ColumnNullable` can hide a `ColumnTuple` that carries a sparse/replicated child (raised in
-/// review): `Tuple` can be inside `Nullable`, and a tuple keeps sparse/replicated children, so
+/// `ColumnNullable` can hide a `ColumnTuple` that carries a sparse/replicated child: `Tuple` can be
+/// inside `Nullable`, and a tuple keeps sparse/replicated children, so
 /// `Nullable(Tuple(Sparse(UInt16)))` is a constructible sort key. `ColumnNullable::compareAt`
 /// delegates to the nested tuple, which delegates to its child, reaching
 /// `ColumnVector::compareAt(..., ColumnSparse)` -- the same bad cast two wrappers deep. The generic
@@ -316,10 +364,12 @@ TEST(FinishSortingTransform, NullableTupleSparseChildSortKeyDoesNotBadCast)
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeNullable>(
         std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    std::vector<UInt64> payload;
     /// Stored chunk: dense `Nullable(Tuple(UInt16))`. Next chunk: same key with a sparse tuple child.
     /// Before the fix this aborts with `Bad cast ... ColumnSparse to ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSorting(
+    ASSERT_NO_THROW(payload = runFinishSorting(
         key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(sparseUInt16(0, n), n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// The replicated sibling of the case above: `Nullable(Tuple(Replicated(UInt16)))`. Peeling only the
@@ -330,10 +380,12 @@ TEST(FinishSortingTransform, NullableTupleReplicatedChildSortKeyDoesNotBadCast)
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeNullable>(
         std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    std::vector<UInt64> payload;
     /// Stored chunk: dense `Nullable(Tuple(UInt16))`. Next chunk: same key with a replicated tuple child.
     /// Before the fix this aborts with `Bad cast ... ColumnReplicated to ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSorting(
+    ASSERT_NO_THROW(payload = runFinishSorting(
         key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(replicatedUInt16(0, n), n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// The same nested-replicated hazard on the ordinary merge-sort path (`MergeSortingTransform` ->
@@ -346,9 +398,11 @@ TEST(MergeSorter, TupleReplicatedChildSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
+    std::vector<UInt64> payload;
     /// Two sorted chunks with the SAME tuple key: one dense, one carrying a replicated tuple child.
-    EXPECT_NO_THROW(runMergeSorter(
+    ASSERT_NO_THROW(payload = runMergeSorter(
         key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 namespace
@@ -362,7 +416,7 @@ namespace
 /// `recursiveRemoveSparse` recursed only through `Replicated`/`Tuple`, so a composite key like
 /// `Tuple(Replicated(UInt16))` or `Nullable(Tuple(Sparse(UInt16)))` reached `SortCursorImpl` with one
 /// side dense and the other wrapped, and `compareAt` bad-cast one level deeper.
-void runMergingSorted(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+std::vector<UInt64> runMergingSorted(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
 
@@ -408,9 +462,14 @@ void runMergingSorted(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr secon
     QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
 
     PullingPipelineExecutor executor(pipeline);
+    std::vector<UInt64> payload;
     Block block;
     while (executor.pull(block))
-        ;
+    {
+        auto block_payload = collectPayload(block);
+        payload.insert(payload.end(), block_payload.begin(), block_payload.end());
+    }
+    return payload;
 }
 
 /// Drive `PartialSortingTransform` (the TopK path) with two blocks: the first sets the saved
@@ -420,7 +479,7 @@ void runMergingSorted(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr secon
 /// (like the merge path) recurses only through `Replicated`/`Tuple`, so a composite key like
 /// `Nullable(Tuple(Sparse(UInt16)))` kept a sparse/replicated child in the threshold and the raw
 /// comparison against the dense live keys bad-cast one level deeper.
-void runPartialSorting(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+std::vector<std::vector<UInt64>> runPartialSorting(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
 
@@ -462,9 +521,36 @@ void runPartialSorting(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr seco
     QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
 
     PullingPipelineExecutor executor(pipeline);
+    std::vector<std::vector<UInt64>> blocks;
     Block block;
     while (executor.pull(block))
-        ;
+    {
+        auto block_payload = collectPayload(block);
+        if (!block_payload.empty())
+            blocks.push_back(std::move(block_payload));
+    }
+    return blocks;
+}
+
+/// The TopK path emits one sorted block per input block, truncated to the LIMIT, and the last row of
+/// the first block becomes the threshold the next block's rows are compared against, keeping only
+/// those strictly below it. So a live threshold comparison is visible in the output rather than only
+/// in the absence of an exception: 2999 rows of a possible 3000, the second block one row short of
+/// the limit and bounded by the threshold value.
+void expectThresholdFiltered(const std::vector<std::vector<UInt64>> & blocks)
+{
+    constexpr size_t limit = 1500;
+
+    ASSERT_EQ(blocks.size(), 2u);
+    /// Every `x` is equal, so sorting by (`x`, `y`) orders the payload.
+    EXPECT_EQ(blocks[0].size(), limit);
+    EXPECT_TRUE(std::is_sorted(blocks[0].begin(), blocks[0].end()));
+
+    const UInt64 threshold = blocks[0].back();
+    EXPECT_EQ(threshold, limit - 1);
+    EXPECT_EQ(blocks[1].size(), threshold);
+    EXPECT_TRUE(std::is_sorted(blocks[1].begin(), blocks[1].end()));
+    EXPECT_LT(blocks[1].back(), threshold);
 }
 
 }
@@ -479,8 +565,10 @@ TEST(MergingSortedAlgorithm, TupleReplicatedChildSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
-    EXPECT_NO_THROW(runMergingSorted(
+    std::vector<UInt64> payload;
+    ASSERT_NO_THROW(payload = runMergingSorted(
         key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// The sparse sibling nested under a nullable on the merge path: `Nullable(Tuple(Sparse(UInt16)))`.
@@ -491,8 +579,10 @@ TEST(MergingSortedAlgorithm, NullableTupleSparseChildSortKeyDoesNotBadCast)
     constexpr size_t n = 8;
     auto key_type = std::make_shared<DataTypeNullable>(
         std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
-    EXPECT_NO_THROW(runMergingSorted(
+    std::vector<UInt64> payload;
+    ASSERT_NO_THROW(payload = runMergingSorted(
         key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(sparseUInt16(0, n), n), n));
+    EXPECT_EQ(payload, payloadOfBothInputsPaired(n));
 }
 
 /// the TopK/threshold path (`PartialSortingTransform`). The saved threshold row was normalized
@@ -508,9 +598,11 @@ TEST(PartialSortingTransform, NullableTupleSparseThresholdDoesNotBadCast)
     constexpr size_t n = 1600;
     auto key_type = std::make_shared<DataTypeNullable>(
         std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    std::vector<std::vector<UInt64>> blocks;
     /// First block sets the threshold as a sparse-child key; second block (dense) is compared to it.
-    EXPECT_NO_THROW(runPartialSorting(
+    ASSERT_NO_THROW(blocks = runPartialSorting(
         key_type, nullableTupleOf(sparseUInt16(0, n), n), nullableTupleOf(denseUInt16(0, n), n), n));
+    expectThresholdFiltered(blocks);
 }
 
 /// The replicated sibling of the TopK case: a `Tuple(Replicated(UInt16))` threshold.
@@ -518,6 +610,8 @@ TEST(PartialSortingTransform, TupleReplicatedThresholdDoesNotBadCast)
 {
     constexpr size_t n = 1600;
     auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
-    EXPECT_NO_THROW(runPartialSorting(
+    std::vector<std::vector<UInt64>> blocks;
+    ASSERT_NO_THROW(blocks = runPartialSorting(
         key_type, tupleOf(replicatedUInt16(0, n)), tupleOf(denseUInt16(0, n)), n));
+    expectThresholdFiltered(blocks);
 }
