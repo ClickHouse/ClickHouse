@@ -13,13 +13,3 @@ nullable_json_and_nullable_key
 {"a":1}	1	Nullable(UInt32)
 \N	\N	Nullable(UInt32)
 non_constant_key_is_rejected
-lowcardinality_typed_path
-x	LowCardinality(Nullable(String))	1
-y	LowCardinality(Nullable(String))	1
-x	LowCardinality(Nullable(String))	1
-y	LowCardinality(Nullable(String))	1
-lowcardinality_typed_path_constant_source
-x	LowCardinality(String)	x	LowCardinality(Nullable(String))	['x']	Array(LowCardinality(String))
-lowcardinality_typed_path_nullable_json
-{"s":"x"}	x	LowCardinality(Nullable(String))
-\N	\N	LowCardinality(Nullable(String))

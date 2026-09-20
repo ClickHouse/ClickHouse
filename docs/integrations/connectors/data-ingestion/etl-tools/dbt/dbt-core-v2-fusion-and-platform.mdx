@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'dbt OSS, v2 and Platform (Beta)'
+sidebarTitle: 'dbt Core v2, Fusion and Platform (Beta)'
 slug: /integrations/dbt/dbt-core-v2-fusion-and-platform
-description: 'Status of the ClickHouse adapter in dbt OSS, dbt v2 and the dbt platform'
-keywords: ['dbt', 'dbt v2', 'dbt platform', 'dbt oss', 'dbt fusion', 'dbt core v2']
-title: 'dbt OSS, v2 and Platform (Beta)'
+description: 'Status of the ClickHouse adapter in dbt Core v2, dbt Fusion and the dbt platform'
+keywords: ['dbt', 'dbt core v2', 'dbt v2', 'dbt fusion', 'dbt platform']
+title: 'dbt Core v2, Fusion and Platform'
 doc_type: 'reference'
 ---
 
@@ -13,23 +13,19 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 <ClickHouseSupportedBadge/>
 <BetaBadge link="https://github.com/ClickHouse/dbt-clickhouse/issues/660"/>
 
-dbt is being rebuilt on a new engine, and ClickHouse is part of that from the start. ClickHouse now works with the new Rust-based dbt engine, in both dbt OSS and dbt v2, and for the first time you can connect to ClickHouse from the dbt platform. Your project does not change: the same models, tests and profiles that run on dbt Core 1.x today run on the new engine; only the binary is different.
+dbt is being rebuilt on a new engine, and ClickHouse is part of that from the start. You can now run dbt against ClickHouse on the new Rust engine (dbt Core v2 and dbt Fusion), and for the first time you can connect to ClickHouse from the dbt platform with the v2 connector. Your project does not change: the same models, tests and profiles that run on dbt Core 1.x today run on the new engine; only the binary is different.
 
-ClickHouse is the first community adapter on dbt OSS, dbt v2 and the dbt platform. dbt's own first-party adapters are launching alongside us; we are the first from outside dbt Labs. The dbt Core 1.x Python adapter, `dbt-clickhouse`, is not going away: we keep it current with dbt 1.x releases and maintain both adapters in parallel.
+ClickHouse is the first community adapter on dbt v2 and in the dbt platform. dbt's own first-party adapters are launching alongside us; we are the first from outside dbt Labs. The dbt Core 1.x Python adapter, `dbt-clickhouse`, is not going away: we keep it current with dbt 1.x releases and maintain both adapters in parallel.
 
 <Warning>
-**Not production-ready.** The ClickHouse adapter for dbt OSS and dbt v2, and the dbt platform connection, are not yet generally available (GA). Use them only in development or staging projects.
+**Not production-ready.** The dbt Core v2 engine, its ClickHouse adapter and the dbt platform connection are not yet generally available (GA). Use them only in development or staging projects.
 </Warning>
 
 <Note>
-**The dbt Core 1.x documentation also applies to dbt OSS and dbt v2.** The adapter behaves the same way on both engines: the profiles, model configs, materializations and macros described in the other dbt pages work unchanged on dbt OSS, dbt v2 and the dbt platform. The exceptions are documented in the [v1 vs v2 parity](#parity) table below.
+**The dbt Core 1.x documentation also applies to dbt Core v2.** The adapter behaves the same way on both engines: the profiles, model configs, materializations and macros described in the other dbt pages work unchanged on dbt Core v2, dbt Fusion and the dbt platform. The exceptions are documented in the [v1 vs v2 parity](#parity) table below.
 </Note>
 
-<Note>
-**dbt OSS** is the open-source (Apache 2.0) build of the v2 engine. See [terminology and availability](#terminology) for how it relates to dbt v2 and the dbt platform.
-</Note>
-
-Live status is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v2 parity with v1, one sub-issue per area) and [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2).
+Live status is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (dbt Core v2 parity, one sub-issue per area) and [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt Fusion).
 
 #### Try ClickHouse in the dbt platform {#request-access}
 
@@ -41,14 +37,14 @@ dbt is available in several forms, and the same adapter can run in more than one
 
 | Term | What it is | ClickHouse status and how to get it |
 |------|------------|-------------------------------------|
-| **dbt Core 1.x** | The Python-based dbt engine, open source (Apache 2.0). Our adapter is `dbt-clickhouse`, maintained in the [ClickHouse GitHub organization](https://github.com/ClickHouse/dbt-clickhouse) and installed alongside `dbt-core`. | **GA, maintained.** Keeps receiving releases in parallel with dbt v2. |
-| **dbt OSS** | Full rewrite of the dbt engine in Rust, open source (Apache 2.0). This new version includes all v1 features plus several performance improvements. | **Beta.** Follow the [dbt v2 upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) and the [ClickHouse setup page for v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) in the dbt documentation. The ClickHouse adapter ships inside the dbt binary; there is no separate package to install. |
-| **dbt v2** | dbt OSS plus additional features from dbt Labs: SQL comprehension, static analysis, LSP, a VS Code extension and column awareness. Closed source, licensed under the [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Beta.** The adapter runs with the v2 binary, but the new SQL features are not available for ClickHouse yet. |
+| **dbt Core 1.x** | The Python-based dbt engine, open source (Apache 2.0). Our adapter is `dbt-clickhouse`, maintained in the [ClickHouse GitHub organization](https://github.com/ClickHouse/dbt-clickhouse) and installed alongside `dbt-core`. | **GA, maintained.** Keeps receiving releases in parallel with v2. |
+| **dbt Core v2** | Full rewrite of the dbt engine in Rust, open source (Apache 2.0). This new version includes all v1 features plus several performance improvements. | **Beta.** Follow the [dbt v2 upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2) and the [ClickHouse setup page for v2](https://docs.getdbt.com/docs/local/connect-data-platform/clickhouse-setup?version=2) in the dbt documentation. The ClickHouse adapter ships inside the dbt binary; there is no separate package to install. |
+| **dbt Fusion** | dbt v2 plus additional features from dbt Labs: SQL comprehension, static analysis, LSP, a VS Code extension and column awareness. Dialect-specific SQL intelligence is built per database. Closed source, licensed under the [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Beta.** The adapter runs with the Fusion binary, but the new SQL features are not available for ClickHouse yet. |
 | **dbt platform** | Hosted dbt, formerly dbt Cloud: Studio IDE, scheduled jobs, environments, Catalog, Semantic Layer. The platform runs dbt v2 only, so ClickHouse in the platform means the v2 adapter. | **Private Beta.** See [how to request access](#request-access). Setup: [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation. |
 
 ## Beta status {#beta-status}
 
-We measure the dbt v2 adapter against the dbt Core 1.x integration test suite of `dbt-clickhouse`. Beta means that core dbt workflows and the ClickHouse Cloud feature set work with documented limits; full v1 parity and self-managed cluster support come after.
+We measure dbt Core v2 against the dbt Core 1.x integration test suite of `dbt-clickhouse`. Beta means that core dbt workflows and the ClickHouse Cloud feature set work with documented limits; full v1 parity and self-managed cluster support come after.
 
 **Today,** the adapter passes more than 81% of the full v1 suite and 92% of the tests that apply to ClickHouse Cloud. Every materialization is at parity (`view`, `table`, `incremental`, `materialized_view`, `dictionary`, `snapshot`, `seed`, `ephemeral`), with the full set of table configs, model contracts, data and unit tests, docs persistence, `clickhouse_s3source()` and the dbt Core 1.x connection settings. The remaining failures relate to the self-managed cluster work listed below and a handful of engine-side differences. See [v1 vs v2 parity](#parity) for the feature-by-feature picture.
 
@@ -61,19 +57,19 @@ GA is on the roadmap and will come soon. We'll update the docs once it's ready.
 In addition to the v1 parity gaps listed below, a few features exclusive to v2 are outside the current scope but will come soon:
 
 - **Semantic Layer / MetricFlow.** ClickHouse support has not been added yet. Tracked in [dbt-labs/metricflow#2124](https://github.com/dbt-labs/metricflow/pull/2124).
-- **ClickHouse SQL intelligence in dbt v2** (dialect-aware validation, static analysis, LSP, column awareness in the VS Code extension). The adapter runs with the dbt v2 binary today but doesn't include these features yet. Until then, static analysis is forced to `off` for ClickHouse projects and the engine writes no column-level lineage. Tracked in [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
+- **ClickHouse SQL intelligence in Fusion** (dialect-aware validation, static analysis, LSP, column awareness in the VS Code extension). The adapter runs with the Fusion binary today but doesn't include these features yet. Until then, static analysis is forced to `off` for ClickHouse projects and the engine writes no column-level lineage. Tracked in [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
 - **Additional auth methods** beyond username and password in the dbt platform.
 
 ## v1 vs v2 parity {#parity}
 
-The tables below compare the features available in `dbt-clickhouse` (v1) with their status in the dbt v2 adapter. Every feature listed is supported in v1 unless the notes say otherwise; the status column is for dbt v2 and applies equally to dbt OSS. The evolution of every pending item is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
+The tables below compare the features available in `dbt-clickhouse` (v1) with their status in the dbt Core v2 adapter. Every feature listed is supported in v1 unless the notes say otherwise; the status column is for dbt Core v2. The evolution of every pending item is tracked in [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
 
 <Badge color="green">Supported</Badge> works today · <Badge color="yellow">Partial</Badge> works with limits · <Badge color="red">Not yet</Badge> pending implementation.
 
 ### Materializations {#parity-materializations}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | `view` | Standard dbt view. | <Badge color="green">Supported</Badge> | |
 | `table` | Full rebuild with engine and DDL options. | <Badge color="green">Supported</Badge> | |
 | `incremental` | Append or merge new rows. | <Badge color="green">Supported</Badge> | |
@@ -86,8 +82,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 
 ### Model configuration {#parity-model-configuration}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | Engine, `ORDER BY`, `PARTITION BY`, `PRIMARY KEY` | Core MergeTree DDL controls. | <Badge color="green">Supported</Badge> | |
 | TTL | Row and column expiration. | <Badge color="green">Supported</Badge> | |
 | Table and query settings | Per-model `SETTINGS` on DDL and on the insert. | <Badge color="green">Supported</Badge> | |
@@ -98,8 +94,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 
 ### Testing and docs {#parity-testing-and-docs}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | Data tests | Generic and singular tests. | <Badge color="green">Supported</Badge> | |
 | Unit tests | Model logic against fixture inputs. | <Badge color="green">Supported</Badge> | |
 | Docs persistence | Descriptions written as ClickHouse comments. | <Badge color="yellow">Partial</Badge> | Descriptions containing `;` fail. |
@@ -108,8 +104,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 
 ### Cluster and Cloud {#parity-cluster-and-cloud}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | ClickHouse Cloud | Recommended Beta setup. | <Badge color="green">Supported</Badge> | |
 | Multi-replica consistency | `select_sequential_consistency` and related read-after-write settings. | <Badge color="green">Supported</Badge> | |
 | `ON CLUSTER` and replicated engines | DDL fan-out on self-managed clusters. | <Badge color="red">Not yet</Badge> | Multi-node clusters in ClickHouse Cloud are supported. Other setups that require `ON CLUSTER` for DDL propagation are not supported yet. For self-managed deployments, test only against single-node clusters. |
@@ -119,8 +115,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 
 ### Macros and operations {#parity-macros-and-operations}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | S3 table function macro | `clickhouse_s3source()` reads S3 directly in a model. | <Badge color="green">Supported</Badge> | |
 | Cross-database macros | Helpers such as those in `dbt-utils`. | <Badge color="green">Supported</Badge> | |
 | Grants | `GRANT` statements from model config. | <Badge color="red">Not yet</Badge> | |
@@ -131,8 +127,8 @@ The tables below compare the features available in `dbt-clickhouse` (v1) with th
 
 ### Connectivity and auth {#parity-connectivity-and-auth}
 
-| Feature | What it does | dbt v2 | Notes |
-|---------|--------------|--------|-------|
+| Feature | What it does | dbt Core v2 | Notes |
+|---------|--------------|-------------|-------|
 | Protocol | How dbt talks to ClickHouse. | <Badge color="green">Supported</Badge> | ADBC (Arrow over HTTP) on v2; HTTP and native on v1. |
 | Username and password, TLS | Standard auth. | <Badge color="green">Supported</Badge> | |
 | mTLS client certificates | `client_cert`, `client_cert_key`, `verify`. | <Badge color="red">Not yet</Badge> | Driver work; the keys are accepted but ignored. |

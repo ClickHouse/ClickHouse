@@ -4,7 +4,6 @@
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/MaskOperations.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 
@@ -18,7 +17,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -28,7 +27,6 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(variant_discriminator_);
     hash.update(num_variants_);
     hash.update(nullable_added_by_extraction_);
-    hash.update(selected_subcolumn_is_null_map_);
     return hash.get128();
 }
 
@@ -37,34 +35,11 @@ SerializationPtr SerializationVariantElement::create(
     const String & variant_element_name_,
     ColumnVariant::Discriminator variant_discriminator_,
     size_t num_variants_,
-    bool nullable_added_by_extraction_,
-    bool selected_subcolumn_is_null_map_)
+    bool nullable_added_by_extraction_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_); });
-}
-
-bool SerializationVariantElement::isNullMapSubstream(Substream::Type type)
-{
-    return type == Substream::NullMap || type == Substream::SparseNullMap || type == Substream::VariantElementNullMap;
-}
-
-void SerializationVariantElement::insertRowsForAbsentElement(IColumn & inner_column, size_t num_rows) const
-{
-    if (selected_subcolumn_is_null_map)
-    {
-        auto & null_map_data = assert_cast<ColumnUInt8 &>(inner_column).getData();
-        null_map_data.resize_fill(null_map_data.size() + num_rows, 1);
-        return;
-    }
-
-    /// `insertManyDefaults` reserves `size() + length`, which for a tuple or a map reserves every field, so
-    /// the per-row caller must not go through it.
-    if (num_rows == 1)
-        inner_column.insertDefault();
-    else
-        inner_column.insertManyDefaults(num_rows);
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_); });
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -207,10 +182,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
     else
     {
-        /// There is no discriminators stream, so the element is absent from every row of the range: it can
-        /// happen after `ALTER TABLE ADD COLUMN`. A null map still owes a value for each of them.
-        if (selected_subcolumn_is_null_map)
-            insertRowsForAbsentElement(result_column, limit);
         settings.path.pop_back();
         return;
     }
@@ -233,7 +204,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     /// A Nullable wrapper added by the extraction is unknown to nested_serialization, so its null map
     /// is filled here from the discriminators. An intrinsic Nullable belongs to nested_serialization,
-    /// which reads the element's own null map; other variants' rows become `NULL` via `insertRowsForAbsentElement`.
+    /// which reads the element's own null map; other variants' rows become NULL via insertDefault().
     IColumn * inner_column = &result_column;
     if (nullable_added_by_extraction && isColumnNullable(result_column))
     {
@@ -281,7 +252,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     /// The second case means that we don't have a stream for such sub-column. It may happen during ALTER MODIFY column with Variant extension.
     if (variant_limit == 0 || variant->empty())
     {
-        insertRowsForAbsentElement(*inner_column, num_read_discriminators);
+        inner_column->insertManyDefaults(num_read_discriminators);
         return;
     }
 
@@ -303,7 +274,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             if (discriminators_data[i] == variant_discriminator)
                 inner_column->insertFrom(*variant, variant_offset++);
             else
-                insertRowsForAbsentElement(*inner_column, 1);
+                inner_column->insertDefault();
         }
     }
 }
@@ -389,8 +360,7 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     ColumnVariant::Discriminator local_variant_discriminator_,
     bool make_nullable_,
     const ColumnPtr & null_map_,
-    size_t num_variants_,
-    bool selected_subcolumn_is_null_map_)
+    size_t num_variants_)
     : local_discriminators(local_discriminators_)
     , null_map(null_map_)
     , variant_element_name(variant_element_name_)
@@ -398,26 +368,9 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     , local_variant_discriminator(local_variant_discriminator_)
     , make_nullable(make_nullable_)
     , num_variants(num_variants_)
-    , selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
 {
 }
 
-std::shared_ptr<const ISerialization::ISubcolumnCreator>
-SerializationVariantElement::VariantSubcolumnCreator::specializeForSelectedSubcolumn(const Substream & selected) const
-{
-    if (selected_subcolumn_is_null_map || !isNullMapSubstream(selected.type))
-        return nullptr;
-
-    return std::make_shared<VariantSubcolumnCreator>(
-        local_discriminators,
-        variant_element_name,
-        global_variant_discriminator,
-        local_variant_discriminator,
-        make_nullable,
-        null_map,
-        num_variants,
-        /*selected_subcolumn_is_null_map_=*/true);
-}
 
 DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DataTypePtr & prev) const
 {
@@ -429,9 +382,7 @@ SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(co
     /// prev_type is the type prev serializes, i.e. the requested subcolumn before create(prev_type)
     /// wraps it. The wrap only adds nullability when the type does not have it already.
     const bool nullable_added = make_nullable && prev_type && !isNullableOrLowCardinalityNullable(prev_type);
-    const bool absent_element_is_null = absenceGoesIntoNullMap() && prev_type && isUInt8(prev_type);
-    return SerializationVariantElement::create(
-        prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added, absent_element_is_null);
+    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const
@@ -441,12 +392,8 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     if (prev->size() == local_discriminators->size())
         return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 
-    /// A null map is the one selection whose value for an absent element is not its default: 0 reads as
-    /// "not null", but the element is not there, so the extracted value is `NULL` and the map owes 1.
-    const bool fill_absent_rows_with_null = absenceGoesIntoNullMap() && checkAndGetColumn<ColumnUInt8>(prev.get());
-
     /// If this variant is empty, fill result column with default values.
-    if (prev->empty() && !fill_absent_rows_with_null)
+    if (prev->empty())
     {
         auto res = make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev)->cloneEmpty() : prev->cloneEmpty();
         res->insertManyDefaults(local_discriminators->size());
@@ -474,14 +421,10 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     if (make_nullable && prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();
 
-    const auto & absent_rows
-        = null_map_from_discriminators ? *null_map_from_discriminators : assert_cast<const ColumnUInt8 &>(*null_map).getData();
-
-    if (fill_absent_rows_with_null)
-        expandDataByMask<UInt8>(
-            assert_cast<ColumnUInt8 &>(*res_column).getData(), absent_rows, /*inverted =*/true, /*default_value =*/1);
+    if (null_map_from_discriminators)
+        res_column->expand(*null_map_from_discriminators, /*inverted = */ true);
     else
-        res_column->expand(absent_rows, /*inverted = */ true);
+        res_column->expand(assert_cast<const ColumnUInt8 &>(*null_map).getData(), /*inverted = */ true);
 
     if (make_nullable && prev->canBeInsideNullable())
     {

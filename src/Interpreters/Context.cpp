@@ -156,7 +156,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -720,8 +720,7 @@ struct ContextSharedPart : boost::noncopyable
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable OnceFlag compression_codec_selector_initialized;
-    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -1142,7 +1141,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionManager::shutdownIfAny();
+        TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
@@ -7185,16 +7184,6 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
 }
 
 
-bool Context::hasSystemLogs() const
-{
-    std::lock_guard lock(mutex_shared_context);
-    if (!shared)
-        return false;
-
-    SharedLockGuard lock2(shared->mutex);
-    return shared->system_logs != nullptr;
-}
-
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
     std::lock_guard lock(mutex_shared_context);
@@ -7433,16 +7422,18 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
-    callOnce(shared->compression_codec_selector_initialized, [&]
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
-        auto config = shared->getConfig();
+        const auto & config = shared->getConfigRefWithLock(lock);
 
-        if (config->has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(*config, config_name);
+        if (config.has(config_name))
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
-    });
+    }
 
     return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }

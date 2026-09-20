@@ -77,12 +77,6 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (reading->getDistributedReadBucketCount() > 0)
         return std::unexpected("the read is part of a distributed plan");
 
-    /// A streaming read resolves which rows it returns at runtime, from the subscription bounds and
-    /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
-    /// table, so an answer derived from one ignores those bounds.
-    if (reading->getQueryInfo().isStream())
-        return std::unexpected("the query uses STREAM");
-
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
 

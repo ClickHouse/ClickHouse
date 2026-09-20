@@ -1,15 +1,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 
 #include <exception>
-
-namespace ProfileEvents
-{
-    extern const Event MetadataTransactionRollbacks;
-    extern const Event MetadataTransactionRollbacksFailed;
-}
 
 namespace DB
 {
@@ -21,8 +14,6 @@ extern const int FS_METADATA_ERROR;
 
 void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
-    ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
-
     for (int64_t i = until_pos; i >= 0; --i)
     {
         try
@@ -31,15 +22,10 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         }
         catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
-
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
 
             rollback_reason.addMessage(fmt::format("While rolling back operation #{}", i));
             rollback_reason.addMessage(getExceptionMessage(std::current_exception(), /*with_stacktrace=*/true));
-            rollback_reason.addMessage(
-                "Rolling back the metadata transaction did not complete, so the metadata keeps a part of a transaction "
-                "that is reported as failed");
 
             return;
         }

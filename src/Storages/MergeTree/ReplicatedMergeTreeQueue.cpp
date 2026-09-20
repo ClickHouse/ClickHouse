@@ -1867,16 +1867,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                               (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
                 }
-
-                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
-                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
-                /// merge rewrites them, so it does need room for what its source parts hold.
-                if (entry.merge_type == MergeType::TTLDrop)
-                {
-                    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-                    if (metadata_snapshot->hasOnlyRowsTTL())
-                        ignore_max_size = true;
-                }
             }
 
             if (isMergeOfPatchPartsBlocked(entry, out_postpone_reason, state_lock))

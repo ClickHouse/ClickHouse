@@ -1636,7 +1636,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
+        if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
