@@ -543,10 +543,19 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 
 void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
 {
-    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
-    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
-        return;
-
+    /** A locator that is not a function is refused right here rather than left to creation time.
+      *
+      * This preflight is the last point that still runs as the real user, and the creation it would
+      * otherwise rely on does not always run: `RESTORE DATABASE` issues `CREATE DATABASE IF NOT EXISTS`,
+      * which returns from `InterpreterCreateQuery::createDatabase` before `DatabaseFactory::get` when the
+      * target database already exists. With `allow_different_database_def = 1` the definition mismatch is
+      * waived as well, so a manifest an older server left holding a quoted locator would pass through the
+      * whole restore with its embedded source never authorized, while the function form of the same
+      * manifest is checked.
+      *
+      * Only `parseArguments` may formulate the refusal: the offending text can carry credentials and must
+      * not be echoed.
+      */
     auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
     BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
 }

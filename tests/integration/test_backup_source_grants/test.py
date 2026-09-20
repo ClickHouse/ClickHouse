@@ -299,6 +299,52 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     node.query("DROP DATABASE dbembedded SYNC")
 
 
+def test_restore_on_cluster_refuses_a_quoted_embedded_locator_over_an_existing_database(
+    started_cluster,
+):
+    # The pre-fix carrier: metadata an older server rewrote holds the locator as a string literal, and
+    # such a manifest can end up inside a backup. On this path the creation-time refusal never runs -
+    # the target database exists, so `CREATE DATABASE IF NOT EXISTS` returns before `DatabaseFactory`,
+    # and `allow_different_database_def = 1` waives the definition mismatch that would stop it next.
+    # The preflight is therefore the only place that can see the quoted locator, and it must refuse it
+    # rather than wave it through unauthorized: the function form of the very same manifest is denied
+    # for a missing `READ ON S3` in the case above.
+    #
+    # The refusal must not print the locator, which is why the assertion below looks for the host that
+    # a quoted locator could carry credentials next to.
+    node.query("DROP DATABASE IF EXISTS dbquoted SYNC")
+    node.query("BACKUP DATABASE d67785 TO File('inner13') FORMAT Null")
+    node.query("CREATE DATABASE dbquoted ENGINE = Backup('d67785', File('inner13'))")
+    node.query("BACKUP DATABASE dbquoted TO File('outer13') FORMAT Null")
+    manifest = (
+        "CREATE DATABASE dbquoted ENGINE = Backup('d67785', "
+        "'S3(\\'http://minio1:9001/root/data/denied/b13\\')')"
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cat > /var/lib/clickhouse/backups/outer13/metadata/dbquoted.sql <<'MANIFEST'\n"
+            f"{manifest}\nMANIFEST",
+        ],
+        user="root",
+    )
+
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'dbquoted'") == "1\n"
+    node.query(f"GRANT READ ON FILE TO {USER}")
+
+    error = node.query_and_get_error(
+        "RESTORE DATABASE dbquoted ON CLUSTER one_shard FROM File('outer13') "
+        "SETTINGS allow_different_database_def = 1",
+        user=USER,
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    assert "Expected function as the backup destination" in error, error
+    assert "minio1" not in error, error
+
+    node.query("DROP DATABASE dbquoted SYNC")
+
+
 def test_restore_on_cluster_of_a_real_backup_engine_manifest_authorizes_the_inner_locator(
     started_cluster,
 ):
