@@ -724,11 +724,14 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 /// Read request must be executed after all previous requests from the same session.
                 /// There are 3 cases:
-                ///  (1) Reads that depend on some earlier writes in the batch we're making.
+                ///  (1) Reads that have to wait for an earlier request from the same session that
+                ///      went into the batch we're making. That earlier request is usually a write,
+                ///      but with `quorum_reads` it can be a read that goes through raft too.
                 ///      Put them in the batch's `intermediate_reads`.
-                ///  (2) Reads that depend on some writes in an earlier batch that is not committed yet.
+                ///  (2) Reads that have to wait for an earlier batch that is not committed yet,
+                ///      because that batch carries an earlier request from the same session.
                 ///      Add them to that batch's `late_reads`.
-                ///  (3) Reads from sessions that have no writes in progress.
+                ///  (3) Reads from sessions that have nothing in flight.
                 ///      Execute them right in this thread, before sending the current batch.
                 ///      (This case is likely important in practice: it should greatly reduce read
                 ///       latency for users that mostly do reads, or that alternate blocking reads
@@ -858,7 +861,8 @@ void KeeperRequestDispatcher::dispatchThread()
                         if (last_batch == batch_idx)
                         {
                             /// Case (1): read request should be attached to the current batch.
-                            /// Put it in late_reads, which will later be flushed to the batch's `reads`.
+                            /// Put it in `late_reads`, which will later be flushed to the batch's
+                            /// `intermediate_reads`.
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
@@ -867,7 +871,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         }
                         else
                         {
-                            /// There are no write requests from this session in current batch so far.
+                            /// No earlier request from this session went into the current batch so far.
                             bool added = false;
                             if (last_batch >= cur_head_idx)
                             {
