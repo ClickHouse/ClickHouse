@@ -31,7 +31,7 @@ struct Settings;
 /// `compatibility` is forwarded and the values it derived are kept but marked unchanged: they still select
 /// the client-side network codec, while the server re-derives them from `compatibility` itself — serializing
 /// them explicitly would break under a profile that pins them as read-only. This mirrors what
-/// `ClientBase::settingsWithoutCompatibilityDerived` does for ordinary queries.
+/// `ClientBase::settingsWithoutClientSideDefaults` does for ordinary queries.
 Settings networkCompressionSettings(const Settings & settings);
 
 /// Should we celebrate a bit?

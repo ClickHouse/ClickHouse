@@ -12,14 +12,18 @@
 #include <base/range.h>
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Interpreters/castColumn.h>
 
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 
@@ -33,6 +37,34 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+SerializationPtr getSerializationForNative(const IDataType & type, const SerializationInfo * info = nullptr)
+{
+    SerializationPtr serialization;
+    if (!type.getCustomSerialization())
+    {
+        if (type.getTypeId() == TypeIndex::DateTime)
+            serialization = SerializationNumber<UInt32>::create();
+        else if (type.getTypeId() == TypeIndex::DateTime64)
+        {
+            const auto & date_time_type = assert_cast<const DataTypeDateTime64 &>(type);
+            serialization = SerializationDecimal<DateTime64>::create(date_time_type.getPrecision(), date_time_type.getScale());
+        }
+    }
+
+    if (!serialization)
+        return info ? type.getSerialization(*info) : type.getDefaultSerialization();
+
+    if (info)
+        return type.wrapSerializationBasedOnKindStack(std::move(serialization), info->getKindStack(), info->getSettings());
+
+    return serialization;
+}
+
 }
 
 
@@ -227,14 +259,14 @@ Block NativeReader::read()
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);
 
-            serialization = column.type->getSerialization(*info);
+            serialization = getSerializationForNative(*column.type, info.get());
             auto new_column = column.type->createColumn(*serialization);
             new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);
         }
         else
         {
-            serialization = column.type->getDefaultSerialization();
+            serialization = getSerializationForNative(*column.type);
             auto new_column = column.type->createColumn(*serialization);
             new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);

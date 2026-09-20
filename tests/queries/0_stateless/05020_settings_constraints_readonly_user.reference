@@ -4,5 +4,7 @@ tenant1-own
 tenant1-own
 -- a readonly user can read a view whose inner query carries a SETTINGS clause
 1
+-- an explicit timezone override is still rejected
+1
 -- the session is still readonly
 1

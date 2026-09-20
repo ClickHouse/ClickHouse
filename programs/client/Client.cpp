@@ -185,7 +185,7 @@ std::vector<String> Client::loadWarningMessages()
     /// effective `dialect` of the authenticated user, which a profile may default to Kusto or PRQL.
     /// Sending the value a user already has is a no-op for setting constraints, so this does not trip a
     /// profile that pins `dialect` as read-only to `clickhouse`.
-    Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
+    Settings probe_settings = settingsWithoutClientSideDefaults().value_or(client_context->getSettingsRef());
     probe_settings.set("dialect", String("clickhouse"));
 
     connection->sendQuery(connection_parameters.timeouts,
@@ -581,11 +581,11 @@ void Client::connect()
     UInt64 server_version_patch = 0;
 
     /// Capture the client local time zone before the branch below may switch the process default
-    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
-    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
-    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
+    /// to the server time zone. `serverTimezone` reads the process default directly and
+    /// ignores `session_timezone`; `getTimeZone` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect` can run again on reconnect, so only capture once.
     if (client_local_timezone.empty())
-        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
+        client_local_timezone = DateLUT::serverTimezone().getName();
 
     if (hosts_and_ports.empty())
     {
@@ -998,16 +998,23 @@ void Client::connect()
 #endif
     }
 
-    if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
+    const bool use_client_time_zone = client_context->getSettingsRef()[Setting::use_client_time_zone];
+    const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
+    server_default_timezone.clear();
+    if (!time_zone.empty())
     {
-        const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
-        if (!time_zone.empty())
+        try
         {
-            try
-            {
+            if (use_client_time_zone)
+                DateLUT::getTimeZone(time_zone);
+            else
                 DateLUT::setDefaultTimezone(time_zone);
-            }
-            catch (...)
+
+            server_default_timezone = time_zone;
+        }
+        catch (...)
+        {
+            if (!use_client_time_zone)
             {
                 std::cerr << "Warning: could not switch to server time zone: " << time_zone
                           << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
@@ -1015,13 +1022,16 @@ void Client::connect()
                           << std::endl;
             }
         }
-        else
-        {
-            std::cerr << "Warning: could not determine server time zone. "
-                      << "Proceeding with local time zone." << std::endl
-                      << std::endl;
-        }
     }
+    else if (!use_client_time_zone)
+    {
+        std::cerr << "Warning: could not determine server time zone. "
+                  << "Proceeding with local time zone." << std::endl
+                  << std::endl;
+    }
+
+    if (server_default_timezone.empty())
+        DateLUT::setDefaultTimezone(client_local_timezone);
 
     /// A custom prompt can be specified
     /// - directly (possible as CLI parameter or in client.xml as top-level <prompt>...</prompt> or within client.xml's connection credentials)

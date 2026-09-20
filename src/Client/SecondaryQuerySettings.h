@@ -16,7 +16,7 @@ struct Settings;
 ///   `compatibility` setting itself, which stays changed and is serialized. Sending them as explicit
 ///   changes instead makes the shard subject them to its own settings constraints - a `CONST` pin drops
 ///   them silently, a range pin clamps them - so the shard would diverge from the `compatibility` the
-///   initiator asked for. This mirrors `ClientBase::settingsWithoutCompatibilityDerived` for the initial
+///   initiator asked for. This mirrors `ClientBase::settingsWithoutClientSideDefaults` for the initial
 ///   query.
 /// - `dialect` is forced to ClickHouse SQL and, unlike the demotion, must stay changed so that it really
 ///   is serialized: the query text the sender ships has already been rewritten into ClickHouse SQL, while

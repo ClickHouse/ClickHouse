@@ -1633,10 +1633,10 @@ void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
     }
 }
 
-std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
+std::optional<Settings> ClientBase::settingsWithoutClientSideDefaults() const
 {
     const Settings & settings = client_context->getSettingsRef();
-    if (!settings.hasSettingsChangedByCompatibility())
+    if (!settings.hasSettingsChangedByCompatibility() && !has_implicit_server_timezone)
         return {};
     Settings result = settings;
     /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
@@ -1644,6 +1644,8 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
     /// compressed packets this client sends), while only changed settings are serialized (so the
     /// server re-derives them from `compatibility` itself and honors its own constraints).
     result.markSettingsChangedByCompatibilityAsUnchanged();
+    if (has_implicit_server_timezone)
+        result[Setting::session_timezone].setChanged(false);
     return result;
 }
 
@@ -1787,12 +1789,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did. Must run before
-    /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
+    /// `settingsWithoutClientSideDefaults` snapshots the settings, so the pinned `dialect` is
     /// included in the settings sent to the server.
     pinOutboundDialectForJSONDialect(query);
 
-    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
-    const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
+    const auto settings_without_client_defaults = settingsWithoutClientSideDefaults();
+    const Settings * settings_to_send = settings_without_client_defaults ? &*settings_without_client_defaults : &settings;
 
     int retries_left = 10;
     while (retries_left)
@@ -2059,7 +2061,7 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-    client_context->setSetting("session_timezone", tz);
+    client_context->setSetting("session_timezone", tz.empty() && has_implicit_server_timezone ? server_default_timezone : tz);
 }
 
 
@@ -2404,13 +2406,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
-    /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
+    /// Must run before `settingsWithoutClientSideDefaults` snapshots the settings, so the pinned
     /// `dialect` is included in the settings sent to the server.
     pinOutboundDialectForJSONDialect(query);
 
-    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const auto settings_without_client_defaults = settingsWithoutClientSideDefaults();
     const Settings * settings_to_send
-        = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
+        = settings_without_client_defaults ? &*settings_without_client_defaults : &client_context->getSettingsRef();
 
     /// The query exchange starts here - see the comment at the same place of `processOrdinaryQuery`.
     armResynchronizationAndSendQuery([&]
@@ -2937,6 +2939,7 @@ void ClientBase::processParsedSingleQuery(
                     have_error = true;
                 }
             }
+            has_implicit_server_timezone = false;
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
@@ -2958,15 +2961,21 @@ void ClientBase::processParsedSingleQuery(
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
-        /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
-        /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
-        /// (asynchronous INSERT, SELECT) rely on `session_timezone`. Seed it with the client time zone unless
-        /// the user set `session_timezone` explicitly. This is transient (reverted with the other query
-        /// settings below), so it tracks per-query `use_client_time_zone` changes in both directions.
-        if (!client_local_timezone.empty()
-            && client_context->getSettingsRef()[Setting::use_client_time_zone]
-            && !client_context->getSettingsRef().isChanged("session_timezone"))
-            client_context->setSetting("session_timezone", client_local_timezone);
+        /// The client parses synchronous INSERT literals itself, but literals interpreted server-side
+        /// (asynchronous INSERT, SELECT) rely on `session_timezone`. Seed it with the client or server time
+        /// zone according to `use_client_time_zone` unless the user set `session_timezone` explicitly.
+        /// This is transient (reverted with the other query settings below), so it tracks per-query
+        /// `use_client_time_zone` changes in both directions, regardless of the connect-time process default.
+        if (!client_context->getSettingsRef().isChanged("session_timezone"))
+        {
+            const auto & time_zone = client_context->getSettingsRef()[Setting::use_client_time_zone]
+                ? client_local_timezone : server_default_timezone;
+            if (!time_zone.empty())
+            {
+                client_context->setSetting("session_timezone", time_zone);
+                has_implicit_server_timezone = !client_context->getSettingsRef()[Setting::use_client_time_zone];
+            }
+        }
 
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -4782,8 +4791,8 @@ void ClientBase::runInteractive()
         initAIProvider();
 #endif
 
-    /// Initialize DateLUT here to avoid counting time spent here as query execution time.
-    const auto local_tz = DateLUT::instance().getTimeZone();
+    /// Resolve the timezone name for the greeting without building a calendar lookup table.
+    const auto local_tz = DateLUT::getTimeZone().getName();
 
     suggest.emplace();
     if (load_suggestions)
