@@ -43,5 +43,16 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d 'SET http
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}&close_session=1" -d 'SELECT 1 AS x FORMAT Null'
 
+echo "-- disabled as a URL parameter in a readonly = 1 session: the setting is always changeable in read-only mode"
+# A bare URL: the randomized settings the harness puts into CLICKHOUSE_URL are not changeable under readonly = 1.
+SESSION_ID_RO="${CLICKHOUSE_DATABASE}_05233_ro"
+URL_RO="${CLICKHOUSE_URL%%\?*}?database=${CLICKHOUSE_DATABASE}&session_id=${SESSION_ID_RO}"
+${CLICKHOUSE_CURL} -sS "${URL_RO}" -d 'SET readonly = 1'
+${CLICKHOUSE_CURL} -sS "${URL_RO}&http_x_clickhouse_format_overrides_output_format=0" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
+${CLICKHOUSE_CURL} -sS "${URL_RO}&http_x_clickhouse_format_overrides_output_format=1" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
+echo "-- ... while an ordinary setting is rejected in the same session"
+${CLICKHOUSE_CURL} -sS "${URL_RO}&max_rows_to_read=1" -d 'SELECT 1 AS x FORMAT CSV' | grep -o "Cannot modify 'max_rows_to_read' setting in readonly mode"
+${CLICKHOUSE_CURL} -sS "${URL_RO}&close_session=1" -d 'SELECT 1 AS x FORMAT Null'
+
 echo "-- compatibility with a version before 26.8 restores the old header behavior"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&compatibility=26.7" -H 'X-ClickHouse-Format: JSONEachRow' -d 'SELECT 1 AS x FORMAT CSV'
