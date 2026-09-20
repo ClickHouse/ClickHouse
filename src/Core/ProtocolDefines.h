@@ -183,10 +183,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
-/// First query-plan serialization version with the second flags byte on `AggregatingStep`, whose bit 1
-/// is `group_by_keys_semantically_constant` and whose bit 2 is `gradual_resize_enabled`. Not gated by
-/// throwing: an older peer simply does not get the byte and falls back to the header-based constness
-/// check and to the strict pre-aggregation resize.
+/// First global query-plan version that writes version 1 of `Aggregating`, which adds a second flags
+/// byte whose bit 1 is `group_by_keys_semantically_constant` and whose bit 2 is
+/// `gradual_resize_enabled`. Not gated by throwing: an older peer gets the step at version 0, without
+/// the byte, and falls back to the header-based constness check and to the strict pre-aggregation
+/// resize.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

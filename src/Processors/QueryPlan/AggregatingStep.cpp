@@ -1125,8 +1125,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
     ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
     ///             128=only_merge.
-    /// A second flags byte follows since query plan serialization version
-    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS`:
+    /// A second flags byte follows in serialization version 1 of this step:
     ///             1=group_by_keys_semantically_constant, 2=gradual_resize_enabled (the latter is
     ///             written only when the step would take the resize branch at all, see below).
     UInt8 flags = 0;
@@ -1175,8 +1174,10 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    /// The second flags byte exists only since query plan serialization version
-    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS`. Its bits
+    /// The second flags byte exists only in serialization version 1 of this step, which the registry
+    /// picks for a stream at global version
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS` or above
+    /// (see `registerAggregatingStep`), and which is written next to the step. Its bits
     /// only pick between the strict and the gradual pre-aggregation resize, so they do not belong to
     /// the hash table statistics cache key, and they need no throwing gate either: towards an older
     /// peer the byte is simply left off the wire and the peer falls back to the header-based
@@ -1194,7 +1195,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// make it depend on the negotiated plan version - an initiator writing these bits and a replica
     /// too old to read them would hash the same query differently, which is exactly the cross-node
     /// key mismatch `for_cache_key` exists to avoid.
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS)
+    if (ctx.step_version >= 1)
     {
         UInt8 extra_flags = 0;
         if (group_by_keys_semantically_constant && !ctx.for_cache_key)
@@ -1271,11 +1272,13 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             "The merge-only aggregation flag in a version {} query plan stream; it requires version >= {}",
             ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION);
 
-    /// The second flags byte (see `serialize`); an older stream has none, and the step then falls
-    /// back to the header-based constness check and keeps the strict pre-aggregation resize.
+    /// The second flags byte (see `serialize`); a stream at step version 0 has none, and the step
+    /// then falls back to the header-based constness check and keeps the strict pre-aggregation
+    /// resize. The registry has already refused any step version this binary does not know, so the
+    /// byte is read exactly when the writer wrote it.
     bool group_by_keys_semantically_constant = false;
     bool gradual_resize_enabled = false;
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS)
+    if (ctx.step_version >= 1)
     {
         UInt8 extra_flags = 0;
         readIntBinary(extra_flags, ctx.in);
@@ -1451,7 +1454,13 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+    /// Version 1 adds the second flags byte (`group_by_keys_semantically_constant`,
+    /// `gradual_resize_enabled`). A stream towards a peer below
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS` stays at
+    /// version 0 and carries neither bit.
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS}};
+    registry.registerStep("Aggregating", AggregatingStep::deserialize, versions);
 }
 
 
