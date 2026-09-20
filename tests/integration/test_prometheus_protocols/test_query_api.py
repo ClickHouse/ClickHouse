@@ -243,15 +243,25 @@ def test_error_while_validating():
 
 # Checks the case when an exception appears before any block has been written to the response buffer.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
-def test_error_before_first_block():
+@pytest.mark.parametrize(
+    ("query", "expected_error"),
+    [
+        ("topk(+Inf, last_over_time(foo[10]))[50:10]", "k of aggregation operator is too large"),
+        ("topk(1 / 0, foo)", "Cannot convert"),
+        (
+            'label_replace(label_replace(foo, "shape", "same", "", ""), "size", "same", "", "")',
+            "Multiple series have the same tags",
+        ),
+    ],
+)
+def test_error_before_first_block(query, expected_error):
     response = get_response_to_http_api_query(
-        node.ip_address, 9093, "/api/v1/query",
-        "topk(+Inf, last_over_time(foo[10]))[50:10]", 150,
+        node.ip_address, 9093, "/api/v1/query", query, 150,
     )
     assert response.status_code == 422, response.text
     assert response.json()["errorType"] == "execution", response.text
     error_message = extract_error_from_http_api_response(response)
-    assert "k of aggregation operator is too large" in error_message
+    assert expected_error in error_message
 
 
 # Checks the case when an exception appears after some blocks have been written
