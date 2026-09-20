@@ -297,6 +297,8 @@ private:
     /// thread-local storage after the query ends, so for them the given query-scoped scratch
     /// buffer is filled and returned instead.
     FieldValueRanges & getFieldValueRangesBuffer(FieldValueRanges & scratch) const;
+    /// Evaluates mark feasibility against prepared field value ranges.
+    BoolMask checkInFieldValueRanges(const FieldValueRanges & ranges) const;
 
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
