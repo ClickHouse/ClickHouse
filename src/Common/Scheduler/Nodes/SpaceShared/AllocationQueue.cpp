@@ -219,7 +219,7 @@ void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)
 
 void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     min_max_allocated = new_value;
 
     // Reject pending allocations that can never succeed because they exceed the new limit.
@@ -246,8 +246,15 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
     }
 
     // Update increase pointer in case the removed allocation was the current one
+    Update update;
     if (setIncrease() && parent)
-        propagate(Update().setIncrease(increase));
+        update.setIncrease(increase);
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
 void AllocationQueue::approveIncrease()
@@ -283,7 +290,7 @@ void AllocationQueue::approveIncrease()
 
 void AllocationQueue::approveDecrease()
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     chassert(decrease);
     ResourceAllocation & allocation = decrease->allocation;
@@ -310,14 +317,21 @@ void AllocationQueue::approveDecrease()
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
+    Update update;
     if (is_increasing && setIncrease())
-        propagate(Update().setIncrease(increase));
+        update.setIncrease(increase);
 
     // Notify allocation
     decrease->allocation.decreaseApproved(*decrease);
     decrease = nullptr;
 
     setDecrease();
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
@@ -453,7 +467,7 @@ std::pair<UInt64, Int64> AllocationQueue::getQueueLengthAndSize()
 
 void AllocationQueue::updateQueueLimit(Int64 value)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     max_queued = value;
 
     // See `updateMinMaxAllocated` for the rationale on unlinking `removing_hook` before
@@ -473,8 +487,15 @@ void AllocationQueue::updateQueueLimit(Int64 value)
     }
 
     // Update increase pointer in case the removed allocation was the current one
+    Update update;
     if (setIncrease() && parent)
-        propagate(Update().setIncrease(increase));
+        update.setIncrease(increase);
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)

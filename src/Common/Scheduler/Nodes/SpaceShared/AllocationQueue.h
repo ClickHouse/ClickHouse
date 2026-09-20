@@ -51,7 +51,10 @@ private:
     bool setDecrease();
     void ensureUsable() const;
 
-    /// Protects all the following fields
+    /// Protects all the following fields.
+    /// Never call propagate() while holding it: propagation can re-enter this queue through
+    /// selectAllocationToKill() (a parent limit selecting a victim here), which re-acquires the
+    /// mutex and would self-deadlock. Build the Update under the lock, release, then propagate.
     mutable std::mutex mutex;
 
     Int64 max_queued; /// Limit on the number of pending allocation
