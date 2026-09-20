@@ -30,14 +30,15 @@ SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS having_prefilter;
 CREATE TABLE having_prefilter (a String, b Int64, c Date) ENGINE = MergeTree ORDER BY tuple();
--- 30000 groups over 100000 rows: keys 0..9999 have count 4 and keys 10000..29999 have count 3, so
--- `HAVING count() > 3` keeps exactly 10000 groups. The key is a 30-byte String plus an Int64 and a
+-- 6000 groups over 20000 rows: keys 0..1999 have count 4 and keys 2000..5999 have count 3, so
+-- `HAVING count() > 3` keeps exactly 2000 groups. The fixture is kept small because the file runs
+-- about a hundred aggregations over it, and a sanitizer build has to finish all of them. The key is a 30-byte String plus an Int64 and a
 -- Date, which is the wide `serialized` method where the skipped materialization is worth most.
 INSERT INTO having_prefilter
-SELECT concat('key-padding-to-thirty-bytes--', toString(number % 30000)),
-       toInt64(number % 30000),
-       toDate('2020-01-01') + ((number % 30000) % 30)
-FROM numbers(100000);
+SELECT concat('key-padding-to-thirty-bytes--', toString(number % 6000)),
+       toInt64(number % 6000),
+       toDate('2020-01-01') + ((number % 6000) % 30)
+FROM numbers(20000);
 
 SELECT '--- applies ---';
 
@@ -256,22 +257,22 @@ SELECT count(), sum(cnt) FROM (
 -- A NULL-keyed group lives outside the hash-table cells, so it is never pre-filtered and has to be
 -- removed by the filter above. Once where it passes the bound, once where it fails.
 SELECT count(), sum(cnt), countIf(k IS NULL) FROM (
-    SELECT nullIf(b, -1) % 30000 AS k, count() AS cnt FROM (
+    SELECT nullIf(b, -1) % 6000 AS k, count() AS cnt FROM (
         SELECT b FROM having_prefilter UNION ALL SELECT NULL FROM numbers(5)
     ) GROUP BY k HAVING count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0;
 SELECT count(), sum(cnt), countIf(k IS NULL) FROM (
-    SELECT nullIf(b, -1) % 30000 AS k, count() AS cnt FROM (
+    SELECT nullIf(b, -1) % 6000 AS k, count() AS cnt FROM (
         SELECT b FROM having_prefilter UNION ALL SELECT NULL FROM numbers(5)
     ) GROUP BY k HAVING count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
 SELECT count(), sum(cnt), countIf(k IS NULL) FROM (
-    SELECT nullIf(b, -1) % 30000 AS k, count() AS cnt FROM (
+    SELECT nullIf(b, -1) % 6000 AS k, count() AS cnt FROM (
         SELECT b FROM having_prefilter UNION ALL SELECT NULL FROM numbers(2)
     ) GROUP BY k HAVING count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0;
 SELECT count(), sum(cnt), countIf(k IS NULL) FROM (
-    SELECT nullIf(b, -1) % 30000 AS k, count() AS cnt FROM (
+    SELECT nullIf(b, -1) % 6000 AS k, count() AS cnt FROM (
         SELECT b FROM having_prefilter UNION ALL SELECT NULL FROM numbers(2)
     ) GROUP BY k HAVING count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
@@ -519,18 +520,32 @@ SELECT '--- the pre-filter is applied while dataflow statistics are collected --
 -- The three queries are deliberately not wrapped in a subquery: the optimization matches the plan node
 -- of the top-level aggregation, and with a wrapping subquery it skips the plan without attaching an
 -- updater, which would leave every cell below measuring an ordinary run.
+-- The estimate cell below compares byte counts the two runs arrive at by different routes - the
+-- pre-filtered run reports the keys measured on the hash table, the ordinary one the materialized
+-- chunk - so it needs enough groups for the sampled compression ratio to settle. This is the only
+-- section that does, so it gets its own larger fixture rather than making the whole file run on one.
+DROP TABLE IF EXISTS having_prefilter_wide;
+CREATE TABLE having_prefilter_wide (a String, b Int64, c Date) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO having_prefilter_wide
+SELECT concat('key-padding-to-thirty-bytes--', toString(number % 30000)),
+       toInt64(number % 30000),
+       toDate('2020-01-01') + ((number % 30000) % 30)
+FROM numbers(100000);
+
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas';
 
-SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 FORMAT Null
+SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING count() > 3 FORMAT Null
     SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_on';
-SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 FORMAT Null
+SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING count() > 3 FORMAT Null
     SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218ap_off';
-SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3 FORMAT Null
+SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3 FORMAT Null
     SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_throwif';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE having_prefilter_wide;
 
 SYSTEM FLUSH LOGS query_log;
 
