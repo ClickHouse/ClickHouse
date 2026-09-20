@@ -5,6 +5,10 @@ for key 'tables' has no 'arguments' list
 for key 'interpolate' has no 'arguments' list
 for key 'lambda' has no 'arguments' list
 for key 'parameters' has no 'arguments' list
+for key 'function_core' has no 'arguments' list
+UNKNOWN_FUNCTION
+Function in (children 1)
+Literal UInt64_9
 SELECT count()
 FROM numbers(3)
 GROUP BY number

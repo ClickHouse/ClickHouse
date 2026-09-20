@@ -24,6 +24,7 @@ ARGS_A_5=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier"
 ARGS_1_6=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"Literal","value":{"field_type":"UInt64","value":6}}]}'
 ARGS_A_7=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":7}}]}'
 ARGS_A_8=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":8}}]}'
+ARGS_X_9=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"},{"type":"Literal","value":{"field_type":"UInt64","value":9}}]}'
 
 # $1 = statement to serialize, $2 = the "arguments" member to drop
 payload() {
@@ -60,6 +61,21 @@ send "$(payload "EXPLAIN AST optimize = 1 SELECT a FROM (SELECT 1 AS a) ORDER BY
 # parsed with `ParserExpressionList` and holds arbitrary expressions, not only literals.
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(x -> x + 3) FROM (SELECT 1 AS a)" "$ARGS_X_3")"
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(quantile(1 IN (6))) FROM (SELECT 1 AS a)" "$ARGS_1_6")"
+
+# A SQL UDF body is not written into the SELECT it breaks: the DDL persists the node, and
+# `UserDefinedSQLFunctionVisitor` splices it into a caller during `TreeRewriter::normalize`, after
+# deserialization has finished. The name carries the test database because a SQL UDF is server-wide.
+UDF="${CLICKHOUSE_DATABASE}_udf_argumentless"
+send "$(payload "CREATE FUNCTION ${UDF} AS (x) -> x IN (9)" "$ARGS_X_9")"
+# Rejected at the boundary means nothing was persisted, so no caller can reach the visitor through it.
+${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" 2>&1 | grep -oEm1 'UNKNOWN_FUNCTION'
+# The same statement well-formed is stored, and the body it restores still reaches that path: the two
+# lines below are the `in` node expanded into the caller, with the body's own literal under it.
+${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
+    "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('CREATE FUNCTION ${UDF} AS (x) -> x IN (9)') FORMAT TSVRaw")"
+${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" |
+    grep -oE "Function in \(children 1\)|Literal UInt64_9"
+${CLICKHOUSE_CLIENT} --query "DROP FUNCTION IF EXISTS ${UDF}"
 
 # Well-formed payloads still round-trip through every screened slot, including the nullary `count()`,
 # the `numbers` table function and both transformer members, whose `arguments` lists the parser leaves
