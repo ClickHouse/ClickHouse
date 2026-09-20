@@ -71,7 +71,7 @@ private:
 
 #if defined(__AVX2__)
         const auto bytes_avx2 = sizeof(__m256i);
-        if (static_cast<size_t>(src_end - src) >= bytes_avx2 && isArchSupported(TargetArch::x86_64_v3))
+        if (static_cast<size_t>(src_end - src) >= bytes_avx2)
         {
             const auto * src_end_avx2 = src_end - (src_end - src) % bytes_avx2;
             const auto v_not_case_lower_bound = _mm256_set1_epi8(not_case_lower_bound - 1);
