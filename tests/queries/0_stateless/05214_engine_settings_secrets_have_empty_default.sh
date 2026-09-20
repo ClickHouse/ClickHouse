@@ -42,7 +42,7 @@ $CLICKHOUSE_CLIENT -q "
             AND query_id = '$query_id' AND type != 'QueryStart'
     ) AS logged
     SELECT
-        engine_name, name, value, default,
+        engine, name, value, default,
         position(logged, concat(' ', name, ' = ')) > 0 AS logged_at_all,
         position(logged, concat(' ', name, ' = ''$probe''')) = 0 AS secret
     FROM system.engine_settings"
@@ -53,6 +53,6 @@ $CLICKHOUSE_CLIENT -q "
         ['kafka_sasl_password', 'nats_url', 'rabbitmq_address', 'after_processing_move_connection_string']) FROM probed_settings;
     SELECT 'an ordinary setting is not taken for a secret', NOT has(groupUniqArrayIf(name, secret), 'index_granularity') FROM probed_settings;
     SELECT 'secrets with a non-empty default:';
-    SELECT engine_name, name, default FROM probed_settings WHERE secret AND default != '' ORDER BY ALL;"
+    SELECT engine, name, default FROM probed_settings WHERE secret AND default != '' ORDER BY ALL;"
 
 $CLICKHOUSE_CLIENT -q "DROP VIEW probed_settings"

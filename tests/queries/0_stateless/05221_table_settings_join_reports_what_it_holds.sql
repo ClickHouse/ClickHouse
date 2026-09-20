@@ -71,19 +71,19 @@ SELECT name, value, source FROM system.table_settings
 WHERE database = '' AND table = 'join_temporary' AND name = 'persistent';
 
 SELECT '-- `system.engine_settings` lists the same eight, as a table created now would get them';
-SELECT count() FROM system.engine_settings WHERE engine_name = 'Join';
+SELECT count() FROM system.engine_settings WHERE engine = 'Join';
 -- A table that states nothing reports exactly what the engine-level rows say.
 SELECT count() FROM (
     SELECT name, value, `default`, changed, description, type, tier FROM system.table_settings
     WHERE database = currentDatabase() AND table = 'join_session_0'
     EXCEPT
-    SELECT name, value, `default`, changed, description, type, tier FROM system.engine_settings WHERE engine_name = 'Join');
+    SELECT name, value, `default`, changed, description, type, tier FROM system.engine_settings WHERE engine = 'Join');
 
 SELECT '-- and `Join` and `Set` describe the two settings they share alike';
 SELECT count() FROM (
-    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine_name = 'Join' AND name IN ('disk', 'persistent')
+    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine = 'Join' AND name IN ('disk', 'persistent')
     EXCEPT
-    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine_name = 'Set' AND name IN ('disk', 'persistent'));
+    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine = 'Set' AND name IN ('disk', 'persistent'));
 
 DROP TABLE join_stated;
 DROP TABLE join_session_0;

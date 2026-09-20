@@ -35,7 +35,7 @@ SELECT count() FROM (
     SELECT name, `default`, description, type, tier FROM system.table_settings
     WHERE database = currentDatabase() AND table = 'set_plain'
     EXCEPT
-    SELECT name, `default`, description, type, tier FROM system.engine_settings WHERE engine_name = 'Set');
+    SELECT name, `default`, description, type, tier FROM system.engine_settings WHERE engine = 'Set');
 
 SELECT '-- but the engine advertises far more than any table of it reports, which is the remaining gap';
 -- `SetSettings` declares the format settings too, and the engine accepts them and never reads them, so a table
@@ -43,7 +43,7 @@ SELECT '-- but the engine advertises far more than any table of it reports, whic
 -- closing it - by narrowing what the engine accepts, or by reporting the rest - is a visible change.
 SELECT
     (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain'),
-    (SELECT count() FROM system.engine_settings WHERE engine_name = 'Set')
+    (SELECT count() FROM system.engine_settings WHERE engine = 'Set')
         > (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain');
 
 SELECT '-- `persistent` is the value the engine acts on';

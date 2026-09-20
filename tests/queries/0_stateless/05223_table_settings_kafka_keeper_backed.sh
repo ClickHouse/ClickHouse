@@ -37,7 +37,7 @@ SETTINGS ${CLAUSE}, kafka_keeper_path = '/clickhouse/{database}/k_keeper', kafka
 
 echo "-- a Keeper-backed table reports every setting, as a plain one does"
 $CLICKHOUSE_CLIENT -q "
-SELECT table, count() = (SELECT count() FROM system.engine_settings WHERE engine_name = 'Kafka') AS all_reported
+SELECT table, count() = (SELECT count() FROM system.engine_settings WHERE engine = 'Kafka') AS all_reported
 FROM system.table_settings
 WHERE database = currentDatabase() AND table IN ('k_plain', 'k_keeper')
 GROUP BY table ORDER BY table"

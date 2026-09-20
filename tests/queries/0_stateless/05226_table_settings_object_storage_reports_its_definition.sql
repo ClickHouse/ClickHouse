@@ -26,7 +26,7 @@ SELECT '-- and the row carries the metadata the engine knows, not an empty type 
 -- otherwise an obsolete setting reports itself as a `Production` one.
 SELECT ts.name, ts.type = es.type, ts.`default` = es.`default`, ts.description = es.description, ts.tier = es.tier
 FROM system.table_settings AS ts
-INNER JOIN (SELECT * FROM system.engine_settings WHERE engine_name = 'S3') AS es ON es.name = ts.name
+INNER JOIN (SELECT * FROM system.engine_settings WHERE engine = 'S3') AS es ON es.name = ts.name
 WHERE ts.database = currentDatabase() AND ts.table = 't_s3';
 
 DROP TABLE t_s3;

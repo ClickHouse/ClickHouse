@@ -3377,7 +3377,7 @@ def test_table_settings_reported(started_cluster):
         f"SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = '{table}'"
     ).strip()
     advertised = instance.query(
-        "SELECT count() FROM system.engine_settings WHERE engine_name = 'MaterializedPostgreSQL'"
+        "SELECT count() FROM system.engine_settings WHERE engine = 'MaterializedPostgreSQL'"
     ).strip()
     assert reported == advertised, (
         f"the table reports {reported} settings while the engine advertises {advertised}"

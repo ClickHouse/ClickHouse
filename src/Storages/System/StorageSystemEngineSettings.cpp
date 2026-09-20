@@ -15,7 +15,7 @@ ColumnsDescription StorageSystemEngineSettings::getColumnsDescription()
 {
     ColumnsDescription description
     {
-        {"engine_name", std::make_shared<DataTypeString>(), "Name of the table engine."},
+        {"engine", std::make_shared<DataTypeString>(), "Name of the table engine, as `system.tables` reports it."},
     };
     for (const auto & column : sharedSettingColumns())
         description.add(column);
@@ -25,7 +25,7 @@ ColumnsDescription StorageSystemEngineSettings::getColumnsDescription()
 Block StorageSystemEngineSettings::getFilterSampleBlock() const
 {
     /// Must list every column of the block passed to filterBlockWithPredicate in getFilteredEngines.
-    return { { {}, std::make_shared<DataTypeString>(), "engine_name" } };
+    return { { {}, std::make_shared<DataTypeString>(), "engine" } };
 }
 
 /// The engines a query can still be interested in. Enumerating a settings struct is not free - the
@@ -41,7 +41,7 @@ static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, c
         engine_column->insert(engine_name);
     }
 
-    Block block { ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine_name") };
+    Block block { ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine") };
     VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
     return block.getByPosition(0).column;
 }

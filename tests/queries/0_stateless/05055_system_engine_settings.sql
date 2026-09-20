@@ -2,19 +2,19 @@
 SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'engine_settings' ORDER BY position;
 
 -- Engines with settings are present.
-SELECT count() > 0 FROM system.engine_settings WHERE engine_name = 'MergeTree';
-SELECT count() > 0 FROM system.engine_settings WHERE engine_name = 'Memory';
-SELECT count(DISTINCT engine_name) > 3 FROM system.engine_settings;
+SELECT count() > 0 FROM system.engine_settings WHERE engine = 'MergeTree';
+SELECT count() > 0 FROM system.engine_settings WHERE engine = 'Memory';
+SELECT count(DISTINCT engine) > 3 FROM system.engine_settings;
 
 -- Metadata of a known setting of an engine that has no server-level instance:
 -- its value is its default and nothing is changed.
-SELECT engine_name, name, value, `default`, changed, type, is_obsolete, tier
-FROM system.engine_settings WHERE engine_name = 'Memory' AND name = 'compress';
+SELECT engine, name, value, `default`, changed, type, is_obsolete, tier
+FROM system.engine_settings WHERE engine = 'Memory' AND name = 'compress';
 
 -- `MergeTree` reports the settings the server actually uses: the same rows as `system.merge_tree_settings`.
 SELECT count() FROM (
     SELECT name, value, `default`, changed, min, max, disallowed_values, readonly, type, is_obsolete, tier
-    FROM system.engine_settings WHERE engine_name = 'MergeTree'
+    FROM system.engine_settings WHERE engine = 'MergeTree'
     EXCEPT
     SELECT name, value, `default`, changed, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.merge_tree_settings);
@@ -22,14 +22,14 @@ SELECT count() FROM (
 -- Engines sharing a settings struct report the same set of settings, in both directions.
 SELECT count() FROM (
     SELECT name FROM (
-        SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'
+        SELECT name FROM system.engine_settings WHERE engine = 'MergeTree'
         EXCEPT
-        SELECT name FROM system.engine_settings WHERE engine_name = 'ReplicatedMergeTree')
+        SELECT name FROM system.engine_settings WHERE engine = 'ReplicatedMergeTree')
     UNION ALL
     SELECT name FROM (
-        SELECT name FROM system.engine_settings WHERE engine_name = 'ReplicatedMergeTree'
+        SELECT name FROM system.engine_settings WHERE engine = 'ReplicatedMergeTree'
         EXCEPT
-        SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'));
+        SELECT name FROM system.engine_settings WHERE engine = 'MergeTree'));
 
 -- A setting an engine merely declares is reported as the default it is. `other` where the value equals the
 -- default means an engine describes its settings by hand and forgot to say so - the `Log` family did.
@@ -46,9 +46,9 @@ SELECT count() > 0 FROM (SELECT value FROM system.engine_settings);
 -- with the plain object storage predicate while its creator builds `DataLakeStorageSettings`.
 -- Both answer 1 in a build without these engines, where the subquery is empty.
 SELECT countDistinct(n) <= 1 FROM (
-    SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'DeltaLake%' GROUP BY engine_name);
+    SELECT count() AS n FROM system.engine_settings WHERE engine LIKE 'DeltaLake%' GROUP BY engine);
 SELECT countDistinct(n) <= 1 FROM (
-    SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'Iceberg%' GROUP BY engine_name);
+    SELECT count() AS n FROM system.engine_settings WHERE engine LIKE 'Iceberg%' GROUP BY engine);
 
 -- Every engine that accepts a SETTINGS clause should be able to say which settings it accepts.
 -- These two cannot: they have no settings struct at all, so a table of theirs reports only what its
@@ -58,16 +58,16 @@ SELECT countDistinct(n) <= 1 FROM (
 -- appearing here that is not one of the two means an engine was added without being wired up. An
 -- engine that rejects a `SETTINGS` clause cannot list settings at all: registering it so is refused.
 SELECT name FROM system.table_engines
-WHERE supports_settings AND name NOT IN (SELECT DISTINCT engine_name FROM system.engine_settings)
+WHERE supports_settings AND name NOT IN (SELECT DISTINCT engine FROM system.engine_settings)
 ORDER BY name;
 
 -- A setting writable under more than one name gets a row per name, as `system.settings` does, so
 -- that looking it up by the name you happen to know finds it. `alias_for` tells the rows apart and
 -- is empty on the setting's own row.
 SELECT name, alias_for FROM system.engine_settings
-WHERE engine_name = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column')
+WHERE engine = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column')
 ORDER BY name;
 
 -- The rows carry the same values; only the name and `alias_for` differ.
 SELECT countDistinct((value, `default`, type, tier)) = 1 FROM system.engine_settings
-WHERE engine_name = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column');
+WHERE engine = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column');

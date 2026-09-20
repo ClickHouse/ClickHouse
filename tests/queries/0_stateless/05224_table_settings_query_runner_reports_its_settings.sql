@@ -15,6 +15,6 @@ ORDER BY name;
 SELECT '-- every setting the engine takes is reported, not only the one the definition states';
 SELECT
     (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'qr')
-    = (SELECT count() FROM system.engine_settings WHERE engine_name = 'QueryRunner');
+    = (SELECT count() FROM system.engine_settings WHERE engine = 'QueryRunner');
 
 DROP TABLE qr;

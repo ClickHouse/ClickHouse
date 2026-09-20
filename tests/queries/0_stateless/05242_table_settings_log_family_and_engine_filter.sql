@@ -21,13 +21,13 @@ ORDER BY table, name;
 
 SELECT '-- described as system.engine_settings describes them';
 SELECT count() FROM system.table_settings AS t
-INNER JOIN system.engine_settings AS e ON e.engine_name = t.engine AND e.name = t.name
+INNER JOIN system.engine_settings AS e ON e.engine = t.engine AND e.name = t.name
 WHERE t.database = currentDatabase() AND t.engine IN ('Log', 'StripeLog', 'TinyLog')
     AND (t.default != e.default OR t.type != e.type OR t.description != e.description OR t.tier != e.tier);
 
 SELECT '-- and the engine rows report the compiled defaults as the defaults they are';
-SELECT engine_name, name, changed, source FROM system.engine_settings
-WHERE engine_name IN ('Log', 'StripeLog', 'TinyLog') ORDER BY ALL;
+SELECT engine, name, changed, source FROM system.engine_settings
+WHERE engine IN ('Log', 'StripeLog', 'TinyLog') ORDER BY ALL;
 
 SELECT '-- a view has no settings of its own, and a materialized view reports through its inner table';
 DROP TABLE IF EXISTS mv;

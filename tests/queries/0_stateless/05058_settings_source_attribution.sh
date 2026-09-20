@@ -94,7 +94,7 @@ echo "-- a session's compatibility does not decide what the server's defaults ar
 # 0 here as well, because the baseline is already built before this session's `SET` can reach it.
 $CLICKHOUSE_LOCAL -q "
 SET compatibility = '23.3';
-SELECT countIf(value != \`default\`) FROM system.engine_settings WHERE engine_name = 'MergeTree';"
+SELECT countIf(value != \`default\`) FROM system.engine_settings WHERE engine = 'MergeTree';"
 
 echo "-- and none of them when nothing sets anything"
 $CLICKHOUSE_LOCAL -q "
