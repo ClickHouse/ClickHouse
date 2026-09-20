@@ -2,6 +2,7 @@
 #include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -12,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -64,8 +66,9 @@ void JSONObjectEachRowInputFormat::skipRowStart()
 
 bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
 {
+    /// The data is one object; its closing `}` is mandatory, a truncated payload is an error.
     if (in->eof())
-        return true;
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected end of data: expected '}}' that closes the object");
     if (JSONUtils::checkAndSkipObjectEnd(*in))
     {
         /// Without this the next block would read whatever follows the closing `}` as more rows, and
@@ -82,6 +85,12 @@ bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
 void JSONObjectEachRowInputFormat::readSuffix()
 {
     skipWhitespaceIfAny(*in);
+    /// Like `JSONEachRow`: an optional `;` may end the data of an `INSERT`.
+    if (!in->eof() && *in->position() == ';')
+    {
+        ++in->position();
+        skipWhitespaceIfAny(*in);
+    }
     assertEOF(*in);
 }
 
@@ -95,7 +104,9 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
     if (first_row)
         JSONUtils::skipObjectStart(in);
 
-    if (in.eof() || JSONUtils::checkAndSkipObjectEnd(in))
+    if (in.eof())
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected end of data: expected '}}' that closes the object");
+    if (JSONUtils::checkAndSkipObjectEnd(in))
     {
         eof = true;
         return {};
