@@ -1266,11 +1266,6 @@ private:
         auto element_type = array_type.getNestedType();
         const auto & needle_type = arguments[1].type;
 
-        /// LowCardinality elements keep their dictionary fast path, whose null-needle answer depends on
-        /// a dictionary index this comparison has no equivalent for.
-        if (element_type->lowCardinality())
-            return nullptr;
-
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
         const auto * col_array = col_array_const ? col_array_const : checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)

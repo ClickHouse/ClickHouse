@@ -38,8 +38,27 @@ DROP TABLE IF EXISTS t_lc_dyn;
 CREATE TABLE t_lc_dyn (id UInt8, v Array(LowCardinality(String))) ENGINE = Memory;
 INSERT INTO t_lc_dyn VALUES (0, ['a']), (1, ['b']);
 
-SELECT id, has(v, 'a'::Dynamic) AS got, toUInt8(arrayExists(x -> x = 'a'::Dynamic, v)) AS want
+SELECT
+    id,
+    has(v, 'a'::Dynamic) AS has_got,
+    toUInt8(arrayExists(x -> x = 'a'::Dynamic, v)) AS has_want,
+    indexOf(v, 'a'::Dynamic) AS index_of_got,
+    indexOf(arrayMap(x -> toUInt8(x = 'a'::Dynamic), v), 1) AS index_of_want,
+    countEqual(v, 'a'::Dynamic) AS count_equal_got,
+    length(arrayFilter(x -> x = 'a'::Dynamic, v)) AS count_equal_want
 FROM t_lc_dyn ORDER BY id;
+
+-- The dictionary is looked up by the bytes of the needle cast to its type, and a FixedString needle
+-- casts to three bytes where the element holds two. The two meet as String, which trims the padding
+-- back off, so the answer cannot come from that lookup.
+SELECT
+    has(materialize(CAST(['V0'] AS Array(LowCardinality(String)))), toFixedString('V0', 3)::Dynamic) AS got,
+    toUInt8(arrayExists(x -> x = toFixedString('V0', 3)::Dynamic,
+                        materialize(CAST(['V0'] AS Array(LowCardinality(String)))))) AS want;
+
+-- The other sign: no common type brings a number and a String element together, so `equals` rejects
+-- the pair and membership must not answer from the needle's spelling as a String either.
+SELECT has(materialize(CAST(['1'] AS Array(LowCardinality(String)))), 1::UInt64::Dynamic) AS number_needle;
 
 -- A dictionary much larger than the number of selected elements takes the sparse branch of
 -- dictionaryMatchesForSelectedIndexes, which requires a plain UInt8 result column.
@@ -669,9 +688,9 @@ SELECT
     mapContainsKey(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), 'k') AS present_contains
 SETTINGS optimize_functions_to_subcolumns = 0;
 
--- Control: the plain Array(LowCardinality(T)) path keeps the answer it has today. Its dictionary also
--- has no null entry, so this is the same question, but changing it is a separate user-visible change
--- on a non-erased type and is deliberately not part of this fix.
+-- Control: the plain Array(LowCardinality(T)) path answers a NULL needle from the dictionary's null
+-- entry alone, so a dictionary that has none finds no NULL, and its default slot does not stand in
+-- for one.
 SELECT
     has(CAST(['', 'a'], 'Array(LowCardinality(String))'), NULL) AS has_with_empty,
     indexOf(CAST(['a', '', 'b'], 'Array(LowCardinality(String))'), NULL) AS index_of_with_empty,
@@ -692,9 +711,9 @@ DROP TABLE IF EXISTS t_const_batched;
 CREATE TABLE t_const_batched (n UInt64) ENGINE = Memory;
 INSERT INTO t_const_batched SELECT number FROM numbers(300);
 
--- The arrays below have to reach the function as constants: the old analyzer does not constant-fold a
--- call that takes a lambda, so building them with arrayMap leaves them materialized there and every
--- cell in this section then silently measures the materialized path instead.
+-- The arrays below have to reach the function as constants, which is the path this section measures:
+-- a builder that is not constant-folded leaves them materialized and every cell then silently
+-- measures the materialized path instead.
 -- 250 elements over 300 rows: more rows than one batch holds, so several batches run per block.
 SELECT
     countIf(has(a, n) != arrayExists(x -> x = n, a)) AS has_mismatches,
@@ -765,17 +784,17 @@ DROP TABLE IF EXISTS t_rewritten;
 CREATE TABLE t_rewritten (a Array(Dynamic)) ENGINE = Memory;
 INSERT INTO t_rewritten VALUES (['V0'::String::Dynamic]);
 
--- The rewrite is an analyzer pass: without `enable_analyzer = 1` it never runs, so the second arm
--- would answer 1 on any build.
+-- The arm below is what proves the rewrite ran: without it, the second arm would answer 1 through
+-- arrayExists alone.
 SELECT
     count() > 0 AS rewrite_happened
 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), a) FROM t_rewritten)
 WHERE explain ILIKE '%has%'
-SETTINGS optimize_rewrite_array_exists_to_has = 1, enable_analyzer = 1;
+SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
 SELECT arrayExists(x -> x = toFixedString('V0', 3), a) AS rewritten_got
 FROM t_rewritten
-SETTINGS optimize_rewrite_array_exists_to_has = 1, enable_analyzer = 1;
+SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
 DROP TABLE IF EXISTS t_dyn_num;
 DROP TABLE IF EXISTS t_lc_dyn;
