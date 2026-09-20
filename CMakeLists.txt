@@ -386,7 +386,16 @@ endif()
 # out: compiler-rt, because contrib/compiler-rt-cmake resets the inherited flags to an allowlist, and on
 # x86-64 the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake, which carry an explicit
 # no_stack_protector so that their CPU dispatch stays a plain tail call.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+# The fuzzer build is the third exception. `clickhouse_fuzzer` links every `src/` library plus the
+# libFuzzer and Address Sanitizer runtimes into a single image that already sits just under the 2 GiB
+# reach of the small code model's `R_X86_64_PC32` relocations, and the extra prologue and epilogue in
+# every instrumented function is enough to push it over, so the link fails with `relocation
+# R_X86_64_PC32 out of range`. Nothing is lost by leaving it out there: the fuzzers are test artifacts,
+# never shipped, and Address Sanitizer already diagnoses the stack buffer overflows a canary would catch,
+# earlier and with a full report rather than an abort.
+if (NOT ENABLE_FUZZING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+endif()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
