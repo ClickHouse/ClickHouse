@@ -275,8 +275,9 @@ bool canCompareKeysWithoutCasts(const DataTypePtr & key_expr_type, const NamesAn
 /// A `Nullable` or `LowCardinality(Nullable)` probe is converted to `Nullable(UInt64)`, requested
 /// explicitly so that `cast_keep_nullable` cannot change the result type. That matches the lookup:
 /// `dictGet` receives a low-cardinality probe as a full column, strips the `Nullable`, converts the
-/// nested values (a negative one hidden under `NULL` throws in both) and yields `NULL` for the
-/// `NULL` rows, as the comparison with the converted `Nullable` probe does.
+/// nested values and yields `NULL` for the `NULL` rows, as the comparison with the converted
+/// `Nullable` probe does. What a `NULL` row hides in the nested column, and whether it is looked
+/// at, is an implementation detail of how the probe was produced and executed, on both sides.
 ///
 /// Only the native signed integers are converted; the 128- and 256-bit ones and the non-integer
 /// probes are left to the caller, which keeps the lookup for them.

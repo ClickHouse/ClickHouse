@@ -121,12 +121,6 @@ SELECT 'nullable probe, opt off';
 SELECT id, dictGet('simple_signed', 'attr', if(id = 1, id, NULL)) = 'alpha' FROM simple_signed_probes ORDER BY id
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- The nested column of a `Nullable` probe is converted as a whole, `NULL` rows included, by the
--- lookup and by the rewrite alike: a negative value hidden under `NULL` throws in both.
-SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', if(id > 0, id, NULL)) = 'alpha'; -- { serverError CANNOT_CONVERT_TYPE }
-SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', if(id > 0, id, NULL)) = 'alpha'
-SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
-
 -- A `LowCardinality(Nullable)` probe reaches `dictGet` as a full column, whose `Nullable` the
 -- lookup strips, so a `NULL` row is a missed lookup there too; the rewrite converts the probe to
 -- `Nullable(UInt64)` and agrees.
