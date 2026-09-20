@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-flaky-check
 
 # Verify that DROP DATABASE does not remove tables from other databases,
 # even when tables inside the dropped database have loading dependencies on external tables.

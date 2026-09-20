@@ -20,7 +20,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write non-partitioned data to DeltaLake.
  * Writes a single data file and commits it to DeltaLake metadata.
  */
-class DeltaLakeSink final : public SinkToStorage, private WithContext
+class DeltaLakeSink : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakeSink(
@@ -32,13 +32,11 @@ public:
         const String & format,
         const String & compression_method);
 
-    ~DeltaLakeSink() override;
+    ~DeltaLakeSink() override = default;
 
     String getName() const override { return "DeltaLakeSink"; }
 
     void consume(Chunk & chunk) override;
-
-    void onException(std::exception_ptr exception) override;
 
     void onFinish() override;
 
@@ -46,19 +44,12 @@ private:
     using StorageSinkPtr = std::unique_ptr<StorageObjectStorageSink>;
     StorageSinkPtr createStorageSink() const;
 
-    /// Cancel every inner sink so its WriteBuffer is not left unfinalized on failure.
-    void cancelBuffers();
-
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const SharedHeader sample_block;
-    /// `sample_block` with each column's type replaced by the Delta write-schema type, so the data files
-    /// are written to match the Delta log (e.g. a declared `UInt8` column is stored as `short`).
-    const SharedHeader write_header;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
-    const bool accurate_write_cast;
     const String write_format;
     const String write_compression_method;
 

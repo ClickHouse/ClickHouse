@@ -80,7 +80,7 @@ public:
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
     SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
-    UUIDs toProfileIDs() const;
+    std::vector<UUID> toProfileIDs() const;
 
     /// Normalizes this list of profile elements: removes duplicates and empty elements, and also sorts the elements
     /// in the following order: first profiles, then settings.

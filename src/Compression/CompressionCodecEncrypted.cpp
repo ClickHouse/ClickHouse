@@ -2,7 +2,6 @@
 #include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <IO/VarInt.h>
 #include <Parsers/IAST.h>
 #include <base/types.h>
@@ -14,6 +13,7 @@
 #include "config.h"
 
 #if USE_SSL
+#    include <openssl/err.h>
 #    include <boost/algorithm/hex.hpp>
 #    include <openssl/evp.h>
 #endif
@@ -124,8 +124,8 @@ const char * getMethod(EncryptionMethod Method)
 /// It returns length of encrypted text.
 size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
-    int out_len = 0;
-    int ciphertext_len = 0;
+    int out_len;
+    int ciphertext_len;
 
     using EVP_CIPHER_CTX_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
     const auto ctx = EVP_CIPHER_CTX_ptr(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
@@ -181,8 +181,8 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 /// It returns length of encrypted text.
 size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
 {
-    int out_len = 0;
-    int plaintext_len = 0;
+    int out_len;
+    int plaintext_len;
 
     using EVP_CIPHER_CTX_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
     const auto ctx = EVP_CIPHER_CTX_ptr(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
@@ -326,7 +326,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
     for (const std::string & config_key : config_keys)
     {
         String key;
-        UInt64 key_id = 0;
+        UInt64 key_id;
 
         if ((config_key == "key") || config_key.starts_with("key["))
         {
@@ -475,11 +475,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
 
 CompressionCodecEncrypted::CompressionCodecEncrypted(EncryptionMethod Method): encryption_method(Method)
 {
-}
-
-ASTPtr CompressionCodecEncrypted::getCodecDescription() const
-{
-    return makeCodecDescription(getMethodName(encryption_method));
+    setCodecDescription(getMethodName(encryption_method));
 }
 
 uint8_t CompressionCodecEncrypted::getMethodByte() const
@@ -489,7 +485,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -514,7 +510,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     const std::string_view plaintext = std::string_view(source, source_size);
 
     /// Get key and nonce for encryption
-    UInt64 current_key_id = 0;
+    UInt64 current_key_id;
     String current_key;
     String nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
@@ -545,7 +541,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     /// The key is needed for decrypting. That's why it is read at the beginning of process.
-    UInt64 key_id = 0;
+    UInt64 key_id;
     const char * ciphertext_with_nonce = readVarUInt(key_id, source, source_size);
 
     /// Size of text should be decreased by key_size, because key_size bytes were not participating in encryption process.

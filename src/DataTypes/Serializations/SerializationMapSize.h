@@ -25,15 +25,10 @@ private:
     SerializationPtr size_serialization;
     MergeTreeMapSerializationVersion serialization_version;
 
+public:
     SerializationMapSize(
         const SerializationPtr & size_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
-
-public:
-    static UInt128 getHash(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_);
-    static SerializationPtr create(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_);
-
-    bool supportsPooling() const override { return size_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -62,7 +57,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

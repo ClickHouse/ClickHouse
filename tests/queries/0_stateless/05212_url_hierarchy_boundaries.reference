@@ -1,3 +1,0 @@
-['abc://example.com/','abc://example.com/a/','abc://example.com/a/b']	['zbc://example.com/','zbc://example.com/a/','zbc://example.com/a/b']	['bc0d://example.com/','bc0d://example.com/a/','bc0d://example.com/a/b']	['bc9d://example.com/','bc9d://example.com/a/','bc9d://example.com/a/b']
-['/a/','/a/b']	['/a/','/a/b']	['/a/','/a/b']	['/a/','/a/b']
-1	1	1	1
