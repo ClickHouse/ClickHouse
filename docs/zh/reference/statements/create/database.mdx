@@ -58,6 +58,19 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 
 ### SETTINGS {#settings}
 
+`SETTINGS` 子句可以在不指定 `ENGINE` 子句的情况下使用，此时将采用默认的数据库引擎 (`Atomic`) 。该子句既可以包含数据库引擎的设置，也可以包含普通的查询设置；每个名称会被分派到其所属的那一类。
+
+#### disk {#disk}
+
+用于存储该数据库的表元数据文件的磁盘。可以指定服务器配置中已定义的磁盘，也可以像单个表那样，通过 `disk` 函数内联定义：
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+适用于将表元数据存储在磁盘上的数据库引擎 (`Atomic`、`Ordinary`) 。若未指定，则使用 `database_disk.disk` 服务器设置中定义的磁盘。
+
 #### lazy_load_tables {#lazy-load-tables}
 
 启用后，数据库启动时不会完全加载各个表。相反，系统会为每个表创建一个轻量级代理，并在首次访问时才将实际的表引擎物化出来。对于包含大量表、但实际只会查询其中一部分的数据库，这可以减少启动时间和内存使用量。

@@ -181,6 +181,9 @@ pois uma réplica é sempre tentada uma vez antes de ser descartada. Use
 [max&#95;execution&#95;time](/pt-BR/reference/settings/session-settings/max-execution#max_execution_time) para limitar
 a própria consulta.
 
+`skip_unavailable_shards` não elimina isso: uma réplica para a qual o initiator não tinha um slot de
+conexão livre nunca foi contatada, portanto o shard não é tratado como indisponível.
+
 Valores possíveis:
 
 * Inteiro positivo.
@@ -883,6 +886,25 @@ Quando ativada, as funções &#39;least&#39; e &#39;greatest&#39; retornam NULL 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "Adicione esta configuração apenas por motivos de compatibilidade. Faz sentido defini-la como 'true' ao fazer rolling update do cluster de uma versão inferior à 21.7 para uma superior"}]}]} />
 
 Liste todos os nomes dos elementos de literais Tuple grandes em seus nomes de colunas em vez de hash. Esta configuração existe apenas por motivos de compatibilidade. Faz sentido defini-la como &#39;true&#39; ao fazer rolling update do cluster de uma versão inferior à 21.7 para uma superior.
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` agora são limites rígidos para todo hash join, inclusive para aqueles que fazem spill para o disco, nos quais antes atuavam como gatilho do spill. O spill passa a ser determinado apenas por `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join`."}]}]} />
+
+Restaura o comportamento que `max_rows_in_join` e `max_bytes_in_join` tinham antes de o limiar de spill se tornar o gatilho, no que diz respeito à
+parte de um join executada em disco: atingir um deles faz o join fazer mais spill em vez de interromper a consulta.
+Nesse caso, `join_algorithm = 'grace_hash'` faz spill apenas com base nesses dois e ignora completamente `max_bytes_before_external_join`, inclusive quando
+é zero. `hash` / `parallel_hash` continuam indo para o disco ao atingir o limiar de spill e, a partir daí, fazem spill por qualquer um dos dois; sua
+fase em memória segue tratando os dois como limite rígido, como antes.
+
+Voltado a consultas escritas conforme o significado anterior dessas duas settings; `compatibility` a habilita automaticamente.
+
+Um servidor anterior a esta setting aplica o significado antigo e não há como alterar isso; por isso, com
+`serialize_query_plan = 1`, um join cujo spill depende do novo significado simplesmente não é enviado a esse servidor:
+a consulta falha em vez de rodar silenciosamente sob o outro contract. Ativar esta setting faz essas consultas
+funcionarem nas duas versões, com o significado antigo em ambos os lados.
 
 ## limit {#limit}
 

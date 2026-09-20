@@ -58,6 +58,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 
 ### SETTINGS {#settings}
 
+La cláusula `SETTINGS` puede usarse sin una cláusula `ENGINE`, en cuyo caso se utiliza el motor de base de datos predeterminado
+(`Atomic`). Puede contener tanto ajustes del motor de base de datos como ajustes de consulta comunes; cada
+nombre se asigna a la categoría a la que corresponde.
+
+#### disk {#disk}
+
+El disco utilizado para almacenar los archivos de metadatos de las tablas de la base de datos. Puede indicarse un disco definido en la configuración del
+servidor, o definirse uno en línea mediante la función `disk`, igual que se hace con una tabla individual:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Se aplica a los motores de base de datos que almacenan los metadatos de las tablas en disco (`Atomic`, `Ordinary`). Si no se especifica,
+se utiliza el disco definido en la configuración del servidor `database_disk.disk`.
+
 #### lazy_load_tables {#lazy-load-tables}
 
 Cuando está habilitado, las tablas no se cargan por completo durante el arranque de la base de datos. En su lugar, se crea un proxy ligero para cada tabla y el motor de tabla real se materializa al acceder a ella por primera vez. Esto reduce el tiempo de arranque y el uso de memoria en bases de datos con muchas tablas, de las que solo se consulta activamente un subconjunto.

@@ -181,6 +181,9 @@ ya que siempre se prueba una réplica al menos una vez antes de descartarla. Uti
 [max&#95;execution&#95;time](/es/reference/settings/session-settings/max-execution#max_execution_time) para acotar
 la consulta en sí.
 
+`skip_unavailable_shards` no silencia esto: con una réplica para la que el initiator no tenía ningún slot
+de conexión libre nunca se llegó a contactar, por lo que el segmento no se considera no disponible.
+
 Possible values:
 
 * Entero positivo.
@@ -884,6 +887,25 @@ Si está habilitada, las funciones &#39;least&#39; y &#39;greatest&#39; devuelve
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "Se añadió esta configuración solo por motivos de compatibilidad. Tiene sentido establecerla en 'true' al realizar una actualización progresiva del clúster desde una versión anterior a la 21.7 a una posterior"}]}]} />
 
 Enumera todos los nombres de los elementos de los literales de tupla grandes en los nombres de sus columnas en lugar del hash. Esta configuración existe solo por motivos de compatibilidad. Tiene sentido establecerla en &#39;true&#39; al realizar una actualización progresiva del clúster desde una versión anterior a la 21.7 a una posterior.
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` ahora son límites estrictos para cada hash join, incluidos los que desbordan a disco, donde antes actuaban como desencadenante del desbordamiento. El desbordamiento se rige únicamente por `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join`."}]}]} />
+
+Restaura el comportamiento de `max_rows_in_join` y `max_bytes_in_join` anterior a que el umbral de desbordamiento se convirtiera en el desencadenante, para
+la parte de un join que se ejecuta en disco: alcanzar uno de ellos hace que el join siga desbordando a disco en lugar de detener la consulta.
+`join_algorithm = 'grace_hash'` desborda entonces a disco basándose únicamente en esos dos e ignora por completo `max_bytes_before_external_join`, incluso
+si es cero. `hash` / `parallel_hash` siguen pasando a disco al alcanzar el umbral de desbordamiento y desbordan al alcanzar cualquiera de los dos posteriormente; su
+fase en memoria sigue tratando ambos como límites estrictos, como antes.
+
+Para las consultas escritas según el significado anterior de estas dos configuraciones, `compatibility` lo habilita automáticamente.
+
+Un servidor anterior a esta configuración aplica el significado antiguo y no se le puede indicar lo contrario, por lo que, con
+`serialize_query_plan = 1`, un join cuyo desbordamiento depende del nuevo significado no se envía a dicho servidor:
+la consulta falla en lugar de ejecutarse silenciosamente con el otro comportamiento. Activar esta configuración permite que esas consultas
+funcionen entre las dos versiones, con el significado antiguo en ambos lados.
 
 ## límite {#limit}
 

@@ -41,7 +41,7 @@ LIMIT 3
 
 ## Requêtes avec FROM {#from-queries}
 
-Une requête peut commencer par la clause `FROM`, la clause `SELECT` étant facultative dans ce cas : si elle est omise, la requête fonctionne comme si `SELECT *` avait été écrit :
+Une requête peut commencer par la clause `FROM`, la clause `SELECT` étant facultative dans ce cas : si elle est omise, la requête fonctionne comme si `SELECT *` avait été écrit :
 
 ```sql
 FROM orders;
@@ -49,9 +49,11 @@ FROM orders WHERE amount > 100;
 FROM orders |> WHERE amount > 100;
 ```
 
-Les alias de table peuvent être écrits avec ou sans le mot-clé `AS`, comme dans la clause `FROM` d&#39;une requête `SELECT` ordinaire : `FROM orders o WHERE o.amount > 100`. La seule exception concerne un alias écrit sous la forme du mot seul `select` : placé après les tables, il introduit la clause `SELECT` explicite au lieu d&#39;être traité comme un alias. Une table nommée `select` n&#39;est pas concernée et conserve son propre alias : `FROM select s WHERE s.id = 1`.
+Les alias de table peuvent être écrits avec ou sans le mot-clé `AS`, comme dans la clause `FROM` d&#39;une requête `SELECT` ordinaire : `FROM orders o WHERE o.amount > 100`. La seule exception concerne un alias écrit sous la forme du mot seul `select` : placé après les tables, il introduit la clause `SELECT` explicite au lieu d&#39;être traité comme un alias. Une table nommée `select` n&#39;est pas concernée et conserve son propre alias : `FROM select s WHERE s.id = 1`.
 
-La clause `SELECT` ne peut pas être omise lorsque l&#39;offset d&#39;échantillonnage de la dernière table peut également être interprété comme un `OFFSET` au niveau de la requête. En effet, dans `FROM t SAMPLE 1/10 OFFSET 5`, l&#39;`OFFSET` appartient à `SAMPLE`, tandis que dans `FROM t SAMPLE 1/10 SELECT * OFFSET 5`, il s&#39;agit d&#39;un `OFFSET` au niveau de la requête : le `SELECT` explicite est nécessaire pour lever cette ambiguïté. Lorsque la requête se poursuit par une clause qu&#39;un `OFFSET` au niveau de la requête ne peut pas précéder, il n&#39;y a aucune ambiguïté et la clause `SELECT` reste facultative, comme d&#39;habitude : `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
+Une sous-requête entre parenthèses peut également commencer par la clause `FROM`, ce qui rend `(from IN ('a'))` ambigu : cela se lit soit comme l&#39;expression `from IN ('a')` portant sur une colonne nommée `from`, soit comme la sous-requête `SELECT * FROM IN('a')` portant sur une fonction de table nommée `IN`. La lecture en tant que colonne est la plus ancienne et l&#39;emporte : des parenthèses dont le contenu se lit comme une expression commençant par le mot `from` suivi d&#39;un opérateur constituent cette expression, jamais une sous-requête. Écrivez la clause `SELECT` explicitement pour obtenir l&#39;autre lecture : `1 IN (SELECT * FROM in)`.
+
+La clause `SELECT` ne peut pas être omise lorsque l&#39;offset d&#39;échantillonnage de la dernière table peut également être interprété comme un `OFFSET` au niveau de la requête. En effet, dans `FROM t SAMPLE 1/10 OFFSET 5`, l&#39;`OFFSET` appartient à `SAMPLE`, tandis que dans `FROM t SAMPLE 1/10 SELECT * OFFSET 5`, il s&#39;agit d&#39;un `OFFSET` au niveau de la requête : le `SELECT` explicite est nécessaire pour lever cette ambiguïté. Lorsque la requête se poursuit par une clause qu&#39;un `OFFSET` au niveau de la requête ne peut pas précéder, il n&#39;y a aucune ambiguïté et la clause `SELECT` reste facultative, comme d&#39;habitude : `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
 ## Operators {#operators}
 

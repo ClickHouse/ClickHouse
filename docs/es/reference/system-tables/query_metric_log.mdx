@@ -807,6 +807,7 @@ de forma predeterminada). Los datos también se recopilan cuando finaliza la con
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se superó el límite global de memoria.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha asignado memoria sin comprobar las restricciones de memoria.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de bytes asignados sin comprobar las restricciones de memoria.
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se capturó un stack trace para una única asignación al rastreador global de memoria igual o superior a `min_allocation_size_to_log_stack_trace`.
 * `ProfileEvent_AzureGetObject` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas GetObject a la API de Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas Upload a la API de Azure Blob Storage
 * `ProfileEvent_AzureStageBlock` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas StageBlock a la API de Azure Blob Storage

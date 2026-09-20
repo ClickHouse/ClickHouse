@@ -56,7 +56,22 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### 설정 {#settings}
+### SETTINGS {#settings}
+
+`SETTINGS` 절은 `ENGINE` 절 없이도 사용할 수 있으며, 이 경우 기본 데이터베이스 엔진(`Atomic`)이 사용됩니다. 이 절에는 데이터베이스 엔진 설정과 일반 쿼리 설정을 모두 지정할 수 있으며, 각 이름은 둘 중 해당하는 쪽으로 전달됩니다.
+
+#### disk {#disk}
+
+데이터베이스의 테이블 메타데이터 파일을 저장하는 데 사용되는 디스크입니다. 서버 구성에 정의된 디스크 이름을 지정하거나,
+단일 테이블과 동일한 방식으로 `disk` 함수를 사용해 인라인으로 정의할 수 있습니다:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+테이블 메타데이터를 디스크에 저장하는 데이터베이스 엔진(`Atomic`, `Ordinary`)에 적용됩니다. 지정하지 않으면
+`database_disk.disk` 서버 설정에 정의된 디스크가 사용됩니다.
 
 #### lazy_load_tables {#lazy-load-tables}
 

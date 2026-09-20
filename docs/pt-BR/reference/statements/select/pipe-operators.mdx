@@ -51,6 +51,8 @@ FROM orders |> WHERE amount > 100;
 
 Aliases de tabelas podem ser escritos com ou sem a palavra-chave `AS`, como na cláusula `FROM` de uma consulta `SELECT` comum: `FROM orders o WHERE o.amount > 100`. A única exceção é um alias escrito como a palavra isolada `select`: após as tabelas, ela inicia a cláusula `SELECT` explícita, em vez de ser tratada como um alias. Uma tabela chamada `select` não é afetada e mantém seu próprio alias: `FROM select s WHERE s.id = 1`.
 
+Uma subconsulta entre parênteses também pode começar com a cláusula `FROM`, o que torna `(from IN ('a'))` ambíguo: ela pode ser lida tanto como a expressão `from IN ('a')` sobre uma coluna chamada `from`, quanto como a subconsulta `SELECT * FROM IN('a')` sobre uma função de tabela chamada `IN`. A leitura como coluna é a mais antiga e prevalece — parênteses cujo conteúdo é lido como uma expressão iniciada pela palavra `from` seguida de um operador são essa expressão, nunca uma subconsulta. Escreva a cláusula `SELECT` explicitamente para obter a outra leitura: `1 IN (SELECT * FROM in)`.
+
 A cláusula `SELECT` não pode ser omitida quando o offset de amostragem da última tabela também puder ser interpretado como um `OFFSET` no nível da consulta, pois, em `FROM t SAMPLE 1/10 OFFSET 5`, o `OFFSET` pertence a `SAMPLE`, enquanto, em `FROM t SAMPLE 1/10 SELECT * OFFSET 5`, ele é um `OFFSET` no nível da consulta — o `SELECT` explícito é necessário para desambiguar os dois casos. Quando a consulta continua com uma cláusula que não pode ser precedida por um `OFFSET` no nível da consulta, não há ambiguidade, e a cláusula `SELECT` é opcional, como de costume: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
 ## Operadores {#operators}

@@ -807,6 +807,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ja/reference/data-types/int-uint)) — グローバルメモリ制限を超過した回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずにメモリが割り当てられた回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずに割り当てられたバイト数。
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ja/reference/data-types/int-uint)) — グローバルメモリトラッカーへの単一の計上が `min_allocation_size_to_log_stack_trace` 以上の場合に、スタックトレースが取得された回数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/ja/reference/data-types/int-uint)) — Azure API GetObject 呼び出し回数。
 * `ProfileEvent_AzureUpload` ([UInt64](/ja/reference/data-types/int-uint)) — Azure Blob Storage API Upload 呼び出し回数
 * `ProfileEvent_AzureStageBlock` ([UInt64](/ja/reference/data-types/int-uint)) — Azure Blob Storage API StageBlock 呼び出し回数

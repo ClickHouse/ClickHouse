@@ -347,6 +347,18 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * &#39;dphyp&#39; - реализует алгоритм DPhyp (Dynamic Programming via Hypergraph Partitioning), который в настоящее время поддерживает только INNER JOIN, — исследует то же пространство поиска, что и `dpsize`, но перебирает только пары связанных подграфов, создавая меньше промежуточных JOIN в разреженных графах JOIN, ценой отказа от рассмотрения декартовых произведений
   Можно указать несколько алгоритмов в виде списка, разделённого запятыми, например `dphyp,greedy`. Они применяются по порядку; если алгоритм не может обработать запрос (например, из-за OUTER JOIN или несвязанных компонентов), в качестве резервного варианта используется следующий.
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость переупорядочивания JOIN в алгоритме порядка JOIN DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость переупорядочивания JOIN в алгоритме порядка JOIN DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора."}]}]} />
+
+Влияет только на алгоритм порядка JOIN `dpsub`. Выбирает детектор конфликтов, с помощью которого DPsub определяет, какие переупорядочивания JOIN допустимы. Доступны следующие значения:
+
+* `''` (по умолчанию) — детектор конфликтов не используется, DPsub применяет ограничение `ON` clause для каждого отношения
+* `'a'` — детектор конфликтов CD-A, корректный, но неполный
+* `'c'` — детектор конфликтов CD-C, корректный и полный
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,27 +391,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Если значение не равно нулю, оптимизатор порядка JOIN использует случайно сгенерированные кардинальности и NDV вместо реальной статистики.
 Если задано значение 1, генерируется начальное значение генератора случайных чисел; если задано значение &gt; 1, это значение используется напрямую как начальное значение генератора случайных чисел.
 Это предназначено для тестирования и помогает выявлять ошибки, вызванные различным порядком JOIN.
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования детектора конфликтов A при проверке корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
-
-Влияет только на алгоритм порядка JOIN `dpsub`. Если включено, DPsub с помощью детектора конфликтов CD-A определяет, какие переупорядочивания JOIN допустимы.
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования (correct and complete) детектора конфликтов C для проверки корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
-
-Влияет только на алгоритм порядка JOIN `dpsub`. При включении DPsub с помощью детектора конфликтов CD-C определяет, какие переупорядочивания JOIN допустимы.
-Имеет приоритет над `query_plan_optimize_join_order_use_conflict_detector_a`, если включены оба параметра.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

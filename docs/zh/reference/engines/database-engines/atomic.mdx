@@ -18,8 +18,10 @@ doc_type: 'reference'
 ## 创建数据库 {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` 可以省略，因为它是默认值。`SETTINGS` 子句既可以包含数据库引擎的设置 (例如 [`disk`](#metadata-disk) 或 [`max_tables`](#limiting-the-number-of-tables)) ，也可以包含普通的查询设置；每个名称都会被分派到它所属的那一类。
 
 ## 具体事项和建议 {#specifics-and-recommendations}
 
@@ -75,13 +77,22 @@ EXCHANGE TABLES new_table AND old_table;
 ### 元数据磁盘 {#metadata-disk}
 
 当在 `SETTINGS` 中指定 `disk` 时，该磁盘将用于存储表的元数据文件。
-例如：
+它可以指定服务器配置中已定义的磁盘，也可以通过 `disk` 函数内联定义，方式与单个表相同：
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-若未指定，默认使用 `database_disk.disk` 中定义的磁盘。
+若未指定，则默认使用 `database_disk.disk` 中定义的磁盘。
+
+相同的 `SETTINGS` 子句同样适用于 `ATTACH DATABASE`：元数据文件位于其他磁盘上的数据库，正是通过这种方式挂载到
+服务器的。此时，`Atomic` 要求显式指定数据库的 `UUID`：
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### 限制表的数量 {#limiting-the-number-of-tables}
 

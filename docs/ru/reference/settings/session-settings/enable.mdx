@@ -34,7 +34,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Новая настройка. Включает адаптивную выгрузку данных из памяти во внешнее хранилище."}]}]} />
 
-Включает адаптивную выгрузку данных из памяти во внешнее хранилище. На данный момент поддерживается только Grace JOIN.
+Включает адаптивную выгрузку данных из памяти во внешнее хранилище. На данный момент поддерживаются hash join, способные выгружать данные на диск: как `grace_hash`, так и адаптивный путь `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -257,7 +257,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Ленивые подсказки типов JSON теперь в статусе бета. Псевдоним для настройки 'allow_experimental_json_lazy_type_hints'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ленивые подсказки типов JSON теперь в статусе бета. Псевдоним для настройки 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Добавлен псевдоним для настройки `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Включает ленивые подсказки типов для типа [JSON](/ru/reference/data-types/newjson).
 

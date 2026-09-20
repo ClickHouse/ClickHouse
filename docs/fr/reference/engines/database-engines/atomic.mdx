@@ -18,8 +18,12 @@ Le moteur `Atomic` prend en charge les requêtes [`DROP TABLE`](#drop-detach-tab
 ## Créer une base de données {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` peut être omis, car il s&#39;agit de la valeur par défaut. Une clause `SETTINGS` peut contenir à la fois des paramètres
+du moteur de base de données (tels que [`disk`](#metadata-disk) ou [`max_tables`](#limiting-the-number-of-tables))
+et des paramètres de requête ordinaires ; chaque nom est dirigé vers celui des deux auquel il appartient.
 
 ## Spécificités et recommandations {#specifics-and-recommendations}
 
@@ -74,14 +78,24 @@ Pour les tables [`ReplicatedMergeTree`](/fr/reference/engines/table-engines/merg
 
 ### Disque de métadonnées {#metadata-disk}
 
-Lorsque `disk` est spécifié dans `SETTINGS`, le disque est utilisé pour stocker les fichiers de métadonnées de la table.
-Par exemple :
+Lorsque `disk` est spécifié dans `SETTINGS`, le disque sert à stocker les fichiers de métadonnées de la table.
+Il peut s&#39;agir d&#39;un disque déclaré dans la configuration du serveur, ou d&#39;un disque défini directement avec la fonction `disk`,
+comme pour une table unique :
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-Si rien n’est précisé, le disque défini dans `database_disk.disk` est utilisé par défaut.
+Si aucune valeur n&#39;est spécifiée, le disque défini dans `database_disk.disk` est utilisé par défaut.
+
+La même clause `SETTINGS` fonctionne pour `ATTACH DATABASE`, ce qui permet d&#39;attacher à un serveur une base de données dont les fichiers de métadonnées
+résident sur un autre disque. Dans ce cas, `Atomic` exige que l&#39;`UUID` de la base de données soit fourni explicitement :
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Limiter le nombre de tables {#limiting-the-number-of-tables}
 

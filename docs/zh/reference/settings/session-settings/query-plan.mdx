@@ -347,6 +347,18 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 * &#39;dphyp&#39; - 实现 DPhyp (通过超图分区进行动态规划) 算法，目前仅支持 INNER JOIN - 探索与 `dpsize` 相同的搜索空间，但只枚举连通子图对，因此在稀疏 JOIN 图上生成的中间 JOIN 更少，代价是不考虑笛卡尔积
   可以将多个算法指定为逗号分隔的列表，例如 `dphyp,greedy`。系统会按顺序尝试这些算法；如果某个算法无法处理该查询 (例如由于存在 OUTER JOIN 或不连通分量) ，则会回退到下一个算法。
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置，用于选择在 DPsub JOIN 顺序算法中判定 JOIN 重排序 有效性的 conflict detector：`a` 表示（正确但不完备的）CD-A，`c` 表示（正确且完备的）CD-C，留空表示不使用。"}]}]} />
+
+仅对 `dpsub` JOIN 顺序算法生效。用于选择 DPsub 判定哪些 JOIN 重排序 有效时所使用的 conflict detector。可选取值如下：
+
+* `''` (默认) —— 不使用 conflict detector，DPsub 采用按 relation 划分的 `ON` clause 限制
+* `'a'` —— CD-A conflict detector，正确但不完备
+* `'c'` —— CD-C conflict detector，正确且完备
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,27 +391,6 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 当该值非 0 时，JOIN 顺序优化器会使用随机生成的基数和 NDV，而不是真实的统计信息。
 当设置为 1 时，会生成一个随机种子；当设置为大于 1 的值时，则直接使用该值作为种子。
 此设置用于测试，以发现由不同 JOIN 顺序引起的错误。
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中使用冲突检测器 A 验证 JOIN 重排序的有效性。"}]}]} />
-
-仅影响 `dpsub` JOIN 顺序算法。启用后，DPsub 使用 CD-A 冲突检测器确定哪些 JOIN
-重排序有效。
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中，使用（正确且完整的）冲突检测器 C 验证 JOIN 重排序的有效性。"}]}]} />
-
-仅影响 `dpsub` JOIN 顺序算法。启用后，DPsub 使用 CD-C 冲突检测器确定哪些 JOIN 重排序有效。当两者均启用时，其优先级高于 `query_plan_optimize_join_order_use_conflict_detector_a`。
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

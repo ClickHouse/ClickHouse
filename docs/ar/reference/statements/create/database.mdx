@@ -56,7 +56,24 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### الإعدادات {#settings}
+### SETTINGS {#settings}
+
+يمكن استخدام عبارة `SETTINGS` دون عبارة `ENGINE`، وعندها يُستخدم محرك قاعدة البيانات الافتراضي
+(`Atomic`). ويمكن أن تتضمن إعدادات محرك قاعدة البيانات وإعدادات الاستعلام العادية معًا؛ حيث يُوجَّه كل
+اسم إلى ما ينتمي إليه منهما.
+
+#### disk {#disk}
+
+القرص المستخدم لتخزين ملفات البيانات الوصفية لجداول قاعدة البيانات. يمكن أن يحدّد اسم قرص من تهيئة
+الخادم، أو أن يُعرّف قرصًا مباشرةً عبر الدالة `disk`، تمامًا كما يفعل الجدول المفرد:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجداول على القرص (`Atomic`، `Ordinary`). وفي حال عدم تحديده،
+يُستخدم القرص المعرّف في إعداد الخادم `database_disk.disk`.
 
 #### lazy_load_tables {#lazy-load-tables}
 

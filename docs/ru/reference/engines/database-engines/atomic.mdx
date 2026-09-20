@@ -20,8 +20,12 @@ doc_type: 'reference'
 ## Создание базы данных {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` можно не указывать, так как это значение по умолчанию. Предложение `SETTINGS` может содержать как настройки
+движка баз данных (например, [`disk`](#metadata-disk) или [`max_tables`](#limiting-the-number-of-tables)),
+так и обычные настройки запроса; каждое имя направляется к той из двух групп, к которой оно относится.
 
 ## Особенности и рекомендации {#specifics-and-recommendations}
 
@@ -76,14 +80,22 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### Диск для метаданных {#metadata-disk}
 
-Когда в `SETTINGS` указан параметр `disk`, этот диск используется для хранения файлов метаданных таблицы.
-Например:
+Когда в `SETTINGS` указан `disk`, этот диск используется для хранения файлов метаданных таблицы.
+Можно указать диск из конфигурации сервера либо задать его непосредственно с помощью функции `disk` — так же, как это делается для отдельной таблицы:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-Если не указано, по умолчанию используется диск, заданный в `database_disk.disk`.
+Если значение не указано, по умолчанию используется диск, заданный в `database_disk.disk`.
+
+То же предложение `SETTINGS` работает и для `ATTACH DATABASE` — именно так к серверу подключается база данных, файлы метаданных которой расположены на другом диске. В этом случае для `Atomic` необходимо явно указать `UUID` базы данных:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Ограничение количества таблиц {#limiting-the-number-of-tables}
 

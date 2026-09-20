@@ -347,6 +347,19 @@ Especifica quais algoritmos de ordem de join devem ser testados durante a otimiz
 * &#39;dphyp&#39; - implementa o algoritmo DPhyp (Programação Dinâmica via Particionamento de Hipergrafo), atualmente apenas para junções INNER - explora o mesmo espaço de busca que `dpsize`, mas enumera apenas pares de subgrafos conectados, o que gera menos junções intermediárias em grafos de junção esparsos, em troca de não considerar produtos cartesianos
   Vários algoritmos podem ser especificados como uma lista separada por vírgulas, por exemplo `dphyp,greedy`. Eles são testados na ordem informada; se um algoritmo não conseguir processar a consulta (por exemplo, devido a OUTER JOINs ou componentes desconectados), o próximo será usado como alternativa.
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}]} />
+
+Afeta apenas o algoritmo de ordem de join `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
+decidir quais reordenações de junções baseadas em custo são válidas. Os seguintes valores estão disponíveis:
+
+* `''` (padrão) - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
+* `'a'` - o conflict detector CD-A, que é correto, porém incompleto
+* `'c'` - o conflict detector CD-C, que é correto e completo
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,27 +392,6 @@ Defina como 0 para desabilitar o limite. Não tem efeito sobre o `query_plan_opt
 Quando diferente de zero, o otimizador da ordem de join usa cardinalidades e NDVs gerados aleatoriamente em vez de estatísticas reais.
 Quando definido como 1, uma semente aleatória é gerada; quando definido com um valor &gt; 1, esse valor é usado diretamente como semente.
 Isso se destina a testes para identificar erros causados por diferentes ordenações de join.
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos A na validação da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
-
-Afeta apenas o algoritmo de ordem de join `dpsub`. Quando habilitada, o DPsub determina quais
-reordenações de junções baseada em custo são válidas por meio do detector de conflitos CD-A).
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos C (correto e completo) para validar a reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
-
-Afeta apenas o algoritmo de ordem de join `dpsub`. Quando ativado, o DPsub determina quais reordenações de junções baseada em custo são válidas usando o detector de conflitos CD-C. Tem precedência sobre `query_plan_optimize_join_order_use_conflict_detector_a` quando ambos estão ativados.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

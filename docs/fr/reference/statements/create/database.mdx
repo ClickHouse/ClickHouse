@@ -56,7 +56,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### PARAMÈTRES {#settings}
+### SETTINGS {#settings}
+
+La clause `SETTINGS` peut être utilisée sans clause `ENGINE`, auquel cas le moteur de base de données par défaut
+(`Atomic`) est utilisé. Elle peut contenir aussi bien des paramètres du moteur de base de données que des paramètres de requête ordinaires ; chaque
+nom est dirigé vers celui des deux auquel il se rapporte.
+
+#### disk {#disk}
+
+Le disque utilisé pour stocker les fichiers de métadonnées des tables de la base de données. Il peut désigner un disque défini dans la configuration du serveur, ou en définir un directement à l&#39;aide de la fonction `disk`, comme le ferait une table individuelle :
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+S&#39;applique aux moteurs de base de données qui stockent les métadonnées des tables sur disque (`Atomic`, `Ordinary`). Si rien n&#39;est spécifié,
+le disque défini dans le paramètre serveur `database_disk.disk` est utilisé.
 
 #### lazy_load_tables {#lazy-load-tables}
 

@@ -19,8 +19,10 @@ doc_type: 'reference'
 ## データベースの作成 {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` はデフォルトであるため省略できます。`SETTINGS` 句には、データベースエンジンの設定 ([`disk`](#metadata-disk) や [`max_tables`](#limiting-the-number-of-tables) など) と通常のクエリ設定の両方を指定でき、各名前は、そのいずれに属するかに応じて送出されます。
 
 ## 詳細と推奨事項 {#specifics-and-recommendations}
 
@@ -73,16 +75,24 @@ EXCHANGE TABLES new_table AND old_table;
 
 [`ReplicatedMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルでは、ZooKeeper 内のパスとレプリカ名についてエンジンパラメータを指定しないことを推奨します。この場合、設定パラメータ [`default_replica_path`](/ja/reference/settings/server-settings/settings/default-replica#default_replica_path) と [`default_replica_name`](/ja/reference/settings/server-settings/settings/default-replica#default_replica_name) が使用されます。エンジンパラメータを明示的に指定する場合は、`{uuid}` マクロを使用することを推奨します。これにより、ZooKeeper 内で各テーブルに対して一意のパスが自動的に生成されます。
 
-### メタデータ用ディスク {#metadata-disk}
+### メタデータディスク {#metadata-disk}
 
-`SETTINGS` で `disk` を指定すると、そのディスクにテーブルのメタデータファイルが保存されます。
-例:
+`SETTINGS` で `disk` を指定すると、そのディスクはテーブルのメタデータファイルの保存に使用されます。
+単一のテーブルの場合と同様に、サーバー設定で定義されたディスクを名前で指定することも、`disk` 関数でインラインに定義することもできます:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-指定しない場合は、デフォルトで `database_disk.disk` に定義されたディスクが使用されます。
+指定しない場合、デフォルトでは `database_disk.disk` に定義されたディスクが使用されます。
+
+同じ `SETTINGS` 句は `ATTACH DATABASE` でも使用でき、メタデータファイルが別のディスク上にあるデータベースをサーバーにアタッチする際は、この方法を用います。その場合、`Atomic` ではデータベースの `UUID` を明示的に指定する必要があります:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### テーブル数の制限 {#limiting-the-number-of-tables}
 

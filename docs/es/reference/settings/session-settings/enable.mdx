@@ -32,9 +32,10 @@ Se respetan las configuraciones de agregación externa (`max_bytes_before_extern
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nueva configuración. Habilita el volcado adaptativo de datos en memoria al almacenamiento externo."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "nueva configuración. Habilita el volcado adaptativo de datos en memoria al almacenamiento externo."}]}]} />
 
-Hace que el procesador vuelque datos al almacenamiento externo de forma adaptativa. Actualmente, se admite grace join.
+Hace que el procesador vuelque datos al almacenamiento externo de forma adaptativa. Actualmente, se admiten los hash joins que pueden volcar datos, tanto
+`grace_hash` como la vía adaptativa `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -257,7 +258,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para el SETTING `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Las indicaciones de tipo diferidas de JSON ahora están en Beta. Un alias para el SETTING 'allow_experimental_json_lazy_type_hints'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Las indicaciones de tipo diferidas de JSON ahora están en Beta. Un alias para el SETTING 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Se añadió un alias para el SETTING `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Habilita las indicaciones de tipo diferidas para el tipo [JSON](/es/reference/data-types/newjson).
 

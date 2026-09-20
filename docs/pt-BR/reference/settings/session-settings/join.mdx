@@ -23,6 +23,8 @@ Especifica qual algoritmo de [JOIN](/pt-BR/reference/statements/select/join) é 
 
 Vários algoritmos podem ser especificados, e um deles será escolhido para uma consulta específica com base em kind/strictness e no motor de tabela.
 
+O fato de um algoritmo baseado em hash fazer spill para disco não faz parte dessa escolha: [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) são o limiar de spill para todos eles (e, uma vez que um dos dois seja diferente de zero, `enable_adaptive_memory_spill_scheduler` pode fazer o spill da junção ainda mais cedo, sob memory pressure), e [`max_rows_in_join`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) são um limite rígido para todos eles, a menos que `legacy_join_size_limits_trigger_spilling` transforme esses dois limites novamente em acionadores de spill em disco. O valor escolhido determina como a junção faz spill: `grace_hash` particiona a tabela da direita a partir do primeiro bloco, enquanto `hash` e `parallel_hash` a coletam em memória e mudam de estratégia quando o limiar é ultrapassado.
+
 A maioria dos algoritmos afeta uma consulta apenas quando é selecionada para ela. Alguns, no entanto, alteram o planejamento apenas por estarem listados — mesmo como uma alternativa de menor prioridade que não é selecionada ao final — porque a decisão é tomada antes da escolha do algoritmo. Há dois efeitos desse tipo:
 
 * A inferência de tipo da chave de junção se torna mais restritiva (uma junção merge não pode unir chaves de tipos diferentes, por exemplo, `String` e `Nullable(String)`). Isso pode alterar os tipos de resultado das colunas `USING` e pode fazer com que uma junção com uma tabela do mecanismo `Join` falhe com `TYPE_MISMATCH`. Acionado por `full_sorting_merge` e `parallel_full_sorting_merge`.
@@ -36,27 +38,29 @@ Valores possíveis:
 
 [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) é usado. O Grace hash oferece uma opção de algoritmo que permite executar junções complexas com bom desempenho, limitando o uso de memória.
 
-A primeira fase de uma grace join lê a tabela da direita e a divide em N buckets, dependendo do valor de hash das colunas-chave (inicialmente, N é `grace_hash_join_initial_buckets`). Isso é feito de forma a garantir que cada bucket possa ser processado de maneira independente. As linhas do primeiro bucket são adicionadas a uma tabela hash em memória, enquanto as demais são salvas em disco. Se a tabela hash crescer além do limite de memória (por exemplo, conforme definido por [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join)), o número de buckets será aumentado, assim como o bucket atribuído a cada linha. Todas as linhas que não pertencem ao bucket atual são descarregadas e reatribuídas.
+`grace_hash` é externo desde o primeiro bloco: a tabela da direita é particionada imediatamente, enquanto `hash` e `parallel_hash` a coletam primeiro em memória e só a particionam quando o limiar de spill é ultrapassado. Escolha-o quando você já sabe que o lado direito não caberá na memória e quer pular a fase em memória. O próprio limiar de spill é o mesmo usado por todos os algoritmos hash, [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), e um dos dois precisa ser diferente de zero, a menos que `legacy_join_size_limits_trigger_spilling` esteja ativado. Sem um limiar, `grace_hash` é ignorado em favor do próximo algoritmo da lista, e rejeitado se for o único.
+
+A primeira fase de um grace join lê a tabela da direita e a divide em N buckets dependendo do valor de hash das colunas de chave (inicialmente, N é `grace_hash_join_initial_buckets`). Isso é feito de modo a garantir que cada bucket possa ser processado de forma independente. As linhas do primeiro bucket são adicionadas a uma tabela hash em memória, enquanto as demais são salvas em disco. Se a tabela hash crescer além do limite de spill, o número de buckets é aumentado junto com o bucket atribuído a cada linha. Quaisquer linhas que não pertençam ao bucket atual são descarregadas e reatribuídas.
 
 Oferece suporte a `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 * hash
 
-O [algoritmo hash join](https://en.wikipedia.org/wiki/Hash_join) é usado. É a implementação mais genérica, compatível com todas as combinações de kind e strictness e com várias chaves de junção combinadas com `OR` na seção `JOIN ON`.
+É usado o [algoritmo hash join](https://en.wikipedia.org/wiki/Hash_join). A implementação mais genérica, que oferece suporte a todas as combinações de tipo e strictness e a múltiplas chaves de junção combinadas com `OR` na seção `JOIN ON`.
 
-Ao usar o algoritmo `hash`, a parte direita de `JOIN` é carregada na RAM.
+Ao usar o algoritmo `hash`, a parte direita do `JOIN` é carregada na RAM.
 
 * parallel&#95;hash
 
-Uma variação de `hash` join que divide os dados em buckets e constrói simultaneamente várias tabelas hash em vez de apenas uma, para acelerar esse processo.
+Uma variação do `hash` join que divide os dados em buckets e constrói várias tabelas hash em vez de uma, de forma concorrente, para acelerar esse processo.
 
-Ao usar o algoritmo `parallel_hash`, a parte direita de `JOIN` é carregada na RAM.
+Ao usar o algoritmo `parallel_hash`, a parte direita do `JOIN` é carregada na RAM.
 
 * partial&#95;merge
 
 Uma variação do [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join), em que apenas a tabela da direita é totalmente ordenada.
 
-`RIGHT JOIN` e `FULL JOIN` têm suporte apenas com strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não têm suporte).
+`RIGHT JOIN` e `FULL JOIN` são suportados apenas com strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não são suportados).
 
 Ao usar o algoritmo `partial_merge`, o ClickHouse ordena os dados e os grava no disco. O algoritmo `partial_merge` no ClickHouse difere ligeiramente da implementação clássica. Primeiro, o ClickHouse ordena a tabela da direita pelas chaves de junção em blocos e cria um índice min-max para os blocos ordenados. Em seguida, ele ordena partes da tabela da esquerda pela `chave de junção` e faz a junção delas com a tabela da direita. O índice min-max também é usado para ignorar blocos desnecessários da tabela da direita.
 
@@ -83,13 +87,13 @@ O algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) baseado em o
 
 A posição na lista define a prioridade: listado após outros algoritmos, como no valor padrão, IEJoin é usado somente quando eles não se aplicam (a seção `ON` não tem condições de igualdade); listado primeiro, ele é usado sempre que a seção `ON` tiver duas condições de desigualdade. As condições restantes (incluindo igualdades) são aplicadas como filtro sobre o resultado da junção para `ALL INNER JOIN` e avaliadas dentro do operador como uma condição residual que afeta a correspondência para os outros tipos. Quando a seção `ON` tem mais de duas condições de desigualdade elegíveis, as duas usadas pelo algoritmo são escolhidas pela seletividade estimada a partir das estatísticas de min/max das colunas (veja o tipo `basic` em [Estatísticas de coluna](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)); quando as estimativas não estão disponíveis (sem estatísticas, ou [`use_statistics`](/pt-BR/reference/settings/session-settings/use-statistics#use_statistics) está desativado), as duas primeiras na ordem sintática são usadas. Sem `ie_join` na lista, um `INNER JOIN` apenas com condições de desigualdade é executado como um `CROSS JOIN` com um filtro, e os outros tipos não têm suporte.
 
-Ambas as entradas são acumuladas na memória antes da junção: [`max_rows_in_join`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) e [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitam juntas a entrada acumulada de ambos os lados (não apenas do lado direito), com a ação em caso de overflow definida por [`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode); os índices de ordenação que o operador cria sobre a entrada acumulada não são contabilizados no limite. O próprio operador de junção é executado em uma única thread; apenas as ordenações das entradas anteriores à junção são paralelizadas.
+Ambas as entradas são acumuladas em memória antes da junção: [`max_rows_in_join`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) e [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitam a entrada acumulada de ambos os lados em conjunto (não apenas o lado direito), com a ação em caso de overflow definida por [`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode); os índices de ordenação que o operator constrói sobre a entrada acumulada não são contabilizados no limite. O operator de junção em si é executado em uma única thread; apenas as ordenações pré-junção das entradas são paralelizadas.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-Igual a `full_sorting_merge`, mas as junções de igualdade compatíveis com hash são divididas pelo hash das chaves de junção em junções merge independentes por shard que são executadas em paralelo (até `max_threads`), em vez de uma única junção merge. Isso mantém o baixo uso de memória por streaming de uma junção merge enquanto usa todas as threads, e o resultado não é ordenado.
+Igual a `full_sorting_merge`, mas junções por igualdade compatíveis com hash são divididas em shards pelo hash das chaves de junção em junções merge independentes por shard que são executadas em paralelo (até `max_threads`), em vez de uma única junção merge. Isso mantém o baixo uso de memória em streaming de uma junção merge enquanto utiliza todas as threads, e o resultado não é ordenado.
 
-O particionamento por hash usando as chaves de junção é aplicado somente a junções simples de igualdade em tipos de chave cujo hash corresponde à comparação da junção merge, e somente quando nenhum dos lados já está ordenado. Ele é ignorado nestes casos:
+O sharding por hash das chaves de junção é aplicado apenas a junções por igualdade simples em tipos de chave cujo hash concorda com a comparação da junção merge, e somente quando nenhum dos lados já está ordenado. Ele é ignorado nestes casos:
 
 * Junções `ASOF` e tipos de chave de ponto flutuante / `JSON` / `Object` / `Dynamic`: seus hashes não são consistentes com a comparação da junção merge, portanto chaves iguais poderiam acabar em shards diferentes.
 * Lados que já estão ordenados (uma leitura MergeTree em ordem ou qualquer entrada pré-ordenada): uma dispersão que preserva a ordem nas junções merge por shard pode causar deadlock no pipeline. A leitura em ordem e sua otimização `read_in_order_use_virtual_row` são mantidas.
@@ -166,16 +170,18 @@ O limite inferior da média de linhas por chave na tabela à direita para determ
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
-Define qual ação o ClickHouse executa quando um JOIN atinge qualquer um dos seguintes limites:
+Define qual ação o ClickHouse executa quando uma junção atinge qualquer um dos seguintes limites:
 
 * [max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 * [max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-Essa configuração só é considerada para os valores `hash`, `parallel_hash` e `ie_join`
-de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm). Outros
-algoritmos (por exemplo, `partial_merge`, `grace_hash`, `auto`) lidam com esses
-limites de outra forma — fazendo spill para disco, reparticionando ou mudando
-de estratégia — veja
+Todo valor de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm)
+baseado em hash considera essa configuração, incluindo aqueles que fazem spill para disco: atingir o
+limite interrompe a consulta em vez de acionar um spill. A exceção é
+`legacy_join_size_limits_trigger_spilling`: com ela ativada, a parte de uma junção que
+já é executada em disco continua fazendo spill em vez de aplicar essa configuração.
+`ie_join` também a considera, sobre a entrada que acumula de ambos os lados. `partial_merge` ainda
+lida com os limites mudando de estratégia — veja
 [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm).
 
 Valores possíveis:
@@ -187,8 +193,8 @@ Valor padrão: `THROW`.
 
 **Veja também**
 
-* [cláusula JOIN](/pt-BR/reference/statements/select/join)
-* [motor de tabela Join](/pt-BR/reference/engines/table-engines/special/join)
+* [cláusula junção](/pt-BR/reference/statements/select/join)
+* [motor de tabela junção](/pt-BR/reference/engines/table-engines/special/join)
 
 ## join_use_nulls {#join_use_nulls}
 

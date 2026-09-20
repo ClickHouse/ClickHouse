@@ -347,6 +347,18 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 * &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
   複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}]} />
+
+`dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの JOIN の並べ替えを有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
+
+* `''` (デフォルト)  - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
+* `'a'` - CD-A conflict detector。正しいが不完全です
+* `'c'` - CD-C conflict detector。正しく完全です
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,26 +391,6 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 0 以外の値を設定すると、JOIN 順序オプティマイザは実際の統計の代わりに、ランダムに生成されたカーディナリティと NDV を使用します。
 1 に設定するとランダムシードが生成され、1 より大きい値に設定すると、その値がシードとして直接使用されます。
 これは、異なる JOIN 順序によって発生するエラーを見つけるためのテストを目的としています。
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムで JOIN の並べ替えの妥当性を確認するために競合検出器 A を使用する新しい設定。"}]}]} />
-
-`dpsub` JOIN 順序アルゴリズムにのみ影響します。有効にすると、DPsub は CD-A 競合検出器を使用して、有効な JOIN の並べ替えを判定します。
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムにおける JOIN の並べ替えの妥当性判定に（correct and complete な）競合検出器 C を使用する新しい設定。"}]}]} />
-
-`dpsub` の JOIN 順序アルゴリズムにのみ影響します。有効にすると、DPsub は CD-C 競合検出器を用いて、どの JOIN の並べ替えが妥当であるかを判定します。`query_plan_optimize_join_order_use_conflict_detector_a` と同時に有効になっている場合は、この設定が優先されます。
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

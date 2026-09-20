@@ -805,8 +805,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "min_allocation_size_to_log_stack_trace", path: "/min#min_allocation_size_to_log_stack_trace", default: "0" },
         { name: "min_allocation_size_to_throw_on_memory_limit", path: "/min#min_allocation_size_to_throw_on_memory_limit", default: "0" },
         { name: "min_os_cpu_wait_time_ratio_to_drop_connection", path: "/min#min_os_cpu_wait_time_ratio_to_drop_connection", default: "0" }
       ],
@@ -1392,7 +1393,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.certificateFile", path: "/other#openssl.client.certificatefile", default: '""' },
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
         { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
         { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },

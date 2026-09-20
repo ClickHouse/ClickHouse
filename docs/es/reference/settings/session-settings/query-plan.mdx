@@ -347,6 +347,19 @@ Especifica qué algoritmos de orden de JOIN se intentan durante la optimización
 * &#39;dphyp&#39; - implementa el algoritmo DPhyp (programación dinámica mediante partición de hipergrafos), actualmente solo para INNER JOIN: explora el mismo espacio de búsqueda que `dpsize`, pero enumera solo pares de subgrafos conectados, lo que genera menos joins intermedios en grafos de join dispersos, a costa de no considerar productos cartesianos
   Se pueden especificar varios algoritmos como una lista separada por comas; por ejemplo, `dphyp,greedy`. Se prueban en orden; si un algoritmo no puede procesar la consulta (p. ej., debido a OUTER JOIN o a componentes desconectados), se usa el siguiente como fallback.
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nueva configuración que selecciona el conflict detector que determina la validez del reordenamiento de JOIN en el algoritmo de orden de JOIN DPsub: `a` para el CD-A (correcto pero incompleto), `c` para el CD-C (correcto y completo), vacío para ninguno."}]}]} />
+
+Solo afecta al algoritmo de orden de JOIN `dpsub`. Selecciona el conflict detector que DPsub emplea para
+determinar qué reordenamientos de JOIN son válidos. Los valores disponibles son los siguientes:
+
+* `''` (predeterminado): sin conflict detector; DPsub aplica la restricción de la `ON` clause por relation
+* `'a'`: el conflict detector CD-A, que es correcto pero incompleto
+* `'c'`: el conflict detector CD-C, que es correcto y completo
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,28 +392,6 @@ Establézcalo en 0 para desactivar el límite. No tiene efecto sobre el valor pr
 Cuando es distinto de cero, el optimizador de orden de JOIN utiliza cardinalidades y NDV generados aleatoriamente en lugar de estadísticas reales.
 Cuando se establece en 1, se genera una semilla aleatoria; cuando se establece en un valor &gt; 1, ese valor se usa directamente como semilla.
 Está pensado para pruebas, con el fin de encontrar errores provocados por distintos órdenes de JOIN.
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para usar el detector de conflictos A a fin de validar el reordenamiento de join en el algoritmo de orden de join DPsub."}]}]} />
-
-Solo afecta al algoritmo de orden de join `dpsub`. Cuando está habilitado, DPsub decide qué
-reordenamientos de join son válidos usando el detector de conflictos CD-A).
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva opción para usar el detector de conflictos C (correcto y completo) para validar el reordenamiento de join en el algoritmo de orden de join DPsub."}]}]} />
-
-Solo afecta al algoritmo de orden de join `dpsub`. Cuando está habilitada, DPsub determina qué reordenamientos de join
-son válidos mediante el detector de conflictos CD-C. Tiene precedencia sobre `query_plan_optimize_join_order_use_conflict_detector_a` cuando ambas están habilitadas.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

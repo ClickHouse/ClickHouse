@@ -34,7 +34,8 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد. تمكين تفريغ بيانات الذاكرة إلى التخزين الخارجي بشكل تكيّفي."}]}]} />
 
-يحفّز المعالج على تفريغ البيانات إلى التخزين الخارجي بشكل تكيّفي. يتوفر دعم grace join حاليًا.
+يحفّز المعالج على تفريغ البيانات إلى التخزين الخارجي بشكل تكيّفي. يتوفر حاليًا دعم عمليات hash join القابلة للتفريغ، سواء
+`grace_hash` أو المسار التكيّفي `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -257,7 +258,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت تلميحات النوع المؤجّلة لـ JSON في مرحلة Beta. اسم بديل للإعداد 'allow_experimental_json_lazy_type_hints'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت تلميحات النوع المؤجّلة لـ JSON في مرحلة Beta. اسم بديل للإعداد 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 يُمكّن تلميحات النوع المؤجّلة لنوع [JSON](/ar/reference/data-types/newjson).
 

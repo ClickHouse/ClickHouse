@@ -172,22 +172,25 @@ Le délai d’attente, en millisecondes, pour obtenir une connexion lorsque le p
 
 L’attente s’applique par réplique, car chaque réplique possède son propre pool de connexions. À son expiration, la
 tentative échoue avec `NO_FREE_CONNECTION`. Dans le chemin de basculement utilisé par les `SELECT`
-distribués, cette situation est traitée comme toute autre réplique inutilisable : la requête essaie les répliques restantes et n’échoue avec
+distribués, cette situation est traitée comme toute autre réplique inutilisable : la requête essaie les répliques restantes et n’échoue avec
 `ALL_CONNECTION_TRIES_FAILED` qu’après les avoir toutes essayées. Ce paramètre ne limite donc pas la
-requête dans son ensemble ; avec `N` répliques et `T` tentatives pour chacune, le délai d’attente total peut atteindre
+requête dans son ensemble ; avec `N` répliques et `T` tentatives pour chacune, le délai d’attente total peut atteindre
 `connection_pool_max_wait_ms` fois `N` fois `T`, où `T` est défini par
 [connections&#95;with&#95;failover&#95;max&#95;tries](/fr/reference/settings/session-settings/other#connections_with_failover_max_tries), mais n’est jamais inférieur à un,
 car une réplique est toujours essayée au moins une fois avant d’être écartée. Utilisez
 [max&#95;execution&#95;time](/fr/reference/settings/session-settings/max-execution#max_execution_time) pour limiter
 la requête elle-même.
 
-Valeurs possibles :
+`skip_unavailable_shards` ne masque pas ce comportement : une réplique pour laquelle l’initiateur n’avait aucun slot de
+connexion libre n’a jamais été contactée, le shard n’est donc pas considéré comme indisponible.
+
+Valeurs possibles :
 
 * Entier positif.
 * 0 — Délai d’expiration infini. L’attente est toujours interrompue par `KILL QUERY` et par `max_execution_time` avec
   le [timeout&#95;overflow&#95;mode](/fr/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw` par défaut.
-  Avec `break`, la limite de temps n’annule pas la requête ; l’attente se poursuit donc jusqu’à ce qu’une connexion soit
-  libérée ; `KILL QUERY` l’interrompt toujours.
+  Avec `break`, la limite de temps n’annule pas la requête ; l’attente se poursuit donc jusqu’à ce qu’une connexion soit
+  libérée ; `KILL QUERY` l’interrompt toujours.
 
 ## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
@@ -883,6 +886,25 @@ S&#39;il est activé, les fonctions &#39;least&#39; et &#39;greatest&#39; renvoi
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "Ajoutez ce paramètre uniquement pour des raisons de compatibilité. Il est pertinent de le définir sur 'true' lors d'une mise à jour progressive du cluster d'une version inférieure à 21.7 vers une version supérieure"}]}]} />
 
 Répertorie tous les noms des éléments des grands littéraux tuple dans leurs noms de colonne au lieu d’un hachage. Ce paramètre n’existe que pour des raisons de compatibilité. Il est pertinent de le définir sur &#39;true&#39; lors d’une mise à jour progressive du cluster d’une version inférieure à 21.7 vers une version supérieure.
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` sont désormais des plafonds stricts pour tout hash join, y compris ceux qui déversent sur le disque, où ils faisaient auparavant office de déclencheur du déversement sur le disque. Le déversement sur le disque est désormais piloté uniquement par `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join`."}]}]} />
+
+Rétablit le fonctionnement de `max_rows_in_join` et `max_bytes_in_join` tel qu&#39;il était avant que le seuil de déversement sur le disque n&#39;en devienne le déclencheur, pour
+la partie d&#39;un join qui s&#39;exécute sur disque : atteindre l&#39;une de ces valeurs fait déverser davantage le join au lieu d&#39;interrompre la requête.
+`join_algorithm = 'grace_hash'` déverse alors sur la seule base de ces deux valeurs et ignore totalement `max_bytes_before_external_join`, zéro
+compris. `hash` / `parallel_hash` basculent toujours sur disque au seuil de déversement sur le disque, puis déversent dès que l&#39;une des deux valeurs est atteinte ; leur
+phase en mémoire continue de les traiter comme un plafond strict, comme auparavant.
+
+Destiné aux requêtes écrites selon l&#39;ancienne signification de ces deux paramètres ; `compatibility` l&#39;active automatiquement.
+
+Un serveur antérieur à ce paramètre applique l&#39;ancienne signification et ne peut pas être configuré autrement : aussi, avec
+`serialize_query_plan = 1`, un join dont le déversement sur le disque dépend de la nouvelle signification n&#39;est tout simplement pas envoyé à un tel serveur :
+la requête échoue au lieu de s&#39;exécuter silencieusement selon l&#39;autre contrat. Activer ce paramètre permet à ces requêtes de
+fonctionner entre les deux versions, avec l&#39;ancienne signification de part et d&#39;autre.
 
 ## limit {#limit}
 

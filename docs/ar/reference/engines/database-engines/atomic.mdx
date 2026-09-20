@@ -19,8 +19,10 @@ doc_type: 'reference'
 ## إنشاء قاعدة بيانات {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+يمكن حذف `ENGINE = Atomic`، لأنه الخيار الافتراضي. ويمكن أن تتضمّن عبارة `SETTINGS` إعدادات محرك قاعدة البيانات (مثل [`disk`](#metadata-disk) أو [`max_tables`](#limiting-the-number-of-tables)) وإعدادات الاستعلام العادية معًا؛ إذ يُوجَّه كل اسم إلى الفئة التي ينتمي إليها منهما.
 
 ## تفاصيل وتوصيات {#specifics-and-recommendations}
 
@@ -75,14 +77,25 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### قرص البيانات الوصفية {#metadata-disk}
 
-عند تحديد `disk` ضمن `SETTINGS`، يُستخدم القرص لتخزين ملفات البيانات الوصفية للجدول.
-على سبيل المثال:
+عند تحديد `disk` في `SETTINGS`، يُستخدم القرص لتخزين ملفات البيانات الوصفية للجدول.
+ويمكن أن يشير إلى قرص مُعرَّف في إعدادات الخادم، أو أن يُعرَّف بشكل مضمّن باستخدام الدالة `disk`،
+تمامًا كما هو الحال مع الجدول المفرد:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-إذا لم يُحدَّد، فسيُستخدم تلقائيًا القرص المُعرَّف في `database_disk.disk`.
+إذا لم يُحدَّد، فسيُستخدَم افتراضيًا القرص المُعرَّف في `database_disk.disk`.
+
+تعمل عبارة `SETTINGS` نفسها مع `ATTACH DATABASE`، وهي الطريقة التي تُربط بها بالخادم قاعدة بيانات توجد
+ملفات البيانات الوصفية الخاصة بها على قرص آخر. ويتطلب `Atomic` في هذه الحالة تحديد معرّف `UUID` الخاص
+بقاعدة البيانات صراحةً:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### تحديد عدد الجداول {#limiting-the-number-of-tables}
 

@@ -179,6 +179,9 @@ Cascades 최적화기에서 부분 집계를 조인 아래로 푸시다운하는
 레플리카는 제외되기 전에 항상 한 번은 시도되므로 1보다 작아지지 않습니다. 쿼리 자체의 시간을
 제한하려면 [max&#95;execution&#95;time](/ko/reference/settings/session-settings/max-execution#max_execution_time)을 사용하십시오.
 
+`skip_unavailable_shards`는 이를 무시하지 않습니다. 이니시에이터에 사용 가능한 연결
+슬롯이 없었던 레플리카에는 접속 자체가 이루어지지 않았으므로, 해당 세그먼트는 사용할 수 없는 것으로 처리되지 않습니다.
+
 가능한 값:
 
 * 양의 정수.
@@ -872,6 +875,25 @@ INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "이 설정은 호환성을 위해서만 추가되었습니다. 클러스터를 21.7 미만 버전에서 그 이상의 버전으로 롤링 업데이트하는 동안에는 'true'로 설정하는 것이 좋습니다"}]}]} />
 
 해시 대신 큰 튜플 리터럴을 구성하는 모든 요소의 이름을 해당 컬럼명에 나열합니다. 이 설정은 호환성을 위해서만 존재합니다. 클러스터를 21.7 미만 버전에서 그 이상의 버전으로 롤링 업데이트하는 동안에는 &#39;true&#39;로 설정하는 것이 좋습니다.
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join`은 이제 디스크로 스필되는 해시 조인을 포함한 모든 해시 조인에 적용되는 엄격한 상한입니다. 이전에는 스필 트리거로 작동했습니다. 스필은 `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join`에 의해서만 발생합니다."}]}]} />
+
+스필 임계값이 트리거로 사용되기 전, 디스크에서 실행되는 조인 부분에서 `max_rows_in_join` 및 `max_bytes_in_join`이 작동하던 방식을 복원합니다.
+둘 중 하나에 도달하면 쿼리를 중단하는 대신 조인이 추가로 스필됩니다.
+이 경우 `join_algorithm = 'grace_hash'`는 이 두 설정만을 기준으로 스필하며, 0을 포함해 `max_bytes_before_external_join`을 완전히 무시합니다.
+`hash` / `parallel_hash`는 여전히 스필 임계값에 도달하면 디스크로 전환되며, 이후 둘 중 하나에 도달하면 스필됩니다. 인메모리 단계에서는
+이전과 마찬가지로 두 설정을 엄격한 상한으로 계속 처리합니다.
+
+이 두 설정의 이전 의미를 기준으로 작성된 쿼리에서는 `compatibility`가 이를 자동으로 활성화합니다.
+
+이 설정이 도입되기 이전의 서버는 이전 의미를 적용하며, 이를 변경할 수 없습니다. 따라서
+`serialize_query_plan = 1`일 때 스필 여부가 새 의미에 따라 결정되는 조인은 해당 서버로 전송되지 않습니다.
+즉, 다른 동작 방식으로 조용히 실행되는 대신 쿼리가 실패합니다. 이 설정을 켜면 이러한 쿼리가
+두 버전 간에도 작동하며, 양쪽 모두에서 이전 의미가 적용됩니다.
 
 ## limit {#limit}
 

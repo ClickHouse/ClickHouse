@@ -18,8 +18,12 @@ El motor `Atomic` admite consultas [`DROP TABLE`](#drop-detach-table) y [`RENAME
 ## Crear una base de datos {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` puede omitirse, ya que es el valor predeterminado. Una cláusula `SETTINGS` puede contener tanto SETTINGS
+del motor de base de datos (como [`disk`](#metadata-disk) o [`max_tables`](#limiting-the-number-of-tables))
+como SETTINGS de consulta ordinarios; cada nombre se dirige al que de los dos le corresponda.
 
 ## Aspectos específicos y recomendaciones {#specifics-and-recommendations}
 
@@ -74,14 +78,23 @@ Para las tablas [`ReplicatedMergeTree`](/es/reference/engines/table-engines/merg
 
 ### Disco de metadatos {#metadata-disk}
 
-Cuando se especifica `disk` en `SETTINGS`, ese disco se utiliza para almacenar los archivos de metadatos de la tabla.
-Por ejemplo:
+Cuando se especifica `disk` en `SETTINGS`, el disco se utiliza para almacenar los archivos de metadatos de la tabla.
+Puede indicar un disco definido en la configuración del servidor o definir uno en línea con la función `disk`,
+igual que se hace con una tabla individual:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-Si no se especifica, se usa de forma predeterminada el disco definido en `database_disk.disk`.
+Si no se especifica, se utiliza de forma predeterminada el disco definido en `database_disk.disk`.
+
+La misma cláusula `SETTINGS` funciona para `ATTACH DATABASE`, que es la forma de asociar a un servidor una base de datos cuyos archivos de metadatos se encuentran en otro disco. En ese caso, `Atomic` requiere que se indique explícitamente el `UUID` de la base de datos:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Limitar el número de tablas {#limiting-the-number-of-tables}
 

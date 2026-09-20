@@ -801,6 +801,7 @@ Contém o histórico dos valores das métricas das tabelas `system.metrics` e `s
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que o limite global de memória foi excedido.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que a memória foi alocada sem verificar as restrições de memória.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de bytes alocada sem verificar as restrições de memória.
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que um stack trace foi capturado para uma única cobrança ao rastreador global de memória igual ou superior a `min_allocation_size_to_log_stack_trace`.
 * `ProfileEvent_AzureGetObject` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de chamadas GetObject da API do Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de chamadas Upload da API do Azure Blob Storage
 * `ProfileEvent_AzureStageBlock` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de chamadas StageBlock da API do Azure Blob Storage
@@ -1075,7 +1076,7 @@ Contém o histórico dos valores das métricas das tabelas `system.metrics` e `s
 * `ProfileEvent_KeeperListRecursiveRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações recursivas de obtenção de filhos
 * `ProfileEvent_KeeperExistsRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de verificação de existência
 * `ProfileEvent_KeeperSetWatchesRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de set watches
-* `ProfileEvent_KeeperAddWatchRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de add watch
+* `ProfileEvent_KeeperAddWatchRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de add watches
 * `ProfileEvent_KeeperRemoveWatchRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de remove watches
 * `ProfileEvent_KeeperCheckWatchRequest` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações de remove watches
 * `ProfileEvent_KeeperRequestRejectedDueToSoftMemoryLimitCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações rejeitadas devido ao excedimento do limite flexível de memória

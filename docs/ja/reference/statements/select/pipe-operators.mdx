@@ -49,7 +49,9 @@ FROM orders WHERE amount > 100;
 FROM orders |> WHERE amount > 100;
 ```
 
-テーブルの別名は、通常の `SELECT` クエリの `FROM` 句と同様に、`AS` キーワードありでもなしでも記述できます: `FROM orders o WHERE o.amount > 100`。唯一の例外は、`select` という単語だけを別名として記述する場合です。テーブルの後に `select` を記述すると、別名ではなく明示的な `SELECT` 句の開始として扱われます。`select` という名前のテーブル自体は影響を受けず、独自の別名を保持できます: `FROM select s WHERE s.id = 1`。
+テーブル別名は、通常の `SELECT` クエリの `FROM` 句と同様に、`AS` キーワードありでもなしでも記述できます: `FROM orders o WHERE o.amount > 100`。唯一の例外は、`select` という単語だけを別名として記述する場合です。テーブルの後に `select` を記述すると、別名ではなく明示的な `SELECT` 句の開始として扱われます。`select` という名前のテーブル自体は影響を受けず、独自の別名を保持できます: `FROM select s WHERE s.id = 1`。
+
+括弧内のサブクエリも `FROM` 句から開始できるため、`(from IN ('a'))` は曖昧になります。これは、`from` という名前のカラムに対する式 `from IN ('a')` とも、`IN` という名前のテーブル関数に対するサブクエリ `SELECT * FROM IN('a')` とも解釈できます。カラムとしての解釈の方が古くからあり、そちらが優先されます。つまり、括弧の内容が `from` という単語に続いて演算子が現れる式として解釈できる場合、それは常にその式であり、サブクエリにはなりません。もう一方の解釈にしたい場合は、`SELECT` 句を明示的に記述してください: `1 IN (SELECT * FROM in)`。
 
 最後のテーブルのサンプルオフセットがクエリレベルの `OFFSET` とも解釈できる場合、`SELECT` 句は省略できません。これは、`FROM t SAMPLE 1/10 OFFSET 5` では `OFFSET` が `SAMPLE` に属する一方、`FROM t SAMPLE 1/10 SELECT * OFFSET 5` ではクエリレベルの `OFFSET` となるためです。両者を区別するには、明示的な `SELECT` が必要です。クエリレベルの `OFFSET` の前に置けない句でクエリが続く場合は曖昧さがないため、通常どおり `SELECT` 句は任意です: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`。
 

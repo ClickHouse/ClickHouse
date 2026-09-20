@@ -34,7 +34,8 @@ Les paramètres d’agrégation externe (`max_bytes_before_external_group_by`, `
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nouveau paramètre. Active le déversement adaptatif des données en mémoire vers un stockage externe."}]}]} />
 
-Déclenche le processeur pour déverser de manière adaptative les données vers un stockage externe. Seul grace join est actuellement pris en charge.
+Déclenche le processeur pour déverser de manière adaptative les données vers un stockage externe. Les jointures de hachage capables de déverser sont actuellement prises en charge, aussi bien
+`grace_hash` que le chemin adaptatif `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -257,7 +258,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Les indications de type JSON différées sont désormais en bêta. Un alias pour le paramètre 'allow_experimental_json_lazy_type_hints'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les indications de type JSON différées sont désormais en bêta. Un alias pour le paramètre 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Ajout d'un alias pour le paramètre `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Active les indications de type différées pour le type [JSON](/fr/reference/data-types/newjson).
 

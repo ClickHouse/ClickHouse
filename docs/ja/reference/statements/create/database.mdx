@@ -56,7 +56,21 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### 設定 {#settings}
+### SETTINGS {#settings}
+
+`SETTINGS` 句は `ENGINE` 句なしで使用でき、その場合はデフォルトのデータベースエンジン (`Atomic`) が使用されます。この句にはデータベースエンジンの設定と通常のクエリ設定の両方を指定でき、各名前はそれぞれが属する方へ送出されます。
+
+#### disk {#disk}
+
+データベースのテーブルメタデータファイルを保存するために使用するディスクです。サーバー設定で定義済みのディスクを名前で指定することも、単一のテーブルの場合と同様に `disk` 関数を使ってインラインで定義することもできます:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+テーブルのメタデータをディスク上に保存するデータベースエンジン (`Atomic`、`Ordinary`) に適用されます。指定しない場合は、
+`database_disk.disk` サーバー設定で定義されたディスクが使用されます。
 
 #### lazy_load_tables {#lazy-load-tables}
 

@@ -347,6 +347,19 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * &#39;dphyp&#39; - يطبّق خوارزمية DPhyp ‏(البرمجة الديناميكية عبر تقسيم الرسم البياني الفائق) حاليًا على عمليات الربط الداخلية فقط - يستكشف مساحة البحث نفسها مثل `dpsize`، لكنه يعدد فقط أزواج الرسوم البيانية الفرعية المتصلة، ما يولّد عددًا أقل من عمليات JOIN الوسيطة في رسوم JOIN البيانية المتناثرة، على حساب عدم مراعاة الضربات الديكارتية
   يمكن تحديد عدة خوارزميات في قائمة مفصولة بفواصل، مثل `dphyp,greedy`. وتُجرَّب بالترتيب؛ فإذا تعذّر على خوارزمية ما التعامل مع الاستعلام (على سبيل المثال بسبب عمليات الربط الخارجية أو المكوّنات غير المتصلة)، تُستخدَم الخوارزمية التالية كخيار احتياطي.
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "إعداد جديد يحدد كاشف التعارض الذي يقرر صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN المسماة DPsub: `a` لـ CD-A (الصحيح لكن غير المكتمل)، و`c` لـ CD-C (الصحيح والمكتمل)، وفارغ لعدم استخدام أي منها."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "إعداد جديد يحدد كاشف التعارض الذي يقرر صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN المسماة DPsub: `a` لـ CD-A (الصحيح لكن غير المكتمل)، و`c` لـ CD-C (الصحيح والمكتمل)، وفارغ لعدم استخدام أي منها."}]}]} />
+
+يؤثر هذا الإعداد على خوارزمية ترتيب JOIN المسماة `dpsub` فقط. وهو يحدد كاشف التعارض الذي يستخدمه DPsub
+لتحديد عمليات إعادة ترتيب JOIN الصالحة. القيم المتاحة هي:
+
+* `''` (الافتراضي) - بدون كاشف تعارض، ويستخدم DPsub قيد عبارة `ON` لكل relation
+* `'a'` - كاشف التعارض CD-A، وهو صحيح لكنه غير مكتمل
+* `'c'` - كاشف التعارض CD-C، وهو صحيح ومكتمل
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,26 +392,6 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 عندما تكون القيمة غير صفرية، يستخدم مُحسِّن ترتيب JOIN قيم cardinality وNDV مُولَّدة عشوائيًا بدلًا من الإحصاءات الفعلية.
 عند تعيينها إلى 1، يُولَّد random seed، وعند تعيينها إلى قيمة &gt; 1، تُستخدم تلك القيمة مباشرةً كبذرة.
 هذا مخصّص للاختبار بهدف اكتشاف الأخطاء الناتجة عن اختلاف ترتيبات JOIN.
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض A للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN‏ DPsub."}]}]} />
-
-يؤثر هذا الإعداد على خوارزمية ترتيب JOIN‏ `dpsub` فقط. عند تمكينه، تحدد DPsub عمليات إعادة ترتيب JOIN الصالحة باستخدام كاشف التعارض CD-A).
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض C (الصحيح والكامل) للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN في DPsub."}]}]} />
-
-يؤثر هذا الإعداد على خوارزمية `dpsub` الخاصة بـ ترتيب JOIN فقط. وعند تمكينه، تعتمد DPsub على كاشف التعارض CD-C لتحديد عمليات إعادة ترتيب JOIN الصالحة. وتكون له الأسبقية على `query_plan_optimize_join_order_use_conflict_detector_a` عند تمكين كليهما.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

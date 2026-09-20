@@ -748,7 +748,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DiskS3ReadRequestsErrors` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청에서 발생한 비-스로틀링 오류 수.
 * `ProfileEvent_DiskS3ReadRequestsThrottling` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청에서 발생한 429 및 503 오류 수.
 * `ProfileEvent_DiskS3ReadRequestsRedirects` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청의 리디렉션 수.
-* `ProfileEvent_DiskS3ReadRequestAttempts` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청의 시도 횟수로, 최초 시도와 모든 재시도를 포함하지만 S3 재시도 전략에서 내부적으로 수행한 재시도는 제외합니다.
+* `ProfileEvent_DiskS3ReadRequestAttempts` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청의 시도 횟수로, 최초 시도와 모든 재시도를 포함하지만 S3 재시도 전략에서 내부적으로 수행한 재시도는 제외합니다
 * `ProfileEvent_DiskS3ReadRequestRetryableErrors` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 GET 및 HEAD 요청의 재시도 가능한 오류 수로, S3 재시도 전략에서 내부적으로 수행한 재시도는 제외합니다.
 * `ProfileEvent_DiskS3WriteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 POST, DELETE, PUT 및 PATCH 요청 시간.
 * `ProfileEvent_DiskS3WriteRequestsCount` ([UInt64](/ko/reference/data-types/int-uint)) — DiskS3 storage에 대한 POST, DELETE, PUT 및 PATCH 요청 수.
@@ -806,6 +806,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ko/reference/data-types/int-uint)) — 전역 메모리 한도를 초과한 횟수입니다.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 제약을 확인하지 않고 메모리를 할당한 횟수입니다.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 제약을 확인하지 않고 할당한 바이트 양입니다.
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ko/reference/data-types/int-uint)) — `min_allocation_size_to_log_stack_trace` 이상인 전역 메모리 추적기에 대한 단일 할당에 대해 스택 트레이스를 캡처한 횟수입니다.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ko/reference/data-types/int-uint)) — Azure API GetObject 호출 수입니다.
 * `ProfileEvent_AzureUpload` ([UInt64](/ko/reference/data-types/int-uint)) — Azure blob storage API Upload 호출 수입니다.
 * `ProfileEvent_AzureStageBlock` ([UInt64](/ko/reference/data-types/int-uint)) — Azure blob storage API StageBlock 호출 수입니다.
@@ -1214,7 +1215,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. Distributed Cache에서 건너뛴 미사용 패킷 수
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 무시된 데이터 패킷의 바이트 수
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 클라이언트가 더 이상 추적하지 않는 요청에 대해 도착한 무시된 데이터 패킷(DistrCacheUnusedDataPacketsBytes의 일부)의 바이트 수입니다(예: 서버가 이미 추가 데이터를 전송한 후 EndRequest를 통해 읽기가 중지된 경우)
-* `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 추적 중인 요청에 도착했지만 이전 읽기 범위 ID에 해당하는 무시된 데이터 패킷(`DistrCacheUnusedDataPacketsBytes`의 일부)의 바이트 수입니다(동일한 요청에서 더 새로운 읽기 범위가 요청됨).
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 추적 중인 요청에 도착했지만 이전 읽기 범위 ID에 해당하는 무시된 데이터 패킷(DistrCacheUnusedDataPacketsBytes의 일부)의 바이트 수입니다(동일한 요청에서 더 새로운 읽기 범위가 요청됨)
 * `ProfileEvent_DistrCacheUnusedPacketsBufferAllocations` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 기존 버퍼를 재사용할 수 없어서 추가로 발생한 버퍼 할당 수
 * `ProfileEvent_DistrCacheLockRegistryMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache registry 이벤트. DistributedCacheRegistry 잠금을 획득하는 데 소요된 시간
 * `ProfileEvent_DistrCacheRegistryUpdateMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache registry 이벤트. Distributed Cache registry를 갱신하는 데 소요된 시간

@@ -800,6 +800,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ja/reference/data-types/int-uint)) — グローバルメモリ制限を超えた回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずにメモリが割り当てられた回数。
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ja/reference/data-types/int-uint)) — メモリ制約を確認せずに割り当てられたバイト数。
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ja/reference/data-types/int-uint)) — `min_allocation_size_to_log_stack_trace` 以上のグローバルメモリトラッカーへの単一の割り当てについて、スタックトレースが取得された回数。
 * `ProfileEvent_AzureGetObject` ([UInt64](/ja/reference/data-types/int-uint)) — Azure API の GetObject 呼び出し回数。
 * `ProfileEvent_AzureUpload` ([UInt64](/ja/reference/data-types/int-uint)) — Azure blob storage API の Upload 呼び出し回数。
 * `ProfileEvent_AzureStageBlock` ([UInt64](/ja/reference/data-types/int-uint)) — Azure blob storage API の StageBlock 呼び出し回数。
@@ -961,16 +962,16 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/ja/reference/data-types/int-uint)) — 入力のほぼすべてが一意であり、かつ下流のコンシューマーがいずれにせよ重複排除を行うため、ハッシュテーブルを破棄して重複排除を停止した重複排除 transform の数。対象は、予備的な `DISTINCT` (`allow_preliminary_distinct_abandoning` を参照) と、`IN` サブクエリの Set 充填前にストリームごとに行われる事前重複排除です。
 * `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/ja/reference/data-types/int-uint)) — クエリメモリが外部 `DISTINCT` のしきい値を超えたか、予測されるハッシュ割り当て量が残りのしきい値予算を超えるため、ハッシュテーブルを解放してすべての行をそのまま通過させるようになった予備的な `DISTINCT` transform の数 (`max_bytes_before_external_distinct` を参照)。代わりに、ディスクにスピルする最終 `DISTINCT` が重複を解決します。
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ja/reference/data-types/int-uint)) — ハッシュ結合用の hash table で事前割り当てされた要素数。
-* `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求が、Keeper に要求を送らずに cache から処理された回数。
-* `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求を Keeper から取得して処理する必要があった回数。
-* `ProfileEvent_MetadataFromKeeperCacheTooManyInvalidated` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルシステムキャッシュが無効化されたエントリを多すぎる数返した回数。
-* `ProfileEvent_MetadataFromKeeperCacheUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper からの応答待機を含め、cache の更新に費やされた合計時間。
-* `ProfileEvent_MetadataFromKeeperUpdateCacheOneLevel` ([UInt64](/ja/reference/data-types/int-uint)) — directory tree の 1 レベル分の cache 更新が行われた回数。
-* `ProfileEvent_MetadataFromKeeperTransactionCommit` ([UInt64](/ja/reference/data-types/int-uint)) — メタデータ取引のコミットが試行された回数。
-* `ProfileEvent_MetadataFromKeeperTransactionCommitRetry` ([UInt64](/ja/reference/data-types/int-uint)) — メタデータ取引のコミットが再試行された回数。
-* `ProfileEvent_MetadataFromKeeperCleanupTransactionCommit` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済み object のクリーンアップに対するメタデータ取引のコミットが試行された回数。
-* `ProfileEvent_MetadataFromKeeperCleanupTransactionCommitRetry` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済み object のクリーンアップに対するメタデータ取引のコミットが再試行された回数。
-* `ProfileEvent_MetadataFromKeeperOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への要求が行われた回数。
+* `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求が、Keeper に要求を送らずに cache から処理された回数
+* `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求を Keeper から取得して処理する必要があった回数
+* `ProfileEvent_MetadataFromKeeperCacheTooManyInvalidated` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルシステムキャッシュが無効化されたエントリを多すぎる数返した回数
+* `ProfileEvent_MetadataFromKeeperCacheUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper からの応答待機を含め、cache の更新に費やされた合計時間
+* `ProfileEvent_MetadataFromKeeperUpdateCacheOneLevel` ([UInt64](/ja/reference/data-types/int-uint)) — directory tree の 1 レベル分の cache 更新が行われた回数
+* `ProfileEvent_MetadataFromKeeperTransactionCommit` ([UInt64](/ja/reference/data-types/int-uint)) — メタデータ取引のコミットが試行された回数
+* `ProfileEvent_MetadataFromKeeperTransactionCommitRetry` ([UInt64](/ja/reference/data-types/int-uint)) — メタデータ取引のコミットが再試行された回数
+* `ProfileEvent_MetadataFromKeeperCleanupTransactionCommit` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済み object のクリーンアップに対するメタデータ取引のコミットが試行された回数
+* `ProfileEvent_MetadataFromKeeperCleanupTransactionCommitRetry` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済み object のクリーンアップに対するメタデータ取引のコミットが再試行された回数
+* `ProfileEvent_MetadataFromKeeperOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への要求が行われた回数
 * `ProfileEvent_MetadataFromKeeperIndividualOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数要求で読み書きされたパス数
 * `ProfileEvent_MetadataFromKeeperIndividualOperationsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数要求に費やされた時間
 * `ProfileEvent_MetadataFromKeeperReconnects` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への再接続が行われた回数

@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="min_allocation_size_to_throw_on_memory_limit">
-  ## min_allocation_size_to_throw_on_memory_limit
-</div>
+## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+向全局 (服务器级) 内存跟踪器单次记账的最小字节数；达到该值时会捕获 stack trace，以 `Warning` 级别写入服务器日志，并以 trace 类型 `MemoryLargeAllocation` 写入 [`system.trace_log`](/zh/reference/system-tables/trace_log)。
+
+用于与阈值比较并上报的大小，是一次 tracker 调用所记账的量，未必对应一次分配：线程会先累积自己的小额分配，再作为一次记账统一刷写，因此上报的大小可能比所报告调用栈顶部的那次分配最多多出 `max_untracked_memory`。将阈值设得远高于 `max_untracked_memory`，即可使该差异忽略不计。
+
+该功能用于诊断全局跟踪总量远超进程实际内存使用量的情形。在此状态下，服务器会拒绝每一次分配 (哪怕是零字节的分配) ，而实际用量却只占限额的一小部分，且常规遥测数据无法定位这一增量：在 `MemoryTrackerBlockerInThread` 下记账的分配会跳过限额检查以及随之产生的链路追踪，而本应记录其余信息的 `system.trace_log` 写入操作在服务器卡死后同样会失败。此时服务器日志仍在持续写入，因此 stack trace 能够记录其中。
+
+每次服务器运行最多捕获 10 条 trace，因为捕获并符号化调用栈开销很大，而触发条件往往会反复出现。在运行时修改此设置，无论调高还是调低，都不会提高该上限。
+
+需要已配置 `trace_log`。若 trace collector 未在运行，该值会被忽略，并在 [`system.server_settings`](/zh/reference/system-tables/server_settings) 中显示为 `0`，因为此时 trace 只能捕获后丢弃。若 collector 在该表被 attach 之前 (attach 发生在启动过程的后期) 处理了某条 trace，则该 trace 仅会进入服务器日志。
+
+值为 `0` (默认) 时禁用该诊断。应将其设置为远高于服务器正常情况下会发生的最大分配，否则常规的大额分配也会被记录，仅启动过程就可能耗尽全部配额。
+
+## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -26,9 +40,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 注意：为避免副作用，建议将该值设置为大于 `max_untracked_memory`。
 
-<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
-  ## min_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

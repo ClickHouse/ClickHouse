@@ -34,7 +34,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新设置。启用将内存数据自适应落盘到外部存储。"}]}]} />
 
-触发处理器将数据自适应落盘到外部存储。目前仅支持 grace join。
+触发处理器将数据自适应落盘到外部存储。目前支持可落盘的哈希连接，包括 `grace_hash` 以及自适应的 `hash` / `parallel_hash` 路径。
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -253,7 +253,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_json_lazy_type_hints` 添加了别名。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "惰性 JSON 类型提示现已进入 Beta 阶段。设置 'allow_experimental_json_lazy_type_hints' 的别名。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "惰性 JSON 类型提示现已进入 Beta 阶段。设置 'allow_experimental_json_lazy_type_hints' 的别名。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_json_lazy_type_hints` 添加了别名。"}]}]} />
 
 为 [JSON](/zh/reference/data-types/newjson) 类型启用惰性类型提示。
 

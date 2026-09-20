@@ -32,9 +32,9 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新しい設定。メモリ内のデータを外部ストレージへ適応的にスピルできるようにします。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新しい設定。メモリ内のデータを外部ストレージへアダプティブにスピルできるようにします。"}]}]} />
 
-トリガープロセッサが、データを外部ストレージへ適応的にスピルします。現時点でサポートされているのは grace join のみです。
+トリガープロセッサが、データを外部ストレージへアダプティブにスピルします。現時点でサポートされているのは、スピル可能なハッシュ結合、すなわち `grace_hash` とアダプティブな `hash` / `parallel_hash` の経路です。
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -252,7 +252,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_json_lazy_type_hints` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON 型ヒントがベータ版になりました。設定 'allow_experimental_json_lazy_type_hints' の別名です。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON 型ヒントがベータ版になりました。設定 'allow_experimental_json_lazy_type_hints' の別名です。"}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_json_lazy_type_hints` の別名を追加しました。"}]}]} />
 
 [JSON](/ja/reference/data-types/newjson) 型の Lazy 型ヒントを有効にします。
 

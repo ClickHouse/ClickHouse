@@ -172,6 +172,8 @@ Cloud 默认值：`1`。
 
 该等待时间按副本生效，因为每个副本各有一个连接池。等待超时后，本次尝试会以 `NO_FREE_CONNECTION` 失败。在分布式 `SELECT` 所使用的故障转移路径上，这与其他不可用副本的处理方式相同：查询会继续尝试其余副本，只有在所有副本都尝试过之后才会以 `ALL_CONNECTION_TRIES_FAILED` 失败。因此该设置并不限制整个查询的耗时；在有 `N` 个副本、每个副本尝试 `T` 次的情况下，总等待时间可能达到 `connection_pool_max_wait_ms` 乘以 `N` 再乘以 `T`，其中 `T` 为 [connections&#95;with&#95;failover&#95;max&#95;tries](/zh/reference/settings/session-settings/other#connections_with_failover_max_tries)，但不会小于 1，因为在放弃某个副本之前总会先尝试一次。若要限制查询本身的耗时，请使用 [max&#95;execution&#95;time](/zh/reference/settings/session-settings/max-execution#max_execution_time)。
 
+`skip_unavailable_shards` 无法屏蔽该错误：发起服务器因没有空闲连接槽而未能连接的副本，实际上从未被访问过，因此该分片不会被视为不可用。
+
 可能的值：
 
 * 正整数。
@@ -862,6 +864,19 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "添加此设置仅为兼容性考虑。在将集群从低于 21.7 的版本滚动更新到更高版本时，建议将其设为 'true'"}]}]} />
 
 对于大型 Tuple 字面量，在其列名中列出所有元素名称，而不是使用哈希。此设置仅为兼容性而存在。在将集群从低于 21.7 的版本滚动更新到更高版本时，建议将其设为 &#39;true&#39;。
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` 现在对每一个 hash 连接都是硬性上限，包括会落盘的那些；此前它们的作用是触发落盘。落盘现在仅由 `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join` 决定。"}]}]} />
+
+针对连接中在磁盘上执行的那部分，恢复 `max_rows_in_join` 和 `max_bytes_in_join` 在落盘阈值成为触发条件之前的行为：达到其中任意一项会让连接继续落盘，而不是中止查询。
+此时 `join_algorithm = 'grace_hash'` 仅依据这两项落盘，并完全忽略 `max_bytes_before_external_join` (取值为零时也一样) 。`hash` / `parallel_hash` 仍在达到落盘阈值时转入磁盘，之后只要触及这两项中的任意一项即落盘；其内存阶段则与以往一样，仍将这两项视为硬性上限。
+
+适用于按这两项设置的旧含义编写的查询；`compatibility` 会自动启用该行为。
+
+早于该设置的服务器只会采用旧含义，且无法更改，因此当 `serialize_query_plan = 1` 时，落盘行为依赖新含义的连接根本不会被发送到这类服务器：查询会直接失败，而不是在另一套契约下悄然运行。启用该设置可让这些查询在两个版本之间都正常工作，且两端都使用旧含义。
 
 ## limit {#limit}
 

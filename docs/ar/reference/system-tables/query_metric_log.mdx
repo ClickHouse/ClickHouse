@@ -807,6 +807,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة العام.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي خُصِّصت فيها الذاكرة دون التحقق من قيود الذاكرة.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي خُصِّصت دون التحقق من قيود الذاكرة.
+* `ProfileEvent_MemoryLargeAllocationTraced` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي التُقط فيها stack trace لعملية تحميل واحدة على متتبّع الذاكرة العام بحجم يساوي `min_allocation_size_to_log_stack_trace` أو يتجاوزه.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات GetObject في واجهة برمجة تطبيقات Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات Upload في واجهة برمجة تطبيقات Azure Blob Storage
 * `ProfileEvent_AzureStageBlock` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات StageBlock في واجهة برمجة تطبيقات Azure Blob Storage

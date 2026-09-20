@@ -2325,7 +2325,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "query_plan_*",
-      count: 55,
+      count: 54,
       settings: [
         { name: "query_plan_aggregation_bucket_top_k", path: "/query-plan#query_plan_aggregation_bucket_top_k", default: "1" },
         { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
@@ -2357,11 +2357,10 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_min_columns_for_join_lazy_indexing", path: "/query-plan#query_plan_min_columns_for_join_lazy_indexing", default: "3" },
         { name: "query_plan_optimize_count_from_text_index", path: "/query-plan#query_plan_optimize_count_from_text_index", default: "1" },
         { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "greedy" },
+        { name: "query_plan_optimize_join_order_conflict_detector", path: "/query-plan#query_plan_optimize_join_order_conflict_detector", default: '""' },
         { name: "query_plan_optimize_join_order_limit", path: "/query-plan#query_plan_optimize_join_order_limit", default: "10" },
         { name: "query_plan_optimize_join_order_max_searched_plans", path: "/query-plan#query_plan_optimize_join_order_max_searched_plans", default: "100000" },
         { name: "query_plan_optimize_join_order_randomize", path: "/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
-        { name: "query_plan_optimize_join_order_use_conflict_detector_a", path: "/query-plan#query_plan_optimize_join_order_use_conflict_detector_a", default: "0" },
-        { name: "query_plan_optimize_join_order_use_conflict_detector_c", path: "/query-plan#query_plan_optimize_join_order_use_conflict_detector_c", default: "0" },
         { name: "query_plan_optimize_lazy_final", path: "/query-plan#query_plan_optimize_lazy_final", default: "0" },
         { name: "query_plan_optimize_lazy_materialization", path: "/query-plan#query_plan_optimize_lazy_materialization", default: "1" },
         { name: "query_plan_optimize_lazy_materialization_for_file", path: "/query-plan#query_plan_optimize_lazy_materialization_for_file", default: "1" },
@@ -2549,9 +2548,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "s3_max_*",
-      count: 12,
+      count: 11,
       settings: [
-        { name: "s3_max_connections", path: "/s3-max#s3_max_connections", default: "1024" },
         { name: "s3_max_get_burst", path: "/s3-max#s3_max_get_burst", default: "0" },
         { name: "s3_max_get_rps", path: "/s3-max#s3_max_get_rps", default: "0" },
         { name: "s3_max_inflight_parts_for_one_file", path: "/s3-max#s3_max_inflight_parts_for_one_file", default: "20" },
@@ -3034,7 +3032,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "その他",
-      count: 140,
+      count: 141,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3103,6 +3101,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
+        { name: "legacy_join_size_limits_trigger_spilling", path: "/other#legacy_join_size_limits_trigger_spilling", default: "0" },
         { name: "limit", path: "/other#limit", default: "0" },
         { name: "load_marks_asynchronously", path: "/other#load_marks_asynchronously", default: "1" },
         { name: "lock_acquire_timeout", path: "/other#lock_acquire_timeout", default: "120" },

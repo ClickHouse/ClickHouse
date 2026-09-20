@@ -51,6 +51,8 @@ FROM orders |> WHERE amount > 100;
 
 테이블 별칭은 일반 `SELECT` 쿼리의 `FROM` 절처럼 `AS` 키워드의 사용 여부와 관계없이 작성할 수 있습니다: `FROM orders o WHERE o.amount > 100`. 유일한 예외는 별칭으로 `select`라는 단어만 단독으로 사용하는 경우입니다. 테이블 뒤에 `select`가 오면 별칭이 아니라 명시적 `SELECT` 절의 시작으로 해석됩니다. 이름이 `select`인 테이블에는 영향을 주지 않으며, 자체 별칭을 그대로 사용할 수 있습니다: `FROM select s WHERE s.id = 1`.
 
+괄호 안의 서브쿼리도 `FROM` 절로 시작할 수 있으며, 이 때문에 `(from IN ('a'))`는 모호해집니다. 이는 `from`이라는 이름의 컬럼에 대한 `from IN ('a')` 표현식으로 읽을 수도 있고, `IN`이라는 이름의 테이블 함수에 대한 서브쿼리 `SELECT * FROM IN('a')`로 읽을 수도 있습니다. 컬럼으로 해석하는 방식이 더 오래된 것이며 우선합니다. 즉, 괄호 안의 내용이 `from`이라는 단어 뒤에 연산자가 오는 표현식으로 읽히면 그것은 해당 표현식이며, 결코 서브쿼리가 아닙니다. 다른 해석을 원한다면 `SELECT` 절을 명시적으로 작성하십시오: `1 IN (SELECT * FROM in)`.
+
 마지막 테이블의 샘플 오프셋을 쿼리 수준 `OFFSET`으로도 해석할 수 있는 경우에는 `SELECT` 절을 생략할 수 없습니다. `FROM t SAMPLE 1/10 OFFSET 5`에서 `OFFSET`은 `SAMPLE`에 속하지만, `FROM t SAMPLE 1/10 SELECT * OFFSET 5`에서는 쿼리 수준 `OFFSET`이므로 둘을 구분하려면 명시적 `SELECT`가 필요합니다. 쿼리가 쿼리 수준 `OFFSET` 앞에 올 수 없는 절로 이어지는 경우에는 모호하지 않으므로, 평소처럼 `SELECT` 절은 선택 사항입니다: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
 ## 연산자 {#operators}

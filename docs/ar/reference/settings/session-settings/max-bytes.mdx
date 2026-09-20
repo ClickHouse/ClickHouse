@@ -54,7 +54,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد للتحكم في الكتابة التلقائية لـ hash joins إلى القرص. تؤدي القيمة غير الصفرية إلى تفعيل ذلك وتحديد عتبة البايتات."}]}]} />
 
-إذا تم تعيينه إلى قيمة غير صفرية وكان `join_algorithm` هو `hash` أو `parallel_hash` أو `default` أو `auto`، فسيتم تلقائيًا تحويل hash join إلى grace hash join لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. وعند تعيينه إلى 0 (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`)؛ اضبط كليهما على `0` لتعطيل الكتابة التلقائية إلى القرص بالكامل. وهو يمنع تحسين القراءة بالترتيب عبر join.
+إذا تم تعيينه إلى قيمة غير صفرية، فسيتم تلقائيًا تحويل hash join إلى grace hash join لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. ويشكّل هذا الإعداد، مع `max_bytes_ratio_before_external_join`، محفّز الكتابة إلى القرص القائم على العتبة لكل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash` الذي يتطلب أن يكون أحد الإعدادين غير صفري. وبمجرد أن تجعل عتبة غير صفرية عملية الربط قابلة للكتابة إلى القرص، يمكن لـ `enable_adaptive_memory_spill_scheduler` أن يجبرها على الكتابة إلى القرص تحت ضغط الذاكرة قبل بلوغ العتبة؛ أما إذا كان كلا الإعدادين `0` فلن تكتب عملية الربط إلى القرص أبدًا، ومن ثم لا يكون لدى المجدول ما يطلقه. والاستثناء هو `legacy_join_size_limits_trigger_spilling`: فعند تفعيله، يتجاهل `grace_hash` المستقل كلا الإعدادين ويكتب إلى القرص بناءً على `max_rows_in_join` / `max_bytes_in_join` بدلًا منهما. وعند تعيينه إلى 0 (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`)؛ اضبط كليهما على `0` لتعطيل الكتابة التلقائية إلى القرص بالكامل. وهو يمنع تحسين القراءة بالترتيب عبر join.
 
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
@@ -102,9 +102,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 وعلى [Join table engine](/ar/reference/engines/table-engines/special/join).
 
 إذا كان الاستعلام يحتوي على عدة عمليات JOIN، فإن ClickHouse يفحص هذا الإعداد لكل
-نتيجة وسيطة. وعند بلوغ الحد، يعتمد الإجراء على قيمة [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) المختارة — راجع
-ذلك الإعداد لمعرفة السلوك الخاص بكل خوارزمية (spill، أو إعادة التقسيم، أو التبديل، أو
-throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode)).
+نتيجة وسيطة. وهو حد صارم لكل `join_algorithm` قائم على التجزئة: فعند بلوغ الحد
+يرفع الاستعلام استثناءً أو يتوقف وفقًا لـ
+[`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode).
+وهو لا يجعل عملية الربط تكتب إلى القرص أبدًا — فهذا القرار يعود إلى
+[`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+و
+[`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+ولأنه حد صارم وليس مُشغِّلًا، فإن ضبطه عند عتبة الكتابة إلى القرص أو دونها يؤدي عادةً
+إلى فشل الاستعلام قبل أن تتمكن عملية الربط من الكتابة إلى القرص إطلاقًا —
+إلا إذا كانت عملية الربط قادرة على الكتابة إلى القرص وأجبر `enable_adaptive_memory_spill_scheduler`
+على الكتابة أولًا، أو أعاد
+`legacy_join_size_limits_trigger_spilling` تحويل هذا الحد إلى مُشغِّل للكتابة
+بالنسبة للجزء من عملية الربط الذي يعمل بالفعل على القرص.
+
+يحسب هذا الحد ما تحتويه جداول التجزئة، لذا فإن عملية الربط التي كتبت إلى القرص تبلغه
+عند تحميل كل حاوية وليس أثناء قراءة الجانب الأيمن: إذ يمكنها قراءة قدر أكبر
+من الجانب الأيمن قبل التوقف مقارنةً بعملية ربط تجزئة تعمل في الذاكرة.
 
 القيم الممكنة:
 
@@ -150,15 +164,15 @@ throw/break وفقًا لـ [`join_overflow_mode`](/ar/reference/settings/sessio
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "إعداد جديد: نسبة الذاكرة المتاحة المستخدمة كعتبة للكتابة إلى القرص في hash joins. يكون مُمكّنًا افتراضيًا عند `0.5`، بما يماثل `max_bytes_ratio_before_external_group_by` و`max_bytes_ratio_before_external_sort`. ويُستخدم مع القيمة المطلقة `max_bytes_before_external_join` (وتُطبَّق القيمة الأصغر بينهما)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "إعداد جديد: نسبة الذاكرة المتاحة المستخدمة كعتبة للكتابة إلى القرص في hash joins. يكون مُمكّنًا افتراضيًا عند `0.5`، بما يماثل `max_bytes_ratio_before_external_group_by` و`max_bytes_ratio_before_external_sort`. ويُستخدم مع القيمة المطلقة `max_bytes_before_external_join` (وتُطبَّق القيمة الأصغر بينهما)."}]}]} />
 
-هي نسبة الذاكرة المتاحة المسموح باستخدامها لـ `JOIN`. وعند بلوغها، سيُحوَّل hash join إلى grace hash join لكتابة بيانات الجانب الأيمن إلى القرص.
+هي نسبة الذاكرة المتاحة المسموح باستخدامها لـ `JOIN`. وعند بلوغها، سيُحوَّل hash join إلى grace hash join لكتابة بيانات الجانب الأيمن إلى القرص.
 
 على سبيل المثال، إذا ضُبطت على `0.6`، فسيسمح `JOIN` باستخدام `60%` من الذاكرة المتاحة (للخادم/المستخدم/عمليات الدمج) لجدول تجزئة للجانب الأيمن في بداية التنفيذ؛ وبعد ذلك تبدأ الكتابة إلى القرص.
 
-إذا جرى تعيين كلٍّ من `max_bytes_before_external_join` و`max_bytes_ratio_before_external_join`، فستُستخدم عتبة النتيجة الأصغر. وإذا كانت النسبة `0`، فلن يُطبَّق إلا الإعداد المطلق.
+إذا جرى تعيين كلٍّ من `max_bytes_before_external_join` و`max_bytes_ratio_before_external_join`، فستُستخدم عتبة النتيجة الأصغر. وإذا كانت النسبة `0`، فلن يُطبَّق إلا الإعداد المطلق.
 
-لا يكون له تأثير إلا عندما تكون `join_algorithm` هي `hash` أو `parallel_hash` أو `default` أو `auto` ويكون قد جرى تهيئة مسار بيانات مؤقت.
+يكون له تأثير مع كل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash`، شريطة أن يكون قد جرى تهيئة مسار بيانات مؤقت.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

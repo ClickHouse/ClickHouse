@@ -17,8 +17,12 @@ O motor `Atomic` oferece suporte a consultas [`DROP TABLE`](#drop-detach-table) 
 ## Criando um banco de dados {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` pode ser omitido, pois é o padrão. Uma cláusula `SETTINGS` pode conter tanto configurações
+do motor de banco de dados (como [`disk`](#metadata-disk) ou [`max_tables`](#limiting-the-number-of-tables))
+quanto configurações comuns de consulta; cada nome é encaminhado para aquele dos dois ao qual pertence.
 
 ## Detalhes e recomendações {#specifics-and-recommendations}
 
@@ -74,13 +78,24 @@ Para tabelas [`ReplicatedMergeTree`](/pt-BR/reference/engines/table-engines/merg
 ### Disco de metadados {#metadata-disk}
 
 Quando `disk` é especificado em `SETTINGS`, o disco é usado para armazenar os arquivos de metadados da tabela.
-Por exemplo:
+É possível indicar um disco definido na configuração do servidor ou defini-lo inline com a função `disk`,
+da mesma forma que se faz para uma única tabela:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-Se não for especificado, o disco definido em `database_disk.disk` será usado por padrão.
+Se não for especificado, o disco definido em `database_disk.disk` é usado por padrão.
+
+A mesma cláusula `SETTINGS` funciona para `ATTACH DATABASE`, que é a forma de anexar a um servidor um banco de dados cujos arquivos de metadados
+residem em outro disco. Nesse caso, o `Atomic` exige que o `UUID` do banco de dados seja informado
+explicitamente:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Limitando o número de tabelas {#limiting-the-number-of-tables}
 

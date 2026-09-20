@@ -54,7 +54,7 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "ハッシュ結合のディスクへの自動スピルを制御する新しい設定です。0 以外の値を指定するとスピルが有効になり、バイト単位のしきい値が設定されます。"}]}]} />
 
-0 以外の値に設定し、`join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。
+0 以外の値に設定すると、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`max_bytes_ratio_before_external_join` と合わせて、これはハッシュベースのすべての `join_algorithm` に対するしきい値ベースのスピルのトリガーであり、`grace_hash` も含まれます。`grace_hash` では、この 2 つのいずれかが 0 以外である必要があります。0 以外のしきい値によって結合がスピル可能になると、`enable_adaptive_memory_spill_scheduler` により、しきい値に達する前でもメモリ逼迫時に強制的にスピルさせることができます。両方の設定が `0` の場合、結合はスピルしないため、スケジューラーがトリガーする対象がありません。例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、単独の `grace_hash` は両方を無視し、代わりに `max_rows_in_join` / `max_bytes_in_join` に基づいてスピルします。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。
 
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
@@ -102,10 +102,23 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 操作と [Join テーブルエンジン](/ja/reference/engines/table-engines/special/join) に適用されます。
 
 1 つのクエリに複数の join が含まれる場合、ClickHouse は各
-中間結果に対してこの設定をチェックします。上限に達した場合の動作は、
-選択した [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) によって異なります。アルゴリズムごとの動作 (spill、再パーティション化、切り替え、または
-[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に応じた throw/break) については、
-その設定を参照してください。
+中間結果に対してこの設定をチェックします。これはハッシュベースのすべての `join_algorithm` に対するハードな上限であり、上限に
+達するとクエリは
+[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に従って例外をスローするか処理を中断します。
+この設定によって join がディスクへスピルすることはありません。その判断は
+[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+および
+[`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)
+に委ねられています。
+これはトリガーではなく上限であるため、スピルのしきい値以下に設定すると、
+通常は join がスピルする前にクエリが失敗します。ただし、join がスピル可能であり
+`enable_adaptive_memory_spill_scheduler` が先にスピルを強制する場合や、
+`legacy_join_size_limits_trigger_spilling` によって、すでにディスク上で実行されている join のパーツに対して
+この上限が再びスピルのトリガーとして機能する場合を除きます。
+
+この上限はハッシュテーブルが保持している内容をカウントするため、スピルした join では
+右側を読み取っている最中ではなく各バケットがロードされる時点で上限に達します。つまり、
+インメモリのハッシュ結合よりも多くの右側のデータを読み取ってから停止する可能性があります。
 
 設定可能な値:
 
@@ -158,7 +171,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 `max_bytes_before_external_join` と `max_bytes_ratio_before_external_join` の両方が設定されている場合は、結果として小さい方のしきい値が使用されます。比率が `0` の場合は、絶対値の設定のみが適用されます。
 
-`join_algorithm` が `hash`、`parallel_hash`、`default`、`auto` のいずれかで、かつ一時データパスが設定されている場合にのみ効果があります。
+一時データパスが設定されていれば、`grace_hash` を含むすべてのハッシュベースの `join_algorithm` に対して効果があります。
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

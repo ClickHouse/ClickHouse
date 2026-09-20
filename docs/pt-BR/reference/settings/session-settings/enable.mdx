@@ -32,9 +32,9 @@ As configurações de agregação externa (`max_bytes_before_external_group_by`,
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nova configuração. Habilita o descarregamento adaptativo de dados da memória para armazenamento externo."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nova configuração. Habilita o spill adaptativo de dados da memória para armazenamento externo."}]}]} />
 
-Faz o processador descarregar dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para `grace join`.
+Faz o processador realizar spill de dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para hash joins que podem fazer spill de dados, tanto `grace_hash` quanto o caminho adaptativo `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -257,7 +257,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Lazy Type Hints para JSON agora são Beta. Um alias para a configuração 'allow_experimental_json_lazy_type_hints'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os Lazy Type Hints para JSON agora são Beta. Um alias para a configuração 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_experimental_json_lazy_type_hints`."}]}]} />
 
 Habilita os Lazy Type Hints para o tipo [JSON](/pt-BR/reference/data-types/newjson).
 

@@ -173,6 +173,8 @@ Cascades オプティマイザーにおいて、部分集約を join の下に�
 
 接続プールはレプリカごとに1つ存在するため、この待機はレプリカ単位で適用されます。待機時間が経過すると、その試行は `NO_FREE_CONNECTION` で失敗します。分散 `SELECT` が使用するフェイルオーバー経路では、これは使用できないその他のレプリカと同様に扱われます。つまりクエリは残りのレプリカを試行し、そのすべてを試し終えて初めて `ALL_CONNECTION_TRIES_FAILED` で失敗します。したがって、この設定でクエリ全体の時間が制限されるわけではありません。`N` 個のレプリカがあり、それぞれ `T` 回試行する場合、合計の待機時間は `connection_pool_max_wait_ms` × `N` × `T` に達する可能性があります。ここで `T` は [connections&#95;with&#95;failover&#95;max&#95;tries](/ja/reference/settings/session-settings/other#connections_with_failover_max_tries) ですが、レプリカは除外される前に必ず一度は試行されるため、1 を下回ることはありません。クエリ自体を制限するには [max&#95;execution&#95;time](/ja/reference/settings/session-settings/max-execution#max_execution_time) を使用してください。
 
+`skip_unavailable_shards` によってこれが抑制されることはありません。イニシエーターに空き接続 slot がなかったレプリカにはそもそも接続が行われていないため、その分片は使用不可とは扱われません。
+
 設定可能な値:
 
 * 正の整数。
@@ -871,6 +873,19 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "この設定は互換性のためにのみ追加されました。バージョン 21.7 未満から 21.7 以上へクラスターをローリングアップデートする際は、'true' に設定するのが適切です"}]}]} />
 
 ハッシュではなく、大きなタプルリテラルの要素名をすべてカラム名として列挙します。この設定は互換性のためにのみ存在します。バージョン 21.7 未満から 21.7 以上へクラスターをローリングアップデートする際は、&#39;true&#39; に設定するのが適切です。
+
+## legacy_join_size_limits_trigger_spilling {#legacy_join_size_limits_trigger_spilling}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`max_rows_in_join` \/ `max_bytes_in_join` は、ディスクへスピルするものも含めたすべてのハッシュ結合に対する厳格な上限になりました。従来これらはスピルのトリガーとして機能していました。スピルは `max_bytes_before_external_join` \/ `max_bytes_ratio_before_external_join` のみによって制御されます。"}]}]} />
+
+スピルのしきい値がトリガーになる以前の `max_rows_in_join` および `max_bytes_in_join` の動作を、結合のうちディスク上で実行される部分について復元します。すなわち、いずれかに達した時点でクエリを停止するのではなく、結合がさらにスピルするようになります。
+この場合、`join_algorithm = 'grace_hash'` はこの 2 つだけを基準にスピルし、`max_bytes_before_external_join` は 0 を含めて完全に無視します。`hash` / `parallel_hash` は引き続きスピルのしきい値でディスクへ移行し、その後はいずれか一方に達した時点でスピルします。これらのインメモリフェーズでは、従来どおりこの 2 つを厳格な上限として扱います。
+
+これら 2 つの設定の以前の意味を前提に書かれたクエリ向けの設定で、`compatibility` によって自動的に有効になります。
+
+この設定が導入される前のバージョンのサーバーは旧来の意味を適用し、それを変更することはできません。そのため `serialize_query_plan = 1` の場合、スピル動作が新しい意味に依存する結合は、そのようなサーバーへは一切送信されません。異なる取り決めのまま暗黙のうちに実行されるのではなく、クエリが失敗します。この設定を有効にすると、両側で旧来の意味が適用され、これらのクエリが 2 つのバージョン間で動作するようになります。
 
 ## limit {#limit}
 

@@ -34,7 +34,7 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "새 설정입니다. 메모리 데이터를 외부 스토리지로 적응적으로 spill할 수 있도록 설정합니다."}]}]} />
 
-프로세서가 데이터를 외부 스토리지로 적응적으로 spill하도록 트리거합니다. 현재는 grace join만 지원합니다.
+프로세서가 데이터를 외부 스토리지로 적응적으로 spill하도록 트리거합니다. 현재는 spill이 가능한 해시 조인, 즉 `grace_hash`와 적응형 `hash` / `parallel_hash` 경로가 지원됩니다.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -252,7 +252,7 @@ SET dialect = 'clickhouse_json';
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "설정 `allow_experimental_json_lazy_type_hints`의 별칭을 추가했습니다."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "지연 JSON 타입 힌트가 베타로 전환되었습니다. 설정 'allow_experimental_json_lazy_type_hints'의 별칭입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "지연 JSON 타입 힌트가 베타로 전환되었습니다. 설정 'allow_experimental_json_lazy_type_hints'의 별칭입니다."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "설정 `allow_experimental_json_lazy_type_hints`의 별칭을 추가했습니다."}]}]} />
 
 [JSON](/ko/reference/data-types/newjson) 타입에 지연 타입 힌트를 활성화합니다.
 

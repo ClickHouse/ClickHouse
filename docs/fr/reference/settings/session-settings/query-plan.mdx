@@ -347,6 +347,19 @@ Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisa
 * &#39;dphyp&#39; - implémente l’algorithme DPhyp (Dynamic Programming via Hypergraph Partitioning), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
   Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison de jointures externes ou de composantes non connexes), le suivant est utilisé comme solution de repli.
 
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
+
+<ExperimentalBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}]} />
+
+N&#39;affecte que l’algorithme d’ordre des jointures `dpsub`. Sélectionne le conflict detector utilisé par DPsub pour
+déterminer quels réordonnancements des JOIN sont valides. Les valeurs suivantes sont disponibles :
+
+* `''` (par défaut) - aucun conflict detector, DPsub applique la restriction de la `ON` clause par relation
+* `'a'` - le conflict detector CD-A, qui est correct mais incomplet
+* `'c'` - le conflict detector CD-C, qui est correct et complet
+
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -379,27 +392,6 @@ Définissez cette valeur sur 0 pour désactiver la limite. Cela n&#39;a aucun ef
 Lorsqu’il est différent de zéro, l’optimiseur de l’ordre des jointures utilise des cardinalités et des NDV générées aléatoirement au lieu de statistiques réelles.
 Lorsqu’il est défini sur 1, une graine aléatoire est générée ; lorsqu’il est défini sur une valeur &gt; 1, cette valeur est utilisée directement comme graine.
 Ce paramètre est destiné aux tests afin de détecter les erreurs causées par différents ordres de jointure.
-
-## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits A pour valider le réordonnancement des JOIN dans l'algorithme d'ordre des jointures DPsub."}]}]} />
-
-N&#39;affecte que l&#39;algorithme d&#39;ordre des jointures `dpsub`. Lorsqu&#39;il est activé, DPsub détermine quels
-réordonnancements des JOIN sont valides à l&#39;aide du détecteur de conflits CD-A.
-
-## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits C (correct et complet) pour déterminer la validité du réordonnancement des JOIN dans l’algorithme d’ordre des jointures DPsub."}]}]} />
-
-N’affecte que l’algorithme d’ordre des jointures `dpsub`. Lorsqu’il est activé, DPsub détermine les réordonnancements des JOIN valides à l’aide du détecteur de conflits CD-C. Ce paramètre a préséance sur `query_plan_optimize_join_order_use_conflict_detector_a` lorsque les deux sont activés.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
