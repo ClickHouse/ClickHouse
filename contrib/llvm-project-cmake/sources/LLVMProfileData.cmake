@@ -1,6 +1,7 @@
 # Source files for LLVMProfileData
 set(LLVMPROFILEDATA_SOURCES
     ${LLVM_SOURCE_DIR}/lib/ProfileData/DataAccessProf.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/ETMTraceDecoder.cpp
     ${LLVM_SOURCE_DIR}/lib/ProfileData/GCOV.cpp
     ${LLVM_SOURCE_DIR}/lib/ProfileData/IndexedMemProfData.cpp
     ${LLVM_SOURCE_DIR}/lib/ProfileData/InstrProfCorrelator.cpp

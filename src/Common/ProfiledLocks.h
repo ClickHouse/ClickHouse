@@ -8,6 +8,7 @@
 #include <chrono>
 #include <mutex>
 #include <shared_mutex>
+#include <tuple>
 #include <utility>
 
 
@@ -70,7 +71,8 @@ protected:
     void tryLockAndProfileWait(std::chrono::duration<Rep, Period> timeout)
     {
         Stopwatch watch;
-        LockType::try_lock_for(timeout);
+        /// The outcome is observable via owns_lock, which callers check after construction.
+        std::ignore = LockType::try_lock_for(timeout);
         ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
     }
 

@@ -87,7 +87,7 @@ if __name__ == "__main__":
     if profraw_files:
         # Auto-detect available LLVM profdata tool
         llvm_profdata = None
-        for ver in ["22", "21", "20", "19", "18", "17", "16", ""]:
+        for ver in ["23", "22", "21", "20", "19", "18", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata = cmd
