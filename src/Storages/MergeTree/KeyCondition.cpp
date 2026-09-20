@@ -5815,7 +5815,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     for (const auto & func : functions)
     {
-        /// A bound that `isNull()` stands in for NULL or for an infinity and is left untransformed below,
+        /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
         /// so no transformed value would remain to compare against an atom in the function's result domain.
         if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
             return {};
