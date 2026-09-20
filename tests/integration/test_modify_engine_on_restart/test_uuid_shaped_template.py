@@ -5,6 +5,9 @@ from test_modify_engine_on_restart.common import get_table_path, set_convert_fla
 
 cluster = ClickHouseCluster(__file__)
 
+# Every node below needs its own {shard}/{replica} pair: with a database disk the root of the metadata storage
+# is named after those macros, so two nodes sharing them would share one metadata directory as well.
+
 # A table of an Ordinary database stores its expanded ZooKeeper path literally, and a later load recovers the
 # znode it owns by matching that path against `default_replica_path` again. The boundary therefore comes from
 # the template, so a UUID-shaped {shard} value standing right after the generated UUID changes nothing.
@@ -21,7 +24,7 @@ ch_inside_component = cluster.add_instance(
     "ch_inside_component",
     main_configs=["configs/config.d/convert_uuid_inside_component.xml"],
     with_zookeeper=True,
-    macros={"shard": "01", "replica": "node1"},
+    macros={"shard": "01", "replica": "node2"},
 )
 # A template that expands {uuid} more than once cannot be matched back against the literal path: the table
 # would not know which znode it owns, so the conversion must be refused instead of leaking the parent znode.
@@ -29,7 +32,7 @@ ch_two_uuids = cluster.add_instance(
     "ch_two_uuids",
     main_configs=["configs/config.d/convert_two_uuids.xml"],
     with_zookeeper=True,
-    macros={"shard": "01", "replica": "node1"},
+    macros={"shard": "01", "replica": "node3"},
     stay_alive=True,
 )
 # `default_replica_name` is stored as a template even for Ordinary databases, so a {uuid} in it must be refused
@@ -38,7 +41,7 @@ ch_replica_name = cluster.add_instance(
     "ch_replica_name",
     main_configs=["configs/config.d/convert_replica_name_uuid.xml"],
     with_zookeeper=True,
-    macros={"shard": "01", "replica": "node1"},
+    macros={"shard": "01", "replica": "node4"},
 )
 
 database_name = "modify_engine_uuid_shaped"
