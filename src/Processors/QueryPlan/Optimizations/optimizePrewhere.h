@@ -30,6 +30,10 @@ ActionsDAG splitAndFillPrewhereInfo(
     const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
     const std::list<const ActionsDAG::Node *> & prewhere_nodes_list);
 
+/// Conjoins a new PREWHERE with the one a `SourceStepWithFilter` already has (`existing AND new`); returns the new one
+/// unchanged when there is none. The existing `PrewhereInfo` is moved from.
+PrewhereInfoPtr mergePrewhereInfos(const PrewhereInfoPtr & existing_prewhere_info, PrewhereInfoPtr prewhere_info);
+
 }
 
 }

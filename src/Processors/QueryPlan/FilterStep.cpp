@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <boost/functional/hash.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -417,6 +418,17 @@ void FilterStep::updateOutputHeader()
 void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
 {
     condition = {condition_hash_, condition_};
+}
+
+void FilterStep::saltConditionForQueryConditionCache(UInt64 salt)
+{
+    if (!condition)
+        return;
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on every platform, same as in `updateQueryConditionCache`.
+    size_t condition_hash = condition->first;
+    boost::hash_combine(condition_hash, salt);
+    condition->first = condition_hash;
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)

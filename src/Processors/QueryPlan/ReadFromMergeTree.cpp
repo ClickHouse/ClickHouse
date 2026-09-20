@@ -5233,6 +5233,31 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
     }
 
+    /// A top-K read whose threshold column is a primary key column skips granules by the primary index as the
+    /// threshold tightens (see `SkipIndexReadResult::isGranuleBeyondTopKThreshold`). Same safety gates as the
+    /// runtime-filter pruning above; `Nullable` and floating-point columns are left out, as NULLs and NaNs
+    /// are placed by the query's NULLS FIRST/LAST rather than by the primary key order.
+    std::optional<size_t> top_k_primary_key_column_position;
+    if (top_k_filter_info && top_k_filter_info->threshold_tracker
+        && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        && !query_info.isFinal()
+        && !pending_mutations
+        && !isParallelReadingFromReplicas()
+        && indexes.has_value())
+    {
+        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        const auto & column_type = top_k_filter_info->data_type;
+        auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
+        if (it != primary_key.column_names.end()
+            && !column_type->isNullable() && !column_type->isLowCardinalityNullable()
+            && !isFloat(removeLowCardinality(column_type)))
+        {
+            const size_t position = it - primary_key.column_names.begin();
+            if (position < primary_key.data_types.size() && primary_key.data_types[position]->equals(*column_type))
+                top_k_primary_key_column_position = position;
+        }
+    }
+
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
@@ -5317,10 +5342,32 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             getLogger("MergeTreeSkipIndexReader"));
     }
 
-    /// Account SelectedRanges / SelectedMarks here, once both reader-creation paths above have
-    /// run. When a read-time skip-index reader is installed (either the use_skip_indexes_on_data_read
-    /// path or the join runtime-filter fallback), it increments these ProfileEvents itself after
-    /// read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
+    /// Need a reader for the top-K primary key pruning as well; it has nothing to prune up front.
+    if (!skip_index_reader && top_k_primary_key_column_position)
+    {
+        skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
+            UsefulSkipIndexes{},
+            indexes->key_condition_rpn_template,
+            /*use_for_disjunctions=*/false,
+            context->getIndexMarkCache(),
+            context->getIndexUncompressedCache(),
+            context->getVectorSimilarityIndexCache(),
+            reader_settings,
+            /*dynamic_predicate_builder=*/{},
+            /*prune_primary_key=*/false,
+            MergeTreeIndices{},
+            /*dynamic_skip_index_filter=*/{},
+            context,
+            getLogger("MergeTreeSkipIndexReader"));
+    }
+
+    if (skip_index_reader && top_k_primary_key_column_position)
+        skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
+
+    /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
+    /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
+    /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these
+    /// ProfileEvents itself after read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
     if (!skip_index_reader)
     {
         ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
