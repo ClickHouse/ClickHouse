@@ -2088,7 +2088,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
     /// - `apply()` runs the commands one after another - so that a command is screened below only when
     /// it will really install a declaration. A name can be declared more than once, and a `DROP`
-    /// removes one declaration of it, so the names are counted rather than collected into a set.
+    /// removes one declaration of it.
     Names constraint_names;
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.push_back(constraint->as<const ASTConstraintDeclaration &>().name);
@@ -2114,8 +2114,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
         if (command.type == AlterCommand::ADD_CONSTRAINT)
         {
-            /// `apply()` stores nothing for a name that is taken: it keeps the declaration it has, or
-            /// refuses the command.
+            /// A taken name gets no second declaration: `apply()` keeps the one it has, or refuses.
             const bool name_is_taken = constraint_name_is_taken(command.constraint_name);
             if (command.constraint_decl && !(command.if_not_exists && name_is_taken))
                 ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
