@@ -38,7 +38,18 @@ class ReadInterruptedException final : public Exception
 public:
     explicit ReadInterruptedException(std::exception_ptr original_exception_ = nullptr);
 
+    /// Without these overrides `copyMutableException` slices the exception back to a plain
+    /// `Exception` (it rethrows through the virtual `Poco::Exception::rethrow`), and the callers
+    /// which recognize the interruption by its type, such as `StorageURLSource::generate`, stop
+    /// recognizing it. That happens on every path which hands an exception over between threads,
+    /// e.g. the background reads of the native `Parquet` reader.
+    ReadInterruptedException * clone() const override { return new ReadInterruptedException(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+
 private:
+    const char * name() const noexcept override { return "DB::ReadInterruptedException"; }
+    const char * className() const noexcept override { return "DB::ReadInterruptedException"; }
+
     std::exception_ptr original_exception;
 };
 
