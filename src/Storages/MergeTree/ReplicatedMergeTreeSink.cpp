@@ -73,6 +73,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_delay_dedup_conflict_resolution[];
     extern const char rmt_dedup_conflict_part_name_missing[];
 }
 
@@ -740,6 +741,8 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {
         chassert(!retry_context.conflict_deduplication_hashes.empty());
+
+        fiu_do_on(FailPoints::rmt_delay_dedup_conflict_resolution, { sleepForSeconds(5); });
 
         /// This block was already written to some replica. Get the part name for it.
         auto deduplication_paths = getDeduplicationPaths(storage.zookeeper_path, retry_context.conflict_deduplication_hashes);
