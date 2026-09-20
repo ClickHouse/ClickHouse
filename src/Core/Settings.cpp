@@ -8272,6 +8272,8 @@ Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queri
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
+
+This setting controls an optimization only. Functions that cannot be executed on the default value of their arguments - such as `parseDateTime`, `IPv4StringToNum` or `intDiv` - always skip the rows containing a NULL regardless of this setting, because the value stored behind a NULL is the default value of the argument type and executing on it would throw on otherwise valid data.
 )", 0) \
     DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
 Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
