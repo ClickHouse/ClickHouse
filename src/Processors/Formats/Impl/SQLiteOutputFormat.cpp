@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SQLITE_ENGINE_ERROR;
+extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -154,10 +155,20 @@ public:
 
     void consume(Chunk chunk) override
     {
+        /// Binding and stepping a row is real work on the SQLite side - and, for the direct local-file
+        /// output path, real disk I/O. Check for cancellation per row, like `MySQLOutputFormat` and
+        /// `PostgreSQLOutputFormat` do, so that a `KILL QUERY` or a timeout does not have to wait for the
+        /// whole chunk to be written out.
+        if (isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
         const auto & columns = chunk.getColumns();
 
         for (size_t row = 0; row != chunk.getNumRows(); ++row)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
             sqlite3_clear_bindings(insert_statement.get());
             sqlite3_reset(insert_statement.get());
 

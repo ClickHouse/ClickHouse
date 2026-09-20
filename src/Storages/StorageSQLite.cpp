@@ -403,7 +403,15 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SQLiteSource>(read_connection, query, sample_block, max_block_size));
+    /// The declared types of a user-provided query are not a contract for its rows: SQLite reports a
+    /// declared type for the result column of a compound `SELECT` too, taken from one of its arms, while
+    /// the rows come from all of them. Such a read is fail-closed for every column (see
+    /// `SQLiteStatementReader::DeclaredTypeTrust`).
+    const auto declared_type_trust = remote_table_or_query.isQuery()
+        ? SQLiteStatementReader::DeclaredTypeTrust::Untrusted
+        : SQLiteStatementReader::DeclaredTypeTrust::Trusted;
+
+    return Pipe(std::make_shared<SQLiteSource>(read_connection, query, sample_block, max_block_size, declared_type_trust));
 }
 
 
@@ -803,6 +811,20 @@ DataTypePtr typeFromStorageClass(int storage_class)
     }
 }
 
+/// Whether the value of this storage class is read into the ClickHouse type mapped from a declared SQLite
+/// type without being coerced into another value. `String` is read from the text rendering of the cell, so
+/// every storage class agrees with it; a `NULL` cell carries no type information at all.
+bool declaredTypeAgreesWithStorageClass(const IDataType & declared_type, int storage_class)
+{
+    if (storage_class == SQLITE_NULL || isString(declared_type))
+        return true;
+
+    if (isFloat(declared_type))
+        return storage_class == SQLITE_FLOAT || storage_class == SQLITE_INTEGER;
+
+    return storage_class == SQLITE_INTEGER;
+}
+
 ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & query)
 {
     /// Wrap the query into a subquery (mirroring how the data is read) and prepare it to read the result
@@ -816,6 +838,17 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     /// enforced by the read path: a later row of another storage class fails the read instead of being
     /// coerced (`SQLiteStatementReader::checkStorageClass`), and the user can declare the column as `String`
     /// to read mixed values.
+    ///
+    /// A declared type is not trusted blindly either. SQLite reports one for the result column of a compound
+    /// `SELECT` as well, taken from one of its arms, while the rows come from all of them:
+    /// `SELECT * FROM (SELECT name FROM t UNION ALL SELECT id FROM t) AS __subquery` reports `INTEGER` and
+    /// returns the TEXT cells of `name` first. Inferring `Int64` from that would read those cells through
+    /// `sqlite3_column_int64` and silently turn them into `0`. So whenever a declared type maps to a numeric
+    /// ClickHouse type - the only case with a coercing accessor to guard - the first row is fetched and the
+    /// declared type is used only if the storage class of that row agrees with it; otherwise the column is
+    /// typed from the storage class, exactly like an undeclared one. This only ever widens the inferred type
+    /// (to `Float64`, or to `String`), never narrows it. Later rows are covered by the read path, which is
+    /// fail-closed for every column of a query-backed read.
     const auto wrapped = "SELECT * FROM (" + query + ") AS __subquery";
 
     /// Preparing loads the database schema and needs a shared lock; retry instead of failing while a
@@ -827,18 +860,27 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     if (column_count == 0)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "SQLite query returned no columns: {}", query);
 
-    std::vector<const char *> declared_types(column_count);
-    bool has_undeclared_column = false;
+    std::vector<DataTypePtr> declared_data_types(column_count);
+    bool needs_first_row = false;
     for (int i = 0; i < column_count; ++i)
     {
-        declared_types[i] = sqlite3_column_decltype(compiled_stmt, i);
-        has_undeclared_column |= declared_types[i] == nullptr;
+        if (const char * declared_type = sqlite3_column_decltype(compiled_stmt, i))
+        {
+            declared_data_types[i] = convertSQLiteDataType(declared_type);
+            /// A declared type that maps to `String` is read through the text path, which renders every
+            /// storage class, so there is nothing for the first row to invalidate.
+            needs_first_row |= !isString(declared_data_types[i]);
+        }
+        else
+        {
+            needs_first_row = true;
+        }
     }
 
-    /// Fetch the first row only when a column needs it, so that a query over declared table columns is
-    /// still described without being executed.
+    /// Fetch the first row only when a column needs it, so that a query whose every result column is a
+    /// declared textual table column is still described without being executed.
     bool has_first_row = false;
-    if (has_undeclared_column)
+    if (needs_first_row)
     {
         int status = SQLiteFormatImpl::stepSQLiteStatementRetryOnBusy(compiled_stmt);
         if (status != SQLITE_ROW && status != SQLITE_DONE)
@@ -854,8 +896,8 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
         const char * name = sqlite3_column_name(compiled_stmt, i);
 
         DataTypePtr type;
-        if (declared_types[i])
-            type = convertSQLiteDataType(declared_types[i]);
+        if (declared_data_types[i] && (!has_first_row || declaredTypeAgreesWithStorageClass(*declared_data_types[i], sqlite3_column_type(compiled_stmt, i))))
+            type = declared_data_types[i];
         else if (has_first_row)
             type = typeFromStorageClass(sqlite3_column_type(compiled_stmt, i));
         else

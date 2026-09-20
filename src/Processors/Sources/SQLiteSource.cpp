@@ -35,11 +35,12 @@ SQLiteSource::SQLiteSource(
     SQLitePtr sqlite_db_,
     const String & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
+    const UInt64 max_block_size_,
+    SQLiteStatementReader::DeclaredTypeTrust declared_type_trust_)
     : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , query_str(query_str_)
     , max_block_size(max_block_size_)
-    , statement_reader(sample_block, storageReadFormatSettings(), SQLiteStatementReader::ValueReadMode::Native)
+    , statement_reader(sample_block, storageReadFormatSettings(), SQLiteStatementReader::ValueReadMode::Native, declared_type_trust_)
     , sqlite_db(std::move(sqlite_db_))
 {
 }

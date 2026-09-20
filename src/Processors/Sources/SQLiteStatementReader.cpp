@@ -22,6 +22,8 @@
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
@@ -67,6 +69,43 @@ std::string_view getTextValue(sqlite3_stmt * statement, int idx)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot read text value from SQLite database");
 
     return {data ? data : "", static_cast<size_t>(len)};
+}
+
+/// Whether a SQLite INTEGER cell holds a value that the native accessor of `value_type` reads back
+/// unchanged. The accessors of the narrow integer types truncate the 64-bit cell into the column type.
+bool integerFitsValueType(ExternalResultDescription::ValueType value_type, Int64 value)
+{
+    auto fits = []<typename T>(Int64 v) { return v >= static_cast<Int64>(std::numeric_limits<T>::min())
+                                              && v <= static_cast<Int64>(std::numeric_limits<T>::max()); };
+
+    switch (value_type)
+    {
+        case ExternalResultDescription::ValueType::vtUInt8:
+            return fits.operator()<UInt8>(value);
+        case ExternalResultDescription::ValueType::vtUInt16:
+            return fits.operator()<UInt16>(value);
+        case ExternalResultDescription::ValueType::vtUInt32:
+            return fits.operator()<UInt32>(value);
+        case ExternalResultDescription::ValueType::vtInt8:
+            return fits.operator()<Int8>(value);
+        case ExternalResultDescription::ValueType::vtInt16:
+            return fits.operator()<Int16>(value);
+        case ExternalResultDescription::ValueType::vtInt32:
+            return fits.operator()<Int32>(value);
+        default:
+            /// `Int64` holds every INTEGER cell, and `UInt64` is read through the text path.
+            return true;
+    }
+}
+
+/// Whether the double round-trips through `Float32`, i.e. whether the narrowing cast in the read path
+/// keeps the value. A NaN stays a NaN, and an infinity stays an infinity, so both are exact.
+bool isExactlyRepresentableAsFloat32(double value)
+{
+    if (std::isnan(value))
+        return true;
+
+    return static_cast<double>(static_cast<Float32>(value)) == value;
 }
 
 template <typename ColumnType, typename Value>
@@ -143,8 +182,10 @@ static bool isDescribedByExternalResultDescription(const DataTypePtr & type_not_
 SQLiteStatementReader::SQLiteStatementReader(
     const Block & sample_block_,
     const FormatSettings & format_settings_,
-    ValueReadMode value_read_mode_)
+    ValueReadMode value_read_mode_,
+    DeclaredTypeTrust declared_type_trust_)
     : format_settings(format_settings_)
+    , declared_type_trust(declared_type_trust_)
 {
     if (value_read_mode_ == ValueReadMode::Native)
     {
@@ -317,7 +358,8 @@ void SQLiteStatementReader::resolveUndeclaredColumns(sqlite3_stmt * statement)
     /// `sqlite3_column_decltype` is valid as soon as the statement is prepared and does not change between
     /// rows, so this is settled on the first row and holds for the lifetime of the statement.
     for (size_t i = 0; i < columns_info.size(); ++i)
-        columns_info[i].requires_exact_storage_class = sqlite3_column_decltype(statement, static_cast<int>(i)) == nullptr;
+        columns_info[i].requires_exact_storage_class
+            = declared_type_trust == DeclaredTypeTrust::Untrusted || sqlite3_column_decltype(statement, static_cast<int>(i)) == nullptr;
 
     undeclared_columns_resolved = true;
 }
@@ -326,7 +368,15 @@ void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlit
 {
     const int storage_class = sqlite3_column_type(statement, idx);
 
-    bool matches = false;
+    /// Whether the storage class of the cell is the one the native accessor of this type decodes without
+    /// coercing it into another class.
+    bool class_matches = false;
+    /// Whether the value is also representable in the column type exactly. A matching storage class is not
+    /// enough on its own: the accessors wrap within the class (`sqlite3_column_int` reads the INTEGER cell
+    /// `300` into a `UInt8` as `44`) and round within it (`sqlite3_column_double` reads the REAL cell
+    /// `16777217` into a `Float32` as `16777216`).
+    bool value_is_exact = true;
+
     switch (*info.native_value_type)
     {
         case ValueType::vtUInt8:
@@ -336,30 +386,43 @@ void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlit
         case ValueType::vtInt16:
         case ValueType::vtInt32:
         case ValueType::vtInt64:
-            matches = storage_class == SQLITE_INTEGER;
+        {
+            class_matches = storage_class == SQLITE_INTEGER;
+            if (class_matches)
+                value_is_exact = integerFitsValueType(*info.native_value_type, sqlite3_column_int64(statement, idx));
             break;
+        }
         case ValueType::vtFloat32:
         case ValueType::vtFloat64:
         {
-            /// An INTEGER cell converts to a double exactly only within +-2^53; beyond that
-            /// `sqlite3_column_double` rounds it to the nearest double, so it is not the same value.
+            const bool is_float32 = *info.native_value_type == ValueType::vtFloat32;
             if (storage_class == SQLITE_INTEGER)
             {
+                class_matches = true;
+
+                /// An INTEGER cell converts to a double exactly only within +-2^53; beyond that
+                /// `sqlite3_column_double` rounds it to the nearest double, so it is not the same value.
                 const Int64 value = sqlite3_column_int64(statement, idx);
-                matches = value >= -(1LL << 53) && value <= (1LL << 53);
+                value_is_exact = value >= -(1LL << 53) && value <= (1LL << 53);
+                if (value_is_exact && is_float32)
+                    value_is_exact = isExactlyRepresentableAsFloat32(static_cast<double>(value));
             }
-            else
-                matches = storage_class == SQLITE_FLOAT;
+            else if (storage_class == SQLITE_FLOAT)
+            {
+                class_matches = true;
+                if (is_float32)
+                    value_is_exact = isExactlyRepresentableAsFloat32(sqlite3_column_double(statement, idx));
+            }
             break;
         }
         default:
             /// Every other value type is decoded from the text rendering of the cell, whatever its storage
             /// class, so there is no coercing accessor to guard.
-            matches = true;
+            class_matches = true;
             break;
     }
 
-    if (!matches)
+    if (!class_matches)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Cannot read a value of the SQLite storage class {} into column {} of type {}: "
@@ -367,6 +430,18 @@ void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlit
             "Select the column as a string (for example, by declaring the column as `String`, or by casting it to text in the SQLite query) "
             "to read values of mixed storage classes",
             storageClassName(storage_class),
+            info.name,
+            info.data_type->getName());
+
+    if (!value_is_exact)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot read the SQLite value {} into column {} of type {}: "
+            "the result column has no declared SQLite type, so its values are read without conversion and must be exactly "
+            "representable in that type in every row. "
+            "Declare the column with a type that holds the value (for example, `Int64` or `Float64`), or as `String` "
+            "to read the values as text",
+            getTextValue(statement, idx),
             info.name,
             info.data_type->getName());
 }
