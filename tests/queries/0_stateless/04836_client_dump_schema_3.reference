@@ -77,12 +77,16 @@ hidden carrier warned: 1
 external source warning retained: 1
 Remote proxy table DDL emitted: 0
 RemoteSecure proxy table DDL emitted: 0
-OK: directory dump orders source, proxies, and readers
+OK: directory dump orders proxies before readers
 OK: external database-only dump replayed
 replayed Remote table resolves: 1
 replayed RemoteSecure table resolves: 1
 replayed Remote reader exists: 1
 replayed RemoteSecure reader exists: 1
+--- directory dump orders a Remote proxy before an in-dump source table reader ---
+OK: proxy ordered before source database
+OK: replayed cycle directory dump in order
+replayed view resolves: 1
 --- a simple dump does not read protected cluster or macro metadata ---
 OK: system.clusters is denied
 OK: system.macros is denied

@@ -2172,9 +2172,13 @@ std::optional<std::vector<String>> orderDatabasesByDependencies(const std::vecto
         depends_on[db]; /// every database gets an entry, even with no dependencies
 
     for (const auto & table : tables)
+    {
+        if (!table.emit)
+            continue;
         for (const auto & dependency : table.dependencies)
             if (dependency.first != table.database && db_set.contains(dependency.first))
                 depends_on[table.database].insert(dependency.first);
+    }
 
     std::map<String, size_t> remaining_dependencies;
     std::map<String, std::vector<String>> dependents;
@@ -2580,6 +2584,8 @@ void dumpDatabaseSchema(
             "`--dump-schema-dir` instead, which orders individual tables directly");
     bool has_cross_database_dependency = std::any_of(tables.begin(), tables.end(), [](const TableInfo & table)
     {
+        if (!table.emit)
+            return false;
         return std::any_of(table.dependencies.begin(), table.dependencies.end(), [&](const auto & dependency)
         {
             return dependency.first != table.database;

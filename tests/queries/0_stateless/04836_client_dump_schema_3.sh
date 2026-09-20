@@ -540,15 +540,13 @@ fi
 rm -rf "$REMOTE_DUMP_DIR"
 if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="$REMOTE_DATABASES" \
     --dump-schema-dir="$REMOTE_DUMP_DIR" > "$REMOTE_DIR_OUTPUT" 2>"$ERR_FILE"; then
-    SOURCE_LINE=$(grep -n "Dumped database ${REMOTE_SOURCE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
     REMOTE_LINE=$(grep -n "Dumped database ${REMOTE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
     SECURE_LINE=$(grep -n "Dumped database ${REMOTE_SECURE_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
     READER_LINE=$(grep -n "Dumped database ${REMOTE_READER_DB} schema" "$REMOTE_DIR_OUTPUT" | cut -d: -f1)
-    if [ "$SOURCE_LINE" -lt "$REMOTE_LINE" ] && [ "$SOURCE_LINE" -lt "$SECURE_LINE" ] \
-        && [ "$REMOTE_LINE" -lt "$READER_LINE" ] && [ "$SECURE_LINE" -lt "$READER_LINE" ]; then
-        echo 'OK: directory dump orders source, proxies, and readers'
+    if [ "$REMOTE_LINE" -lt "$READER_LINE" ] && [ "$SECURE_LINE" -lt "$READER_LINE" ]; then
+        echo 'OK: directory dump orders proxies before readers'
     else
-        echo "FAIL: directory order source=$SOURCE_LINE remote=$REMOTE_LINE secure=$SECURE_LINE reader=$READER_LINE"
+        echo "FAIL: directory order remote=$REMOTE_LINE secure=$SECURE_LINE reader=$READER_LINE"
     fi
 else
     echo "FAIL: remote database directory dump rejected: $(cat "$ERR_FILE")"
@@ -577,6 +575,48 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 "
 rm -rf "$REMOTE_DUMP_DIR"
 rm -f "$REMOTE_DUMP_FILE" "$REMOTE_DIR_OUTPUT" "$ERR_FILE"
+
+echo '--- directory dump orders a Remote proxy before an in-dump source table reader ---'
+CYCLE_SRC_DB="${DB}_cycle_src"
+CYCLE_PROXY_DB="${DB}_cycle_proxy"
+CYCLE_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_cycle_dir"
+CYCLE_DIR_OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_cycle_dir.out"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CYCLE_PROXY_DB};
+    DROP DATABASE IF EXISTS ${CYCLE_SRC_DB};
+    CREATE DATABASE ${CYCLE_SRC_DB};
+    CREATE TABLE ${CYCLE_SRC_DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE DATABASE ${CYCLE_PROXY_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${CYCLE_SRC_DB}');
+    CREATE VIEW ${CYCLE_SRC_DB}.v AS SELECT * FROM ${CYCLE_PROXY_DB}.t;
+"
+if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="${CYCLE_PROXY_DB},${CYCLE_SRC_DB}" \
+    --dump-schema-dir="$CYCLE_DIR" > "$CYCLE_DIR_OUT" 2>"$ERR_FILE"; then
+    PROXY_LINE=$(grep -n "Dumped database ${CYCLE_PROXY_DB} schema" "$CYCLE_DIR_OUT" | cut -d: -f1)
+    SRC_LINE=$(grep -n "Dumped database ${CYCLE_SRC_DB} schema" "$CYCLE_DIR_OUT" | cut -d: -f1)
+    if [ "$PROXY_LINE" -lt "$SRC_LINE" ]; then
+        echo 'OK: proxy ordered before source database'
+    else
+        echo "FAIL: expected proxy before source: proxy=$PROXY_LINE src=$SRC_LINE"
+    fi
+else
+    echo "FAIL: cycle directory dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE ${CYCLE_PROXY_DB};
+    DROP DATABASE ${CYCLE_SRC_DB} SYNC;
+"
+if $CLICKHOUSE_CLIENT --multiquery --queries-file "$CYCLE_DIR/${CYCLE_PROXY_DB}.sql" > /dev/null 2>"$ERR_FILE" \
+    && $CLICKHOUSE_CLIENT --multiquery --queries-file "$CYCLE_DIR/${CYCLE_SRC_DB}.sql" > /dev/null 2>"$ERR_FILE"; then
+    echo 'OK: replayed cycle directory dump in order'
+    echo "replayed view resolves: $($CLICKHOUSE_CLIENT -q "EXISTS VIEW ${CYCLE_SRC_DB}.v")"
+else
+    echo "FAIL: replay failed: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CYCLE_PROXY_DB};
+    DROP DATABASE IF EXISTS ${CYCLE_SRC_DB} SYNC;
+"
+rm -rf "$CYCLE_DIR" "$CYCLE_DIR_OUT" "$ERR_FILE"
 
 echo '--- a simple dump does not read protected cluster or macro metadata ---'
 LEAN_DB="${DB}_lean_rbac"
