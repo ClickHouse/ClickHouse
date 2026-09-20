@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versões compatíveis do Postgres
@@ -98,17 +97,7 @@ Conecte-se à instância de gravação do Aurora PostgreSQL como usuário admini
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-A publication `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
-
-<div id="iam-authentication">
-  ### Usando autenticação IAM (opcional)
-</div>
-
-<IAMAuthentication engine="postgres" service="aurora">
-  <Note>
-    A autenticação IAM para replicação exige que o parâmetro `rds.iam_auth_for_replication` esteja definido como `1`.
-  </Note>
-</IAMAuthentication>
+A publication `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e, posteriormente, será usada para a ingestão do fluxo de replicação.
 
 <div id="configure-network-access">
   ## Configurar acesso à rede
@@ -118,7 +107,7 @@ A publication `clickpipes` define o conjunto de tabelas cujos eventos de altera�
   ### Controle de acesso baseado em IP
 </div>
 
-Se você quiser restringir o tráfego para o cluster Aurora, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às `Inbound rules` do Security Group do Aurora.
+Se você quiser restringir o tráfego para o cluster Aurora, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/home#list-of-static-ips) às `Inbound rules` do Security Group do Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Onde encontrar o Security Group no Aurora PostgreSQL?" size="lg" border />
 

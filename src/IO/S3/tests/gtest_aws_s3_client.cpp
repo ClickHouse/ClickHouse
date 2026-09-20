@@ -130,6 +130,7 @@ using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, cons
 
 static void testServerSideEncryption(
     RequestFn do_request,
+    bool disable_checksum,
     String server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
     String expected_headers,
@@ -169,6 +170,7 @@ static void testServerSideEncryption(
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = is_s3express_bucket,
     };
@@ -201,6 +203,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -225,6 +228,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -232,6 +236,30 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "amz-sdk-request;"
         "content-length;"
         "content-md5;"
+        "content-type;"
+        "host;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
+        "x-amz-server-side-encryption-customer-algorithm: AES256\n"
+        "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
+        "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+}
+
+TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWriteDisableChecksum)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
         "content-type;"
         "host;"
         "x-amz-content-sha256;"
@@ -253,6 +281,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
     // KMS headers shouldn't be set on a read request
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -274,6 +303,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
     sse_kms_config.bucket_key_enabled = true;
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -301,6 +331,7 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ true,
         "",
         {},
         "authorization: ... SignedHeaders="
@@ -344,6 +375,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
     DB::HTTPHeaderEntries headers;
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
     };
@@ -497,6 +529,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
+            .disable_checksum = false,
         };
 
         std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -639,6 +672,7 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };
@@ -735,20 +769,6 @@ TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
 }
 
-TEST(IOTestAwsS3Client, HttpResponseCodeToString)
-{
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::NOT_FOUND), "404");
-
-    /// The AWS SDK uses this value when there was no response at all: it must not be printed as a number,
-    /// and especially not as 18446744073709551615, which is what a cast to an unsigned type produces.
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-
-    /// The same rendering must be used by `{}` in log and exception messages.
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-}
-
 TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
 {
     {
@@ -836,11 +856,10 @@ public:
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new FixedETagHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, makeMockServerParams()))
+              *server_socket, new Poco::Net::HTTPServerParams()))
     {
         server->start();
     }
-    ~FixedETagServer() { server->stop(); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
@@ -906,11 +925,10 @@ public:
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, makeMockServerParams()))
+              *server_socket, new Poco::Net::HTTPServerParams()))
     {
         server->start();
     }
-    ~IfMatchAwareServer() { server->stop(); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
@@ -936,6 +954,7 @@ std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };
@@ -1081,100 +1100,6 @@ TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
     String content;
     DB::readStringUntilEOF(content, read_buffer);
     EXPECT_EQ(content, body);
-}
-
-/// The response wait of a credential round trip is bounded by the credential cap whatever the
-/// data-transfer timeouts are: a looser component is lowered to the cap, a non-positive one
-/// (unbounded downstream) takes the cap, and one already tighter than the cap is kept rather than
-/// raised. The connect timeout is passed through untouched.
-TEST(IOTestAwsS3Client, CredentialAcquisitionTimeoutsAreCapped)
-{
-    const Poco::Timespan request_cap(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
-
-    struct Case
-    {
-        const char * name;
-        Poco::Timespan input;
-        Poco::Timespan expected;
-    };
-
-    const Case request_cases[] = {
-        {"one hour is lowered to the cap", Poco::Timespan(60 * 60, 0), request_cap},
-        {"no limit takes the cap", Poco::Timespan(0), request_cap},
-        {"tighter than the cap is kept", Poco::Timespan(2, 0), Poco::Timespan(2, 0)},
-        {"exactly the cap is kept", request_cap, request_cap},
-    };
-
-    for (const auto & c : request_cases)
-    {
-        auto timeouts = DB::ConnectionTimeouts().withSendTimeout(c.input).withReceiveTimeout(c.input);
-        auto capped = DB::S3::getCredentialAcquisitionTimeouts(timeouts);
-        EXPECT_EQ(capped.receive_timeout, c.expected) << c.name;
-        EXPECT_EQ(capped.send_timeout, c.expected) << c.name;
-    }
-
-    const Case connect_cases[] = {
-        {"the backup's ten seconds is kept", Poco::Timespan(10, 0), Poco::Timespan(10, 0)},
-        {"a custom metadata service budget is kept", Poco::Timespan(30, 0), Poco::Timespan(30, 0)},
-        {"no limit is kept", Poco::Timespan(0), Poco::Timespan(0)},
-    };
-
-    for (const auto & c : connect_cases)
-    {
-        auto timeouts = DB::ConnectionTimeouts().withConnectionTimeout(c.input);
-        auto capped = DB::S3::getCredentialAcquisitionTimeouts(timeouts);
-        EXPECT_EQ(capped.connection_timeout, c.expected) << c.name;
-        EXPECT_EQ(capped.secure_connection_timeout, c.expected) << c.name;
-    }
-}
-
-namespace
-{
-
-/// `timeouts` is protected, so reading the data-plane value the client actually serves requests with
-/// needs a subclass rather than a friend declaration.
-class GCPOAuthClientWithVisibleTimeouts : public DB::S3::PocoHTTPClientGCPOAuth
-{
-public:
-    using DB::S3::PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth;
-
-    const DB::ConnectionTimeouts & getDataPlaneTimeouts() const { return timeouts; }
-};
-
-}
-
-/// Capping the credential round trip must not touch the data plane: a backup keeps the one-hour
-/// per-request timeout it sets for large multipart transfers.
-TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
-{
-    DB::RemoteHostFilter remote_host_filter;
-    auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "eu-west-1",
-        remote_host_filter,
-        /* s3_max_redirects = */ 10,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "http");
-
-    /// The values BackupIO_S3 sets for a backup.
-    client_configuration.connectTimeoutMs = 10 * 1000;
-    client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-
-    GCPOAuthClientWithVisibleTimeouts client(client_configuration);
-
-    const auto & data_plane = client.getDataPlaneTimeouts();
-    EXPECT_EQ(data_plane.receive_timeout, Poco::Timespan(60 * 60, 0));
-    EXPECT_EQ(data_plane.send_timeout, Poco::Timespan(60 * 60, 0));
-    EXPECT_EQ(data_plane.connection_timeout, Poco::Timespan(10, 0));
-
-    auto credential = DB::S3::getCredentialAcquisitionTimeouts(data_plane);
-    EXPECT_EQ(credential.receive_timeout, Poco::Timespan(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000));
-    EXPECT_EQ(credential.connection_timeout, Poco::Timespan(10, 0));
 }
 
 #endif

@@ -44,7 +44,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يفترض ABS ClickPipe أن الملفات تُضاف إلى الحاوية وفق الترتيب المعجمي، ويعتمد على هذا الترتيب الضمني لاستيعاب الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم استيعابه. على سبيل المثال، ستُستوعَب الملفات المسماة `file1` و`file2` و`file3` بالتسلسل، ولكن إذا أُضيف ملف جديد باسم `file 0` إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم استيعابه.
 
-في هذا الوضع، يُجري ABS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يتحقق من وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). لبدء الاستيعاب المستمر بعد ملف محدد، هيّئ **البدء بعد**. ستتخطى ClickPipes الملفات التي تكون أقل من القيمة المُهيأة أو مساوية لها معجميًا، وتتابع استيعاب الملفات الأحدث من تلك النقطة.
+في هذا الوضع، يُجري ABS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يتحقق من وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **لا يمكن** بدء الاستيعاب من ملف محدد أو من نقطة زمنية معينة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد.
 
 <div id="file-pattern-matching">
   ### مطابقة أنماط الملفات
@@ -149,10 +149,10 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 تستخدم ABS ClickPipes مسارين منفصلين للشبكة لاكتشاف البيانات الوصفية واستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
 
 <Warning>
-  إن **التحكم بالوصول المستند إلى عناوين IP لا يعمل** إذا كانت حاوية Azure Blob Storage الخاصة بك في منطقة Azure نفسها التي توجد فيها خدمة ClickHouse Cloud. وعندما تكون الخدمتان في المنطقة نفسها، تُوجَّه حركة المرور عبر شبكة Azure الداخلية بدلًا من الإنترنت العام.
+  إن **التحكم في الوصول المستند إلى عناوين IP لا يعمل** إذا كانت حاوية Azure Blob Storage الخاصة بك في منطقة Azure نفسها التي توجد فيها خدمة ClickHouse Cloud. وعندما تكون الخدمتان في المنطقة نفسها، تُوجَّه حركة المرور عبر شبكة Azure الداخلية بدلًا من الإنترنت العام.
 </Warning>
 
-* بالنسبة إلى **التحكم بالوصول المستند إلى عناوين IP**، يجب أن تسمح [قواعد شبكة IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) في جدار حماية Azure Storage بعناوين IP الثابتة الخاصة بمنطقة خدمة ClickPipes والمدرجة [هنا](/ar/integrations/clickpipes/networking/static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. وللحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud، افتح الطرفية وشغّل:
+* بالنسبة إلى **التحكم في الوصول المستند إلى عناوين IP**، يجب أن تسمح [قواعد شبكة IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) في جدار حماية Azure Storage بعناوين IP الثابتة الخاصة بمنطقة خدمة ClickPipes والمدرجة [هنا](/ar/integrations/clickpipes/home#list-of-static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. وللحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud، افتح الطرفية وشغّل:
 
   ```bash
   # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
@@ -165,19 +165,18 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة الاستخدام لديك تتطلب ضبطًا أدق، فيمكنك تعديل الإعدادات التالية:
 
-| Setting                              | Default value | Description                                                                                                                                                  |
-| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Max insert bytes`                   | 10GB          | عدد البايتات التي ستتم معالجتها في دفعة إدراج واحدة.                                                                                                         |
-| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات التي ستتم معالجتها في دفعة إدراج واحدة.                                                                                             |
-| `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings/max-threads#max_threads) لمعالجة الملفات.                                    |
-| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ إدراج المتزامنة](/ar/reference/settings/session-settings/max-insert#max_insert_threads) لمعالجة الملفات.                          |
-| `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في block](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.                 |
-| `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings/max-download#max_download_threads).                                    |
-| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفاصل استطلاع تخزين الكائنات قبل إدراج البيانات في مجموعة ClickHouse.                                                                       |
-| `Start after`                        | None          | للاستيعاب المستمر المرتب، يتخطى الملفات التي يكون اسمها أو مسارها أقل من اسم الملف أو المسار المُعدّ أو مساويًا له وفق الترتيب المعجمي.                      |
-| `Parallel distributed insert select` | 2           | [إعداد parallel distributed إدراج select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                 |
-| `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
-| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                           |
+| Setting                              | Default value | Description                                                                                                                                         |
+| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | عدد البايتات التي ستتم معالجتها في دفعة insert واحدة.                                                                                               |
+| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات التي ستتم معالجتها في دفعة insert واحدة.                                                                                   |
+| `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                                       |
+| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ insert المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
+| `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في block](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.                   |
+| `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                                        |
+| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في مجموعة ClickHouse.                                                                            |
+| `Parallel distributed insert select` | 2             | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                                |
+| `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                  |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة في ClickPipes" size="lg" border />
 

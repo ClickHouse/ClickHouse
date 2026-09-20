@@ -1,0 +1,193 @@
+---
+noindex: true
+title: "الترحيل إلى Shared Catalog"
+description: "يُعد Shared Catalog النهج الجديد لإدارة البيانات الوصفية في مثيلات ClickHouse Private."
+---
+
+يُعد Shared Catalog النهج الجديد لإدارة البيانات الوصفية في مثيلات ClickHouse Private. فبدلاً من قواعد البيانات التي تستخدم المحرك [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated)، والذي يعتمد على DDL queue في ClickHouse Keeper لضمان تطبيق عبارات DDL على جميع النُسخ المتماثلة، يقوم محرك قاعدة البيانات [Shared](https://clickhouse.com/docs/engines/database-engines/shared) بتخزين جميع البيانات الوصفية في Keeper نفسه، مما يلغي الحاجة إلى مزامنة عبارات DDL بين النُسخ المتماثلة.
+
+يوفر Shared Catalog عدة مزايا:
+
+* حالة متسقة عبر جميع النُسخ المتماثلة
+* عمل عُقد compute دون حالة (مما يتيح عُقد Server عديمة الحالة)
+* `CREATE TABLE ... AS SELECT` ذرّي
+* دعم `UNDROP`
+* `RENAME`/نقل `TABLE` بين قواعد البيانات
+* تهيئة سريعة وموثوقة للنُسخ المتماثلة (تُقلّل أوقات الاستيقاظ والبدء والتجهيز)
+
+ومع ذلك، فهو يتطلب ترحيلاً إذا لم يكن مثيلك قد أُعِد باستخدام Shared Catalog عند أول عملية نشر. نوصي باختبار الترحيل أولاً في بيئة اختبار قبل ترحيل مثيلات production.
+
+<div id="migration-requirements">
+  ## متطلبات الترحيل
+</div>
+
+قبل بدء الترحيل، تحقّق من استيفاء المتطلبات الأساسية التالية:
+
+<Steps>
+  <Step>
+    ### 1. وجود نسختين متماثلتين على الأقل من الخادم
+
+    ينفّذ الـ Operator ترقية متدرجة لترحيل قواعد البيانات إلى محرك قاعدة البيانات Shared الجديد. اضبط قيم Helm ‏`server.replicas` على 2 أو أكثر.
+  </Step>
+
+  <Step>
+    ### 2. استخدام جميع قواعد البيانات لمحرك Replicated
+
+    يجب أن تستخدم جميع قواعد البيانات (باستثناء `system`) محرك قاعدة البيانات Replicated. تحقّق من ذلك باستخدام:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    يجب ألا يُرجع الاستعلام أي صفوف.
+  </Step>
+
+  <Step>
+    ### 3. استخدام جميع الجداول لمحركات جداول غير مكررة
+
+    يجب ألا تستخدم أي جداول (باستثناء الجداول الموجودة في `system`) محركات جداول مكررة أو قديمة. تحقّق من ذلك باستخدام:
+
+    ```sql
+    SELECT
+        name,
+        engine,
+        database
+    FROM system.tables
+    WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+      AND (database != 'system')
+    ```
+
+    يجب ألا يُرجع الاستعلام أي صفوف.
+  </Step>
+
+  <Step>
+    ### 4. عدم وجود جداول في حالة detached
+
+    ```sql
+    SELECT * FROM system.detached_tables
+    ```
+
+    يجب ألا يُرجع الاستعلام أي صفوف.
+
+    بعد استيفاء جميع المتطلبات، يمكن بدء الترحيل. وإذا لم يُستوفَ أيٌّ من هذه المتطلبات، فتواصل مع دعم ClickHouse للحصول على المساعدة.
+  </Step>
+</Steps>
+
+<div id="performing-the-migration">
+  ## تنفيذ عملية الترحيل
+</div>
+
+<Warning>
+  بالنسبة إلى مثيلات Hydra، رحّل المثيل الأصل أولاً قبل ترحيل أي مثيلات فرعية. بعد ترحيل المثيل الأصل، كرّر الخطوات التالية لكل مثيل فرعي.
+</Warning>
+
+<Steps>
+  <Step>
+    ### 1. تمكين إعداد Shared Catalog
+
+    اضبط `featureFlags.enableSharedCatalog` على `true` في قيم Helm الخاصة بك. يؤدي ذلك إلى تمكين هذا الإعداد، لكنه لا يبدأ ترحيل قواعد البيانات. سيؤدي نشر ClickHouse cluster مع تعيين هذا الخيار إلى `true` من دون ترحيل قواعد البيانات `Replicated` الحالية إلى فشل ClickHouse cluster في بدء التشغيل.
+  </Step>
+
+  <Step>
+    ### 2. إضافة مؤشرات الترحيل
+
+    اضبط `featureFlags.migrateToSharedCatalog` على `true` في قيم Helm الخاصة بك. يؤدي ذلك إلى ما يلي:
+
+    * إضافة الإعداد `shared_database_catalog.migration_from_database_replicated` إلى ClickHouse، لإعلامه بوجود قواعد بيانات `Replicated` حالية أثناء التشغيل في وضع Shared Catalog
+    * إضافة annotation ‏`clickhouse.com/start-shared-catalog-migration: "true"` إلى مورد ClickHouseCluster في Kubernetes، لإخطار الـ Operator بترحيل هذا cluster
+
+    بعد النشر، سيبدأ الـ Operator ترقية متدرجة لعُقد الخادم. وسيؤدي ذلك أيضاً إلى تغيير نوع جميع قواعد البيانات إلى `Shared`.
+  </Step>
+
+  <Step>
+    ### 3. انتظر حتى تصبح الحالة Ready
+
+    ```bash
+    kubectl get ClickHouseCluster <instance-name>
+    ```
+  </Step>
+
+  <Step>
+    ### 4. إزالة مؤشرات الترحيل
+
+    بمجرد أن تصبح الحالة Ready، اضبط `featureFlags.migrateToSharedCatalog` على `false` في قيم Helm الخاصة بك. وبما أن جميع قواعد البيانات قد رُحِّلت إلى النوع `Shared` بدلاً من `Replicated`، فلن تعود إعدادات الترحيل ذات صلة.
+  </Step>
+
+  <Step>
+    ### 5. التحقق من ترحيل جميع قواعد البيانات
+
+    تأكّد من أن جميع قواعد البيانات غير التابعة للنظام تستخدم محرك Shared:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Shared')
+    ```
+
+    يجب ألا يُرجع الاستعلام أي صفوف. عند هذه النقطة، يكون قد تم ترحيل مثيلك إلى Shared Catalog.
+  </Step>
+</Steps>
+
+<div id="rollback">
+  ## التراجع
+</div>
+
+إذا واجهت أي مشكلات مع Shared Catalog، يمكنك الرجوع إلى الحالة السابقة:
+
+<Steps>
+  <Step>
+    ### 1. إزالة مؤشرات الترحيل
+
+    اضبط `featureFlags.migrateToSharedCatalog` على `false` في قيم Helm الخاصة بك.
+  </Step>
+
+  <Step>
+    ### 2. إزالة إعدادات Shared Catalog
+
+    اضبط `featureFlags.enableSharedCatalog` على `false` في قيم Helm الخاصة بك. سيؤدي ذلك إلى جعل Operator يعيد التغييرات.
+  </Step>
+
+  <Step>
+    ### 3. إزالة Catalog من Keeper
+
+    أنشئ `port-forward` للاتصال بـ Keeper، ثم ابدأ جلسة keeper-client (باستخدام `clickhouse keeper-client`).
+
+    بعد بدء الجلسة، نفّذ الأوامر التالية:
+
+    ```text
+    ls '/clickhouse/catalog'
+    # المخرجات: migration_from_database_replicated_completed names references replicas uuids
+
+    rmr '/clickhouse/catalog'
+    # أنت على وشك حذف المسار /clickhouse/catalog بشكل تكراري. هل تريد المتابعة؟
+    # [y/n] y
+    ```
+
+    سيؤدي ذلك إلى إزالة جميع حالات Shared Catalog من Keeper.
+  </Step>
+
+  <Step>
+    ### 4. التحقق من التراجع
+
+    تأكّد من أن جميع قواعد البيانات غير التابعة لـ system تستخدم المحرك Replicated مرة أخرى:
+
+    ```sql
+    SELECT DISTINCT
+        name,
+        engine
+    FROM clusterAllReplicas('default', system.databases)
+    WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+      AND (engine != 'Replicated')
+    ```
+
+    يجب ألا يُرجع الاستعلام أي صفوف.
+  </Step>
+</Steps>

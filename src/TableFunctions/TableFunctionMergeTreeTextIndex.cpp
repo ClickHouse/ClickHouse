@@ -35,7 +35,6 @@ public:
     /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
     /// A persisted definition would also resolve the source table under the global context or the engine credentials.
     bool canBeUsedToCreateTable() const override { return false; }
-    bool dependsOnCurrentUserGrants() const override { return true; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -187,7 +186,7 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | The table name to read text index from.    |
 | `index_name` | The text index to read from.               |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with tokens and their posting list metadata.
 

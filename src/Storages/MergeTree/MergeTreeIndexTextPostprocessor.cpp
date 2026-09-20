@@ -31,9 +31,6 @@ constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
 /// Lambda argument used when tokenizing each element of an Array column in the row-level fallback.
 constexpr char postprocessor_element_arg[] = "__text_index_element";
 
-/// Bounds the per-granule token map state a filter can create; larger sets use the general vectorized path.
-constexpr size_t max_filter_set_size = 8192;
-
 bool isEmptyStringLiteral(const ASTPtr & ast)
 {
     const auto * literal = ast->as<ASTLiteral>();
@@ -133,11 +130,8 @@ std::optional<MergeTreeIndexTextInlineFilter> tryExtractInlineFilter(const ASTPt
         return {};
 
     MergeTreeIndexTextInlineFilter filter;
+    /// `NOT IN`: invert so `shouldDrop` fires for tokens outside the set.
     filter.drop_on_match = is_not_in ? !drop_on_condition : drop_on_condition;
-
-    if (literals.size() > max_filter_set_size)
-        return {};
-
     filter.tokens.reserve(literals.size());
     for (auto & literal : literals)
         filter.tokens.insert(std::move(literal));
@@ -226,7 +220,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
-    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast) const
+    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const
 {
     chassert(actions);
 
@@ -242,7 +236,7 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     /// tokens always yields String tokens (normalizing FixedString elements to String to match the build
     /// path and the postprocessor validation) and drops empty tokens, so an empty element never reaches the
     /// postprocessor and cannot fabricate a token the index never stored.
-    ASTPtr tokens_ast = source_ast ? source_ast->clone() : ASTPtr(make_intrusive<ASTIdentifier>(col_name));
+    ASTPtr tokens_ast = make_intrusive<ASTIdentifier>(col_name);
     if (isArray(col_type))
     {
         tokens_ast = makeASTFunction("arrayFlatten",

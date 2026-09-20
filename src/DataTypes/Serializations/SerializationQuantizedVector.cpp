@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
-#include <IO/ReadBuffer.h>
 #include <Common/ProductQuantizer.h>
 #include <Common/VectorQuantizer.h>
 #include <Common/Exception.h>
@@ -111,17 +110,9 @@ public:
         state = std::make_shared<DeserializedStateProductQuantization>();
     }
 
-    /// The codebook is a single per-part value broadcast to the whole range. Wrap the base column as an empty
-    /// ColumnConst; deserialize sets its value and grows its size, so the (large) codebook is never materialized
-    /// per row.
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override
-    {
-        column->insertDefault(); /// placeholder single value; the real one is set during deserialization
-        return ColumnConst::create(std::move(column), 0);
-    }
-
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t /*rows_offset*/,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -136,8 +127,7 @@ public:
             state_pq = new_state.get();
             state = std::move(new_state);
         }
-
-        auto & const_column = assert_cast<ColumnConst &>(column);
+        const size_t prev_size = column ? column->size() : 0;
 
         /// Read the part's single codebook value exactly once (the stream holds one value for the whole part); every
         /// granule reuses it.
@@ -155,17 +145,14 @@ public:
                 return;
 
             auto value = value_type->createColumn();
-            nested_serialization->deserializeBinaryBulk(*value, *stream, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+            nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
             if (value->size() != 1)
                 throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                     "Expected exactly one per-part PQ codebook value but read {}", value->size());
             state_pq->codebook = std::move(value);
         }
 
-        /// Set the broadcast value (idempotent across granules and freshly-created result columns) and extend the
-        /// range by `limit` rows (O(1) for ColumnConst).
-        const_column.setValue(state_pq->codebook);
-        const_column.insertManyFrom(*state_pq->codebook, 0, limit);
+        column = ColumnConst::create(state_pq->codebook, prev_size + limit);
     }
 
 private:
@@ -193,11 +180,6 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
             SerializationProductQuantizationCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             product_quantization_subcolumn_name, ISerialization::Substream::ProductQuantizationCodebook);
     }
-}
-
-String SerializationQuantizedVector::getCustomSerializationIdentity() const
-{
-    return fmt::format("QuantizedVector({},{},{},{})", params.method, params.dimensions, params.bits, params.m);
 }
 
 void SerializationQuantizedVector::enumerateStreams(
@@ -289,53 +271,6 @@ void SerializationQuantizedVector::serializeBinaryBulkWithMultipleStreams(
     auto codes_column = encodeCodes(column, offset, count, codebook);
     SerializeBinaryBulkStatePtr codes_state;
     codes_serialization->serializeBinaryBulkWithMultipleStreams(*codes_column, 0, codes_column->size(), settings, codes_state);
-}
-
-void SerializationQuantizedVector::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
-{
-    /// Only a Compact part interleaves the codes with this granule's array bytes, so only there can the array streams
-    /// be left mid-granule. Wide gives each substream its own file, and Native writes no codes at all.
-    if (settings.data_part_type != MergeTreeDataPartType::Compact)
-    {
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
-        return;
-    }
-
-    /// A Compact reader may skip the per-granule seek and inherit the stream position, which the unread codes make
-    /// wrong. Re-assert it absolutely from this granule's mark; a no-op when already positioned.
-    if (settings.seek_stream_to_current_mark_callback)
-    {
-        settings.path.push_back(Substream::ArraySizes);
-        settings.seek_stream_to_current_mark_callback(settings.path);
-        settings.path.pop_back();
-
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
-        return;
-    }
-
-    /// No marks to seek to, so consume this granule's codes instead. Only valid if the nested read actually advanced
-    /// the stream: served from the substreams cache it does not, and consuming then would itself desync it.
-    settings.path.push_back(Substream::ArraySizes);
-    const ReadBuffer * array_stream = settings.getter(settings.path);
-    settings.path.pop_back();
-    const size_t bytes_before = array_stream ? array_stream->count() : 0;
-
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
-
-    if (!array_stream || array_stream->count() == bytes_before)
-        return;
-
-    /// Consume this granule's codes through the codes serialization rather than by byte arithmetic;
-    /// a no-op if the getter has no codes stream.
-    auto codes = codes_type->createColumn();
-    DeserializeBinaryBulkStatePtr codes_state;
-    codes_serialization->deserializeBinaryBulkWithMultipleStreams(
-        *codes, limit, settings, codes_state, /*cache=*/nullptr);
 }
 
 void SerializationQuantizedVector::serializeBinaryBulkStateSuffix(

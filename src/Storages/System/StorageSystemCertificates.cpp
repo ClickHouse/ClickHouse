@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Common/re2.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -13,11 +12,9 @@
 #include <base/scope_guard.h>
 
 #if USE_SSL
-    #include <Poco/Net/EmbeddedCertificates.h>
     #include <Poco/Net/SSLManager.h>
     #include <Poco/Net/SSLException.h>
     #include <Common/Crypto/X509Certificate.h>
-    #include <Server/CertificateReloader.h>
 #endif
 
 #include <boost/algorithm/string/classification.hpp>
@@ -47,7 +44,7 @@ ColumnsDescription StorageSystemCertificates::getColumnsDescription()
         {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The end of the time window when this certificate is valid."},
         {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Subject - identifies the owner of the public key."},
         {"pkey_algo",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Public Key Algorithm defines the algorithm the public key can be used with."},
-        {"path",            std::make_shared<DataTypeString>(), "Path to the file or directory containing this certificate, or `(embedded)` for the certificates embedded into the binary."},
+        {"path",            std::make_shared<DataTypeString>(), "Path to the file or directory containing this certificate."},
         {"default",         std::make_shared<DataTypeNumber<UInt8>>(), "Certificate is in the default certificate location."},
         {"protocol",        std::make_shared<DataTypeString>(), "Protocol name if certificate is from per-protocol TLS config, otherwise empty."}
     };
@@ -92,22 +89,8 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
         if (!dir_entry.is_regular_file() || !RE2::FullMatch(dir_entry.path().filename().string(), cert_name))
             continue;
 
-        /// A hash-named entry that cannot be parsed - a stale symlink, a zero-byte placeholder -
-        /// must not make the whole table unreadable: this table exists to show what the trust store
-        /// contains, and a single unreadable file would otherwise hide all of it.
-        try
-        {
-            X509Certificate cert(dir_entry.path());
-            populateTable(cert, res_columns, dir_entry.path(), def, protocol);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                getLogger("StorageSystemCertificates"),
-                "Cannot read the certificate {}: {}",
-                dir_entry.path().string(),
-                getCurrentExceptionMessage(false));
-        }
+        X509Certificate cert(dir_entry.path());
+        populateTable(cert, res_columns, dir_entry.path(), def, protocol);
     }
 }
 
@@ -155,29 +138,14 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
                     populateTable(cert, res_columns, ca_paths.caDefaultFile, true, protocol_name);
             }
         }
-
-        if (ca_paths.caEmbedded)
-        {
-            /// No CA certificates were found on the filesystem, and the ones embedded into the binary are used instead.
-            auto certs = X509Certificate::fromBuffer(std::string(Poco::Net::embeddedCACertificates()));
-            for (const auto & cert : certs)
-                populateTable(cert, res_columns, "(embedded)", true, protocol_name);
-        }
-    };
-
-    /// The CA certificates may have been reloaded since the context was created, `CertificateReloader` knows the current ones.
-    auto current_ca_paths = [](const std::string & prefix, Poco::Net::Context::Ptr ssl_context)
-    {
-        if (auto reloaded_ca_paths = CertificateReloader::instance().getCAPaths(prefix))
-            return *reloaded_ca_paths;
-        return ssl_context->getCAPaths();
     };
 
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
 
     try
     {
-        process_ca_paths(current_ca_paths(Poco::Net::SSLManager::CFG_SERVER_PREFIX, Poco::Net::SSLManager::instance().defaultServerContext()), "");
+        const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();
+        process_ca_paths(ca_paths, "");
     }
     catch (const Poco::Net::SSLException &)
     {
@@ -194,7 +162,10 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             continue;
 
         if (auto ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix))
-            process_ca_paths(current_ca_paths(prefix, ctx), protocol_name);
+        {
+            const auto & ca_paths = ctx->getCAPaths();
+            process_ca_paths(ca_paths, protocol_name);
+        }
     }
 #endif
 }

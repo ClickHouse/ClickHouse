@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Настройка Hydra (разделение вычислительных ресурсов)"
+sidebarTitle: "Настройка Hydra (разделение вычислительных ресурсов)"
+description: "Это руководство поможет вам создать дочерние инстансы Hydra для существующего кластера ClickHouse Private."
+---
+
+Это руководство поможет вам создать дочерние инстансы Hydra для существующего кластера ClickHouse Private. Hydra позволяет запускать несколько независимых вычислительных групп поверх общего набора данных, каждая из которых имеет собственный сайзинг и конечную точку.
+
+Общий обзор принципов работы Hydra см. в разделе [Hydra Compute Separation](/ru/products/clickhouse-private/explanation/hydra-compute-separation).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Работающий кластер ClickHouse Private, который будет использоваться как **родительский** (в этом руководстве — `default-xx-01`)
+
+* Установленный ClickHouse Operator с включенным флагом возможности Hydra:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  Если оператор был установлен без этого флага, перед продолжением обновите его, задав для флага значение `true`.
+
+* Доступ к Helm Registry и чарту `onprem-clickhouse-cluster`
+
+<Steps>
+  <Step>
+    ## 1. Определите родительский кластер
+
+    Перед созданием дочернего инстанса запишите **имя** и **пространство имен** родительского кластера. Родительский кластер должен находиться в работающем состоянии — дочерние инстансы нельзя подготовить, если родительский кластер остановлен, завершен или переведен в неактивное состояние.
+
+    Для кластера с именем `default-xx-01` значения по умолчанию такие:
+
+    | Свойство          | Значение           |
+    | ----------------- | ------------------ |
+    | Имя кластера      | `default-xx-01`    |
+    | Пространство имен | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. Создайте дочерний инстанс
+
+    <Warning>
+      Каждый экземпляр ClickHouseCluster должен находиться в собственном пространстве имен. Не развертывайте дочерний инстанс в том же пространстве имен, что и родительский. ClickHouse Operator предполагает один ClickHouseCluster на пространство имен, и нарушение этого правила приводит к деградации кластеров.
+    </Warning>
+
+    Разверните новый `ClickHouseCluster`, используя тот же Helm-чарт, что и для родительского кластера, и добавьте значения `parentCluster`, чтобы связать их:
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    Дочерний инстанс будет:
+
+    * Использовать общий с родительским кластером ансамбль ClickHouse Keeper (отдельное развертывание Keeper не требуется)
+    * Использовать общий с родительским кластером префикс данных S3
+    * Запускать собственные поды ClickHouse Server с независимым выделением ресурсов
+    * Предоставлять собственную конечную точку сервиса Kubernetes
+  </Step>
+
+  <Step>
+    ## 3. Создайте дочерний инстанс только для чтения (необязательно)
+
+    Чтобы создать дочерний инстанс, который может выполнять запросы к данным, но не может записывать их, добавьте флаг `isReadonly`:
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    Дочерние инстансы только для чтения подходят для отчетности, панелей мониторинга и аналитических рабочих нагрузок, где доступ на запись не нужен.
+  </Step>
+
+  <Step>
+    ## 4. Проверьте дочерний инстанс
+
+    После развертывания дочернего инстанса убедитесь, что он запущен:
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    Подключитесь через собственную конечную точку сервиса дочернего инстанса:
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    Выполните запрос, чтобы подтвердить доступ к данным:
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+1. **Родительский инстанс должен быть запущен.** Вы не можете создать дочерние инстансы, если родительский инстанс остановлен, завершён или переведён в неактивное состояние. Родительский инстанс должен быть запущен, поскольку дочерние инстансы зависят от его ансамбля Keeper и конфигурации общих данных.
+
+2. **Удалите дочерние инстансы перед удалением родительского.** Перед удалением родительского кластера необходимо удалить все дочерние инстансы. Попытка удалить родительский кластер с активными дочерними инстансами завершится ошибкой.
+
+3. **Сброс пароля выполняется на родительском инстансе.** Сбросить пароль для дочерних инстансов Hydra нельзя. Чтобы сбросить пароль для дочернего инстанса, выполните сброс на родительском инстансе. См. [how-to/reset-passwords.md](/ru/products/clickhouse-private/guides/reset-user-passwords).

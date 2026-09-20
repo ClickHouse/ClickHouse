@@ -57,7 +57,7 @@ VALUES
 The `CREATE TABLE` DDL statement above declares the `Goals` nested data structure, which contains data about conversions, or goals reached.
 Each row in the 'visits' table corresponds to zero or more conversions.
 
-When the [`flatten_nested`](/reference/settings/session-settings/other#flatten_nested) setting is set to `0` (`flatten_nested=1` by default) arbitrary levels of nesting are supported.
+When the [`flatten_nested`](/reference/settings/session-settings#flatten_nested) setting is set to `0` (`flatten_nested=1` by default) arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot.
 These columns make up an array of matching types.
