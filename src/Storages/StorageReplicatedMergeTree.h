@@ -189,7 +189,7 @@ public:
         bool cleanup,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -852,6 +852,7 @@ private:
       * If replicas are added at the same time, it can not wait the added replica.
       *
       * Waits for inactive replicas no more than wait_for_inactive_timeout.
+      * With only_active, inactive replicas are not waited for and not reported.
       * Returns list of inactive replicas that have not executed entry or throws exception.
       *
       * NOTE: This method must be called without table lock held.
@@ -859,9 +860,10 @@ private:
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
                                              Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-                                             const String & error_context = {});
+                                             const String & error_context = {}, bool only_active = false);
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+                                                   bool only_active = false);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -964,8 +966,9 @@ private:
     bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Wait for timeout seconds mutation is finished on replicas
+    /// With only_active, replicas that are not active are not reported as unfinished.
     void waitMutationToFinishOnReplicas(
-        const Strings & replicas, const String & mutation_id) const;
+        const Strings & replicas, const String & mutation_id, bool only_active = false) const;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 
