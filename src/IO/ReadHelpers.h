@@ -170,6 +170,11 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -970,7 +975,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+        /// Why not `readIntTextUnsafe`? Because that reader cannot check for overflow.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
