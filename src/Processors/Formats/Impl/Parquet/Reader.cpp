@@ -3148,27 +3148,38 @@ static void processRepDefLevelsForArray(
     constexpr size_t simd_width = 32;
     constexpr int max_boundaries_for_simd = 12;
 
-    if (num_values >= 2 * simd_width)
+    if (num_values < simd_width)
     {
-        int first_boundary_count = 0;
-        int second_boundary_count = 0;
-        for (size_t j = 0; j < simd_width; ++j)
-        {
-            first_boundary_count += rep[j] < array_rep && def[j] >= parent_array_def;
-            second_boundary_count += rep[j + simd_width] < array_rep && def[j + simd_width] >= parent_array_def;
-        }
-
-        if (first_boundary_count > max_boundaries_for_simd && second_boundary_count > max_boundaries_for_simd)
-        {
-            processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
-            return;
-        }
+        processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
+        return;
     }
 
     const __m256i sign_bit = _mm256_set1_epi8(static_cast<char>(0x80));
     const __m256i array_rep_xored = _mm256_set1_epi8(static_cast<char>(array_rep ^ 0x80));
     const __m256i array_def_xored = _mm256_set1_epi8(static_cast<char>(array_def ^ 0x80));
     const __m256i parent_array_def_xored = _mm256_set1_epi8(static_cast<char>(parent_array_def ^ 0x80));
+
+    if (num_values >= 2 * simd_width)
+    {
+        const auto count_boundaries = [&](size_t pos)
+        {
+            const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + pos));
+            const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + pos));
+            const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
+            const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
+            const UInt32 boundary_mask
+                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
+            const UInt32 def_lt_parent_mask
+                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
+            return std::popcount(boundary_mask & ~def_lt_parent_mask);
+        };
+
+        if (count_boundaries(0) > max_boundaries_for_simd && count_boundaries(simd_width) > max_boundaries_for_simd)
+        {
+            processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
+            return;
+        }
+    }
 
     for (; i + simd_width <= num_values; i += simd_width)
     {
