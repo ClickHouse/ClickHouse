@@ -81,6 +81,9 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
+            /// Bound the multiplier before multiplying: an unbounded one overflows the product and
+            /// slips past `checkStringSize`, which would then under-size `res_data`.
+            checkRepeatTime(static_cast<UInt64>(repeat_time));
             size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[static_cast<ssize_t>(i) - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
@@ -114,6 +117,9 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_size; ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
+            /// Bound the multiplier before multiplying: an unbounded one overflows the product and
+            /// slips past `checkStringSize`, which would then under-size `res_data`.
+            checkRepeatTime(static_cast<UInt64>(repeat_time));
             size_t repeated_size = static_cast<size_t>(str_size * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;

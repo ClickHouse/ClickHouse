@@ -38,6 +38,7 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <base/sanitizer_defs.h>
 
 namespace ProfileEvents
 {
@@ -202,7 +203,16 @@ UInt64 eventCount(ProfileEvents::Event event)
     return ProfileEvents::global_counters[event];
 }
 
-UInt64 sumOfValues(const std::vector<Chunk> & chunks)
+/// A linear congruential generator feeding a modulo-2^64 checksum; both wrap by design.
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW nextValueAndAccumulate(UInt64 & state, UInt64 & sum)
+{
+    state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+    sum += state;
+    return state;
+}
+
+/// The checksum is a plain modulo-2^64 sum.
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW sumOfValues(const std::vector<Chunk> & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
@@ -432,9 +442,7 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
         auto column = ColumnUInt64::create();
         for (size_t row = 0; row < rows_per_chunk; ++row)
         {
-            value = value * 6364136223846793005ULL + 1442695040888963407ULL;
-            column->insertValue(value);
-            expected_sum += value;
+            column->insertValue(nextValueAndAccumulate(value, expected_sum));
         }
         input.emplace_back(Columns{std::move(column)}, rows_per_chunk);
     }

@@ -394,7 +394,8 @@ struct BlockMyersEditDistance
     static constexpr size_t W = sizeof(Word) * 8;
 
     // Requires haystack_len and needle_len > 0
-    static UInt32 distance(
+    /// Myers' bit-parallel algorithm detects its carries from the wraparound of `Word`.
+    static UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW distance(
         const SymbolT * __restrict haystack, UInt32 haystack_len,
         const SymbolT * __restrict needle,   UInt32 needle_len)
     {

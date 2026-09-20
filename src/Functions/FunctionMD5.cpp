@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <base/sanitizer_defs.h>
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #define USE_MD5_AARCH64_ASIMD 1
@@ -523,8 +524,9 @@ struct ScalarMD5Ops
     };
     static constexpr size_t lanes = 2;
 
-    static inline Vec add(Vec a, Vec b)
+    static inline Vec NO_SANITIZE_UNSIGNED_OVERFLOW add(Vec a, Vec b)
     {
+        /// MD5 is defined over addition modulo 2^32.
         return {a.v[0] + b.v[0], a.v[1] + b.v[1]};
     }
     static inline Vec set1(uint32_t val)

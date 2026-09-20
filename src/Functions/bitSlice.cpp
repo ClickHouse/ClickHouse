@@ -282,7 +282,7 @@ public:
 
         while (!src.isEnd())
         {
-            ssize_t remain_byte = src.getElementSize() - offset_byte;
+            ssize_t remain_byte = static_cast<ssize_t>(src.getElementSize()) - static_cast<ssize_t>(offset_byte);
             if (length < 0)
             {
                 length_byte = std::max(remain_byte + (length / word_size), 0z);

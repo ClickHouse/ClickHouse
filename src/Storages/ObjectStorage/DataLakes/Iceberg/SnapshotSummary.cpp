@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB::ErrorCodes
 {
@@ -45,7 +46,9 @@ const SnapshotSummaryExtraFields & SnapshotSummary::getExtraFields() const
     return extra_fields;
 }
 
-SnapshotSummary::SnapshotSummary(
+/// The per-operation deltas are unsigned and go negative when a snapshot shrinks; the running
+/// totals are correct modulo 2^64, so the wraparound is part of the arithmetic.
+NO_SANITIZE_UNSIGNED_OVERFLOW SnapshotSummary::SnapshotSummary(
     SnapshotSummaryUpdate update_, std::optional<SnapshotSummaryTotals> parent_totals, SnapshotSummaryExtraFields extra_fields_)
     : update(std::move(update_))
     , extra_fields(std::move(extra_fields_))

@@ -151,6 +151,9 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     /// Accumulate 8 digits at a time via SWAR (byteswap on big-endian; see parse_eight_digits_unrolled).
     while (p + 8 <= last && is_made_of_eight_digits_fast(p))
     {
+        /// Eight more digits would exceed what fits exactly, and the tail loop below rejects it.
+        if (p - digits_begin + 8 > max_u128_integer_digits)
+            break;
         uint64_t chunk = 0;
         ::memcpy(&chunk, p, 8);
         if constexpr (std::endian::native == std::endian::big)
@@ -160,6 +163,9 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     }
     while (p < last && isNumericASCII(*p))
     {
+        /// One digit too many: the value cannot be represented exactly, so stop before it overflows.
+        if (p - digits_begin >= max_u128_integer_digits)
+            return false;
         value = value * 10 + static_cast<unsigned>(*p - '0');
         ++p;
     }

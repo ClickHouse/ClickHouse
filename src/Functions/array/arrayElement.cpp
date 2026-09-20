@@ -421,7 +421,7 @@ struct ArrayElementNumImpl
             }
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
-                size_t j = offsets[i] + index;
+                size_t j = offsets[i] - common::negateIgnoreOverflow(static_cast<size_t>(index));
                 result[i] = data[j];
                 builder.update(j);
             }
@@ -535,7 +535,7 @@ struct ArrayElementArrayNumImpl
             }
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
-                size_t j = offsets[i] + index;
+                size_t j = offsets[i] - common::negateIgnoreOverflow(static_cast<size_t>(index));
                 ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
                 result_data_size += nested_array_size;
             }
@@ -568,7 +568,7 @@ struct ArrayElementArrayNumImpl
             }
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
-                size_t j = offsets[i] + index;
+                size_t j = offsets[i] - common::negateIgnoreOverflow(static_cast<size_t>(index));
                 builder.update(j);
 
                 ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[static_cast<ssize_t>(j) - 1];
@@ -704,7 +704,7 @@ struct ArrayElementArrayStringImpl
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
-                adjusted_index = array_size + index;
+                adjusted_index = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
             else
                 adjusted_index = array_size; /// means no element should be taken
 
@@ -738,7 +738,7 @@ struct ArrayElementArrayStringImpl
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
-                adjusted_index = array_size + index;
+                adjusted_index = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
             else
                 adjusted_index = array_size; /// means no element should be taken
 
@@ -869,7 +869,7 @@ struct ArrayElementStringImpl
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
-                adjusted_index = array_size + index;
+                adjusted_index = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
             else
                 adjusted_index = array_size; /// means no element should be taken
 
@@ -969,7 +969,7 @@ struct ArrayElementGenericImpl
             }
             else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
             {
-                size_t j = offsets[i] + index;
+                size_t j = offsets[i] - common::negateIgnoreOverflow(static_cast<size_t>(index));
                 result.insertFrom(data, j);
                 builder.update(j);
             }

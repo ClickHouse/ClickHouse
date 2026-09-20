@@ -188,7 +188,7 @@ void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteIn
 
     root = updateInfo(root, normalized_path, info);
     remote_layout_directories_delta += 1;
-    remote_layout_files_delta += info.files.size();
+    remote_layout_files_delta += static_cast<int64_t>(info.files.size());
 }
 
 void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
@@ -236,7 +236,7 @@ void FsSnapshot::removeDirectory(const std::string & path)
         if (isVirtual(subtree_node))
             return;
 
-        remote_layout_files_delta -= subtree_node->info->files.size();
+        remote_layout_files_delta -= static_cast<int64_t>(subtree_node->info->files.size());
         remote_layout_directories_delta -= 1;
     });
 }
