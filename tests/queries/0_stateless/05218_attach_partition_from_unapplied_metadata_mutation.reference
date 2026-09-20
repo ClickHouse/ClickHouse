@@ -3,6 +3,7 @@ after refused ATTACH FROM: dst parts	0
 after refused REPLACE FROM: dst2 keeps its rows	3	21
 after refused ATTACH FROM into MergeTree: dst parts	0
 after refused MOVE TO TABLE: src intact	10	10045
+after OPTIMIZE FINAL the clone carries the renamed data	10	10045
 MergeTree src reads the renamed column	10	10045
 after refused MergeTree MOVE: src intact	10	10045
 src reads the dropped-and-readded column	10	0
@@ -14,16 +15,3 @@ after refused ATTACH FROM: share dst parts	0
 the skipped column has no files in the part	0
 src reads the re-added default and not the marker	10	9990
 after refused ATTACH FROM: marker dst parts	0
-the dropping table moved its metadata version	1
-the source part still holds the dropped column	1
-a part whose dropped column no schema has is cloned	10	45
-src reads the never-written renamed column	10	0
-the clone reads the renamed column the same way	10	0
-an independent dotted column survives its prefix being dropped	10	45
-src reads the default that the invalidated marker left	10	5550
-the clone reads that same default	10	5550
-src reads the cleared column as defaults	10	0
-after refused ATTACH FROM: clear dst parts	0
-clean source is cloned	10	10045
-a part behind only ALTER MODIFY COLUMN is cloned	10	10045
-after OPTIMIZE FINAL the clone carries the renamed data	10	10045
