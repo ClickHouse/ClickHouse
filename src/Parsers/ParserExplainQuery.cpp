@@ -200,6 +200,10 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr explain_output_format;
     if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
     {
+        /// `ParserSubquery` constructs this parser without an `end`, which the bare-source parsers need
+        if (select_only)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot be used in a subquery");
+
         ASTPtr actions;
         bool parenthesized_source = pos->type == TokenType::OpeningRoundBracket;
         auto bare_begin = pos;
@@ -288,7 +292,16 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// `FORMAT` travels upward with the `FORMAT`, so the insert parser must leave it alone
         ParserQuery p(end, allow_settings_after_format_in_insert && parse_output_options, false, parse_output_options);
         bool parsed_query = false;
-        if (p.parse(pos, query, expected))
+        /// `(EXPLAIN TEXT ...)` cannot be a subquery, so `ParserQuery` rejects it with an exception
+        /// instead of returning false.
+        bool parenthesized_explain_text{false};
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            auto peek = pos;
+            ++peek;
+            parenthesized_explain_text = ParserKeyword(Keyword::EXPLAIN).ignore(peek, expected) && ParserKeyword(Keyword::TEXT).checkWithoutMoving(peek, expected);
+        }
+        if (!parenthesized_explain_text && p.parse(pos, query, expected))
         {
             /// pass an insert-derived format toward the enclosing formatting request
             if (!parse_output_options)
@@ -505,7 +518,7 @@ Actions are applied from left to right. Separate consecutive actions with commas
 | --- | --- |
 | `ONELINE` | Formats the query on one line. |
 | `MULTILINE` | Formats the query across multiple lines. This is the default. |
-| `MODIFY LIMIT expression` | Replaces or adds the source query's `LIMIT` length. Preserves any existing offset. |
+| `MODIFY LIMIT expression` | Replaces or adds the source query's `LIMIT` length. Preserves any existing offset; use `MODIFY OFFSET` to change it. |
 | `MODIFY OFFSET expression` | Replaces or adds the source query's offset. Preserves any existing limit length. |
 | `PAGE n` | Sets the offset to the current limit length multiplied by `n - 1`. Requires an existing `LIMIT` and a positive `UInt64` literal page number. `PAGE 1` removes the offset. |
 | `MODIFY FORMAT identifier` | Replaces or adds the source query's output `FORMAT`. |

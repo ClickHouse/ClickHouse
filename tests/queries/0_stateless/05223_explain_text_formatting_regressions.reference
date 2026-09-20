@@ -24,3 +24,11 @@ Explain EXPLAIN TEXT (children 2)
      QueryParameter p:UInt64
  ExpressionList (children 1)
   ExplainTextAction ONELINE
+Explain EXPLAIN TEXT (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+ ExpressionList (children 1)
+  ExplainTextAction ONELINE
