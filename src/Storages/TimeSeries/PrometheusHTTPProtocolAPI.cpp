@@ -294,11 +294,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
                 const auto read_bytes = counters_after[ProfileEvents::SelectedBytes] - (*initial_counters)[ProfileEvents::SelectedBytes];
                 const auto peak_memory_usage = thread_group->memory_tracker.getPeak();
 
-                writeString(R"(,"stats":{"timings":{"evalTotalTime":)", output);
+                writeString(R"(,"stats":{"clickhouse":{"elapsedTime":)", output);
                 writeFloatText(evaluation_watch->elapsedSeconds(), output);
-                writeString(R"(},"samples":{"samplesRead":)", output);
-                writeIntText(read_rows, output);
-                writeString(R"(},"clickhouse":{"readRows":)", output);
+                writeString(R"(,"readRows":)", output);
                 writeIntText(read_rows, output);
                 writeString(R"(,"readBytes":)", output);
                 writeIntText(read_bytes, output);
