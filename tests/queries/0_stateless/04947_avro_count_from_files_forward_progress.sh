@@ -43,10 +43,13 @@ open(dst, 'wb').write(data + zigzag(count) + zigzag(bytes_declared) + b'\xff' * 
 # block must carry at least the 4 checksum bytes), so the payload here is a real snappy stream of
 # $4 literal bytes plus avro's own big-endian CRC-32 of those bytes: varint length, then a literal
 # element whose tag byte is (len - 1) << 2.
+# A 5th argument repeats that byte value as the literal payload; without it the payload is
+# 1, 2, 3, ... which decodes as valid rows.
 avro_append_snappy_block() {
     python3 -c "
 import sys, zlib
 src, dst, count, literal_len = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+fill = int(sys.argv[5])
 def varint(n):
     out = bytearray()
     while True:
@@ -56,12 +59,12 @@ def varint(n):
         if not n:
             break
     return bytes(out)
-raw = bytes(range(1, 1 + literal_len))
+raw = bytes([fill]) * literal_len if fill >= 0 else bytes(range(1, 1 + literal_len))
 payload = varint(len(raw)) + bytes([(len(raw) - 1) << 2]) + raw + (zlib.crc32(raw) & 0xffffffff).to_bytes(4, 'big')
 data = open(src, 'rb').read()
 # Both header fields are non-negative here, so zigzag is just the value shifted left by one.
 open(dst, 'wb').write(data + varint(count << 1) + varint(len(payload) << 1) + payload + data[-16:])
-" "$1" "$2" "$3" "$4"
+" "$1" "$2" "$3" "$4" "${5--1}"
 }
 
 $CLICKHOUSE_LOCAL -q "
@@ -105,11 +108,17 @@ avro_append_block "$DIR/deflate.avro" "$DIR/huge-deflate.avro" 1000000000 0
 avro_append_block "$DIR/ok-zstd.avro" "$DIR/huge-zstd.avro" 1000000000 0
 
 # A block whose header is honest -- 2 objects do fit in 8 payload bytes for this schema -- but whose
-# payload is 8 0xff bytes, an unterminated varint that no decoder can consume.
+# payload is 8 0xff bytes, an unterminated varint that no decoder can consume. The same file on
+# snappy, where the declared payload size is verified against the decompressed bytes.
 avro_append_block "$DIR/ok.avro" "$DIR/badpayload.avro" 2 8 8
+avro_append_snappy_block "$DIR/ok-snappy.avro" "$DIR/badpayload-snappy.avro" 2 8 255
+
+# Both header fields inflated. The library's fit check compares the declared count against the
+# declared payload size, so this passes it; nothing may then count from the header.
+avro_append_block "$DIR/ok.avro" "$DIR/inflated-both.avro" 1000000000 2000000000
 
 # A fixture that failed to be written would turn every count below into a silent zero.
-for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deflate huge-zstd badpayload; do
+for f in ok nullrows deflate ok-snappy ok-zstd nullrows-snappy negative negbytes huge huge-snappy huge-deflate huge-zstd badpayload badpayload-snappy inflated-both; do
     [ -s "$DIR/$f.avro" ] || echo "MISSING FIXTURE $f.avro"
 done
 
@@ -165,6 +174,13 @@ for setting in 1 0; do
     done
 done
 
+echo '--- a jointly inflated header is rejected, not counted'
+for setting in 1 0; do
+    $CLICKHOUSE_LOCAL -q "
+        SELECT count() FROM file('$DIR/inflated-both.avro', Avro)
+        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
+done
+
 # The bound is derived from the schema, not from the input size, so a file that legitimately holds
 # more rows than it has payload bytes must still count. These are the files it could destroy.
 echo '--- valid input on every codec counts the same with and without the count shortcut'
@@ -175,24 +191,27 @@ for setting in 1 0; do
     done
 done
 
-# deflate and zstd decompress lazily, so the payload size is not known where the bound is applied
-# (ClickHouse/avro c488095932fb). Only the read path rejects a corrupted header for those two.
-echo '--- lazily decompressed codecs are rejected by the read path'
-for f in huge-deflate.avro huge-zstd.avro; do
-    $CLICKHOUSE_LOCAL -q "
-        SELECT count() FROM file('$DIR/$f', Avro)
-        $BOUND, optimize_count_from_files = 0" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
-done
-
 # The shortcut answers from the block headers without decoding the payload, and that is its only
 # user-visible difference from a full read. This file's headers are honest, so the size bound
 # accepts it; its payload is not decodable, so only the reading path can fail on it.
 echo '--- the count shortcut answers from the block header without decoding the payload'
 $CLICKHOUSE_LOCAL -q "
-    SELECT count() FROM file('$DIR/badpayload.avro', Avro)
+    SELECT count() FROM file('$DIR/badpayload-snappy.avro', Avro)
     $BOUND, optimize_count_from_files = 1"
 $CLICKHOUSE_LOCAL -q "
-    SELECT count() FROM file('$DIR/badpayload.avro', Avro)
+    SELECT count() FROM file('$DIR/badpayload-snappy.avro', Avro)
     $BOUND, optimize_count_from_files = 0" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
+
+# The same files on the codecs where the declared payload size is never materialized: null compares
+# two fields of the same corrupted header, and deflate and zstd decompress lazily and are not
+# checked at all (ClickHouse/avro c488095932fb). Both settings must reach the read path.
+echo '--- the shortcut is declined where the declared payload size is not verified'
+for f in badpayload.avro huge-deflate.avro huge-zstd.avro; do
+    for setting in 1 0; do
+        $CLICKHOUSE_LOCAL -q "
+            SELECT count() FROM file('$DIR/$f', Avro)
+            $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'AVRO_EXCEPTION'
+    done
+done
 
 rm -rf "$DIR"

@@ -30,6 +30,9 @@ optimize_count_from_files = 0
 1
 1
 1
+--- a jointly inflated header is rejected, not counted
+1
+1
 --- valid input on every codec counts the same with and without the count shortcut
 optimize_count_from_files = 1
 5000
@@ -39,9 +42,13 @@ optimize_count_from_files = 0
 5000
 5000
 1000
---- lazily decompressed codecs are rejected by the read path
-1
-1
 --- the count shortcut answers from the block header without decoding the payload
 5002
+1
+--- the shortcut is declined where the declared payload size is not verified
+1
+1
+1
+1
+1
 1
