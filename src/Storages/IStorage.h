@@ -272,6 +272,9 @@ public:
     /// It is a method on the storage rather than a static enumeration of the settings type because some values
     /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings
     /// object enumerates it, and reaches for `Storages/TableSettingsHelpers.h` only for what that object cannot hold.
+    ///
+    /// The `type`, `comment` and `aliases` an override reports are views: they have to point at storage that lives
+    /// as long as the program, a string literal or a settings struct's metadata, never at anything this call owns.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.

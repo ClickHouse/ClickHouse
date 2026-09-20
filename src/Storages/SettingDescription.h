@@ -48,8 +48,14 @@ std::string_view toString(SettingOrigin origin);
 /// table (`system.table_settings`). Only in the second case can `origin` be `Definition` or
 /// `SharedMetadata`.
 ///
-/// `type` and `comment` are `string_view` because a settings struct owns them statically. They are
-/// empty, along with `default_value`, when a setting is known only from a table's `SETTINGS` clause.
+/// `type`, `comment` and `aliases` are views, as `BaseSettings::FieldInfo` holds the same three: whoever fills
+/// them must point at storage that lives as long as the program - a string literal, or a settings struct's
+/// macro-generated metadata - because a `SettingDescription` is copied and outlives whatever produced it, while
+/// nothing here owns those bytes. Making them own would copy every setting's description on every row of
+/// `system.engine_settings` and `system.table_settings`, which is most of what those tables carry.
+///
+/// `type` and `comment` are empty, along with `default_value`, when a setting is known only from a table's
+/// `SETTINGS` clause.
 struct SettingDescription
 {
     String name;

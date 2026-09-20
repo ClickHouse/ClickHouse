@@ -351,6 +351,8 @@ SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
         {
             described.name = it->name;
             described.default_value = it->default_value;
+            /// Views outliving `known`, which is local: every engine's enumeration points them at its settings
+            /// struct's metadata or at a literal, both of which live as long as the program.
             described.type = it->type;
             described.comment = it->comment;
             described.tier = it->tier;
