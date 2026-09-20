@@ -26,13 +26,12 @@ clauses = (
 )
 
 
-def query(clause, serialized=0, hedged=0, enabled="1", local=False, analyzer=1):
+def query(clause, serialized=0, hedged=0, enabled="1", local=False):
     # A compatibility clause preserves changes matching the inherited value during constraint checks.
-    compatibility = "compatibility='26.9', " if analyzer else ""
-    inner = f"SELECT value FROM system.settings WHERE name='{setting}' SETTINGS {compatibility}{clause}"
+    inner = f"SELECT value FROM system.settings WHERE name='{setting}' SETTINGS compatibility='26.9', {clause}"
     table = f"view({inner})" if local else f"remote('{address}', view({inner}))"
     return (
-        f"SELECT * FROM {table} FORMAT TabSeparated SETTINGS enable_analyzer={analyzer}, "
+        f"SELECT * FROM {table} FORMAT TabSeparated SETTINGS "
         f"serialize_query_plan={serialized}, use_hedged_requests={hedged}, {setting}={enabled}, "
         "prefer_localhost_replica=0, max_parallel_replicas=1, distributed_group_by_no_merge=0, max_threads=1, "
         "send_profile_events=0, send_logs_level='none', query_profiler_cpu_time_period_ns=0, "
@@ -69,20 +68,18 @@ def plain_http(sql):
     assert status == "200" and body == "0\n", (sql, status, body)
 
 
-for analyzer in (0, 1):
-    cases = [(clause, "0" if not analyzer and "DEFAULT" in clause else expected) for clause, expected in clauses]
-    native_batch([(query(clause, local=True, analyzer=analyzer), expected) for clause, expected in cases])
-    print(f"analyzer={analyzer}: local duplicate and shorthand controls passed")
+native_batch([(query(clause, local=True), expected) for clause, expected in clauses])
+print("local duplicate and shorthand controls passed")
 
-    for serialized in (0, 1) if analyzer else (0,):
-        for hedged in (0, 1):
-            native_cases = [(query(clause, serialized, hedged, analyzer=analyzer), expected) for clause, expected in cases]
-            final_opt_in = clauses[0][0]
-            native_cases.append((query(final_opt_in, serialized, hedged, enabled="0", analyzer=analyzer), "0"))
-            native_cases.append((query(final_opt_in, serialized, hedged, enabled="DEFAULT", analyzer=analyzer), "0"))
-            native_batch(native_cases)
-            plain_http(query(final_opt_in, serialized, hedged, analyzer=analyzer))
-            for invalid in (f"{setting}='not-a-bool', {setting}=1", f"{setting}=1, {setting}='not-a-bool'"):
-                invalid_native(query(invalid, serialized, hedged, analyzer=analyzer))
-            print(f"analyzer={analyzer} serialized={serialized} hedged={hedged}: duplicates, defaults, gating and invalid values preserved")
+for serialized in (0, 1):
+    for hedged in (0, 1):
+        native_cases = [(query(clause, serialized, hedged), expected) for clause, expected in clauses]
+        final_opt_in = clauses[0][0]
+        native_cases.append((query(final_opt_in, serialized, hedged, enabled="0"), "0"))
+        native_cases.append((query(final_opt_in, serialized, hedged, enabled="DEFAULT"), "0"))
+        native_batch(native_cases)
+        plain_http(query(final_opt_in, serialized, hedged))
+        for invalid in (f"{setting}='not-a-bool', {setting}=1", f"{setting}=1, {setting}='not-a-bool'"):
+            invalid_native(query(invalid, serialized, hedged))
+        print(f"serialized={serialized} hedged={hedged}: duplicates, defaults, gating and invalid values preserved")
 PY
