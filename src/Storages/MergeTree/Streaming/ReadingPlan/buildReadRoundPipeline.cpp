@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -46,37 +45,6 @@ namespace DB
 namespace
 {
 
-const ProjectionDescription * chooseCommitOrderProjection(const StorageInMemoryMetadata & metadata, const Names & columns)
-{
-    for (const auto & projection : metadata.projections)
-    {
-        if (projection.type != ProjectionDescription::Type::Normal)
-            continue;
-
-        const auto sorting_key = projection.metadata->getSortingKeyColumns();
-        if (sorting_key.size() < 2 || sorting_key[0] != BlockNumberColumn::name || sorting_key[1] != BlockOffsetColumn::name)
-            continue;
-
-        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column).has_value(); };
-        if (std::ranges::all_of(columns, has_column))
-            return &projection;
-    }
-
-    return nullptr;
-}
-
-QueryPlanOptimizationSettings makeReadRoundOptimizationSettings(const ContextPtr & context, const StorageInMemoryMetadata & metadata, const Names & columns_to_read)
-{
-    QueryPlanOptimizationSettings settings(context);
-    if (const auto * projection = chooseCommitOrderProjection(metadata, columns_to_read))
-    {
-        settings.prefer_use_projection = true;
-        settings.preferred_projection_name = projection->name;
-    }
-
-    return settings;
-}
-
 /// Commit-order key + everything the watermark needs.
 Names metadataStreamColumns(const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
@@ -89,36 +57,6 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
     for (const auto & source_column : source_columns)
         if (!std::ranges::contains(columns, source_column))
             columns.push_back(source_column);
-
-    return columns;
-}
-
-/// User-requested columns + the commit-order key + watermark column + prewhere inputs + row filter inputs.
-Names dataStreamColumns(Names columns, const StreamSettings & stream_settings, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
-{
-    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    if (stream_settings.watermark)
-        if (!std::ranges::contains(columns, stream_settings.watermark->column))
-            columns.push_back(stream_settings.watermark->column);
-
-    if (prewhere_info)
-    {
-        const auto source_columns = prewhere_info->prewhere_actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    if (row_level_filter)
-    {
-        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
 
     return columns;
 }
@@ -189,8 +127,7 @@ Pipe buildPartitionReadingPipeline(
     const auto & row_level_filter = reading_context.row_level_filter;
     const auto & output_header = reading_context.output_header;
 
-    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, stream_settings, prewhere_info, row_level_filter);
-    auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, columns_to_read);
+    auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, reading_context.columns_to_read);
     if (!plan)
         return {};
 
@@ -273,8 +210,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
-    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, stream_settings, reading_context.prewhere_info, reading_context.row_level_filter);
-    const auto opt_settings = makeReadRoundOptimizationSettings(context, *metadata, columns_to_read);
+    const QueryPlanOptimizationSettings opt_settings(context);
 
     ReadRoundPipeline result;
     Pipes pipes;

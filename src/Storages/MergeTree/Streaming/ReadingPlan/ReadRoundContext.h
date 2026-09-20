@@ -16,7 +16,7 @@ struct ReadRoundContext
     const FilterDAGInfoPtr row_level_filter;
     const StreamSettings stream_settings;
     const ContextPtr context;
-    const Names user_requested_columns;
+    const Names columns_to_read;
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const SharedHeader output_header;
