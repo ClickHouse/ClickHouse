@@ -38,5 +38,15 @@
             use_uncompressed_cache = 0
     </query>
 
+    <query>
+        SELECT sum(byteSize(value, value))
+        FROM byte_size_sparse_perf
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS byte_size_sparse_perf</drop_query>
 </test>

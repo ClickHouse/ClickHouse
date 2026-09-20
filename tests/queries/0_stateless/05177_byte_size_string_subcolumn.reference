@@ -1,4 +1,4 @@
-SELECT plus(__table1.`s.size`, byteSize(__table1.`s.size`)) AS `byteSize(s)`
+SELECT plus(__table1.`s.size`, __byteSizeWithSparseOverhead(__table1.`s.size`)) AS `byteSize(s)`
 FROM default.t_byte_size_string_subcolumn AS __table1
 0
 1	8
@@ -28,14 +28,19 @@ FROM default.t_byte_size_string_subcolumn AS __table1
 4	26
 0
 SELECT
-    plus(__table1.`s.size`, byteSize(__table1.`s.size`)) AS `byteSize(s)`,
-    plus(__table1.`s.size`, byteSize(__table1.`s.size`, 1)) AS `byteSize(s, 1)`
+    plus(__table1.`s.size`, __byteSizeWithSparseOverhead(__table1.`s.size`)) AS `byteSize(s)`,
+    plus(__table1.`s.size`, __byteSizeWithSparseOverhead(__table1.`s.size`, 1)) AS `byteSize(s, 1)`
 FROM default.t_byte_size_string_subcolumn AS __table1
 id	Default
 s	Sparse
 optimized	2018
 unoptimized	2018
+optimized_mixed	3618
+unoptimized_mixed	3618
 v	Sparse
-1920	1920
+1600	1600
+3200	3200
+3520	3520
+3520	3520
 optimized_single_stream	2018
 unoptimized_single_stream	2018

@@ -122,6 +122,14 @@ SELECT 'unoptimized', sum(byteSize(s))
 FROM t_byte_size_sparse
 SETTINGS optimize_functions_to_subcolumns = 0;
 
+-- The second argument must keep its size when the sparse String is rewritten.
+SELECT 'optimized_mixed', sum(byteSize(s, id))
+FROM t_byte_size_sparse;
+
+SELECT 'unoptimized_mixed', sum(byteSize(s, id))
+FROM t_byte_size_sparse
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 DROP TABLE t_byte_size_sparse;
 
 DROP TABLE IF EXISTS t_byte_size_sparse_fixed;
@@ -149,7 +157,18 @@ WHERE database = currentDatabase()
   AND active
 ORDER BY column;
 
-SELECT sum(byteSize(v)) AS actual, sum(8 + 8 * (v != 0)) AS expected
+-- Fixed-width arguments must retain the original constant-size fast path.
+SELECT sum(byteSize(v)) AS actual, count() * 8 AS expected
+FROM t_byte_size_sparse_fixed;
+
+SELECT sum(byteSize(v, v)) AS actual, count() * 16 AS expected
+FROM t_byte_size_sparse_fixed;
+
+-- Mixed arguments keep the existing representation-dependent result.
+SELECT sum(byteSize(v, '')) AS actual, sum(16 + 8 * (v != 0)) AS expected
+FROM t_byte_size_sparse_fixed;
+
+SELECT sum(byteSize('', v)) AS actual, sum(16 + 8 * (v != 0)) AS expected
 FROM t_byte_size_sparse_fixed;
 
 DROP TABLE t_byte_size_sparse_fixed;

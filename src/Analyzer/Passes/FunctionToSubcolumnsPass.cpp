@@ -270,7 +270,7 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
 
 void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
-    /// Replace `byteSize(String, ...)` with `String.size + byteSize(String.size, ...)`.
+    /// Replace `byteSize(String, ...)` with `String.size + __byteSizeWithSparseOverhead(String.size, ...)`.
     /// The generic matcher limits this rewrite to at most two arguments.
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
@@ -278,13 +278,13 @@ void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & func
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
 
-    /// `byteSize(String, ...)` includes the storage representation's per-row
-    /// overhead. The size subcolumn keeps the same sparse wrapper, so its own
-    /// byteSize is 8 for dense rows, and includes the sparse offset for
-    /// non-default rows. This preserves the original result for both layouts.
+    /// The size subcolumn keeps the String's sparse wrapper. Account for its
+    /// per-row storage overhead without changing byteSize's constant fast path
+    /// for ordinary fixed-width arguments. The original String could not use
+    /// that fast path, even when every other argument had a fixed-size type.
     auto size_node = std::make_shared<ColumnNode>(column, ctx.column_source);
 
-    auto byte_size_node = std::make_shared<FunctionNode>("byteSize");
+    auto byte_size_node = std::make_shared<FunctionNode>("__byteSizeWithSparseOverhead");
     auto & byte_size_arguments = byte_size_node->getArguments().getNodes();
     byte_size_arguments.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
 
@@ -292,7 +292,7 @@ void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & func
     for (size_t arg_num = 1; arg_num < original_arguments.size(); ++arg_num)
         byte_size_arguments.push_back(original_arguments[arg_num]);
 
-    resolveOrdinaryFunctionNodeByName(*byte_size_node, "byteSize", ctx.context);
+    resolveOrdinaryFunctionNodeByName(*byte_size_node, "__byteSizeWithSparseOverhead", ctx.context);
 
     auto plus_node = std::make_shared<FunctionNode>("plus");
     auto & plus_arguments = plus_node->getArguments().getNodes();
