@@ -22,6 +22,10 @@ variant_string_constant	1
 variant_numeric_constant	3
 variant_numeric_constant_merged	1
 variant_numeric_constant_not_merged_above_threshold	0
+variant_two_alternatives_constant	1
+variant_two_alternatives_constant_chain	1
+variant_two_alternatives_constant_above_threshold	1
+unwrapped_same_values_merged	1
 variant_no_string_alternative	3
 variant_string_constant_expression	3
 variant_single_alternative	3

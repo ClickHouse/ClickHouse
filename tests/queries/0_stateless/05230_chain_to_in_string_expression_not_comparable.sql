@@ -263,6 +263,24 @@ SELECT 'variant_numeric_constant_not_merged_above_threshold', countIf(explain LI
        OR v = CAST(toUInt16(3), 'Variant(UInt16)'))
 SETTINGS optimize_min_equality_disjunction_chain_length = 100;
 
+-- The alternative a constant carries is not part of its type, so a merged chain has to rebuild it from a
+-- value with no discriminator, and that lands in the first declared alternative: `Variant(Date, UInt32)`
+-- turns the `UInt32` below into a day number. The last row shows merging is live in this fixture.
+SELECT 'variant_two_alternatives_constant', count() FROM (SELECT materialize(toUInt32(100000)) AS u)
+    WHERE u = CAST(toUInt32(100000), 'Variant(Date, UInt32)')
+SETTINGS allow_suspicious_variant_types = 1;
+SELECT 'variant_two_alternatives_constant_chain', count() FROM (SELECT materialize(toUInt32(100000)) AS u)
+    WHERE u = CAST(toUInt32(100000), 'Variant(Date, UInt32)') OR u = CAST(toUInt32(100001), 'Variant(Date, UInt32)')
+       OR u = CAST(toUInt32(100002), 'Variant(Date, UInt32)')
+SETTINGS allow_suspicious_variant_types = 1;
+SELECT 'variant_two_alternatives_constant_above_threshold', count() FROM (SELECT materialize(toUInt32(100000)) AS u)
+    WHERE u = CAST(toUInt32(100000), 'Variant(Date, UInt32)') OR u = CAST(toUInt32(100001), 'Variant(Date, UInt32)')
+       OR u = CAST(toUInt32(100002), 'Variant(Date, UInt32)')
+SETTINGS allow_suspicious_variant_types = 1, optimize_min_equality_disjunction_chain_length = 100;
+SELECT 'unwrapped_same_values_merged', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT materialize(toUInt32(100000)) AS u)
+    WHERE u = toUInt32(100000) OR u = toUInt32(100001) OR u = toUInt32(100002));
+
 -- Three result rows bounding the alternative-wise test: no string-family alternative (merge declined,
 -- answer still 3), a String constant against a UInt8 alternative (merge kept, so the test may not be a
 -- blanket Variant decline), and all alternatives comparable. All three select three of ten rows, so a
