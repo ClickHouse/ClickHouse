@@ -136,7 +136,7 @@ namespace
             {
                 if (auto * select_query = right_argument.select_query->as<ASTSelectQuery>())
                 {
-                    if (auto * tables = select_query->tables())
+                    if (auto tables = select_query->tables())
                     {
                         if (!tables->children.empty())
                         {
@@ -153,7 +153,7 @@ namespace
                                             {
                                                 if (auto * inner_select = subq.ast->as<ASTSelectQuery>())
                                                 {
-                                                    ASTPtr inner_where = inner_select->getExpression(ASTSelectQuery::Expression::WHERE);
+                                                    ASTPtr inner_where = inner_select->where();
                                                     if (inner_where)
                                                         inner_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", inner_where, filter_condition->clone()));
                                                     else
@@ -168,7 +168,7 @@ namespace
                         }
                     }
 
-                    ASTPtr existing_where = select_query->getExpression(ASTSelectQuery::Expression::WHERE);
+                    ASTPtr existing_where = select_query->where();
                     if (existing_where)
                         select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
                     else
