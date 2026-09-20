@@ -559,6 +559,10 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
         client.close()
 
     # The session teardown is asynchronous, so keep sampling for a while.
+    # Every successful sample must show a monotonic uptime, and at least one
+    # sample must succeed: a server that never answers again after the
+    # disconnect is as broken as one that restarted.
+    saw_success = False
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
@@ -566,12 +570,16 @@ def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
         except Exception:  # the server is down or restarting — the next sample decides
             time.sleep(0.5)
             continue
+        saw_success = True
         assert uptime >= uptime_before, (
             "the server restarted after the SSH disconnect, i.e. it died while "
             f"tearing the session down (uptime {uptime} < {uptime_before})"
         )
         time.sleep(0.5)
 
+    assert saw_success, (
+        "the server never answered a query within 30 s after the SSH disconnect"
+    )
     assert not instance.contains_in_log(
         "std::terminate"
     ), "the server called `std::terminate` while tearing down the SSH session"
