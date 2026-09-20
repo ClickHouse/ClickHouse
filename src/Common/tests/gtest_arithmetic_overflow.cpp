@@ -7,6 +7,16 @@
 namespace arithmetic_overflow_test
 {
 
+static volatile bool use_boundary_value = true;
+
+template <typename T>
+NO_INLINE T runtimeValue(T value)
+{
+    /// Keep the boundary opaque even under LTO, so the old UB-based helpers
+    /// cannot pass by constant-propagating the value into the wrapper.
+    return use_boundary_value ? value : T{};
+}
+
 /// Keep each arithmetic relation in one out-of-line function. The old
 /// UB-based implementation allowed Clang to fold these relations to false.
 template <typename T>
@@ -36,8 +46,8 @@ NO_INLINE bool negateWraps(T value)
 template <typename T>
 void checkIgnoreOverflowWraparound()
 {
-    const T min = std::numeric_limits<T>::min();
-    const T max = std::numeric_limits<T>::max();
+    const T min = runtimeValue(std::numeric_limits<T>::min());
+    const T max = runtimeValue(std::numeric_limits<T>::max());
 
     EXPECT_EQ(common::addIgnoreOverflow(max, T{1}), min);
     EXPECT_EQ(common::subIgnoreOverflow(min, T{1}), max);
