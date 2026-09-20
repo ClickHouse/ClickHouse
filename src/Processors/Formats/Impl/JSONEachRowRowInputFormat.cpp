@@ -414,6 +414,12 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     register_format("JSONL", false);
     register_format("NDJSON", false);
 
+    /// `JSONLines`, `JSONL` and `NDJSON` are interchangeable spellings of `JSONEachRow`, and the
+    /// file extensions below are registered only for `JSONEachRow`.
+    factory.registerFormatAlias("JSONLines", "JSONEachRow");
+    factory.registerFormatAlias("JSONL", "JSONEachRow");
+    factory.registerFormatAlias("NDJSON", "JSONEachRow");
+
     factory.registerFileExtension("ndjson", "JSONEachRow");
     factory.registerFileExtension("jsonl", "JSONEachRow");
     /// NDJSON lakes commonly name their files `.json`, but the `json` extension infers as `JSON`.

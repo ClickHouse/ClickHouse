@@ -351,9 +351,15 @@ public:
     /// readable as the format but infers as a different one: e.g. NDJSON lakes commonly name
     /// their files `.json`, which infers as `JSON`.
     void registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference = true);
-    /// All file extensions registered for the format or for its `WithNames`/`WithNamesAndTypes`
-    /// base format, in a deterministic order. The lowercased format name is always a part of
-    /// the result, because format names are registered as extensions of the format itself.
+    /// Register an interchangeable spelling of a format registered under another name, such as
+    /// `JSONLines` for `JSONEachRow`. Only getFileExtensionsForFormat consults it: the alias is
+    /// a format of its own everywhere else, and the file extensions are registered only for the
+    /// canonical spelling.
+    void registerFormatAlias(const String & alias, const String & format_name);
+    /// All file extensions registered for the format, for the format it is an alias of, or for
+    /// its `WithNames`/`WithNamesAndTypes` base format, in a deterministic order. The lowercased
+    /// format name is always a part of the result, because format names are registered as
+    /// extensions of the format itself.
     std::vector<String> getFileExtensionsForFormat(const String & format_name) const;
     String getFormatFromFileName(String file_name);
     std::optional<String> tryGetFormatFromFileName(String file_name);
@@ -417,6 +423,8 @@ private:
     /// Lowercased format name -> all extensions registered for it (including the ones with
     /// used_for_format_inference = false, which are absent from file_extension_formats).
     std::unordered_map<String, std::set<String>> format_file_extensions;
+    /// Lowercased alias -> lowercased canonical format name, see registerFormatAlias.
+    std::unordered_map<String, String> format_aliases;
 
     const Creators & getCreators(const String & name) const;
     Creators & getOrCreateCreators(const String & name);

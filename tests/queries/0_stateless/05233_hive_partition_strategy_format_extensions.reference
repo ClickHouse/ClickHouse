@@ -6,6 +6,10 @@ csv lake:
 42	2
 tsv lake:
 8	5
+jsonl lake as JSONLines:
+1	1
+tsv lake as TSVRaw:
+8	5
 jsonl lake after insert:
 1	1
 3	4

@@ -987,24 +987,43 @@ void FormatFactory::registerFileExtension(const String & extension, const String
     format_file_extensions[boost::to_lower_copy(format_name)].insert(lowercased_extension);
 }
 
+void FormatFactory::registerFormatAlias(const String & alias, const String & format_name)
+{
+    format_aliases[boost::to_lower_copy(alias)] = boost::to_lower_copy(format_name);
+}
+
 std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
 {
-    std::vector<String> format_names = {boost::to_lower_copy(format_name)};
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+
+    std::vector<String> format_names;
+
+    /// Interchangeable spellings of the same format (`JSONLines` for `JSONEachRow`, `TSV` for
+    /// `TabSeparated`) are registered as independent formats, and the extensions are registered
+    /// only for the canonical spelling, so resolve the alias before the lookup.
+    const auto add_name = [&](const String & name)
+    {
+        format_names.push_back(name);
+        if (const auto it = format_aliases.find(name); it != format_aliases.end())
+            format_names.push_back(it->second);
+    };
+
+    add_name(lowercased_format_name);
 
     /// A format registered via registerWithNamesAndTypes reads the files of its base format:
     /// e.g. a lake of `.csv` files with a header row is read with the `CSVWithNames` format.
     for (const std::string_view suffix : {"withnamesandtypes", "withnames"})
     {
-        if (format_names.front().ends_with(suffix))
+        if (lowercased_format_name.ends_with(suffix))
         {
-            format_names.push_back(format_names.front().substr(0, format_names.front().size() - suffix.size()));
+            add_name(lowercased_format_name.substr(0, lowercased_format_name.size() - suffix.size()));
             break;
         }
     }
 
     /// The format name itself is registered as a file extension for every input and output
     /// format, so the lowercased format name always ends up in the result.
-    std::set<String> extensions{format_names.front()};
+    std::set<String> extensions{lowercased_format_name};
     for (const auto & name : format_names)
     {
         if (const auto it = format_file_extensions.find(name); it != format_file_extensions.end())
