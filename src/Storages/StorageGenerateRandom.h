@@ -42,6 +42,7 @@ public:
         size_t num_streams) override;
 
     bool supportsTransactions() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 private:
     UInt64 max_array_length = 10;
     UInt64 max_string_length = 10;

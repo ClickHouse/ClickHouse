@@ -37,6 +37,8 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
+    bool supportsTruncate() const override { return false; }
+
 private:
     QueryRunnerMode mode;
     std::unique_ptr<QueryRunnerDispatcher> dispatcher;
