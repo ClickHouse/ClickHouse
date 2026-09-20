@@ -11,5 +11,10 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "CREATE TABL
 
 echo "-- PromQL line comments may end at EOF"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up # trailing comment"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up # trailing comment', 1700000000)"
+
+echo "-- A bare '#' at EOF is an error in both PromQL entry points"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 --query "up #" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --query "SELECT * FROM prometheusQuery(ts, 'up #', 1700000000)" 2>&1 | grep -o -E "SYNTAX_ERROR|CANNOT_PARSE_PROMQL_QUERY" | head -n 1
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE ts"

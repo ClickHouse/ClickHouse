@@ -1,1 +1,4 @@
 -- PromQL line comments may end at EOF
+-- A bare '#' at EOF is an error in both PromQL entry points
+SYNTAX_ERROR
+CANNOT_PARSE_PROMQL_QUERY
