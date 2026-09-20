@@ -38,6 +38,8 @@ void assertDateTimeFullyParsed(ReadBuffer & buf, bool skip_zero_padding)
  *
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
+ * The value is read by the basic `DateTime64` text parser, so, as everywhere that parser is used, a numeric
+ * string with an optional fractional part (e.g. '1234567890', '1234.5', '-0.5') is a unix timestamp.
   */
 class FunctionTimestamp final : public IFunction
 {
@@ -195,13 +197,16 @@ REGISTER_FUNCTION(Timestamp)
     FunctionDocumentation::Description description = R"(
 Converts the first argument `expr` to type [`DateTime64(6)`](/reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
+
+The value is parsed in the same way as a `DateTime64` string in the basic format: a date `YYYY-MM-DD`, a date with time `YYYY-MM-DD hh:mm:ss[.ffffff]`,
+or a Unix timestamp with an optional fractional part, such as `1234567890.123456`, `1234.5`, or `-0.5`. The whole argument must be consumed, so trailing characters are rejected.
     )";
     FunctionDocumentation::Syntax syntax = R"(
     timestamp(expr[, expr_time])
     )";
     FunctionDocumentation::Arguments arguments =
     {
-        {"expr", "Date or date with time.", {"String"}},
+        {"expr", "Date, date with time, or a Unix timestamp with an optional fractional part.", {"String"}},
         {"expr_time", "Optional. Time to add to the converted value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the converted value of `expr`, or `expr` with added time", {"DateTime64(6)"}};
@@ -212,6 +217,14 @@ SELECT timestamp('2023-12-31') AS ts;
         R"(
 ┌─────────────────────────ts─┐
 │ 2023-12-31 00:00:00.000000 │
+└────────────────────────────┘
+    )"},
+        {"Convert a Unix timestamp string to DateTime64(6)", R"(
+SELECT timestamp('1234.5') AS ts SETTINGS session_timezone = 'UTC';
+    )",
+        R"(
+┌─────────────────────────ts─┐
+│ 1970-01-01 00:20:34.500000 │
 └────────────────────────────┘
     )"},
         {"Add time to date string", R"(
