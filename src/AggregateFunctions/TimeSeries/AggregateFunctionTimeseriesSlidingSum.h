@@ -151,6 +151,10 @@ public:
             }
             return current_sum;
         }
+    }
+
+    /// The value that last left the window, with its timestamp, for a rate that needs the sample
+    /// before the window to measure from. Empty until the window has dropped one.
     const std::optional<std::pair<TimestampType, SummaryType>> & getLastRemoved() const
     {
         return last_removed;
