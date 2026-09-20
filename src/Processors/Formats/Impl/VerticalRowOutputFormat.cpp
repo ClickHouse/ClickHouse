@@ -279,34 +279,28 @@ x: 1
 y: ᴺᵁᴸᴸ
 ```
 
-By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉`:
+By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a NUL is shown as `␀`:
 
 ```sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+SELECT 'string with a NUL \0 character' AS test FORMAT Vertical
 ```
 
 ```response
-Row 1:
-──────
-test: string with 'quotes' and ␉ with some special 
- characters
+VERTICAL_PICTURES_PLACEHOLDER
 ```
 
-`ESC` and the line feed are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations, and a multi-line value keeps being broken across lines. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, a line feed breaks the line, and an ANSI escape sequence is what lets the data carry a visualization. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
 
 To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test
+SELECT 'string with a NUL \0 character' AS test
 FORMAT Vertical
 SETTINGS output_format_pretty_display_control_characters = 0
 ```
 
 ```response
-Row 1:
-──────
-test: string with 'quotes' and 	 with some special 
- characters
+VERTICAL_RAW_PLACEHOLDER
 ```
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).

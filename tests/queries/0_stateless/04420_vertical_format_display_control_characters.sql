@@ -9,9 +9,9 @@ SELECT 'null\0and\x01mixed\x1btext' AS value FORMAT Vertical;
 SELECT 'delete\x7Fchar' AS value FORMAT Vertical;
 SELECT 'normal text' AS value FORMAT Vertical;
 
--- `ESC` and the line feed are never replaced, because a terminal interprets them rather than
--- swallowing them: the ANSI escape sequences carried by the data keep being interpreted (the mixed
--- value above also keeps its `ESC` byte), and the `line\nbreak` value above stays on two lines.
+-- `TAB`, the line feed and `ESC` are never replaced, because a terminal interprets them rather
+-- than swallowing them: the `tab\there` value above keeps its tab, the `line\nbreak` value stays
+-- on two lines, and the ANSI escape sequences carried by the data keep being interpreted.
 SELECT '\x1b[31mred\x1b[0m' AS value FORMAT Vertical;
 SELECT 1 AS `esc\x1bname` FORMAT Vertical;
 
