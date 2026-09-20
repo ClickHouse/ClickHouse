@@ -1631,7 +1631,7 @@ public:
 namespace
 {
 
-/// A server without a started Raft instance. Enough for onCommit and the error paths, which only
+/// A server without a started Raft instance. Enough for `onCommit` and the error paths, which only
 /// touch in_flight_batches and the response routing.
 struct DispatcherFixture
 {
@@ -1646,8 +1646,8 @@ struct DispatcherFixture
     /// Responses the router took, i.e. that did not go to the per-session response queue.
     std::vector<DB::KeeperResponseForSession> routed;
 
-    /// Called synchronously from KeeperStateMachine::processReadRequests, so a test can observe the
-    /// window in which onCommit is executing a batch's reads. Must not throw.
+    /// Called synchronously from `KeeperStateMachine::processReadRequests`, so a test can observe the
+    /// window in which `onCommit` is executing a batch's reads. Must not throw.
     std::function<void(DB::KeeperResponseForSession)> on_response;
 
     DB::KeeperSpecialResponseRouter router()
@@ -1695,7 +1695,7 @@ struct DispatcherFixture
         dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
 
-    /// Executing reads goes through KeeperStateMachine::processReadRequests, which needs the
+    /// Executing reads goes through `KeeperStateMachine::processReadRequests`, which needs the
     /// storage the constructor does not create. Raft still is not started.
     void initStateMachine() const { server->getKeeperStateMachine()->init(); }
 };
@@ -1736,7 +1736,7 @@ DB::KeeperRequestForSession makeReadRequest(int64_t session_id, int32_t xid, con
     return request_for_session;
 }
 
-/// The true observation count of a histogram metric. Metric::observe increments exactly one
+/// The true observation count of a histogram metric. `Metric::observe` increments exactly one
 /// bucket counter (they are per-bucket, not cumulative), so any single index is the wrong oracle.
 HistogramMetrics::Metric::Counter waitForWriteObservations()
 {
@@ -1783,7 +1783,7 @@ TEST(KeeperDispatcher, SessionIDCommitCorrelation)
     EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the fully committed batch was not popped";
 }
 
-/// keeper_read_wait_for_write_time_milliseconds must be observed for both carriers of parked reads.
+/// `keeper_read_wait_for_write_time_milliseconds` must be observed for both carriers of parked reads.
 /// The metric is process-global, so every arm asserts a delta, never an absolute value.
 /// Reads that never waited, and reads dropped without their write completing, must not be counted.
 TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
@@ -1792,7 +1792,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
     fixture.initStateMachine();
     auto & dispatcher = *fixture.dispatcher;
 
-    /// intermediate_reads: parked between two writes of the batch, drained by onCommit after the
+    /// `intermediate_reads`: parked between two writes of the batch, drained by `onCommit` after the
     /// first one commits, while the batch is still in flight.
     {
         auto before = waitForWriteObservations();
@@ -1816,7 +1816,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
-    /// late_reads: parked after the last request of the batch, drained by onCommit.
+    /// `late_reads`: parked after the last request of the batch, drained by `onCommit`.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
@@ -1865,7 +1865,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         EXPECT_EQ(waitForWriteObservations() - before, 0u) << "dropped reads were observed as completed waits";
     }
 
-    /// A read that arrives while onCommit is already executing this batch's reads.
+    /// A read that arrives while `onCommit` is already executing this batch's reads.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
@@ -1874,8 +1874,8 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         auto first_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 2, "/");
         ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, first_read));
 
-        /// processReadRequests calls this back synchronously, inside the drain loop, which is
-        /// exactly the window dispatchThread would add into.
+        /// `processReadRequests` calls this back synchronously, inside the drain loop, which is
+        /// exactly the window `dispatchThread` would add into.
         auto mid_drain_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 3, "/");
         bool added_mid_drain = false;
         fixture.on_response = [&](DB::KeeperResponseForSession)
