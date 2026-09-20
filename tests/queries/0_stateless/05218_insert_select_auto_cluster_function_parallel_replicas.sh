@@ -38,8 +38,11 @@ SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, ma
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_cluster_engines = 1, parallel_distributed_insert_select = 2, log_queries = 1"
 
-QUERY_ID_URL="05218_${CLICKHOUSE_DATABASE}_url"
-QUERY_ID_S3="05218_${CLICKHOUSE_DATABASE}_s3"
+# The query ids and the query log lookup below must isolate this run: a re-run on the same server
+# must not pick up the secondary queries of a previous run.
+QUERY_ID_SUFFIX="${CLICKHOUSE_DATABASE}_$(date +%s%N)_${RANDOM}"
+QUERY_ID_URL="05218_url_${QUERY_ID_SUFFIX}"
+QUERY_ID_S3="05218_s3_${QUERY_ID_SUFFIX}"
 
 echo "--- url ---"
 $CLICKHOUSE_CLIENT --query_id "${QUERY_ID_URL}" -q "
@@ -55,9 +58,11 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM dst_05218"
 # The INSERT must really have been distributed: every replica ran the forwarded INSERT, the forwarded
 # query names the `*Cluster` function, and the replicas together read every file exactly once.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-for query_id in "${QUERY_ID_URL}" "${QUERY_ID_S3}"
+for pair in "${QUERY_ID_URL} urlCluster" "${QUERY_ID_S3} s3Cluster"
 do
-    echo "--- forwarded queries of ${query_id##*_} ---"
+    query_id="${pair%% *}"
+    cluster_function="${pair##* }"
+    echo "--- forwarded queries of ${cluster_function%Cluster} ---"
     $CLICKHOUSE_CLIENT -q "
         WITH initial AS
         (
@@ -68,17 +73,19 @@ do
                 AND is_initial_query = 1
                 AND type = 'QueryFinish'
                 AND event_date >= yesterday()
+                AND event_time >= now() - INTERVAL 10 MINUTE
         )
         SELECT
             count() AS replicas,
-            countIf(query LIKE '%Cluster(%') AS cluster_function_queries,
+            countIf(query ILIKE '%${cluster_function}(%') AS cluster_function_queries,
             sum(read_rows) AS rows_read_by_replicas
         FROM system.query_log
         WHERE initial_query_id IN (SELECT query_id FROM initial)
             AND is_initial_query = 0
             AND query_kind = 'Insert'
             AND type = 'QueryFinish'
-            AND event_date >= yesterday()"
+            AND event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE dst_05218 SYNC"
