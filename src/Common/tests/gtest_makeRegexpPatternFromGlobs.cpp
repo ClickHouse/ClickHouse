@@ -187,6 +187,32 @@ TEST(Common, expandSelectionGlobFirst)
     }
 }
 
+TEST(Common, canExpandSelectionGlobFirst)
+{
+    /// `makeRegexpPatternFromGlobs` reads a doubled brace as a literal brace around an enum, and a
+    /// comma outside a group as literal text, so a pattern the selector glob scanner refuses can
+    /// still be matched by the reader as a regexp. A caller wanting one sample path asks first.
+    for (const auto & pattern : {"{{a,b}}", "dir/{{a,b}}/f.csv", "a,b{c,d}{e,f}", "}{a,b}{c,d}",
+                                 "{a,b}{c{d,e}"})
+    {
+        EXPECT_FALSE(canExpandSelectionGlobFirst(pattern)) << pattern;
+        EXPECT_THROW(expandSelectionGlobFirst(pattern), DB::Exception) << pattern;
+    }
+
+    /// An unterminated group is not a group the scanner ever reaches, and the answer stays "no"
+    /// rather than depending on which of the two spots notices that the pattern is malformed.
+    EXPECT_FALSE(canExpandSelectionGlobFirst("{a,b"));
+
+    /// Everything the scanner does accept, including a literal comma past the last group and a
+    /// pattern without any group at all.
+    for (const auto & pattern : {"file.csv", "a,b.csv", "file{1,2,3}.csv", "{a}.csv", "{a,b}/{c,d}",
+                                 "{a,b}{c,d}.c,d", "{a,,b}", "{,a}", "{}"})
+    {
+        EXPECT_TRUE(canExpandSelectionGlobFirst(pattern)) << pattern;
+        EXPECT_NO_THROW(expandSelectionGlobFirst(pattern)) << pattern;
+    }
+}
+
 TEST(Common, rangeGlobIsBounded)
 {
     /// A `{N..M}` range glob becomes an alternation of every number of the range, so the regexp is

@@ -65,6 +65,40 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
 }
 
+bool canExpandSelectionGlobFirst(const std::string & input)
+{
+    /// The same shapes `scanNextSelectorGlob` refuses, answered without throwing: a '{' inside a
+    /// group, a '}' or a ',' outside one, and a group that is never closed. A ',' past the last
+    /// group is literal text - the scan stops at the '}' of that group and never looks at it.
+    const size_t last_open_bracket = input.rfind('{');
+    /// Without a '{' there is no group to scan at all, and the whole pattern stays literal text.
+    if (last_open_bracket == std::string::npos)
+        return true;
+
+    bool opened = false;
+
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        const char letter = input[i];
+        if (letter == '{')
+        {
+            if (opened)
+                return false;
+            opened = true;
+        }
+        else if (letter == '}')
+        {
+            if (!opened)
+                return false;
+            opened = false;
+        }
+        else if (letter == ',' && !opened && i < last_open_bracket)
+            return false;
+    }
+
+    return !opened;
+}
+
 
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:

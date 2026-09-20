@@ -10,6 +10,13 @@ namespace DB
     bool containsOnlyEnumGlobs(const std::string & input);
     bool hasExactlyOneBracketsExpansion(const std::string & input);
 
+    /// Whether `expandSelectionGlobFirst` can parse the pattern, i.e. whether its `{a,b,c}` groups
+    /// are the ones a selector glob is made of: not nested, closed, and holding every comma.
+    /// `makeRegexpPatternFromGlobs` is more permissive - a doubled brace like `{{a,b}}` is a literal
+    /// brace around an enum for it, and a comma outside a group is literal text - so a caller that
+    /// only wants a sample path has to ask first instead of refusing a path the reader would read.
+    bool canExpandSelectionGlobFirst(const std::string & input);
+
     /// Parse globs in string and make a regexp for it.
     /// A `{N..M}` range glob becomes an alternation of every number of the range, so it throws
     /// instead of building a regexp for an unreasonably long range, or for unreasonably many of them.
@@ -24,7 +31,8 @@ namespace DB
 
     /// The first path `expandSelectionGlob` would return, picking each group's first alternative
     /// without enumerating the rest. For a caller that needs one sample path rather than the whole
-    /// product it is also always possible, where the full expansion can be refused for a pattern
-    /// the reader would go on to match as a regexp.
+    /// product it is always possible whatever the groups multiply out to, where the full expansion
+    /// can be refused for a pattern the reader would go on to match as a regexp. It throws for a
+    /// pattern `canExpandSelectionGlobFirst` rejects.
     std::string expandSelectionGlobFirst(const std::string & path);
 }

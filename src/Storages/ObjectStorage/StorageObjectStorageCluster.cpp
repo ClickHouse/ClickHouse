@@ -84,14 +84,17 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
         /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
         /// and, for a table definition, persist it - from a path that the reader always refuses to
         /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
-        /// never built, so taking each group's first alternative is enough and is always possible.
+        /// never built, so taking each group's first alternative is enough.
         if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
         {
             auto expanded = expandSelectionGlob(path.path);
             if (!expanded.empty())
                 return expanded.front() + archive_suffix;
         }
-        else
+        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
+        /// literal brace around an enum for it, and a comma outside a group is literal text. Such a
+        /// path is listed instead, rather than refused during analysis while the reader reads it.
+        else if (canExpandSelectionGlobFirst(path.path))
             return expandSelectionGlobFirst(path.path) + archive_suffix;
     }
 
