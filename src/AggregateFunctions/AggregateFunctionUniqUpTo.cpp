@@ -139,6 +139,9 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
+        if (count > threshold)
+            return;
+
         /// Keep in mind that calculations are approximate.
         auto value = column.getDataAt(row_num);
         insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()), threshold);
@@ -263,7 +266,11 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
+        auto & state = this->data(place);
+        if (state.count > threshold)
+            return;
+
+        state.insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
