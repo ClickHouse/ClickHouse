@@ -1,0 +1,41 @@
+--- results are unchanged ---
+2000	8000	4	4
+2000	8000	4	4
+2000	8000
+2000	8000
+2001	8005	1
+2001	8005	1
+2000	8000	0
+2000	8000	0
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000	2000	8000
+2000	8000	2000	8000
+0	0	0
+0	0	0
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+2000	8000
+--- the pre-filter is applied while dataflow statistics are collected ---
+05233ap_lc_off	0	1
+05233ap_lc_on	20000	1
+05233ap_lcrep_off	0	1
+05233ap_lcrep_on	20000	1
+05233ap_none_off	0	1
+05233ap_none_on	30000	1
+05233ap_off	0	1
+05233ap_on	20000	1
+05233ap_throwif	20000	1
+estimate matches the run without the pre-filter	1
+estimate matches with every group rejected	1
+estimate matches for a repeated LowCardinality key	1
+estimate matches for a LowCardinality key	1

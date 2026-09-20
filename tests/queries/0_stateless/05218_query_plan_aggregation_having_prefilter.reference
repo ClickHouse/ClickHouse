@@ -40,33 +40,6 @@ array join in having	0
 stateful outer condition, merged	0
 stateful outer condition across a projection, merged	0
 serialized plan	0
---- results are unchanged ---
-2000	8000	4	4
-2000	8000	4	4
-2000	8000
-2000	8000
-2001	8005	1
-2001	8005	1
-2000	8000	0
-2000	8000	0
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000	2000	8000
-2000	8000	2000	8000
-0	0	0
-0	0	0
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
-2000	8000
 --- the skipped-group count is exact for every operator, in both conversion paths ---
 2000	8000
 2000	8000
@@ -104,17 +77,6 @@ serialized plan	0
 --- a sibling aggregate that throws on a rejected group stops being reached ---
 2000
 5
---- the pre-filter is applied while dataflow statistics are collected ---
-05218ap_lc_off	0	1
-05218ap_lc_on	20000	1
-05218ap_none_off	0	1
-05218ap_none_on	30000	1
-05218ap_off	0	1
-05218ap_on	20000	1
-05218ap_throwif	20000	1
-estimate matches the run without the pre-filter	1
-estimate matches with every group rejected	1
-estimate matches for a LowCardinality key	1
 --- independent per-partition aggregation is refused ---
 skip merging is set	1
 and the pre-filter is not	0
