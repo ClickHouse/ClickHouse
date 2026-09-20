@@ -3230,13 +3230,14 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         if (input->column)
             continue;
 
-        /// A not-matched row holds the column's own default, which differs from the type's
-        /// `getDefault` field for `Date32`. Non-trivial default insertion keeps the type default.
-        ColumnPtr constant_column;
-        if (input->result_type->isDefaultInsertTrivial())
-            constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
-        else
-            constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        /// A not-matched row holds the column's own default, which for `Date32` is 0 (1970-01-01)
+        /// and not the `Field` from `getDefault` (1900-01-01). Where default insertion is not
+        /// trivial the join's own fill sites disagree, so no probe value is faithful: leave the
+        /// input unknown, which keeps the built filter non-constant and proves nothing below.
+        if (!input->result_type->isDefaultInsertTrivial())
+            continue;
+
+        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
     }

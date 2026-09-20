@@ -8,6 +8,8 @@ conversion preserved, rows	0
 conversion preserved, plan	1
 LowCardinality(Date32)	2
 Tuple(Date32)	2
+Tuple(Date32, Enum8), whole tuple in the filter	2
+Tuple(Date32, Enum8), subcolumn extraction off	2
 Date is unaffected, rows	2
 Date is unaffected, plan	1
 dictionary LEFT JOIN, answer unchanged	1

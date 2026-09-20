@@ -11,13 +11,14 @@ SET join_use_nulls = 0;                                    -- a not-matched row 
                                                            -- default, not NULL
 SET enable_parallel_replicas = 0;                          -- the assertions below are about the local plan
 SET allow_suspicious_low_cardinality_types = 1;            -- for the LowCardinality(Date32) fixture
-SET session_timezone = 'UTC';                              -- east of UTC, toDateTime(Date32 '1970-01-01')
-                                                           -- is below the DateTime epoch and wraps
+SET session_timezone = 'UTC';                              -- in a timezone east of UTC, toDateTime(Date32
+                                                           -- '1970-01-01') is below the epoch and wraps
 
 DROP TABLE IF EXISTS kr_05233;
 DROP TABLE IF EXISTS kl_05233;
 DROP TABLE IF EXISTS kl_lc_05233;
 DROP TABLE IF EXISTS kl_tup_05233;
+DROP TABLE IF EXISTS kl_tup_mix_05233;
 DROP TABLE IF EXISTS kl_date_05233;
 DROP DICTIONARY IF EXISTS dict_05233;
 DROP TABLE IF EXISTS kdr_05233;
@@ -79,6 +80,20 @@ SELECT 'Tuple(Date32)', count()
 FROM kr_05233 AS r LEFT JOIN kl_tup_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00');
 
+CREATE TABLE kl_tup_mix_05233 (t Tuple(Date32, Enum8('x' = 1)), v Int64) ENGINE = MergeTree ORDER BY v;
+INSERT INTO kl_tup_mix_05233 VALUES (tuple(toDate32('2021-01-01'), 'x'), 1);
+
+-- A mixed composite: both join fill families agree on the `Date32` element and differ only on the
+-- `Enum8` one, so the whole tuple's type default must not stand in for the element read here.
+SELECT 'Tuple(Date32, Enum8), whole tuple in the filter', count()
+FROM kr_05233 AS r LEFT JOIN kl_tup_mix_05233 AS l ON l.v = r.v
+WHERE toDateTime(materialize(l.t).1) < toDateTime('2020-07-25 12:00:00');
+
+SELECT 'Tuple(Date32, Enum8), subcolumn extraction off', count()
+FROM kr_05233 AS r LEFT JOIN kl_tup_mix_05233 AS l ON l.v = r.v
+WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00')
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 -- `Date` agrees on both values, so neither its result nor its conversion may move.
 CREATE TABLE kl_date_05233 (d Date, v Int64) ENGINE = MergeTree ORDER BY d;
 INSERT INTO kl_date_05233 VALUES ('2021-01-01', 1);
@@ -130,6 +145,7 @@ DROP DICTIONARY dict_05233;
 DROP TABLE kdr_05233;
 DROP TABLE dsrc_05233;
 DROP TABLE kl_date_05233;
+DROP TABLE kl_tup_mix_05233;
 DROP TABLE kl_tup_05233;
 DROP TABLE kl_lc_05233;
 DROP TABLE kl_05233;
