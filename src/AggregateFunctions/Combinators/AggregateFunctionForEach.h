@@ -30,7 +30,8 @@ namespace ErrorCodes
 }
 
 
-struct AggregateFunctionForEachData
+/// Cache-line aligned state to prevent false sharing during parallel aggregation.
+struct alignas(64) AggregateFunctionForEachData
 {
     size_t dynamic_array_size = 0;
     char * array_of_aggregate_datas = nullptr;
@@ -82,7 +83,7 @@ private:
 
             char * old_state = state.array_of_aggregate_datas;
 
-            char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
+            char * new_state = arena.alignedAlloc(allocation_size, std::max<size_t>(64, nested_func->alignOfData()));
 
             size_t i = 0;
             try
@@ -285,6 +286,87 @@ public:
         {
             nested_func->add(nested_state, nested.data(), i, arena);
             nested_state += nested_size_of_data;
+        }
+    }
+
+    /// Optimized batch aggregation for rows belonging to the same place.
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionForEach>::addBatchSinglePlace(
+                row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
+
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            size_t begin = offsets[row - 1];
+            size_t end = offsets[row];
+            AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+
+            char * nested_state = state.array_of_aggregate_datas;
+            for (size_t i = begin; i < end; ++i)
+            {
+                nested_func->add(nested_state, nested.data(), i, arena);
+                nested_state += nested_size_of_data;
+            }
+        }
+    }
+
+    /// Optimized batch aggregation across places.
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionForEach>::addBatch(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            if (!places[row])
+                continue;
+
+            AggregateDataPtr place = places[row] + place_offset;
+            size_t begin = offsets[row - 1];
+            size_t end = offsets[row];
+            AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+
+            char * nested_state = state.array_of_aggregate_datas;
+            for (size_t i = begin; i < end; ++i)
+            {
+                nested_func->add(nested_state, nested.data(), i, arena);
+                nested_state += nested_size_of_data;
+            }
         }
     }
 
