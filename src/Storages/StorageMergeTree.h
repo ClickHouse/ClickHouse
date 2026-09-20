@@ -347,6 +347,7 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
     bool areBackgroundWorkersEnabled() const override { return background_workers_enabled; }
+    bool isReadonlyCommitInFlight() const override { return readonly_commit_in_flight; }
 
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
@@ -359,6 +360,11 @@ private:
 
     bool isTableReadonly() const;
     void assertNotReadonly() const;
+
+    /// The `table_readonly` setting as it is currently visible in memory, which a settings `ALTER`
+    /// changes before the commit. Only the `ALTER` itself, which decides what the transition is,
+    /// uses this; everything else must use `isTableReadonly`, which reports the durable value.
+    bool isReadonlySettingSet() const;
 
     /// Starts every background worker that only a writable table runs. Called on startup of a writable
     /// table and again when `table_readonly` is turned back off, so that a table that was attached
@@ -407,6 +413,21 @@ private:
     /// that the outdated part loader of a table that started writable, whose only guard this is,
     /// stops modifying the disk once the table is read-only.
     std::atomic<bool> background_workers_enabled {false};
+
+    /// Whether a settings `ALTER` that turns `table_readonly` off is between making the new value
+    /// visible in memory and committing it durably. `changeSettings` publishes the new settings
+    /// immediately, but the table becomes durably writable only when `alterTable` returns, and the
+    /// `ALTER` holds `alter_lock`, which does not serialize with the `lockForShare` that the write
+    /// paths take. Without this flag a concurrent `INSERT`, mutation, `TRUNCATE`, `MOVE PARTITION TO
+    /// TABLE` or `REPLACE PARTITION` would pass `assertNotReadonly` inside that window and modify a
+    /// table whose failed commit leaves it read-only. `isTableReadonly` therefore reports the old,
+    /// durable value while it is set, and the `ALTER` itself uses `isReadonlySettingSet` where it
+    /// means the new in-memory value.
+    ///
+    /// Only the 1 -> 0 direction needs this. A 0 -> 1 `ALTER` makes the table look read-only before
+    /// the commit, which merely rejects a concurrent write that a rolled-back commit would have
+    /// allowed: conservative, and never a write to a read-only table.
+    std::atomic<bool> readonly_commit_in_flight {false};
 
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;

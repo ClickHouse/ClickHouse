@@ -69,6 +69,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace ProfileEvents
@@ -532,8 +533,16 @@ void StorageMergeTree::alter(
         /// read-only table and enabled again only after the commit succeeded, see the end of this
         /// method. They are already disabled for a table that started read-only or was made read-only
         /// by an earlier `ALTER`; this keeps the invariant for a table created with `table_readonly = 1`.
-        if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
+        /// The table is durably read-only until the commit succeeds, so foreground queries that
+        /// modify data keep being rejected for the whole window, exactly like the background workers
+        /// disabled just below. Cleared at the end of this branch, before the post-commit tail.
+        const bool commit_of_readonly_table = (*old_storage_settings)[MergeTreeSetting::table_readonly];
+        if (commit_of_readonly_table)
+        {
+            readonly_commit_in_flight = true;
             disableBackgroundWorkers();
+        }
+        SCOPE_EXIT({ if (commit_of_readonly_table) readonly_commit_in_flight = false; });
 
         StartedBackgroundWorkers started_workers;
         try
@@ -564,7 +573,7 @@ void StorageMergeTree::alter(
             /// the commit is enabling the workers, a flag flip that cannot fail, so the table can never
             /// end up durably writable with some workers absent until a restart. Starting is
             /// idempotent, so a retried `ALTER` completes the transition.
-            if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
+            if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
                 startBackgroundWorkers(&started_workers);
 
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_settings_pause_before_metadata_commit);
@@ -928,7 +937,7 @@ void StorageMergeTree::alter(
         /// its only guard is `background_workers_enabled`. It suspends itself after the part it is
         /// loading and resumes when the setting is toggled back. Done after the commit: a failed
         /// commit leaves the table writable, with every worker enabled.
-        if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
+        if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isReadonlySettingSet())
         {
             disableBackgroundWorkers();
             cleanup_thread.stop();
@@ -940,7 +949,7 @@ void StorageMergeTree::alter(
         /// commit: an enabled worker could otherwise queue work on a table whose commit then fails,
         /// and the cleanup modifies the disk. Enabling and the wake-up cannot fail. The cleanup can,
         /// but that leaves the table in a consistent writable state with every worker running.
-        if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
+        if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
         {
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
@@ -2324,7 +2333,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
-    if (isTableReadonly() || !background_workers_enabled)
+    if (isReadonlySettingSet() || !background_workers_enabled)
         return false;
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
@@ -4196,9 +4205,16 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
     return cache;
 }
 
-bool StorageMergeTree::isTableReadonly() const
+bool StorageMergeTree::isReadonlySettingSet() const
 {
     return isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly];
+}
+
+bool StorageMergeTree::isTableReadonly() const
+{
+    /// `readonly_commit_in_flight` keeps the durable value visible while a `table_readonly` 1 -> 0
+    /// `ALTER` has already published the new settings in memory but has not committed them.
+    return readonly_commit_in_flight || isReadonlySettingSet();
 }
 
 void StorageMergeTree::assertNotReadonly() const
