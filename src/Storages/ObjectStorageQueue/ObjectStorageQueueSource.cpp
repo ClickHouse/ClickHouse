@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
