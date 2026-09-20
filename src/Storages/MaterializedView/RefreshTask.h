@@ -326,6 +326,8 @@ private:
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
+        /// The schedule state reached only memory. No refresh until doScheduling saves it.
+        bool local_state_save_pending = false;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.

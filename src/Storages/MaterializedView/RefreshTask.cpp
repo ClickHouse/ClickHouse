@@ -356,7 +356,7 @@ void RefreshTask::startup()
     }
     else if (!local_state_path.empty())
     {
-        saveLocalCoordinationState(context, coordination.root_znode.toString());
+        scheduling.local_state_save_pending = !saveLocalCoordinationState(context, coordination.root_znode.toString());
     }
 
     auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
@@ -845,6 +845,24 @@ void RefreshTask::doScheduling(bool is_shutdown)
             /// scheduling thread and the catch-all below would abort the server. Stay Disabled.
             setState(RefreshState::Disabled, lock);
             return;
+        }
+
+        if (scheduling.local_state_save_pending)
+        {
+            const String data = coordination.root_znode.toString();
+            /// shutdown() nulls `view` under `mutex`, so take the context first and re-check after.
+            auto context = view->getContext();
+            lock.unlock();
+            const bool saved = saveLocalCoordinationState(context, data);
+            lock.lock();
+            if (!view)
+                return;
+            if (!saved)
+            {
+                scheduling_task->scheduleAfter(5000);
+                return;
+            }
+            scheduling.local_state_save_pending = false;
         }
 
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
@@ -1874,7 +1892,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         lock.lock();
         if (!saved)
         {
-            ProfileEvents::increment(ProfileEvents::RefreshableViewStatePersistFailed);
             scheduling_task->scheduleAfter(5000);
             return false;
         }
@@ -1925,7 +1942,7 @@ RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState()
 
             /// parse() makes the fields after `randomness` optional, for old znodes, and reads a cut-off
             /// cursor as an empty one; every field toString() writes ends in a newline.
-            if (data.find("\ncursor: ") == String::npos || !data.ends_with("\n"))
+            if (!data.contains("\ncursor: ") || !data.ends_with("\n"))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Persisted refresh state does not end with a complete cursor field");
 
             CoordinationZnode znode;
@@ -1965,6 +1982,7 @@ bool RefreshTask::saveLocalCoordinationState(const ContextPtr & context, const S
     {
         /// Throwing here would reach doScheduling's catch-all, which aborts debug builds.
         tryLogCurrentException(getLogger(), fmt::format("Failed to persist refresh state '{}'", local_state_path));
+        ProfileEvents::increment(ProfileEvents::RefreshableViewStatePersistFailed);
         return false;
     }
 }

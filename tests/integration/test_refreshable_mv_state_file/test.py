@@ -1,6 +1,7 @@
 import os
 import shlex
 import time
+import uuid
 
 import pytest
 
@@ -314,6 +315,120 @@ def test_finished_refresh_is_not_published_when_the_state_cannot_be_persisted():
         assert refresh_info(name, "last_success_time") == after
     finally:
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_a_failed_startup_save_is_retried_before_any_refresh():
+    """startup() is the only chance an EMPTY view has to publish its anchor before it refreshes.
+
+    Blocking the write needs the path before the view exists, so the UUID is given explicitly. A
+    directory at the temporary name the file is written through fails the write with EISDIR for any
+    uid, unlike permission bits, which root would ignore.
+    """
+    name = "rmv_startup_persist_fails"
+    view_uuid = str(uuid.uuid4())
+    server_uuid = node.query("SELECT serverUUID()").strip()
+    state_dir = f"{DB_DISK_PATH}/store/{view_uuid[:3]}/{view_uuid}"
+    blocker = f"{state_dir}/refresh_state.{server_uuid}.txt.tmp"
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    # The server has to be able to write here once the blocker is gone, whichever uid it runs as.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {blocker} && chown -R --reference={DB_DISK_PATH} {DB_DISK_PATH}/store",
+        ],
+        user="root",
+    )
+    try:
+        failures_before = profile_event("RefreshableViewStatePersistFailed")
+        successes_before = profile_event("RefreshableViewRefreshSuccess")
+        # EMPTY is what makes the anchor worth keeping: it says the view was just refreshed, and
+        # EVERY 2 SECOND is short enough that an anchor left in memory is refreshed past at once.
+        node.query(
+            f"CREATE MATERIALIZED VIEW {name} UUID '{view_uuid}' REFRESH EVERY 2 SECOND "
+            f"(a DateTime) ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT now() a"
+        )
+        failures = node.query_with_retry(
+            "SELECT sum(value) FROM system.events "
+            "WHERE event = 'RefreshableViewStatePersistFailed'",
+            check_callback=lambda x: int(x.strip()) > failures_before,
+            retry_count=120,
+        ).strip()
+        assert int(failures) > failures_before
+
+        # Three timeslots and one 5 s retry interval, so a view that refreshes off the unpublished
+        # anchor reddens this rather than merely being early.
+        time.sleep(7)
+        assert refresh_info(name, "last_success_time") == "\\N"
+        assert profile_event("RefreshableViewRefreshSuccess") == successes_before
+        assert find_refresh_state_files(state_dir) == []
+
+        node.exec_in_container(["bash", "-c", f"rmdir {blocker}"], user="root")
+
+        # Refreshing is held until the save succeeds, so a refresh happening at all is the retry.
+        wait_for_refresh_info(name, "last_success_time", lambda x: x not in ("", "\\N"))
+        assert find_refresh_state_files(state_dir) == [
+            f"{state_dir}/refresh_state.{server_uuid}.txt"
+        ]
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.exec_in_container(["bash", "-c", f"rm -rf {blocker}"], user="root")
+
+
+def test_a_stopped_view_still_retries_its_failed_startup_save():
+    """Stopping a view stops its refreshes, not its persistence.
+
+    A view stopped before its anchor reached the disk is the shape of the reported stampede: the
+    anchor never becomes durable, a restart reconstructs the epoch one instead, and the SYSTEM START
+    VIEWS that follows refreshes every view at once.
+    """
+    name = "rmv_stopped_persist_fails"
+    view_uuid = str(uuid.uuid4())
+    server_uuid = node.query("SELECT serverUUID()").strip()
+    state_dir = f"{DB_DISK_PATH}/store/{view_uuid[:3]}/{view_uuid}"
+    blocker = f"{state_dir}/refresh_state.{server_uuid}.txt.tmp"
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {blocker} && chown -R --reference={DB_DISK_PATH} {DB_DISK_PATH}/store",
+        ],
+        user="root",
+    )
+    try:
+        failures_before = profile_event("RefreshableViewStatePersistFailed")
+        # EVERY 1 DAY, so nothing here depends on when refreshes resume.
+        node.query(
+            f"CREATE MATERIALIZED VIEW {name} UUID '{view_uuid}' REFRESH EVERY 1 DAY "
+            f"(a DateTime) ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT now() a"
+        )
+        node.query(f"SYSTEM STOP VIEW {name}")
+        failures = node.query_with_retry(
+            "SELECT sum(value) FROM system.events "
+            "WHERE event = 'RefreshableViewStatePersistFailed'",
+            check_callback=lambda x: int(x.strip()) > failures_before,
+            retry_count=120,
+        ).strip()
+        assert int(failures) > failures_before
+        assert find_refresh_state_files(state_dir) == []
+
+        node.exec_in_container(["bash", "-c", f"rmdir {blocker}"], user="root")
+
+        state_path = f"{state_dir}/refresh_state.{server_uuid}.txt"
+        for _ in range(120):
+            if find_refresh_state_files(state_dir) == [state_path]:
+                break
+            time.sleep(0.5)
+        assert find_refresh_state_files(state_dir) == [state_path]
+        # The file appears while the scheduling pass still holds the view in Scheduling, so the
+        # status it settles back to is what says the retry started no refresh.
+        wait_for_refresh_info(name, "status", lambda x: x == "Disabled")
+        assert refresh_info(name, "last_success_time") == "\\N"
+        assert "last_completed_timeslot: 0\n" not in read_state_file(state_path)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.exec_in_container(["bash", "-c", f"rm -rf {blocker}"], user="root")
 
 
 def create_slow_rmv(name):
