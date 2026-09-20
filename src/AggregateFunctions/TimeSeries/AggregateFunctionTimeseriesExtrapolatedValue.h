@@ -168,9 +168,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 if (last_removed.has_value())
                 {
                     const auto & prev_summary = last_removed->second;
-                    Int64 sample_ts = toInt64(prev_summary.last_timestamp);
-                    Int64 cut_off_ts = toInt64(grid_timestamp) - toInt64(window);
-                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= toInt64(window))
+                    Int64 sample_ts = static_cast<Int64>(prev_summary.last_timestamp);
+                    Int64 cut_off_ts = static_cast<Int64>(grid_timestamp) - static_cast<Int64>(window);
+                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= static_cast<Int64>(window))
                     {
                         has_prev = true;
                         prev_timestamp = prev_summary.last_timestamp;
@@ -295,6 +295,7 @@ public:
     static constexpr bool check_resets = Traits::check_resets;
 
     using TimestampType = typename Traits::TimestampType;
+    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
     using Aggregator = typename Traits::Aggregator;
 
