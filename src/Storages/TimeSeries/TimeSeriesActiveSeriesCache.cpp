@@ -19,20 +19,29 @@ TimeSeriesActiveSeriesCache::TimeSeriesActiveSeriesCache(size_t max_entries, UIn
     : shards(NUM_SHARDS)
     , ttl_seconds(ttl_seconds_)
 {
-    size_t per_shard = max_entries ? std::max<size_t>(1, max_entries / NUM_SHARDS) : 0;
-    for (auto & shard : shards)
-        shard.max_shard_entries = per_shard;
+    bool unlimited = (max_entries == 0);
+    size_t base = unlimited ? 0 : (max_entries / NUM_SHARDS);
+    size_t rem = unlimited ? 0 : (max_entries % NUM_SHARDS);
+    for (size_t i = 0; i < NUM_SHARDS; ++i)
+    {
+        shards[i].unlimited = unlimited;
+        shards[i].max_shard_entries = base + (i < rem ? 1 : 0);
+    }
 }
 
-void TimeSeriesActiveSeriesCache::updateSettings(size_t max_entries, UInt32 ttl_seconds_)
+void TimeSeriesActiveSeriesCache::updateSettings(size_t max_entries, UInt32 ttl_seconds_) const
 {
     ttl_seconds.store(ttl_seconds_, std::memory_order_relaxed);
-    size_t per_shard = max_entries ? std::max<size_t>(1, max_entries / NUM_SHARDS) : 0;
-    for (auto & shard : shards)
+    bool unlimited = (max_entries == 0);
+    size_t base = unlimited ? 0 : (max_entries / NUM_SHARDS);
+    size_t rem = unlimited ? 0 : (max_entries % NUM_SHARDS);
+    for (size_t i = 0; i < NUM_SHARDS; ++i)
     {
+        auto & shard = shards[i];
         std::lock_guard lock(shard.mutex);
-        shard.max_shard_entries = per_shard;
-        while (shard.max_shard_entries > 0 && shard.map.size() > shard.max_shard_entries)
+        shard.unlimited = unlimited;
+        shard.max_shard_entries = base + (i < rem ? 1 : 0);
+        while (!shard.unlimited && shard.map.size() > shard.max_shard_entries)
         {
             auto it = shard.map.begin();
             if (it != shard.map.end())
@@ -43,7 +52,7 @@ void TimeSeriesActiveSeriesCache::updateSettings(size_t max_entries, UInt32 ttl_
     }
 }
 
-void TimeSeriesActiveSeriesCache::clear()
+void TimeSeriesActiveSeriesCache::clear() const
 {
     for (auto & shard : shards)
     {
@@ -102,7 +111,7 @@ void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
     UInt32 current_time,
     IColumn::Filter & out_filter,
     size_t & out_written_count,
-    std::vector<UInt128> & out_touched_ids)
+    std::vector<UInt128> & out_touched_ids) const
 {
     size_t num_rows = id_column->size();
     out_filter.resize_fill(num_rows, 0);
@@ -143,14 +152,17 @@ void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
             if (!it)
             {
                 needs_write = true;
-                if (shard.max_shard_entries > 0 && shard.map.size() >= shard.max_shard_entries)
+                if (shard.unlimited || shard.max_shard_entries > 0)
                 {
-                    auto first = shard.map.begin();
-                    if (first != shard.map.end())
-                        shard.map.erase(first->getKey());
+                    if (!shard.unlimited && shard.map.size() >= shard.max_shard_entries)
+                    {
+                        auto first = shard.map.begin();
+                        if (first != shard.map.end())
+                            shard.map.erase(first->getKey());
+                    }
+                    shard.map[id] = current_time;
+                    out_touched_ids.push_back(id);
                 }
-                shard.map[id] = current_time;
-                out_touched_ids.push_back(id);
             }
             else if (ttl > 0 && current_time > it->getMapped() && (current_time - it->getMapped() >= ttl))
             {
@@ -168,7 +180,7 @@ void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
     }
 }
 
-void TimeSeriesActiveSeriesCache::rollbackBulk(const std::vector<UInt128> & ids)
+void TimeSeriesActiveSeriesCache::rollbackBulk(const std::vector<UInt128> & ids) const
 {
     if (ids.empty())
         return;

@@ -27,16 +27,16 @@ public:
         UInt32 current_time,
         IColumn::Filter & out_filter,
         size_t & out_written_count,
-        std::vector<UInt128> & out_touched_ids);
+        std::vector<UInt128> & out_touched_ids) const;
 
     /// Rolls back the cache entries in case the tags pipeline push throws an exception.
-    void rollbackBulk(const std::vector<UInt128> & ids);
+    void rollbackBulk(const std::vector<UInt128> & ids) const;
 
     /// Clears all entries from the cache (called e.g. on TRUNCATE).
-    void clear();
+    void clear() const;
 
     /// Updates cache configuration settings (called e.g. on ALTER TABLE SETTINGS).
-    void updateSettings(size_t max_entries, UInt32 ttl_seconds);
+    void updateSettings(size_t max_entries, UInt32 ttl_seconds) const;
 
     /// Returns the approximate total number of entries across all shards.
     size_t size() const;
@@ -52,10 +52,11 @@ private:
         mutable std::mutex mutex;
         HashMap<UInt128, UInt32, HashCRC32<UInt128>> map;
         size_t max_shard_entries = 0;
+        bool unlimited = false;
     };
 
-    std::vector<Shard> shards;
-    std::atomic<UInt32> ttl_seconds;
+    mutable std::vector<Shard> shards;
+    mutable std::atomic<UInt32> ttl_seconds;
 
     static size_t getShardIndex(const UInt128 & id)
     {
@@ -64,6 +65,6 @@ private:
     }
 };
 
-using TimeSeriesActiveSeriesCachePtr = std::shared_ptr<TimeSeriesActiveSeriesCache>;
+using TimeSeriesActiveSeriesCachePtr = std::shared_ptr<const TimeSeriesActiveSeriesCache>;
 
 }

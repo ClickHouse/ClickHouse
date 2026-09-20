@@ -77,11 +77,11 @@ namespace
         return copy;
     }
 
-    /// Skipping a tags insert also skips the `min_time` and `max_time` that batch would have contributed, and the
-    /// selector prunes series by those columns, so the cache is only sound where the row does not carry them.
-    bool activeSeriesCacheAllowed(const TimeSeriesSettings & settings)
+    /// Cache is only sound when tags target is owned (inner) and min_time/max_time are not stored.
+    bool activeSeriesCacheAllowed(const TimeSeriesSettings & settings, bool tags_is_inner)
     {
-        return (settings[TimeSeriesSetting::tags_cache_max_series] != 0)
+        return tags_is_inner
+            && (settings[TimeSeriesSetting::tags_cache_max_series] != 0)
             && !settings[TimeSeriesSetting::store_min_time_and_max_time];
     }
 
@@ -234,11 +234,13 @@ StorageTimeSeries::StorageTimeSeries(
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
     storage_settings.set(std::move(settings));
 
+    const auto * tags_target = tryGetTarget(ViewTarget::Kind::Tags);
+    bool tags_is_inner = tags_target && tags_target->is_inner_table;
     const auto & initial_settings = *storage_settings.get();
-    if (activeSeriesCacheAllowed(initial_settings))
-        active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(
+    if (activeSeriesCacheAllowed(initial_settings, tags_is_inner))
+        active_series_cache.set(std::make_unique<TimeSeriesActiveSeriesCache>(
             initial_settings[TimeSeriesSetting::tags_cache_max_series],
-            static_cast<UInt32>(initial_settings[TimeSeriesSetting::tags_cache_ttl_seconds]));
+            static_cast<UInt32>(initial_settings[TimeSeriesSetting::tags_cache_ttl_seconds])));
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -437,6 +439,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                         getStorageID().getNameForLogs());
     }
 
+    if (auto cache = active_series_cache.get())
+        cache->clear();
+
     for (auto target_kind : getTargetKinds())
     {
         /// We truncate only inner tables here.
@@ -452,8 +457,8 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         }
     }
 
-    if (active_series_cache)
-        active_series_cache->clear();
+    if (auto cache = active_series_cache.get())
+        cache->clear();
 }
 
 
@@ -638,12 +643,14 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         const auto & updated_settings = *storage_settings.get();
         UInt64 max_series = updated_settings[TimeSeriesSetting::tags_cache_max_series];
         UInt64 ttl = updated_settings[TimeSeriesSetting::tags_cache_ttl_seconds];
-        if (activeSeriesCacheAllowed(updated_settings))
+        const auto * tags_target = tryGetTarget(ViewTarget::Kind::Tags);
+        bool tags_is_inner = tags_target && tags_target->is_inner_table;
+        if (activeSeriesCacheAllowed(updated_settings, tags_is_inner))
         {
-            if (active_series_cache)
-                active_series_cache->updateSettings(max_series, static_cast<UInt32>(ttl));
+            if (auto cache = active_series_cache.get())
+                cache->updateSettings(max_series, static_cast<UInt32>(ttl));
             else
-                active_series_cache = std::make_shared<TimeSeriesActiveSeriesCache>(max_series, static_cast<UInt32>(ttl));
+                active_series_cache.set(std::make_unique<TimeSeriesActiveSeriesCache>(max_series, static_cast<UInt32>(ttl)));
         }
         else
         {

@@ -95,6 +95,32 @@ SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_bounds')
 SELECT 'max_time advanced to the latest sample:';
 SELECT max(max_time) = toDateTime64(1015, 3) FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_bounds');
 
+-- 6. External tags target gets no cache even with store_min_time_and_max_time = 0
+DROP TABLE IF EXISTS ext_tags;
+DROP TABLE IF EXISTS ts_ext;
+CREATE TABLE ext_tags
+(
+    id Tuple(UInt64, LowCardinality(UUID)),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String)
+)
+ENGINE = MergeTree ORDER BY (metric_name, id);
+
+CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, store_min_time_and_max_time = 0, tags_cache_max_series = 1000 TAGS ext_tags;
+
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(1000, 3), 1.0)]);
+
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(1015, 3), 2.0)]);
+
+SELECT 'external tags: both inserts write tags:';
+SELECT count() FROM ext_tags;
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_ext');
+
+DROP TABLE ts_ext;
+DROP TABLE ext_tags;
+
 DROP TABLE ts_cache;
 DROP TABLE ts_nocache;
 DROP TABLE ts_bounds;
