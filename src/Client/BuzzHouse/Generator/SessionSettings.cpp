@@ -917,6 +917,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_function_early_short_circuit", trueOrFalseSettingNoOracle},
     {"enable_global_with_statement", trueOrFalseSettingNoOracle},
     {"enable_group_by_top_k_optimization", trueOrFalseSettingNoOracle},
+    {"enable_group_by_top_k_dynamic_filtering", trueOrFalseSettingNoOracle},
     {"enable_hdfs_pread", trueOrFalseSettingNoOracle},
     {"enable_http_compression", trueOrFalseSettingNoOracle},
     {"enable_job_stack_trace", trueOrFalseSettingNoOracle},

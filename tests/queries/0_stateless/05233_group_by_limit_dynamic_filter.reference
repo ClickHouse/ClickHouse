@@ -1,0 +1,37 @@
+first primary key column, no ORDER BY
+3	3
+plan: the read is filtered by the boundary
+1
+second primary key column, no ORDER BY
+5	5
+second primary key column, ORDER BY key DESC
+999	100
+998	100
+997	100
+996	100
+WHERE moved to PREWHERE, conjoined with the boundary filter
+3	3
+1
+explicit PREWHERE
+3	3
+composite key: the boundary of the first key column
+5	5
+Nullable key outside the primary key: filtered, not skipped
+3	3
+1
+several aggregation streams publish into one tracker
+7	7
+ORDER BY column LIMIT n over the second primary key column skips granules too
+0	0
+1	0
+2	0
+not applied
+0
+0
+0
+granules skipped by the primary key
+05233_a	1	1
+05233_as	1	1
+05233_b	1	1
+05233_b_desc	1	1
+05233_sort	1	1

@@ -222,6 +222,29 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     if (settings.make_distributed_plan || settings.serialize_query_plan)
         return 0;
 
+    /// The planner puts the heap on the partial aggregation of a distributed query itself
+    /// (`applyTopKPushdownToPartialAggregation`); such a plan has no `LimitStep` above the aggregation,
+    /// so only the link to the reading step is added here.
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(parent_node->step.get()))
+    {
+        const auto & params = aggregating_step->getParams();
+        if (params.top_k && !params.top_k->threshold_tracker)
+        {
+            auto threshold_tracker = tryAttachDynamicFilter(
+                parent_node,
+                *aggregating_step,
+                params.top_k->k,
+                params.top_k->key_columns,
+                params.top_k->directions.front(),
+                params.top_k->nulls_directions.front(),
+                settings,
+                nodes);
+            if (threshold_tracker)
+                aggregating_step->setTopKThresholdTracker(std::move(threshold_tracker));
+        }
+        return 0;
+    }
+
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());
     if (!limit_step)
         return 0;
