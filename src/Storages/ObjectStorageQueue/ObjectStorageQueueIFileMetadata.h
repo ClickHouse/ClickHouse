@@ -42,6 +42,7 @@ public:
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
+        void updateState(State state_);
 
         std::string getException() const;
 
