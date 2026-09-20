@@ -90,13 +90,19 @@ QUERY_ID="${CLICKHOUSE_DATABASE}_kill_after_source_finished"
 ERROR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.err")
 
 # The aggregation consumes the whole file, so the source is finished by the time the last request is
-# counted; `sleepEachRow` then holds the pipeline while the query is killed.
+# counted; `sleepEachRow` then holds the pipeline while the query is killed. The sleep is long, and
+# the limit on it is raised accordingly, because everything the test has to do before the `KILL` -
+# two polling loops, each of them running `clickhouse-client` - takes seconds on a loaded sanitizer
+# runner, and the query must still be running by then. It does not make the test slow: `sleep`
+# wakes up every second to call `QueryStatus::checkTimeLimit`, which throws for a killed query, so
+# the query ends within a second of the `KILL`.
 # parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
 # queries with their own query ids, and the kill of this query id would not reach the source.
 $CLICKHOUSE_CLIENT \
     --parallel_replicas_for_cluster_engines 0 \
+    --function_sleep_max_microseconds_per_block 60000000 \
     --query_id "$QUERY_ID" \
-    --query "SELECT sleepEachRow(3) FROM (SELECT count() FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64'))" \
+    --query "SELECT sleepEachRow(60) FROM (SELECT count() FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64'))" \
     >/dev/null 2>"$ERROR_FILE" &
 CLIENT_PID=$!
 
