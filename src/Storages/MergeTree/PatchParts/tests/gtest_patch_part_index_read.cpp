@@ -41,7 +41,9 @@ TEST(PatchPartIndexRead, RejectsBytesAfterTheIndex)
 
     /// Any other trailing content is rejected the same way.
     {
-        ReadBufferFromString in(written + String("\0\0\0", 3));
+        /// `ReadBufferFromString` only borrows the bytes, so the string has to outlive the buffer.
+        String with_trailing_bytes = written + String("\0\0\0", 3);
+        ReadBufferFromString in(with_trailing_bytes);
         EXPECT_ANY_THROW(PatchPartIndex::readBinary(in));
     }
 }
