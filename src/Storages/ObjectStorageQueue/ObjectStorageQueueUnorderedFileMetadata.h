@@ -19,6 +19,7 @@ public:
         std::atomic<UInt64> & loading_retries_ref_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
