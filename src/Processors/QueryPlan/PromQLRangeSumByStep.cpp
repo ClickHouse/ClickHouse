@@ -39,6 +39,7 @@ PromQLRangeSumByStep::PromQLRangeSumByStep(
     AggregateFunctionPtr rate_function_,
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
+    size_t max_samples_per_series_,
     size_t max_output_groups_,
     size_t max_output_block_size_,
     bool parallel_processing_requested_,
@@ -48,6 +49,7 @@ PromQLRangeSumByStep::PromQLRangeSumByStep(
     , rate_function(std::move(rate_function_))
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
+    , max_samples_per_series(max_samples_per_series_)
     , max_output_groups(max_output_groups_)
     , max_output_block_size(max_output_block_size_)
     , max_parallel_lanes(max_parallel_lanes_)
@@ -70,6 +72,7 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
              rate_function_ptr = rate_function,
              sum_function_ptr = sum_function,
              labels = labels_to_keep,
+             max_samples = max_samples_per_series,
              max_groups = max_output_groups,
              output_block_size = max_output_block_size,
              group_limit](const SharedHeader & header)
@@ -80,6 +83,7 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
                     rate_function_ptr,
                     sum_function_ptr,
                     labels,
+                    max_samples,
                     max_groups,
                     output_block_size,
                     group_limit);
@@ -128,11 +132,12 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
          rate_function_ptr = rate_function,
          sum_function_ptr = sum_function,
          labels = labels_to_keep,
+         max_samples = max_samples_per_series,
          max_groups = max_output_groups,
          output_block_size = max_output_block_size](const SharedHeader & header)
         {
             return std::make_shared<PromQLRangeSumByTransform>(
-                header, collector_ptr, rate_function_ptr, sum_function_ptr, labels, max_groups, output_block_size);
+                header, collector_ptr, rate_function_ptr, sum_function_ptr, labels, max_samples, max_groups, output_block_size);
         });
 }
 

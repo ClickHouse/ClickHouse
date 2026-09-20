@@ -280,6 +280,10 @@ bool tryBuildPromQLRangeSumByPlan(
     auto sum_function = AggregateFunctionFactory::instance().get(
         "sumForEach", NullsAction::EMPTY, DataTypes{rate_function->getResultType()}, {}, sum_properties);
 
+    const auto max_samples_per_series = context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series];
+    if (!max_samples_per_series)
+        return false;
+
     native_plan.addStep(
         std::make_unique<PromQLRangeSumByStep>(
             native_plan.getCurrentHeader(),
@@ -287,6 +291,7 @@ bool tryBuildPromQLRangeSumByPlan(
             rate_function,
             sum_function,
             std::move(range_sum_query.labels_to_keep),
+            max_samples_per_series,
             max_output_groups,
             max_block_size,
             context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
@@ -365,7 +370,6 @@ bool tryBuildPromQLTwoRangeRatesPlan(
     const PrometheusQueryTree & promql_query,
     const PrometheusQueryEvaluationSettings & evaluation_settings,
     const PromQLTwoRangeRatesQuery & two_rates_query,
-    size_t max_output_groups,
     BuiltSetsByHashPtr prepared_identifier_sets)
 {
     const bool reads_raw_samples = context->getSettingsRef()[Setting::enable_promql_native_raw_samples];
@@ -391,8 +395,9 @@ bool tryBuildPromQLTwoRangeRatesPlan(
         return false;
 
     const auto max_samples_per_series = context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series];
+    const auto max_join_groups = context->getSettingsRef()[Setting::max_promql_native_rate_series];
     const auto max_grid_cells = context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells];
-    if (!max_samples_per_series || !max_grid_cells || !max_output_groups)
+    if (!max_samples_per_series || !max_join_groups || !max_grid_cells)
         return false;
 
     std::optional<Field> raw_min_time;
@@ -413,7 +418,7 @@ bool tryBuildPromQLTwoRangeRatesPlan(
             two_rates_query.rates[1].metric_name,
             max_samples_per_series,
             max_block_size,
-            max_output_groups,
+            max_join_groups,
             max_grid_cells,
             context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
             context->getSettingsRef()[Setting::max_promql_native_parallel_lanes],
@@ -455,9 +460,8 @@ bool canBuildPromQLNativeVectorGridPlan(
         = extractPromQLTwoRangeRatesQuery(promql_query.getRoot(), evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
     if ((!range_sum_query && !range_rate_query && !two_rates_query) || !hasCompatibleEvaluationSettings(evaluation_settings))
         return false;
-    if ((range_rate_query || two_rates_query)
-        && (!context->getSettingsRef()[Setting::max_promql_native_rate_series]
-            || !context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series]))
+    if (!context->getSettingsRef()[Setting::max_promql_native_rate_series]
+        || !context->getSettingsRef()[Setting::max_promql_native_rate_samples_per_series])
         return false;
     if (two_rates_query && !context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells])
         return false;
@@ -538,7 +542,7 @@ std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGri
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The materialized native PromQL identifier set is missing");
 
     const size_t selected_series = set_and_key->set->getTotalRowCount();
-    if ((range_rate_query || two_rates_query) && selected_series > context->getSettingsRef()[Setting::max_promql_native_rate_series])
+    if (selected_series > context->getSettingsRef()[Setting::max_promql_native_rate_series])
         return {};
 
     return PromQLNativeVectorGridPreparation{
@@ -567,19 +571,21 @@ bool tryBuildPromQLNativePlan(
     if ((!native_query && !topk_query && !range_rate_query) || !hasCompatibleEvaluationSettings(evaluation_settings))
         return false;
 
+    auto preparation = tryPreparePromQLNativeVectorGridPlan(
+        query_info,
+        context,
+        processed_stage,
+        max_block_size,
+        num_streams,
+        promql_query,
+        evaluation_settings);
+    if (!preparation)
+        return false;
+
     QueryPlan native_plan;
     if (range_rate_query)
     {
-        auto preparation = tryPreparePromQLNativeVectorGridPlan(
-            query_info,
-            context,
-            processed_stage,
-            max_block_size,
-            num_streams,
-            promql_query,
-            evaluation_settings);
-        if (!preparation
-            || !tryBuildPromQLRangeRatePlan(
+        if (!tryBuildPromQLRangeRatePlan(
                 native_plan,
                 query_info,
                 context,
@@ -606,7 +612,7 @@ bool tryBuildPromQLNativePlan(
                 evaluation_settings,
                 std::move(range_sum_query),
                 max_output_groups,
-                /* prepared_identifier_sets = */ nullptr))
+                std::move(preparation->identifier_sets)))
             return false;
     }
 
@@ -733,7 +739,6 @@ bool tryBuildPromQLNativeVectorGridPlan(
             promql_query,
             evaluation_settings,
             *two_rates_query,
-            max_output_groups,
             std::move(prepared_identifier_sets));
     }
     if (!built)

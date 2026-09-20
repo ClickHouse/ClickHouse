@@ -200,7 +200,8 @@ QueryPipeline makePipeline(
     Strings labels_to_keep,
     size_t max_output_groups = 1024,
     size_t max_output_block_size = 1024,
-    PromQLGroupLimitPtr group_limit = nullptr)
+    PromQLGroupLimitPtr group_limit = nullptr,
+    size_t max_samples_per_series = 1024)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
     auto transform = std::make_shared<PromQLRangeSumByTransform>(header,
@@ -208,6 +209,7 @@ QueryPipeline makePipeline(
         rate_function,
         sum_function,
         std::move(labels_to_keep),
+        max_samples_per_series,
         max_output_groups,
         max_output_block_size,
         std::move(group_limit));
@@ -453,6 +455,33 @@ TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
+TEST(PromQLRangeSumByTransform, EnforcesPerSeriesSampleLimitAcrossChunks)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type);
+    const auto collector = makeCollector();
+    const auto rate_function = makeRateFunction(samples_type);
+    const auto sum_function = makeSumFunction(rate_function);
+
+    Chunks chunks;
+    chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}}}));
+    chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{10, 10.0}, {20, 20.0}}}));
+    auto pipeline = makePipeline(
+        header,
+        std::move(chunks),
+        collector,
+        rate_function,
+        sum_function,
+        Strings{"namespace"},
+        /*max_output_groups=*/1024,
+        /*max_output_block_size=*/1024,
+        /*group_limit=*/nullptr,
+        /*max_samples_per_series=*/2);
+    PullingPipelineExecutor executor(pipeline);
+    Chunk output;
+    expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
+}
+
 TEST(PromQLRangeSumByTransform, CapsOutputBlockSize)
 {
     const auto samples_type = makeSamplesType();
@@ -546,6 +575,7 @@ TEST(PromQLRangeSumByStep, BuildsAndRunsSingleStreamPipeline)
         rate_function,
         sum_function,
         Strings{"namespace"},
+        /*max_samples_per_series=*/1024,
         /*max_output_groups=*/1024,
         /*max_output_block_size=*/1024);
     QueryPipelineBuilders inputs;
@@ -621,6 +651,7 @@ TEST(PromQLRangeSumByStep, MergesSortedInputStreamsBeforeNativeKernel)
             rate_function,
             sum_function,
             Strings{"namespace"},
+            /*max_samples_per_series=*/1024,
             /*max_output_groups=*/1024,
             /*max_output_block_size=*/1024);
         QueryPipelineBuilders inputs;
@@ -716,6 +747,7 @@ TEST(PromQLRangeSumByStep, ParallelLanesShareOneOutputGroupAtLimit)
         rate_function,
         sum_function,
         Strings{"namespace"},
+        /*max_samples_per_series=*/1024,
         /*max_output_groups=*/1,
         /*max_output_block_size=*/1024);
     step.enableParallelProcessing();

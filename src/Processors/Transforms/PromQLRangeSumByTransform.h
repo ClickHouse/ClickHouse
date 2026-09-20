@@ -38,6 +38,7 @@ public:
         AggregateFunctionPtr rate_function_,
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
+        size_t max_samples_per_series_,
         size_t max_output_groups_,
         size_t max_output_block_size_,
         /// Optional query-wide output-group limit shared by parallel lanes and their merge.
@@ -64,6 +65,7 @@ private:
     AggregateFunctionPtr rate_function;
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
+    const size_t max_samples_per_series;
     const size_t max_output_groups;
     const size_t max_output_block_size;
     const PromQLGroupLimitPtr group_limit;
@@ -81,6 +83,7 @@ private:
     size_t next_generated_group = 0;
 
     Group current_output_group = Collector::getGroupForNoTags();
+    size_t current_series_samples = 0;
     bool rate_state_created = false;
     bool has_current_series = false;
     bool generation_started = false;

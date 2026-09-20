@@ -1,11 +1,13 @@
 #include <Processors/Transforms/PromQLRangeSumByTransform.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 
@@ -39,6 +41,7 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     AggregateFunctionPtr rate_function_,
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
+    size_t max_samples_per_series_,
     size_t max_output_groups_,
     size_t max_output_block_size_,
     PromQLGroupLimitPtr group_limit_)
@@ -47,6 +50,7 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     , rate_function(std::move(rate_function_))
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
+    , max_samples_per_series(max_samples_per_series_)
     , max_output_groups(max_output_groups_)
     , max_output_block_size(max_output_block_size_)
     , group_limit(std::move(group_limit_))
@@ -64,6 +68,8 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum expects sumForEach, got {}", sum_function->getName());
     if (rate_function->allocatesMemoryInArena())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a rate state independent of Arena memory");
+    if (max_samples_per_series == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a positive per-series sample limit");
     if (max_output_groups == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native range sum requires a positive output group limit");
     if (max_output_block_size == 0)
@@ -106,8 +112,16 @@ void PromQLRangeSumByTransform::consume(Chunk chunk)
 {
     const auto & columns = chunk.getColumns();
     const auto & id_column = *columns[id_position];
-    const auto * time_series_column = columns[time_series_position].get();
-    const IColumn * rate_arguments[] = {time_series_column};
+    const auto time_series_column
+        = columns[time_series_position]->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+    const auto * time_series_array = typeid_cast<const ColumnArray *>(time_series_column.get());
+    if (!time_series_array)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PromQL native range sum received incompatible {} column {}",
+            TimeSeriesColumnNames::TimeSeries,
+            time_series_column->getName());
+    const IColumn * rate_arguments[] = {time_series_column.get()};
 
     collector->getGroupByID(columns[id_position], full_groups);
     for (size_t row = 0; row < chunk.getNumRows(); ++row)
@@ -131,7 +145,16 @@ void PromQLRangeSumByTransform::consume(Chunk chunk)
             }
         }
 
+        const size_t row_begin = row == 0 ? 0 : time_series_array->getOffsets()[row - 1];
+        const size_t row_samples = time_series_array->getOffsets()[row] - row_begin;
+        if (row_samples > max_samples_per_series - current_series_samples)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+                "PromQL native range sum exceeded its limit of {} samples for one physical series",
+                max_samples_per_series);
+
         rate_function->add(rate_place.data(), rate_arguments, row, nullptr);
+        current_series_samples += row_samples;
     }
 }
 
@@ -173,6 +196,7 @@ void PromQLRangeSumByTransform::finishSeries()
     rate_function->destroy(rate_place.data());
     rate_state_created = false;
     has_current_series = false;
+    current_series_samples = 0;
     current_id->popBack(1);
 }
 
@@ -264,6 +288,7 @@ void PromQLRangeSumByTransform::destroyStates() noexcept
         rate_function->destroy(rate_place.data());
         rate_state_created = false;
         has_current_series = false;
+        current_series_samples = 0;
     }
 
     if (sum_function)

@@ -160,7 +160,7 @@ QueryPipeline makePipeline(
     const AggregateFunctionPtr & rate_function,
     size_t max_samples_per_series = 1024,
     size_t max_output_block_size = 1024,
-    size_t max_output_groups = 1024,
+    size_t max_join_groups = 1024,
     size_t max_grid_cells = 1024)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
@@ -172,7 +172,7 @@ QueryPipeline makePipeline(
         "errors_total",
         max_samples_per_series,
         max_output_block_size,
-        max_output_groups,
+        max_join_groups,
         max_grid_cells);
     Pipe pipe(source);
     pipe.addTransform(transform);
@@ -207,7 +207,7 @@ void expectExceptionCode(Function && function, int expected_code)
 
 TEST(PromQLTwoRangeRatesGroupState, MatchingSideReplacesPendingGridWithinLimit)
 {
-    PromQLTwoRangeRatesGroupState state(/*max_output_groups=*/2, /*max_grid_cells=*/6);
+    PromQLTwoRangeRatesGroupState state(/*max_join_groups=*/2, /*max_grid_cells=*/6);
 
     MutableColumnPtr first_a = ColumnUInt64::create();
     MutableColumnPtr first_b = ColumnUInt64::create();
@@ -487,7 +487,7 @@ TEST(PromQLTwoRangeRatesStep, MatchesMetricSidesAcrossParallelIdentifierRanges)
         "errors_total",
         /*max_samples_per_series=*/1024,
         /*max_output_block_size=*/1,
-        /*max_output_groups=*/1024,
+        /*max_join_groups=*/1024,
         /*max_grid_cells=*/1024,
         /*parallel_processing_requested=*/true);
     EXPECT_TRUE(step.isParallelProcessingRequested());
@@ -562,7 +562,7 @@ TEST(PromQLTwoRangeRatesStep, RejectsDuplicateMetricSideAcrossParallelIdentifier
         "errors_total",
         /*max_samples_per_series=*/1024,
         /*max_output_block_size=*/1,
-        /*max_output_groups=*/1024,
+        /*max_join_groups=*/1024,
         /*max_grid_cells=*/1024,
         /*parallel_processing_requested=*/true);
     step.enableParallelProcessing();

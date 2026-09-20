@@ -192,4 +192,46 @@ SELECT tags, arrayMap(sample -> sample.2, samples)
 FROM d06_fallback
 ORDER BY tags;
 
+-- The native output-group limit applies to state held by native aggregation
+-- steps, not to the intermediate vector-matching keys streamed by this native
+-- fragment into its SQL `sum by` parent. Two matched instances and two orphans
+-- still produce one valid SQL output group for `pod="api-1"`.
+SELECT count(), sum(length(samples))
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads{pod="api-1"}[5m])+rate(writes{pod="api-1"}[5m])))',
+    300, 420, 60)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_parallel_processing = 1,
+    max_promql_native_output_groups = 1;
+
+SELECT countIf(explain LIKE '%PromQLTwoRangeRates%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_d06_two_rate_sum,
+        'ceil(sum by(namespace,pod)(rate(reads{pod="api-1"}[5m])+rate(writes{pod="api-1"}[5m])))',
+        300, 420, 60)
+    SETTINGS
+        enable_promql_native_plan = 1,
+        enable_promql_native_parallel_processing = 1,
+        max_promql_native_output_groups = 1
+);
+
+-- The SQL parent retains its standard group-by and memory limits. In
+-- particular, the native aggregation limit does not cap the two groups that
+-- this hybrid query produces after the SQL `sum by`.
+SELECT count(), sum(length(samples))
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+    300, 420, 60)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_parallel_processing = 1,
+    max_promql_native_output_groups = 1;
+
 DROP TABLE promql_native_d06_two_rate_sum;

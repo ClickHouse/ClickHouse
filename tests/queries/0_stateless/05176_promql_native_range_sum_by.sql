@@ -460,4 +460,26 @@ FROM prometheusQueryRange(
     110, 130, 10)
 SETTINGS enable_promql_native_plan = 1, max_promql_native_output_groups = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
+-- Disabling native rate-series admission must also disable the direct
+-- `sum by (...)(rate(...))` root, not only leaf and hybrid fragments.
+SELECT countIf(explain LIKE '%PromQLRangeSumBy%')
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_range_sum_by,
+        'sum by (dc) (rate(m{job="api"}[20]))',
+        110, 130, 10)
+    SETTINGS enable_promql_native_plan = 1, max_promql_native_rate_series = 0
+);
+
+-- A positive per-series sample cap is enforced by the sliced direct kernel.
+SELECT count()
+FROM prometheusQueryRange(
+    promql_native_range_sum_by,
+    'sum by (dc) (rate(m{job="api"}[20]))',
+    110, 130, 10)
+SETTINGS enable_promql_native_plan = 1, max_promql_native_rate_samples_per_series = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+
 DROP TABLE promql_native_range_sum_by;

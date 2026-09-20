@@ -20,6 +20,7 @@ public:
         AggregateFunctionPtr rate_function_,
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
+        size_t max_samples_per_series_,
         size_t max_output_groups_,
         size_t max_output_block_size_,
         bool parallel_processing_requested_ = false,
@@ -42,6 +43,7 @@ private:
     AggregateFunctionPtr rate_function;
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
+    size_t max_samples_per_series;
     size_t max_output_groups;
     size_t max_output_block_size;
     size_t max_parallel_lanes;

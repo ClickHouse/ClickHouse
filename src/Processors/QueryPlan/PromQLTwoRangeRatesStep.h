@@ -22,7 +22,7 @@ public:
         String second_metric_name_,
         size_t max_samples_per_series_,
         size_t max_output_block_size_,
-        size_t max_output_groups_,
+        size_t max_join_groups_,
         size_t max_grid_cells_,
         bool parallel_processing_requested_ = false,
         size_t max_parallel_lanes_ = 0,
@@ -48,7 +48,7 @@ private:
     String second_metric_name;
     size_t max_samples_per_series;
     size_t max_output_block_size;
-    size_t max_output_groups;
+    size_t max_join_groups;
     size_t max_grid_cells;
     size_t max_parallel_lanes;
     bool parallel_processing_requested;

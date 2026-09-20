@@ -9462,7 +9462,7 @@ Maximum number of rows in one block produced inside the query plan generated for
 )", PRIVATE_PREVIEW) \
     \
     DECLARE(UInt64, max_promql_native_output_groups, 1000000, R"(
-Maximum number of output label groups held in memory by a native PromQL query plan.
+Maximum number of output label groups held in memory by a native PromQL aggregation step. Streaming native fragments below a SQL aggregation are bounded by the native series and vector-grid limits; the SQL aggregation continues to use the standard group-by and memory limits.
 )", PRIVATE_PREVIEW) \
     \
     DECLARE(UInt64, max_promql_native_rate_series, 1000000, R"(

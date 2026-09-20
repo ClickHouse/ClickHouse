@@ -33,7 +33,7 @@ public:
         ColumnPtr values;
     };
 
-    PromQLTwoRangeRatesGroupState(size_t max_output_groups_, size_t max_grid_cells_);
+    PromQLTwoRangeRatesGroupState(size_t max_join_groups_, size_t max_grid_cells_);
 
     std::optional<Match> add(
         Group join_group,
@@ -53,7 +53,7 @@ private:
 
     using GroupIndexMap = HashMap<Group, UInt64, HashCRC32<Group>>;
 
-    const size_t max_output_groups;
+    const size_t max_join_groups;
     const size_t max_grid_cells;
     std::mutex mutex;
     std::vector<PendingGroup> pending_groups;
@@ -86,7 +86,7 @@ public:
         String second_metric_name_,
         size_t max_samples_per_series_,
         size_t max_output_block_size_,
-        size_t max_output_groups_,
+        size_t max_join_groups_,
         size_t max_grid_cells_,
         PromQLTwoRangeRatesGroupStatePtr group_state_ = nullptr,
         std::optional<Field> raw_min_time_ = {},
@@ -125,7 +125,7 @@ private:
     const String second_metric_name;
     const size_t max_samples_per_series;
     const size_t max_output_block_size;
-    const size_t max_output_groups;
+    const size_t max_join_groups;
     const size_t max_grid_cells;
     PromQLTwoRangeRatesGroupStatePtr group_state;
 

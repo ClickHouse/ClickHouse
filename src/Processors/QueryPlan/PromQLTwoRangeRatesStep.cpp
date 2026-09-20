@@ -40,7 +40,7 @@ PromQLTwoRangeRatesStep::PromQLTwoRangeRatesStep(
     String second_metric_name_,
     size_t max_samples_per_series_,
     size_t max_output_block_size_,
-    size_t max_output_groups_,
+    size_t max_join_groups_,
     size_t max_grid_cells_,
     bool parallel_processing_requested_,
     size_t max_parallel_lanes_,
@@ -53,7 +53,7 @@ PromQLTwoRangeRatesStep::PromQLTwoRangeRatesStep(
     , second_metric_name(std::move(second_metric_name_))
     , max_samples_per_series(max_samples_per_series_)
     , max_output_block_size(max_output_block_size_)
-    , max_output_groups(max_output_groups_)
+    , max_join_groups(max_join_groups_)
     , max_grid_cells(max_grid_cells_)
     , max_parallel_lanes(max_parallel_lanes_)
     , parallel_processing_requested(parallel_processing_requested_)
@@ -71,7 +71,7 @@ void PromQLTwoRangeRatesStep::transformPipeline(QueryPipelineBuilder & pipeline,
 
     if (parallel_processing_enabled && pipeline.getNumStreams() > 1)
     {
-        auto group_state = std::make_shared<PromQLTwoRangeRatesGroupState>(max_output_groups, max_grid_cells);
+        auto group_state = std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups, max_grid_cells);
         pipeline.addSimpleTransform(
             [collector_ptr = collector,
              rate_function_ptr = rate_function,
@@ -79,7 +79,7 @@ void PromQLTwoRangeRatesStep::transformPipeline(QueryPipelineBuilder & pipeline,
              second_metric = second_metric_name,
              max_samples = max_samples_per_series,
              output_block_size = max_output_block_size,
-             max_groups = max_output_groups,
+             max_groups = max_join_groups,
              grid_cells = max_grid_cells,
              group_state,
              min_time = raw_min_time,
@@ -135,7 +135,7 @@ void PromQLTwoRangeRatesStep::transformPipeline(QueryPipelineBuilder & pipeline,
          second_metric = second_metric_name,
          max_samples = max_samples_per_series,
          output_block_size = max_output_block_size,
-         max_groups = max_output_groups,
+         max_groups = max_join_groups,
          grid_cells = max_grid_cells,
          min_time = raw_min_time,
          max_time = raw_max_time](const SharedHeader & header)

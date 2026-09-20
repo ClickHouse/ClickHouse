@@ -30,11 +30,11 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-PromQLTwoRangeRatesGroupState::PromQLTwoRangeRatesGroupState(size_t max_output_groups_, size_t max_grid_cells_)
-    : max_output_groups(max_output_groups_)
+PromQLTwoRangeRatesGroupState::PromQLTwoRangeRatesGroupState(size_t max_join_groups_, size_t max_grid_cells_)
+    : max_join_groups(max_join_groups_)
     , max_grid_cells(max_grid_cells_)
 {
-    pending_groups.reserve(std::min(max_output_groups, size_t{1024}));
+    pending_groups.reserve(std::min(max_join_groups, size_t{1024}));
 }
 
 std::optional<PromQLTwoRangeRatesGroupState::Match> PromQLTwoRangeRatesGroupState::add(
@@ -49,11 +49,11 @@ std::optional<PromQLTwoRangeRatesGroupState::Match> PromQLTwoRangeRatesGroupStat
     auto index_it = group_indices.find(join_group);
     if (!index_it)
     {
-        if (pending_groups.size() >= max_output_groups)
+        if (pending_groups.size() >= max_join_groups)
             throw Exception(
                 ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-                "PromQL native two-rate transform exceeded its limit of {} output groups",
-                max_output_groups);
+                "PromQL native two-rate transform exceeded its limit of {} vector-matching groups",
+                max_join_groups);
 
         const UInt64 index = pending_groups.size();
         pending_groups.emplace_back();
@@ -134,7 +134,7 @@ PromQLTwoRangeRatesTransform::PromQLTwoRangeRatesTransform(
     String second_metric_name_,
     size_t max_samples_per_series_,
     size_t max_output_block_size_,
-    size_t max_output_groups_,
+    size_t max_join_groups_,
     size_t max_grid_cells_,
     PromQLTwoRangeRatesGroupStatePtr group_state_,
     std::optional<Field> raw_min_time_,
@@ -148,9 +148,9 @@ PromQLTwoRangeRatesTransform::PromQLTwoRangeRatesTransform(
     , second_metric_name(std::move(second_metric_name_))
     , max_samples_per_series(max_samples_per_series_)
     , max_output_block_size(max_output_block_size_)
-    , max_output_groups(max_output_groups_)
+    , max_join_groups(max_join_groups_)
     , max_grid_cells(max_grid_cells_)
-    , group_state(group_state_ ? std::move(group_state_) : std::make_shared<PromQLTwoRangeRatesGroupState>(max_output_groups_, max_grid_cells_))
+    , group_state(group_state_ ? std::move(group_state_) : std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups_, max_grid_cells_))
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
 {
     if (!collector)
@@ -170,8 +170,8 @@ PromQLTwoRangeRatesTransform::PromQLTwoRangeRatesTransform(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive per-series sample limit");
     if (max_output_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive output block size");
-    if (max_output_groups == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive output group limit");
+    if (max_join_groups == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive vector-matching group limit");
     if (max_grid_cells == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive grid-cell limit");
     if (!input_header->has(TimeSeriesColumnNames::ID) || !input_header->has(TimeSeriesColumnNames::Bucket))
