@@ -50,8 +50,8 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
-        /// Preserve the Prometheus `stats` mode. Prometheus only adds per-step fields for `all`
-        /// when its per-step statistics feature is enabled; ClickHouse currently exposes aggregate stats only.
+        /// Preserve the requested Prometheus `stats` mode.
+        /// ClickHouse currently exposes the same ClickHouse-specific aggregate stats for `true` and `all`.
         QueryStatsMode stats_mode = QueryStatsMode::None;
     };
 
