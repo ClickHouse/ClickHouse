@@ -266,18 +266,19 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size + first_delta_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
     const auto double_delta_write_spec = getDeltaMaxWriteSpecByteSize(data_bytes_size);
 
     const UInt32 max_item_size_bits = double_delta_write_spec.prefix_bits + double_delta_write_spec.data_bits;
 
-    // + 7 is to round up to next byte. The number of bits is computed in 64 bits: for a large
-    // block it does not fit into 32, and only the division by 8 brings it back into range.
-    const UInt64 result = (static_cast<UInt64>(items_count) * max_item_size_bits + 7) / 8;
-
-    return static_cast<UInt32>(result);
+    // + 7 is to round up to next byte. The bit count wraps `UInt32` for a large enough block, and
+    // that wrap is load-bearing: `getCheckedReserveSize` in `CompressionCodecMultiple` rejects an
+    // oversized codec chain precisely by noticing that a codec reserved less than its own input.
+    // Widening the arithmetic moves the stage at which a chain is rejected, which
+    // `04812_codec_chain_reserve_overflow` pins.
+    return (items_count * max_item_size_bits + 7) / 8;
 }
 
 /// Double delta coding is modular arithmetic by definition: the deltas wrap around, and the
