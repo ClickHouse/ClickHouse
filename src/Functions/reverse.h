@@ -80,8 +80,10 @@ struct ReverseImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        res_data.resize_exact(data.size());
-        res_offsets.assign(offsets);
+        /// Size the result from the number of rows we are asked to produce, not from the backing buffers:
+        /// the source column may be larger than `input_rows_count` during partial evaluation.
+        res_offsets.assign(offsets.begin(), offsets.begin() + input_rows_count);
+        res_data.resize_exact(input_rows_count ? offsets[input_rows_count - 1] : 0);
 
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -112,7 +114,7 @@ struct ReverseImpl
 
     static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data, size_t input_rows_count)
     {
-        res_data.resize_exact(data.size());
+        res_data.resize_exact(input_rows_count * n);
 
         if (n == 1)
         {
