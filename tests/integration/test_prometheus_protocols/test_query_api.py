@@ -154,11 +154,13 @@ def test_query_stats():
     instant_data_without_stats = instant_without_stats.json()["data"]
     assert instant_data["result"] == instant_data_without_stats["result"]
     assert "stats" not in instant_data_without_stats
-    assert instant_data["stats"]["timings"]["evalTotalTime"] >= 0
-    assert instant_data["stats"]["samples"]["samplesRead"] > 0
-    assert instant_data["stats"]["clickhouse"]["readRows"] > 0
-    assert instant_data["stats"]["clickhouse"]["readBytes"] > 0
-    assert instant_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0
+    instant_stats = instant_data["stats"]
+    assert "timings" not in instant_stats
+    assert "samples" not in instant_stats
+    assert instant_stats["clickhouse"]["elapsedTime"] >= 0
+    assert instant_stats["clickhouse"]["readRows"] > 0
+    assert instant_stats["clickhouse"]["readBytes"] > 0
+    assert instant_stats["clickhouse"]["peakMemoryUsage"] >= 0
 
     instant_empty_stats = get_response_to_http_api_query(
         node.ip_address,
@@ -211,11 +213,13 @@ def test_query_stats():
     range_data_without_stats = range_without_stats.json()["data"]
     assert range_data["result"] == range_data_without_stats["result"]
     assert "stats" not in range_data_without_stats
-    assert range_data["stats"]["timings"]["evalTotalTime"] >= 0
-    assert range_data["stats"]["samples"]["samplesRead"] > 0
-    assert range_data["stats"]["clickhouse"]["readRows"] > 0
-    assert range_data["stats"]["clickhouse"]["readBytes"] > 0
-    assert range_data["stats"]["clickhouse"]["peakMemoryUsage"] >= 0
+    range_stats = range_data["stats"]
+    assert "timings" not in range_stats
+    assert "samples" not in range_stats
+    assert range_stats["clickhouse"]["elapsedTime"] >= 0
+    assert range_stats["clickhouse"]["readRows"] > 0
+    assert range_stats["clickhouse"]["readBytes"] > 0
+    assert range_stats["clickhouse"]["peakMemoryUsage"] >= 0
 
 
 def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
