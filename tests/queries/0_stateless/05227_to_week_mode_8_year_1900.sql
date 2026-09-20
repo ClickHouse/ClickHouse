@@ -97,3 +97,15 @@ SELECT count() FROM t_year_week_9999 WHERE toYearWeek(d, 0) = 1;
 SELECT countIf(toYearWeek(d, 0) = 1) FROM t_year_week_9999;
 
 DROP TABLE t_year_week_9999;
+
+-- A `Date32` column is just an `Int32`, so it can hold day numbers beyond 9999-12-31 (arithmetic does not
+-- saturate the stored value, only the formatting does). They must saturate to the boundary day like in
+-- every other calendar function, instead of letting the week-year run away past the four-digit year and
+-- eventually wrap around: the week-year of the last representable day is 10000 in mode 8, not 10400.
+SELECT toYear(d), toYearWeek(d, 8), toYearWeek(d, 9), toYearWeek(d, 0), toWeek(d, 8)
+FROM (SELECT toDate32('9999-12-31') + 146097 * number AS d FROM numbers(1, 3))
+ORDER BY d;
+
+SELECT toYear(d), toYearWeek(d, 8), toYearWeek(d, 9), toYearWeek(d, 0), toWeek(d, 8)
+FROM (SELECT toDate32('0000-01-01') - 146097 * number AS d FROM numbers(1, 3))
+ORDER BY d;

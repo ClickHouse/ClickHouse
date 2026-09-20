@@ -1217,9 +1217,18 @@ public:
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
+                /// A raw `Date32` day number can be arbitrarily far outside the representable
+                /// [0000-01-01, 9999-12-31] window (`DataTypeDate32` is just an `Int32`, and e.g.
+                /// `toDate32('9999-12-31') + 146097` stays a valid column value). Saturate it first, the same
+                /// way every other out-of-range helper does through `outOfRangeDayIndex`, so that the
+                /// week-year cannot run away from the calendar and overflow the four-digit year.
+                /// The clamp is a no-op for every representable day, so it does not affect the boundary
+                /// values below. It is needed exactly for a day number, because `toDayNum` is the identity
+                /// for an `ExtendedDayNum`, while for a `Time` it already saturates the same way.
+                const ExtendedDayNum saturated = dayNumOfDayIndex(outOfRangeDayIndex(toDayNum(v)));
                 /// Year/week numbering is timezone-independent and repeats every 400 years.
                 Int32 cycles = 0;
-                const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
+                const ExtendedDayNum shifted = shiftIntoLUTRange(saturated, cycles);
                 YearWeek yw = toYearWeek(shifted, week_mode);
                 /// The week-year can fall just outside the representable [0000, 9999] range at the boundaries,
                 /// and `toYearWeek` promises to be monotonic, so the result must not fall back when that
