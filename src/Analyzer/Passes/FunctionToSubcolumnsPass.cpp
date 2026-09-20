@@ -535,6 +535,55 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+void optimizeArrayTupleElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace tupleElement(array_of_tuples, element) with the corresponding Array subcolumn.
+    /// The tuple field must be resolved below the Array wrappers, while the replacement keeps
+    /// the complete Array result type resolved by tupleElement.
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+    if (!second_argument_constant_node)
+        return;
+
+    const IDataType * nested_type = ctx.column.type.get();
+    if (!checkAndGetDataType<DataTypeArray>(nested_type))
+        return;
+
+    while (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
+        nested_type = array_type->getNestedType().get();
+
+    const auto * data_type_tuple = checkAndGetDataType<DataTypeTuple>(nested_type);
+    if (!data_type_tuple)
+        return;
+
+    auto subcolumn_name = getElementSubcolumnName(second_argument_constant_node->getValue(), *data_type_tuple);
+    if (!subcolumn_name)
+        return;
+
+    const auto & result_type = function_node.getResultType();
+    NameAndTypePair column{ctx.column.name + "." + *subcolumn_name, result_type};
+
+    if (tupleElementNameIsAmbiguousWhenFlattened(*data_type_tuple, *subcolumn_name)
+        || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+        || tupleElementNameIsOrdinalOnly(ctx.column_source, *data_type_tuple))
+        return;
+
+    SubcolumnPredicate is_expected_subcolumn = [&](const auto & path)
+    {
+        return SerializationTuple::isElementSubcolumn(path, *subcolumn_name);
+    };
+
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, column.type))
+        return;
+
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
@@ -835,6 +884,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Tuple, "tupleElement"}, optimizeElementToSubcolumn<DataTypeTuple>,
+    },
+    {
+        {TypeIndex::Array, "tupleElement"}, optimizeArrayTupleElementToSubcolumn,
     },
     {
         {TypeIndex::Nullable, "tupleElement"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
