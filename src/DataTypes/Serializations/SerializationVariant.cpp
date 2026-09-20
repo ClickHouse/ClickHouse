@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 /// Validate that a discriminator value is within bounds (< num_variants) or is NULL_DISCRIMINATOR.
@@ -812,8 +813,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
         if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         {
-            auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
+            discriminators_data.resize_fill(discriminators_data.size() + limit_in_granule, state.compact_discr);
             auto remained_limit_in_granule = limit_in_granule;
 
             if (rows_offset)
@@ -831,8 +831,13 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         }
         else
         {
+            size_t start = discriminators_data.size();
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
-            size_t start = discriminators_data.size() - limit_in_granule;
+            size_t num_read = discriminators_data.size() - start;
+            if (num_read != limit_in_granule)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
+
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
             for (size_t i = start; i != start + skipped_rows; ++i)

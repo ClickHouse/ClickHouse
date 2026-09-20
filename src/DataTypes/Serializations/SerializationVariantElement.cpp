@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_)
@@ -366,8 +367,7 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
         size_t limit_in_granule = std::min(limit, discriminators_state->remaining_rows_in_granule);
         if (discriminators_state->granule_format == SerializationVariant::CompactDiscriminatorsGranuleFormat::COMPACT)
         {
-            auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, discriminators_state->compact_discr);
+            discriminators_data.resize_fill(discriminators_data.size() + limit_in_granule, discriminators_state->compact_discr);
             auto remained_limit_in_granule = limit_in_granule;
 
             if (rows_offset)
@@ -385,8 +385,13 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
         }
         else
         {
+            size_t start = discriminators_data.size();
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
-            size_t start = discriminators_data.size() - limit_in_granule;
+            size_t num_read = discriminators_data.size() - start;
+            if (num_read != limit_in_granule)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all discriminators in Variant granule. Expected: {}, got: {}", limit_in_granule, num_read);
+
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
             for (size_t i = start; i != start + skipped_rows; ++i)
