@@ -132,7 +132,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
+            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
                 TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(
@@ -233,7 +233,7 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
+            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
                 TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(
@@ -334,7 +334,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
+            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
                 TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(
