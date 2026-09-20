@@ -33,6 +33,14 @@ OK
 -- dictGet and joinGet name their object instead of reading it as a column
 ACCESS_DENIED
 ACCESS_DENIED
+-- The object of dictGet and joinGet named through a WITH alias is read as well
+ACCESS_DENIED
+ACCESS_DENIED
+-- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object
+ACCESS_DENIED
+-- joinGet reads the key columns of the Join table too
+ACCESS_DENIED
+OK
 -- A UDF body reading a column the user cannot read, on every entry point
 ACCESS_DENIED
 ACCESS_DENIED

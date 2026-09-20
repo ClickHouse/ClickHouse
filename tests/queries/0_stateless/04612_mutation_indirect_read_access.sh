@@ -165,6 +165,22 @@ echo "-- dictGet and joinGet name their object instead of reading it as a column
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
 
+# `dictGet` and `joinGet` take the name of their object from a `WITH` alias too - the analyzer
+# resolves the identifier as an expression first - so such a name is not a reference to a CTE.
+echo "-- The object of dictGet and joinGet named through a WITH alias is read as well"
+check_access "ALTER TABLE tab UPDATE name = (WITH '$CLICKHOUSE_DATABASE.dict' AS d SELECT dictGet(d, 'payload', toUInt64(1))) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (WITH '$CLICKHOUSE_DATABASE.join_tab' AS j SELECT joinGet(j, 'payload', toUInt32(1))) WHERE 0 SETTINGS $off"
+echo "-- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object"
+check_access "ALTER TABLE tab UPDATE name = (WITH materialize('$CLICKHOUSE_DATABASE.dict') AS d SELECT dictGet(d, 'payload', toUInt64(1))) WHERE 0 SETTINGS $off"
+
+# `joinGet` probes the key columns of the `Join` table, not only the attribute it names, and
+# `FunctionJoinGet::prepare` requires `SELECT` on both.
+echo "-- joinGet reads the key columns of the Join table too"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(payload) ON $CLICKHOUSE_DATABASE.join_tab TO $user_name"
+check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.join_tab TO $user_name"
+check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
+
 echo "-- A UDF body reading a column the user cannot read, on every entry point"
 check_access "ALTER TABLE tab DELETE WHERE $udf_name() SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() SETTINGS $off"

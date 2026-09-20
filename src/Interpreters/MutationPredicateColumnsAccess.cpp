@@ -23,6 +23,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageJoin.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
@@ -162,6 +163,14 @@ bool selectsEverything(const IAST & ast)
     return false;
 }
 
+/// A scalar `WITH <expression> AS name` of a mutation subquery, with its value when that value is a
+/// string literal - which is what `dictGet` and `joinGet` may name their object by.
+struct WithScalar
+{
+    String name;
+    std::optional<String> string_value;
+};
+
 /// Walks a mutation expression and collects, by name, the reads it performs through a subquery, a
 /// table on the right of `IN`, `dictGet` or `joinGet`. See `addExpressionIndirectReadsAccess`.
 class IndirectReadsCollector
@@ -221,16 +230,25 @@ private:
         }
         else if (functionIsJoinGet(function.name) && arguments.size() >= 2)
         {
-            /// `joinGet('db.join_tbl', 'column', ...)` reads that one column, as checked by
-            /// `FunctionJoinGet` itself when it is built - which for a mutation happens in the
-            /// background, with full access.
-            if (auto table_id = tryGetNamedTable(*arguments[0]))
+            /// `joinGet('db.join_tbl', 'column', ...)` reads that column and the key columns it
+            /// probes, exactly as `FunctionJoinGet::prepare` checks when the function is built -
+            /// which for a mutation happens in the background, with full access.
+            bool unknown_object = false;
+            auto table_id = tryGetFunctionObject(*arguments[0], unknown_object);
+            if (unknown_object)
             {
-                const auto * column = arguments[1]->as<ASTLiteral>();
-                if (column && column->value.getType() == Field::Types::String)
+                required_access.emplace_back(AccessType::SELECT);
+            }
+            else if (table_id)
+            {
+                std::optional<Strings> columns;
+                if (const auto * column = arguments[1]->as<ASTLiteral>();
+                    column && column->value.getType() == Field::Types::String)
+                    columns = tryGetJoinGetColumns(*table_id, column->value.safeGet<String>());
+
+                if (columns)
                     required_access.emplace_back(
-                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name,
-                        Strings{column->value.safeGet<String>()});
+                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name, *columns);
                 else
                     required_access.emplace_back(
                         AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name);
@@ -238,7 +256,11 @@ private:
         }
         else if (functionIsDictGet(function.name) && !arguments.empty())
         {
-            if (auto dictionary_id = tryGetNamedTable(*arguments[0]))
+            bool unknown_object = false;
+            auto dictionary_id = tryGetFunctionObject(*arguments[0], unknown_object);
+            if (unknown_object)
+                required_access.emplace_back(AccessType::dictGet);
+            else if (dictionary_id)
                 required_access.emplace_back(
                     AccessType::dictGet, databaseOrCurrent(*dictionary_id), dictionary_id->table_name);
         }
@@ -261,7 +283,12 @@ private:
         if (!literal || literal->value.getType() != Field::Types::String)
             return {};
 
-        const auto & name = literal->value.safeGet<String>();
+        return tryGetNamedTable(literal->value.safeGet<String>());
+    }
+
+    /// A table named by a string, as `joinGet` and `dictGet` name theirs: `tbl` or `db.tbl`.
+    static std::optional<StorageID> tryGetNamedTable(const String & name)
+    {
         if (name.empty())
             return {};
 
@@ -269,6 +296,60 @@ private:
         if (dot == String::npos)
             return StorageID{"", name};
         return StorageID{name.substr(0, dot), name.substr(dot + 1)};
+    }
+
+    /// The dictionary or `Join` table a `dictGet` / `joinGet` first argument names. A one-part
+    /// identifier there may be a `WITH` alias, which the analyzer resolves to its value before the
+    /// object is looked up (`resolveFunction.cpp`, as in `WITH 'dict' AS d SELECT dictGet(d, ...)`):
+    /// an alias holding a string literal names that object, and an alias holding anything else
+    /// leaves the object unknown, which is reported in `unknown_object` so that the caller can
+    /// require the access on every object instead of skipping the read.
+    std::optional<StorageID> tryGetFunctionObject(const IAST & argument, bool & unknown_object) const
+    {
+        unknown_object = false;
+
+        if (const auto * identifier = argument.as<ASTIdentifier>(); identifier && !identifier->compound())
+        {
+            if (const auto * scalar = findWithScalar(identifier->name()))
+            {
+                if (!scalar->string_value)
+                {
+                    unknown_object = true;
+                    return {};
+                }
+                return tryGetNamedTable(*scalar->string_value);
+            }
+        }
+
+        return tryGetNamedTable(argument);
+    }
+
+    /// The columns `joinGet` reads from a `Join` table: the attribute it names and the key columns
+    /// it probes (`FunctionJoinGet::prepare`). Nothing when the table cannot be resolved here -
+    /// then the requirement falls back to the whole table, which is a superset of what it reads.
+    std::optional<Strings> tryGetJoinGetColumns(const StorageID & table_id, const String & attribute) const
+    {
+        StorageID resolved{databaseOrCurrent(table_id), table_id.table_name};
+        if (resolved.database_name.empty())
+            return {};
+
+        const auto storage_join = std::dynamic_pointer_cast<StorageJoin>(
+            DatabaseCatalog::instance().tryGetTable(resolved, context));
+        if (!storage_join)
+            return {};
+
+        Strings columns = storage_join->getKeyNames();
+        columns.push_back(attribute);
+        return columns;
+    }
+
+    /// The innermost `WITH <expression> AS name` in scope with this name, if any.
+    const WithScalar * findWithScalar(const String & name) const
+    {
+        for (auto it = with_scalars.rbegin(); it != with_scalars.rend(); ++it)
+            if (it->name == name)
+                return &*it;
+        return nullptr;
     }
 
     void visitSelectOrUnion(const IAST & ast)
@@ -300,7 +381,11 @@ private:
         /// and nowhere else: once this level is done its names go out of scope again, so that a
         /// later `id IN s` is not taken for this level's `s`.
         const size_t enclosing_cte_names = cte_names.size();
-        SCOPE_EXIT({ cte_names.resize(enclosing_cte_names); });
+        const size_t enclosing_with_scalars = with_scalars.size();
+        SCOPE_EXIT({
+            cte_names.resize(enclosing_cte_names);
+            with_scalars.resize(enclosing_with_scalars);
+        });
 
         if (const auto with = select.with())
         {
@@ -315,6 +400,18 @@ private:
                 }
                 else
                 {
+                    /// A scalar `WITH <expression> AS name`. `dictGet` and `joinGet` accept such a
+                    /// name for their object and the analyzer resolves it to its value first, so
+                    /// the alias is remembered with the value when that value is a string literal,
+                    /// and without one otherwise - see `tryGetFunctionObject`.
+                    if (const String alias = child->tryGetAlias(); !alias.empty())
+                    {
+                        const auto * literal = child->as<ASTLiteral>();
+                        if (literal && literal->value.getType() == Field::Types::String)
+                            with_scalars.emplace_back(alias, literal->value.safeGet<String>());
+                        else
+                            with_scalars.emplace_back(alias, std::nullopt);
+                    }
                     visitExpression(child.get());
                 }
             }
@@ -624,6 +721,8 @@ private:
     const StorageInMemoryMetadata * mutated_metadata;
     /// The `WITH` names in scope, innermost last; see `visitSelect`.
     std::vector<String> cte_names;
+    /// The scalar `WITH` aliases in scope, innermost last; see `tryGetFunctionObject`.
+    std::vector<WithScalar> with_scalars;
     /// The column names visible at each enclosing subquery level, innermost last; see `visibleColumns`.
     std::vector<NameSet> subquery_levels;
     bool inside_subquery = false;
