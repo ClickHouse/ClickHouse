@@ -12,6 +12,10 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
+namespace roaring
+{
+class Roaring64Map;
+}
 
 namespace DB
 {
@@ -230,6 +234,7 @@ public:
     };
 
     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    ~MergeTreeSetIndex();
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -300,6 +305,8 @@ private:
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
     bool cache_ranges = false;
+    /// Accelerated 64-bit Roaring Bitmap index for single integer key column.
+    std::unique_ptr<roaring::Roaring64Map> roaring_bitmap;
 };
 
 }

@@ -1,0 +1,18 @@
+--- Basic IN subset ---
+0
+20
+40
+60
+80
+--- Point lookup via IN ---
+42	63
+--- Narrow range in set ---
+3
+--- Single element NOT IN ---
+50
+--- UInt32 key column ---
+0
+10
+20
+30
+40

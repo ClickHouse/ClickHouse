@@ -35,6 +35,7 @@
 #include <base/range.h>
 #include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <roaring/roaring64map.hh>
 
 
 namespace DB
@@ -740,7 +741,27 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     /// thread-local storage could pin arbitrarily large buffers after the query ends.
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
         [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+
+    /// Build 64-bit Roaring Bitmap for single integer key column.
+    if (tuple_size == 1 && !ordered_set[0]->empty())
+    {
+        if (const auto * col_u64 = typeid_cast<const ColumnUInt64 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u64->getData();
+            roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+            roaring_bitmap->addMany(data.size(), data.data());
+        }
+        else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u32->getData();
+            roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+            for (auto val : data)
+                roaring_bitmap->add(val);
+        }
+    }
 }
+
+MergeTreeSetIndex::~MergeTreeSetIndex() = default;
 
 MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
 {
@@ -837,6 +858,74 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         range.right.update(new_range->right);
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
+    }
+
+    /// Fast path for single integer key column using 64-bit Roaring Bitmap.
+    if (tuple_size == 1 && roaring_bitmap)
+    {
+        const auto & r = ranges[0];
+        if (r.left.isPositiveInfinity() || r.right.isNegativeInfinity())
+            return {false, true};
+
+        const auto * left_col_u64 = typeid_cast<const ColumnUInt64 *>(r.left.column.get());
+        const auto * right_col_u64 = typeid_cast<const ColumnUInt64 *>(r.right.column.get());
+        const auto * left_col_u32 = left_col_u64 ? nullptr : typeid_cast<const ColumnUInt32 *>(r.left.column.get());
+        const auto * right_col_u32 = right_col_u64 ? nullptr : typeid_cast<const ColumnUInt32 *>(r.right.column.get());
+
+        if ((left_col_u64 && right_col_u64) || (left_col_u32 && right_col_u32))
+        {
+            UInt64 left_val = 0;
+            UInt64 right_val = std::numeric_limits<UInt64>::max();
+
+            if (r.left.isNormal())
+            {
+                left_val = left_col_u64 ? left_col_u64->getElement(0) : left_col_u32->getElement(0);
+                if (!r.left_included)
+                {
+                    if (left_val == std::numeric_limits<UInt64>::max())
+                        return {false, true};
+                    ++left_val;
+                }
+            }
+            else if (r.left.isNegativeInfinity())
+            {
+                left_val = 0;
+            }
+
+            if (r.right.isNormal())
+            {
+                right_val = right_col_u64 ? right_col_u64->getElement(0) : right_col_u32->getElement(0);
+                if (!r.right_included)
+                {
+                    if (right_val == 0)
+                        return {false, true};
+                    --right_val;
+                }
+            }
+            else if (r.right.isPositiveInfinity())
+            {
+                right_val = std::numeric_limits<UInt64>::max();
+            }
+
+            if (left_val > right_val)
+                return {false, true};
+
+            const uint64_t upper = roaring_bitmap->rank(right_val);
+            const uint64_t lower = (left_val == 0) ? 0 : roaring_bitmap->rank(left_val - 1);
+            const uint64_t count = upper - lower;
+
+            bool can_be_true = count > 0;
+            bool at_most_one = false;
+            if (r.left.isNormal() && r.right.isNormal())
+                at_most_one = (left_val == right_val && r.left_included && r.right_included);
+            else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
+                at_most_one = true;
+
+            if (at_most_one && has_all_keys)
+                return {can_be_true, !can_be_true};
+
+            return {can_be_true, true};
+        }
     }
 
     /// lhs < rhs return -1
