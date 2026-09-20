@@ -212,7 +212,20 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             NamesAndTypesList actual_columns;
             for (const auto & column : columns)
                 actual_columns.emplace_back(column.name, column.type);
-            validateParameterizedViewSchema(table_name, actual_columns, view_metadata->getColumns());
+            const auto & declared_columns = view_metadata->getColumns();
+            validateParameterizedViewSchema(table_name, actual_columns, declared_columns);
+
+            /// The substituted query only yields names and types. When the view has a declared schema
+            /// latched in its stored definition, that schema is what `DESCRIBE TABLE pv`, `SHOW COLUMNS`
+            /// and `system.columns` expose, including per-column metadata (defaults, comments, ...) that
+            /// a sample block cannot carry. Return the declared descriptions so that `DESCRIBE TABLE pv(...)`
+            /// agrees with them once validation has proven the names and types match.
+            if (!declared_columns.empty())
+            {
+                columns.clear();
+                for (const auto & column : declared_columns)
+                    columns.emplace_back(column);
+            }
             return;
         }
     }

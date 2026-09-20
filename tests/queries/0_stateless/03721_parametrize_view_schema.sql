@@ -1,5 +1,3 @@
-SET enable_analyzer = 1;
-
 -- { echoOn }
 SET use_declared_schema_for_parameterized_views = 0;
 
@@ -112,21 +110,9 @@ FROM 03271_parametrized_v_expl(upper_bound = 3);
 SELECT *
 FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 
-SET enable_analyzer = 0;
-SET use_declared_schema_for_parameterized_views = 1;
-
--- Legacy path: mismatched schema should also throw TYPE_MISMATCH
-SELECT *
-FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
-
--- Legacy path: matching schema should succeed
-SELECT *
-FROM 03271_parametrized_v_expl(upper_bound = 3);
-
 -- Schema exposure is decided by the setting value at CREATE time, not at query time
 -- (a deliberate backward-compatibility choice), and the decision is persisted in the stored
 -- definition so that reloading it never consults the setting again.
-SET enable_analyzer = 1;
 SET use_declared_schema_for_parameterized_views = 1;
 CREATE OR REPLACE VIEW 03271_parametrized_v_toggle (n UInt64) AS
 SELECT number AS n
@@ -194,6 +180,26 @@ DESCRIBE TABLE 03271_parametrized_v_reload;
 -- parameters, because its columns are only known after substitution.
 DESCRIBE TABLE 03271_parametrized_v; -- { serverError UNSUPPORTED_METHOD }
 
+-- `DESCRIBE TABLE pv(...)` must return the declared column descriptions, not just the names and
+-- types inferred from the substituted query: per-column metadata such as a default expression or a
+-- comment lives only in the declared schema, and bare `DESCRIBE TABLE pv`, `SHOW COLUMNS` and
+-- `system.columns` already expose it.
+SET use_declared_schema_for_parameterized_views = 1;
+CREATE VIEW 03271_parametrized_v_meta (n UInt64 DEFAULT 1 COMMENT 'declared comment') AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+DESCRIBE TABLE 03271_parametrized_v_meta;
+DESCRIBE TABLE 03271_parametrized_v_meta(upper_bound = 3);
+-- The query-time setting does not matter: the schema is latched in the stored definition.
+SET use_declared_schema_for_parameterized_views = 0;
+DESCRIBE TABLE 03271_parametrized_v_meta(upper_bound = 3);
+-- A mismatch is still rejected before any declared metadata is returned.
+SET use_declared_schema_for_parameterized_views = 1;
+CREATE VIEW 03271_parametrized_v_meta_mismatch (n String DEFAULT '1' COMMENT 'declared comment') AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+DESCRIBE TABLE 03271_parametrized_v_meta_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+
 -- { echoOff }
 
 DROP VIEW 03271_parametrized_v;
@@ -204,3 +210,5 @@ DROP VIEW 03271_parametrized_v_toggle_mismatch;
 DROP VIEW 03271_parametrized_v_off;
 DROP VIEW 03271_parametrized_v_reload;
 DROP VIEW 03271_parametrized_v_reload_mismatch;
+DROP VIEW 03271_parametrized_v_meta;
+DROP VIEW 03271_parametrized_v_meta_mismatch;
