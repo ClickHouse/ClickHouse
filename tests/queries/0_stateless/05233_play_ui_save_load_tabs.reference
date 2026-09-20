@@ -1,6 +1,6 @@
 --- the two buttons sit in the tab bar, in that order, before the connection key
-<button id="tab-save" type="button" title="Save all tabs and their queries as Markdown">💾</button>
-<button id="tab-load" type="button" title="Load tabs and their queries from Markdown">📂</button>
+<button id="tab-save" type="button" title="Save all tabs and their queries as Markdown">
+<button id="tab-load" type="button" title="Load tabs and their queries from Markdown">
 <div id="tab-io">
 <div id="connection-menu">
 --- one auto margin pushes that whole right-hand cluster over; a second one would split it

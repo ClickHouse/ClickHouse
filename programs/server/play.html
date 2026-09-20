@@ -613,9 +613,12 @@
             flex-shrink: 0;
         }
 
-        /* Borderless, background-less buttons - just the glyph - like the 🔑 button beside them.
-           The page font is inherited (rather than the system button font) for the same reason as
-           `#tab-add`: so their line box matches the tabs' and they align on the strip's bottom line. */
+        /* Borderless, background-less buttons - just the icon - sitting next to the 🔑 button.
+           The icons are line art stroked in the current text color (like the copy/download icons of
+           the toolbar), not emoji: a colour glyph takes no text color, so it could not be muted
+           when idle nor lit on hover the way every other control in the bar is. The page font is
+           inherited (rather than the system button font) for the same reason as `#tab-add`: so
+           their line box matches the tabs' and they align on the strip's bottom line. */
         #tab-save, #tab-load
         {
             display: flex;
@@ -628,15 +631,22 @@
             line-height: 1;
             background: none;
             border: none;
-            color: var(--text-color);
-            /* On active, brighten the emoji itself rather than painting a button background. */
-            filter: brightness(0.85);
-            transition: filter 0.1s;
+            /* Idle in the muted tone the tabs' own close icons use, so the pair reads as part of
+               the bar's chrome rather than competing with the tab titles. */
+            color: var(--misc-text-color);
+            transition: color 0.1s;
+        }
+
+        #tab-save svg, #tab-load svg
+        {
+            width: 1.1em;
+            height: 1.1em;
+            display: block;
         }
 
         #tab-save:hover, #tab-save:focus, #tab-load:hover, #tab-load:focus
         {
-            filter: brightness(1.15);
+            color: var(--text-color-active);
         }
 
         /* The two modals the save/load buttons open. They are plain `<dialog>` elements shown with
@@ -2007,8 +2017,8 @@
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
             <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
             <div id="tab-io">
-                <button id="tab-save" type="button" title="Save all tabs and their queries as Markdown">💾</button>
-                <button id="tab-load" type="button" title="Load tabs and their queries from Markdown">📂</button>
+                <button id="tab-save" type="button" title="Save all tabs and their queries as Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
+                <button id="tab-load" type="button" title="Load tabs and their queries from Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
             </div>
             <div id="connection-menu">
                 <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>

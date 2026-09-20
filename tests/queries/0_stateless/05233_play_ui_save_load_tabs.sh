@@ -19,7 +19,7 @@ URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 page="$(${CLICKHOUSE_CURL} -sS "${URL}/play")"
 
 echo '--- the two buttons sit in the tab bar, in that order, before the connection key'
-echo "$page" | grep -oE '^ *<button id="tab-(save|load)" type="button" title="[^"]*">.*$' | sed 's/^ *//'
+echo "$page" | grep -oE '<button id="tab-(save|load)" type="button" title="[^"]*">'
 echo "$page" | grep -E '^ *<div id="(tab-io|connection-menu)">$' | sed 's/^ *//'
 
 echo '--- one auto margin pushes that whole right-hand cluster over; a second one would split it'
