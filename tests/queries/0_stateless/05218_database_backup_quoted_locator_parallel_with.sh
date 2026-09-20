@@ -44,6 +44,26 @@ CREATE DATABASE $ATTACHED_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME',
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $OTHER_DATABASE_NAME"
 
+# A quoted locator can carry credentials, and `PARALLEL WITH` formats its statements before the engine
+# refuses them, so the formatted text must hide it: neither the logged query text (the same text an
+# `ON CLUSTER` statement puts into the distributed DDL payload) nor the refusal message may carry it.
+$CLICKHOUSE_CLIENT -q """
+CREATE DATABASE $OTHER_DATABASE_NAME
+PARALLEL WITH
+ATTACH DATABASE $ATTACHED_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME', 'S3(\\'http://localhost:11111/05218\\', \\'ak\\', \\'SEKRIT_05218\\')');
+""" 2>&1 | grep -q -F 'Expected function' && echo 'refused'
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $OTHER_DATABASE_NAME"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q """
+SELECT countIf(query LIKE '%SEKRIT_05218%' OR exception LIKE '%SEKRIT_05218%'), countIf(query LIKE '%Backup(%[HIDDEN]%') > 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type != 'QueryStart'
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;
+"""
+
 # The function form goes through the same wrapper.
 $CLICKHOUSE_CLIENT -q """
 CREATE DATABASE IF NOT EXISTS $OTHER_DATABASE_NAME

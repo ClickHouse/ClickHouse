@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
@@ -523,6 +524,15 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
             return result;
         }
     }
+
+    /// `BackupInfo::fromAST` puts the offending argument into its message, and that message reaches the
+    /// error log and the `exception` column of `query_log`. A locator held in a string literal is exactly
+    /// the text that can carry credentials, so refuse it here without echoing it.
+    if (!engine_args[1]->as<ASTFunction>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected function as the backup destination of a `Backup` database. It must be spelled as the "
+            "function it is, such as `File('backup')` or `S3(...)`. The text given is not shown, because a "
+            "destination held in a string literal cannot be redacted and may carry credentials");
 
     result.backup_info = BackupInfo::fromAST(*engine_args[1]);
 
