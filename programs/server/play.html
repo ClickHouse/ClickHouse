@@ -357,14 +357,6 @@
             border-bottom: 1px solid var(--border-color);
         }
 
-        /* The `display: flex` above (id specificity) overrides the user-agent
-           `[hidden] { display: none }` rule, so restore hiding explicitly with a
-           selector that wins on specificity. */
-        #tab-bar[hidden]
-        {
-            display: none;
-        }
-
         [data-theme="dark"] #tab-bar::before
         {
             background: #000; /* pure black strip */
@@ -805,11 +797,6 @@
             transition: filter 0.1s;
         }
 
-        #connection-key[hidden]
-        {
-            display: none;
-        }
-
         #connection-key:hover, #connection-key:focus
         {
             filter: brightness(1.15);
@@ -825,10 +812,9 @@
             z-index: 3;
             padding: 0.75rem;
             width: min(90vw, 34rem);
-            /* The page background, so the inputs look exactly as they do in the inline top bar
-               (a field on the page color, delineated by its own border) rather than blending
-               into a same-colored panel. The border and shadow below set the panel apart from
-               the content it floats over. */
+            /* The page background, so each input reads as a field on the page color, delineated
+               by its own border, rather than blending into a same-colored panel. The border and
+               shadow below set the panel apart from the content it floats over. */
             background: var(--background-color);
             border: 1px solid var(--border-color);
             box-shadow: 0 0.25rem 1rem var(--shadow-color);
@@ -2019,7 +2005,7 @@
         <div id="terminal-resizer"></div>
     </div>
     <div id="main">
-        <div id="tab-bar" hidden>
+        <div id="tab-bar">
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
             <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
@@ -2028,14 +2014,15 @@
                 <button id="tab-load" type="button" title="Load tabs and their queries from Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
             </div>
             <div id="connection-menu">
-                <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>
-                <div id="connection-dropdown" hidden></div>
+                <button id="connection-key" type="button" title="Connection settings" aria-expanded="false">🔑</button>
+                <div id="connection-dropdown" hidden>
+                    <div id="inputs">
+                        <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
+                    </div>
+                </div>
             </div>
         </div>
         <form id="controls">
-            <div id="inputs">
-                <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
-            </div>
             <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
             <div id="query-params"></div>
             <div id="run_div">
@@ -9697,10 +9684,8 @@ function checkCredentials() {
                 updateServerInfoVisibility();
             } else {
                 [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
-                /// The credentials didn't work — surface the connection settings so they can be
-                /// fixed. Only relevant when they live in the drop-down (tab bar shown); inline
-                /// (single tab) they are already visible, so there is nothing to open.
-                if (!connection_key_elem.hidden) { openConnectionDropdown(); }
+                /// The credentials didn't work — surface the connection settings so they can be fixed.
+                openConnectionDropdown();
             }
         }
     });
@@ -9774,10 +9759,7 @@ function resetCredentialsStatus() {
 function connectionSurface() {
     /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
     /// safe to call from the handlers registered just below, which run before those declarations.
-    /// The 🔑 button is hidden in the single-tab inline layout; there the surface is `#inputs`.
-    return document.getElementById('connection-key').hidden
-        ? document.getElementById('inputs')
-        : document.getElementById('connection-menu');
+    return document.getElementById('connection-menu');
 }
 let pointer_down_inside_inputs = false;
 let commit_deferred = false;
@@ -13190,15 +13172,13 @@ const tab_bar_elem = document.getElementById('tab-bar');
 const tabs_elem = document.getElementById('tabs');
 const tab_close_others_elem = document.getElementById('tab-close-others');
 
-/// The connection parameters (url/user/password) live in the `#inputs` element. When the tab
-/// bar is shown they clutter the top of every tab, so we relocate that same element into a
-/// drop-down behind a 🔑 button in the top-right corner. Relocating the existing element (rather
-/// than duplicating the inputs) keeps every reference and event listener bound to it valid. The
-/// three inputs carry `form="controls"`, so once moved out of the form's subtree they still count
-/// as its fields: pressing `Enter` in url/user/password keeps submitting `#controls` (running the
-/// query), matching the inline single-tab layout.
+/// The connection parameters (url/user/password) live in the `#inputs` element, inside the
+/// drop-down behind the 🔑 button in the top-right corner of the tab bar: they are shared by
+/// every tab, so showing them above the editor would clutter the top of all of them. The three
+/// inputs carry `form="controls"`, so although they sit outside the form's subtree they still
+/// count as its fields: pressing `Enter` in url/user/password submits `#controls` and runs the
+/// query, as it does from the editor.
 const inputs_elem = document.getElementById('inputs');
-const controls_elem = document.getElementById('controls');
 const connection_menu_elem = document.getElementById('connection-menu');
 const connection_key_elem = document.getElementById('connection-key');
 const connection_dropdown_elem = document.getElementById('connection-dropdown');
@@ -13213,45 +13193,6 @@ function openConnectionDropdown() {
 function closeConnectionDropdown() {
     connection_dropdown_elem.hidden = true;
     connection_key_elem.setAttribute('aria-expanded', 'false');
-}
-
-/// Place the `#inputs` element either inline in `#controls` (no tab bar) or inside the
-/// drop-down behind the 🔑 button (tab bar shown). Called from `renderTabBar` whenever the
-/// tab bar's visibility is recomputed.
-function syncConnectionUI() {
-    const tabsShown = !tab_bar_elem.hidden;
-    /// Capture whether the 🔑 button owns focus before the next line may hide it: hiding a focused
-    /// element strands keyboard focus, so on the drop-down→inline transition we hand focus to a
-    /// visible control below (the mirror of the inline→drop-down handoff).
-    const keyHadFocus = document.activeElement === connection_key_elem;
-    connection_key_elem.hidden = !tabsShown;
-    if (tabsShown) {
-        if (inputs_elem.parentElement !== connection_dropdown_elem) {
-            /// If focus is inside `#inputs` when the tab bar first appears (e.g. the user pressed
-            /// Enter in url/user/password to run the first query — reachable because those fields
-            /// keep `form="controls"` and submit implicitly), moving the subtree into the hidden
-            /// drop-down would strand focus on a hidden element. Move focus to the now-visible 🔑
-            /// button first — as the Escape handler does — so keyboard users keep a visible focus
-            /// target and the inputs stay one key press away behind that button.
-            const refocus = inputs_elem.contains(document.activeElement);
-            connection_dropdown_elem.appendChild(inputs_elem);
-            if (refocus) connection_key_elem.focus();
-        }
-    } else {
-        /// Restore the inline position (first child of the form) and make sure the drop-down
-        /// is closed so a later reappearance of the tab bar starts collapsed.
-        if (inputs_elem.parentElement !== controls_elem) {
-            controls_elem.insertBefore(inputs_elem, controls_elem.firstChild);
-        }
-        closeConnectionDropdown();
-        /// The `#connection-key` button was just hidden; if it owned focus, hand focus to the
-        /// now-visible inline `url` input — the first connection field the button gated — so
-        /// keyboard focus stays visible and the next Tab continues from the connection row.
-        if (keyHadFocus) url_elem.focus();
-    }
-    /// The url input's width differs between the inline bar and the drop-down, so the point at
-    /// which the hostname reaches the version/uptime indicator changes: recompute its visibility.
-    updateServerInfoVisibility();
 }
 
 connection_key_elem.addEventListener('click', (e) => {
@@ -13318,10 +13259,9 @@ document.addEventListener('keydown', (e) => {
 /// A hidden invalid control blocks the submit with no visible bubble, leaving the Run button
 /// dead. Open the drop-down when a connection field reports invalid, so the browser shows its
 /// validation bubble on a now-visible control. `invalid` does not bubble, so listen in the
-/// capture phase. In the single-tab layout the 🔑 button is hidden and the inputs are already
-/// visible inline, so nothing is opened.
+/// capture phase.
 inputs_elem.addEventListener('invalid', () => {
-    if (!connection_key_elem.hidden && connection_dropdown_elem.hidden) openConnectionDropdown();
+    if (connection_dropdown_elem.hidden) openConnectionDropdown();
 }, true);
 
 /// Generate the next default title: "Query A" .. "Query Z", "Query AA", ...
@@ -14303,23 +14243,13 @@ function renderTabBar() {
     /// covers every path (not just `duplicateTab`). Safe against re-entry: `commit` clears
     /// `activeTitleCommit` before it calls back into `renderTabBar`, so this becomes a no-op.
     if (activeTitleCommit) activeTitleCommit(true);
-    const active = getActiveTab();
-    /// Hidden when there is a single tab that has never produced a result from a genuine
-    /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
-    /// (rather than merely `result != null`) also ignores any stale/fabricated result
-    /// snapshot that an older build may have persisted to IndexedDB.
-    /// A running query also reveals the bar (`anyInFlight`), so even the very first query on a
-    /// fresh page can be backgrounded: the user needs the `[+]` button to open a second tab (or
-    /// switch away) while that first query is still in flight.
-    tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran) && !anyInFlight());
     /// With a single tab there are no "other" tabs to close; show it only for 2+. Hiding a
-    /// focused element strands keyboard focus (same problem `syncConnectionUI` solves for the
-    /// 🔑 button): activating this button with Enter/Space on exactly two tabs hides it in the
-    /// resulting rerender, so hand focus to the query area — always visible — before hiding.
+    /// focused element strands keyboard focus: activating this button with Enter/Space on exactly
+    /// two tabs hides it in the resulting rerender, so hand focus to the query area — always
+    /// visible — before hiding.
     const closeOthersHadFocus = document.activeElement === tab_close_others_elem;
     tab_close_others_elem.hidden = tabs.length < 2;
     if (closeOthersHadFocus && tab_close_others_elem.hidden) query_area.focus();
-    syncConnectionUI();
 
     tabs_elem.textContent = '';
     for (const tab of tabs) {
@@ -14973,7 +14903,7 @@ function saveHistory(stateData, titleForDoc, tab) {
     /// `result.query` comparison fails for a partial run; this is the same rule for the run path.
     const full_editor_run = stateData.fullEditor === true;
     tab.result = {
-        ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
+        ran: true,   /// marks a genuine run (see `tabReflectsRun` and the blank-tab pruning on startup)
         /// The single statement that produced this result (in multi-query mode it differs
         /// from the editor text in tab.query); used for rendering/graph-detection/downloads.
         query: stateData.resultQuery ?? stateData.query,
@@ -15075,8 +15005,8 @@ function saveHistory(stateData, titleForDoc, tab) {
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
-/// existing result (or none); does NOT fabricate a result, so a never-run single tab
-/// stays result-less and the tab bar stays hidden. Keeps the entry's `run=1` marker while the
+/// existing result (or none); does NOT fabricate a result, so a never-run tab stays
+/// result-less. Keeps the entry's `run=1` marker while the
 /// editor still reflects the produced run (`tabReflectsRun`) so switching INTO a run-backed tab
 /// leaves its shared `run=1` URL as re-runnable as `saveHistory` left it; a result-less or
 /// edited tab reports false and the marker is dropped.
@@ -15340,8 +15270,7 @@ window.onpopstate = function(event) {
     /// snapshot under `result`; legacy flat entries (predating per-tab state) store the produced
     /// result at the TOP level. Normalize such a flat entry into a nested snapshot on `tab.result`
     /// (which `materializeResult` renders) rather than treating it as "no result" — otherwise the
-    /// tab bar would hide despite a visible result and the next persist/switch would drop the
-    /// restored snapshot. A truly result-less entry stays null.
+    /// next persist/switch would drop the restored snapshot. A truly result-less entry stays null.
     if (event.state.result) {
         tab.result = event.state.result;
     } else if (event.state.data != null || (event.state.multi && event.state.multi.length)) {
@@ -15438,11 +15367,6 @@ function beginFlight(tab, launchInteractionGen) {
     scheduleSave();
     updateTabIndicator(tab);
     refreshFavicon();
-    /// Reveal the tab bar (with its `[+]`) the moment a run starts on an otherwise-hidden bar, so
-    /// the first query on a fresh page can be backgrounded. Only rebuilds when hidden (a no-op cost
-    /// once the bar is already shown), and in that case there is a single tab, so no background
-    /// tab's spinner animation is reset by the rebuild.
-    if (tab_bar_elem.hidden) renderTabBar();
     /// New run: no statement of it has claimed the editor's error marker yet, scoping the
     /// arbitration in `highlightQueryError` to this run. Both error-marker fields live on the
     /// TAB, and are (re)set for a background launch too: runs execute concurrently across tabs,
@@ -15470,14 +15394,6 @@ function endFlight(tab) {
     tab.inFlight = false;
     updateTabIndicator(tab);
     refreshFavicon();
-    /// A run that ended without leaving a result (e.g. cancelled before the first row) on a lone
-    /// tab should let the bar collapse back to its pristine hidden state. Re-render only when that
-    /// hide actually applies, so the common case (bar stays visible) does not rebuild on every run.
-    if (!tab_bar_elem.hidden && tabs.length <= 1 && !anyInFlight()
-        && !(getActiveTab() && getActiveTab().result && getActiveTab().result.ran))
-    {
-        renderTabBar();
-    }
     if (tab.id === activeTabId) {
         document.getElementById('run').blur();
         updateRunButtons(isMultiQuery);
@@ -18999,8 +18915,8 @@ if (theme) {
 
 /// ----- Tab bootstrap & startup reconciliation -----------------------------------
 /// Build the initial in-memory tab from whatever the synchronous load produced (the
-/// URL hash query, if any). A single result-less tab keeps the tab bar hidden, so the
-/// first paint is identical to the pre-tabs UI (no layout shift).
+/// URL hash query, if any). It is a real tab like any other: the bar is always shown, so a
+/// first-ever visit opens with one tab rather than with a tab-less page.
 tabs = [makeTab(undefined, query_area.value)];
 activeTabId = tabs[0].id;
 /// Seed the bootstrap tab's color modes, pinned columns and column sort from the URL (a
@@ -19092,9 +19008,9 @@ async function reconcileStartup() {
         /// Do not restore blank scratch tabs left over from a previous session: on reload they
         /// would reappear as empty tabs the user never asked to keep. A tab counts as blank only
         /// when its query is empty AND it carries no genuine run result: a tab whose editor was
-        /// cleared after a run still holds a `result.ran` snapshot, which `renderTabBar` treats as
-        /// meaningful persisted state, so it must be preserved (dropping it would silently erase a
-        /// run-backed tab from `IndexedDB`). Dropping the truly-blank tabs here lets the workspace
+        /// cleared after a run still holds a `result.ran` snapshot — meaningful persisted state
+        /// that must be preserved (dropping it would silently erase a run-backed tab from
+        /// `IndexedDB`). Dropping the truly-blank tabs here lets the workspace
         /// fall back to a single fresh tab when every saved tab was blank (as on a first-ever
         /// visit), and the trailing `persist` prunes them from storage.
         for (const r of ordered) {
@@ -19472,9 +19388,9 @@ async function reconcileStartup() {
         /// back to the dropped blank title, and the trailing `scheduleSave` would persist it again,
         /// resurrecting the very blank tab the pruning removed. Keep the default fresh bootstrap
         /// tab, and strip the stale `?tab=` from the URL so it matches a first-ever visit (an
-        /// all-blank workspace falls back to a single fresh tab). The tab bar stays hidden for the
-        /// lone result-less tab, so `syncHistory` is deliberately not called here (it would re-add
-        /// a `?tab=` for the default title); a targeted `replaceState` drops the `tab` key. The
+        /// all-blank workspace falls back to a single fresh tab). `syncHistory` is deliberately
+        /// not called here (it would re-add a `?tab=` for the default title); a targeted
+        /// `replaceState` drops the `tab` key. The
         /// reloaded entry's state must go too: it still carries the dropped tab's `tabId`/`tabName`
         /// (history state survives a reload), and keeping it would make the bootstrap tab's first
         /// unrun edit bail out of `refreshCurrentHistoryEntry` (`cur.tabId !== tab.id`), never
