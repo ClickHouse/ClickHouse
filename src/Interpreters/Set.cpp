@@ -895,9 +895,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
         if (left_opt && right_opt)
         {
-            /// Conservative fallback if applyMonotonicFunctionsChainToRange inverted the transformed bounds.
+            /// An inverted range is empty. Only a non-monotonic function chain can invert bounds
+            /// whose range is not really empty, so keep the conservative answer just for that case.
             if (r.left.isNormal() && r.right.isNormal() && *left_opt > *right_opt)
-                return {true, true};
+            {
+                if (!indexes_mapping[0].functions.empty())
+                    return {true, true};
+                return {false, true};
+            }
 
             UInt64 left_val = *left_opt;
             UInt64 right_val = *right_opt;
