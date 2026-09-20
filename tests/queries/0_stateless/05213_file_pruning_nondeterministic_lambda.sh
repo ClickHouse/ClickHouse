@@ -39,13 +39,16 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'visible predicate is not used to prune files',
 # degrade into refusing every predicate. A file that does not parse as `UInt32` is added to the glob:
 # it is only tolerated when the pruning drops it before it is read, so a `count()` instead of an
 # error is the evidence that the pruning happened. The lambda variant checks that the guard stayed
-# specific to non-deterministic lambdas and does not refuse every lambda.
+# specific to non-deterministic lambdas and does not refuse every lambda; its body is not of the
+# `x -> x = constant` shape and `optimize_rewrite_array_exists_to_has` is pinned off on top of that,
+# so `ArrayExistsToHasPass` cannot turn it into a `has` call and leave the control without a lambda.
 echo "not_a_number" > "${CLICKHOUSE_USER_FILES_UNIQUE}"/databad.csv
 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'deterministic predicate still prunes', count()
     FROM file('${GLOB}', 'CSV', 'a UInt32') WHERE _file = 'data1.csv'"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'deterministic lambda still prunes', count()
-    FROM file('${GLOB}', 'CSV', 'a UInt32') WHERE arrayExists(x -> x = 'data1.csv', [_file])"
+    FROM file('${GLOB}', 'CSV', 'a UInt32') WHERE arrayExists(x -> startsWith(x, 'data1.'), [_file])
+    SETTINGS optimize_rewrite_array_exists_to_has = 0"
 
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE:?}"/*
