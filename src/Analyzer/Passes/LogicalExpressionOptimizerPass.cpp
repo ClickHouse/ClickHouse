@@ -453,13 +453,15 @@ static bool containsInterval(const DataTypePtr & type)
 
 /// `FunctionComparison` resolves a `String`/`FixedString` operand against any other type, and equal-size
 /// tuples whatever their elements, but at execution it coerces only a constant string and otherwise throws.
-static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression_type, const DataTypePtr & constant_type)
+/// `constant_is_materialized` marks a constant whose value reaches the comparison as a materialized column.
+static bool comparisonWithConstantIsNotExecutable(
+    const DataTypePtr & expression_type, const DataTypePtr & constant_type, bool constant_is_materialized = false)
 {
     const auto expression = removeLowCardinalityAndNullable(expression_type);
     const auto constant = removeLowCardinalityAndNullable(constant_type);
 
-    /// A string a `Dynamic` or `Variant` constant merely carries is materialized, so it is not coerced.
-    if (constant->hasDynamicStructure() || isVariant(constant))
+    /// A `Dynamic` constant has no fixed alternative set, so the type of the value it carries is unknown here.
+    if (constant->hasDynamicStructure())
         return true;
 
     const auto * expression_tuple = typeid_cast<const DataTypeTuple *>(expression.get());
@@ -471,7 +473,7 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
         if (expression_elements.size() != constant_elements.size())
             return false;
         for (size_t i = 0; i < expression_elements.size(); ++i)
-            if (comparisonWithConstantIsNotExecutable(expression_elements[i], constant_elements[i]))
+            if (comparisonWithConstantIsNotExecutable(expression_elements[i], constant_elements[i], constant_is_materialized))
                 return true;
         return false;
     }
@@ -479,14 +481,25 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
     const auto * expression_array = typeid_cast<const DataTypeArray *>(expression.get());
     const auto * constant_array = typeid_cast<const DataTypeArray *>(constant.get());
     if (expression_array && constant_array)
-        return comparisonWithConstantIsNotExecutable(expression_array->getNestedType(), constant_array->getNestedType());
+        return comparisonWithConstantIsNotExecutable(
+            expression_array->getNestedType(), constant_array->getNestedType(), constant_is_materialized);
+
+    /// A `Variant` constant is compared on the alternative it carries, and that alternative is materialized,
+    /// so a string it holds is not coerced the way a string constant is.
+    if (const auto * constant_variant = typeid_cast<const DataTypeVariant *>(constant.get()))
+    {
+        for (const auto & alternative : constant_variant->getVariants())
+            if (comparisonWithConstantIsNotExecutable(expression, alternative, /*constant_is_materialized=*/true))
+                return true;
+        return false;
+    }
 
     /// A `Variant` is compared on the alternative each row holds, so an incomparable one refuses those rows.
     if (const auto * expression_variant = typeid_cast<const DataTypeVariant *>(expression.get()))
     {
         for (const auto & alternative : expression_variant->getVariants())
         {
-            if (comparisonWithConstantIsNotExecutable(alternative, constant))
+            if (comparisonWithConstantIsNotExecutable(alternative, constant, constant_is_materialized))
                 return true;
 
             const auto bare_alternative = removeLowCardinalityAndNullable(alternative);
@@ -498,7 +511,8 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
         return false;
     }
 
-    if (!isStringOrFixedString(expression))
+    /// A materialized operand is coerced no more than the expression is, so the pair needs a supertype.
+    if (!isStringOrFixedString(expression) && !constant_is_materialized)
         return false;
 
     if (containsInterval(expression) || containsInterval(constant))
@@ -506,7 +520,7 @@ static bool comparisonWithConstantIsNotExecutable(const DataTypePtr & expression
 
     /// `getLeastSupertype` returns `String` for every string-compatible pair, and `Dynamic` with a `Dynamic` operand.
     const auto supertype = tryGetLeastSupertype(DataTypes{expression, constant});
-    return !supertype || !isStringOrFixedString(supertype);
+    return !supertype || (isStringOrFixedString(expression) && !isStringOrFixedString(supertype));
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.

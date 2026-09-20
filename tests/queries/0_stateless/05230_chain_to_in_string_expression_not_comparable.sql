@@ -143,6 +143,21 @@ SELECT count() FROM (SELECT tuple(materialize(toUInt8(1))) AS t)
     WHERE t = tuple(CAST('1', 'Variant(String)')) OR t = tuple(CAST('2', 'Variant(String)'))
        OR t = tuple(CAST('3', 'Variant(String)'))
 SETTINGS optimize_min_equality_disjunction_chain_length = 100; -- { serverError NO_COMMON_TYPE }
+-- The carried value does not have to be a string to be incomparable: a `Date` alternative against a numeric
+-- expression is refused as well, and the raw day number converts to `UInt16` losslessly, so this shape
+-- reaches the merge unless every alternative is checked. Scalar, then one tuple position down.
+SELECT count() FROM (SELECT materialize(toUInt16(1)) AS u)
+    WHERE u = CAST(toDate(1), 'Variant(Date, UInt16)')
+SETTINGS allow_suspicious_variant_types = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM (SELECT materialize(toUInt16(1)) AS u)
+    WHERE u = CAST(toDate(1), 'Variant(Date, UInt16)') OR u = CAST(toDate(2), 'Variant(Date, UInt16)')
+       OR u = CAST(toDate(3), 'Variant(Date, UInt16)')
+SETTINGS allow_suspicious_variant_types = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM (SELECT tuple(materialize(toUInt16(1))) AS t)
+    WHERE t = tuple(CAST(toDate(1), 'Variant(Date, UInt16)'))
+       OR t = tuple(CAST(toDate(2), 'Variant(Date, UInt16)'))
+       OR t = tuple(CAST(toDate(3), 'Variant(Date, UInt16)'))
+SETTINGS allow_suspicious_variant_types = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'a Variant expression with an alternative the constant cannot be compared with';
 -- Each row is dispatched on the alternative it holds, which refuses a String alternative against a
@@ -233,6 +248,20 @@ SELECT 'dynamic_string_constant', count() FROM (SELECT materialize('1') AS s)
 SELECT 'variant_string_constant', count() FROM (SELECT materialize('1') AS s)
     WHERE s = CAST('1', 'Variant(String)') OR s = CAST('2', 'Variant(String)')
        OR s = CAST('3', 'Variant(String)');
+-- And a carried value comparable with the expression keeps both the answer and the merge, so the carrier
+-- test is alternative-wise in this direction too rather than a blanket decline.
+SELECT 'variant_numeric_constant', count() FROM (SELECT CAST(toUInt16(number), 'Variant(UInt16)') AS v FROM numbers(10))
+    WHERE v = CAST(toUInt16(1), 'Variant(UInt16)') OR v = CAST(toUInt16(2), 'Variant(UInt16)')
+       OR v = CAST(toUInt16(3), 'Variant(UInt16)');
+SELECT 'variant_numeric_constant_merged', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT CAST(toUInt16(number), 'Variant(UInt16)') AS v FROM numbers(10))
+    WHERE v = CAST(toUInt16(1), 'Variant(UInt16)') OR v = CAST(toUInt16(2), 'Variant(UInt16)')
+       OR v = CAST(toUInt16(3), 'Variant(UInt16)'));
+SELECT 'variant_numeric_constant_not_merged_above_threshold', countIf(explain LIKE '%function_name: in,%') FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM (SELECT CAST(toUInt16(number), 'Variant(UInt16)') AS v FROM numbers(10))
+    WHERE v = CAST(toUInt16(1), 'Variant(UInt16)') OR v = CAST(toUInt16(2), 'Variant(UInt16)')
+       OR v = CAST(toUInt16(3), 'Variant(UInt16)'))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
 
 -- Three result rows bounding the alternative-wise test: no string-family alternative (merge declined,
 -- answer still 3), a String constant against a UInt8 alternative (merge kept, so the test may not be a

@@ -19,6 +19,9 @@ tuple_array_vs_array	0
 tuple_uuid_vs_string_constants	0
 dynamic_string_constant	1
 variant_string_constant	1
+variant_numeric_constant	3
+variant_numeric_constant_merged	1
+variant_numeric_constant_not_merged_above_threshold	0
 variant_no_string_alternative	3
 variant_string_constant_expression	3
 variant_single_alternative	3
