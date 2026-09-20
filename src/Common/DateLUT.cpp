@@ -39,6 +39,21 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 }
 
 
+/// Some time zone databases keep alternate copies of the zones next to the canonical ones:
+/// `posix/` holds copies of the top-level files, and `right/` holds the same zones counting
+/// leap seconds. Neither directory name is part of a zone name - the zone is what follows it,
+/// and ClickHouse does not model leap seconds, so `right/Europe/Berlin` is `Europe/Berlin` here.
+/// The content-scan below already skips both directories; the relative-path fast paths above it
+/// see the host-selected name verbatim, so they have to strip the prefix themselves.
+std::string canonicalTimeZoneName(std::string name)
+{
+    for (std::string_view prefix : {"posix/", "right/"})
+        if (name.starts_with(prefix))
+            return name.substr(prefix.size());
+    return name;
+}
+
+
 std::string determineDefaultTimeZone()
 {
     namespace fs = std::filesystem;
@@ -108,7 +123,7 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
 
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return canonicalTimeZoneName(tz_name.empty() ? relative_path.string() : tz_name);
         }
 
         /// Try the same with full symlinks resolution
@@ -120,7 +135,7 @@ std::string determineDefaultTimeZone()
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return canonicalTimeZoneName(tz_name.empty() ? relative_path.string() : tz_name);
         }
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied (not symlinked)
