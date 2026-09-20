@@ -66,6 +66,7 @@ INSERT INTO t_106533_stats_basic VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
 SELECT count() FROM t_106533_stats_basic WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_106533_stats_basic WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats_basic WHERE val IN (150.) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_106533_stats_basic;
 
@@ -84,5 +85,6 @@ INSERT INTO t_106533_stats_auto VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
 SELECT count() FROM t_106533_stats_auto WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_106533_stats_auto WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats_auto WHERE val IN (150.) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_106533_stats_auto;
