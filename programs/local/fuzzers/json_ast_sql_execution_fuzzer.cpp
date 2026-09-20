@@ -50,6 +50,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Stopwatch.h>
+#include <unistd.h>
 #include <Common/StringUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -745,6 +746,18 @@ extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
 {
     if (DB::LocalFuzzerRunner::isMergeRun(*argc, *argv))
         return 0;
+
+    /// libFuzzer ends a session (`-max_total_time`, `-runs`) with `exit`, which runs the static destructors of
+    /// ClickHouse while the runner thread and the background pools of `clickhouse local` are still alive; that
+    /// aborted the process at the deadline (an empty-input `crash-da39a3ee...` artifact, exit code 134) in some
+    /// sessions. Registered first so that it runs last, after the statistics printers: flush and leave.
+    atexit([]
+    {
+        std::cout.flush();
+        std::cerr.flush();
+        fflush(nullptr);
+        _exit(0);
+    });
 
     DB::JSONASTFuzzer::initializePipeline("json_ast_sql_execution_fuzzer", argc, argv);
     if (const char * value = getenv("JSON_AST_FUZZER_ORACLE"))
