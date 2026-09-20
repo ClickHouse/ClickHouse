@@ -75,6 +75,26 @@ SELECT 'after alter to disable cache:';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
+-- Re-enable cache from 0 via ALTER and set TTL
+ALTER TABLE ts_cache MODIFY SETTING tags_cache_max_series = 1000, tags_cache_ttl_seconds = 7200;
+
+INSERT INTO ts_cache (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(2030, 3), 3.0)]);
+
+SELECT 'after alter to re-enable cache (first insert caches):';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+
+-- Live update of tags_cache_ttl_seconds on active cache
+ALTER TABLE ts_cache MODIFY SETTING tags_cache_ttl_seconds = 1800;
+
+INSERT INTO ts_cache (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(2045, 3), 4.0)]);
+
+SELECT 'after alter ttl on live cache (second insert skips tags):';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+
 -- 5. A table that stores min_time / max_time gets no cache, whatever tags_cache_max_series says:
 -- skipping its tags inserts would freeze the bounds a query prunes series by.
 DROP TABLE IF EXISTS ts_bounds;

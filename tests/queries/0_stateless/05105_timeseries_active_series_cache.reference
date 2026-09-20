@@ -18,6 +18,12 @@ after truncate and insert:
 after alter to disable cache:
 2
 2
+after alter to re-enable cache (first insert caches):
+3
+3
+after alter ttl on live cache (second insert skips tags):
+3
+4
 bounds stored: both inserts write tags:
 2
 2
