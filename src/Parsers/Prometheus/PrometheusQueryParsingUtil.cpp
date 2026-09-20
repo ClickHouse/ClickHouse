@@ -695,7 +695,7 @@ namespace
         if (res_duration_ms)
         {
             Int64 total_ms = 0;
-            if (DecimalUtils::tryMultiplyAdd(seconds, 1000, milliseconds, total_ms))
+            if (DecimalUtils::tryMultiplyAdd<Int64>(seconds, 1000, milliseconds, total_ms))
                 *res_duration_ms = total_ms;
         }
 
