@@ -106,22 +106,7 @@ Notes:
 
 ### How to run performance test
 
-Start a reference server and a server with the change on different ports. From
-the repository root, run a single test with:
-
-```
-python3 tests/performance/scripts/perf.py \
-    --host localhost localhost \
-    --port 9001 9002 \
-    --min-runs 3 --cap 5 --cap-fast 10 \
-    tests/performance/tuple_element_array_subcolumn.xml
-```
-
-The tuple-element array benchmark creates three tables with 64, 256, and 1024
-bytes of unused payload per tuple entry. For each table it compares the
-explicit `tupleElement(a, 'code')` spelling with the direct `a.code`
-subcolumn spelling. The function query is the result under test; the direct
-subcolumn query is the control for the expected read path.
+TODO
 
 ### How to validate single test
 
