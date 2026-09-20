@@ -1993,6 +1993,7 @@ std::vector<TableInfo> fetchTables(
             }
             catch (...)
             {
+                /// Ok: server may restrict system tables access; fallback to loopback checks.
             }
         }
         return *cached;
