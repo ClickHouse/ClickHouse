@@ -491,7 +491,7 @@ void LocalConnection::sendQuery(
                     return false;
                 };
 
-                executor.setCancelCallback(callback, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+                executor.setCancelCallback(callback, interactiveDelayMilliseconds());
             }
             executor.execute();
         }
@@ -559,10 +559,17 @@ void LocalConnection::sendCancel()
         state->pushing_async_executor->cancel();
 }
 
+/// `interactive_delay` is in microseconds; the executors take milliseconds. Values below 1000 used to
+/// truncate to 0, a blocking pull that dropped the first `Ctrl+C` and delayed the logs until the end.
+UInt64 LocalConnection::interactiveDelayMilliseconds() const
+{
+    return std::max<UInt64>(1, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+}
+
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+        return state->executor->pull(block, interactiveDelayMilliseconds());
 
     return false;
 }

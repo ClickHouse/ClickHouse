@@ -200,6 +200,7 @@ public:
 
 private:
     bool pullBlock(Block & block);
+    UInt64 interactiveDelayMilliseconds() const;
 
     void finishQuery();
 
