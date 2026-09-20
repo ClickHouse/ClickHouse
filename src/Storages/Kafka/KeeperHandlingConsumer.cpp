@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ABORTED;
 extern const int LOGICAL_ERROR;
 }
 
@@ -342,9 +343,24 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             ++active_replicas_with_lock;
     }
 
-    /// Clamp to 1: our own is_active may be transiently missing, and 0 would divide by zero in
-    /// updatePermanentLocksLocked (its chassert is a no-op in the release build).
-    active_replica_count = std::max<size_t>(active_replica_count, 1);
+    /// Our own `is_active` is created by `StorageKafka2::activate` before the reader tasks are started and is
+    /// only removed after they are stopped, so by the time we get here this replica must be among the active
+    /// ones. Counting zero therefore means our own registration is gone from Keeper or we filtered ourselves
+    /// out. Fail closed instead of defaulting to 1: pretending there is one active replica would let this
+    /// replica claim a full quota of locks while every peer leaves it out of theirs, silently hiding the
+    /// broken state (and 0 would divide by zero in `updatePermanentLocksLocked`, whose `chassert` is a no-op
+    /// in the release build).
+    if (active_replica_count == 0)
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Replica {} is not among the active replicas of {}: none of the {} candidate replicas (out of {} total, "
+            "shard_count={}) has an `is_active` node. The replica is not registered in Keeper as active anymore",
+            replica_name,
+            keeper_path.string(),
+            candidates.size(),
+            replica_names.size(),
+            shard_count);
+
     LOG_TEST(log, "There are {} active replicas with lock, {} active replicas out of {} total replicas (shard_count={})",
              active_replicas_with_lock, active_replica_count, replica_names.size(), shard_count);
     const auto has_replica_without_locks = active_replicas_with_lock < active_replica_count;
