@@ -13,6 +13,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
