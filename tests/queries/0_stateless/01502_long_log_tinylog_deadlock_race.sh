@@ -98,4 +98,4 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"
 # to avoid the following error:
 # Code: 219. DB::Exception: New table appeared in database being dropped or detached. Try again. (DATABASE_NOT_EMPTY)
 
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE current_database = currentDatabase() SYNC FORMAT Null"
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE current_database = currentDatabase() SYNC FORMAT Null SETTINGS kill_throw_if_noop = false"
