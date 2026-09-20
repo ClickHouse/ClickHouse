@@ -4,7 +4,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
@@ -79,76 +81,116 @@ namespace
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
         }
 
-        String sides[2];
-
-        left_argument = toVectorGrid(std::move(left_argument), context);
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
-        sides[0] = context.subqueries.back().name;
-        String & left = sides[0];
-
-        right_argument = toVectorGrid(std::move(right_argument), context);
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
-        sides[1] = context.subqueries.back().name;
-        String & right = sides[1];
-
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
 
-        /// Step 1:
-        /// new_left:
-        /// SELECT group AS original_group,
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-        ///        values
-        /// FROM left
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
-        ///
-        /// Step 2:
-        /// new_right:
-        /// SELECT group AS original_group,
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-        ///        values
-        /// FROM right
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
-        ///
         bool metric_name_dropped_from_join_group = false;
+        String left;
+        String right;
 
-        for (auto & side : sides)
+        if (group_left)
         {
-            SelectQueryBuilder builder;
+            /// Dynamic filter pushdown: evaluate left side first and push join_group into right side.
+            left_argument = toVectorGrid(std::move(left_argument), context);
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+            String left_grid = context.subqueries.back().name;
 
-            bool metric_name_dropped_from_group = (side == left) ? left_argument.metric_name_dropped : right_argument.metric_name_dropped;
-            bool metric_name_dropped_from_join_group_on_side = metric_name_dropped_from_group;
-
-            /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
-            /// have different metric names (e.g., `foo` and `bar`), so keeping `__name__` in the join key
-            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTForBinaryOperator.
-            ASTPtr join_group = transformGroupASTForBinaryOperator(
+            bool metric_name_dropped_from_left = left_argument.metric_name_dropped;
+            ASTPtr left_join_group = transformGroupASTForBinaryOperator(
                 operator_node,
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
                 /* drop_metric_name = */ true,
-                metric_name_dropped_from_join_group_on_side);
+                metric_name_dropped_from_left);
+            metric_name_dropped_from_join_group |= metric_name_dropped_from_left;
 
-            /// If the metric name has dropped from the `join_group` either on left or on right then it's dropped.
-            metric_name_dropped_from_join_group |= metric_name_dropped_from_join_group_on_side;
+            SelectQueryBuilder left_builder;
+            ASTPtr left_original_group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
+            left_original_group->setAlias(ColumnNames::OriginalGroup);
+            left_builder.select_list.push_back(std::move(left_original_group));
+            left_builder.select_list.push_back(left_join_group);
+            left_builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+            left_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            left_builder.from_table = left_grid;
 
-            /// If neither group_left not group_right is specified then it's one-to-one match.
-            /// If there is group_left then it's many-to-one match.
-            /// If there is group_right then it's one-to-many match.
-            bool group_on_side = (side == left) ? group_left : group_right;
+            ASTPtr left_ast = left_builder.getSelectQuery();
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_ast), SQLSubqueryType::MATERIALIZED_TABLE});
+            left = context.subqueries.back().name;
 
-            /// If `join_group` is the same as `group` then we already know it's unique.
-            bool check_side_one = !group_on_side && (tryGetIdentifierName(join_group.get()) != ColumnNames::Group);
+            bool metric_name_dropped_from_right = right_argument.metric_name_dropped;
+            ASTPtr right_join_group = transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /* drop_metric_name = */ true,
+                metric_name_dropped_from_right);
+            metric_name_dropped_from_join_group |= metric_name_dropped_from_right;
 
-            /// We add column `original_group` because we may need it at step 3.
+            SelectQueryBuilder filter_builder;
+            filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+            filter_builder.from_table = left;
+            auto filter_subquery = make_intrusive<ASTSubquery>(filter_builder.getSelectQuery());
+            ASTPtr filter_condition = makeASTFunction("in", right_join_group->clone(), std::move(filter_subquery));
+
+            /// Push down join_group restriction into selector and range-aggregation stages of right side.
+            if (right_argument.select_query)
+            {
+                if (auto * select_query = right_argument.select_query->as<ASTSelectQuery>())
+                {
+                    if (auto * tables = select_query->tables())
+                    {
+                        if (!tables->children.empty())
+                        {
+                            if (auto * elem = tables->children[0]->as<ASTTablesInSelectQueryElement>())
+                            {
+                                if (auto * table_expr = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
+                                {
+                                    if (auto * table_id = table_expr->database_and_table_name ? table_expr->database_and_table_name->as<ASTTableIdentifier>() : nullptr)
+                                    {
+                                        String from_table_name = table_id->shortName();
+                                        for (auto & subq : context.subqueries)
+                                        {
+                                            if (subq.name == from_table_name && subq.ast)
+                                            {
+                                                if (auto * inner_select = subq.ast->as<ASTSelectQuery>())
+                                                {
+                                                    ASTPtr inner_where = inner_select->getExpression(ASTSelectQuery::Expression::WHERE);
+                                                    if (inner_where)
+                                                        inner_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", inner_where, filter_condition->clone()));
+                                                    else
+                                                        inner_select->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ASTPtr existing_where = select_query->getExpression(ASTSelectQuery::Expression::WHERE);
+                    if (existing_where)
+                        select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
+                    else
+                        select_query->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
+                }
+            }
+
+            right_argument = toVectorGrid(std::move(right_argument), context);
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+            String right_grid = context.subqueries.back().name;
+
+            SelectQueryBuilder right_builder;
+            bool check_side_one = (tryGetIdentifierName(right_join_group.get()) != ColumnNames::Group);
+
             ASTPtr original_group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
             if (check_side_one)
                 original_group = makeASTFunction("any", std::move(original_group));
             original_group->setAlias(ColumnNames::OriginalGroup);
-            builder.select_list.push_back(std::move(original_group));
+            right_builder.select_list.push_back(std::move(original_group));
 
-            builder.select_list.push_back(join_group);
-            builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+            right_builder.select_list.push_back(right_join_group);
+            right_builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
             ASTPtr values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
             if (check_side_one)
@@ -156,16 +198,13 @@ namespace
                 values = makeASTFunction("any", std::move(values));
                 values->setAlias(ColumnNames::Values);
             }
-            builder.select_list.push_back(std::move(values));
-
-            builder.from_table = side;
+            right_builder.select_list.push_back(std::move(values));
+            right_builder.from_table = right_grid;
 
             if (check_side_one)
             {
-                /// We throw an exception if there are multiple matches on the side "one".
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
-
-                builder.having = makeASTFunction(
+                right_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+                right_builder.having = makeASTFunction(
                     "equals",
                     makeASTFunction(
                         "timeSeriesThrowDuplicateSeriesIf",
@@ -174,21 +213,82 @@ namespace
                     make_intrusive<ASTLiteral>(0u));
             }
 
-            if (group_left && (side == right))
+            /// Filter right-side join_groups by left side in Step 2.
+            right_builder.where = filter_condition;
+
+            ASTPtr right_ast = right_builder.getSelectQuery();
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_ast), SQLSubqueryType::TABLE});
+            right = context.subqueries.back().name;
+        }
+        else
+        {
+            String sides[2];
+
+            left_argument = toVectorGrid(std::move(left_argument), context);
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+            sides[0] = context.subqueries.back().name;
+
+            right_argument = toVectorGrid(std::move(right_argument), context);
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+            sides[1] = context.subqueries.back().name;
+
+            for (size_t i = 0; i < 2; ++i)
             {
-                // Dynamic filter pushdown: filter right-side join_groups by left side.
-                SelectQueryBuilder filter_builder;
-                filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
-                filter_builder.from_table = left;
-                auto subquery = make_intrusive<ASTSubquery>(filter_builder.getSelectQuery());
-                builder.where = makeASTFunction("in", join_group->clone(), std::move(subquery));
+                SelectQueryBuilder builder;
+
+                bool metric_name_dropped_from_group = (i == 0) ? left_argument.metric_name_dropped : right_argument.metric_name_dropped;
+                bool metric_name_dropped_from_join_group_on_side = metric_name_dropped_from_group;
+
+                ASTPtr join_group = transformGroupASTForBinaryOperator(
+                    operator_node,
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    /* drop_metric_name = */ true,
+                    metric_name_dropped_from_join_group_on_side);
+
+                metric_name_dropped_from_join_group |= metric_name_dropped_from_join_group_on_side;
+
+                bool group_on_side = (i == 0) ? group_left : group_right;
+                bool check_side_one = !group_on_side && (tryGetIdentifierName(join_group.get()) != ColumnNames::Group);
+
+                ASTPtr original_group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
+                if (check_side_one)
+                    original_group = makeASTFunction("any", std::move(original_group));
+                original_group->setAlias(ColumnNames::OriginalGroup);
+                builder.select_list.push_back(std::move(original_group));
+
+                builder.select_list.push_back(join_group);
+                builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+
+                ASTPtr values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+                if (check_side_one)
+                {
+                    values = makeASTFunction("any", std::move(values));
+                    values->setAlias(ColumnNames::Values);
+                }
+                builder.select_list.push_back(std::move(values));
+
+                builder.from_table = sides[i];
+
+                if (check_side_one)
+                {
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+                    builder.having = makeASTFunction(
+                        "equals",
+                        makeASTFunction(
+                            "timeSeriesThrowDuplicateSeriesIf",
+                            makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
+                            make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup)),
+                        make_intrusive<ASTLiteral>(0u));
+                }
+
+                ASTPtr ast = builder.getSelectQuery();
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), SQLSubqueryType::TABLE});
+
+                if (i == 0)
+                    left = context.subqueries.back().name;
+                else
+                    right = context.subqueries.back().name;
             }
-
-            ASTPtr ast = builder.getSelectQuery();
-            auto subquery_type = (group_left && (side == left)) ? SQLSubqueryType::MATERIALIZED_TABLE : SQLSubqueryType::TABLE;
-            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), subquery_type});
-
-            side = context.subqueries.back().name;
         }
 
         /// Step 3:

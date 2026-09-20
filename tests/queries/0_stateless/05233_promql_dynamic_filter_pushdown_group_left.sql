@@ -8,12 +8,13 @@ SET allow_experimental_time_series_table = 1;
 CREATE TABLE t_promql_dfp ENGINE = TimeSeries;
 
 -- Left-side metric `requests` with dc=a (hosts h1, h2)
--- Right-side metric `target_info` with dc=a, dc=b, dc=c
+-- Right-side metric `target_info` with dc=a, duplicate dc=b, and dc=c
 INSERT INTO t_promql_dfp (metric_name, tags, samples) VALUES
     ('requests', map('host', 'h1', 'dc', 'a'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20)]),
     ('requests', map('host', 'h2', 'dc', 'a'), [(toDateTime64(100, 3), 30), (toDateTime64(110, 3), 40)]),
     ('target_info', map('dc', 'a', 'env', 'prod'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1)]),
     ('target_info', map('dc', 'b', 'env', 'staging'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1)]),
+    ('target_info', map('dc', 'b', 'env', 'staging_dup'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1)]),
     ('target_info', map('dc', 'c', 'env', 'dev'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1)]);
 
 SELECT '-- group_left with dynamic filter pushdown pruning dc=b and dc=c';
@@ -21,5 +22,9 @@ SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (en
 
 SELECT '-- group_left with empty left side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests{dc="nonexistent"} * on (dc) group_left (env) target_info', 110) ORDER BY tags;
+
+SELECT '-- explain plan verifies join_group filter pushdown';
+SELECT countIf(explain LIKE '%JoinGroup%' OR explain LIKE '%timeSeriesRemoveAllTagsExcept%') > 0
+FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) target_info', 110));
 
 DROP TABLE t_promql_dfp;
