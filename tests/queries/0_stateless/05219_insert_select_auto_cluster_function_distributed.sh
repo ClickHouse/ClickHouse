@@ -148,9 +148,77 @@ do
             AND event_date >= yesterday()"
 done
 
+# A `dictGet` sharding key is not deterministic across queries - the dictionary can be reloaded - but it is
+# fixed within one and states where a row belongs, and `allow_nondeterministic_optimize_skip_unused_shards`
+# lets reads prune by it. It must be treated like any other placement-preserving key.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE dict_source_05219 (key UInt32, shard UInt64) ENGINE = Memory;
+    INSERT INTO dict_source_05219 SELECT number, number % 2 FROM numbers(100);
+    CREATE DICTIONARY dict_05219 (key UInt32, shard UInt64)
+        PRIMARY KEY key
+        SOURCE(CLICKHOUSE(host '127.0.0.1' port tcpPort() table 'dict_source_05219' db currentDatabase() user 'default'))
+        LIFETIME(0) LAYOUT(HASHED());
+    SYSTEM RELOAD DICTIONARY dict_05219;
+    CREATE TABLE local_05219_dict (x UInt32) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE dist_05219_dict AS local_05219_dict
+        ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_05219_dict,
+                             dictGetUInt64('${CLICKHOUSE_DATABASE}.dict_05219', 'shard', x));
+"
+
+QUERY_ID_DICT="05219_${CLICKHOUSE_DATABASE}_dict"
+
+echo "--- dictGet sharding key, parallel_distributed_insert_select = 2 ---"
+$CLICKHOUSE_CLIENT --query_id "${QUERY_ID_DICT}" -q "
+    INSERT INTO dist_05219_dict SELECT * FROM url('${S3_DIR}/part_{1..3}.tsv', 'TSV', 'x UInt32')
+    SETTINGS ${SHARDED_SETTINGS}, parallel_distributed_insert_select = 2"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219_dict"
+
+# An explicitly written `*Cluster` source names a cluster of its own. The shards that run the forwarded
+# query are those of the `Distributed` table, and they reject a cluster name their own `remote_servers` does
+# not define, so the forwarded query must name the destination's cluster and not the source's.
+QUERY_ID_EXPLICIT="05219_${CLICKHOUSE_DATABASE}_explicit"
+
+echo "--- explicitly written s3Cluster with a different cluster ---"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE local_05219"
+$CLICKHOUSE_CLIENT --query_id "${QUERY_ID_EXPLICIT}" -q "
+    INSERT INTO dist_05219
+    SELECT * FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '${S3_DIR}/part_{1..3}.tsv', 'TSV', 'x UInt32')
+    SETTINGS parallel_distributed_insert_select = 2, log_queries = 1"
+$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+for query_id in "${QUERY_ID_DICT}" "${QUERY_ID_EXPLICIT}"
+do
+    echo "--- forwarded cluster-function queries of ${query_id##*_} ---"
+    $CLICKHOUSE_CLIENT -q "
+        WITH initial AS
+        (
+            SELECT query_id
+            FROM system.query_log
+            WHERE current_database = currentDatabase()
+                AND query_id = '${query_id}'
+                AND is_initial_query = 1
+                AND type = 'QueryFinish'
+                AND event_date >= yesterday()
+        )
+        SELECT
+            countIf(query LIKE '%Cluster(''test_cluster_two_shards_localhost''%') AS to_destination_cluster,
+            countIf(query LIKE '%Cluster(''test_cluster_one_shard_three_replicas_localhost''%') AS to_source_cluster
+        FROM system.query_log
+        WHERE initial_query_id IN (SELECT query_id FROM initial)
+            AND is_initial_query = 0
+            AND query_kind = 'Insert'
+            AND type = 'QueryFinish'
+            AND event_date >= yesterday()"
+done
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dist_05219;
     DROP TABLE local_05219;
     DROP TABLE dist_05219_sharded;
     DROP TABLE local_05219_sharded;
+    DROP TABLE dist_05219_dict;
+    DROP TABLE local_05219_dict;
+    DROP DICTIONARY dict_05219;
+    DROP TABLE dict_source_05219;
 "

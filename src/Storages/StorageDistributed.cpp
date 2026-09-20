@@ -312,6 +312,23 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+/// Weaker than `isExpressionActionsDeterministic`: it also accepts a function whose result can change
+/// between queries as long as it is fixed within one, `dictGet` being the motivating case. Such a sharding
+/// key still describes where a row belongs — `allow_nondeterministic_optimize_skip_unused_shards` exists
+/// precisely so that reads can prune by it — whereas `rand()`, which is not deterministic even within a
+/// query, describes nothing.
+bool isExpressionActionsDeterministicInScopeOfQuery(const ExpressionActionsPtr & actions)
+{
+    for (const auto & action : actions->getActions())
+    {
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        if (!action.node->function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
 /// Find the sharding key output node in `sharding_key_dag`.
 /// `sharding_key_column_name` is the name of the unanalyzed sharding key AST and can differ from the
 /// analyzed DAG output name: the analyzer may const-fold or otherwise rewrite the expression, so a name
@@ -485,6 +502,7 @@ StorageDistributed::StorageDistributed(
         if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
+        sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -1431,13 +1449,19 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// local table just above, so a row stays on whichever shard happened to read it. For a `Distributed`
     /// source that is sound — the rows a shard reads are already the rows placed there — but a cluster table
     /// function hands out files by rendezvous hashing over their paths, which has nothing to do with the
-    /// destination's sharding key. A deterministic sharding key states where a row must live, and
-    /// `optimize_skip_unused_shards` later prunes shards by it, so scattering rows against it would silently
-    /// produce wrong results. Skip the distributed execution and let the ordinary `INSERT ... SELECT` place
-    /// the rows through `DistributedSink`; the `SELECT` still reads the source cluster in parallel. A
-    /// non-deterministic sharding key (`rand()`, ...) cannot describe placement, so the fast path stays.
+    /// destination's sharding key. A sharding key that is fixed within a query states where a row must live,
+    /// and `optimize_skip_unused_shards` later prunes shards by it, so scattering rows against it would
+    /// silently produce wrong results. Skip the distributed execution and let the ordinary
+    /// `INSERT ... SELECT` place the rows through `DistributedSink`; the `SELECT` still reads the source
+    /// cluster in parallel.
+    ///
+    /// The check is `isDeterministicInScopeOfQuery` rather than `isDeterministic` on purpose: a `dictGet`
+    /// sharding key is not deterministic across queries, yet it does state where a row belongs and
+    /// `allow_nondeterministic_optimize_skip_unused_shards` lets reads prune by it. Only a key that is not
+    /// even fixed within one query (`rand()`) describes no placement at all, and for those the fast path
+    /// stays.
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
-        && hasShardingKeyForReads() && sharding_key_is_deterministic)
+        && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
     {
         LOG_INFO(
             log,

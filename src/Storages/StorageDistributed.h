@@ -251,6 +251,9 @@ private:
     bool has_sharding_key;
     ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 
