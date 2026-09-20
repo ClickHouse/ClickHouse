@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
@@ -27,6 +28,25 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// Collects all ASTSelectQuery instances by unwrapping ASTSelectWithUnionQuery layers.
+    void collectSelectQueries(const ASTPtr & ast, std::vector<ASTSelectQuery *> & result)
+    {
+        if (!ast)
+            return;
+        if (auto * select = ast->as<ASTSelectQuery>())
+        {
+            result.push_back(select);
+        }
+        else if (auto * select_with_union = ast->as<ASTSelectWithUnionQuery>())
+        {
+            if (select_with_union->list_of_selects)
+            {
+                for (const auto & child : select_with_union->list_of_selects->children)
+                    collectSelectQueries(child, result);
+            }
+        }
+    }
+
     void checkVectorMatching(
         const PrometheusQueryTree::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
@@ -134,32 +154,41 @@ namespace
             /// Push down join_group restriction into selector and range-aggregation stages of right side.
             if (right_argument.select_query)
             {
-                if (auto * select_query = right_argument.select_query->as<ASTSelectQuery>())
+                std::unordered_set<String> visited_subqueries;
+
+                auto push_down_to_ast = [&](auto & self, const ASTPtr & query_ast) -> void
                 {
-                    if (auto tables = select_query->tables())
+                    std::vector<ASTSelectQuery *> select_queries;
+                    collectSelectQueries(query_ast, select_queries);
+                    for (auto * select_query : select_queries)
                     {
-                        if (!tables->children.empty())
+                        ASTPtr existing_where = select_query->where();
+                        if (existing_where)
+                            select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
+                        else
+                            select_query->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
+
+                        if (auto tables = select_query->tables())
                         {
-                            if (auto * elem = tables->children[0]->as<ASTTablesInSelectQueryElement>())
+                            for (const auto & table_child : tables->children)
                             {
-                                if (auto * table_expr = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
+                                if (auto * elem = table_child->as<ASTTablesInSelectQueryElement>())
                                 {
-                                    if (auto * table_id = table_expr->database_and_table_name ? table_expr->database_and_table_name->as<ASTTableIdentifier>() : nullptr)
+                                    if (auto * table_expr = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
                                     {
-                                        String from_table_name = table_id->shortName();
-                                        for (auto & subq : context.subqueries)
+                                        if (auto * table_id = table_expr->database_and_table_name ? table_expr->database_and_table_name->as<ASTTableIdentifier>() : nullptr)
                                         {
-                                            if (subq.name == from_table_name && subq.ast)
+                                            String from_table_name = table_id->shortName();
+                                            if (visited_subqueries.insert(from_table_name).second)
                                             {
-                                                if (auto * inner_select = subq.ast->as<ASTSelectQuery>())
+                                                for (auto & subq : context.subqueries)
                                                 {
-                                                    ASTPtr inner_where = inner_select->where();
-                                                    if (inner_where)
-                                                        inner_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", inner_where, filter_condition->clone()));
-                                                    else
-                                                        inner_select->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
+                                                    if (subq.name == from_table_name && subq.ast)
+                                                    {
+                                                        self(self, subq.ast);
+                                                        break;
+                                                    }
                                                 }
-                                                break;
                                             }
                                         }
                                     }
@@ -167,13 +196,9 @@ namespace
                             }
                         }
                     }
+                };
 
-                    ASTPtr existing_where = select_query->where();
-                    if (existing_where)
-                        select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
-                    else
-                        select_query->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
-                }
+                push_down_to_ast(push_down_to_ast, right_argument.select_query);
             }
 
             right_argument = toVectorGrid(std::move(right_argument), context);
