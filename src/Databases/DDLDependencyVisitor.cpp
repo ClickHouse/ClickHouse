@@ -68,10 +68,10 @@ namespace
             if (!is_plain_view)
                 return {};
 
-            TableNamesSet result = source_tables;
-            /// Avoid circular dependencies
-            result.erase(table_name);
-            return result;
+            /// Every table the definition of the view refers to, not only its table expressions: a table named
+            /// in `x IN table`, `joinGet` or `dictGet` blocks `DROP` through the referential graph just the same,
+            /// so it lists the view among its dependents as well.
+            return getDependencies();
         }
 
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
@@ -107,7 +107,6 @@ namespace
         String current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
-        TableNamesSet source_tables;  /// All source tables referenced in table expressions
         bool can_throw;
         bool validate_current_database;
         bool is_plain_view = false;
@@ -276,7 +275,6 @@ namespace
             }
 
             dependencies.emplace(qualified_name);
-            source_tables.emplace(qualified_name);
         }
 
         /// Finds dependencies of a table engine.
