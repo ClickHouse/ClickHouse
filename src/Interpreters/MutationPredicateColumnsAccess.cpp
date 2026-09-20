@@ -21,10 +21,12 @@
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <base/scope_guard.h>
 
+#include <algorithm>
 #include <array>
 #include <optional>
-#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -191,7 +193,7 @@ private:
             {
                 if (auto table_id = tryGetNamedTable(*identifier))
                     required_access.emplace_back(
-                        AccessType::SELECT, databaseOrCurrent(*table_id), table_id->table_name);
+                        AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name);
             }
         }
         else if (functionIsJoinGet(function.name) && arguments.size() >= 2)
@@ -271,6 +273,12 @@ private:
 
     void visitSelect(const ASTSelectQuery & select)
     {
+        /// A `WITH` name is visible in the `SELECT` that defines it and in the subqueries below it,
+        /// and nowhere else: once this level is done its names go out of scope again, so that a
+        /// later `id IN s` is not taken for this level's `s`.
+        const size_t enclosing_cte_names = cte_names.size();
+        SCOPE_EXIT({ cte_names.resize(enclosing_cte_names); });
+
         if (const auto with = select.with())
         {
             for (const auto & child : with->children)
@@ -278,7 +286,7 @@ private:
                 if (const auto * with_element = child->as<ASTWithElement>())
                 {
                     /// A `WITH` name is not a table to grant on, but its body reads tables.
-                    cte_names.insert(with_element->name);
+                    cte_names.push_back(with_element->name);
                     if (with_element->subquery)
                         visitSelectOrUnion(*with_element->subquery);
                 }
@@ -342,14 +350,14 @@ private:
             if (auto columns = tryAttributeColumns(expressions, tables.front(), single_table_alias))
             {
                 required_access.emplace_back(
-                    AccessType::SELECT, databaseOrCurrent(tables.front()), tables.front().table_name, *columns);
+                    AccessType::SELECT, databaseOfTable(tables.front()), tables.front().table_name, *columns);
                 return;
             }
         }
 
         /// Fall back to the whole table, a superset of any column set it may read.
         for (const auto & table_id : tables)
-            required_access.emplace_back(AccessType::SELECT, databaseOrCurrent(table_id), table_id.table_name);
+            required_access.emplace_back(AccessType::SELECT, databaseOfTable(table_id), table_id.table_name);
     }
 
     /// The columns this level reads from its single table, or nothing when they cannot all be
@@ -423,7 +431,7 @@ private:
             return false;
 
         const String & name = identifier.name();
-        if (cte_names.contains(name))
+        if (isCteName(name))
             return false;
 
         if (!mutated_metadata)
@@ -457,16 +465,43 @@ private:
         if (!table_id.database_name.empty())
             return false;
 
-        return cte_names.contains(table_id.table_name)
+        return isCteName(table_id.table_name)
             || static_cast<bool>(context->tryResolveStorageID(
                    StorageID{"", table_id.table_name}, Context::ResolveExternal));
     }
 
+    bool isCteName(const String & name) const
+    {
+        return std::ranges::find(cte_names, name) != cte_names.end();
+    }
+
+    /// The database an unqualified ordinary table in a mutation expression is read from: the
+    /// database of the mutated table, not the session's current one. `InterpreterAlterQuery` and
+    /// `InterpreterUpdateQuery` qualify the expression with `AddDefaultDatabaseVisitor(...,
+    /// table_id.getDatabaseName())` before the mutation is stored, and the stored predicate of a
+    /// lightweight `DELETE FROM` is later run in a background context that has no current database
+    /// at all, so a bare `other` in `ALTER TABLE db1.t DELETE WHERE id IN other` never means the
+    /// session's `other`. Requiring the grant on the same table that is read leaves no room for a
+    /// user who can read `current_db.other` but not `db1.other`.
+    ///
+    /// An empty database is kept when the mutated table's database is unknown and there is no
+    /// current one: `executeDDLQueryOnCluster` expands an empty database in an access element to
+    /// each host's default database, so the requirement travels with the query instead of being
+    /// dropped.
+    String databaseOfTable(const StorageID & table_id) const
+    {
+        if (!table_id.database_name.empty())
+            return table_id.database_name;
+        if (!mutated_database.empty())
+            return mutated_database;
+        return context->getCurrentDatabase();
+    }
+
+    /// A dictionary or a Join table named by a `dictGet` / `joinGet` argument is resolved against
+    /// the current database, both by `AddDefaultDatabaseVisitor` (`qualifyDictionaryNameWithDatabase`)
+    /// and by the functions themselves, so its requirement is on the current database too.
     String databaseOrCurrent(const StorageID & table_id) const
     {
-        /// An empty database is kept when there is no current one: `executeDDLQueryOnCluster`
-        /// expands an empty database in an access element to each host's default database, so the
-        /// requirement travels with the query instead of being dropped.
         if (!table_id.database_name.empty())
             return table_id.database_name;
         return context->getCurrentDatabase();
@@ -477,7 +512,8 @@ private:
     const String & mutated_database;
     const String & mutated_table;
     const StorageInMemoryMetadata * mutated_metadata;
-    std::unordered_set<String> cte_names;
+    /// The `WITH` names in scope, innermost last; see `visitSelect`.
+    std::vector<String> cte_names;
     bool inside_subquery = false;
 };
 

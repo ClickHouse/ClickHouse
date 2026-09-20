@@ -13,12 +13,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_name="${CLICKHOUSE_DATABASE}_user_04612"
 udf_name="${CLICKHOUSE_DATABASE}_leak_04612"
+# A second database, to be the session's current database while the mutated table is in another.
+other_db="${CLICKHOUSE_DATABASE}_other_04612"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
 DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
+DROP DATABASE IF EXISTS $other_db;
+CREATE DATABASE $other_db;
 
 CREATE TABLE tab (id UInt32, name String, hidden UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -55,12 +59,20 @@ GRANT ALTER DELETE ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
 -- other objects.
 GRANT SELECT(id, name) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
+-- The user may read tables of these names in the other database - where none of them exists.
+GRANT SELECT ON $other_db.secret_tab TO $user_name;
+GRANT SELECT ON $other_db.secret_set TO $user_name;
 "
 
+# Runs a query as the user, from a session whose current database is the second argument when given.
 function check_access()
 {
+    local client="$CLICKHOUSE_CLIENT"
+    if [ -n "${2:-}" ]; then
+        client="${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$2}"
+    fi
     local output
-    output=$($CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "$1" 2>&1)
+    output=$($client --user "$user_name" --password "password" -q "$1" 2>&1)
     local rc=$?
     if [ $rc -eq 0 ]; then
         echo "OK"
@@ -108,9 +120,22 @@ check_access "ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
 echo "-- An array column on the right of IN is a column, not a table"
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr AND 0 SETTINGS validate_mutation_query = 0"
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr_tab.arr AND 0 SETTINGS validate_mutation_query = 0"
-echo "-- A WITH name on the right of IN is not a table either"
+echo "-- A WITH name on the right of IN is not a table either, in its SELECT and in the subqueries below it"
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM s) AND 0 SETTINGS validate_mutation_query = 0"
+check_not_denied "ALTER TABLE arr_tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM (SELECT v FROM s)) AND 0 SETTINGS validate_mutation_query = 0"
+echo "-- Once that subquery ends its WITH names are out of scope, and a later IN of the same name reads a table"
+check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN (WITH secret_set AS (SELECT 0) SELECT 0) OR id IN secret_set SETTINGS validate_mutation_query = 0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE arr_tab SYNC"
+
+# The mutation expression is qualified with the database of the mutated table before it is stored,
+# so an unqualified table in it is read from that database - not from the session's current one,
+# where the user may read a table of the same name (here, one that does not even exist).
+echo "-- An unqualified table is read from the mutated table's database, not the session's"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN secret_set SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off" "$other_db"
+check_access "DELETE FROM $CLICKHOUSE_DATABASE.tab WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
+check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
 
 echo "-- dictGet and joinGet name their object instead of reading it as a column"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
@@ -145,6 +170,12 @@ check_access "ALTER TABLE tab DELETE WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "UPDATE tab SET name = name WHERE $udf_name() AND 0 SETTINGS $off, enable_lightweight_update = 1"
 
+echo "-- Including from another current database: the mutation runs, so it does read the mutated table's database"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN secret_set AND 0 SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT secret FROM secret_tab) AND 0 SETTINGS $off" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off" "$other_db"
+check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
+
 echo "-- The value of an unreadable table never reached a readable column"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
 
@@ -153,4 +184,5 @@ DROP DICTIONARY IF EXISTS dict;
 DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
+DROP DATABASE IF EXISTS $other_db;
 "

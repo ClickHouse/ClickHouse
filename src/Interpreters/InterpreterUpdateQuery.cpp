@@ -119,8 +119,9 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// Reads hidden behind a subquery or a `dictGet`/`joinGet` name their own objects, so they are
     /// required on every path - including the ones where the updated table is not present locally,
-    /// and when `validate_mutation_query` is disabled. The updated table is passed along only to
-    /// tell one of its columns from a table on the right of `IN`.
+    /// and when `validate_mutation_query` is disabled. The updated table is passed along to tell one
+    /// of its columns from a table on the right of `IN`, and as the database an unqualified table in
+    /// the expression is read from (see `AddDefaultDatabaseVisitor` below).
     auto add_indirect_reads = [&](const String & database, const String & table, const StorageInMemoryMetadata * metadata)
     {
         addExpressionIndirectReadsAccess(

@@ -46,15 +46,18 @@ void addExpressionColumnsSelectAccess(
 /// produces a column-level requirement. Every other shape - a join, several tables, a nested
 /// subquery or table function in `FROM`, an asterisk, a dotted name that may itself be a column -
 /// falls back to requiring `SELECT` on the whole table, which is a superset and so never
-/// under-requires. `WITH` names and session temporary tables are not tables to grant on and are
-/// skipped. A table function inside a subquery is not covered: its privilege is derived from an
-/// instance of the function, which is what validation builds.
+/// under-requires. `WITH` names (within the `SELECT` that defines them and its subqueries) and
+/// session temporary tables are not tables to grant on and are skipped. A table function inside a
+/// subquery is not covered: its privilege is derived from an instance of the function, which is
+/// what validation builds.
 ///
-/// `mutated_database`, `mutated_table` and `mutated_metadata` describe the table being mutated, and
-/// are used only to tell a table from a column on the right of `IN`: `... WHERE x IN arr` reads an
-/// array column, `... WHERE x IN other` reads a table, and the two are the same identifier in the
-/// AST. `mutated_metadata` may be null when the table is not present locally, and then that case
-/// fails closed and requires the grant.
+/// An unqualified table is required in `mutated_database` - the database the mutation expression is
+/// qualified with before it is stored, and so the one it is read from - rather than in the session's
+/// current database; `dictGet` and `joinGet` names keep their current-database resolution.
+/// `mutated_table` and `mutated_metadata` are used only to tell a table from a column on the right
+/// of `IN`: `... WHERE x IN arr` reads an array column, `... WHERE x IN other` reads a table, and the
+/// two are the same identifier in the AST. `mutated_metadata` may be null when the table is not
+/// present locally, and then that case fails closed and requires the grant.
 void addExpressionIndirectReadsAccess(
     AccessRightsElements & required_access,
     const IAST * expression,

@@ -10,8 +10,17 @@ ACCESS_DENIED
 -- An array column on the right of IN is a column, not a table
 NOT_DENIED
 NOT_DENIED
--- A WITH name on the right of IN is not a table either
+-- A WITH name on the right of IN is not a table either, in its SELECT and in the subqueries below it
 NOT_DENIED
+NOT_DENIED
+-- Once that subquery ends its WITH names are out of scope, and a later IN of the same name reads a table
+ACCESS_DENIED
+-- An unqualified table is read from the mutated table's database, not the session's
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
 -- dictGet and joinGet name their object instead of reading it as a column
 ACCESS_DENIED
 ACCESS_DENIED
@@ -28,6 +37,11 @@ OK
 OK
 OK
 OK
+OK
+OK
+OK
+OK
+-- Including from another current database: the mutation runs, so it does read the mutated table's database
 OK
 OK
 OK
