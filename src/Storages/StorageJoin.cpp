@@ -206,6 +206,17 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
 
+    /** A previous mutation may be committed but not finished: `completeMutation` threw after the
+      * marker was in place, so the table is in the mutated state in memory, and the only durable copy
+      * of that state is the replacement still staged in `mutation_data_file_name`, which is about to
+      * be overwritten. The swap is finished first, as the load would do it, so that the marker never
+      * points at a file this mutation staged: a failure of this mutation before its own commit would
+      * otherwise make the load publish its snapshot - or whatever part of it got written - under the
+      * number of the previous one.
+      */
+    if (persistent)
+        finishInterruptedMutation();
+
     auto backup_buf = disk->writeFile(path + mutation_data_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));

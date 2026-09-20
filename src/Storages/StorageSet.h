@@ -83,7 +83,9 @@ protected:
       */
     void completeMutation(UInt64 mutation_id);
 
-    /// Finishes the swap of a committed mutation the marker of which is found at load. See `completeMutation`.
+    /** Finishes the swap of a committed mutation the marker of which is found, at load and before a new
+      * mutation stages its own replacement in the same file. See `completeMutation`.
+      */
     void finishInterruptedMutation();
 
     /** Inserts that were started before a mutation may still be running: `write` only assigns them a
