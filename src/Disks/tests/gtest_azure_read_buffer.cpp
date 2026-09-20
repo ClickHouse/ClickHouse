@@ -277,10 +277,16 @@ public:
     {
     }
 
+    /// How many blob downloads the reader has issued, so that a test can assert that a bound
+    /// that allows no bytes at all does not go to the endpoint in the first place.
+    size_t getDownloadCount() const { return downloads; }
+
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
         const bool is_download = request.GetMethod() == Azure::Core::Http::HttpMethod::Get;
+        if (is_download)
+            ++downloads;
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1,
@@ -338,6 +344,7 @@ private:
 
     static constexpr size_t blob_size = 1024;
     size_t extra_bytes;
+    size_t downloads = 0;
 };
 
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeCountingBuffer(size_t extra_bytes, size_t buffer_size)
@@ -427,6 +434,94 @@ TEST(AzureReadUntilPosition, WidenedAfterPartialRead)
     ASSERT_EQ(rest.size(), static_cast<size_t>(190));
     for (size_t i = 0; i < rest.size(); ++i)
         ASSERT_EQ(static_cast<uint8_t>(rest[i]), static_cast<uint8_t>(10 + i)) << "at position " << i;
+}
+
+namespace
+{
+
+/// The same as `makeCountingBuffer`, but also hands the transport back, so that a test can look at
+/// the requests the reader has issued.
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeCountingBuffer(
+    size_t extra_bytes, size_t buffer_size, std::shared_ptr<CountingRangeTransport> & transport)
+{
+    transport = std::make_shared<CountingRangeTransport>(extra_bytes);
+
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = transport;
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+
+    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+        container_client,
+        "blob",
+        read_settings,
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
+}
+
+}
+
+/// The empty range `[0, 0)` is a bound like any other: `supportsRightBoundedReads` promises that
+/// the reader stops at it, so it must report EOF right away instead of taking a bound of zero for
+/// an unbounded read. It must not go to the endpoint either, because no byte of the response could
+/// be handed out.
+TEST(AzureReadUntilPosition, EmptyRange)
+{
+    std::shared_ptr<CountingRangeTransport> transport;
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64, transport);
+    buffer->setReadUntilPosition(0);
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_TRUE(data.empty());
+    ASSERT_TRUE(buffer->eof());
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
+}
+
+/// `setReadUntilEnd` is the way to say "no bound", and it must still work after the bound has been
+/// set to the empty range.
+TEST(AzureReadUntilPosition, EmptyRangeThenReadUntilEnd)
+{
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64);
+    buffer->setReadUntilPosition(0);
+    ASSERT_TRUE(buffer->eof());
+
+    buffer->setReadUntilEnd();
+
+    std::array<char, 10> head{};
+    ASSERT_EQ(buffer->read(head.data(), head.size()), head.size());
+    for (size_t i = 0; i < head.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(head[i]), static_cast<uint8_t>(i)) << "at position " << i;
+}
+
+/// A bound below the current position is allowed as long as the caller seeks back before reading,
+/// which `ReadBuffer::setReadUntilPosition` explicitly recommends supporting. Tightening it all the
+/// way down to the empty range is no different.
+TEST(AzureReadUntilPosition, TightenedToEmptyRangeAfterPartialRead)
+{
+    std::shared_ptr<CountingRangeTransport> transport;
+    auto buffer = makeCountingBuffer(/* extra_bytes */ 0, /* buffer_size */ 64, transport);
+    buffer->setReadUntilPosition(100);
+
+    std::array<char, 10> head{};
+    ASSERT_EQ(buffer->read(head.data(), head.size()), head.size());
+
+    const size_t downloads_after_head = transport->getDownloadCount();
+
+    buffer->setReadUntilPosition(0);
+    buffer->seek(0, SEEK_SET);
+
+    std::string rest;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(rest, *buffer));
+
+    ASSERT_TRUE(rest.empty());
+    ASSERT_EQ(transport->getDownloadCount(), downloads_after_head);
 }
 
 #endif

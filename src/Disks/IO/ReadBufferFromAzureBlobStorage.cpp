@@ -50,7 +50,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_download_retries_,
     bool use_external_buffer_,
     bool restricted_seek_,
-    size_t read_until_position_,
+    std::optional<size_t> read_until_position_,
     BlobStorageLogWriterPtr blob_storage_log_,
     String container_for_logging_)
     : ReadBufferFromFileBase()
@@ -79,7 +79,7 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 {
     if (read_until_position)
     {
-        read_until_position = 0;
+        read_until_position.reset();
         if (initialized)
         {
             offset = getPosition();
@@ -91,7 +91,7 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
-    if (position == static_cast<size_t>(read_until_position))
+    if (read_until_position == position)
         return;
 
     read_until_position = position;
@@ -114,11 +114,15 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 {
     if (read_until_position)
     {
-        if (read_until_position == offset)
+        if (*read_until_position == static_cast<size_t>(offset))
             return false;
 
-        if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+        if (*read_until_position < static_cast<size_t>(offset))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Attempt to read beyond right offset ({} > {})",
+                offset,
+                static_cast<off_t>(*read_until_position) - 1);
     }
 
     if (!initialized)
@@ -201,7 +205,7 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
             "Seek is allowed only before first read attempt from the buffer (current offset: "
             "{}, new offset: {}, reading until position: {}, available: {})",
-            getPosition(), offset_, read_until_position, available());
+            getPosition(), offset_, read_until_position ? std::to_string(*read_until_position) : "none", available());
     }
 
     if (whence != SEEK_SET)
@@ -256,8 +260,8 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     Azure::Storage::Blobs::DownloadBlobOptions download_options;
 
     Azure::Nullable<int64_t> length {};
-    if (read_until_position != 0)
-        length = {static_cast<int64_t>(read_until_position - offset)};
+    if (read_until_position)
+        length = {static_cast<int64_t>(*read_until_position - offset)};
 
     download_options.Range = {static_cast<int64_t>(offset), length};
 
@@ -348,7 +352,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     initialized = true;
 }
 
-size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_)
+size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, std::optional<size_t> read_until_position_)
 {
     /// `reported_length` is the `Content-Length` of the response, which is chosen by the remote
     /// endpoint: an endpoint that answers a ranged request with more data than was requested must
@@ -363,7 +367,7 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
         : std::numeric_limits<size_t>::max();
 
     if (read_until_position_)
-        total = std::min(total, static_cast<size_t>(read_until_position_));
+        total = std::min(total, *read_until_position_);
 
     return total;
 }

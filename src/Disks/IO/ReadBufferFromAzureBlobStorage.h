@@ -33,7 +33,7 @@ public:
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
-        size_t read_until_position_ = 0,
+        std::optional<size_t> read_until_position_ = {},
         BlobStorageLogWriterPtr blob_storage_log_ = {},
         String container_for_logging_ = {});
 
@@ -74,7 +74,7 @@ private:
     /// The offset just past the last byte that the current download is allowed to deliver.
     /// `reported_length` is the length of the response body as reported by the remote endpoint,
     /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
-    static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_);
+    static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, std::optional<size_t> read_until_position_);
 
     /// Creates the client on first use. Thread-safe.
     const AzureBlobStorage::BlobClient & getBlobClient() const;
@@ -96,7 +96,11 @@ private:
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
 
-    off_t read_until_position = 0;
+    /// The offset just past the last byte the caller is allowed to read, when the caller has set
+    /// a bound. An empty optional means "no bound", so that a bound of zero - the empty range
+    /// `[0, 0)` - is honoured as a bound and reports EOF right away, as `supportsRightBoundedReads`
+    /// promises, instead of being taken for an unbounded read.
+    std::optional<size_t> read_until_position;
 
     off_t offset = 0;
     size_t total_size{};

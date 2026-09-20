@@ -257,7 +257,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /* read_until_position */0,
+        /* read_until_position */ std::nullopt,
         std::move(blob_storage_log),
         connection_params.getContainer());
 }
