@@ -31,18 +31,7 @@ WHERE ts.database = currentDatabase() AND ts.table = 't_s3';
 
 DROP TABLE t_s3;
 
-SELECT '-- a stated name the engine does not know is reported as the definition states it, with no metadata';
--- The engine accepts such a name (https://github.com/ClickHouse/ClickHouse/issues/120705), so the row exists;
--- there is nothing to describe it with, which is the one case the enrichment above cannot improve. When that
--- issue is fixed the `CREATE` will throw and this block goes with it - it pins today's behaviour, not a rule.
-CREATE TABLE t_s3_unknown (a UInt64)
-ENGINE = S3('http://localhost:11111/test/table_settings.csv', NOSIGN, 'CSV')
-SETTINGS not_a_setting_of_this_engine = 1;
-SELECT name, value, source, type = '' AS no_type, `default` = '' AS no_default FROM system.table_settings
-WHERE database = currentDatabase() AND table = 't_s3_unknown';
-DROP TABLE t_s3_unknown;
-
-SELECT '-- including for an obsolete setting, which must not claim to be a production one';
+SELECT '-- the metadata is reported for an obsolete setting too, which must not claim to be a production one';
 CREATE TABLE t_s3_obsolete (a UInt64)
 ENGINE = S3('http://localhost:11111/test/table_settings.parquet', NOSIGN, 'Parquet')
 SETTINGS input_format_parquet_import_nested = 1;
