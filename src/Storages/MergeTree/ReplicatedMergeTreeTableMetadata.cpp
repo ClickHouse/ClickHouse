@@ -382,6 +382,15 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
+    /// Only dropping the partition key is a supported metadata change.
+    /// A different non-empty key must still be rejected during replica recovery.
+    if (!from_zk.partition_key.empty())
+    {
+        String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
+        String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+        if (parsed_local_partition_key != parsed_zk_partition_key)
+            handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
+    }
 }
 
 bool ReplicatedMergeTreeTableMetadata::checkEquals(
