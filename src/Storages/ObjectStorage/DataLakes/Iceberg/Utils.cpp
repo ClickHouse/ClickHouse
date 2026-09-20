@@ -403,6 +403,7 @@ bool writeMetadataFileAndVersionHint(
         std::string version_hint_value;
         std::string etag;
         std::string write_if_none_match = "*";
+        bool hint_exists = false;
         if (object_storage->exists(object_info))
         {
             auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
@@ -410,23 +411,7 @@ bool writeMetadataFileAndVersionHint(
             boost::algorithm::trim(version_hint_value);
             etag = object_metadata.etag;
             write_if_none_match.clear();
-
-            /// The rewrite of an existing hint is kept monotonic by a compare-and-swap on the tag of
-            /// the copy that was just read. `ETag` is an optional response header, and without it the
-            /// write would degrade into an unconditional overwrite, so two concurrent writers could
-            /// move `version-hint.text` backwards and a reader with `iceberg_use_version_hint = 1`
-            /// would resolve a stale snapshot. Fail close: leave the hint alone rather than overwrite
-            /// it without a precondition. The metadata file itself is already committed, and a hint
-            /// that lags is the state this code path is designed to tolerate.
-            if (etag.empty())
-            {
-                LOG_WARNING(
-                    getLogger("IcebergMetadata"),
-                    "The object storage did not report an ETag for {}, so the version hint cannot be updated "
-                    "without losing its compare-and-swap. Leaving it unchanged.",
-                    storage_version_hint_path);
-                break;
-            }
+            hint_exists = true;
         }
         else if (!try_write_version_hint)
         {
@@ -448,6 +433,24 @@ bool writeMetadataFileAndVersionHint(
         }
         if (old_version < metadata_file_info.version)
         {
+            /// The rewrite of an existing hint is kept monotonic by a compare-and-swap on the tag of
+            /// the copy that was just read. `ETag` is an optional response header, and without it the
+            /// write would degrade into an unconditional overwrite, so two concurrent writers could
+            /// move `version-hint.text` backwards. Skipping the rewrite instead is not an option
+            /// either: the commit would report success while every reader with
+            /// `iceberg_use_version_hint = 1` stays pinned to the previous snapshot, because
+            /// `getLatestOrExplicitMetadataFileAndVersion` trusts the hint without cross-checking the
+            /// listing. Fail the commit instead, the same way a backend that cannot express the
+            /// compare-and-swap of the metadata file itself does.
+            if (hint_exists && etag.empty())
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "The object storage did not report an ETag for {}, so the version hint cannot be advanced to {} "
+                    "under a compare-and-swap. Refusing to commit: leaving the hint behind would serve stale metadata "
+                    "to readers with `iceberg_use_version_hint = 1`.",
+                    storage_version_hint_path,
+                    metadata_file_info.version);
+
             try
             {
                 /// Write just the version number for Spark/spec compatibility.

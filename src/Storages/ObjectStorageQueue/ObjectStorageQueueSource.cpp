@@ -92,7 +92,8 @@ namespace ErrorCodes
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
 }
 
-std::string ObjectStorageQueueSource::makeDeduplicationToken(const std::string & etag_from_metadata, size_t row_offset)
+std::string ObjectStorageQueueSource::makeDeduplicationToken(
+    const std::string & etag_from_metadata, const std::string & path, size_t row_offset)
 {
     /// Etag is quoted for some reason.
     std::string etag = etag_from_metadata;
@@ -103,10 +104,12 @@ std::string ObjectStorageQueueSource::makeDeduplicationToken(const std::string &
     /// the same would give the first chunk of every file `:0`, the second `:<rows in the first
     /// chunk>`, and so on, and `DeduplicationInfo::getBlockUnifiedHash` uses a non-empty user token
     /// verbatim - distinct files would deduplicate against each other and their rows would disappear
-    /// from the dependent materialized views. An empty token is the documented "no user token" value
-    /// and makes the unified hash come from the data, which deduplicates on content.
+    /// from the dependent materialized views. An empty token is no better: it makes the unified hash
+    /// come from the data, so two different files holding an identical chunk would deduplicate
+    /// against each other just the same. Fall back to the path of the object, which is what the
+    /// queue itself identifies a file by.
     if (etag.empty())
-        return {};
+        return fmt::format("{}:{}", path, row_offset);
 
     /// Create unique token per chunk: etag + row offset
     return fmt::format("{}:{}", etag, row_offset);
@@ -1439,7 +1442,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                dedup_token = makeDeduplicationToken(object_metadata->etag, row_offset);
+                dedup_token = makeDeduplicationToken(object_metadata->etag, path, row_offset);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());

@@ -240,32 +240,42 @@ private:
     std::string hint_etag;
 };
 
-/// Drives the real commit against a backend whose existing version hint carries `hint_etag`.
-std::vector<ExistingVersionHintObjectStorage::Write> commitOverExistingVersionHint(const std::string & hint_etag)
+/// Drives the real commit against a backend whose existing version hint carries `hint_etag`. The
+/// outcome is left to the test, because a backend that reports no tag makes the commit throw, and
+/// the writes recorded up to that point are what the test is about.
+struct CommitOverExistingVersionHint
 {
-    Iceberg::IcebergPathResolver resolver(
-        "/table",
-        "/table",
-        Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
-    GeneratedMetadataFileWithInfo metadata_file_info{
-        .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
-        .version = 2,
-        .compression_method = CompressionMethod::None,
-    };
+    explicit CommitOverExistingVersionHint(const std::string & hint_etag)
+        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag))
+    {
+    }
 
-    auto object_storage = std::make_shared<ExistingVersionHintObjectStorage>(hint_etag);
+    bool run() const
+    {
+        Iceberg::IcebergPathResolver resolver(
+            "/table",
+            "/table",
+            Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+        GeneratedMetadataFileWithInfo metadata_file_info{
+            .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
+            .version = 2,
+            .compression_method = CompressionMethod::None,
+        };
 
-    EXPECT_TRUE(Iceberg::writeMetadataFileAndVersionHint(
-        resolver,
-        metadata_file_info,
-        "{}",
-        Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-        object_storage,
-        getContext().context,
-        /*try_write_version_hint=*/ true));
+        return Iceberg::writeMetadataFileAndVersionHint(
+            resolver,
+            metadata_file_info,
+            "{}",
+            Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
+            object_storage,
+            getContext().context,
+            /*try_write_version_hint=*/ true);
+    }
 
-    return object_storage->writes;
-}
+    const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
+
+    std::shared_ptr<ExistingVersionHintObjectStorage> object_storage;
+};
 
 }
 
@@ -274,23 +284,38 @@ TEST(IcebergCommitPropagation, VersionHintIsRewrittenUnderItsETag)
     /// The control: with an `ETag` the hint is advanced, and the rewrite carries the tag of the copy
     /// that was read as its compare-and-swap. Without this the test below would also pass against a
     /// commit that never touches the hint at all.
-    auto writes = commitOverExistingVersionHint("\"abc\"");
+    CommitOverExistingVersionHint commit("\"abc\"");
+    EXPECT_TRUE(commit.run());
 
+    const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 2u);
     EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
     EXPECT_EQ(writes[1].write_if_match, "\"abc\"");
     EXPECT_TRUE(writes[1].write_if_none_match.empty());
 }
 
-TEST(IcebergCommitPropagation, VersionHintWithoutETagIsNotOverwritten)
+TEST(IcebergCommitPropagation, VersionHintWithoutETagFailsTheCommit)
 {
     /// `ETag` is an optional response header. Without it there is no compare-and-swap to put on the
     /// rewrite, so the update would degrade into an unconditional overwrite and two concurrent
-    /// writers could move the hint backwards, which makes a reader with `iceberg_use_version_hint = 1`
-    /// resolve a stale snapshot. The commit must leave the hint alone instead - only the metadata
-    /// file, which has its own `IfNoneMatch` condition, is written.
-    auto writes = commitOverExistingVersionHint("");
+    /// writers could move the hint backwards. Skipping the rewrite is no better: the commit would
+    /// report success while every reader with `iceberg_use_version_hint = 1` keeps resolving the
+    /// previous snapshot, because the hint is trusted without cross-checking the listing. The commit
+    /// has to fail instead, and the hint must stay untouched - only the metadata file, which has its
+    /// own `IfNoneMatch` condition, is written before the refusal.
+    CommitOverExistingVersionHint commit("");
 
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to refuse to advance the version hint, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    const auto & writes = commit.writes();
     ASSERT_EQ(writes.size(), 1u);
     EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
     EXPECT_EQ(writes[0].write_if_none_match, "*");
