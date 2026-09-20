@@ -73,10 +73,12 @@ public:
     ~PostingListCursor();
 
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Returns whether at least one byte was written, i.e. whether the posting list has doc_ids in the window.
+    bool linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Increment counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    void linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Returns whether at least one counter was incremented, i.e. whether the posting list has doc_ids in the window.
+    bool linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Move to the next doc_id. The common case, the next value being in the decoded block,
     /// is resolved inline; block and segment transitions go through `nextSlow`.
@@ -145,13 +147,15 @@ private:
     void nextSlow();
 
     /// Linear scan over an embedded (fully materialized) posting list.
+    /// Returns whether at least one byte of `data` was written.
     template <PadOp op>
-    void linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
+    bool linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Linear scan over a compressed posting list: iterates segments and packed blocks, with
     /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
+    /// Returns whether at least one byte of `data` was written.
     template <PadOp op>
-    void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+    bool linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
 
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
@@ -232,11 +236,12 @@ void lazyUnionPostingLists(
 /// The caller is responsible for preparing the cursor vector (resolving search tokens
 /// to cursors and deduplicating if necessary).
 ///
-/// The two algorithms, selected by `algorithm` (`AUTO` compares densities, see `lazyIntersectPostingLists`):
-///   - Brute-force bitmap counting — the first cursor sets bits, the remaining ones increment counters,
-///     then a final pass keeps only the rows where the count is n.
-///   - Leapfrog — cursors sorted by ascending cardinality, the sparsest one leads and the others advance
-///     forward, skipping whole blocks.
+/// The two algorithms, selected by `algorithm` (`AUTO` compares densities, see `lazyIntersectPostingLists`).
+/// In both the cursors are sorted by ascending cardinality, so the sparsest posting list goes first:
+///   - Brute-force bitmap counting — the sparsest cursor sets bits, the remaining ones increment counters
+///     (skipping regions that are still all-zero), then a final pass keeps only the rows where the count is n.
+///     Stops early once a cursor has no rows in the window, because the intersection is then empty.
+///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
 /// n == 1 is a degenerate case handled by a direct linear scan, same as the union.
 void lazyIntersectPostingLists(
     IColumn & column,
