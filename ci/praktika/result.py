@@ -398,7 +398,7 @@ class Result(MetaClasses.Serializable):
         """Bounds one failed-step line, keeping both of its ends.
 
         A step payload carries its cause either near the front (the
-        error-centered excerpt of ``from_commands_run``) or at the very tail
+        marker-centered excerpt of ``from_commands_run``) or at the very tail
         (its plain last-N excerpt), so trimming one end alone can drop the
         cause. The head also carries the step name, which is the only
         identifying text a job-level row has.
@@ -406,16 +406,18 @@ class Result(MetaClasses.Serializable):
         The bound sits above the widest shape ``from_commands_run`` produces
         (300 retained lines, about 26 KB), so an ordinary step log is named
         whole and only a step with pathologically long single lines is cut.
-        Such a step can carry its error marker anywhere, including inside the
-        span that would otherwise be dropped, so the kept tail is anchored on
-        the first marker when there is one.
+        Such a step can carry its marker anywhere, including inside the span
+        that would otherwise be dropped, so the kept tail is anchored on the
+        first ``: error:`` or ``: warning:``, the two markers
+        ``from_commands_run`` centers its own excerpt on.
         """
         MAX_STEP_INFO_LEN = 32768
         if len(line) <= MAX_STEP_INFO_LEN:
             return line
         half = MAX_STEP_INFO_LEN // 2
         head, tail = line[:half], line[-half:]
-        marker = line.find(": error:", half)
+        found = [line.find(m, half) for m in (": error:", ": warning:")]
+        marker = min((p for p in found if p != -1), default=-1)
         if marker != -1 and marker < len(line) - half:
             tail = line[marker - min(marker - half, 200) : marker + half]
         dropped = len(line) - len(head) - len(tail)
