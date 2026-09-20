@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
@@ -10,6 +11,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool group_by_use_nulls;
 extern const SettingsBool optimize_injective_functions_in_limit_by;
 }
 
@@ -44,16 +46,38 @@ public:
         QueryTreeNodePtrWithHashSet group_by_keys;
         if (query->hasGroupBy())
         {
+            /// `group_by_use_nulls` makes everything resolved after `GROUP BY` see the grouping keys
+            /// promoted to `Nullable`: `QueryAnalyzer` replaces such an expression with a clone of the
+            /// key converted to `Nullable` (see `registerNullableGroupByKeys`). Node comparison
+            /// includes the result type, so the original key alone does not match the shape that
+            /// arrives in `LIMIT BY`, and the unwrapping would walk past the key again. Register the
+            /// converted shape as well. Only a `FunctionNode` needs it: `unwrapInjectiveFunctionsInKeys`
+            /// keeps every other kind of node anyway.
+            const bool group_by_use_nulls = getSettings()[Setting::group_by_use_nulls]
+                && (query->isGroupByWithGroupingSets() || query->isGroupByWithRollup() || query->isGroupByWithCube());
+
+            auto register_key = [&](const QueryTreeNodePtr & key)
+            {
+                group_by_keys.insert(key);
+
+                if (group_by_use_nulls && key->as<FunctionNode>())
+                {
+                    auto nullable_key = key->clone();
+                    nullable_key->convertToNullable();
+                    group_by_keys.insert(std::move(nullable_key));
+                }
+            };
+
             if (query->isGroupByWithGroupingSets())
             {
                 for (const auto & grouping_set : query->getGroupBy().getNodes())
                     for (const auto & key : grouping_set->as<ListNode &>().getNodes())
-                        group_by_keys.insert(key);
+                        register_key(key);
             }
             else
             {
                 for (const auto & key : query->getGroupBy().getNodes())
-                    group_by_keys.insert(key);
+                    register_key(key);
             }
         }
 
