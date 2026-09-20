@@ -86,9 +86,19 @@ public:
         const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
+    /// Check whether the identifier binds to any table expression of the scope other than `table_expression_node`.
+    /// A table expression which a SEMI/ANTI JOIN hides from the current context (see `isTableExpressionHiddenBySemiAntiJoin`)
+    /// is not a competing binder: its columns are not visible, so they cannot make another name ambiguous.
     static bool tryBindIdentifierToTableExpressions(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    /// Returns true if `table_expression_node` is on the non-preserved side of a SEMI/ANTI JOIN of the nearest
+    /// query scope's join tree and `semi_join_compatibility` / `anti_join_compatibility` hides that side from
+    /// everything outside that join's own ON expression (see `SemiAntiJoinSideChecker`).
+    static bool isTableExpressionHiddenBySemiAntiJoin(
+        const IQueryTreeNode * table_expression_node,
         const IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToArrayJoinExpressions(

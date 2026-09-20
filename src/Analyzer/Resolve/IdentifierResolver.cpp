@@ -705,6 +705,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
         if (table_expression_node.get() == table_expression_node_to_ignore.get())
             continue;
 
+        /// The columns of a hidden SEMI/ANTI JOIN side are not visible here, so they must not make a
+        /// name of the preserved side ambiguous: otherwise `SELECT *` over `t1 LEFT SEMI JOIN t2` with
+        /// a column `a` on both sides would keep the only surviving column named `t1.a`, and an outer
+        /// query could no longer refer to it as `a` although `t2` is not part of the result at all.
+        if (isTableExpressionHiddenBySemiAntiJoin(table_expression_node.get(), scope))
+            continue;
+
         can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(identifier_lookup, table_expression_node, scope);
         if (can_bind_identifier_to_table_expression)
             break;
@@ -1420,6 +1427,69 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
 bool SemiAntiJoinSideChecker::shouldSkipSide(JoinTableSide side) const
 {
     return (skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right);
+}
+
+bool IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(
+    const IQueryTreeNode * table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    const auto & settings = scope.context->getSettingsRef();
+    if (!settings[Setting::semi_join_compatibility] && !settings[Setting::anti_join_compatibility])
+        return false;
+
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (!nearest_query_scope)
+        return false;
+
+    const auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+    if (!query_node || !query_node->getJoinTreeNode())
+        return false;
+
+    /// Follow the path from the root of the join tree down to the table expression. Every SEMI/ANTI
+    /// JOIN on that path hides the side which contains the table expression if the compatibility
+    /// setting says so, unless its own ON expression is being resolved (`SemiAntiJoinSideChecker`).
+    const IQueryTreeNode * current = query_node->getJoinTreeNode().get();
+    while (current && current != table_expression_node)
+    {
+        if (const auto * join_node = current->as<JoinNode>())
+        {
+            const auto * left = join_node->getLeftTableExpressionNode().get();
+            const auto * right = join_node->getRightTableExpressionNode().get();
+            const bool is_from_left = joinSubtreeContains(left, table_expression_node);
+            const bool is_from_right = !is_from_left && joinSubtreeContains(right, table_expression_node);
+            if (!is_from_left && !is_from_right)
+                return false;
+
+            SemiAntiJoinSideChecker checker(*join_node, join_node->getStrictness(), join_node->getKind(), scope.context, scope.resolving_join_on_expression);
+            if (checker.shouldSkipSide(is_from_left ? JoinTableSide::Left : JoinTableSide::Right))
+                return true;
+
+            current = is_from_left ? left : right;
+        }
+        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
+        {
+            const IQueryTreeNode * next = nullptr;
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+            {
+                if (joinSubtreeContains(table_expression.get(), table_expression_node))
+                {
+                    next = table_expression.get();
+                    break;
+                }
+            }
+            current = next;
+        }
+        else if (const auto * array_join_node = current->as<ArrayJoinNode>())
+        {
+            current = array_join_node->getTableExpressionNode().get();
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 void SemiAntiJoinSideChecker::throwIfTableAccessDenied(

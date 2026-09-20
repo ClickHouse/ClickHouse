@@ -366,3 +366,27 @@ SELECT if(false, cte_r.b, 42) FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN cte_r ON fa
 -- A materialized CTE on the preserved (right) side of a RIGHT SEMI JOIN stays accessible.
 WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
 SELECT cte_r.b FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN cte_r ON true;
+
+-- `SELECT *` and explicit column references must not stay qualified because of the hidden side.
+-- The projection names of matched columns are qualified only when the bare name binds to another
+-- table expression of the scope; a hidden SEMI/ANTI side is not part of the result, so its column
+-- `a` must not turn the preserved-side `a` into `t1.a` — an outer query refers to it as `a`.
+SELECT a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
+SELECT a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
+SELECT a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 LEFT ANTI JOIN (SELECT 2 AS a) AS t2 ON false);
+SELECT a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT ANTI JOIN (SELECT 2 AS a) AS t2 ON false);
+-- The qualified matcher and an explicitly qualified column of the preserved side get the bare name too.
+SELECT a FROM (SELECT t1.* FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
+SELECT a FROM (SELECT t1.a FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
+-- The result header carries the bare names.
+SELECT * FROM (SELECT 1 AS a, 2 AS b) AS t1 LEFT SEMI JOIN (SELECT 3 AS a) AS t2 ON true FORMAT TSVWithNames;
+-- A SEMI JOIN nested below another JOIN: the hidden `t3.a` must not qualify `t1.a`, while `t2.a`
+-- of the visible outer join side still does.
+SELECT * FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t3 ON true LEFT JOIN (SELECT 3 AS a) AS t2 ON t1.a = t2.a - 2 FORMAT TSVWithNames;
+SELECT * FROM (SELECT 1 AS a) AS t1 LEFT SEMI JOIN (SELECT 2 AS a) AS t3 ON true LEFT JOIN (SELECT 3 AS a) AS t2 ON true FORMAT TSVWithNames;
+-- With the compatibility setting disabled, both sides are returned and the right side stays
+-- qualified as before (the left side of a single join is never qualified, see `single_join_prefer_left_table`).
+SET semi_join_compatibility = 0;
+SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true FORMAT TSVWithNames;
+SELECT t2.a FROM (SELECT * FROM (SELECT 1 AS a) AS t1 RIGHT SEMI JOIN (SELECT 2 AS a) AS t2 ON true);
+SET semi_join_compatibility = 1;
