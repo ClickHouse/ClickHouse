@@ -31,8 +31,10 @@ ColumnsDescription sharedSettingColumns()
             "the `compatibility` setting, a named collection or replicated metadata."},
         {"default", std::make_shared<DataTypeString>(), "Value the setting has when nothing sets it."},
         {"changed", std::make_shared<DataTypeUInt8>(),
-            "1 if something other than the compiled default set this value. Not the same as `value` differing from "
-            "`default`: assigning a setting the value it already had still counts."},
+            "1 if the value has a source other than the engine's compiled-in default, which is `source != 'default'`. "
+            "Where the engine records who assigned a setting, assigning it the value it already had still counts; "
+            "where the engine cannot say and the source is read back from the value - see `source` - a value equal to "
+            "the default reads as unchanged."},
         {"source", settingOriginEnum(),
             "Where the value came from: the engine's compiled-in `default`, a server `config` section, an older "
             "release's default the `compatibility` setting rolled back to, a `named_collection` the table was built "

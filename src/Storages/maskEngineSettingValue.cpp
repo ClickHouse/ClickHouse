@@ -14,7 +14,7 @@ String maskEngineSettingValue(const String & setting_name, const Field & field, 
     /// AST rather than a literal.
     String masked = value;
     if (CoreSettings::maskSettingValue(setting_name, field, masked))
-        return masked;
+        return masked == value ? String{} : masked;
 
     for (const auto * registry : engineSettingsToHide())
     {
@@ -32,8 +32,11 @@ String maskEngineSettingValue(const String & setting_name, const Field & field, 
             /// The registries render the SQL literal, quotes included, because their other caller
             /// prints SQL. A column prints the value itself, so take the quotes back off.
             if (rendered->size() >= 2 && rendered->front() == '\'' && rendered->back() == '\'')
-                return rendered->substr(1, rendered->size() - 2);
-            return std::move(*rendered);
+                rendered = rendered->substr(1, rendered->size() - 2);
+
+            /// Some rules render whatever they are given - a URI with no password in it comes back as it went in.
+            /// Nothing was hidden then, and a row saying its value is a placeholder would be lying about it.
+            return *rendered == value ? String{} : std::move(*rendered);
         }
     }
 
