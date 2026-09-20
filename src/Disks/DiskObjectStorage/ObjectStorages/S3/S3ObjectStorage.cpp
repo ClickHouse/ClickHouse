@@ -659,7 +659,11 @@ void S3ObjectStorage::applyNewSettings(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+
+    /// Static configurations keep their resolved authentication settings: those come from the table
+    /// definition, so a refresh must not overwrite them from the config or from an endpoint block.
+    if (options.allow_client_change)
+        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
@@ -667,7 +671,8 @@ void S3ObjectStorage::applyNewSettings(
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
     {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        if (options.allow_client_change)
+            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
