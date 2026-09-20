@@ -9,11 +9,12 @@ second primary key column, ORDER BY key DESC
 998	100
 997	100
 996	100
-WHERE moved to PREWHERE, conjoined with the boundary filter
+WHERE on another column
 3	3
 1
-explicit PREWHERE
+explicit PREWHERE, conjoined with the boundary filter
 3	3
+1
 composite key: the boundary of the first key column
 5	5
 Nullable key outside the primary key: filtered, not skipped

@@ -73,17 +73,22 @@ SELECT 'second primary key column, ORDER BY key DESC';
 SELECT b, count() FROM t_gb_dyn GROUP BY b ORDER BY b DESC LIMIT 4
 SETTINGS log_comment = '05233_b_desc';
 
-SELECT 'WHERE moved to PREWHERE, conjoined with the boundary filter';
+SELECT 'WHERE on another column';
 SELECT count(), countIf(l.c = r.c AND l.sb = r.sb)
 FROM (SELECT a, count() AS c, sum(b) AS sb FROM t_gb_dyn WHERE s != '' GROUP BY a LIMIT 3) AS l
 INNER JOIN ref_a AS r USING (a);
 
+-- Whether the WHERE is moved to PREWHERE depends on the part format and on randomized settings;
+-- the boundary filter is there either way.
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT a, count() FROM t_gb_dyn WHERE s != '' GROUP BY a LIMIT 3)
-WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(a)%' AND explain LIKE '% AND %';
+WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(a)%';
 
-SELECT 'explicit PREWHERE';
+SELECT 'explicit PREWHERE, conjoined with the boundary filter';
 SELECT count(), countIf(c = 500)
 FROM (SELECT a, count() AS c FROM t_gb_dyn PREWHERE b < 500 GROUP BY a LIMIT 3);
+
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT a, count() FROM t_gb_dyn PREWHERE b < 500 GROUP BY a LIMIT 3)
+WHERE explain LIKE '%Prewhere filter column:%\_\_topKFilter(a)%' AND explain LIKE '% AND %';
 
 SELECT 'composite key: the boundary of the first key column';
 SELECT count(), countIf(l.c = r.c)
