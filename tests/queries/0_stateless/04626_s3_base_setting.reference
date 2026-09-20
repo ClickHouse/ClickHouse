@@ -15,8 +15,5 @@
 --- S3 table engine with a relative URL, resolved URL is materialized into the DDL
 5
 1
---- S3 table engine from a named collection with a relative URL, resolved URL is materialized into the DDL
-1
-5
 --- s3_base without a scheme is an error
 must contain a scheme

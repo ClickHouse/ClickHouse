@@ -3,8 +3,8 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -50,6 +50,20 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
 }
 
+TEST(ColumnLowCardinality, HasOnlyTypeDefaults)
+{
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto column = low_cardinality_type->createColumn();
+
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+    column->insertDefault();
+    column->insert(Field{UInt64{0}});
+    ASSERT_TRUE(column->hasOnlyTypeDefaults());
+
+    column->insert(Field{UInt64{1}});
+    ASSERT_FALSE(column->hasOnlyTypeDefaults());
+}
+
 TEST(ColumnLowCardinality, Clone)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
@@ -90,24 +104,47 @@ TEST(ColumnLowCardinality, CloneNullableKeepsZeroValue)
     ASSERT_EQ(value.safeGet<UInt64>(), 2);
 }
 
+TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
+{
+    auto dictionary_keys = ColumnUInt64::create();
+    for (UInt64 value : {0, 10})
+        dictionary_keys->insertValue(value);
+
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
+
+    auto source_indexes = ColumnUInt8::create();
+    source_indexes->insertValue(1);
+    auto source = ColumnLowCardinality::create(dictionary, std::move(source_indexes), /* is_shared = */ true);
+
+    auto wide_indexes = ColumnUInt16::create();
+    wide_indexes->insertValue(1);
+    auto wide_column = ColumnLowCardinality::create(dictionary, std::move(wide_indexes), /* is_shared = */ false);
+    auto destination = wide_column->cloneEmpty();
+    const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+
+    ASSERT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
+    EXPECT_THROW(destination->insertRangeFrom(*source, source->size(), 1), Exception);
+    EXPECT_TRUE(destination->empty());
+}
+
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
 {
     /// Test edge case: empty dictionary (size=0) with empty indexes (num_rows=0)
     /// This should not throw an error, as empty indexes are always valid
     /// Regression test for bug where check was: if (max_position >= limit)
     /// When num_rows=0, max_position stays 0, and with limit=0, this incorrectly threw
-    
+
     auto data_type = std::make_shared<DataTypeUInt32>();
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(data_type);
     auto column = low_cardinality_type->createColumn();
     auto & lc_column = assert_cast<ColumnLowCardinality &>(*column);
-    
+
     // Create empty keys and indexes columns
     auto empty_keys = ColumnUInt32::create();
     auto empty_indexes = ColumnUInt8::create();
-    
+
     // This should NOT throw an exception
     ASSERT_NO_THROW(lc_column.insertRangeFromDictionaryEncodedColumn(*empty_keys, *empty_indexes));
-    
+
     ASSERT_EQ(column->size(), 0);
 }

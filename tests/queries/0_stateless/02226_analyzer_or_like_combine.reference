@@ -452,7 +452,6 @@ QUERY id: 0
                 CONSTANT id: 25, constant_value: \'world%\', constant_value_type: String
   SETTINGS optimize_or_like_chain=1 enable_analyzer=1 max_hyperscan_regexp_total_length=10
 Привет, World	Привет, World
-Привет, World	Привет, World
 QUERY id: 0
   PROJECTION COLUMNS
     s1 String

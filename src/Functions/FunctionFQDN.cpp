@@ -26,6 +26,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override

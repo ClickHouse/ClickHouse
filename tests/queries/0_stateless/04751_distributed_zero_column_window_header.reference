@@ -1,0 +1,79 @@
+--- const projection through a table function
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
+--- const projection through a stored view
+2
+2
+--- plain table, no constant anywhere
+2
+2
+2
+2
+2
+2
+--- the column read to count rows differs between the two sides
+1
+200000
+--- UNION ALL and JOIN
+2
+2
+2
+2
+2
+2
+--- nothing internal reaches the user
+2
+2
+2
+2
+2	4
+--- a user alias that spells an internal column identifier
+2
+2
+1
+1
+2
+2
+--- controls: unchanged shapes
+2
+2
+2
+2
+2
+2
+2
+2
+1
+1
+c
+c
+2
+1
+2
+2
+6
+6
+6
+6
+6
+6
+1
+1
+1
+1

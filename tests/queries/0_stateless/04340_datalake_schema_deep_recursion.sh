@@ -47,7 +47,7 @@ PYEOF
 # allow_experimental_delta_kernel_rs=0 selects the C++ metadata parser (the Rust kernel has its own
 # recursion limit). The deep schema must be rejected with a JSON exception, not crash the process.
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE deltaLakeLocal('$TMP_DIR/dl') SETTINGS allow_experimental_delta_kernel_rs=0 FORMAT Null" 2>&1 \
-    | expect_contains delta_depth JSONException
+    | expect_contains delta_depth "Maximum allowed JSON depth exceeded"
 
 # Iceberg parses the whole metadata JSON with Poco before any field validation, so a deeply nested
 # metadata file overflows the parser (reachable at default settings, no kernel involved). Must be
@@ -59,7 +59,7 @@ open('$TMP_DIR/ice/metadata/v1.metadata.json', 'wb').write(b'{' + b'\"a\":{' * N
 open('$TMP_DIR/ice/metadata/version-hint.text', 'w').write('1')
 "
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE icebergLocal('$TMP_DIR/ice') FORMAT Null" 2>&1 \
-    | expect_contains iceberg_depth JSONException
+    | expect_contains iceberg_depth "Maximum allowed JSON depth exceeded"
 
 # Paimon parses its schema file (schema/schema-N) with Poco before validation; a deeply nested
 # schema must be rejected with a JSON exception, not crash (reachable at default settings).
@@ -69,4 +69,4 @@ N = 2000
 open('$TMP_DIR/pm/schema/schema-0', 'wb').write(b'{' + b'\"a\":{' * N + b'\"x\":1' + b'}' * N + b'}')
 "
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE paimonLocal('$TMP_DIR/pm') FORMAT Null" 2>&1 \
-    | expect_contains paimon_depth JSONException
+    | expect_contains paimon_depth "Maximum allowed JSON depth exceeded"

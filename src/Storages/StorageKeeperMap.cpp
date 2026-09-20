@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -25,9 +26,13 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -86,7 +91,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace FailPoints
@@ -107,6 +112,8 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 namespace
@@ -119,6 +126,72 @@ std::string formattedAST(const ASTPtr & ast)
     if (!ast)
         return "";
     return ast->formatWithSecretsOneLine();
+}
+
+/// Some builds persisted a single primary-key expression as `(key)`, while others wrote `key`.
+/// Normalize only outer parentheses that wrap one complete expression. This works with parsers
+/// that either preserve or discard those parentheses and rejects comments or trailing syntax.
+std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_key)
+{
+    if (!primary_key.ends_with('\n'))
+        return std::nullopt;
+
+    std::string_view expression(primary_key);
+    expression.remove_suffix(1);
+
+    auto try_parse = [](std::string_view text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        const char * end = pos + text.size();
+        std::string error_message;
+        return tryParseQuery(
+            parser,
+            pos,
+            end,
+            error_message,
+            /*hilite=*/ false,
+            /*description=*/ "KeeperMap primary key",
+            /*allow_multi_statements=*/ false,
+            text.size(),
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /*skip_insignificant=*/ true);
+    };
+
+    ASTPtr ast = try_parse(expression);
+    if (!ast)
+        return std::nullopt;
+
+    while (expression.size() >= 2 && expression.front() == '(' && expression.back() == ')')
+    {
+        auto inner_expression = expression.substr(1, expression.size() - 2);
+        auto inner_ast = try_parse(inner_expression);
+        if (!inner_ast)
+            break;
+
+        expression = inner_expression;
+        ast = std::move(inner_ast);
+    }
+
+    if (expression != ast->formatWithSecretsOneLine())
+        return std::nullopt;
+
+    return std::string(expression);
+}
+
+std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
+{
+    const auto * expression_list = ast ? ast->as<ASTExpressionList>() : nullptr;
+    if (expression_list && expression_list->children.size() == 1)
+    {
+        auto primary_key = expression_list->children.front()->clone();
+        primary_key->setParenthesized(false);
+        return formattedAST(primary_key);
+    }
+
+    /// Preserve expression-list spelling until every supported reader canonicalizes each element.
+    return formattedAST(ast);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -380,7 +453,7 @@ StorageKeeperMap::StorageKeeperMap(
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
         << "columns: " << metadata.columns.toString(true)
-        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+        << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
     if (zk_root_path.empty())
@@ -463,7 +536,7 @@ StorageKeeperMap::StorageKeeperMap(
 
                 if (exists)
                 {
-                    isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
+                    isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
 
                     auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
@@ -662,7 +735,7 @@ VirtualColumnsDescription StorageKeeperMap::createVirtuals()
     return desc;
 }
 
-bool StorageKeeperMap::isMetadataStringEqual(
+bool StorageKeeperMap::isMetadataStringCompatible(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
     bool throw_on_error) const
@@ -671,40 +744,80 @@ bool StorageKeeperMap::isMetadataStringEqual(
         return true;
 
     const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
-    const std::string_view primary_key_header = "primary key: ";
+    const std::string_view primary_key_header = "\nprimary key: ";
 
-    if (!local_metadata_string.starts_with(metadata_format_version_prefix))
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
+    /// The stored value is untrusted: anything with write access to the Keeper path can leave arbitrary
+    /// bytes there, and a caller that did not ask for errors must still get an answer.
+    bool columns_equal = false;
+    try
+    {
+        if (!zk_metadata_string.starts_with(metadata_format_version_prefix))
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
 
-    auto zk_pk_pos = zk_metadata_string.rfind(primary_key_header);
-    if (zk_pk_pos == std::string::npos)
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
+        if (!local_metadata_string.starts_with(metadata_format_version_prefix))
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or columns definition: {}", local_metadata_string);
 
-    auto local_pk_pos = local_metadata_string.rfind(primary_key_header);
-    if (local_pk_pos == std::string::npos)
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
+        auto zk_pk_pos = zk_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
+        if (zk_pk_pos == std::string::npos)
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
 
-    auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos - metadata_format_version_prefix.size()));
-    auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos - metadata_format_version_prefix.size()));
+        auto local_pk_pos = local_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
+        if (local_pk_pos == std::string::npos)
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
 
-    /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
-    bool columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
+        auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos + 1 - metadata_format_version_prefix.size()));
+        auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos + 1 - metadata_format_version_prefix.size()));
 
-    auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
-    auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
+        /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
+        columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
 
-    bool pk_equal = zk_pk == local_pk;
+        auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
+        auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    if (columns_equal && pk_equal)
-        return true;
+        if (zk_pk == local_pk)
+        {
+            if (columns_equal)
+                return true;
+        }
+        else if (columns_equal)
+        {
+            const auto canonical_zk_pk = tryCanonicalPrimaryKey(zk_pk);
+            const auto canonical_local_pk = tryCanonicalPrimaryKey(local_pk);
+            if (canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk)
+                return true;
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        /// `operator new` signals allocation failure by throwing this directly, so it carries no error code.
+        throw;
+    }
+    catch (...)
+    {
+        if (throw_on_error)
+            throw;
+
+        /// A failure to allocate says nothing about the stored bytes, and the invalid-metadata verdict is
+        /// cached for the lifetime of the table, so reporting one as corruption would strand a healthy
+        /// table until restart.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            throw;
+
+        tryLogCurrentException(
+            log,
+            fmt::format("Cannot parse metadata of path {}, will treat the table as having invalid metadata", zk_root_path),
+            LogsLevel::warning);
+        return false;
+    }
 
     if (throw_on_error)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}",
-            columns_equal ? "columns" : "primary key",
             zk_root_path,
+            columns_equal ? "primary key" : "columns",
             zk_metadata_string,
             local_metadata_string);
     }
@@ -713,8 +826,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         log,
         "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}. "
         "Will use stored metadata",
-        columns_equal ? "columns" : "primary key",
         zk_root_path,
+        columns_equal ? "primary key" : "columns",
         zk_metadata_string,
         local_metadata_string);
 
@@ -1199,8 +1312,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
@@ -1409,7 +1521,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                     return;
                 }
 
-                if (!isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
+                if (!isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
                 {
                     table_status = TableStatus::INVALID_METADATA;
                     return;
