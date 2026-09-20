@@ -95,11 +95,9 @@ std::unique_ptr<AggregatingStep> deserializeStep(const String & bytes, const Sha
     auto step = AggregatingStep::deserialize(ctx);
     /// The registry create function is typed as `QueryPlanStepPtr`; the pipeline check below needs
     /// the concrete step.
-    auto * aggregating = typeid_cast<AggregatingStep *>(step.get());
-    if (!aggregating)
+    if (!typeid_cast<AggregatingStep *>(step.get()))
         return nullptr;
-    step.release();
-    return std::unique_ptr<AggregatingStep>(aggregating);
+    return std::unique_ptr<AggregatingStep>(static_cast<AggregatingStep *>(step.release()));
 }
 
 /// Two-stream pipeline over header-only sources, so the pre-aggregation resize is inserted.
