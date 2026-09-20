@@ -472,6 +472,15 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
+bool isStringOrNullableString(const IDataType & type)
+{
+    if (isString(type))
+        return true;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return isString(*nullable->getNestedType());
+    return false;
+}
+
 bool isLowCardinalityType(const IDataType & type)
 {
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
