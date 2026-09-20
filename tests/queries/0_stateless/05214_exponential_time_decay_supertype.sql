@@ -1,4 +1,5 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
+SET use_variant_as_common_type = 0;
 
 WITH
     CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS a,
