@@ -448,9 +448,13 @@ public:
     ///
     /// These atoms are relaxed when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier, and a right-unbounded FUNCTION_IN_RANGE atom is also
-    /// relaxed when its key column can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns).
+    /// mentioned earlier. Two NaN rules relax them as well, each for the bound
+    /// its condition is evaluated against: a right-unbounded FUNCTION_IN_RANGE
+    /// atom over a key column that can hold a NaN inside a Tuple (see
+    /// relaxRangeAtomsOverNaNHidingTupleColumns), and, for a condition built
+    /// over a getExtremes-derived hyperrectangle, a range or single-element set
+    /// atom over any key column that can hide a NaN (see
+    /// relaxAtomsOverNaNHidingColumns).
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
