@@ -39,6 +39,12 @@ MergeSorter::MergeSorter(
         /// Materialize sparse columns to avoid searching their offsets during comparisons.
         convertToFullIfSparse(chunk);
 
+        /// Convert to full column, because cursors compare values across chunks and the merged
+        /// output is built by inserting ranges from all of them. Parts of the same table can be
+        /// stored with and without automatic LowCardinality serialization, so chunks of the same
+        /// column may arrive with different in-memory representations.
+        convertToFullIfNonNativeLowCardinality(chunk);
+
         /// Merge cursors expect full columns.
         convertToFullIfConst(chunk);
 
