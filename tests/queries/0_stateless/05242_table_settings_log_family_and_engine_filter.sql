@@ -25,8 +25,16 @@ INNER JOIN system.engine_settings AS e ON e.engine_name = t.engine AND e.name = 
 WHERE t.database = currentDatabase() AND t.engine IN ('Log', 'StripeLog', 'TinyLog')
     AND (t.default != e.default OR t.type != e.type OR t.description != e.description OR t.tier != e.tier);
 
-SELECT '-- a view has no settings';
-SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'v';
+SELECT '-- and the engine rows report the compiled defaults as the defaults they are';
+SELECT engine_name, name, changed, source FROM system.engine_settings
+WHERE engine_name IN ('Log', 'StripeLog', 'TinyLog') ORDER BY ALL;
+
+SELECT '-- a view has no settings of its own, and a materialized view reports through its inner table';
+CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1024 AS SELECT x FROM mt;
+SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table IN ('v', 'mv');
+SELECT name, value, source FROM system.table_settings
+WHERE database = currentDatabase() AND startsWith(table, '.inner') AND name = 'index_granularity';
+DROP TABLE mv;
 
 SELECT '-- a predicate on engine selects the same rows as filtering after the fact';
 SELECT

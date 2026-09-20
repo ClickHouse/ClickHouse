@@ -7,8 +7,16 @@ tiny_with_policy	disk	default	0	default
 tiny_with_policy	storage_policy	default	1	definition
 -- described as system.engine_settings describes them
 0
--- a view has no settings
+-- and the engine rows report the compiled defaults as the defaults they are
+Log	disk	0	default
+Log	storage_policy	0	default
+StripeLog	disk	0	default
+StripeLog	storage_policy	0	default
+TinyLog	disk	0	default
+TinyLog	storage_policy	0	default
+-- a view has no settings of its own, and a materialized view reports through its inner table
 0
+index_granularity	1024	definition
 -- a predicate on engine selects the same rows as filtering after the fact
 1	1	1
 -- and combined with a predicate on the table

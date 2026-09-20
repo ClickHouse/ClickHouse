@@ -31,6 +31,10 @@ SELECT count() FROM (
         EXCEPT
         SELECT name FROM system.engine_settings WHERE engine_name = 'MergeTree'));
 
+-- A setting an engine merely declares is reported as the default it is. `other` where the value equals the
+-- default means an engine describes its settings by hand and forgot to say so - the `Log` family did.
+SELECT count() FROM system.engine_settings WHERE changed AND value = `default` AND source = 'other';
+
 -- Every setting must render. `storage_catalog_type` used to throw because its default enum value
 -- had no string form, and that one setting made every query against this table fail. Read every
 -- value rather than counting that one row: the data lake engines are absent from some builds, so

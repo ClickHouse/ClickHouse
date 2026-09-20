@@ -33,9 +33,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool database_datalake_require_metadata_access;
-    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 
@@ -403,7 +401,7 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
-        { ColumnString::create(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "engine" },
+        { nullptr, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "engine" },
     };
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &engines_block, context);
         dag && std::ranges::any_of(dag->getInputs(), [](const auto * input) { return input->result_name == "engine"; }))
