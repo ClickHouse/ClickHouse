@@ -1036,7 +1036,7 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
     bool at_most_one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        auto & r = ranges[i];
+        const auto & r = ranges[i];
         if (r.left.isNormal() && r.right.isNormal())
         {
             if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))

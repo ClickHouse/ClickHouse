@@ -42,7 +42,7 @@ SELECT toDate(dt), toWeek(dt) FROM t_roaring_transformed WHERE toWeek(dt) IN (1,
 SELECT count() FROM t_roaring_transformed WHERE toMonth(dt) IN (1, 2);
 
 SELECT '--- Transformed key: toDayOfMonth with timezone and Nullable ---';
-CREATE TABLE t_roaring_tz (dt Nullable(DateTime('America/New_York')), value Float64) ENGINE = MergeTree ORDER BY dt DESC SETTINGS index_granularity = 8;
+CREATE TABLE t_roaring_tz (dt Nullable(DateTime('America/New_York')), value Float64) ENGINE = MergeTree ORDER BY dt DESC SETTINGS index_granularity = 8, allow_nullable_key = 1;
 INSERT INTO t_roaring_tz SELECT toDateTime('2026-01-01 00:00:00', 'America/New_York') + interval (number * 3) day, number * 1.0 FROM numbers(50);
 SELECT count() FROM t_roaring_tz WHERE toDayOfMonth(dt) IN (1, 3);
 DROP TABLE t_roaring_tz;
