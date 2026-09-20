@@ -108,8 +108,9 @@ chc_client_opts opts = {
     .password = "",
     .database = "default",
 };
+chc_exception *exc = NULL;
 chc_err err = {};
-if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+if (chc_client_init(&client, &opts, &al, &io, &exc, &err) != CHC_OK) {
     fprintf(stderr, "connect: %s\n", err.msg);
     chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
     return 1;
