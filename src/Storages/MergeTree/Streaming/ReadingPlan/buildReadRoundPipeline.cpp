@@ -34,7 +34,6 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <algorithm>
 #include <memory>
@@ -138,11 +137,6 @@ Pipe buildPartitionReadingPipeline(
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
-        ActionsDAG time_attribute_dag(plan->getCurrentHeader()->getColumnsWithTypeAndName());
-        const auto & alias_node = time_attribute_dag.addAlias(time_attribute_dag.findInOutputs(stream_settings.watermark->column), TimeAttributeColumn::name);
-        time_attribute_dag.getOutputs().push_back(&alias_node);
-        plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(time_attribute_dag)));
-
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);
@@ -191,8 +185,9 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
     const auto & output_header = reading_context.output_header;
-    const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
+    const auto storage_metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
+    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(streaming_metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 

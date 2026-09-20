@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Streaming/Utils.h>
 
-#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <algorithm>
 #include <optional>
@@ -104,17 +103,11 @@ std::optional<FilterDAGInfo> makeReadRoundPrewhereFilter(const PrewhereInfoPtr &
     return makeReadRoundFilter(info->prewhere_actions, info->prewhere_column_name, info->remove_prewhere_column, stream_settings, storage, context);
 }
 
-Names makeColumnsToRead(Names columns, const StreamSettings & stream_settings, const std::optional<FilterDAGInfo> & row_level_filter, const std::optional<FilterDAGInfo> & prewhere_filter)
+Names makeColumnsToRead(Names columns, const std::optional<FilterDAGInfo> & row_level_filter, const std::optional<FilterDAGInfo> & prewhere_filter)
 {
-    std::erase(columns, TimeAttributeColumn::name);
-
     for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
         if (!std::ranges::contains(columns, aux_name))
             columns.push_back(aux_name);
-
-    if (stream_settings.watermark)
-        if (!std::ranges::contains(columns, stream_settings.watermark->column))
-            columns.push_back(stream_settings.watermark->column);
 
     for (const auto * filter : {&row_level_filter, &prewhere_filter})
         if (filter->has_value())
@@ -136,7 +129,7 @@ const ProjectionDescription * chooseCommitOrderProjection(const StorageInMemoryM
         if (sorting_key.size() < 2 || sorting_key[0] != BlockNumberColumn::name || sorting_key[1] != BlockOffsetColumn::name)
             continue;
 
-        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column).has_value(); };
+        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column).has_value() || projection.metadata->virtuals.has(column); };
         if (std::ranges::all_of(columns, has_column))
             return &projection;
     }
@@ -159,10 +152,11 @@ ReadRoundContext makeReadRoundContext(
 
     auto row_level_filter = makeReadRoundRowLevelFilter(query_info.row_level_filter, stream_settings, storage, context);
     auto prewhere_filter = makeReadRoundPrewhereFilter(query_info.prewhere_info, stream_settings, storage, context);
-    auto columns_to_read = makeColumnsToRead(std::move(user_requested_columns), stream_settings, row_level_filter, prewhere_filter);
+    auto columns_to_read = makeColumnsToRead(std::move(user_requested_columns), row_level_filter, prewhere_filter);
 
-    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-    const auto * projection = chooseCommitOrderProjection(*metadata, columns_to_read);
+    const auto storage_metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+    const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
+    const auto * projection = chooseCommitOrderProjection(*streaming_metadata, columns_to_read);
 
     return ReadRoundContext{
         .storage = storage,
