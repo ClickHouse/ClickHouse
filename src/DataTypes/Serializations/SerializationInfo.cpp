@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <algorithm>
+#include <array>
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
@@ -261,32 +262,42 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     }
 }
 
+/// The order in which the kinds wrap each other, innermost first: `ColumnSparse` can sit inside
+/// `ColumnReplicated` but not the other way round (see `removeSpecialRepresentations`), and nothing
+/// wraps a `ColumnBLOB`. Not the order of the enum, whose values are part of the Native format.
+static constexpr std::array canonical_kind_order
+{
+    ISerialization::Kind::DEFAULT,
+    ISerialization::Kind::SPARSE,
+    ISerialization::Kind::REPLICATED,
+    ISerialization::Kind::DETACHED,
+};
+
 void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) const
 {
     if (kind_stack.empty() || kind_stack.front() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind stack must start with Default");
 
-    for (size_t i = 0; i != kind_stack.size(); ++i)
-    {
-        auto kind = kind_stack[i];
+    /// A stack describes nested wrappers, so it must be a subsequence of the canonical order — and
+    /// therefore free of repeats. Any other stack is a layout no writer builds and nothing unwraps.
+    auto expected = canonical_kind_order.begin();
 
+    for (auto kind : kind_stack)
+    {
         if (!allowed_kinds.contains(kind))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Unexpected serialization kind {} in the received data",
                 ISerialization::kindToString(kind));
 
-        /// Each kind wraps the serialization once. A repeat nests a column inside its own layout,
-        /// which materialization does not unwrap: `ColumnSparse` over `ColumnSparse` stays sparse.
-        if (std::find(kind_stack.begin(), kind_stack.begin() + i, kind) != kind_stack.begin() + i)
+        expected = std::find(expected, canonical_kind_order.end(), kind);
+        if (expected == canonical_kind_order.end())
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Serialization kind {} occurs more than once in a kind stack",
+                "Serialization kind {} is out of order in a kind stack",
                 ISerialization::kindToString(kind));
 
-        /// A ColumnBLOB holds the serialized form of the whole column, so no other kind can wrap it.
-        if (kind == ISerialization::Kind::DETACHED && i + 1 != kind_stack.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind Detached must be the last kind in a kind stack");
+        ++expected;
     }
 }
 

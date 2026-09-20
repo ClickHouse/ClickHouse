@@ -41,6 +41,7 @@ KIND_STACK_COMBINATION = 5
 KIND_DEFAULT = 0
 KIND_SPARSE = 1
 KIND_DETACHED = 2
+KIND_REPLICATED = 3
 
 
 def writeVarUInt(x, ba):
@@ -285,7 +286,15 @@ def main():
     runScenario(
         "repeated kind",
         externalTableBlock("UInt64", combinationKindStack([KIND_DEFAULT, KIND_SPARSE, KIND_SPARSE])),
-        "occurs more than once",
+        "is out of order",
+    )
+
+    # Sparse can sit inside Replicated but not the other way round, and ColumnSparse over
+    # ColumnReplicated does not materialize back to a full column of the declared type either.
+    runScenario(
+        "kinds in the wrong order",
+        externalTableBlock("UInt64", combinationKindStack([KIND_DEFAULT, KIND_REPLICATED, KIND_SPARSE])),
+        "is out of order",
     )
 
     # Every kind stack starts with Default.

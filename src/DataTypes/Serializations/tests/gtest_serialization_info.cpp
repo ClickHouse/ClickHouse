@@ -417,4 +417,22 @@ TEST(SerializationInfoBinary, AcceptsDetachedOverSparse)
     EXPECT_EQ(info.getKindStack(), expected);
 }
 
+/// The full stack a writer can build, with every kind in its canonical position.
+TEST(SerializationInfoBinary, AcceptsDetachedOverReplicatedOverSparse)
+{
+    /// COMBINATION encoding of {Default, Sparse, Replicated, Detached}.
+    const char kinds[] = {5, 4, 0, 1, 3, 2};
+    ReadBufferFromMemory in(kinds, sizeof(kinds));
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
+    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
+
+    ISerialization::KindStack expected{
+        ISerialization::Kind::DEFAULT,
+        ISerialization::Kind::SPARSE,
+        ISerialization::Kind::REPLICATED,
+        ISerialization::Kind::DETACHED};
+    EXPECT_EQ(info.getKindStack(), expected);
+}
+
 }
