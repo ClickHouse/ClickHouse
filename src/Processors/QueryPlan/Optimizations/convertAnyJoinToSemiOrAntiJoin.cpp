@@ -135,8 +135,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         return 0;
 
     /// The Join engine requires its declared join kind and strictness to remain unchanged. A prepared
-    /// key-value storage fills a missing key with the type default on a direct lookup but with the column
-    /// default when read as an ordinary stream, and which of the two applies is decided after this pass.
+    /// key-value storage can fill a missing key with the type default on a direct lookup but with the
+    /// column default when read as an ordinary stream, and which applies is decided after this pass.
     auto isPreparedJoinStorage = [](auto & step)
     {
         auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());

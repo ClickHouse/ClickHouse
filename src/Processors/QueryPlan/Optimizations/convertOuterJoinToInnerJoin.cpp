@@ -225,8 +225,8 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     /// Storage Join expects a particular join kind and cannot build not-matched rows for
     /// composite keys, so converting its outer join to inner is unsound (issue #106949).
-    /// A prepared key-value storage fills a missing key with the type default on a direct lookup but with
-    /// the column default when read as an ordinary stream, and which applies is decided after this pass.
+    /// A prepared key-value storage can fill a missing key with the type default on a direct lookup but
+    /// with the column default when read as an ordinary stream, and which applies is decided after this pass.
     /// Earlier passes (filter push-down, runtime-filter build) can insert single-child steps
     /// between the join and its JoinStepLogicalLookup source, so descend through them.
     auto isPreparedJoinStorage = [](const QueryPlan::Node * side_node)
