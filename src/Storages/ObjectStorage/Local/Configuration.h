@@ -65,10 +65,16 @@ public:
     const String & getRawURI() const override { return path.path; }
 
     const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
     void setPathsUnlocked(const Paths & paths_) override
     {
         paths = paths_;
-        path = paths_[0];
+        onPathsUpdatedUnlocked();
+    }
+    void onPathsUpdatedUnlocked() override
+    {
+        if (!paths.empty())
+            path = paths[0];
     }
 
     String getNamespace() const override { return ""; }

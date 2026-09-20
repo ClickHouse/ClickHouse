@@ -65,6 +65,7 @@ public:
     const String & getRawURI() const override { return url; }
 
     const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
     void setPathsUnlocked(const Paths & paths_) override
     {
         paths = paths_;

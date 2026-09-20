@@ -135,7 +135,7 @@ public:
     /// `*_split_on_write_by_size_bytes` appends the keys it writes to it, and a truncating insert retires them -
     /// while the reads snapshot it at planning time, so it is guarded by `paths_mutex` and handed out by value.
     /// The backends keep the storage of the list (`keys`, `blobs_paths`, `paths`) and reach it only through
-    /// `getPathsUnlocked` / `setPathsUnlocked`, which are called with the mutex held.
+    /// `getPathsUnlocked` / `getMutablePathsUnlocked` / `setPathsUnlocked`, which are called with the mutex held.
     Paths getPaths() const
     {
         std::lock_guard lock(paths_mutex);
@@ -155,23 +155,26 @@ public:
     }
 
     /// Appends a path to the list, unless it is already there.
+    /// An insert split by size publishes every object it writes, so the list is mutated in place rather than
+    /// copied per object - a split export of thousands of objects would otherwise copy the whole list as many times.
     void appendPath(const Path & path)
     {
         std::lock_guard lock(paths_mutex);
-        Paths paths = getPathsUnlocked();
+        Paths & paths = getMutablePathsUnlocked();
         if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) != paths.end())
             return;
         paths.push_back(path);
-        setPathsUnlocked(paths);
+        onPathsUpdatedUnlocked();
     }
 
     /// Drops a path from the list. Used to retire a key as soon as it has been removed from the object storage.
     void retirePath(const String & path)
     {
         std::lock_guard lock(paths_mutex);
-        Paths paths = getPathsUnlocked();
-        std::erase_if(paths, [&](const auto & p) { return p.path == path; });
-        setPathsUnlocked(paths);
+        Paths & paths = getMutablePathsUnlocked();
+        if (std::erase_if(paths, [&](const auto & p) { return p.path == path; }) == 0)
+            return;
+        onPathsUpdatedUnlocked();
     }
 
     virtual String getDataSourceDescription() const = 0;
@@ -428,7 +431,12 @@ public:
 
 protected:
     virtual const Paths & getPathsUnlocked() const = 0;
+    /// The list itself, for the mutations that touch a single element of it.
+    virtual Paths & getMutablePathsUnlocked() = 0;
     virtual void setPathsUnlocked(const Paths & paths) = 0;
+    /// Called after `getMutablePathsUnlocked` has been mutated in place, so that a backend which derives
+    /// something from the list (`Local` keeps its raw path in sync with the first element) can update it.
+    virtual void onPathsUpdatedUnlocked() {}
 
     /// The mutex belongs to the object, so a copy of the configuration gets its own fresh one.
     mutable CopyableMutex paths_mutex;

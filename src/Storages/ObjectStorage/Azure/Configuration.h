@@ -103,6 +103,7 @@ public:
     const String & getRawURI() const override { return blob_path.path; }
 
     const Paths & getPathsUnlocked() const override { return blobs_paths; }
+    Paths & getMutablePathsUnlocked() override { return blobs_paths; }
     void setPathsUnlocked(const Paths & paths) override { blobs_paths = paths; }
 
     String getNamespace() const override { return connection_params.getContainer(); }

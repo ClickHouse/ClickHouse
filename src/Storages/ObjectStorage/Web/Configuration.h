@@ -72,6 +72,7 @@ public:
     bool supportsPartialPathPrefix() const override { return false; }
 
     const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
     void setPathsUnlocked(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return namespace_prefix; }

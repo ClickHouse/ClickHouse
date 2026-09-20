@@ -122,6 +122,7 @@ public:
     const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPathsUnlocked() const override { return keys; }
+    Paths & getMutablePathsUnlocked() override { return keys; }
     void setPathsUnlocked(const Paths & paths) override
     {
         keys = paths;
