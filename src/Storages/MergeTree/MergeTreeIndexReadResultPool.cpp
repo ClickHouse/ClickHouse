@@ -144,7 +144,21 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     }
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
+    /// A dynamic skip index can refuse the filter at read time (a `bloom_filter` index can only test an
+    /// exact `IN` set, and the runtime filter may have overflowed into its approximate form), so decide
+    /// which indexes are still usable before building the predicate: with no primary key to prune and no
+    /// usable index left there is nothing to apply it to, and materializing it per part would be pure loss.
+    MergeTreeIndices usable_dynamic_skip_indexes;
     if (dynamic_predicate_builder && !ranges.empty())
+    {
+        for (const auto & index_helper : dynamic_skip_indexes)
+        {
+            if (!dynamic_skip_index_filter || dynamic_skip_index_filter(*index_helper))
+                usable_dynamic_skip_indexes.push_back(index_helper);
+        }
+    }
+
+    if (dynamic_predicate_builder && !ranges.empty() && (prune_primary_key || !usable_dynamic_skip_indexes.empty()))
     {
         /// Pruning by the primary key needs the part itself.
         auto data_part = part_info->getDataPart();
@@ -180,12 +194,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
-            for (const auto & index_helper : dynamic_skip_indexes)
+            for (const auto & index_helper : usable_dynamic_skip_indexes)
             {
                 if (ranges.empty())
                     break;
-                if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
-                    continue;
                 if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
                     continue;
 

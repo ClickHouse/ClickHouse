@@ -9,8 +9,8 @@ results
 5	10000
 5000	12497500
 5	10000
-granules dropped
-05245_bloom_only	1
-05245_bloom_only_overflowed_filter	0
-05245_bloom_only_two_filters	1
-05245_minmax	1
+granules considered and dropped
+05245_bloom_only	1	1
+05245_bloom_only_overflowed_filter	0	0
+05245_bloom_only_two_filters	1	1
+05245_minmax	1	1

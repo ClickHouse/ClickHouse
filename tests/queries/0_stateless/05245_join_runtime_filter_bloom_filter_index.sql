@@ -72,9 +72,13 @@ SELECT count(), sum(p.k) FROM probe_bloom_only AS p
     SETTINGS join_runtime_filter_exact_values_limit = 1000, log_comment = '05245_bloom_only_two_filters';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT 'granules dropped';
+-- `considered` must be zero for the overflowed filter as well: with the `bloom_filter` index refusing
+-- the approximate filter and no primary key to prune, there is no consumer left, so the dynamic
+-- predicate must not be materialized per part only to be thrown away.
+SELECT 'granules considered and dropped';
 SELECT
     log_comment,
+    argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time) > 0,
     argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
