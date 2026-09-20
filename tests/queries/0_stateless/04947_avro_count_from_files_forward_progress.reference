@@ -25,3 +25,20 @@ optimize_count_from_files = 0
 5000	16876015480804349662
 5000	16876015480804349662
 5000	16876015480804349662
+--- a declared count the payload cannot hold is rejected at the header, not counted
+1
+1
+1
+1
+--- valid input on every codec counts the same with and without the count shortcut
+optimize_count_from_files = 1
+5000
+5000
+1000
+optimize_count_from_files = 0
+5000
+5000
+1000
+--- lazily decompressed codecs are rejected by the read path
+1
+1
