@@ -71,9 +71,9 @@ void registerStatementKillQuery(StatementFactory & factory)
     factory.registerStatement("KILL",
     {
         .description = R"DOCS_MD(
-There are two kinds of kill statements: to kill a query and to kill a mutation.
+This page describes the `KILL QUERY` and `KILL MUTATION` statements.
 
-By default, `KILL` throws an exception if the `WHERE` expression matches zero rows in either `system.mutations` or `system.processes`.
+By default, `KILL QUERY` throws when its `WHERE` expression matches zero rows in `system.processes`, and `KILL MUTATION` throws when its `WHERE` expression matches zero rows in `system.mutations`.
 To disable this behavior, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `false`.
 
 ## KILL QUERY {#kill-query}

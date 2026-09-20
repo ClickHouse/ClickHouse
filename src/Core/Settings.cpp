@@ -8848,14 +8848,14 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, kill_throw_if_noop, true, R"(
-Enables or disables throwing an exception if an [KILL](../../sql-reference/statements/kill.md) query didn't perform a kill.
+Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-By default, `KILL` will throw an exception if `WHERE` expression matched zero rows either from `system.mutations` or `system.processes`. If it is set to false, no exception will be thrown even if it didn't do anything.
+By default, `KILL QUERY` throws when no rows match in `system.processes`, and `KILL MUTATION` throws when no rows match in `system.mutations`. If set to false, an empty match returns without an exception.
 
 Possible values:
 
-- 1 — Throwing an exception is enabled.
-- 0 — Throwing an exception is disabled.
+- 1 — Throw an exception.
+- 0 — Do not throw an exception.
 )", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
