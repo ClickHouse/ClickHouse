@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -75,6 +76,37 @@ ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char *
                 "Every argument of a `{}` function for key '{}' must be a function during AST JSON deserialization",
                 expected_name, key);
 
+    return child;
+}
+
+namespace
+{
+
+void rejectArgumentlessFunctions(const IAST & ast, const char * key)
+{
+    checkStackSize();
+
+    const auto * function = ast.as<ASTFunction>();
+    if (function && !function->arguments)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
+            "which the SQL parser produces only outside an expression", function->name, key);
+
+    /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
+    for (const auto & child : ast.children)
+    {
+        if (child)
+            rejectArgumentlessFunctions(*child, key);
+    }
+}
+
+}
+
+ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
+{
+    ASTPtr child = readChild(key);
+    if (child)
+        rejectArgumentlessFunctions(*child, key);
     return child;
 }
 
