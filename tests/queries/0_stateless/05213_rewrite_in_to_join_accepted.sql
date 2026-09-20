@@ -1,3 +1,4 @@
+-- Tags: long
 -- Which `IN (subquery)` the in to join rewrite accepts, and that an accepted one gives the same
 -- answer as the set it replaces.
 
