@@ -99,7 +99,7 @@ SELECT count() FROM file('$DATA_DIR/s0.npy.gz', 'Npy');
 # runner disables optimize_count_from_files with probability 0.05, which would make this a scan.
 ${CLICKHOUSE_LOCAL} -m --query "
 SELECT count() FROM file('$CURDIR/data_npy/npy_big.npy', 'Npy') SETTINGS optimize_count_from_files = 1;
-SELECT sum(value) < 1000000 FROM system.events WHERE event = 'SelectedBytes';
+SELECT sum(value) < 1000000 AND count() = 1 FROM system.events WHERE event = 'SelectedBytes';
 "
 
 # The row-count cache a bare DESCRIBE no longer pre-fills is still filled by a real read.
