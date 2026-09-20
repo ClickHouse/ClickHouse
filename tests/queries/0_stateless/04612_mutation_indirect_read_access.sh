@@ -17,7 +17,7 @@ udf_name="${CLICKHOUSE_DATABASE}_leak_04612"
 other_db="${CLICKHOUSE_DATABASE}_other_04612"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src;
 DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
@@ -32,6 +32,12 @@ INSERT INTO tab VALUES (1, 'a', 7), (42, 'b', 8);
 -- does not merge into the predicates of the other cases.
 CREATE TABLE arr_tab (id UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO arr_tab VALUES (1, [1]), (42, [42]);
+
+-- A table the user may read some of, to be the FROM of a subquery that reads more than that.
+CREATE TABLE readable (id UInt32, arr Array(UInt32), hidden_arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO readable VALUES (1, [1], [7]);
+CREATE TABLE dim (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO dim VALUES (1);
 
 -- The tables, set, dictionary and Join table the user has no access to.
 CREATE TABLE secret_tab (secret UInt32, payload String) ENGINE = MergeTree ORDER BY secret;
@@ -59,6 +65,8 @@ GRANT ALTER DELETE ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
 -- other objects.
 GRANT SELECT(id, name) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
+GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.readable TO $user_name;
+GRANT SELECT ON $CLICKHOUSE_DATABASE.dim TO $user_name;
 -- The user may read tables of these names in the other database - where none of them exists.
 GRANT SELECT ON $other_db.secret_tab TO $user_name;
 GRANT SELECT ON $other_db.secret_set TO $user_name;
@@ -111,15 +119,16 @@ echo "-- A table on the right of IN, validation off"
 check_access "ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
 
 # The right-hand side of IN is a table name, a set name or an array-valued column, and the three are
-# the same identifier in the AST, so a column of the mutated table must not be mistaken for a table.
-# Neither shape below can execute as a mutation, for a reason of its own that predates this check:
-# the analyzer resolves the right-hand side of `IN` as a table name, and a `WITH` element of a
-# mutation subquery is not in scope when the mutation runs. Both are exactly why the access check
-# must not take such a name for a table, so the mutations are not waited for and only the access
-# decision is asserted, on a table of their own that is dropped right after.
-echo "-- An array column on the right of IN is a column, not a table"
-check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr AND 0 SETTINGS validate_mutation_query = 0"
-check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN arr_tab.arr AND 0 SETTINGS validate_mutation_query = 0"
+# the same identifier in the AST. A one-part name is always a table there: the mutation expression is
+# qualified with a database before it is stored, so `1 IN arr` becomes `1 IN (db.arr)` and reads a
+# table of that name on every entry point - the array column is only read by a qualified `1 IN t.arr`.
+echo "-- A one-part name on the right of IN is a table even where the mutated table has such a column"
+check_access "ALTER TABLE arr_tab DELETE WHERE 1 IN arr AND 0 SETTINGS validate_mutation_query = 0, mutations_sync = 2"
+echo "-- A qualified name that is an array column of the mutated table is a column"
+check_access "ALTER TABLE arr_tab DELETE WHERE 1 IN arr_tab.arr AND 0 SETTINGS validate_mutation_query = 0, mutations_sync = 2"
+# A `WITH` element of a mutation subquery is not in scope when the mutation runs, which predates this
+# check and is exactly why the access check must not take such a name for a table, so the mutation is
+# not waited for and only the access decision is asserted.
 echo "-- A WITH name on the right of IN is not a table either, in its SELECT and in the subqueries below it"
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM s) AND 0 SETTINGS validate_mutation_query = 0"
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE id IN (WITH s AS (SELECT 1 AS v) SELECT v FROM (SELECT v FROM s)) AND 0 SETTINGS validate_mutation_query = 0"
@@ -136,6 +145,21 @@ check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT se
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off" "$other_db"
 check_access "DELETE FROM $CLICKHOUSE_DATABASE.tab WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
 check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
+
+# A read named inside a subquery, or inside a `JOIN ... ON` condition, is invisible to a walk that
+# only looks at the subquery's `FROM` tables and at the clauses of its `SELECT`.
+echo "-- A named read below the top level is a read too, in a subquery and in a JOIN condition"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE id IN secret_set) SETTINGS $off"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT r.id FROM readable r JOIN dim d ON r.id = d.id AND r.id IN secret_set) SETTINGS $off"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT r.id FROM readable r JOIN dim d ON r.id = d.id AND dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(r.id)) = '') SETTINGS $off"
+
+echo "-- A column read only in an ARRAY JOIN list is read as well"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable ARRAY JOIN hidden_arr AS elem) SETTINGS $off"
+
+# Below the top level a qualified name is resolved against the columns of the subquery's own tables,
+# just as the mutated table's columns resolve it at the top level.
+echo "-- An array column of the subquery's own table on the right of IN is a column, not a table"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT r.id FROM readable r WHERE 1 IN r.arr) AND 0 SETTINGS $off"
 
 echo "-- dictGet and joinGet name their object instead of reading it as a column"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
@@ -166,6 +190,7 @@ check_access "DELETE FROM tab WHERE id IN (SELECT secret FROM secret_tab) AND 0 
 check_access "ALTER TABLE tab DELETE WHERE id IN secret_set AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE id IN secret_set) AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "UPDATE tab SET name = name WHERE $udf_name() AND 0 SETTINGS $off, enable_lightweight_update = 1"
@@ -181,7 +206,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DICTIONARY IF EXISTS dict;
-DROP TABLE IF EXISTS tab, arr_tab, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
 DROP DATABASE IF EXISTS $other_db;

@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/misc.h>
@@ -20,11 +21,11 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
-#include <array>
 #include <optional>
 #include <vector>
 
@@ -34,12 +35,20 @@ namespace DB
 namespace
 {
 
-/// The identifiers on the right of an `IN` in a mutation expression. Such a name is a table or a
-/// set as often as it is an array column, and `RequiredSourceColumnsVisitor` reports it as a
-/// column either way, so the two have to be told apart by the mutated table's columns.
+/// The identifiers on the right of an `IN` in a mutation expression, split by whether they are
+/// compound. `RequiredSourceColumnsVisitor` reports such a name as a column, but a one-part name
+/// there is always a table: the mutation expression is qualified with a database before it is
+/// stored, and `WHERE 1 IN arr` becomes `1 IN (db.arr)`, which reads a table and never the array
+/// column `arr` - only a qualified `WHERE 1 IN t.arr` reads the column.
 /// Subqueries are not descended into, matching the visitor, whose required columns are the ones
 /// being resolved here.
-void collectInRightHandSideIdentifiers(const IAST & ast, NameSet & names)
+struct InRightHandSideIdentifiers
+{
+    NameSet bare;
+    NameSet compound;
+};
+
+void collectInRightHandSideIdentifiers(const IAST & ast, InRightHandSideIdentifiers & names)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
         return;
@@ -49,12 +58,21 @@ void collectInRightHandSideIdentifiers(const IAST & ast, NameSet & names)
         && function->arguments->children.size() == 2)
     {
         if (const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>())
-            names.insert(identifier->name());
+            (identifier->compound() ? names.compound : names.bare).insert(identifier->name());
     }
 
     for (const auto & child : ast.children)
         if (child)
             collectInRightHandSideIdentifiers(*child, names);
+}
+
+InRightHandSideIdentifiers collectInRightHandSideIdentifiers(const ASTs & expressions)
+{
+    InRightHandSideIdentifiers names;
+    for (const auto & expression : expressions)
+        if (expression)
+            collectInRightHandSideIdentifiers(*expression, names);
+    return names;
 }
 
 }
@@ -73,7 +91,7 @@ void addExpressionColumnsSelectAccess(
     auto expression_clone = expression->clone();
     RequiredSourceColumnsVisitor(columns_context).visit(expression_clone);
 
-    NameSet in_right_hand_side_names;
+    InRightHandSideIdentifiers in_right_hand_side_names;
     collectInRightHandSideIdentifiers(*expression, in_right_hand_side_names);
 
     Strings columns;
@@ -81,6 +99,11 @@ void addExpressionColumnsSelectAccess(
     const String table_prefix = table + ".";
     for (const auto & name : columns_context.requiredColumns())
     {
+        /// A one-part name on the right of `IN` is a table, even when the mutated table has a column
+        /// of that name; `addExpressionIndirectReadsAccess` requires `SELECT` on that table instead.
+        if (in_right_hand_side_names.bare.contains(name))
+            continue;
+
         /// A real column (including a real dotted/quoted name like `t.id`) requires SELECT as-is.
         if (metadata.columns.has(name))
         {
@@ -102,9 +125,9 @@ void addExpressionColumnsSelectAccess(
         if (metadata.isVirtualColumn(String(bare)))
             continue;
 
-        /// A name on the right of `IN` that is not a column of this table names a table or a set,
-        /// and `addExpressionIndirectReadsAccess` requires `SELECT` on that table instead.
-        if (!metadata.columns.has(String(bare)) && in_right_hand_side_names.contains(name))
+        /// A qualified name on the right of `IN` that is not a column of this table names a table
+        /// or a set, and `addExpressionIndirectReadsAccess` requires `SELECT` on it instead.
+        if (!metadata.columns.has(String(bare)) && in_right_hand_side_names.compound.contains(name))
             continue;
 
         columns.emplace_back(bare);
@@ -191,7 +214,7 @@ private:
             /// `x IN other` reads `other`; `x IN (SELECT ...)` and `x IN (1, 2)` do not name a table.
             if (const auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && namesATable(*identifier))
             {
-                if (auto table_id = tryGetNamedTable(*identifier))
+                if (auto table_id = tryGetNamedTable(*identifier); table_id && !needsNoGrant(*table_id))
                     required_access.emplace_back(
                         AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name);
             }
@@ -298,9 +321,12 @@ private:
         }
 
         std::vector<StorageID> tables;
-        String single_table_alias;
+        Strings aliases;
         /// Whether a column reference at this level can be attributed to one table.
         bool attributable = true;
+        /// Whether every table expression at this level is an ordinary named table whose columns can
+        /// be looked up; see `visibleColumns`.
+        bool all_tables_named = true;
 
         for (const auto * table_expression : getTableExpressions(select))
         {
@@ -308,12 +334,14 @@ private:
             {
                 visitSelectOrUnion(*table_expression->subquery);
                 attributable = false;
+                all_tables_named = false;
             }
             else if (table_expression->table_function)
             {
                 /// Not covered - walk the arguments for nested subqueries at least.
                 visitExpression(table_expression->table_function.get());
                 attributable = false;
+                all_tables_named = false;
             }
             else if (const auto & name = table_expression->database_and_table_name)
             {
@@ -321,22 +349,53 @@ private:
                 if (!identifier)
                 {
                     attributable = false;
+                    all_tables_named = false;
                     continue;
                 }
 
                 auto table_id = identifier->getTableId();
                 if (needsNoGrant(table_id))
+                {
+                    /// A `WITH` element or a temporary table needs no grant, but its columns are not
+                    /// known from the catalog either.
+                    all_tables_named = false;
                     continue;
+                }
 
-                if (tables.empty())
-                    single_table_alias = identifier->tryGetAlias();
+                aliases.push_back(identifier->tryGetAlias());
                 tables.push_back(std::move(table_id));
             }
         }
 
-        const std::array expressions{
+        ASTs expressions{
             select.select(), select.where(), select.prewhere(), select.having(), select.qualify(),
             select.groupBy(), select.orderBy(), select.limitBy()};
+
+        /// A `JOIN ... ON` / `USING` condition and an `ARRAY JOIN` list read columns and can hold
+        /// named reads of their own, and belong to none of the clauses above.
+        if (const auto tables_in_select = select.tables())
+        {
+            for (const auto & child : tables_in_select->children)
+            {
+                const auto * element = child->as<ASTTablesInSelectQueryElement>();
+                if (!element)
+                    continue;
+
+                if (const auto * table_join = element->table_join ? element->table_join->as<ASTTableJoin>() : nullptr)
+                {
+                    expressions.push_back(table_join->on_expression);
+                    expressions.push_back(table_join->using_expression_list);
+                }
+
+                if (const auto * array_join = element->array_join ? element->array_join->as<ASTArrayJoin>() : nullptr)
+                    expressions.push_back(array_join->expression_list);
+            }
+        }
+
+        /// The names this level's tables can be referred to by, so that a name on the right of an
+        /// `IN` below the top level can be told apart from a table; see `namesATable`.
+        subquery_levels.push_back(visibleColumns(tables, aliases, all_tables_named));
+        SCOPE_EXIT({ subquery_levels.pop_back(); });
 
         /// Nested subqueries and named reads inside this level's expressions are reads of their own.
         for (const auto & expression : expressions)
@@ -347,7 +406,7 @@ private:
 
         if (attributable && tables.size() == 1)
         {
-            if (auto columns = tryAttributeColumns(expressions, tables.front(), single_table_alias))
+            if (auto columns = tryAttributeColumns(expressions, tables.front(), aliases.front()))
             {
                 required_access.emplace_back(
                     AccessType::SELECT, databaseOfTable(tables.front()), tables.front().table_name, *columns);
@@ -363,7 +422,7 @@ private:
     /// The columns this level reads from its single table, or nothing when they cannot all be
     /// attributed to it.
     std::optional<Strings> tryAttributeColumns(
-        const std::array<ASTPtr, 8> & expressions, const StorageID & table_id, const String & alias) const
+        const ASTs & expressions, const StorageID & table_id, const String & alias) const
     {
         RequiredSourceColumnsVisitor::Data columns_context;
         for (const auto & expression : expressions)
@@ -377,6 +436,13 @@ private:
             RequiredSourceColumnsVisitor(columns_context).visit(expression_clone);
         }
 
+        /// A name on the right of `IN` that is a table and not a column of this level is required as
+        /// a table by `visitNamedReads`; requiring it as a column of this level too would ask for a
+        /// grant no one can give. `namesATable` decides the two apart the same way.
+        const auto in_right_hand_side_names = collectInRightHandSideIdentifiers(expressions);
+        /// `visitSelect` pushes this level before it calls this, so the stack is never empty here.
+        const NameSet & visible = subquery_levels.back();
+
         /// The qualifications a reference to this table may carry.
         Strings prefixes;
         if (!alias.empty())
@@ -388,6 +454,11 @@ private:
         Strings columns;
         for (const auto & name : columns_context.requiredColumns())
         {
+            if (in_right_hand_side_names.bare.contains(name))
+                continue;
+            if (in_right_hand_side_names.compound.contains(name) && !visible.contains(name))
+                continue;
+
             std::string_view bare = name;
             for (const auto & prefix : prefixes)
             {
@@ -413,26 +484,30 @@ private:
         return columns;
     }
 
-    /// The right-hand side of `IN` is a table name, a set name or an array-valued column, and the
-    /// three are the same identifier as far as the AST is concerned: `... WHERE x IN arr` is a valid
-    /// read of a column, and `WITH s AS (...) ... WHERE x IN s` names a `WITH` element. Requiring
-    /// `SELECT` on a table of that name would deny both, so a name that resolves to a column of the
-    /// mutated table, or to a `WITH` name, is left alone.
+    /// Whether an identifier on the right of `IN` names a table (or a set) rather than reading an
+    /// array-valued column: the two are the same identifier as far as the AST is concerned.
     ///
-    /// The mutated table's columns are only known at the top level of the mutation expression. Inside
-    /// a subquery an identifier belongs to that subquery's tables, whose columns are not known here,
-    /// so the rule does not apply there - a subquery's own tables are required by `visitSelect`
-    /// instead. When the mutated table is not present locally its columns are unknown too, and then
-    /// this fails closed and requires the grant, like the whole-table requirement the callers add in
-    /// that case.
+    /// A one-part name is always a table here. The mutation expression is qualified with a database
+    /// before it is stored, so `WHERE 1 IN arr` becomes `1 IN (db.arr)` and reads a table `db.arr` on
+    /// every entry point, even when `arr` is an array column of the mutated table - the column is
+    /// only read by a qualified `WHERE 1 IN t.arr`. A `WITH` name is not a table to grant on, and a
+    /// temporary table needs no grant, exactly as in a plain `SELECT`.
+    ///
+    /// A qualified name is a column when it resolves to one: against the mutated table's columns at
+    /// the top level of the mutation expression, and against the columns of the enclosing subquery's
+    /// tables below it (see `visibleColumns`). Where those columns are unknown this fails closed and
+    /// requires the grant, so that a read of a real table is never missed.
     bool namesATable(const ASTIdentifier & identifier) const
     {
-        if (inside_subquery)
-            return false;
-
         const String & name = identifier.name();
         if (isCteName(name))
             return false;
+
+        if (!identifier.compound())
+            return true;
+
+        if (inside_subquery)
+            return subquery_levels.empty() || !subquery_levels.back().contains(name);
 
         if (!mutated_metadata)
             return true;
@@ -456,6 +531,41 @@ private:
     bool isColumnOfMutatedTable(const String & name) const
     {
         return mutated_metadata->columns.has(name) || mutated_metadata->isVirtualColumn(name);
+    }
+
+    /// Every name a column of the given tables can be written as at this level: bare, and qualified
+    /// with the table's alias, its name and its database and name. Empty when a table expression at
+    /// this level is not an ordinary named table, or when a table cannot be found in the catalog -
+    /// then nothing is a known column and `namesATable` fails closed.
+    NameSet visibleColumns(const std::vector<StorageID> & tables, const Strings & aliases, bool all_tables_named) const
+    {
+        NameSet names;
+        if (!all_tables_named)
+            return names;
+
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            StorageID table_id{databaseOfTable(tables[i]), tables[i].table_name};
+            if (table_id.database_name.empty())
+                return {};
+
+            const auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            if (!storage)
+                return {};
+
+            Strings prefixes{""};
+            if (!aliases[i].empty())
+                prefixes.emplace_back(aliases[i] + ".");
+            prefixes.emplace_back(table_id.table_name + ".");
+            prefixes.emplace_back(table_id.database_name + "." + table_id.table_name + ".");
+
+            const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            for (const auto & column : metadata->columns)
+                for (const auto & prefix : prefixes)
+                    names.insert(prefix + column.name);
+        }
+
+        return names;
     }
 
     /// A `WITH` name and a session temporary table are not tables to grant `SELECT` on, exactly as
@@ -514,6 +624,8 @@ private:
     const StorageInMemoryMetadata * mutated_metadata;
     /// The `WITH` names in scope, innermost last; see `visitSelect`.
     std::vector<String> cte_names;
+    /// The column names visible at each enclosing subquery level, innermost last; see `visibleColumns`.
+    std::vector<NameSet> subquery_levels;
     bool inside_subquery = false;
 };
 
