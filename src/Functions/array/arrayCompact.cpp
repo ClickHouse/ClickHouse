@@ -144,7 +144,7 @@ struct ArrayCompactImpl
             executeType< Int32 >(mapped, array, res) ||
             executeType< Int64 >(mapped, array, res) ||
             executeType<Float32>(mapped, array, res) ||
-            executeType<Float64>(mapped, array, res)) ||
+            executeType<Float64>(mapped, array, res) ||
             executeType<Decimal32>(mapped, array, res) ||
             executeType<Decimal64>(mapped, array, res) ||
             executeType<Decimal128>(mapped, array, res) ||
