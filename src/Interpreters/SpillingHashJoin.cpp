@@ -164,13 +164,14 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
-void SpillingHashJoin::switchToGraceHashJoin()
+void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
 {
-    const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
+    const auto log_switch = [this, spill_immediately](const JoinPtr & join, std::string_view join_name)
     {
         LOG_DEBUG(
             log,
-            "Memory spill threshold reached with {} ({} bytes, {} rows), switching to GraceHashJoin",
+            "{}, switching to GraceHashJoin: {} holds {} bytes in {} rows",
+            spill_immediately ? "Spill requested under memory pressure" : "Memory spill threshold reached",
             join_name,
             join->getTotalByteCount(),
             join->getTotalRowCount());
@@ -188,7 +189,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-            print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
+            log_switch(concurrent_join, "ConcurrentHashJoin");
 
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
@@ -201,6 +202,11 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 any_take_last_row,
                 max_bytes_before_external_join);
             grace_join->initialize(*left_sample_block);
+            /// Moving the data into bucket 0 frees nothing on its own. Asking the grace join to spill
+            /// before it is fed doubles the bucket count on the first block, so half of what we hand
+            /// over goes to disk right away - even if this is the last block of the build phase.
+            if (spill_immediately)
+                grace_join->requestSpill();
             chosen_join = grace_join;
 
             /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
@@ -213,7 +219,11 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
-    print_threshold_reached_log(hash_join, "HashJoin");
+    /// `requestSpill` can bring us here too, so look at the state again before rebuilding.
+    if (state.load(std::memory_order_relaxed) != State::COLLECTING)
+        return;
+
+    log_switch(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
@@ -229,6 +239,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         max_bytes_before_external_join);
 
     chosen_join->initialize(*left_sample_block);
+    if (spill_immediately)
+        chosen_join->requestSpill();
 
     /// Drain extracted blocks into GraceHashJoin one by one,
     /// freeing each after insertion to limit peak memory.
@@ -287,6 +299,38 @@ void SpillingHashJoin::onBuildPhaseFinish()
             concurrent_join->dropRightBlocksKeptForAnotherAlgorithm();
         else
             hash_join->dropRightBlocksKeptForAnotherAlgorithm();
+    }
+}
+
+size_t SpillingHashJoin::getSpillableBytes() const
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// Switching to GraceHashJoin puts what was collected on disk, except the one bucket it keeps
+            /// in memory. An upper bound is fine here, the scheduler only ranks candidates by it.
+            return concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        case State::GRACE_HASH_JOIN:
+            return chosen_join->getSpillableBytes();
+        case State::IN_MEMORY_JOIN:
+            /// Build phase finished in memory, nothing left to spill.
+            return 0;
+    }
+}
+
+void SpillingHashJoin::requestSpill()
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
+            switchToGraceHashJoin(/*spill_immediately=*/true);
+            return;
+        case State::GRACE_HASH_JOIN:
+            chosen_join->requestSpill();
+            return;
+        case State::IN_MEMORY_JOIN:
+            return;
     }
 }
 
