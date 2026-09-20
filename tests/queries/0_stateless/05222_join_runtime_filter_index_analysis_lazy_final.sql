@@ -19,6 +19,14 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_optimize_lazy_final = 1;
 SET max_rows_for_lazy_final = 10000000;
 SET min_filtered_ratio_for_lazy_final = 0;
+-- The disjoint case below is about the primary key ranges of the *parts*, so the two ways of getting
+-- intersections that do not come from the data are pinned off. A level-0 part can hold several versions
+-- of the same key, so the rewrite treats it as intersecting itself; `optimize_on_insert` (on by default,
+-- randomized by the test harness) is what merges the inserted block and lifts the part above level 0.
+-- And with several insert threads one `INSERT ... SELECT` is written as several parts with interleaved
+-- key ranges. Either one sends the disjoint table down the `InputSelector` path.
+SET optimize_on_insert = 1;
+SET max_insert_threads = 1;
 
 DROP TABLE IF EXISTS probe_lazy_final_disjoint;
 DROP TABLE IF EXISTS probe_lazy_final_overlapping;
