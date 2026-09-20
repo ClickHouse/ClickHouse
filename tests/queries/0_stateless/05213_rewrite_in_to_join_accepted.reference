@@ -50,6 +50,10 @@
 1	0
 2
 2
+-- Two columns of the subquery share a name
+1	0
+[(2,3)]
+[(2,3)]
 -- The subquery is a union
 1	0
 [1,1,1]

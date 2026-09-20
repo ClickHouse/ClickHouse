@@ -267,6 +267,22 @@ void buildQueryPlanForUncorrelatedInSubquery(
     for (const auto & context : subquery_plan.getInterpretersContexts())
         query_plan.addInterpreterContext(context);
 
+    ///`IN` matches the columns of its subquery with the elements of its key by position, while a join reads
+    /// its input columns by name, so subquery columns must be renamed to have unique names.
+    auto unique_names_header = *subquery_plan.getCurrentHeader();
+    makeUniqueColumnNamesInBlock(unique_names_header);
+    if (!blocksHaveEqualStructure(unique_names_header, *subquery_plan.getCurrentHeader()))
+    {
+        auto unique_names_dag = ActionsDAG::makeConvertingActions(
+            subquery_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+            unique_names_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            planner_context->getQueryContext());
+        auto unique_names_step = std::make_unique<ExpressionStep>(subquery_plan.getCurrentHeader(), std::move(unique_names_dag));
+        unique_names_step->setStepDescription("Give the columns of the IN subquery names of their own");
+        subquery_plan.addStep(std::move(unique_names_step));
+    }
+
     auto subquery_column_names = subquery_plan.getCurrentHeader()->getNames();
     const auto & key_column_names = in_subquery.key_column_names;
     if (key_column_names.size() != subquery_column_names.size())

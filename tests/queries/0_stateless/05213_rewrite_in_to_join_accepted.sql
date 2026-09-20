@@ -110,6 +110,13 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM 
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- Two columns of the subquery share a name';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT count() FROM t WHERE (id, b) IN (SELECT number AS `plus(number, 1)`, number + 1 FROM numbers(3)));
+
+SELECT groupArray((id, b)) FROM (SELECT id, b FROM t WHERE (id, b) IN (SELECT number AS `plus(number, 1)`, number + 1 FROM numbers(3)) ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray((id, b)) FROM (SELECT id, b FROM t WHERE (id, b) IN (SELECT number AS `plus(number, 1)`, number + 1 FROM numbers(3)) ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- The subquery is a union';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s UNION ALL SELECT k FROM w));
