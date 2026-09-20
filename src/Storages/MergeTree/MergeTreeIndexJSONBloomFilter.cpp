@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -22,6 +23,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -61,6 +63,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_READ_ALL_DATA;
 extern const int CORRUPTED_DATA;
 extern const int INCORRECT_DATA;
 extern const int INCORRECT_NUMBER_OF_COLUMNS;
@@ -377,30 +380,21 @@ bool canHashRawValue(const IDataType & type)
         return which.isStringOrFixedString();
 }
 
-UInt64 hashTypedValue(
-    UInt64 seed,
-    const ISerialization & serialization,
-    WhichDataType which,
-    bool raw_value,
-    const IColumn & column,
-    size_t row,
-    WriteBufferFromOwnString & value,
-    const FormatSettings & format_settings)
+template <typename T>
+UInt64 hashNumericValue(UInt64 seed, T number)
 {
     UInt64 bits = 0;
-    bool numeric = true;
-    if (which.isInt8() || which.isInt16() || which.isInt32() || which.isInt64())
-        bits = static_cast<UInt64>(column.getInt(row));
-    else if (which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64())
+    if constexpr (std::is_signed_v<T> && std::is_integral_v<T>)
+        bits = static_cast<UInt64>(number);
+    else if constexpr (std::is_unsigned_v<T>)
     {
-        bits = column.getUInt(row);
+        bits = number;
         /// Separate wide positive values from negative `Int64` values with the same bits.
         if (bits >= (UInt64(1) << 63))
             seed ^= 0x9e3779b97f4a7c15ULL;
     }
-    else if (which.isFloat32() || which.isFloat64())
+    else
     {
-        const Float64 number = column.getFloat64(row);
         const Float64 magnitude = std::abs(number);
         if (magnitude < 0x1p64 && static_cast<Float64>(static_cast<UInt64>(magnitude)) == magnitude)
         {
@@ -419,13 +413,26 @@ UInt64 hashTypedValue(
             seed ^= 0xd1b54a32d192ed03ULL;
         }
     }
-    else
-        numeric = false;
-    if (numeric)
-    {
-        transformEndianness<std::endian::little>(bits);
-        return XXH_INLINE_XXH3_64bits_withSeed(&bits, sizeof(bits), seed);
-    }
+    transformEndianness<std::endian::little>(bits);
+    return XXH_INLINE_XXH3_64bits_withSeed(&bits, sizeof(bits), seed);
+}
+
+UInt64 hashTypedValue(
+    UInt64 seed,
+    const ISerialization & serialization,
+    WhichDataType which,
+    bool raw_value,
+    const IColumn & column,
+    size_t row,
+    WriteBufferFromOwnString & value,
+    const FormatSettings & format_settings)
+{
+    if (which.isNativeInt())
+        return hashNumericValue(seed, column.getInt(row));
+    if (which.isNativeUInt())
+        return hashNumericValue(seed, column.getUInt(row));
+    if (which.isNativeFloat())
+        return hashNumericValue(seed, column.getFloat64(row));
     if (which.isFloat() && column.getFloat64(row) == 0)
     {
         const UInt64 zero = 0;
@@ -440,6 +447,52 @@ UInt64 hashTypedValue(
     serialization.serializeBinary(column, row, value, format_settings);
     const auto data = value.stringView();
     return XXH_INLINE_XXH3_64bits_withSeed(data.data(), data.size(), seed);
+}
+
+/// Read the same scalar payload as its serialization, without materializing a column.
+UInt64 hashSharedScalar(UInt64 seed, const IDataType & type, ReadBufferFromMemory & buffer, const FormatSettings & settings)
+{
+    auto read_number = [&]<typename T>()
+    {
+        T number;
+        readBinaryLittleEndian(number, buffer);
+        if constexpr (std::is_floating_point_v<T>)
+            return hashNumericValue(seed, static_cast<Float64>(number));
+        else
+            return hashNumericValue(seed, number);
+    };
+
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Int8: return read_number.template operator()<Int8>();
+        case TypeIndex::Int16: return read_number.template operator()<Int16>();
+        case TypeIndex::Int32: return read_number.template operator()<Int32>();
+        case TypeIndex::Int64: return read_number.template operator()<Int64>();
+        case TypeIndex::UInt8: return read_number.template operator()<UInt8>();
+        case TypeIndex::UInt16: return read_number.template operator()<UInt16>();
+        case TypeIndex::UInt32: return read_number.template operator()<UInt32>();
+        case TypeIndex::UInt64: return read_number.template operator()<UInt64>();
+        case TypeIndex::Float32: return read_number.template operator()<Float32>();
+        case TypeIndex::Float64: return read_number.template operator()<Float64>();
+        default: break;
+    }
+
+    UInt64 size = 0;
+    if (WhichDataType(type).isString())
+    {
+        readVarUInt(size, buffer);
+        SerializationString::checkStringSize(size, settings);
+    }
+    else
+        size = assert_cast<const DataTypeFixedString &>(type).getN();
+
+    /// Match `readStrict`, including its exception for truncated payloads. Trailing bytes are ignored.
+    if (size > buffer.available())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data. Bytes read: {}. Bytes expected: {}.", buffer.available(), std::to_string(size));
+    const char * data = buffer.position();
+    buffer.position() += size;
+    return XXH_INLINE_XXH3_64bits_withSeed(data, size, seed);
 }
 
 String appendPath(std::string_view prefix, std::string_view suffix)
@@ -771,6 +824,16 @@ private:
         if (type_info.which.isNothing())
             return;
 
+        if (type_info.which.isNativeNumber() || type_info.which.isStringOrFixedString())
+        {
+            ScalarPlan keyed_plan;
+            auto * plan = should_index ? &prepareScalar(hash_path, logical_path, role, true, type_info, keyed_plan) : nullptr;
+            const auto hash = hashSharedScalar(plan ? plan->seed : 0, *type, buffer, format_settings);
+            if (plan)
+                plan->tokens->values.insert(hash);
+            return;
+        }
+
         auto & available_columns = shared_columns_cache[type_info.name];
         auto column = available_columns.empty() ? type->createColumn() : std::move(available_columns.back());
         if (!available_columns.empty())
@@ -1019,17 +1082,15 @@ private:
             emitValue(hash_path, logical_path, role, type, column, row, is_dynamic, info, index_path);
     }
 
-    void emitScalar(
+    ScalarPlan & prepareScalar(
         std::string_view path,
         std::string_view logical_path,
         JSONBloomRole role,
-        const IColumn & column,
-        size_t row,
         bool is_dynamic,
-        const TypeInfo & type_info)
+        const TypeInfo & type_info,
+        ScalarPlan & keyed_plan)
     {
         /// Reuse preparation for shared paths. Keyed map scopes can differ on every row.
-        ScalarPlan keyed_plan;
         auto & plan = path == logical_path ? type_info.scalar_plans[{String(path), role}] : keyed_plan;
         if (!plan.tokens)
         {
@@ -1043,6 +1104,20 @@ private:
             plan.has_dynamic_presence = true;
         }
 
+        return plan;
+    }
+
+    void emitScalar(
+        std::string_view path,
+        std::string_view logical_path,
+        JSONBloomRole role,
+        const IColumn & column,
+        size_t row,
+        bool is_dynamic,
+        const TypeInfo & type_info)
+    {
+        ScalarPlan keyed_plan;
+        auto & plan = prepareScalar(path, logical_path, role, is_dynamic, type_info, keyed_plan);
         plan.tokens->values.insert(hashTypedValue(
             plan.seed,
             *type_info.serialization, type_info.which, type_info.raw_value, column, row, value_buffer, format_settings));

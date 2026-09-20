@@ -39,7 +39,7 @@ static constexpr UInt64 MAX_TOTAL_STRING_SIZE = 1ULL << 48;
 /// The size of a string comes from the data, so it has to be validated before it is used to resize anything.
 /// `format_binary_max_string_size` is a user-facing limit that can be disabled by setting it to `0`,
 /// while `MAX_STRING_SIZE` is a hard limit that is always enforced.
-static void checkStringSize(UInt64 size, const FormatSettings & settings)
+void SerializationString::checkStringSize(UInt64 size, const FormatSettings & settings)
 {
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(

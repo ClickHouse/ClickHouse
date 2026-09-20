@@ -26,6 +26,8 @@ public:
     /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
     static constexpr size_t MAX_STRING_SIZE = 16_GiB;
 
+    static void checkStringSize(UInt64 size, const FormatSettings & settings);
+
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
