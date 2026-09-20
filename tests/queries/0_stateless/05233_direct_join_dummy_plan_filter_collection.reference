@@ -1,0 +1,6 @@
+count	1000
+direct join used	1
+distributed count	100
+distributed direct join used	1
+filtered join estimate is selective	1
+unfiltered join uses replicas	1

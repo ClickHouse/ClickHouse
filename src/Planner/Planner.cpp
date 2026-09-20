@@ -393,6 +393,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
     /// This plan collects pushed-down filters and is never executed
     optimization_settings.make_distributed_plan = false;
+    /// Choosing a physical join reads the right table's storage, which the dummy tables above replaced.
+    optimization_settings.keep_logical_steps = true;
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
