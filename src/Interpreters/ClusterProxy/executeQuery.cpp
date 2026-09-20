@@ -599,7 +599,8 @@ void executeQuery(
             auto query_for_shard = query_info.query_tree->clone();
             if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
                 /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+                sharding_key_expr->getRequiredColumns().size() == 1 &&
+                !shardingKeyExpressionContainsNotReadySet(sharding_key_expr))
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
@@ -638,7 +639,8 @@ void executeQuery(
             ASTPtr query_ast_for_shard = query_info.query->clone();
             if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
                 /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+                sharding_key_expr->getRequiredColumns().size() == 1 &&
+                !shardingKeyExpressionContainsNotReadySet(sharding_key_expr))
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
