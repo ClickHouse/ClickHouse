@@ -2867,6 +2867,32 @@ static void removeStaleSplitFilesByNumber(const NumberedFileNames & numbered_pat
 }
 
 
+/// The table only ever deletes the numbered files it remembers, and it remembers only the ones written since
+/// it was loaded: the engine keeps no metadata about the files it has written, and a `DETACH` / `ATTACH` or a
+/// server restart rebuilds the list of the paths from the single configured name. A numbered file left over from
+/// an earlier split insert is therefore not attributable to this table anymore, and `TRUNCATE TABLE` leaves it
+/// where it is rather than deleting a file that may as well belong to someone else. That is not worth an error -
+/// the truncated table does not read those files either - but it is worth a warning, so that the leftovers that
+/// a glob pattern over the directory still sees do not come as a surprise.
+static void warnAboutForgottenSplitTail(
+    const Strings & current_paths, const NumberedFileNames & numbered_paths, const String & table_name_for_log)
+{
+    if (current_paths.size() != 1)
+        return;
+
+    const String forgotten_path = numbered_paths.getName(numbered_paths.start_sequence_number);
+    if (!fs::exists(forgotten_path))
+        return;
+
+    LOG_WARNING(
+        getLogger("StorageFile"),
+        "The truncated table {} has left the file {} in place: it was written by an insert split by size before the table "
+        "was reloaded, and the table no longer attributes it to itself. Remove it manually if it is not needed.",
+        table_name_for_log,
+        forgotten_path);
+}
+
+
 class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
@@ -3560,6 +3586,8 @@ void StorageFile::truncate(
         const auto & path = current_paths.front();
         if (fs::exists(path) && 0 != ::truncate(path.c_str(), 0))
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
+
+        warnAboutForgottenSplitTail(current_paths, getNumberedFileNames(path), getStorageID().getNameForLogs());
     }
 }
 

@@ -1053,6 +1053,27 @@ void StorageObjectStorage::truncate(
 
     object_storage->removeObjectIfExists(StoredObject(paths.front().path));
     LOG_INFO(log, "Removed the object {} of the truncated table", paths.front().path);
+
+    /// The table only ever deletes the numbered keys it remembers, and it remembers only the ones written since
+    /// it was loaded: the engine keeps no metadata about the objects it has written, and a `DETACH` / `ATTACH` or
+    /// a server restart rebuilds the list of the paths from the single configured key. A numbered object left over
+    /// from an earlier split insert is therefore not attributable to this table anymore, and `TRUNCATE TABLE`
+    /// leaves it where it is rather than deleting an object that may as well belong to someone else. That is not
+    /// worth an error - the truncated table does not read those objects either - but it is worth a warning, so
+    /// that the leftovers that a glob pattern over the bucket still sees do not come as a surprise.
+    if (paths.size() == 1)
+    {
+        const auto numbered_keys = getNumberedFileNames(paths.front().path);
+        const String forgotten_key = numbered_keys.getName(numbered_keys.start_sequence_number);
+        if (object_storage->exists(StoredObject(forgotten_key)))
+            LOG_WARNING(
+                log,
+                "The truncated table {} has left the object {} in place: it was written by an insert split by size "
+                "before the table was reloaded, and the table no longer attributes it to itself. "
+                "Remove it manually if it is not needed.",
+                getStorageID().getNameForLogs(),
+                forgotten_key);
+    }
 }
 
 void StorageObjectStorage::drop()
