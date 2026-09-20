@@ -842,7 +842,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     return db;
 }
 
-void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
+void DatabaseCatalog::updateDatabaseName(
+    const String & old_name,
+    const String & new_name,
+    const Strings & tables_in_database,
+    const RecomputedDependenciesByTable & recomputed_dependencies)
 {
     std::lock_guard lock{databases_mutex};
     chassert(!databases.contains(new_name));
@@ -868,10 +872,23 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
 
     for (const auto & table_name : tables_in_database)
     {
+        /// A table whose dependencies were recomputed from its stored definition against the new database name
+        /// gets exactly those edges. The other tables keep the edges recorded under the old name, re-keyed.
+        /// Both are done here, in the same critical section that publishes the new name, so that the graphs
+        /// are already correct when the renamed database becomes observable.
+        const auto recomputed = recomputed_dependencies.find(table_name);
         auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
         auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-        referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
-        loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+        if (recomputed != recomputed_dependencies.end())
+        {
+            referential_dependencies.addDependencies(StorageID{new_name, table_name}, recomputed->second.referential_dependencies);
+            loading_dependencies.addDependencies(StorageID{new_name, table_name}, recomputed->second.loading_dependencies);
+        }
+        else
+        {
+            referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
+            loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+        }
 
         /// `view_dependencies` is rewired in both directions: the table being renamed
         /// may be a materialized view (incoming edges from its source) and/or a source
@@ -895,14 +912,20 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         /// `plain_view_dependencies` is re-keyed on the view side only: the renamed table may be a plain
         /// view, and it moves into the new database. The source side must stay where it is: a source is
         /// written in the definition of a view either qualified, and then it keeps naming the old
-        /// database, or without a database, and then it is resolved against the database of the view.
-        /// `InterpreterRenameQuery` recomputes the dependencies of the views of the renamed database from
-        /// their definitions once the rename is done, which is what moves the unqualified ones.
+        /// database, or without a database, and then it is resolved against the database of the view -
+        /// which is what the recomputed dependencies of the views of the renamed database express.
         auto plain_view_sources = plain_view_dependencies.getDependents(StorageID{old_name, table_name});
         for (const auto & source : plain_view_sources)
-        {
             plain_view_dependencies.removeDependency(source, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-            plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
+        if (recomputed != recomputed_dependencies.end())
+        {
+            for (const auto & source : recomputed->second.plain_view_dependencies)
+                plain_view_dependencies.addDependency(StorageID{source}, StorageID{new_name, table_name});
+        }
+        else
+        {
+            for (const auto & source : plain_view_sources)
+                plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
         }
     }
 }

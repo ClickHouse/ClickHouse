@@ -159,7 +159,22 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
+    /// Dependencies of a table recomputed from its stored definition against the new name of its database.
+    /// `updateDatabaseName` applies them in place of re-keying the edges recorded under the old name.
+    struct RecomputedDependencies
+    {
+        TableNamesSet referential_dependencies;
+        TableNamesSet loading_dependencies;
+        TableNamesSet plain_view_dependencies;
+    };
+    /// Keyed by the table name.
+    using RecomputedDependenciesByTable = std::unordered_map<String, RecomputedDependencies>;
+
+    void updateDatabaseName(
+        const String & old_name,
+        const String & new_name,
+        const Strings & tables_in_database,
+        const RecomputedDependenciesByTable & recomputed_dependencies);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(std::string_view database_name) const;

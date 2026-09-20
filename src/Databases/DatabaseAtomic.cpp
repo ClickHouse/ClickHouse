@@ -2,6 +2,8 @@
 #include <thread>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
@@ -13,6 +15,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -745,6 +748,16 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
+
+    /// The stored definitions of the tables are not rewritten by the rename, so the dependencies of the ordinary
+    /// views are recomputed from them against the new database name (reading a definition takes `mutex`, so this
+    /// is done before it is locked; the DDL guard keeps the tables unchanged meanwhile). A source written without
+    /// a database follows the view into the new database, a qualified one keeps naming the database written in
+    /// the definition: the resolution the metadata loading path uses, so the graphs stay equal to what a reload
+    /// would rebuild. `DatabaseCatalog::updateDatabaseName` applies the result in the same critical section that
+    /// publishes the new name, so the graphs are never observed in an intermediate state.
+    auto recomputed_dependencies = getOrdinaryViewDependenciesForNewDatabaseName(query_context, new_name);
+
     std::lock_guard lock(mutex);
 
     /// A longer database name leaves less room for the table name in the dropped-metadata file
@@ -788,7 +801,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table_names.reserve(tables.size());
             for (auto & table : tables)
                 table_names.push_back(table.first);
-            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names, recomputed_dependencies);
         }
         database_name = new_name;
 
@@ -817,6 +830,28 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         db_disk->moveDirectory(old_path_to_table_symlinks, path_to_table_symlinks);
         tryCreateMetadataSymlink();
     }
+}
+
+DatabaseCatalog::RecomputedDependenciesByTable DatabaseAtomic::getOrdinaryViewDependenciesForNewDatabaseName(ContextPtr query_context, const String & new_name) const
+{
+    DatabaseCatalog::RecomputedDependenciesByTable result;
+    for (auto it = getTablesIterator(query_context, /*filter_by_table_name*/ {}, /*skip_not_loaded*/ false); it->isValid(); it->next())
+    {
+        if (!dynamic_cast<const StorageView *>(it->table().get()))
+            continue;
+
+        auto ast = getCreateTableQuery(it->name(), query_context);
+        QualifiedTableName table_name{getDatabaseName(), it->name()};
+        auto dependencies = getDependenciesFromCreateQuery(
+            getContext(), table_name, ast, new_name, /*can_throw*/ false, /*validate_current_database*/ false);
+        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext(), table_name, ast, new_name);
+
+        result.emplace(
+            it->name(),
+            DatabaseCatalog::RecomputedDependencies{
+                std::move(dependencies.dependencies), std::move(loading_dependencies), std::move(dependencies.plain_view_dependencies)});
+    }
+    return result;
 }
 
 void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled)
