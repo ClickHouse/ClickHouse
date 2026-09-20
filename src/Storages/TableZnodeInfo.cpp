@@ -343,7 +343,29 @@ void TableZnodeInfo::checkPrefixForDropRecoverableFromPath(const StorageID & tab
 
     auto recovered = recoverPrefixMintedFromDefaultReplicaPath(full_path, table_id, context);
     if (recovered == path_prefix_for_drop)
-        return;
+    {
+        /// The recovery above asks the template where the minted UUID sits, and the template may answer that
+        /// through the current name of the table ("/clickhouse/tables/{database}/{table}/{uuid}/{shard}").
+        /// The path is stored literally, so a later `RENAME TABLE` keeps the old name in it and the same
+        /// question then gets no answer at all, which would leave the owned znode behind on `DROP TABLE`.
+        /// Ask it once under a name the table does not have: an answer that depends on the name is refused.
+        StorageID renamed_table_id = table_id;
+        renamed_table_id.database_name += "_after_rename";
+        renamed_table_id.table_name += "_after_rename";
+        if (recoverPrefixMintedFromDefaultReplicaPath(full_path, renamed_table_id, context) == path_prefix_for_drop)
+            return;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The ZooKeeper path {} of the converted table is located inside the default_replica_path template {} "
+            "through the name of the table. A table of an Ordinary database stores this path literally, so after "
+            "RENAME TABLE it could not tell anymore that it owns {} and would keep that znode in ZooKeeper after "
+            "DROP TABLE. Remove the {{database}} and {{table}} macros from the default_replica_path template, or "
+            "move the table to an Atomic database before converting it",
+            quoteString(full_path),
+            quoteString(String(context->getServerSettings()[ServerSetting::default_replica_path])),
+            quoteString(path_prefix_for_drop));
+    }
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,

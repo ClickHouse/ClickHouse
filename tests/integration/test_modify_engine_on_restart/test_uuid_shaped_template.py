@@ -44,9 +44,19 @@ ch_replica_name = cluster.add_instance(
     macros={"shard": "01", "replica": "node4"},
 )
 
+# A template that describes the position of {uuid} through the name of the table cannot survive a rename: the
+# literal path keeps the old name, so a later load would no longer find the znode the conversion minted.
+ch_name_in_path = cluster.add_instance(
+    "ch_name_in_path",
+    main_configs=["configs/config.d/convert_name_in_path.xml"],
+    with_zookeeper=True,
+    macros={"shard": "01", "replica": "node5"},
+)
+
 database_name = "modify_engine_uuid_shaped"
 
 CANNOT_MATCH_ERROR = "cannot be matched back against the default_replica_path template"
+NAME_IN_PATH_ERROR = "is located inside the default_replica_path template"
 
 
 @pytest.fixture(scope="module")
@@ -228,3 +238,37 @@ def test_uuid_in_replica_name_refused(started_cluster, engine):
         ch_replica_name, "mt", "Macro 'uuid' in engine arguments is only supported"
     )
     ch_replica_name.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def test_name_in_path_refused_for_ordinary(started_cluster):
+    create_database(ch_name_in_path, "Ordinary")
+    create_mergetree_table(ch_name_in_path, "mt")
+    check_attach_as_replicated_refused(ch_name_in_path, "mt", NAME_IN_PATH_ERROR)
+    ch_name_in_path.query(f"DROP DATABASE {database_name} SYNC")
+
+
+def test_name_in_path_accepted_for_atomic(started_cluster):
+    # An Atomic table keeps the macros in its metadata, so a rename re-expands the template with the new name
+    # and the table never has to find the minted UUID in a literal path.
+    create_database(ch_name_in_path, "Atomic")
+    create_mergetree_table(ch_name_in_path, "mt")
+    q(ch_name_in_path, "DETACH TABLE mt")
+    q(ch_name_in_path, "ATTACH TABLE mt AS REPLICATED")
+    assert get_engine(ch_name_in_path, "mt") == "ReplicatedMergeTree"
+    uuid = q(
+        ch_name_in_path,
+        f"SELECT uuid FROM system.tables WHERE database = '{database_name}' AND table = 'mt'",
+    ).strip()
+    assert (
+        get_zookeeper_path(ch_name_in_path, "mt")
+        == f"/clickhouse/tables/{database_name}/mt/{uuid}/01"
+    )
+    q(ch_name_in_path, "SYSTEM RESTORE REPLICA mt")
+    assert q(ch_name_in_path, "SELECT count() FROM mt").strip() == "1"
+    q(ch_name_in_path, "DROP TABLE mt SYNC")
+    # The table owns the znode named after its UUID and nothing above it.
+    assert not znode_exists(
+        ch_name_in_path, f"/clickhouse/tables/{database_name}/mt", uuid
+    )
+    assert znode_exists(ch_name_in_path, f"/clickhouse/tables/{database_name}", "mt")
+    ch_name_in_path.query(f"DROP DATABASE {database_name} SYNC")
