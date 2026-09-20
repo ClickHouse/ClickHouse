@@ -147,3 +147,34 @@ select count() from t_05218 where dt in (1e30, 946684800.0);
 select count() from t_05218 where t in (3599999.0, nan);
 select count() from t_05218 where (dt, t) in ((1.0, 1.0), (946684800.0, 3600000.5));
 drop table t_05218;
+
+select 'A typed DateTime / DateTime64 constant against a Time64 column: IN must agree with =';
+-- `getLeastSupertype(Time64, DateTime64)` is `DateTime64`, so a `DateTime` / `DateTime64` constant compared
+-- with a `Time64` column is NOT projected to the local seconds-of-day the way `CAST(... AS Time64)` is: the
+-- column is widened to `DateTime64` instead. The `Time64` tick window above returns "cannot convert" for an
+-- epoch value outside the clock window, which excludes it from the set - the same answer `=` gives.
+drop table if exists t_05218_time64_typed;
+create table t_05218_time64_typed (t Time64(3)) engine = MergeTree order by t;
+insert into t_05218_time64_typed values ('12:34:56.789'), ('12:34:56.000'), ('00:00:00.000');
+select count() from t_05218_time64_typed where t in (toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow'));
+select count() from t_05218_time64_typed where t = toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow');
+select count() from t_05218_time64_typed where t in (toDateTime64('1970-01-01 12:34:56.789', 3, 'UTC'));
+select count() from t_05218_time64_typed where t = toDateTime64('1970-01-01 12:34:56.789', 3, 'UTC');
+select count() from t_05218_time64_typed where t in (toDateTime('2020-01-01 12:34:56', 'UTC'));
+select count() from t_05218_time64_typed where t = toDateTime('2020-01-01 12:34:56', 'UTC');
+select count() from t_05218_time64_typed where t in (toDateTime('1970-01-01 12:34:56', 'UTC'));
+select count() from t_05218_time64_typed where t = toDateTime('1970-01-01 12:34:56', 'UTC');
+-- An explicit `CAST` to `Time64` does project to the local seconds-of-day, and then it matches.
+select count() from t_05218_time64_typed where t in (cast(toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow') as Time64(3)));
+drop table t_05218_time64_typed;
+
+select 'A DateTime64 constant inserted into a Time64 column: VALUES must agree with SELECT';
+-- The `Time64` branch of `convertFieldToType` returns "cannot convert" here, so the `VALUES` expression
+-- fallback re-runs the constant through `CAST`, which projects to the local seconds-of-day.
+drop table if exists t_05218_time64_insert;
+create table t_05218_time64_insert (t Time64(3)) engine = Memory;
+insert into t_05218_time64_insert values (toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow'));
+insert into t_05218_time64_insert select toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow');
+select distinct t from t_05218_time64_insert;
+select count() from t_05218_time64_insert;
+drop table t_05218_time64_insert;
