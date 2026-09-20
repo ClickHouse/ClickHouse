@@ -654,7 +654,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         }
         else
         {
-            active_series_cache.reset();
+            active_series_cache.set(nullptr);
         }
     }
 }
