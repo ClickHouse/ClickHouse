@@ -35,6 +35,9 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
 
@@ -394,7 +397,7 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     ContextPtr context = reading->getContext();
     const auto all_normal_projections = normal_projections;
-    filterProjectionCandidates(normal_projections, optimization_settings.preferred_projection_name);
+    filterProjectionCandidates(normal_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
     rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, "the setting preferred_optimize_projection_name names another projection");
 
     Names required_columns = reading->getAllColumnNames();
@@ -442,7 +445,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    const bool relax_projection_checks = optimization_settings.force_use_projection || optimization_settings.prefer_use_projection;
+    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
     if (!relax_projection_checks)
     {

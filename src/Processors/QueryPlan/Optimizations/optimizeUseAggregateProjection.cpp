@@ -50,6 +50,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
+    extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
 
@@ -750,8 +753,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     ReadFromMergeTree & reading,
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
-    size_t max_set_size_for_match,
-    const String & preferred_projection_name)
+    size_t max_set_size_for_match)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -835,7 +837,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     if (!candidates.minmax_projection)
     {
         const auto all_agg_projections = agg_projections;
-        filterProjectionCandidates(agg_projections, preferred_projection_name);
+        filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
         rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
         candidates.real.reserve(agg_projections.size());
@@ -886,7 +888,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 }
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
-    QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match, const String & preferred_projection_name)
+    QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
@@ -920,7 +922,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     /// Prefer the user specified projection if any.
     const auto all_agg_projections = agg_projections;
-    filterProjectionCandidates(agg_projections, preferred_projection_name);
+    filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
     rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
@@ -1197,15 +1199,14 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
     auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match, optimization_settings.preferred_projection_name)
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match)
                     : getAggregateProjectionCandidates(
                           node,
                           *aggregating,
                           *reading,
                           max_added_blocks,
                           optimization_settings.optimize_use_implicit_projections,
-                          max_set_size_for_match,
-                          optimization_settings.preferred_projection_name));
+                          max_set_size_for_match));
 
     result.projection_reject_reasons = std::move(candidates.reject_reasons);
 
@@ -1250,7 +1251,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        const bool relax_projection_checks = optimization_settings.force_use_projection || optimization_settings.prefer_use_projection;
+        const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
         if (!relax_projection_checks)
         {
