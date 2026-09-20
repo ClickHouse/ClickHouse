@@ -122,7 +122,7 @@ public:
 
     void recordAggregationKeySizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types);
 
-    /// For a conversion that materialized only some of the groups (the bucket Top-K):
+    /// For a conversion that materialized only some of the groups (the bucket Top-K, the HAVING pre-filter):
     /// `full_key_bytes` is the byte size all keys would occupy materialized, measured on the
     /// hash table, and the chunk provides the compression-ratio sample only. The statistics
     /// must describe the untruncated output because they price the parallel-replicas plan,

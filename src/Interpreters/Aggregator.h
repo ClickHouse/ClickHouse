@@ -1062,6 +1062,8 @@ private:
     }
 
     /// `allow_having_prefilter` is sound only on a final conversion of a complete bucket; each caller establishes that.
+    /// `full_key_bytes`, when non-null, receives what every group's key - kept or skipped - would occupy materialized,
+    /// measured one key at a time on a single reused row, so the accounting stays bounded.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks convertToBlockImpl(
@@ -1072,7 +1074,8 @@ private:
         bool final,
         size_t rows,
         bool return_single_block,
-        bool allow_having_prefilter = false) const;
+        bool allow_having_prefilter = false,
+        UInt64 * full_key_bytes = nullptr) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
@@ -1085,7 +1088,8 @@ private:
         bool final,
         size_t rows,
         bool return_single_block,
-        bool allow_having_prefilter = false) const;
+        bool allow_having_prefilter = false,
+        UInt64 * full_key_bytes = nullptr) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1115,14 +1119,16 @@ private:
         Arenas & aggregates_pools,
         bool use_compiled_functions,
         bool return_single_block,
-        bool allow_having_prefilter = false) const;
+        bool allow_having_prefilter,
+        UInt64 * full_key_bytes) const;
 
     template <typename Method, typename Table>
     Chunks
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
 
-    /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
-    /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
+    /// `full_key_bytes`, when non-null and the bucket goes through a conversion that materializes
+    /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all
+    /// of the bucket's keys would occupy materialized: the runtime
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
@@ -1136,18 +1142,10 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes,
+        UInt64 * full_key_bytes,
         size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
-
-    /// Records the key sizes of the untruncated aggregation output: the runtime dataflow statistics must
-    /// describe every group, because they price the shipping term of the parallel-replicas plan, whose
-    /// partial aggregation materializes all of them. Must run before the conversion, which consumes the
-    /// bucket, and only for a conversion that materializes only some of the bucket's groups.
-    template <typename Method>
-    void recordUntruncatedKeySizes(
-        RuntimeDataflowStatisticsCacheUpdater & updater, Method & method, Arenas & aggregates_pools, Int32 bucket) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
