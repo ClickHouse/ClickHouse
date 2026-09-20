@@ -107,3 +107,11 @@ ${CLICKHOUSE_LOCAL} -m --query "
 SELECT count() FROM file('$DATA_DIR/ok.npy', 'Npy') SETTINGS optimize_count_from_files = 0;
 SELECT number_of_rows FROM system.schema_inference_cache WHERE format = 'Npy';
 "
+
+# An early stop is served from the rows that are there: where the size is not knowable, the
+# declared count is contradicted only once a consumer asks for a row past the data.
+# max_block_size is pinned (the runner randomizes it) so that the stop is one row at a time.
+${CLICKHOUSE_LOCAL} -m --query "
+SELECT count() FROM (SELECT * FROM file('$DATA_DIR/huge.npy.gz', 'Npy') LIMIT 1 SETTINGS max_block_size = 1);
+SELECT count() FROM (SELECT * FROM file('$DATA_DIR/huge.npy.gz', 'Npy') LIMIT 11 SETTINGS max_block_size = 1);
+" 2>&1 | grep -oE 'CANNOT_READ_ALL_DATA|^[0-9]+$'
