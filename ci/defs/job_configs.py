@@ -179,6 +179,14 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
+            # `find_tests.py` selects which tests this job runs, and
+            # `Result.complete_job` in `result.py` builds the summary the job
+            # publishes. Both are runner inputs, so the digest must cover them:
+            # `_filter_unaffected_jobs` skips this job before `find_tests.py`
+            # ever reads `_STATELESS_HARNESS_PATHS`, so an entry there only
+            # takes effect when the digest keeps the job alive.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/praktika/result.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
