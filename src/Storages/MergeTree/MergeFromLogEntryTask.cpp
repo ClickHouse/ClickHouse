@@ -353,9 +353,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Account TTL merge
+    /// Account TTL merge. The slot belongs to this task, so it is given back when the task dies,
+    /// whether or not the merge it was taken for ever ran.
     if (isTTLMergeType(future_merged_part->merge_type))
-        storage.getContext()->getMergeList().bookMergeWithTTL();
+        ttl_merge_slot = MergeList::TTLMergeSlot(storage.getContext()->getMergeList());
 
     auto table_id = storage.getStorageID();
 
