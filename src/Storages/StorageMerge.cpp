@@ -1,6 +1,7 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <span>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
@@ -21,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -57,6 +59,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -65,6 +68,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -838,6 +842,44 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
+static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
+{
+    if (pipelines.size() < 2)
+        return;
+
+    /// Children are converted to the common Merge header before being optimized, and are optimized
+    /// independently afterwards, so constant folding can leave a column Const in one sibling and not
+    /// in another. This is the only point at which every sibling's final header is known.
+    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
+    ColumnsWithTypeAndName common = reconcileConstness(
+        pipelines.front()->getHeader().getColumnsWithTypeAndName(),
+        pipelines.size(),
+        [&](size_t sibling, size_t, const String & name) { return pipelines[sibling]->getHeader().findByName(name); });
+
+    /// Every sibling needs comparing even when nothing was materialized above: the target is the
+    /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
+    /// full column.
+    auto target = std::make_shared<const Block>(std::move(common));
+    for (const auto & cur_pipeline : pipelines)
+    {
+        if (blocksHaveEqualStructure(cur_pipeline->getHeader(), *target))
+            continue;
+
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            cur_pipeline->getHeader().getColumnsWithTypeAndName(),
+            target->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
+
+        auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+        cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
+        {
+            return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
+        });
+    }
+}
+
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
@@ -873,6 +915,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    reconcileSiblingPipelineHeaders(pipelines);
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
@@ -1744,8 +1788,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
-    for (auto * child : node->children)
-        ok &= recursivelyApplyToReadingSteps(child, func);
+    /// Only the first child of a set-creating step is the main pipeline; the rest read unrelated
+    /// tables to build the sets, and their sorting keys need not match this read's order prefix.
+    if (typeid_cast<CreatingSetsStep *>(node->step.get()) || typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        if (!node->children.empty())
+            ok &= recursivelyApplyToReadingSteps(node->children.front(), func);
+    }
+    else
+    {
+        for (auto * child : node->children)
+            ok &= recursivelyApplyToReadingSteps(child, func);
+    }
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
     // In this case it is ok if one child will read in order and other will not (though I don't know when it is possible),
@@ -1923,6 +1977,10 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
 
+    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
+    /// and addFilterTransform needs it to plant the step that builds them.
+    prepared_sets = expression_analyzer.getPreparedSets();
+
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
     /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
@@ -1980,10 +2038,14 @@ void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
     step->addFilter(actions_dag.clone(), filter_column_name);
 }
 
-void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
+void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextPtr local_context) const
 {
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
+
+    /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
+    /// additional pushdown. No subquery adds no step.
+    addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2155,7 +2217,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 
@@ -2227,7 +2289,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
-        row_policy_data_opt->addFilterTransform(child.plan);
+        row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,
@@ -2450,10 +2512,20 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
         if (!storage->isMergeTree() || !child.plan.isInitialized())
             return expandable_reads.emplace();
 
+        const auto * node = child.plan.getRootNode();
+
+        /// A row policy with an `IN (subquery)` predicate roots the child plan at a set-creating step
+        /// (`RowPolicyData::addFilterTransform`). Its sets are built by the initiator and a fragment
+        /// referencing them cannot be shipped to the replicas yet - `planHasSubquerySet` in
+        /// `applyParallelReplicas.cpp` keeps such plans local for the same reason - so this child keeps the
+        /// whole `Merge` on a single replica, deliberately and not through the shape check below.
+        if (node
+            && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
+            return expandable_reads.emplace();
+
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
         /// by a plain read, whatever its leaf turns out to be.
-        const auto * node = child.plan.getRootNode();
         while (node && node->children.size() == 1
                && (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get())))
             node = node->children.front();
