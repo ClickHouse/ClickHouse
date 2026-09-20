@@ -25,7 +25,7 @@ undrop_query_id="undrop-query-${CLICKHOUSE_DATABASE}-$RANDOM"
 # unrelated tests.
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id IN ('$select_query_id', '$undrop_query_id') SYNC FORMAT Null"
+    ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id IN ('$select_query_id', '$undrop_query_id') SYNC FORMAT Null SETTINGS kill_throw_if_noop = false"
     wait
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_undrop_kill SYNC"
 }
