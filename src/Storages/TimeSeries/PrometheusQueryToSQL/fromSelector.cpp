@@ -7,6 +7,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -26,13 +27,22 @@ namespace
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
 
         /// SELECT timeSeriesIdToGroup(id) AS group, time_series
+        /// for bucketed tables, or `timestamp, value` for older row-layout tables.
         /// FROM timeSeriesSelector(<selector>, <min_time>, <max_time>)
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
         builder.select_list.back()->setAlias(ColumnNames::Group);
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+        if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        }
 
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;

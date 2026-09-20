@@ -84,6 +84,7 @@ StorageTimeSeriesSelector::Configuration makeRangeSelectorConfiguration(
 
     StorageTimeSeriesSelector::Configuration selector_config;
     selector_config.time_series_storage_id = evaluation_settings.time_series_storage_id;
+    selector_config.time_series_version = time_series_storage->getVersion();
     selector_config.id_data_type = tags_metadata->columns.get(TimeSeriesColumnNames::ID).type;
     selector_config.timestamp_data_type = evaluation_settings.timestamp_data_type;
     selector_config.scalar_data_type = evaluation_settings.scalar_data_type;
@@ -635,15 +636,16 @@ bool tryBuildPromQLNativePlan(
         duration_type->createColumnConst(0, DecimalField<Decimal64>(*evaluation_settings.step, timestamp_scale)),
         duration_type,
         "__promql_native_step");
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
     const auto & time_series = finalize_dag.addFunction(
         FunctionFactory::instance().get("timeSeriesFromGrid", context),
         {&start, &end, &step, &nullable_values},
-        TimeSeriesColumnNames::TimeSeries);
+        samples_column_name);
     finalize_dag.getOutputs() = {&tags, &time_series};
     native_plan.addStep(std::make_unique<ExpressionStep>(native_plan.getCurrentHeader(), std::move(finalize_dag)));
 
     ActionsDAG filter_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    const auto & filter_time_series = filter_dag.findInOutputs(TimeSeriesColumnNames::TimeSeries);
+    const auto & filter_time_series = filter_dag.findInOutputs(samples_column_name);
     const auto & nonempty
         = filter_dag.addFunction(FunctionFactory::instance().get("notEmpty", context), {&filter_time_series}, nonempty_filter_column);
     filter_dag.getOutputs().push_back(&nonempty);

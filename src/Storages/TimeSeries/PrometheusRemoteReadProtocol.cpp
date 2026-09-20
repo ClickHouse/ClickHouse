@@ -24,6 +24,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <optional>
 
 
@@ -77,19 +78,21 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(time_series) AS time_series
+    /// SELECT timeSeriesGroupToTags(group) AS tags,
+    ///        timeSeriesGroupArray(<selector sample columns>) AS samples
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
-        Int64 max_time_ms)
+        Int64 max_time_ms,
+        bool has_bucketed_samples)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(time_series) AS time_series
+            /// Bucketed tables make the selector return `time_series`; older tables return `timestamp` and `value`.
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -97,11 +100,21 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            select_list_exp->children.push_back(makeASTFunction(
-                "timeSeriesGroupArray",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)));
+            if (has_bucketed_samples)
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)));
+            }
+            else
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            }
 
-            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
@@ -165,7 +178,7 @@ namespace
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
         /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
-        const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::TimeSeries).column);
+        const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
         const auto & timestamps = timestamp_value_tuples.getColumn(0);
@@ -173,7 +186,7 @@ namespace
 
         auto timestamp_data_type
             = typeid_cast<const DataTypeTuple &>(
-                  *typeid_cast<const DataTypeArray &>(*block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+                  *typeid_cast<const DataTypeArray &>(*block.getByName(TimeSeriesColumnNames::Samples).type).getNestedType())
                   .getElement(0);
 
         UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -229,7 +242,11 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id,
+        label_matcher,
+        start_timestamp_ms,
+        end_timestamp_ms,
+        time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());

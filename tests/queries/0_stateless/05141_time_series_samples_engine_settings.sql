@@ -15,7 +15,7 @@ CREATE TABLE ts ENGINE = TimeSeries;
 SELECT extract(name, '^\.inner_id\.(\w+)\.') AS inner_table, engine_full
 FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.%samples.%' ORDER BY inner_table;
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES
+INSERT INTO ts (metric_name, tags, samples) VALUES
     ('m', map(), [(toDateTime64('2026-01-15 10:00:00', 3), 1.), (toDateTime64('2026-02-15 10:00:00', 3), 2.), (toDateTime64('2026-02-20 10:00:00', 3), 3.)]);
 SELECT partition, sum(rows) AS rows
 FROM system.parts WHERE database = currentDatabase() AND table LIKE '.inner\_id.samples.%' AND active

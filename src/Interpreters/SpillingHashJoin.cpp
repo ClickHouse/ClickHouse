@@ -334,7 +334,7 @@ void SpillingHashJoin::requestSpill()
     }
 }
 
-void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
+void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
 {
     chosen_join->onProbePhaseFinish(matched_right_rows);
 }

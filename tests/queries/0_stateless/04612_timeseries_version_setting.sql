@@ -2,22 +2,19 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-replicated-database: plain `DETACH TABLE` is not allowed there, only `DETACH TABLE PERMANENTLY`.
 --
--- Coverage for the `version` setting of the TimeSeries table engine (see TimeSeriesVersion.h):
--- it is pinned automatically at CREATE time, persists in the table metadata, and cannot be changed.
+-- Coverage for the `version` setting of the TimeSeries table engine (see TimeSeriesVersion.h): it persists
+-- in the table metadata, cannot be changed, and every supported version works. The pinning of the version
+-- at CREATE time is covered by the unit test gtest_normalize_time_series_definition.cpp.
 
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_version;
+DROP TABLE IF EXISTS ts_version_3;
+DROP TABLE IF EXISTS ts_version_2;
 DROP TABLE IF EXISTS ts_version_1;
 DROP TABLE IF EXISTS ts_version_0;
-DROP TABLE IF EXISTS ts_version_1_copy;
-DROP TABLE IF EXISTS ts_version_0_copy;
-DROP TABLE IF EXISTS ts_version_bad;
 
-SELECT '--- the version is pinned into a new table ---';
 CREATE TABLE ts_version ENGINE = TimeSeries SETTINGS tags_to_columns = {'job':'job'};
-SELECT extract(create_table_query, 'version = (\d+)'), extract(engine_full, 'version = (\d+)')
-    FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
 SELECT '--- the version survives DETACH/ATTACH ---';
 DETACH TABLE ts_version;
@@ -26,7 +23,7 @@ SELECT extract(create_table_query, 'version = (\d+)')
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
 SELECT '--- the version cannot be altered ---';
-ALTER TABLE ts_version MODIFY SETTING version = 1; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE ts_version MODIFY SETTING version = 2; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE ts_version RESET SETTING version; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- altering another setting does not drop the version or other settings from the metadata ---';
@@ -37,37 +34,18 @@ SELECT extract(create_table_query, 'version = (\d+)'),
        position(create_table_query, 'recent_samples_ttl_seconds') > 0
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
-SELECT '--- an explicit version in CREATE: supported versions are allowed, unknown ones are rejected ---';
+SELECT '--- PromQL works on tables of every supported version ---';
+CREATE TABLE ts_version_3 ENGINE = TimeSeries SETTINGS version = 3;
+CREATE TABLE ts_version_2 ENGINE = TimeSeries SETTINGS version = 2;
 CREATE TABLE ts_version_1 ENGINE = TimeSeries SETTINGS version = 1;
-SELECT extract(create_table_query, 'version = (\d+)')
-    FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version_1';
 CREATE TABLE ts_version_0 ENGINE = TimeSeries SETTINGS version = 0;
-SELECT extract(create_table_query, 'version = (\d+)')
-    FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version_0';
-CREATE TABLE ts_version_bad ENGINE = TimeSeries SETTINGS version = 999; -- { serverError INVALID_SETTING_VALUE }
+SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000);
+SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000);
+SELECT count() FROM prometheusQuery(ts_version_2, 'up', 1000);
+SELECT count() FROM prometheusQuery(ts_version_3, 'up', 1000);
 
-SELECT '--- the tables of the older versions can be read but not written into, and PromQL rejects them ---';
-SELECT count() FROM ts_version_0;
-SELECT count() FROM ts_version_1;
-INSERT INTO ts_version_0 (metric_name, tags, time_series) VALUES ('up', map(), [(toDateTime64(1000, 3), 1.)]); -- { serverError INCOMPATIBLE_SCHEMA }
-INSERT INTO ts_version_1 (metric_name, tags, time_series) VALUES ('up', map(), [(toDateTime64(1000, 3), 1.)]); -- { serverError INCOMPATIBLE_SCHEMA }
-SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000); -- { serverError INCOMPATIBLE_SCHEMA }
-SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000); -- { serverError INCOMPATIBLE_SCHEMA }
-SELECT count() FROM timeSeriesSelector(ts_version_1, 'up', 0, 1000); -- { serverError INCOMPATIBLE_SCHEMA }
-
-SELECT '--- the latest version supports everything ---';
-INSERT INTO ts_version (metric_name, tags, time_series) VALUES ('up', map('job', 'j'), [(toDateTime64(1000, 3), 1.)]);
-SELECT count() FROM ts_version;
-SELECT count() FROM prometheusQuery(ts_version, 'up', 1000);
-
-SELECT '--- CREATE AS does not copy the version: a new table gets the latest one ---';
-CREATE TABLE ts_version_0_copy AS ts_version_0;
-CREATE TABLE ts_version_1_copy AS ts_version_1;
-SELECT name, extract(create_table_query, 'version = (\d+)')
-    FROM system.tables WHERE database = currentDatabase() AND name IN ('ts_version_0_copy', 'ts_version_1_copy') ORDER BY name;
-
-DROP TABLE ts_version_0_copy;
-DROP TABLE ts_version_1_copy;
 DROP TABLE ts_version_0;
 DROP TABLE ts_version_1;
+DROP TABLE ts_version_2;
+DROP TABLE ts_version_3;
 DROP TABLE ts_version;

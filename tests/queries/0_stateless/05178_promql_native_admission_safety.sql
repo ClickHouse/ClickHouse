@@ -23,19 +23,19 @@ TAGS INNER COLUMNS
         DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags)))
 );
 
-INSERT INTO promql_native_duplicate_tags (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_duplicate_tags (metric_name, tags, samples) VALUES
     ('m', map('dc', 'a', 'job', 'api'),
         [(toDateTime64(90, 3), 0.), (toDateTime64(100, 3), 10.)]);
 
 ALTER TABLE promql_native_duplicate_tags MODIFY SETTING
     id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))';
 
-INSERT INTO promql_native_duplicate_tags (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_duplicate_tags (metric_name, tags, samples) VALUES
     ('m', map('dc', 'a', 'job', 'api'),
         [(toDateTime64(110, 3), 30.), (toDateTime64(120, 3), 60.)]);
 
 CREATE TEMPORARY TABLE duplicate_tags_sql AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_duplicate_tags,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -43,7 +43,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE duplicate_tags_fallback AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_duplicate_tags,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -52,16 +52,16 @@ SETTINGS enable_promql_native_plan = 1;
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM duplicate_tags_fallback
+    SELECT tags, samples FROM duplicate_tags_fallback
     EXCEPT ALL
-    SELECT tags, time_series FROM duplicate_tags_sql
+    SELECT tags, samples FROM duplicate_tags_sql
 );
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM duplicate_tags_sql
+    SELECT tags, samples FROM duplicate_tags_sql
     EXCEPT ALL
-    SELECT tags, time_series FROM duplicate_tags_fallback
+    SELECT tags, samples FROM duplicate_tags_fallback
 );
 
 SELECT countIf(explain LIKE '%PromQLRangeSumBy%')
@@ -95,7 +95,7 @@ CREATE TABLE promql_native_serialization
 ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0;
 
-INSERT INTO promql_native_serialization (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_serialization (metric_name, tags, samples) VALUES
     ('m', map('dc', 'a', 'job', 'api'),
         [(toDateTime64(90, 3), 0.), (toDateTime64(100, 3), 10.),
          (toDateTime64(110, 3), 30.), (toDateTime64(120, 3), 60.)]);

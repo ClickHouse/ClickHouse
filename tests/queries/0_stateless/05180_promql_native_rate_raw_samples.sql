@@ -16,7 +16,7 @@ SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_s
 -- Timestamps 0.001 and 40 are the inclusive selector boundaries for the query
 -- below. Duplicate lower-bound timestamps and samples immediately outside the
 -- boundaries exercise the nested lower/upper-bound search.
-INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_rate_raw_samples (metric_name, tags, samples) VALUES
     ('reads', map('instance', 'one'),
         [(toDateTime64(0, 3), 0.),
          (toDateTime64('1970-01-01 00:00:00.001', 3), 1.),
@@ -28,7 +28,7 @@ INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALU
 -- Three still-unmerged physical rows for the same ID and bucket. Their ranges
 -- overlap, and timestamps 10, 20, and 40 occur in multiple rows. The samples
 -- aggregate keeps the greatest value for each duplicate timestamp.
-INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_rate_raw_samples (metric_name, tags, samples) VALUES
     ('reads', map('instance', 'overlap'),
         [(toDateTime64(0, 3), 0.),
          (toDateTime64(10, 3), 10.),
@@ -36,14 +36,14 @@ INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALU
          (toDateTime64(30, 3), 30.),
          (toDateTime64(40, 3), 40.)]);
 
-INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_rate_raw_samples (metric_name, tags, samples) VALUES
     ('reads', map('instance', 'overlap'),
         [(toDateTime64(10, 3), 12.),
          (toDateTime64(20, 3), 18.),
          (toDateTime64(25, 3), 25.),
          (toDateTime64(40, 3), 39.)]);
 
-INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_rate_raw_samples (metric_name, tags, samples) VALUES
     ('reads', map('instance', 'overlap'),
         [(toDateTime64(10, 3), 11.),
          (toDateTime64(20, 3), 22.),
@@ -53,7 +53,7 @@ INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALU
 -- A second metric with the same non-name labels makes this the supported
 -- two-rate hybrid shape. The adversarial reads side still arrives as three
 -- separate physical rows before the native fragments are installed.
-INSERT INTO promql_native_rate_raw_samples (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_rate_raw_samples (metric_name, tags, samples) VALUES
     ('writes', map('instance', 'one'),
         [(toDateTime64(0, 3), 0.),
          (toDateTime64(10, 3), 5.),
@@ -81,7 +81,7 @@ WHERE id IN
 );
 
 CREATE TEMPORARY TABLE raw_rate_sql_oracle AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'ceil(sum by(instance)(rate(reads[20s])+rate(writes[20s])))',
@@ -89,7 +89,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE raw_rate_sliced_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'ceil(sum by(instance)(rate(reads[20s])+rate(writes[20s])))',
@@ -99,7 +99,7 @@ SETTINGS
     enable_promql_native_raw_samples = 0;
 
 CREATE TEMPORARY TABLE raw_rate_raw_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'ceil(sum by(instance)(rate(reads[20s])+rate(writes[20s])))',
@@ -153,45 +153,45 @@ FROM
 
 -- Equality checks below cannot pass vacuously: two series, each with two
 -- evaluation points, must be present in the SQL oracle.
-SELECT count(), sum(length(time_series))
+SELECT count(), sum(length(samples))
 FROM raw_rate_sql_oracle;
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM raw_rate_sliced_native
+    SELECT tags, samples FROM raw_rate_sliced_native
     EXCEPT ALL
-    SELECT tags, time_series FROM raw_rate_sql_oracle
+    SELECT tags, samples FROM raw_rate_sql_oracle
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM raw_rate_sql_oracle
+    SELECT tags, samples FROM raw_rate_sql_oracle
     EXCEPT ALL
-    SELECT tags, time_series FROM raw_rate_sliced_native
+    SELECT tags, samples FROM raw_rate_sliced_native
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM raw_rate_raw_native
+    SELECT tags, samples FROM raw_rate_raw_native
     EXCEPT ALL
-    SELECT tags, time_series FROM raw_rate_sql_oracle
+    SELECT tags, samples FROM raw_rate_sql_oracle
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM raw_rate_sql_oracle
+    SELECT tags, samples FROM raw_rate_sql_oracle
     EXCEPT ALL
-    SELECT tags, time_series FROM raw_rate_raw_native
+    SELECT tags, samples FROM raw_rate_raw_native
 );
 
 -- A standalone `rate` must be admitted as a complete native root, not only as
 -- an implementation detail of the fused two-rate fragment.
 CREATE TEMPORARY TABLE root_rate_sql_oracle AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'rate(reads[20s])',
@@ -199,7 +199,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE root_rate_sliced_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'rate(reads[20s])',
@@ -209,7 +209,7 @@ SETTINGS
     enable_promql_native_raw_samples = 0;
 
 CREATE TEMPORARY TABLE root_rate_raw_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_rate_raw_samples,
     'rate(reads[20s])',
@@ -258,39 +258,39 @@ FROM
         enable_promql_native_raw_samples = 1
 );
 
-SELECT count(), sum(length(time_series))
+SELECT count(), sum(length(samples))
 FROM root_rate_sql_oracle;
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM root_rate_sliced_native
+    SELECT tags, samples FROM root_rate_sliced_native
     EXCEPT ALL
-    SELECT tags, time_series FROM root_rate_sql_oracle
+    SELECT tags, samples FROM root_rate_sql_oracle
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM root_rate_sql_oracle
+    SELECT tags, samples FROM root_rate_sql_oracle
     EXCEPT ALL
-    SELECT tags, time_series FROM root_rate_sliced_native
+    SELECT tags, samples FROM root_rate_sliced_native
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM root_rate_raw_native
+    SELECT tags, samples FROM root_rate_raw_native
     EXCEPT ALL
-    SELECT tags, time_series FROM root_rate_sql_oracle
+    SELECT tags, samples FROM root_rate_sql_oracle
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM root_rate_sql_oracle
+    SELECT tags, samples FROM root_rate_sql_oracle
     EXCEPT ALL
-    SELECT tags, time_series FROM root_rate_raw_native
+    SELECT tags, samples FROM root_rate_raw_native
 );
 
 -- The raw reader must reject an oversized physical row from `samples.size0`

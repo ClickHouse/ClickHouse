@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS ts_selector_late_samples_read;
 
 CREATE TABLE ts_selector_late_samples_read ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 
-INSERT INTO ts_selector_late_samples_read (metric_name, tags, time_series) VALUES
+INSERT INTO ts_selector_late_samples_read (metric_name, tags, samples) VALUES
     ('m', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(300, 3), 3.)]),
     ('m', map('env', 'dev'), [(toDateTime64(200, 3), 2.)]);
 
@@ -50,7 +50,7 @@ CREATE TABLE ts_selector_late_samples_memory ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES ts_selector_late_samples_memory_data;
 
-INSERT INTO ts_selector_late_samples_memory (metric_name, tags, time_series) VALUES
+INSERT INTO ts_selector_late_samples_memory (metric_name, tags, samples) VALUES
     ('m', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]);
 
 SELECT arrayJoin(time_series) AS sample
@@ -82,7 +82,7 @@ CREATE TABLE ts_selector_late_samples_distributed ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES ts_selector_late_samples_distributed_data;
 
-INSERT INTO ts_selector_late_samples_distributed (metric_name, tags, time_series)
+INSERT INTO ts_selector_late_samples_distributed (metric_name, tags, samples)
 SETTINGS insert_distributed_sync = 1
 VALUES ('m', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]);
 

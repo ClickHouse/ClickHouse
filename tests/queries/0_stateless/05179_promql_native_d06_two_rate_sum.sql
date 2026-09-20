@@ -17,7 +17,7 @@ SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)
 -- counter reset in `reads`; the second pair uses a distinct `instance` label but
 -- contributes to the same outer (namespace, pod) group. Read-only and write-only
 -- instances have no match and must be dropped before `sum by`.
-INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, samples) VALUES
     ('reads', map('instance', 'i1', 'namespace', 'prod', 'pod', 'api-1'),
         [(toDateTime64(0, 3), 100.), (toDateTime64(60, 3), 200.), (toDateTime64(120, 3), 300.),
          (toDateTime64(180, 3), 10.), (toDateTime64(240, 3), 110.), (toDateTime64(300, 3), 210.),
@@ -53,12 +53,12 @@ INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, time_series) VALU
 
 -- Keep an unrelated metric in a separate samples part. The exact two-metric range union must
 -- prune this part while the `id IN <set>` remains the exact row-level filter.
-INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, samples) VALUES
     ('unrelated', map('instance', 'noise', 'namespace', 'prod', 'pod', 'noise'),
         [(toDateTime64(300, 3), 1.), (toDateTime64(360, 3), 2.), (toDateTime64(420, 3), 3.)]);
 
 CREATE TEMPORARY TABLE d06_sql AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_d06_two_rate_sum,
     'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
@@ -66,7 +66,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE d06_hybrid AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_d06_two_rate_sum,
     'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
@@ -122,32 +122,32 @@ SETTINGS max_promql_query_block_size = 16384;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM d06_hybrid
+    SELECT tags, samples FROM d06_hybrid
     EXCEPT ALL
-    SELECT tags, time_series FROM d06_sql
+    SELECT tags, samples FROM d06_sql
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM d06_sql
+    SELECT tags, samples FROM d06_sql
     EXCEPT ALL
-    SELECT tags, time_series FROM d06_hybrid
+    SELECT tags, samples FROM d06_hybrid
 );
 
 -- Keep the SQL oracle's exact values visible in the reference output.
-SELECT tags, arrayMap(sample -> sample.2, time_series)
+SELECT tags, arrayMap(sample -> sample.2, samples)
 FROM d06_sql
 ORDER BY tags;
 
-SELECT tags, arrayMap(sample -> sample.2, time_series)
+SELECT tags, arrayMap(sample -> sample.2, samples)
 FROM d06_hybrid
 ORDER BY tags;
 
 -- A combined vector-grid budget below the two-branch admission need must fail
 -- closed to the SQL plan, while preserving the same exact rows.
 CREATE TEMPORARY TABLE d06_fallback AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_d06_two_rate_sum,
     'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
@@ -175,20 +175,20 @@ FROM
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM d06_fallback
+    SELECT tags, samples FROM d06_fallback
     EXCEPT ALL
-    SELECT tags, time_series FROM d06_sql
+    SELECT tags, samples FROM d06_sql
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM d06_sql
+    SELECT tags, samples FROM d06_sql
     EXCEPT ALL
-    SELECT tags, time_series FROM d06_fallback
+    SELECT tags, samples FROM d06_fallback
 );
 
-SELECT tags, arrayMap(sample -> sample.2, time_series)
+SELECT tags, arrayMap(sample -> sample.2, samples)
 FROM d06_fallback
 ORDER BY tags;
 

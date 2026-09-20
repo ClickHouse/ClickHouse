@@ -26,7 +26,7 @@ SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES promql_native_fallback_unordered_samples
 TAGS INNER COLUMNS (id UUID);
 
-INSERT INTO promql_native_fallback_unordered (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_fallback_unordered (metric_name, tags, samples) VALUES
     ('m', map('dc', 'a', 'job', 'api'),
         [(toDateTime64(90, 3), 0.), (toDateTime64(100, 3), 10.), (toDateTime64(110, 3), 30.),
          (toDateTime64(120, 3), 55.), (toDateTime64(130, 3), 85.)]),
@@ -35,7 +35,7 @@ INSERT INTO promql_native_fallback_unordered (metric_name, tags, time_series) VA
          (toDateTime64(120, 3), 25.), (toDateTime64(130, 3), 50.)]);
 
 CREATE TEMPORARY TABLE unordered_h0_sql AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_fallback_unordered,
     'clamp_max(sum by (dc) (rate(m{job="api"}[20])), 2)',
@@ -43,7 +43,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE unordered_h0_fallback AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_fallback_unordered,
     'clamp_max(sum by (dc) (rate(m{job="api"}[20])), 2)',
@@ -52,16 +52,16 @@ SETTINGS enable_promql_native_plan = 1;
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM unordered_h0_fallback
+    SELECT tags, samples FROM unordered_h0_fallback
     EXCEPT ALL
-    SELECT tags, time_series FROM unordered_h0_sql
+    SELECT tags, samples FROM unordered_h0_sql
 );
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM unordered_h0_sql
+    SELECT tags, samples FROM unordered_h0_sql
     EXCEPT ALL
-    SELECT tags, time_series FROM unordered_h0_fallback
+    SELECT tags, samples FROM unordered_h0_fallback
 );
 
 SELECT countIf(explain LIKE '%PromQLRangeSumBy%')
@@ -77,7 +77,7 @@ FROM
 );
 
 CREATE TEMPORARY TABLE unordered_h1_sql AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_fallback_unordered,
     'topk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -85,7 +85,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE unordered_h1_fallback AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_fallback_unordered,
     'topk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -94,16 +94,16 @@ SETTINGS enable_promql_native_plan = 1;
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM unordered_h1_fallback
+    SELECT tags, samples FROM unordered_h1_fallback
     EXCEPT ALL
-    SELECT tags, time_series FROM unordered_h1_sql
+    SELECT tags, samples FROM unordered_h1_sql
 );
 
 SELECT count() FROM
 (
-    SELECT tags, time_series FROM unordered_h1_sql
+    SELECT tags, samples FROM unordered_h1_sql
     EXCEPT ALL
-    SELECT tags, time_series FROM unordered_h1_fallback
+    SELECT tags, samples FROM unordered_h1_fallback
 );
 
 SELECT countIf(explain LIKE '%PromQLRangeSumBy%')

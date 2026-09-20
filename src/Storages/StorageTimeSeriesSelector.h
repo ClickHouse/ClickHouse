@@ -29,6 +29,7 @@ public:
     struct Configuration
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
+        UInt64 time_series_version = 0;
 
         /// Data types of the corresponding columns in the TimeSeries table.
         /// We use these data types for the columns we read from table function timeSeriesSelector().

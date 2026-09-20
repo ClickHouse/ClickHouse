@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS promql_native_range_sum_by;
 CREATE TABLE promql_native_range_sum_by ENGINE = TimeSeries
 SETTINGS samples_index_granularity = 1;
 
-INSERT INTO promql_native_range_sum_by (metric_name, tags, time_series) VALUES
+INSERT INTO promql_native_range_sum_by (metric_name, tags, samples) VALUES
     ('m', map('dc', 'a', 'host', 'h1', 'job', 'api'),
         [(toDateTime64(90, 3), 0.), (toDateTime64(100, 3), 10.), (toDateTime64(110, 3), 30.),
          (toDateTime64(120, 3), 55.), (toDateTime64(130, 3), 85.)]),
@@ -27,7 +27,7 @@ INSERT INTO promql_native_range_sum_by (metric_name, tags, time_series) VALUES
         [(toDateTime64(100, 3), 1000.), (toDateTime64(130, 3), 2000.)]);
 
 CREATE TEMPORARY TABLE promql_transpiled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -35,7 +35,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -43,7 +43,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 1;
 
 CREATE TEMPORARY TABLE promql_native_parallel AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -54,34 +54,34 @@ SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_native
+    SELECT tags, samples FROM promql_native
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_transpiled
+    SELECT tags, samples FROM promql_transpiled
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_transpiled
+    SELECT tags, samples FROM promql_transpiled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_native
+    SELECT tags, samples FROM promql_native
 );
 
 -- Primary-key range sharding is exactly equivalent to the serial native path.
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_native_parallel
+    SELECT tags, samples FROM promql_native_parallel
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_transpiled
+    SELECT tags, samples FROM promql_transpiled
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_transpiled
+    SELECT tags, samples FROM promql_transpiled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_native_parallel
+    SELECT tags, samples FROM promql_native_parallel
 );
 
 -- The parallel setting keeps the query on the native step; exact multi-stream
@@ -111,7 +111,7 @@ FROM
     SETTINGS enable_promql_native_plan = 1
 );
 
-SELECT count(), sum(length(time_series)) > 0
+SELECT count(), sum(length(samples)) > 0
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (rate(m{job="api"}[20]))',
@@ -150,7 +150,7 @@ SETTINGS
 -- A supported subtree can be evaluated natively while the ordinary SQL analyzer
 -- composes the unsupported parent around its `VECTOR_GRID` output.
 CREATE TEMPORARY TABLE promql_clamp_max_transpiled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'clamp_max(sum by (dc) (rate(m{job="api"}[20])), 2)',
@@ -158,7 +158,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_clamp_max_hybrid AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'clamp_max(sum by (dc) (rate(m{job="api"}[20])), 2)',
@@ -168,17 +168,17 @@ SETTINGS enable_promql_native_plan = 1;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_clamp_max_hybrid
+    SELECT tags, samples FROM promql_clamp_max_hybrid
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_clamp_max_transpiled
+    SELECT tags, samples FROM promql_clamp_max_transpiled
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_clamp_max_transpiled
+    SELECT tags, samples FROM promql_clamp_max_transpiled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_clamp_max_hybrid
+    SELECT tags, samples FROM promql_clamp_max_hybrid
 );
 
 -- Exactly one native subtree is embedded when enabled; disabling the setting
@@ -209,7 +209,7 @@ FROM
 
 -- The bounded topk extension is exactly equivalent to the existing SQL-transpiler oracle.
 CREATE TEMPORARY TABLE promql_topk_transpiled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'topk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -217,7 +217,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_topk_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'topk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -227,17 +227,17 @@ SETTINGS enable_promql_native_plan = 1;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_topk_native
+    SELECT tags, samples FROM promql_topk_native
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_topk_transpiled
+    SELECT tags, samples FROM promql_topk_transpiled
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_topk_transpiled
+    SELECT tags, samples FROM promql_topk_transpiled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_topk_native
+    SELECT tags, samples FROM promql_topk_native
 );
 
 SELECT countIf(explain LIKE '%PromQLRangeSumBy%') > 0
@@ -266,7 +266,7 @@ FROM
 
 -- The bottomk extension uses the same exact oracle and plan route.
 CREATE TEMPORARY TABLE promql_bottomk_transpiled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'bottomk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -274,7 +274,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_bottomk_native AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'bottomk(1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -284,17 +284,17 @@ SETTINGS enable_promql_native_plan = 1;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_bottomk_native
+    SELECT tags, samples FROM promql_bottomk_native
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_bottomk_transpiled
+    SELECT tags, samples FROM promql_bottomk_transpiled
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_bottomk_transpiled
+    SELECT tags, samples FROM promql_bottomk_transpiled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_bottomk_native
+    SELECT tags, samples FROM promql_bottomk_native
 );
 
 SELECT countIf(explain LIKE '%PromQLRangeSumBy%') > 0
@@ -343,7 +343,7 @@ FROM
 );
 
 CREATE TEMPORARY TABLE promql_fallback_reference AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (last_over_time(m{job="api"}[20]))',
@@ -351,7 +351,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_fallback_enabled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'sum by (dc) (last_over_time(m{job="api"}[20]))',
@@ -361,17 +361,17 @@ SETTINGS enable_promql_native_plan = 1;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_fallback_enabled
+    SELECT tags, samples FROM promql_fallback_enabled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_fallback_reference
+    SELECT tags, samples FROM promql_fallback_reference
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_fallback_reference
+    SELECT tags, samples FROM promql_fallback_reference
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_fallback_enabled
+    SELECT tags, samples FROM promql_fallback_enabled
 );
 
 -- Unsupported topk shapes remain on the SQL-transpiler path and preserve exact fallback results.
@@ -388,7 +388,7 @@ FROM
 );
 
 CREATE TEMPORARY TABLE promql_grouped_topk_fallback_reference AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'topk by (dc) (1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -396,7 +396,7 @@ FROM prometheusQueryRange(
 SETTINGS enable_promql_native_plan = 0;
 
 CREATE TEMPORARY TABLE promql_grouped_topk_fallback_enabled AS
-SELECT tags, time_series
+SELECT tags, samples
 FROM prometheusQueryRange(
     promql_native_range_sum_by,
     'topk by (dc) (1, sum by (dc) (rate(m{job="api"}[20])))',
@@ -406,17 +406,17 @@ SETTINGS enable_promql_native_plan = 1;
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_grouped_topk_fallback_enabled
+    SELECT tags, samples FROM promql_grouped_topk_fallback_enabled
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_grouped_topk_fallback_reference
+    SELECT tags, samples FROM promql_grouped_topk_fallback_reference
 );
 
 SELECT count()
 FROM
 (
-    SELECT tags, time_series FROM promql_grouped_topk_fallback_reference
+    SELECT tags, samples FROM promql_grouped_topk_fallback_reference
     EXCEPT ALL
-    SELECT tags, time_series FROM promql_grouped_topk_fallback_enabled
+    SELECT tags, samples FROM promql_grouped_topk_fallback_enabled
 );
 
 -- Dynamic bottomk k is also deliberately unsupported by the native classifier and must fall back.

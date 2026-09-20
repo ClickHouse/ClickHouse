@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -297,27 +298,31 @@ namespace
     }
 
 
-    /// Finalizes a SQL query returning a range vector as two columns "tags", "time_series".
+    /// Finalizes a SQL query returning a range vector as two columns "tags", "samples".
     ASTPtr finalizeRangeVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::RANGE_VECTOR);
+
+        const auto * samples_outer_column_name = ColumnNames::getOuterSamples(context.time_series_version);
 
         ASTPtr tags;
         ASTPtr time_series;
         ASTPtr values;
         ASTPtr where;
+        ASTs group_by;
+        ASTPtr having;
 
         switch (result.store_method)
         {
             case StoreMethod::EMPTY:
             {
-                /// SELECT * FROM null('tags Array(Tuple(String, String)), time_series Array(Tuple(timestamp_data_type, scalar_data_type))')
+                /// SELECT * FROM null('tags Array(Tuple(String, String)), samples Array(Tuple(timestamp_data_type, scalar_data_type))')
                 SelectQueryBuilder builder;
                 builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
                 String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                     ColumnNames::Tags,
-                    ColumnNames::TimeSeries, context.timestamp_data_type->getName(), context.scalar_data_type->getName());
+                    samples_outer_column_name, context.timestamp_data_type->getName(), context.scalar_data_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -328,7 +333,7 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayResize([], <count_of_time_steps>, <scalar_value>)) AS time_series
+                ///                           arrayResize([], <count_of_time_steps>, <scalar_value>)) AS samples
 
                 /// arrayResize([], <count_of_time_steps>, <scalar_value>)
                 values = makeASTFunction(
@@ -343,7 +348,7 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayResize([], <count_of_time_steps>, value::scalar_data_type)) AS time_series
+                ///                           arrayResize([], <count_of_time_steps>, value::scalar_data_type)) AS samples
                 /// FROM <subquery>
 
                 /// arrayResize([], <count_of_time_steps>, value)
@@ -359,7 +364,7 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           values::Array(scalar_data_type)) AS time_series
+                ///                           values::Array(scalar_data_type)) AS samples
                 /// FROM <scalar_grid>
 
                 /// values::Array(scalar_data_type)
@@ -373,9 +378,9 @@ namespace
             case StoreMethod::VECTOR_GRID:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(scalar_data_type))) AS time_series
+                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(scalar_data_type))) AS samples
                 /// FROM <vector_grid>
-                /// WHERE notEmpty(time_series)
+                /// WHERE notEmpty(samples)
 
                 /// timeSeriesGroupToTags(group) AS tags
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -387,18 +392,19 @@ namespace
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
                     make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName())));
 
-                where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
                 break;
             }
 
             case StoreMethod::RAW_DATA:
             {
-                /// Step 1: Merge the rows of each series into one array of samples.
-                ///
-                /// SELECT group, timeSeriesGroupArray(time_series) AS time_series
-                /// FROM <raw_data>
-                /// GROUP BY group
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
                 {
+                    /// Step 1: Merge the bucket rows of each series into one array of samples.
+                    ///
+                    /// SELECT group, timeSeriesGroupArray(time_series) AS time_series
+                    /// FROM <raw_data>
+                    /// GROUP BY group
                     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
 
                     SelectQueryBuilder builder;
@@ -412,17 +418,29 @@ namespace
                     result.select_query = builder.getSelectQuery();
                 }
 
-                /// Step 2: Convert the groups to tags and skip the empty series. A separate step because
-                /// the input column and the merged array of step 1 have the same name `time_series`.
-                ///
-                /// SELECT timeSeriesGroupToTags(group) AS tags, time_series
-                /// FROM <step1>
-                /// WHERE notEmpty(time_series)
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                time_series = make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries);
-                where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+                {
+                    /// Step 2: Convert the groups to tags and skip empty series. A separate step is needed because
+                    /// the input column and the merged array of step 1 have the same name `time_series`.
+                    time_series = make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries);
+                    time_series->setAlias(samples_outer_column_name);
+                    where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                }
+                else
+                {
+                    /// Preserve the historical row-layout SQL aggregation for versions 0 through 5.
+                    time_series = makeASTFunction(
+                        "timeSeriesGroupArray",
+                        timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.timestamp_data_type),
+                        timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
+                    time_series->setAlias(samples_outer_column_name);
+
+                    group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
 
                 break;
             }
@@ -447,7 +465,7 @@ namespace
 
         if (!time_series)
         {
-            /// timeSeriesFromGrid(<start_time>, <end_time>, <step>, <values>) AS time_series
+            /// timeSeriesFromGrid(<start_time>, <end_time>, <step>, <values>) AS samples
             chassert(values);
             time_series = makeASTFunction(
                     "timeSeriesFromGrid",
@@ -455,7 +473,7 @@ namespace
                     timeSeriesTimestampToAST(result.end_time, context.timestamp_data_type),
                     timeSeriesDurationToAST(result.step, context.timestamp_data_type),
                     std::move(values));
-            time_series->setAlias(ColumnNames::TimeSeries);
+            time_series->setAlias(samples_outer_column_name);
         }
 
         SelectQueryBuilder builder;
@@ -463,6 +481,8 @@ namespace
         builder.select_list.push_back(std::move(time_series));
 
         builder.where = std::move(where);
+        builder.group_by = std::move(group_by);
+        builder.having = std::move(having);
 
         /// Data from range queries comes sorted alphabetically by tags.
         builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));

@@ -78,13 +78,14 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -172,7 +173,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
-    extern const SettingsBool allow_experimental_trino_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -228,6 +229,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsBool send_profile_events;
+    extern const SettingsUInt64 session_query_ids_history_size;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -370,6 +372,15 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 client_info.client_trace_context.composeTraceparentHeader());
         }
     }
+}
+
+/// Mirrors `LOG_IMPL`'s enablement check: a log file, the console and `system.text_log` all sit behind
+/// the logger's own level, and a client can additionally ask for server logs through `send_logs_level`.
+static bool errorMessageWillBeLogged(const LoggerPtr & logger)
+{
+    /// `currentThreadHasGroup` must stay first: `currentThreadLogsLevel` throws without a thread status.
+    return (currentThreadHasGroup() && currentThreadLogsLevel() >= LogsLevel::error)
+        || logger->is(Poco::Message::PRIO_ERROR);
 }
 
 /// Log exception (with query info) into text log (not into system table).
@@ -945,19 +956,24 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
-    if (settings[Setting::calculate_text_stack_trace] && log_error)
+    /// `elem.stack_trace` has two readers: `logException` below and `system.query_log`'s `stack_trace` column.
+    std::shared_ptr<QueryLog> query_log;
+    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
+        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        query_log = context->getQueryLog();
+
+    if (settings[Setting::calculate_text_stack_trace] && log_error
+        && (query_log || errorMessageWillBeLogged(getLogger("executeQuery"))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
-    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
-        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+    if (query_log)
     {
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
-        if (auto query_log = context->getQueryLog())
-            query_log->add([&](QueryLogElement & e) { e = elem; });
+        query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
     if (query_span)
@@ -1036,12 +1052,20 @@ void logExceptionBeforeStart(
     if (settings[Setting::log_query_settings])
         elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
-    if (settings[Setting::calculate_text_stack_trace])
+    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
+
+    /// A configured `system.query_log` here receives the trace even for a cancelled query.
+    auto query_log = context->getQueryLog();
+    const bool query_log_will_read = query_log && settings[Setting::log_queries]
+        && elem.type >= settings[Setting::log_queries_min_type]
+        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
+
+    if (settings[Setting::calculate_text_stack_trace]
+        && (query_log_will_read || (log_error && errorMessageWillBeLogged(getLogger("executeQuery")))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = log_as_internal;
 
-    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
 
     /// Update performance counters before logging to query_log
@@ -1057,10 +1081,9 @@ void logExceptionBeforeStart(
     }
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
-    if (auto query_log = context->getQueryLog())
+    if (query_log)
     {
-        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        if (query_log_will_read)
         {
             if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
@@ -2273,7 +2296,43 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
+    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9: the
+    /// analyzer is mandatory and the old query analysis is no longer supported. A change that would
+    /// disable it is refused where the settings constraints are consulted, but a settings profile from
+    /// the server configuration is applied without them, and so is a setting given to
+    /// `clickhouse-local` on the command line, so a value from before the deprecation can still reach
+    /// a query. Ignore it here, the way the value of an obsolete setting is ignored, rather than
+    /// quietly analyzing the query the retired way; `system.warnings` reports the changed obsolete
+    /// setting, pointing at the configuration that still carries it.
+    ///
+    /// A query that another server sent to this one keeps the value it was sent with: a few internal
+    /// code paths still turn the analyzer off for a whole query on the initiator (`EXPLAIN AST`, a
+    /// view read by the old interpreter, a materialized view over a `Distributed` table), and the
+    /// servers of a cluster have to agree on how one query is analyzed.
+    ///
+    /// Such a query is identified by the query kind, which the initiator sends, so a client that
+    /// declares its own query to be a secondary one (`clickhouse-client --query_kind secondary_query`)
+    /// keeps the value as well. There is nothing more trustworthy to key this on - a secondary query
+    /// is exactly a query another server says it is sending - and forcing the analyzer on instead
+    /// would make an initiator that turned it off disagree with its own replicas about the result.
+    /// `clickhouse-local` is not a server another one can send a query to, so the declaration carries
+    /// no meaning there and does not keep the old query analysis alive.
+    const bool sent_by_another_server = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && client_info.interface != ClientInfo::Interface::LOCAL;
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && !sent_by_another_server)
+        context->setSetting("allow_experimental_analyzer", true);
+
     const Settings & settings = context->getSettingsRef();
+
+    /// Remember the query id in the session history exposed through `system.session_query_ids`.
+    /// Recorded at query start deliberately, so that queries that later fail are captured too.
+    /// Secondary queries of distributed queries are excluded: they arrive over pooled
+    /// inter-server connections whose sessions are shared between initiators.
+    if (!internal && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->hasSessionContext())
+    {
+        if (UInt64 history_size = settings[Setting::session_query_ids_history_size])
+            context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
+    }
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
@@ -2351,7 +2410,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks],
                 end,
-                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::enable_trino_dialect],
                 settings[Setting::allow_settings_after_format_in_insert],
                 settings[Setting::implicit_select]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -3155,7 +3214,10 @@ static BlockIO executeQueryImpl(
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                        create_interpreter->setInternal(internal);
+                        /// `InterpreterCreateQuery` uses `internal` to mean "initiated by the server itself, so all
+                        /// the restrictions for user queries (access checks among them) can be skipped". A query
+                        /// written by the user is never that, even when it is executed as a nested `internal` query.
+                        create_interpreter->setInternal(internal && !flags.user_initiated);
                     }
 
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -3236,14 +3298,19 @@ static BlockIO executeQueryImpl(
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
             plan.resolveStorages(context);
-            plan.optimize(QueryPlanOptimizationSettings(context));
+
+            /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
+            /// plan to a distributed one.
+            QueryPlanOptimizationSettings optimization_settings(context);
+            plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+            plan.optimize(optimization_settings);
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings(context),
+                    optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
 

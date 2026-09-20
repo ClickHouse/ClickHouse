@@ -24,10 +24,10 @@ RECENT SAMPLES INNER ENGINE = ReplicatedAggregatingMergeTree SETTINGS max_bytes_
 
 SELECT '-- the same block inserted twice is deduplicated in both the samples and the recent samples table';
 
-INSERT INTO ts_dedup (metric_name, tags, time_series) SETTINGS insert_deduplicate = 1 VALUES
+INSERT INTO ts_dedup (metric_name, tags, samples) SETTINGS insert_deduplicate = 1 VALUES
     ('dedup_metric', map('env', 'prod'), [(toDateTime64('2026-01-01 00:00:00', 3), 1.), (toDateTime64('2026-01-01 00:00:15', 3), 2.)]);
 
-INSERT INTO ts_dedup (metric_name, tags, time_series) SETTINGS insert_deduplicate = 1 VALUES
+INSERT INTO ts_dedup (metric_name, tags, samples) SETTINGS insert_deduplicate = 1 VALUES
     ('dedup_metric', map('env', 'prod'), [(toDateTime64('2026-01-01 00:00:00', 3), 1.), (toDateTime64('2026-01-01 00:00:15', 3), 2.)]);
 
 SELECT
@@ -36,7 +36,7 @@ SELECT
 
 SELECT '-- a different block is inserted into both';
 
-INSERT INTO ts_dedup (metric_name, tags, time_series) SETTINGS insert_deduplicate = 1 VALUES
+INSERT INTO ts_dedup (metric_name, tags, samples) SETTINGS insert_deduplicate = 1 VALUES
     ('dedup_metric', map('env', 'prod'), [(toDateTime64('2026-01-01 00:00:30', 3), 3.)]);
 
 SELECT

@@ -27,10 +27,10 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (time_series, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, Metrics).
-/// The samples of a series are sorted, deduplicated and split into time buckets, each bucket makes a row
-/// of the samples tables with the columns `id`, `samples`, `bucket`, `min_time`, `max_time`.
+/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
+/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
+/// Version 6 stores sorted and deduplicated samples in time buckets; versions 0 through 5
+/// keep the historical one-sample-per-row representation.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -76,11 +76,11 @@ private:
     };
 
     void initTagsAndSamplesPipelines();
-    void initMetricsPipeline();
+    void initMetricFamiliesPipeline();
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
 
     void consumeTagsAndSamples(const Block & block);
-    void consumeMetrics(const Block & block);
+    void consumeMetricFamilies(const Block & block);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -90,7 +90,7 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
-    bool insert_metrics = false;
+    bool insert_metric_families = false;
     bool async_insert = false;
 
     /// Types of the `id` column of the tags table, and of the timestamps and the values of the samples.
@@ -117,7 +117,7 @@ private:
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
-    std::unique_ptr<TargetPipeline> metrics_pipeline;
+    std::unique_ptr<TargetPipeline> metric_families_pipeline;
 };
 
 }

@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- Since version 2 of the TimeSeries table engine a row of the samples table contains the samples of one series
+-- Since version 6 of the TimeSeries table engine a row of the samples table contains the samples of one series
 -- within one time bucket: the columns `samples` (a sorted array of tuples (timestamp, value)), `bucket`, `min_time`, `max_time`.
 
 SET allow_experimental_time_series_table = 1;
@@ -17,7 +17,7 @@ SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_s
 
 SELECT '-- the inserted samples are sorted, deduplicated (the greatest value wins, NaN loses) and split into buckets';
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES
+INSERT INTO ts (metric_name, tags, samples) VALUES
     ('m', map('env', 'prod'), [(toDateTime64(1250, 3), 5.), (toDateTime64(100, 3), 1.), (toDateTime64(700, 3), 3.), (toDateTime64(100, 3), 2.), (toDateTime64(1199.999, 3), 4.), (toDateTime64(700, 3), nan)]),
     ('m', map('env', 'dev'), [(toDateTime64(50, 3), 10.)]);
 
@@ -27,16 +27,16 @@ ORDER BY env, s.bucket;
 
 SELECT '-- reading the TimeSeries table returns a row per bucket, the rows of a series can be merged with timeSeriesGroupArray';
 
-SELECT metric_name, tags, time_series FROM ts ORDER BY tags, time_series;
-SELECT metric_name, tags, timeSeriesGroupArray(time_series) FROM ts FINAL GROUP BY metric_name, tags ORDER BY tags;
+SELECT metric_name, tags, samples FROM ts ORDER BY tags, samples;
+SELECT metric_name, tags, timeSeriesGroupArray(samples) FROM ts FINAL GROUP BY metric_name, tags ORDER BY tags;
 
 SELECT '-- the rows of the same bucket are merged by the engine';
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m', map('env', 'prod'), [(toDateTime64(150, 3), 1.5), (toDateTime64(100, 3), 1.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(toDateTime64(150, 3), 1.5), (toDateTime64(100, 3), 1.)]);
 SELECT count() FROM timeSeriesSamples(ts);
 SELECT '-- without FINAL the rows of the unmerged parts are returned as they are, with FINAL the rows of the same bucket are merged';
-SELECT metric_name, tags, time_series FROM ts ORDER BY tags, time_series;
-SELECT metric_name, tags, time_series FROM ts FINAL ORDER BY tags, time_series;
+SELECT metric_name, tags, samples FROM ts ORDER BY tags, samples;
+SELECT metric_name, tags, samples FROM ts FINAL ORDER BY tags, samples;
 SELECT '-- timeSeriesSelector and PromQL merge the rows of the unmerged parts too (the greatest value wins for the duplicate timestamp 100)';
 SELECT timeSeriesGroupArray(time_series) FROM timeSeriesSelector(ts, 'm{env="prod"}', 0, 200) GROUP BY id;
 SELECT * FROM prometheusQuery(ts, 'm{env="prod"}[5m]', 200);
@@ -50,7 +50,7 @@ ORDER BY env;
 
 SELECT '-- timeSeriesSelector returns the buckets cut to the requested interval, the rows of a series can be merged with timeSeriesGroupArray';
 
-DESCRIBE timeSeriesSelector(ts, 'm', 0, 1);
+SELECT toTypeName(id), toTypeName(time_series) FROM timeSeriesSelector(ts, 'm', 0, 200) LIMIT 1;
 SELECT time_series FROM timeSeriesSelector(ts, 'm{env="prod"}', 120, 1200) ORDER BY time_series;
 SELECT timeSeriesGroupArray(time_series) FROM timeSeriesSelector(ts, 'm{env="prod"}', 120, 1200) GROUP BY id;
 SELECT count() FROM timeSeriesSelector(ts, 'm{env="prod"}', 200, 600);
@@ -72,7 +72,7 @@ DROP TABLE IF EXISTS ts_recent;
 CREATE TABLE ts_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000, recent_samples_bucket_step_seconds = 300;
 
 -- 12 samples in the last 20 minutes.
-INSERT INTO ts_recent (metric_name, tags, time_series) SELECT 'm', map(), arrayMap(i -> (toDateTime64(now(), 3) - toIntervalSecond(60 + i * 100), toFloat64(i)), range(12));
+INSERT INTO ts_recent (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(now(), 3) - toIntervalSecond(60 + i * 100), toFloat64(i)), range(12));
 
 -- Every sample of a row belongs to its bucket, and `min_time` and `max_time` are the bounds of the row.
 SELECT sum(length(samples)), count() BETWEEN 1 AND 2, countIf(toUInt32(bucket) % 3600 != 0),
@@ -103,20 +103,20 @@ CREATE TABLE ts_bad ENGINE = TimeSeries SAMPLES INNER COLUMNS (value Float32); -
 SELECT '-- the types of timestamps and values can be adjusted via the outer column or via the samples column';
 
 DROP TABLE IF EXISTS ts_types;
-CREATE TABLE ts_types (time_series Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
+CREATE TABLE ts_types (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \((.*?)\) SAMPLES INNER ENGINE') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_types';
-INSERT INTO ts_types (metric_name, tags, time_series) VALUES ('m', map(), [(100, 1.5), (50, 2.5)]);
-SELECT time_series FROM ts_types;
+INSERT INTO ts_types (metric_name, tags, samples) VALUES ('m', map(), [(100, 1.5), (50, 2.5)]);
+SELECT samples FROM ts_types;
 SELECT bucket, samples, min_time, max_time FROM timeSeriesSamples(ts_types);
 SELECT * FROM timeSeriesSelector(ts_types, 'm', 60, 100) FORMAT TSVWithNamesAndTypes;
 DROP TABLE ts_types;
 
 CREATE TABLE ts_types ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(1)));
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'ts_types' AND name = 'time_series';
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'ts_types' AND name = 'samples';
 SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \((.*?)\) SAMPLES INNER ENGINE') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_types';
-INSERT INTO ts_types (metric_name, tags, time_series) VALUES ('m', map(), [(toDateTime64(100.000001, 6), 1.5)]);
-SELECT time_series FROM ts_types;
+INSERT INTO ts_types (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100.000001, 6), 1.5)]);
+SELECT samples FROM ts_types;
 DROP TABLE ts_types;
 
 SELECT '-- an external samples table can use plain types';
@@ -126,7 +126,7 @@ DROP TABLE IF EXISTS ext_samples;
 CREATE TABLE ext_samples (id UUID, samples Array(Tuple(DateTime64(3), Float64)), bucket DateTime64(3), min_time DateTime64(3), max_time DateTime64(3))
 ENGINE = MergeTree ORDER BY (id, bucket);
 CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES ext_samples TAGS INNER COLUMNS (id UUID);
-INSERT INTO ts_ext (metric_name, tags, time_series) VALUES ('m', map(), [(toDateTime64(4000, 3), 1.), (toDateTime64(100, 3), 2.)]);
+INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(4000, 3), 1.), (toDateTime64(100, 3), 2.)]);
 SELECT bucket, samples, min_time, max_time FROM ext_samples ORDER BY bucket;
 SELECT * FROM prometheusQuery(ts_ext, 'm', 4100) ORDER BY ALL;
 DROP TABLE ts_ext;
@@ -145,7 +145,7 @@ CREATE TABLE ext_bad (id UUID, samples Array(Tuple(DateTime64(3), Float64)), buc
 CREATE TABLE ts_bad ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
 DROP TABLE ext_bad;
 CREATE TABLE ext_bad (id UUID, samples Array(Tuple(DateTime64(3), Float32)), bucket DateTime64(3), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_bad (time_series Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ts_bad (samples Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SAMPLES ext_bad TAGS INNER COLUMNS (id UUID); -- { serverError BAD_TYPE_OF_FIELD }
 DROP TABLE ext_bad;
 
 SELECT '-- a table created AS a table of an older version gets the new layout with the same types';

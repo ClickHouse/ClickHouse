@@ -173,8 +173,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type]
-        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())).type);
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
@@ -193,6 +193,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     Configuration config;
     config.time_series_storage_id = std::move(time_series_storage_id);
+    config.time_series_version = time_series_storage->getVersion();
     config.id_data_type = std::move(id_data_type);
     config.timestamp_data_type = std::move(timestamp_data_type);
     config.scalar_data_type = std::move(scalar_data_type);
@@ -383,6 +384,120 @@ ASTPtr makeSelectQueryFromTagsTable(
         select_with_union_query->list_of_selects = select_with_union_query->children.back();
     }
 
+    return select_with_union_query;
+}
+
+ASTPtr makeWhereFilterForRowSamplesTable(
+    ASTPtr select_query_from_tags_table,
+    DateTime64 min_time,
+    DateTime64 max_time,
+    const DataTypePtr & timestamp_data_type,
+    ASTs whole_metric_id_range_conditions)
+{
+    ASTs conditions;
+
+    /// Keep the timestamp range before `id IN <set>`: for the default row schema
+    /// (ORDER BY (id, timestamp)) the timestamp predicate is typically more selective.
+    conditions.push_back(makeASTFunction(
+        "greaterOrEquals",
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+        timeSeriesTimestampToAST(min_time, timestamp_data_type)));
+    conditions.push_back(makeASTFunction(
+        "lessOrEquals",
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+        timeSeriesTimestampToAST(max_time, timestamp_data_type)));
+
+    auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+    conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+
+    for (auto & condition : whole_metric_id_range_conditions)
+        conditions.push_back(std::move(condition));
+
+    return makeASTForLogicalAnd(std::move(conditions));
+}
+
+ASTPtr makeSelectQueryFromRowSamplesTable(
+    const StorageID & samples_table_id,
+    ASTPtr select_query_from_tags_table,
+    DateTime64 min_time,
+    DateTime64 max_time,
+    const DataTypePtr & timestamp_data_type,
+    ASTs whole_metric_id_range_conditions)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    auto & select_list = select_list_exp->children;
+    select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+    select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+    select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_exp = make_intrusive<ASTTableExpression>();
+    table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(samples_table_id);
+    table_exp->children.emplace_back(table_exp->database_and_table_name);
+    table->table_expression = table_exp;
+    tables->children.push_back(table);
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+
+    auto where_filter = makeWhereFilterForRowSamplesTable(
+        std::move(select_query_from_tags_table),
+        min_time,
+        max_time,
+        timestamp_data_type,
+        std::move(whole_metric_id_range_conditions));
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(std::move(list_of_selects));
+    select_with_union_query->list_of_selects = select_with_union_query->children.back();
+    return select_with_union_query;
+}
+
+ASTPtr makeSelectQueryForRowSamples(
+    ASTPtr select_query_from_samples_table,
+    const DataTypePtr & id_data_type,
+    const DataTypePtr & timestamp_data_type,
+    const DataTypePtr & scalar_data_type)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    auto & select_list = select_list_exp->children;
+
+    select_list.push_back(makeASTFunction(
+        "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
+    select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+    select_list.push_back(makeASTFunction(
+        "_CAST",
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+        make_intrusive<ASTLiteral>(timestamp_data_type->getName())));
+    select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+    select_list.push_back(makeASTFunction(
+        "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(scalar_data_type->getName())));
+    select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
+
+    auto nested_table_exp = make_intrusive<ASTTableExpression>();
+    nested_table_exp->subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_samples_table));
+    nested_table_exp->children.push_back(nested_table_exp->subquery);
+    auto nested_table = make_intrusive<ASTTablesInSelectQueryElement>();
+    nested_table->table_expression = nested_table_exp;
+    nested_table->children.push_back(nested_table->table_expression);
+    auto nested_tables = make_intrusive<ASTTablesInSelectQuery>();
+    nested_tables->children.push_back(nested_table);
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, nested_tables);
+
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(std::move(list_of_selects));
+    select_with_union_query->list_of_selects = select_with_union_query->children.back();
     return select_with_union_query;
 }
 
@@ -1064,6 +1179,7 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
+    const bool has_bucketed_samples = time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
 
     DateTime64 min_time = config.min_time;
     DateTime64 max_time = config.max_time;
@@ -1131,6 +1247,13 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
     auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+
+    /// Native ordered/raw fragments consume the bucketed physical layout. Keep the SQL selector
+    /// for historical row-layout tables and let callers retain their existing SQL plan for modes
+    /// which require buckets.
+    if (!has_bucketed_samples
+        && (samples_read_order != SamplesReadOrder::Unordered || samples_read_mode != SamplesReadMode::Sliced))
+        return false;
 
     if (samples_read_order == SamplesReadOrder::IdBucket && !canReadSamplesInOrder(samples_table, samples_table_metadata))
         return false;
@@ -1201,11 +1324,6 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
         modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
 
-    /// The threshold in rows is disabled because a row of the table contains many samples,
-    /// and otherwise the default threshold in rows (163840) would dominate the threshold in bytes.
-    if (!context->getSettingsRef().isChanged("merge_tree_min_rows_for_concurrent_read"))
-        modified_context->setSetting("merge_tree_min_rows_for_concurrent_read", UInt64{0});
-
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the row-level filter for exact filtering
@@ -1222,6 +1340,33 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
             "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
             quoteString(config.selector.toString()));
     }
+
+    if (!has_bucketed_samples)
+    {
+        ASTPtr select_query_from_samples_table = makeSelectQueryFromRowSamplesTable(
+            samples_table_id,
+            std::move(select_query_from_tags_table),
+            min_time,
+            max_time,
+            config.timestamp_data_type,
+            std::move(whole_metric_id_range_conditions));
+        ASTPtr select_query = makeSelectQueryForRowSamples(
+            std::move(select_query_from_samples_table), config.id_data_type, config.timestamp_data_type, config.scalar_data_type);
+
+        LOG_DEBUG(log, "Building row-layout SQL for selector: {}", config.selector.toString());
+        LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
+
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+        InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        query_plan = std::move(interpreter).extractQueryPlan();
+        return true;
+    }
+
+    /// The threshold in rows is disabled because a row of a bucketed table contains many samples,
+    /// and otherwise the default threshold in rows (163840) would dominate the threshold in bytes.
+    if (!context->getSettingsRef().isChanged("merge_tree_min_rows_for_concurrent_read"))
+        modified_context->setSetting("merge_tree_min_rows_for_concurrent_read", UInt64{0});
 
     ASTPtr select_query_from_samples_table = makeSelectQueryFromSamplesTable(
         samples_table_id,

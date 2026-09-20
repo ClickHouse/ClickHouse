@@ -28,9 +28,10 @@ CREATE TABLE samples_table
 ) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket)
 SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60 SAMPLES samples_table TAGS tags_table;
+CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS version = 6, samples_bucket_step_seconds = 60
+SAMPLES samples_table TAGS tags_table;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
+INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
 INSERT INTO samples_table
     SELECT (SELECT id FROM tags_table LIMIT 1), timeSeriesGroupArray(toDateTime64(number, 3), toFloat64(number)),
            toDateTime(intDiv(number, 60) * 60), min(toDateTime64(number, 3)), max(toDateTime64(number, 3))

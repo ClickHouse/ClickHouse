@@ -181,7 +181,8 @@ private:
 
     FileBucket * current_bucket = nullptr;
     /// A bucket crossed the hard cap under `join_overflow_mode = 'break'`: emit it, then stop.
-    bool stop_after_current_bucket = false;
+    /// Set from the concurrent build phase (`addBlockToJoin`) as well as from `getDelayedBlocks`.
+    std::atomic<bool> stop_after_current_bucket = false;
 
     mutable std::mutex current_bucket_mutex;
 

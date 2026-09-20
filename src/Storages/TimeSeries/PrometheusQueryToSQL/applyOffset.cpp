@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -51,60 +52,62 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, arrayMap(sample -> (sample.1 + INTERVAL X, sample.2), time_series) AS time_series
-                /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-                /// sample.1
-                ASTPtr timestamp = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{1}));
-
-                ASTPtr new_timestamp;
-                if (isDateTime64(context.timestamp_data_type))
+                auto add_offset = [&](ASTPtr timestamp)
                 {
-                    /// timestamp + INTERVAL x MILLISECONDS
-                    chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                    /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    /// The interval functions do not accept Decimal arguments, so the literal must be
-                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
-                    /// scale >= timestamp_scale.
-                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
+                    ASTPtr result;
+                    if (isDateTime64(context.timestamp_data_type))
+                    {
+                        chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
+                        UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                        Int64 scaled_offset_value
+                            = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
-                    static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                    std::string_view to_interval_function = to_interval_functions[scale / 3];
+                        static const std::string_view to_interval_functions[]
+                            = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
+                        result = makeASTFunction(
+                            "plus",
+                            std::move(timestamp),
+                            makeASTFunction(to_interval_functions[scale / 3], make_intrusive<ASTLiteral>(scaled_offset_value)));
+                    }
+                    else
+                    {
+                        result = makeASTFunction(
+                            "plus", std::move(timestamp), timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
+                    }
 
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        std::move(timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
+                    return timeSeriesTimestampASTCast(std::move(result), context.timestamp_data_type);
+                };
+
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+                {
+                    /// SELECT group, arrayMap(sample -> (sample.1 + INTERVAL X, sample.2), time_series) AS time_series
+                    auto new_sample = makeASTFunction(
+                        "tuple",
+                        add_offset(makeASTFunction(
+                            "tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{1}))),
+                        makeASTFunction(
+                            "tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{2})));
+
+                    auto new_time_series = makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("sample")), std::move(new_sample)),
+                        make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                    new_time_series->setAlias(ColumnNames::TimeSeries);
+                    builder.select_list.push_back(std::move(new_time_series));
                 }
                 else
                 {
-                    /// timestamp + x
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        std::move(timestamp),
-                        timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
+                    /// SELECT group, timestamp + INTERVAL X AS timestamp, value
+                    auto new_timestamp = add_offset(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                    new_timestamp->setAlias(ColumnNames::Timestamp);
+                    builder.select_list.push_back(std::move(new_timestamp));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 }
-
-                /// The cast restores the exact type of the timestamps (e.g. the scale of `DateTime64`) after the addition.
-                new_timestamp = timeSeriesTimestampASTCast(std::move(new_timestamp), context.timestamp_data_type);
-
-                /// arrayMap(sample -> (<new_timestamp>, sample.2), time_series) AS time_series
-                auto new_sample = makeASTFunction(
-                    "tuple",
-                    std::move(new_timestamp),
-                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("sample"), make_intrusive<ASTLiteral>(UInt64{2})));
-
-                auto new_time_series = makeASTFunction(
-                    "arrayMap",
-                    makeASTFunction("lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("sample")), std::move(new_sample)),
-                    make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
-
-                new_time_series->setAlias(ColumnNames::TimeSeries);
-                builder.select_list.push_back(std::move(new_time_series));
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
