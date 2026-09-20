@@ -88,6 +88,16 @@ namespace ErrorCodes
 namespace
 {
 
+bool startsWithCaseInsensitive(std::string_view s, std::string_view prefix)
+{
+    return prefix.size() <= s.size() && equalsCaseInsensitive(s.substr(0, prefix.size()), prefix);
+}
+
+bool endsWithCaseInsensitive(std::string_view s, std::string_view suffix)
+{
+    return suffix.size() <= s.size() && equalsCaseInsensitive(s.substr(s.size() - suffix.size()), suffix);
+}
+
 /// Sends `query`, calling `handle_block` for each received `Data` packet, in order.
 void executeQuery(
     IServerConnection & connection,
@@ -498,6 +508,8 @@ struct ClusterLocality
     /// identifier first argument against these before the clusters, so one can name a local address.
     /// Fetched on first use because most dumps contain no such call.
     std::function<const std::map<String, std::map<String, String>> &()> named_collections;
+    /// Server hostnames and local cluster replica addresses considered local dependencies.
+    std::function<const std::set<String> &()> local_hostnames;
     /// For mirroring the server's constant folding of `cluster*` name/table arguments.
     ContextPtr context;
 };
@@ -537,7 +549,7 @@ String expandClusterMacros(const String & name, const std::map<String, String> &
 
 bool isClusterTableFunctionName(const String & name)
 {
-    return name == "cluster" || name == "clusterAllReplicas";
+    return equalsCaseInsensitive(name, "cluster") || equalsCaseInsensitive(name, "clusterAllReplicas");
 }
 
 /// Rejects expressions that would fold against the dump session or machine.
@@ -609,12 +621,11 @@ String resolveClusterOfFunction(const ASTFunction & function, const ClusterLocal
 
 bool isRemoteFunctionName(const String & name)
 {
-    return name == "remote" || name == "remoteSecure" || name == "Remote" || name == "RemoteSecure";
+    return equalsCaseInsensitive(name, "remote") || equalsCaseInsensitive(name, "remoteSecure");
 }
 
-/// Mirrors `Cluster::Address::isLocal` for one replica of a `remote*` pattern, as far as a client can:
-/// a loopback host on the server's port is local. Whether any other host is one of the server's own
-/// interfaces is not knowable here, so it stays remote, as `DDLDependencyVisitor` assumes for all.
+/// Mirrors `Cluster::Address::isLocal` for one replica of a `remote*` pattern:
+/// matches localhost, local hostnames, or fails closed if not provably remote.
 bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLocality & clusters)
 {
     bool has_explicit_port = address.starts_with('[') ? address.contains("]:") : address.contains(':');
@@ -630,14 +641,21 @@ bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLoca
     }
     if (host.starts_with('[') && host.ends_with(']'))
         host = host.substr(1, host.size() - 2);
+    if (equalsCaseInsensitive(host, "localhost"))
+        return true;
+    if (clusters.local_hostnames)
+    {
+        for (const auto & local_host : clusters.local_hostnames())
+            if (equalsCaseInsensitive(host, local_host))
+                return true;
+    }
     Poco::Net::IPAddress ip;
-    /// The server resolves names through DNS; this is the one name known to be loopback without it.
-    /// Hostnames are case-insensitive, so `LocalHost` reaches the same loopback address.
-    if (!Poco::Net::IPAddress::tryParse(host, ip))
-        return equalsCaseInsensitive(host, "localhost");
-    /// `isLocalAddress` decides loopback addresses by value alone (127.0.0.2 is not local); the
-    /// interface scan it does for the rest would inspect this machine, not the server's.
-    return ip.isLoopback() && isLocalAddress(ip);
+    if (Poco::Net::IPAddress::tryParse(host, ip))
+    {
+        if (ip.isLoopback())
+            return isLocalAddress(ip);
+    }
+    return true;
 }
 
 /// Whether any replica of a `remote*` address pattern is read without a connection.
@@ -785,7 +803,7 @@ RemoteCollectionTarget resolveRemoteNamedCollection(
 bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLocality & clusters)
 {
     const auto & first = function.arguments->children.at(0);
-    bool secure = function.name == "remoteSecure" || function.name == "RemoteSecure";
+    bool secure = equalsCaseInsensitive(function.name, "remoteSecure");
     String name;
     if (tryGetIdentifierNameInto(first, name))
     {
@@ -876,7 +894,7 @@ std::optional<String> tryGetStringLiteralOrRegexpWrapper(const ASTPtr & arg, boo
     is_regexp = false;
     if (const auto * literal = arg->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
         return literal->value.safeGet<String>();
-    if (const auto * function = arg->as<ASTFunction>(); function && function->name == "REGEXP" && function->arguments
+    if (const auto * function = arg->as<ASTFunction>(); function && equalsCaseInsensitive(function->name, "REGEXP") && function->arguments
         && function->arguments->children.size() == 1)
     {
         if (const auto * inner = function->arguments->children[0]->as<ASTLiteral>(); inner && inner->value.getType() == Field::Types::String)
@@ -930,7 +948,7 @@ void collectMergeAndLoopReferences(
     if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
     {
         const auto & args = function->arguments->children;
-        if (function->name == "merge" && args.size() == 2)
+        if (equalsCaseInsensitive(function->name, "merge") && args.size() == 2)
         {
             bool database_is_regexp = false;
             std::optional<String> database_pattern = tryGetStringLiteralOrRegexpWrapper(args[0], database_is_regexp);
@@ -1046,7 +1064,7 @@ void collectMergeAndLoopReferences(
                     function->formatForErrorMessage());
             }
         }
-        else if (function->name == "loop" && args.size() == 1)
+        else if (equalsCaseInsensitive(function->name, "loop") && args.size() == 1)
         {
             if (args[0]->as<ASTFunction>())
             {
@@ -1063,7 +1081,7 @@ void collectMergeAndLoopReferences(
                     function->formatForErrorMessage());
             }
         }
-        else if (function->name == "loop" && args.size() == 2)
+        else if (equalsCaseInsensitive(function->name, "loop") && args.size() == 2)
         {
             /// loop(database, table): two separate plain arguments, not one qualified "db.table" name.
             auto read_plain_name = [](const ASTPtr & arg) -> std::optional<String>
@@ -1203,7 +1221,7 @@ void collectFunctionArgumentReferences(
                     out.push_back({dependency->first, dependency->second});
             }
         }
-        else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "dictionary")
+        else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || equalsCaseInsensitive(function->name, "dictionary"))
         {
             candidate = tryGetQualifiedNameFromFunctionArgument(*function, 0);
             candidate_kind = functionIsJoinGet(function->name) ? ReferenceKind::Join : ReferenceKind::Dictionary;
@@ -1293,7 +1311,7 @@ bool tableFunctionUsesNamedCollections(std::string_view name)
         "paimonHDFSCluster",
         "paimonLocal",
     };
-    return std::ranges::find(names, name) != std::end(names);
+    return std::ranges::any_of(names, [&](std::string_view n) { return equalsCaseInsensitive(n, name); });
 }
 
 bool tableEngineUsesNamedCollections(std::string_view name)
@@ -1340,7 +1358,7 @@ bool tableEngineUsesNamedCollections(std::string_view name)
         "PaimonHDFS",
         "PaimonLocal",
     };
-    return std::ranges::find(names, name) != std::end(names);
+    return std::ranges::any_of(names, [&](std::string_view n) { return equalsCaseInsensitive(n, name); });
 }
 
 bool databaseEngineUsesNamedCollections(std::string_view name)
@@ -1353,7 +1371,7 @@ bool databaseEngineUsesNamedCollections(std::string_view name)
         "Remote",
         "RemoteSecure",
     };
-    return std::ranges::find(names, name) != std::end(names);
+    return std::ranges::any_of(names, [&](std::string_view n) { return equalsCaseInsensitive(n, name); });
 }
 
 void collectNamedCollectionFromFunction(
@@ -1388,7 +1406,7 @@ void collectNamedCollectionsFromTableFunction(
     const bool is_remote = isRemoteFunctionName(function.name);
     if (tableFunctionUsesNamedCollections(function.name))
     {
-        const size_t slot = function.name.ends_with("Cluster") ? 1 : 0;
+        const size_t slot = endsWithCaseInsensitive(function.name, "Cluster") ? 1 : 0;
         collectNamedCollectionFromFunction(function, slot, is_remote, clusters, dependencies);
     }
 
@@ -1408,9 +1426,9 @@ void collectNamedCollectionsFromTableFunction(
     const auto & arguments = function.arguments->children;
     if ((is_remote || isClusterTableFunctionName(function.name)) && arguments.size() >= 2)
         collect_nested(arguments[1]);
-    else if (function.name == "loop" && arguments.size() == 1)
+    else if (equalsCaseInsensitive(function.name, "loop") && arguments.size() == 1)
         collect_nested(arguments[0]);
-    else if (function.name == "viewIfPermitted" && arguments.size() == 2)
+    else if (equalsCaseInsensitive(function.name, "viewIfPermitted") && arguments.size() == 2)
         collect_nested(arguments[1]);
 
     if (is_remote)
@@ -1454,7 +1472,8 @@ void collectDictionaryNamedCollection(
         "postgresql",
         "ytsaurus",
     };
-    if (!source || !source->elements || std::ranges::find(source_names, source->name) == std::end(source_names))
+    if (!source || !source->elements
+        || !std::ranges::any_of(source_names, [&](std::string_view n) { return equalsCaseInsensitive(n, source->name); }))
         return;
 
     for (const auto & element : source->elements->children)
@@ -1495,7 +1514,7 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
     if (const auto * engine = create->storage ? create->storage->engine : nullptr; engine
         && (create->getTable().empty() ? databaseEngineUsesNamedCollections(engine->name) : tableEngineUsesNamedCollections(engine->name)))
     {
-        const bool classify_remote = !create->getTable().empty() && (engine->name == "Remote" || engine->name == "RemoteSecure");
+        const bool classify_remote = !create->getTable().empty() && isRemoteFunctionName(engine->name);
         collectNamedCollectionFromFunction(*engine, 0, classify_remote, clusters, dependencies);
         if (classify_remote)
             collectNamedCollectionsFromTableFunction(*engine, clusters, dependencies);
@@ -1955,6 +1974,29 @@ std::vector<TableInfo> fetchTables(
         }
         return *cached;
     };
+    /// Local hostnames and cluster replica addresses, queried lazily on first remote* check.
+    clusters.local_hostnames = [&, cached = std::optional<std::set<String>>{}]() mutable -> const std::set<String> &
+    {
+        if (!cached)
+        {
+            cached.emplace();
+            try
+            {
+                for (auto & host : fetchStringColumn(
+                         connection,
+                         timeouts,
+                         client_info,
+                         "SELECT hostName() UNION DISTINCT SELECT fqdn() UNION DISTINCT SELECT host_name FROM system.clusters WHERE is_local UNION DISTINCT SELECT host_address FROM system.clusters WHERE is_local",
+                         context->getSettingsRef()))
+                    if (!host.empty())
+                        cached->insert(std::move(host));
+            }
+            catch (...)
+            {
+            }
+        }
+        return *cached;
+    };
 
     /// Fetch table names from undumped databases so unqualified references and empty-database
     /// merge() calls can be checked for ambiguity against them, not just against dumped databases.
@@ -2278,25 +2320,25 @@ ReplayGateNeeds collectReplayGateNeeds(const std::vector<String> & create_querie
             if (create->getTable().empty())
             {
                 /// CREATE DATABASE: gate on the database engine name.
-                if (engine.name == "Ordinary")
+                if (equalsCaseInsensitive(engine.name, "Ordinary"))
                     needs.ordinary_database = true;
-                else if (engine.name == "Replicated")
+                else if (equalsCaseInsensitive(engine.name, "Replicated"))
                     needs.replicated_database = true;
-                else if (engine.name == "MaterializedPostgreSQL")
+                else if (equalsCaseInsensitive(engine.name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_database = true;
-                else if (engine.name == "MaterializedMySQL")
+                else if (equalsCaseInsensitive(engine.name, "MaterializedMySQL"))
                     needs.materialized_mysql_database = true;
             }
             else
             {
                 /// CREATE TABLE: gate on the table engine name.
-                if (engine.name.starts_with("Replicated") && engine.arguments && !engine.arguments->children.empty())
+                if (startsWithCaseInsensitive(engine.name, "Replicated") && engine.arguments && !engine.arguments->children.empty())
                     needs.replicated_engine_arguments = true;
-                if (engine.name == "MaterializedPostgreSQL")
+                if (equalsCaseInsensitive(engine.name, "MaterializedPostgreSQL"))
                     needs.materialized_postgresql_table = true;
-                if (engine.name == "TimeSeries")
+                if (equalsCaseInsensitive(engine.name, "TimeSeries"))
                     needs.time_series_table = true;
-                if (engine.name == "Kafka")
+                if (equalsCaseInsensitive(engine.name, "Kafka"))
                     needs.kafka_engine = true;
             }
         }
@@ -2494,7 +2536,7 @@ void dumpDatabaseSchema(
     for (const auto & db : target_databases)
     {
         /// Backup serializes its locator as a quoted string that its CREATE path rejects.
-        if (database_info.at(db).engine == "Backup")
+        if (equalsCaseInsensitive(database_info.at(db).engine, "Backup"))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot dump database {} for --dump-schema: SHOW CREATE DATABASE for the Backup engine is not replayable",
