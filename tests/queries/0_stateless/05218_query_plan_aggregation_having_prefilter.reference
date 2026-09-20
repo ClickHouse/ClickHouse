@@ -101,6 +101,9 @@ serialized plan	0
 10000
 10000
 10000
+--- a sibling aggregate that throws on a rejected group stops being reached ---
+2000
+5
 --- the pre-filter is applied while dataflow statistics are collected ---
 05218ap_off	0	1
 05218ap_on	20000	1

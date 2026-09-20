@@ -481,6 +481,34 @@ SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND intDiv(1, cnt - 3) > 0
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
 
+SELECT '--- a sibling aggregate that throws on a rejected group stops being reached ---';
+
+-- A rejected group is neither filtered nor finalized, so an aggregate that throws from
+-- `insertResultInto` on that group - `kolmogorovSmirnovTest` with one empty sample, here - stops
+-- raising. This is the same elision the bucket Top-K conversion already performs by default on
+-- master (`query_plan_aggregation_bucket_top_k`), which likewise destroys a rejected group's states
+-- without finalizing them; the last cell pins that precedent next to this one. Pinned in both
+-- directions rather than left undefined.
+DROP TABLE IF EXISTS having_prefilter_sibling;
+CREATE TABLE having_prefilter_sibling (a UInt32, b Int64, s UInt8) ENGINE = MergeTree ORDER BY tuple();
+-- Groups 0..1999 have four rows, one of them in the second sample; groups 2000..2999 have three rows,
+-- all in the first, so only a group `HAVING cnt > 3` rejects has an empty sample.
+INSERT INTO having_prefilter_sibling SELECT number % 3000, number, number >= 9000 FROM numbers(11000);
+
+SELECT count(t.1) FROM (
+    SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a HAVING cnt > 3
+) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count(t.1) FROM (
+    SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a HAVING cnt > 3
+) SETTINGS query_plan_aggregation_having_prefilter = 1;
+
+SELECT count() FROM (
+    SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a ORDER BY cnt DESC LIMIT 5
+) WHERE t.1 >= 0 OR t.1 < 0
+SETTINGS query_plan_aggregation_having_prefilter = 0, query_plan_aggregation_bucket_top_k = 1;
+
+DROP TABLE having_prefilter_sibling;
+
 SELECT '--- the pre-filter is applied while dataflow statistics are collected ---';
 
 -- `automatic_parallel_replicas_mode = 2` attaches a dataflow statistics updater to the aggregation and
