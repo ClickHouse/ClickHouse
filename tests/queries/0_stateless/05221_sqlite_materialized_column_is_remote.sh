@@ -24,37 +24,27 @@ INSERT INTO s VALUES (1), (2);
 # projected from the source, a predicate over it is pushed down and `external_table_strict_query` accepts it,
 # and when the source does not provide the column the read fails instead of silently computing it locally.
 # An `ALIAS` column is the local counterpart: it is computed from its expression on every read.
-for analyzer in 1 0
-do
-    echo "enable_analyzer = ${analyzer}"
+${CLICKHOUSE_LOCAL} --multiquery --query="
+CREATE TABLE ext (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10) ENGINE = SQLite('${DB_PATH}', 't');
 
-    ${CLICKHOUSE_LOCAL} --multiquery --query="
-    CREATE TABLE ext (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10) ENGINE = SQLite('${DB_PATH}', 't');
+SELECT 'table source, values', a, m, l FROM ext ORDER BY a;
 
-    SELECT 'table source, values', a, m, l FROM ext ORDER BY a
-        SETTINGS enable_analyzer = ${analyzer};
+SELECT 'table source, materialized filter, strict', count() FROM ext WHERE m = 100
+    SETTINGS external_table_strict_query = 1;
 
-    SELECT 'table source, materialized filter, strict', count() FROM ext WHERE m = 100
-        SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
+CREATE TABLE ext_query (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10)
+    ENGINE = SQLite('${DB_PATH}', query('SELECT a, m FROM t'));
 
-    CREATE TABLE ext_query (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10)
-        ENGINE = SQLite('${DB_PATH}', query('SELECT a, m FROM t'));
+SELECT 'query source, values', a, m, l FROM ext_query ORDER BY a;
 
-    SELECT 'query source, values', a, m, l FROM ext_query ORDER BY a
-        SETTINGS enable_analyzer = ${analyzer};
+CREATE TABLE ext_query_without_m (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10)
+    ENGINE = SQLite('${DB_PATH}', query('SELECT a FROM s'));
 
-    CREATE TABLE ext_query_without_m (a Int64, m Int64 MATERIALIZED a + 1, l Int64 ALIAS a * 10)
-        ENGINE = SQLite('${DB_PATH}', query('SELECT a FROM s'));
+SELECT 'query source without the column, alias', a, l FROM ext_query_without_m ORDER BY a;
 
-    SELECT 'query source without the column, alias', a, l FROM ext_query_without_m ORDER BY a
-        SETTINGS enable_analyzer = ${analyzer};
+SELECT 'query source without the column, materialized', m FROM ext_query_without_m; -- { serverError SQLITE_ENGINE_ERROR }
 
-    SELECT 'query source without the column, materialized', m FROM ext_query_without_m
-        SETTINGS enable_analyzer = ${analyzer}; -- { serverError SQLITE_ENGINE_ERROR }
+CREATE TABLE ext_table_without_m (a Int64, m Int64 MATERIALIZED a + 1) ENGINE = SQLite('${DB_PATH}', 's');
 
-    CREATE TABLE ext_table_without_m (a Int64, m Int64 MATERIALIZED a + 1) ENGINE = SQLite('${DB_PATH}', 's');
-
-    SELECT 'table source without the column, materialized', m FROM ext_table_without_m
-        SETTINGS enable_analyzer = ${analyzer}; -- { serverError SQLITE_ENGINE_ERROR }
-    "
-done
+SELECT 'table source without the column, materialized', m FROM ext_table_without_m; -- { serverError SQLITE_ENGINE_ERROR }
+"

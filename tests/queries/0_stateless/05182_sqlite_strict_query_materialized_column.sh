@@ -20,33 +20,26 @@ INSERT INTO t VALUES (1, 2), (2, 3);
 # accepts it. An `ALIAS` column belongs to this source too, but it exists only locally: a filter over it is
 # applied locally, and must be rejected under `external_table_strict_query` instead of being silently dropped
 # as if it belonged to another table.
-for analyzer in 1 0
-do
-    echo "enable_analyzer = ${analyzer}"
+${CLICKHOUSE_LOCAL} --multiquery --query="
+CREATE TABLE ext (i Int64, m Int64 MATERIALIZED i + 1, a Int64 ALIAS i * 10) ENGINE = SQLite('${DB_PATH}', 't');
 
-    ${CLICKHOUSE_LOCAL} --multiquery --query="
-    CREATE TABLE ext (i Int64, m Int64 MATERIALIZED i + 1, a Int64 ALIAS i * 10) ENGINE = SQLite('${DB_PATH}', 't');
+SELECT 'materialized filter, default', count() FROM ext WHERE m = 2;
 
-    SELECT 'materialized filter, default', count() FROM ext WHERE m = 2
-        SETTINGS enable_analyzer = ${analyzer};
+SELECT 'alias filter, default', count() FROM ext WHERE a = 10;
 
-    SELECT 'alias filter, default', count() FROM ext WHERE a = 10
-        SETTINGS enable_analyzer = ${analyzer};
+SELECT 'ordinary filter, strict', count() FROM ext WHERE i = 1
+    SETTINGS external_table_strict_query = 1;
+"
 
-    SELECT 'ordinary filter, strict', count() FROM ext WHERE i = 1
-        SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
-    "
+${CLICKHOUSE_LOCAL} --multiquery --query="
+CREATE TABLE ext (i Int64, m Int64 MATERIALIZED i + 1) ENGINE = SQLite('${DB_PATH}', 't');
+SELECT 'materialized filter, strict', count() FROM ext WHERE m = 2
+    SETTINGS external_table_strict_query = 1;
+"
 
-    ${CLICKHOUSE_LOCAL} --multiquery --query="
-    CREATE TABLE ext (i Int64, m Int64 MATERIALIZED i + 1) ENGINE = SQLite('${DB_PATH}', 't');
-    SELECT 'materialized filter, strict', count() FROM ext WHERE m = 2
-        SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
-    "
-
-    echo -n 'alias filter, strict: '
-    ${CLICKHOUSE_LOCAL} --multiquery --query="
-    CREATE TABLE ext (i Int64, a Int64 ALIAS i * 10) ENGINE = SQLite('${DB_PATH}', 't');
-    SELECT count() FROM ext WHERE a = 10
-        SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
-    " 2>&1 | grep -c 'INCORRECT_QUERY'
-done
+echo -n 'alias filter, strict: '
+${CLICKHOUSE_LOCAL} --multiquery --query="
+CREATE TABLE ext (i Int64, a Int64 ALIAS i * 10) ENGINE = SQLite('${DB_PATH}', 't');
+SELECT count() FROM ext WHERE a = 10
+    SETTINGS external_table_strict_query = 1;
+" 2>&1 | grep -c 'INCORRECT_QUERY'

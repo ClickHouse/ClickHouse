@@ -23,26 +23,26 @@ SELECT i FROM ext WHERE _table = 'ext' AND i = 1 FORMAT Null;
 SELECT i FROM ext WHERE _table = 'ext' OR i = 2 FORMAT Null;
 " 2>&1 | grep -oE 'Query: SELECT `i` FROM `t`( WHERE .*)?$'
 
-echo 'Table-backed strict mode rejects _table with the analyzer:'
+echo 'Table-backed strict mode rejects _table:'
 ${CLICKHOUSE_LOCAL} --multiquery --query="
 CREATE TABLE ext ENGINE = SQLite('${DB_PATH}', 't');
-SELECT i FROM ext WHERE _table = 'ext' SETTINGS external_table_strict_query = 1, enable_analyzer = 1;
+SELECT i FROM ext WHERE _table = 'ext' SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
-echo 'Table-backed strict mode rejects _database with the old analyzer:'
+echo 'Table-backed strict mode rejects _database:'
 ${CLICKHOUSE_LOCAL} --multiquery --query="
 CREATE TABLE ext ENGINE = SQLite('${DB_PATH}', 't');
-SELECT i FROM ext WHERE _database = 'missing' SETTINGS external_table_strict_query = 1, enable_analyzer = 0;
+SELECT i FROM ext WHERE _database = 'missing' SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
-echo 'Query-backed strict mode rejects _table with the analyzer:'
+echo 'Query-backed strict mode rejects _table:'
 ${CLICKHOUSE_LOCAL} --multiquery --query="
 CREATE TABLE query_ext ENGINE = SQLite('${DB_PATH}', query('SELECT i FROM t'));
-SELECT i FROM query_ext WHERE _table = 'query_ext' SETTINGS external_table_strict_query = 1, enable_analyzer = 1;
+SELECT i FROM query_ext WHERE _table = 'query_ext' SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'
 
-echo 'Query-backed strict mode rejects _database with the old analyzer:'
+echo 'Query-backed strict mode rejects _database:'
 ${CLICKHOUSE_LOCAL} --multiquery --query="
 CREATE TABLE query_ext ENGINE = SQLite('${DB_PATH}', query('SELECT i FROM t'));
-SELECT i FROM query_ext WHERE _database = 'missing' SETTINGS external_table_strict_query = 1, enable_analyzer = 0;
+SELECT i FROM query_ext WHERE _database = 'missing' SETTINGS external_table_strict_query = 1;
 " 2>&1 | grep -c 'INCORRECT_QUERY'

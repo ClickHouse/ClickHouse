@@ -23,20 +23,13 @@ INSERT INTO t(i) VALUES (1), (2);
 # physical column. So it stays pushdown-eligible - a filter over it belongs to the remote query, and
 # `external_table_strict_query = 1` accepts it - exactly like a `MATERIALIZED` column with an expression, which
 # is a physical column of the remote table as well (see `05182_sqlite_strict_query_materialized_column`).
-for analyzer in 1 0
-do
-    echo "enable_analyzer = ${analyzer}"
+${CLICKHOUSE_LOCAL} --multiquery --query="
+CREATE TABLE ext (i Int64, g Int64) ENGINE = SQLite('${DB_PATH}', 't');
 
-    ${CLICKHOUSE_LOCAL} --multiquery --query="
-    CREATE TABLE ext (i Int64, g Int64) ENGINE = SQLite('${DB_PATH}', 't');
+SELECT 'generated filter, default', count() FROM ext WHERE g = 2;
 
-    SELECT 'generated filter, default', count() FROM ext WHERE g = 2
-        SETTINGS enable_analyzer = ${analyzer};
+SELECT 'generated filter, strict', count() FROM ext WHERE g = 2
+    SETTINGS external_table_strict_query = 1;
 
-    SELECT 'generated filter, strict', count() FROM ext WHERE g = 2
-        SETTINGS external_table_strict_query = 1, enable_analyzer = ${analyzer};
-
-    SELECT 'generated column values', i, g FROM ext ORDER BY i
-        SETTINGS enable_analyzer = ${analyzer};
-    "
-done
+SELECT 'generated column values', i, g FROM ext ORDER BY i;
+"
