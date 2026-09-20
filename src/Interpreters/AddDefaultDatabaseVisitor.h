@@ -29,6 +29,7 @@
 #include <deque>
 #include <optional>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -156,9 +157,11 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    /// The `WITH` names collected by the narrow qualification pass, which does not model the
-    /// scopes: `visitTableExpressionsImpl` maintains it, the full traversal uses `scopes`.
-    mutable std::unordered_set<String> with_aliases;
+    /// The `WITH` names visible to the narrow qualification pass, counted by how many enclosing
+    /// `SELECT`s declare each one: the body of an element masks its own name one level only, so an
+    /// enclosing `SELECT` that declares the same name keeps hiding the table. `visitTableExpressionsImpl`
+    /// maintains this; the full traversal uses `scopes` instead.
+    mutable std::unordered_map<String, size_t> with_aliases;
     /// The settings in effect at the `SELECT` the narrow pass is inside, the counterpart of
     /// `Scope::settings_context` of the full traversal. Null outside `visitTableExpressions`.
     mutable ContextPtr table_expressions_settings_context;
@@ -334,6 +337,62 @@ private:
         visitChildren(*subquery);
     }
 
+    bool isWithAliasVisible(const String & name) const
+    {
+        auto it = with_aliases.find(name);
+        return it != with_aliases.end() && it->second > 0;
+    }
+
+    /// Hides the innermost declaration of `name` for as long as it lives.
+    struct MaskedWithAlias
+    {
+        MaskedWithAlias(std::unordered_map<String, size_t> & counts_, String name_)
+            : counts(counts_), name(std::move(name_))
+        {
+            auto it = counts.find(name);
+            masked = it != counts.end() && it->second > 0;
+            if (masked)
+                --it->second;
+        }
+        ~MaskedWithAlias()
+        {
+            if (masked)
+                ++counts[name];
+        }
+
+        MaskedWithAlias(const MaskedWithAlias &) = delete;
+        MaskedWithAlias & operator=(const MaskedWithAlias &) = delete;
+
+        std::unordered_map<String, size_t> & counts;
+        String name;
+        bool masked = false;
+    };
+
+    /// The body of a `WITH` element of the narrow pass. A plain element is not in scope inside its
+    /// own body, and neither is a recursive one in its seed - the first branch, which the analyzer
+    /// resolves like any other query - so there the name is a table (or an element of an enclosing
+    /// `SELECT`) and has to be qualified. The recursive members after the seed reference the element
+    /// itself. This is the rule the full traversal applies through `BodyWalk`.
+    void visitTableExpressionsWithElement(const ASTSelectQuery & select, ASTWithElement & with_element) const
+    {
+        if (isRecursiveElement(select, with_element))
+        {
+            if (ASTs * branches = ApplyWithSubqueryVisitor::getRecursiveBodyBranches(with_element.subquery))
+            {
+                {
+                    MaskedWithAlias masked(with_aliases, with_element.name);
+                    visitTableExpressionsImpl(*branches->front());
+                }
+                for (size_t i = 1; i < branches->size(); ++i)
+                    visitTableExpressionsImpl(*(*branches)[i]);
+                return;
+            }
+        }
+
+        MaskedWithAlias masked(with_aliases, with_element.name);
+        visitTableExpressionsImpl(*with_element.subquery);
+    }
+
     void visitTableExpressionsImpl(IAST & ast) const
     {
         if (auto * select = ast.as<ASTSelectQuery>())
@@ -357,12 +416,15 @@ private:
             auto enclosing_with_aliases = with_aliases;
             if (!inherit_from_outer)
                 with_aliases.clear();
-            if (select->with())
+            /// Every name of the list is bound before any body is walked, as `QueryAnalyzer` does,
+            /// so an element may reference a later one.
+            const ASTPtr with = select->with();
+            if (with)
             {
-                for (const auto & child : select->with()->children)
+                for (const auto & child : with->children)
                 {
                     if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
-                        with_aliases.insert(with_element->name);
+                        ++with_aliases[with_element->name];
                 }
             }
 
@@ -376,8 +438,22 @@ private:
             for (const auto & child : select->children)
                 collectAliases(child);
 
+            if (with)
+            {
+                for (auto & child : with->children)
+                {
+                    if (auto * with_element = child->as<ASTWithElement>())
+                        visitTableExpressionsWithElement(*select, *with_element);
+                    else
+                        visitTableExpressionsImpl(*child);
+                }
+            }
+
             for (auto & child : select->children)
-                visitTableExpressionsImpl(*child);
+            {
+                if (child != with)
+                    visitTableExpressionsImpl(*child);
+            }
 
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
@@ -707,7 +783,7 @@ private:
         /// This is a `WITH` alias in scope here. `with_aliases` is filled by the narrow pass and
         /// `findScopeDeclaring` looks at the scopes of the full traversal; only one of them ever
         /// has anything, since the two passes are separate traversals.
-        if (with_aliases.contains(identifier.name()) || findScopeDeclaring(identifier.name()))
+        if (isWithAliasVisible(identifier.name()) || findScopeDeclaring(identifier.name()))
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());

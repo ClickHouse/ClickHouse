@@ -4,4 +4,13 @@ stored out of scope qualified	1
 stored in scope not qualified	1
 read out of scope	11
 read in scope	7
+live own body	11
+live recursive seed	11
+live nested same name	10
+stored own body qualified	1
+stored recursive seed qualified	1
+stored nested same name not qualified	1
+read own body	11
+read recursive seed	11
+read nested same name	10
 reload out of scope	11
