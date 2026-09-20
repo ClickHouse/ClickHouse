@@ -127,8 +127,16 @@ public:
     /// hash table, and the chunk provides the compression-ratio sample only. The statistics
     /// must describe the untruncated output because they price the parallel-replicas plan,
     /// whose partial aggregation materializes every group.
+    /// `untruncated_sample_columns`, when the conversion kept one, is a bounded copy of the untruncated
+    /// keys and is sampled in place of the chunk: the chunk holds the kept groups only, whose keys
+    /// compress differently, and holds no row at all when every group was rejected - and without a
+    /// compression ratio the accumulated byte count is dropped rather than estimated.
     void recordAggregationKeySizes(
-        const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes);
+        const Chunk & chunk,
+        const ColumnNumbers & keys_positions,
+        const DataTypes & key_types,
+        size_t full_key_bytes,
+        const Columns & untruncated_sample_columns);
 
     /// Estimates compressed size of aggregate state columns in the output chunk.
     /// Mirrors the logic of Aggregator::estimateSizeOfCompressedState but works on ColumnAggregateFunction columns

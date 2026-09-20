@@ -543,6 +543,23 @@ SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING count() > 
 SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3 FORMAT Null
     SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_throwif';
 
+-- A bound no group meets empties every bucket's chunk. The statistics divide the accumulated key bytes
+-- by a compression ratio sampled from the chunk, so with nothing left there to sample the bytes would be
+-- dropped and the shipping term underpriced; the conversion keeps a bounded sample of the keys it
+-- measured for this case, which is what the estimate cell below reads.
+SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING count() > 1000000 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_none_on';
+SELECT a, count() AS cnt FROM having_prefilter_wide GROUP BY a HAVING count() > 1000000 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218ap_none_off';
+
+-- A high-cardinality `LowCardinality` key: the meter's scratch row is one of those columns, and
+-- `ColumnLowCardinality::popBack` leaves the value it measured interned in the dictionary, so the
+-- scratch column is rebuilt once it outgrows its bound. The estimate has to survive that rebuild.
+SELECT toLowCardinality(a) AS k, count() AS cnt FROM having_prefilter_wide GROUP BY k HAVING count() > 3 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218ap_lc_on';
+SELECT toLowCardinality(a) AS k, count() AS cnt FROM having_prefilter_wide GROUP BY k HAVING count() > 3 FORMAT Null
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218ap_lc_off';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 DROP TABLE having_prefilter_wide;
@@ -574,6 +591,33 @@ FROM
     FROM system.query_log
     WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 15 MINUTE
       AND current_database = currentDatabase() AND log_comment IN ('05218ap_on', '05218ap_off')
+);
+
+-- The same comparison for the two runs above: an all-rejected aggregation still has to report the keys
+-- its groups would have shipped, and a `LowCardinality` key still has to report them after the scratch
+-- column is rebuilt. Without either, the pre-filtered run loses the whole `AggregationKeys` term.
+SELECT 'estimate matches with every group rejected',
+       greatest(on_bytes, off_bytes) <= least(on_bytes, off_bytes) * 1.25 AS ok
+FROM
+(
+    SELECT
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_none_on') AS on_bytes,
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_none_off') AS off_bytes
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 15 MINUTE
+      AND current_database = currentDatabase() AND log_comment IN ('05218ap_none_on', '05218ap_none_off')
+);
+
+SELECT 'estimate matches for a LowCardinality key',
+       greatest(on_bytes, off_bytes) <= least(on_bytes, off_bytes) * 1.25 AS ok
+FROM
+(
+    SELECT
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_lc_on') AS on_bytes,
+        anyIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05218ap_lc_off') AS off_bytes
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 15 MINUTE
+      AND current_database = currentDatabase() AND log_comment IN ('05218ap_lc_on', '05218ap_lc_off')
 );
 
 SELECT '--- independent per-partition aggregation is refused ---';
