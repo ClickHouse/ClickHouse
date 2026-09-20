@@ -1982,12 +1982,15 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
+    /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
+    /// in the global context, not in the session that happens to issue the `ALTER`.
+    const ContextPtr index_context = context->getGlobalContext();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
         }
         catch (const Exception & exception)
         {
@@ -2016,6 +2019,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
+    for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
+        new_projections.addUnavailable(definition_ast->clone());
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
