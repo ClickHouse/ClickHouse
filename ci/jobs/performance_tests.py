@@ -2253,16 +2253,29 @@ def main():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
                 )
+                info.add_workflow_warning(
+                    "Performance comparison: CIDB was not reachable, so the learned "
+                    "per-query thresholds are missing. Every query is judged against the "
+                    "0.15/0.25 floors instead, so historically noisy queries can be "
+                    "reported as changed."
+                )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
             result = cidb.do_select_query(
-                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
+                query=GET_HISTORICAL_TRESHOLDS_QUERY,
+                timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+                retries=3,
             )
-            if result is None:
+            if not result:
                 print(
                     "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                info.add_workflow_warning(
+                    "Performance comparison: failed to fetch the learned per-query "
+                    "thresholds. Every query is judged against the 0.15/0.25 floors "
+                    "instead, so historically noisy queries can be reported as changed."
                 )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
