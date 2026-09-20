@@ -337,8 +337,6 @@ void RefreshTask::startup()
     if (!coordination.coordinated)
         resolveLocalStateLocation(context);
 
-    /// Must precede RefreshSet::emplace, which notifies dependent views, and those read
-    /// last_completed_timeslot. Reading a file is also not allowed while holding `mutex`.
     auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState();
 
     if (start_paused || context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
@@ -358,7 +356,6 @@ void RefreshTask::startup()
     }
     else if (!local_state_path.empty())
     {
-        /// Best-effort: a failed write here leaves the same state as no persistence at all.
         saveLocalCoordinationState(context, coordination.root_znode.toString());
     }
 
@@ -1867,9 +1864,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
     }
-    /// Not on the transition that starts a refresh: a restart recomputes everything it publishes from
-    /// the state the previous finish persisted, and its caller clears `execution.interrupt_execution`
-    /// immediately afterwards, so persisting here would only open a window for a lost SYSTEM STOP VIEW.
     else if (!local_state_path.empty() && !running)
     {
         const String data = root.toString();
@@ -1880,7 +1874,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         lock.lock();
         if (!saved)
         {
-            /// Same retry cadence the Keeper error path uses for an unavailable state store.
             ProfileEvents::increment(ProfileEvents::RefreshableViewStatePersistFailed);
             scheduling_task->scheduleAfter(5000);
             return false;
@@ -1904,19 +1897,15 @@ void RefreshTask::resolveLocalStateLocation(const ContextPtr & context)
     if (view_uuid == UUIDHelpers::Nil || server_uuid == UUIDHelpers::Nil)
         return;
 
-    /// The owning database's metadata disk, which `SETTINGS disk` can point away from the
-    /// server-global one. IDatabase::getDisk() already defaults to getDatabaseDisk(), so an engine
-    /// that keeps no metadata on disk needs no separate fallback.
+    /// `SETTINGS disk` can point a database's metadata disk away from the server-global one.
     auto database = DatabaseCatalog::instance().tryGetDatabase(view->getStorageID().database_name);
     auto disk = database ? database->getDisk() : context->getDatabaseDisk();
-    /// A read-only database disk is a live configuration, not a misconfiguration: DiskLocal
-    /// marks itself read-only without failing startup.
+    /// DiskLocal marks itself read-only without failing startup, so this is a live configuration.
     if (!disk || disk->isReadOnly() || disk->isWriteOnce())
         return;
 
     local_state_disk = std::move(disk);
-    /// The database disk may be object storage shared by replicas, which all hold the same
-    /// view UUID, and an uncoordinated view schedules independently on each replica.
+    /// Replicas sharing an object-storage database disk hold the same view UUID, yet schedule separately.
     local_state_path = DatabaseCatalog::getStoreDirPath(view_uuid)
         / fmt::format("refresh_state.{}.txt", server_uuid);
 }
@@ -1926,8 +1915,7 @@ RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState()
     LoadedLocalState result;
     try
     {
-        /// existsFileOrDirectory, not existsFile: existsFile is false for a directory, which would
-        /// report a directory at this path as absent and let the view refresh.
+        /// existsFile is false for a directory, which would read as absent.
         if (!local_state_disk->existsFileOrDirectory(local_state_path))
             return result;
 

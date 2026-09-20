@@ -340,12 +340,10 @@ private:
         std::atomic<Int64> fake_clock {INT64_MIN};
     };
 
-    /// Outcome of reading the coordination state that an uncoordinated view persisted.
     struct LoadedLocalState
     {
         std::optional<CoordinationZnode> znode;
-        /// Present but unreadable, which is not the same as absent: absent means first start, while
-        /// unreadable means a schedule existed and was lost.
+        /// Unreadable, as opposed to absent: a schedule existed and was lost.
         bool unusable = false;
     };
 
@@ -354,10 +352,8 @@ private:
 
     StorageMaterializedView * view;
 
-    /// Where an uncoordinated view persists `coordination.root_znode`, standing in for the Keeper
-    /// znode a coordinated view re-reads at startup. Empty disables persistence.
-    /// Assigned only in startup(), which publishes them by releasing `mutex` before the scheduling
-    /// task can run, so both are then read without holding `mutex`.
+    /// Where an uncoordinated view persists `coordination.root_znode`. Empty disables persistence.
+    /// Assigned only in startup(), before the scheduling task can run, so reads need no `mutex`.
     DiskPtr local_state_disk;
     String local_state_path;
 
@@ -450,10 +446,8 @@ private:
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
-    /// Assign `local_state_disk`/`local_state_path`, or leave them unset to disable persistence.
     void resolveLocalStateLocation(const ContextPtr & context);
-    /// Read/write `local_state_path`. Callers must not hold `mutex`; the save side takes the context
-    /// instead of touching `view`, which a parallel shutdown() may null. Neither throws.
+    /// Callers must not hold `mutex`. Neither throws.
     LoadedLocalState loadLocalCoordinationState();
     bool saveLocalCoordinationState(const ContextPtr & context, const String & data);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
