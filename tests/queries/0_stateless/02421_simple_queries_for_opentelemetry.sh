@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # This function takes 3 arguments, the third optional:
 # $1 - query id
 # $2 - query
-# $3 - a client-supplied trace id, so the caller can find this query's TCPHandler span
+# $3 - a client-supplied trace id, so the caller can find this query's `TCPHandler` span
 function execute_query()
 {
   local traceparent=()
@@ -81,19 +81,19 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
 }
 
-# A SERVER span reaches the async opentelemetry_span_log only when its handler's
-# TracingContextHolder is destroyed, which is after the client already has its response, and
-# SYSTEM FLUSH LOGS flushes only what is already queued - so one read can legitimately find nothing.
+# A SERVER span reaches the async `opentelemetry_span_log` only when its handler's
+# `TracingContextHolder` is destroyed, which is after the client already has its response, and
+# `SYSTEM FLUSH LOGS` flushes only what is already queued - so one read can legitimately find nothing.
 # Sleeps are budgeted per file, not per call site, to bound the added time (Fast test: --timeout 60).
 span_poll_sleeps_left=15
 
-# $1 - SELECT list, $2 - operation_name, $3 - trace id (lowercase hex). The rows come back in
+# $1 - `SELECT` list, $2 - `operation_name`, $3 - trace id (lowercase hex). The rows come back in
 # $span_read_result because a command substitution would lose the shared budget in a subshell.
 function read_server_span()
 {
     span_read_result=""
 
-    for _ in {1..15}; do
+    for _ in {1..30}; do
         span_read_result=$(${CLICKHOUSE_CLIENT} -q "
             SYSTEM FLUSH LOGS opentelemetry_span_log;
             SELECT ${1}
@@ -113,7 +113,7 @@ function check_tcp_attributes()
 {
   local client_version="not found"
 
-  # client.version is recorded on the TCPHandler (SERVER) span, not on the child query span.
+  # `client.version` is recorded on the `TCPHandler` (SERVER) span, not on the child query span.
   read_server_span "attribute['client.version'] != '' AS client_version" 'TCPHandler' "$1"
 
   if [[ -z "$span_read_result" ]]; then
