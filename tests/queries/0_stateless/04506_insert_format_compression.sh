@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+if ! command -v gzip &> /dev/null; then echo "gzip not found" 1>&2; exit 1; fi
+if ! command -v zstd &> /dev/null; then echo "zstd not found" 1>&2; exit 1; fi
+
 [ -e "${CLICKHOUSE_TMP}"/04506_data.csv ] && rm "${CLICKHOUSE_TMP}"/04506_data.csv
 [ -e "${CLICKHOUSE_TMP}"/04506_data.csv.gz ] && rm "${CLICKHOUSE_TMP}"/04506_data.csv.gz
 
@@ -35,6 +38,37 @@ ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_ins
 # EXPLAIN AST / query logging / formatQuerySingleLine would produce text the parser rejects.
 ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION ''gzip'' FORMAT CSV')"
 ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION ''gzip'' SELECT * FROM input(''id UInt32, text String'') FORMAT CSV')"
+
+# Negative check: COMPRESSION written before SETTINGS (wrong order for this form -- SETTINGS must come
+# first here, unlike FROM INFILE below) is rejected with a clear error instead of a generic "extra
+# tokens" parse failure.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SETTINGS max_threads = 1 FORMAT CSV" 2>&1 | grep -c -o "SETTINGS must be written before COMPRESSION, not after"
+
+# Negative check: for FROM INFILE, COMPRESSION must be written directly after the file name, before
+# SETTINGS -- the opposite order from the bare-FORMAT/input() form above. Written after SETTINGS instead,
+# it is rejected with a clear error.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FROM INFILE '04506_nonexistent.csv' SETTINGS max_threads = 1 COMPRESSION 'gzip' FORMAT CSV" 2>&1 | grep -c -o "COMPRESSION for FROM INFILE must be written directly after the file name"
+
+# Restricted-keyword check: this feature adds COMPRESSION to ParserAlias::restricted_keywords, alongside
+# FORMAT/SETTINGS/etc., so it can still be used as a column/table alias with an explicit AS or as a
+# quoted identifier, but no longer as a bare, unquoted, AS-less implicit alias.
+${CLICKHOUSE_CLIENT} --query "SELECT 1 AS COMPRESSION"
+${CLICKHOUSE_CLIENT} --query "SELECT 1 COMPRESSION" 2>&1 | grep -c -o "Syntax error"
+${CLICKHOUSE_CLIENT} --query "SELECT 1 \`COMPRESSION\`"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM system.one COMPRESSION" 2>&1 | grep -c -o "Syntax error"
+
+# Functional check: COMPRESSION works together with an explicit column list. (The column-list parser
+# never parses aliases at all -- ParserColumnsMatcher/ParserCompoundIdentifier/etc., not ParserAlias --
+# so this is a plain functional regression check, independent of the restricted-keyword change above.)
+printf '30,AA\n31,BB\n' > "${CLICKHOUSE_TMP}"/04506_data13.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data13.csv
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression (id, text) COMPRESSION 'gzip' FORMAT CSV" < "${CLICKHOUSE_TMP}"/04506_data13.csv.gz
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data13.csv "${CLICKHOUSE_TMP}"/04506_data13.csv.gz
 
 # Functional check: COMPRESSION works the same way through the input() table function as through a bare FORMAT clause.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
@@ -73,6 +107,37 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data6.csv "${CLICKHOUSE_TMP}"/04506_data6.csv.gz
 
+# Documented fallback: COMPRESSION 'auto' has no filename to detect a method from when stdin is a
+# pipe with no backing file (as opposed to a redirected file descriptor, tested above), so it must
+# silently resolve to no decompression rather than error out. Fed via process substitution so stdin
+# is a pipe, not a named file, and the piped data is plain (uncompressed) CSV, so a correct
+# fallback-to-none inserts it as-is.
+printf '20,T\n21,U\n' > "${CLICKHOUSE_TMP}"/04506_data12.csv
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'auto' FORMAT CSV" < <(cat "${CLICKHOUSE_TMP}"/04506_data12.csv)
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data12.csv
+
+# Method-name plumbing: COMPRESSION works with 'bz2' too, not just 'gzip'/'zstd' -- exercises a
+# third distinct entry of the method-name whitelist, backed by a different external tool.
+if command -v bzip2 &> /dev/null; then
+    printf '25,Y\n26,Z\n' > "${CLICKHOUSE_TMP}"/04506_data10.csv
+    bzip2 -k -f "${CLICKHOUSE_TMP}"/04506_data10.csv
+
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'bz2' FORMAT CSV" < "${CLICKHOUSE_TMP}"/04506_data10.csv.bz2
+    ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+    rm -f "${CLICKHOUSE_TMP}"/04506_data10.csv "${CLICKHOUSE_TMP}"/04506_data10.csv.bz2
+else
+    echo "25	Y"
+    echo "26	Z"
+fi
+
 # clickhouse-local regression: bare FORMAT + COMPRESSION via stdin works the same way in clickhouse-local
 # as in clickhouse-client (both share ClientBase::sendDataFrom for this path). A bare-FORMAT INSERT fed
 # via stdin must be the last statement in its query text (true regardless of COMPRESSION -- the parser
@@ -98,7 +163,7 @@ rm -rf "${CLICKHOUSE_TMP}"/04506_local_path
 
 # clickhouse-local regression: COMPRESSION works through the input() table function in clickhouse-local
 # too, not just through a bare FORMAT clause. clickhouse-local's input() reads via a separate
-# LocalConnection::setInputInitializer() path that does not go through ClientBase::sendDataFrom(), so it
+# LocalConnection::setInputInitializer path that does not go through ClientBase::sendDataFrom, so it
 # needs (and has) its own handling of the COMPRESSION clause. As with the bare-FORMAT case above, the
 # INSERT fed via stdin must be the last statement in its query text, so CREATE and INSERT run in one
 # invocation with a persistent --path, and SELECT runs in a second invocation. Uses MergeTree, not
@@ -124,8 +189,8 @@ rm -rf "${CLICKHOUSE_TMP}"/04506_local_path2
 # the compression already detected from the real stdin descriptor (threaded from LocalServer into
 # LocalConnection via setDefaultInputCompressionMethod), not silently become a no-op the way it would
 # if resolved with an empty path hint.
-printf '17,Q\n18,R\n' > "${CLICKHOUSE_TMP}"/04506_data7.csv
-gzip -k -f "${CLICKHOUSE_TMP}"/04506_data7.csv
+printf '17,Q\n18,R\n' > "${CLICKHOUSE_TMP}"/04506_data11.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data11.csv
 
 rm -rf "${CLICKHOUSE_TMP}"/04506_local_path3
 mkdir -p "${CLICKHOUSE_TMP}"/04506_local_path3
@@ -133,11 +198,11 @@ mkdir -p "${CLICKHOUSE_TMP}"/04506_local_path3
 ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path3 --query "
 CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO test_insert_format_compression COMPRESSION 'auto' SELECT * FROM input('id UInt32, text String') FORMAT CSV
-" < "${CLICKHOUSE_TMP}"/04506_data7.csv.gz
+" < "${CLICKHOUSE_TMP}"/04506_data11.csv.gz
 
 ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path3 --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 
-rm -f "${CLICKHOUSE_TMP}"/04506_data7.csv "${CLICKHOUSE_TMP}"/04506_data7.csv.gz
+rm -f "${CLICKHOUSE_TMP}"/04506_data11.csv "${CLICKHOUSE_TMP}"/04506_data11.csv.gz
 rm -rf "${CLICKHOUSE_TMP}"/04506_local_path3
 
 # Negative check: COMPRESSION is client-side-only. Sent directly to the server over HTTP (which never
@@ -157,7 +222,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 # Negative check: FROM INFILE is likewise client-side-only (the server must never open a path from the
 # query text itself), and that ban must hold on the async_insert path too. `executeQuery` sets `tail` on
 # every INSERT before the async_insert decision, so `hasInlinedData()` is true even for a bare `FROM
-# INFILE` with no other data, and this query would otherwise reach pushQueryWithInlinedData() and open
+# INFILE` with no other data, and this query would otherwise reach pushQueryWithInlinedData and open
 # the path server-side.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 printf '' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20test_insert_format_compression%20FROM%20INFILE%20'04506_nonexistent.csv'%20FORMAT%20CSV&async_insert=1&wait_for_async_insert=1" --data-binary @- | grep -c -o "Query has infile and was send directly to server"
