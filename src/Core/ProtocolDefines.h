@@ -121,17 +121,27 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `ORDER BY ... WITH FILL` can be shipped in full.
 /// Version 19 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
-/// Version 19 also adds a second flags byte on `AggregatingStep` carrying `group_by_keys_semantically_constant`
-/// (bit 1), which keeps the gradual pre-aggregation resize off for `GROUP BY materialize(1)`-like keys
-/// on the shard, and `gradual_resize_enabled` (bit 2), which keeps it on for the pre-aggregation of a
-/// user `GROUP BY` only. Left off the wire towards older peers, which fall back to the header-based
-/// check and to the strict resize.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+/// Version 20 adds `legacy_join_size_limits_trigger_spilling` to the join step settings. A peer below
+/// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
+/// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
+/// needs the new contract is not serialized for such a peer at all.
+/// Version 21 introduces serialization version 1 of `AggregatingStep`, which adds a second flags byte
+/// carrying `group_by_keys_semantically_constant` (bit 1), which keeps the gradual pre-aggregation
+/// resize off for `GROUP BY materialize(1)`-like keys on the shard, and `gradual_resize_enabled`
+/// (bit 2), which keeps it on for the pre-aggregation of a user `GROUP BY` only. A stream towards an
+/// older peer stays at step version 0 and carries neither bit; that peer falls back to the
+/// header-based check and to the strict resize.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
+/// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
+/// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
+/// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -177,7 +187,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// is `group_by_keys_semantically_constant` and whose bit 2 is `gradual_resize_enabled`. Not gated by
 /// throwing: an older peer simply does not get the byte and falls back to the header-based constness
 /// check and to the strict pre-aggregation resize.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS = 19;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
