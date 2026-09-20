@@ -1,0 +1,7 @@
+live out of scope	11
+live in scope	7
+stored out of scope qualified	1
+stored in scope not qualified	1
+read out of scope	11
+read in scope	7
+reload out of scope	11

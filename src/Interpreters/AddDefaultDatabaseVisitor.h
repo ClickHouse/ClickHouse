@@ -106,7 +106,9 @@ public:
         /// into the next one, where the same name is an ordinary table name and has to be qualified.
         auto enclosing_with_aliases = std::move(with_aliases);
         with_aliases.clear();
+        auto enclosing_settings_context = std::exchange(table_expressions_settings_context, context);
         visitTableExpressionsImpl(ast);
+        table_expressions_settings_context = std::move(enclosing_settings_context);
         with_aliases = std::move(enclosing_with_aliases);
     }
 
@@ -157,6 +159,9 @@ private:
     /// The `WITH` names collected by the narrow qualification pass, which does not model the
     /// scopes: `visitTableExpressionsImpl` maintains it, the full traversal uses `scopes`.
     mutable std::unordered_set<String> with_aliases;
+    /// The settings in effect at the `SELECT` the narrow pass is inside, the counterpart of
+    /// `Scope::settings_context` of the full traversal. Null outside `visitTableExpressions`.
+    mutable ContextPtr table_expressions_settings_context;
     mutable std::unordered_set<String> expression_aliases;
 
     /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
@@ -241,9 +246,10 @@ private:
 
     static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
 
-    /// The settings in effect at `select`, and whether a plain `WITH` alias of an enclosing
-    /// `SELECT` is visible in it.
-    std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select) const;
+    /// The settings in effect at `select`, given those of the enclosing `SELECT` (null for the
+    /// outermost one, where the visitor's own context applies), and whether a plain `WITH` alias of
+    /// an enclosing `SELECT` is visible in it.
+    std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select, const ContextPtr & enclosing_context) const;
 
     /// Whether `with_element` of a `WITH RECURSIVE` list is a recursive element. `RECURSIVE` is a
     /// property of the whole list, but `QueryTreeBuilder` marks only the elements it builds as a
@@ -340,7 +346,17 @@ private:
             /// and qualifying `cte` there turned the dependency of the view on its source table into
             /// a dependency on a nonexistent table. The names are visible in this select query and in
             /// its subqueries, and are forgotten when the walk leaves it.
+            /// A name declared by an enclosing `SELECT` is only visible here when this `SELECT`
+            /// inherits, exactly as in the full traversal: `SQL UDF` expansion drops a whole
+            /// `SELECT ... SETTINGS enable_global_with_statement = 0` into the query, and there an
+            /// enclosing common table expression's name is an ordinary table name again and has to
+            /// be qualified, or the stored definition reads the database of whoever queries it.
+            auto [settings_context, inherit_from_outer] = scopeSettings(*select, table_expressions_settings_context);
+            auto enclosing_settings_context = std::exchange(table_expressions_settings_context, settings_context);
+
             auto enclosing_with_aliases = with_aliases;
+            if (!inherit_from_outer)
+                with_aliases.clear();
             if (select->with())
             {
                 for (const auto & child : select->with()->children)
@@ -365,6 +381,7 @@ private:
 
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
+            table_expressions_settings_context = std::move(enclosing_settings_context);
             return;
         }
 
@@ -499,7 +516,7 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// An alias is visible only inside the subtree of the `SELECT` that declares it.
-        auto [settings_context, inherit] = scopeSettings(select);
+        auto [settings_context, inherit] = scopeSettings(select, scopes.empty() ? nullptr : scopes.back().settings_context);
         WithAliasesScope with_aliases_scope(scopes, std::move(settings_context), inherit);
         Scope & scope = scopes.back();
 

@@ -33,9 +33,9 @@ void AddDefaultDatabaseVisitor::appendSettings(SettingsChanges & changes, const 
             changes.push_back(change);
 }
 
-std::pair<ContextPtr, bool> AddDefaultDatabaseVisitor::scopeSettings(const ASTSelectQuery & select) const
+std::pair<ContextPtr, bool> AddDefaultDatabaseVisitor::scopeSettings(const ASTSelectQuery & select, const ContextPtr & enclosing_context) const
 {
-    ContextPtr enclosing = scopes.empty() ? context : scopes.back().settings_context;
+    ContextPtr enclosing = enclosing_context ? enclosing_context : context;
 
     SettingsChanges changes;
     appendSettings(changes, select);
