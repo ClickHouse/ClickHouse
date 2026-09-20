@@ -184,7 +184,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         /// A `LEFT ANTI` filter is built as `ExactNotContains`, whose `range_positive` is false, so it
         /// exposes neither recorded key values nor a key range and can never produce a pruning predicate.
         /// Tracking the build-side key range for it would be a pure `getExtremes` tax on every build chunk.
-        /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis && !check_left_does_not_contain,
+        /*enable_index_analysis_=*/optimization_settings.enable_join_runtime_filters_index_analysis && !check_left_does_not_contain,
         distinct_keys_hint,
         distinct_keys_hint_matches_filter_key);
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
@@ -558,7 +558,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                 /*allow_to_use_not_exact_filter_=*/false,
                 /// Always a `LEFT ANTI` (negating) filter here - see the note above, it can never prune.
-                /*track_key_range_=*/false,
+                /*enable_index_analysis_=*/false,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key_=*/true);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
@@ -718,6 +718,10 @@ void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
     /// the descriptors on the new read (`ReadFromMergeTree::inheritJoinRuntimeFiltersForIndexAnalysis`), so
     /// a prunable projection key, or a `FINAL` read split into non-`FINAL` ones, keeps the tracking on.
     std::unordered_map<String, std::vector<ReadFromMergeTree *>> reads_by_filter_key;
+    /// The subset of the keys above whose consumer can prune with the recorded key range, and not only
+    /// with the exact key values: a probe key covered by a `bloom_filter` index alone reads the filter,
+    /// but never its range, so it must not keep the build-side tracking alive.
+    std::unordered_set<String> filter_keys_using_key_range;
     std::vector<BuildRuntimeFilterStep *> build_steps;
 
     std::vector<QueryPlan::Node *> stack{&root};
@@ -729,7 +733,11 @@ void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
         if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
             for (const auto & descriptor : read_step->getJoinRuntimeFiltersForIndexAnalysis())
+            {
                 reads_by_filter_key[descriptor.filter_id].push_back(read_step);
+                if (descriptor.can_use_key_range)
+                    filter_keys_using_key_range.insert(descriptor.filter_id);
+            }
         }
         else if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
         {
@@ -742,12 +750,12 @@ void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
 
     /// A registered descriptor is not the same thing as a usable pruning predicate: a negating
     /// (`LEFT ANTI`) filter is registered on the read as well, but `convertRuntimeFilterToKeyConditionDAG`
-    /// can never build a predicate from it. Such a filter has its key-range tracking off already, so drop
+    /// can never build a predicate from it. Such a filter has its index analysis off already, so drop
     /// its descriptors instead of installing the dynamic-predicate machinery for nothing.
     std::unordered_set<String> unusable_filter_keys;
     for (auto * build_step : build_steps)
     {
-        if (!build_step->isKeyRangeTrackingEnabled())
+        if (!build_step->isIndexAnalysisEnabled())
             unusable_filter_keys.insert(build_step->getFilterKey());
     }
 
@@ -761,18 +769,27 @@ void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
                 continue;
             reads_to_clean.insert(it->second.begin(), it->second.end());
             reads_by_filter_key.erase(it);
+            filter_keys_using_key_range.erase(filter_key);
         }
         for (auto * read_step : reads_to_clean)
             read_step->removeJoinRuntimeFiltersForIndexAnalysis(unusable_filter_keys);
     }
 
-    /// Tracking the build-side key range costs an extra `getExtremes` pass over every build chunk, so
-    /// it is worth it only for a filter whose probe side registered a descriptor for it. Without this,
-    /// enabling `enable_join_runtime_filters_index_analysis` would slow down every join whose key is
-    /// neither in the primary key nor covered by a `minmax`, `set` or `bloom_filter` skip index.
+    /// Tracking the build-side key range costs an extra `getExtremes` pass over every build chunk, so it
+    /// is worth it only for a filter whose probe side registered a descriptor that can use that range.
+    /// Without this, enabling `enable_join_runtime_filters_index_analysis` would slow down every join
+    /// whose key is neither in the primary key nor covered by a `minmax` or `set` skip index.
+    ///
+    /// A key that only a `bloom_filter` index covers is a consumer of the filter but not of its range:
+    /// `MergeTreeIndexConditionBloomFilter` can test the exact key values and nothing else. Such a
+    /// filter keeps the index analysis (exposing the values is free) and loses the range tracking, so
+    /// the new default really is "prune or do nothing" there.
     for (auto * build_step : build_steps)
     {
-        if (!reads_by_filter_key.contains(build_step->getFilterKey()))
+        const auto & filter_key = build_step->getFilterKey();
+        if (!reads_by_filter_key.contains(filter_key))
+            build_step->disableIndexAnalysis();
+        else if (!filter_keys_using_key_range.contains(filter_key))
             build_step->disableKeyRangeTracking();
     }
 }

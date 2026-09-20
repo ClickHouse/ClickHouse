@@ -76,7 +76,12 @@ class RuntimeFilterIndexAnalysis
 public:
     RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_);
 
+    /// Expose the exact key values to the probe side. Free: the filter records them anyway.
     void enable() { enabled = true; }
+    /// Additionally collect the `[min, max]` key range, which costs a `getExtremes` pass over every
+    /// build-side chunk. Only a probe-side consumer that can test a range (the primary key, a `minmax`
+    /// or a `set` skip index) asks for it.
+    void enableKeyRangeTracking() { range_enabled = true; }
     bool canUseExactValues() const { return enabled && positive_filter; }
     void insert(const IColumn & values);
     void mergeFrom(const RuntimeFilterIndexAnalysis & source);
@@ -90,6 +95,7 @@ private:
     const bool range_supported;
     const bool positive_filter;
     bool enabled = false;
+    bool range_enabled = false;
     bool has_range = false;
     Field range_min{};
     Field range_max{};
@@ -330,7 +336,10 @@ private:
             detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>)};
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
+            /// The metadata of a prebuilt filter is copied from the filter it replaces, so there is
+            /// nothing to collect and no reason to withhold either part of it.
             result.index_analysis.enable();
+            result.index_analysis.enableKeyRangeTracking();
             if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
                 result.index_analysis.setRange(*range);
         }
@@ -365,8 +374,10 @@ public:
     /// The source must be a distinct filter. Both filters are locked in stable address order.
     void merge(const RuntimeFilter & source);
 
-    /// Opt in to collecting build-side metadata for storage index analysis.
+    /// Opt in to exposing the exact build-side key values for storage index analysis.
     void enableIndexAnalysis();
+    /// Additionally opt in to collecting the build-side key range (an extra pass over every chunk).
+    void enableKeyRangeTracking();
     ColumnPtr getRecordedKeyValues() const;
     std::optional<Range> getRecordedKeyRanges() const;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
@@ -416,6 +427,14 @@ struct RuntimeFilterIndexAnalysisDescriptor
     String filter_id;
     String key_column_name;
     DataTypePtr key_column_type;
+
+    /// Whether the consumer this descriptor was registered for can prune with the key range the build
+    /// side records in addition to the exact key values: the primary key and the `minmax` and `set` skip
+    /// indexes can, a `bloom_filter` index cannot (`MergeTreeIndexConditionBloomFilter` understands only
+    /// equality and `IN`, so a `[min, max]` predicate evaluates to unknown there). A key that only has a
+    /// `bloom_filter` index is therefore still a consumer of the filter, but not of its key range, and
+    /// the build side must not pay the extra `getExtremes` pass for it.
+    bool can_use_key_range = false;
 };
 
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).

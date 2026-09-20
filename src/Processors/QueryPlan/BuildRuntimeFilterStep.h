@@ -25,7 +25,9 @@ public:
         UInt64 blocks_to_skip_before_reenabling,
         Float64 max_ratio_of_set_bits_in_bloom_filter,
         bool allow_to_use_not_exact_filter_,
-        bool track_key_range_,
+        /// Whether the probe side may use this filter for index analysis at all; the key range tracking
+        /// starts enabled with it and is switched off separately by `disableKeyRangeTracking`.
+        bool enable_index_analysis_,
         std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
         bool distinct_keys_hint_matches_filter_key_ = false);
 
@@ -39,11 +41,22 @@ public:
     const String & getFilterKey() const { return filter_key; }
 
     /// Called after index analysis registration, when no probe-side read consumes this filter's key
-    /// range: dropping the tracking avoids an extra `getExtremes` scan of every build-side chunk.
+    /// range: dropping the tracking avoids an extra `getExtremes` scan of every build-side chunk. The
+    /// exact key values stay available, so a probe key covered only by a `bloom_filter` index - which
+    /// can test values but not a range - still prunes.
     void disableKeyRangeTracking() { track_key_range = false; }
+
+    /// Called when no probe-side read consumes this filter at all: then even exposing the exact key
+    /// values is pointless, and the dynamic predicate is not installed on any read.
+    void disableIndexAnalysis()
+    {
+        index_analysis = false;
+        track_key_range = false;
+    }
 
     /// False for a filter that can never yield a positive pruning predicate (a negating `LEFT ANTI`
     /// filter), or for one no probe-side read consumes.
+    bool isIndexAnalysisEnabled() const { return index_analysis; }
     bool isKeyRangeTrackingEnabled() const { return track_key_range; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
@@ -79,7 +92,9 @@ private:
     Float64 max_ratio_of_set_bits_in_bloom_filter;
 
     bool allow_to_use_not_exact_filter;
-    /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.
+    /// Expose the exact key values for left-side index analysis; free, the filter records them anyway.
+    bool index_analysis;
+    /// Also record the key range for left-side index analysis; off avoids an extra build-side scan.
     bool track_key_range;
 
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.

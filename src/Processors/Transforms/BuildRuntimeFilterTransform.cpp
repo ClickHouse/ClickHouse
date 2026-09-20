@@ -29,6 +29,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
+    bool index_analysis_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_,
@@ -88,9 +89,12 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 exact_values_limit_));
     }
 
-    /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
-    if (track_key_range_)
+    /// Exposing the exact key values is free, the filter records them anyway; only pay the extra
+    /// min/max scan of the build side when the left side can prune with that range as well.
+    if (index_analysis_)
         built_filter->enableIndexAnalysis();
+    if (track_key_range_)
+        built_filter->enableKeyRangeTracking();
 }
 
 

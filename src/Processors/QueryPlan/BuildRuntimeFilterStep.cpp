@@ -64,7 +64,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
-    bool track_key_range_,
+    bool enable_index_analysis_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_)
     : ITransformingStep(
@@ -82,7 +82,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
-    , track_key_range(track_key_range_)
+    , index_analysis(enable_index_analysis_)
+    , track_key_range(enable_index_analysis_)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
@@ -124,6 +125,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
             allow_to_use_not_exact_filter,
+            index_analysis,
             track_key_range,
             distinct_keys_hint,
             distinct_keys_hint_matches_filter_key,
@@ -192,7 +194,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         blocks_to_skip_before_reenabling,
         max_ratio_of_set_bits_in_bloom_filter,
         allow_to_use_not_exact_filter,
-        /*track_key_range_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
+        /*enable_index_analysis_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
@@ -224,6 +226,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     else
     {
         format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+        format_settings.out << prefix << "Index analysis: " << index_analysis << '\n';
         format_settings.out << prefix << "Key range tracking: " << track_key_range << '\n';
     }
 }

@@ -2894,6 +2894,14 @@ bool isIndexTypeApplicableToJoinRuntimeFilter(const String & index_type)
     return index_type == "minmax" || index_type == "set" || index_type == "bloom_filter";
 }
 
+/// Of those, only these can prune with the `[min, max]` key range the build side records when the filter
+/// no longer exposes exact key values: `MergeTreeIndexConditionBloomFilter` supports only equality, `IN`
+/// and the `has*` functions, so a range predicate is always unknown for a `bloom_filter` index.
+bool isIndexTypeApplicableToJoinRuntimeFilterKeyRange(const String & index_type)
+{
+    return index_type == "minmax" || index_type == "set";
+}
+
 std::unordered_set<String> getIgnoredDataSkippingIndices(const Settings & settings)
 {
     if (!settings[Setting::ignore_data_skipping_indices].changed)
@@ -2951,6 +2959,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
     /// The primary-key path only needs the data-read safety checks above; the secondary skip-index
     /// part is additionally gated by `use_skip_indexes` and `ignore_data_skipping_indices`.
     bool has_applicable_skip_index = false;
+    bool has_key_range_capable_skip_index = false;
     if (settings[Setting::use_skip_indexes])
     {
         const auto ignored_index_names = getIgnoredDataSkippingIndices(settings);
@@ -2960,9 +2969,14 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
                 continue;
             if (!isIndexTypeApplicableToJoinRuntimeFilter(index.type))
                 continue;
-            if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+            if (std::find(index.column_names.begin(), index.column_names.end(), column_name) == index.column_names.end())
+                continue;
+
+            has_applicable_skip_index = true;
+            /// A `bloom_filter` index can only test the exact key values, never the recorded key range.
+            if (isIndexTypeApplicableToJoinRuntimeFilterKeyRange(index.type))
             {
-                has_applicable_skip_index = true;
+                has_key_range_capable_skip_index = true;
                 break;
             }
         }
@@ -2971,9 +2985,14 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
     if (!is_primary_key_column && !has_applicable_skip_index)
         return;
 
-    join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
-    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
-        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+    /// A key that only a `bloom_filter` index covers prunes with the exact values of the filter, but it
+    /// can never use the key range, so it must not keep the build-side key range tracking alive on its
+    /// own, see `disableUnusedRuntimeFilterKeyRangeTracking`.
+    const bool can_use_key_range = is_primary_key_column || has_key_range_capable_skip_index;
+
+    join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type, can_use_key_range});
+    LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={}, key_range={})",
+        filter_id, column_name, is_primary_key_column, has_applicable_skip_index, can_use_key_range);
 }
 
 void ReadFromMergeTree::inheritJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step)
@@ -5354,15 +5373,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 if (index.index.type != "bloom_filter")
                     return true;
+
+                /// `buildRuntimeRangePredicate` ANDs every usable filter into the predicate, and one
+                /// probe key can carry several filters (`p.k = b1.k AND p.k = b2.k` registers one
+                /// descriptor per `__applyFilter`). The index is usable as soon as *any* of them still
+                /// exposes an exact `IN` set within the cap, so all matching descriptors are scanned
+                /// instead of letting the first one decide for the whole column.
                 for (const auto & descr : descriptors)
                 {
                     if (std::find(index.index.column_names.begin(), index.index.column_names.end(), descr.key_column_name) == index.index.column_names.end())
                         continue;
                     auto filter = lookup->find(descr.filter_id);
                     if (!filter)
-                        return false;
+                        continue;
                     auto values = filter->getRecordedKeyValues();
-                    return values && values->size() <= bloom_filter_in_cap;
+                    if (values && values->size() <= bloom_filter_in_cap)
+                        return true;
                 }
                 return false;
             };

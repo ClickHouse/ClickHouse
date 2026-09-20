@@ -186,7 +186,7 @@ detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr
 
 void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
 {
-    if (!enabled || !range_supported || !positive_filter)
+    if (!range_enabled || !range_supported || !positive_filter)
         return;
 
     range_min = range.left;
@@ -212,7 +212,7 @@ void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, cons
 
 void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
 {
-    if (!enabled || !range_supported || !positive_filter || values.empty())
+    if (!range_enabled || !range_supported || !positive_filter || values.empty())
         return;
 
     Field column_min;
@@ -224,13 +224,13 @@ void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
 
 void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
 {
-    if (enabled && range_supported && positive_filter && source.has_range)
+    if (range_enabled && range_supported && positive_filter && source.has_range)
         extendRange(source.range_min, source.range_max);
 }
 
 std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
 {
-    if (!enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
+    if (!range_enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
         return {};
     return Range(range_min, true, range_max, true);
 }
@@ -805,6 +805,13 @@ void RuntimeFilter::enableIndexAnalysis()
     std::lock_guard lock(mutex);
     data.build_state.assertCanInsert();
     data.index_analysis.enable();
+}
+
+void RuntimeFilter::enableKeyRangeTracking()
+{
+    std::lock_guard lock(mutex);
+    data.build_state.assertCanInsert();
+    data.index_analysis.enableKeyRangeTracking();
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
