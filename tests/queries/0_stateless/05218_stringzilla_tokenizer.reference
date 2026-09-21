@@ -1,0 +1,138 @@
+-- Tests the `stringzilla` tokenizer (UAX #29 word segmentation by StringZilla) with the `tokens` and
+-- `tokensForLikePattern` functions.
+
+-- { echoOn }
+
+-- Return type and constness
+SELECT tokens('', 'stringzilla') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+[]	Array(String)	1
+SELECT tokens('hello world', 'stringzilla') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+['hello','world']	Array(String)	1
+SELECT tokens(materialize('hello world'), 'stringzilla') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+['hello','world']	Array(String)	0
+SELECT tokens(toNullable('hello world'), 'stringzilla') AS tokenized, toTypeName(tokenized);
+['hello','world']	Array(String)
+SELECT tokens(toFixedString('hello world', 16), 'stringzilla') AS tokenized;
+['hello','world']
+SELECT tokens('hello world', 'stringzilla', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH, BAD_ARGUMENTS }
+-- ASCII connectors follow UAX #29: `.` and `'` join letters or digits, `:` joins letters, `,` and `;` join digits
+SELECT tokens('a_b a_3 a_ _a __a_b_3_ __', 'stringzilla');
+['a_b','a_3','a_','_a','__a_b_3_']
+SELECT tokens('a:b a:3 a: :a ::a:b:3:', 'stringzilla');
+['a:b','a','3','a','a','a:b','3']
+SELECT tokens($$a'b a'3 don't ''a'b'3'$$, 'stringzilla');
+['a\'b','a','3','don\'t','a\'b','3']
+SELECT tokens('a.b a.3 3.14 U.S.A. v1.2.3', 'stringzilla');
+['a.b','a','3','3.14','U.S.A','v1.2.3']
+SELECT tokens('1,000,000 1;2 12:30 e-mail user@example.com', 'stringzilla');
+['1,000,000','1;2','12','30','e','mail','user','example.com']
+-- Separators: ASCII control whitespace, CRLF, whitespace runs, Unicode spaces, punctuation and symbols
+SELECT tokens('tab\there\nnew\rcr\vvt\fff end', 'stringzilla');
+['tab','here','new','cr','vt','ff','end']
+SELECT tokens('line1\r\nline2\r\n\r\nline3', 'stringzilla');
+['line1','line2','line3']
+SELECT tokens('  two   spaces  ', 'stringzilla');
+['two','spaces']
+SELECT tokens('nbsp\xC2\xA0ideographic\xE3\x80\x80space\xE2\x80\xA8ls', 'stringzilla');
+['nbsp','ideographic','space','ls']
+SELECT tokens('price: $100, 50% off; x+y=z <tag> [a] {b} ~c', 'stringzilla');
+['price','100','50','off','x','y','z','tag','a','b','c']
+SELECT tokens('\x00a\x01b\x7Fc', 'stringzilla');
+['a','b','c']
+-- CJK: ideographs and Hiragana are single-character tokens, Katakana and Hangul runs are words, CJK punctuation is dropped
+SELECT tokens('中文分词测试，你好世界。', 'stringzilla');
+['中','文','分','词','测','试','你','好','世','界']
+SELECT tokens('日本語のテキスト カタカナ ひらがな「引用」', 'stringzilla');
+['日','本','語','の','テキスト','カタカナ','ひ','ら','が','な','引','用']
+SELECT tokens('한국어 텍스트', 'stringzilla');
+['한국어','텍스트']
+SELECT tokens('错误503', 'stringzilla');
+['错','误','503']
+SELECT tokens('taichi张三丰in the house', 'stringzilla');
+['taichi','张','三','丰','in','the','house']
+SELECT tokens('ClickHouse是一个用于OLAP的列式数据库', 'stringzilla');
+['ClickHouse','是','一','个','用','于','OLAP','的','列','式','数','据','库']
+SELECT tokens('中文，English；混合。', 'stringzilla');
+['中','文','English','混','合']
+-- Other scripts and combining marks
+SELECT tokens('café naïve Ελληνικά русский', 'stringzilla');
+['café','naïve','Ελληνικά','русский']
+SELECT tokens('e\xCC\x81te\xCC\x81 (decomposed)', 'stringzilla');
+['été','decomposed']
+SELECT tokens('שלום עולם مرحبا بالعالم', 'stringzilla');
+['שלום','עולם','مرحبا','بالعالم']
+-- Emoji, emoji sequences, flags, and punctuation with combining marks are separators
+SELECT tokens('emoji 😀 👍🏽 👨‍👩‍👧 ❤️ 🇺🇸🇫🇷 !\xCC\x81 ok', 'stringzilla');
+['emoji','ok']
+-- Ill-formed UTF-8 is kept as tokens and never skips the following text
+SELECT tokens('\xFF\xFE bad \xE4\xB8 trunc', 'stringzilla');
+['�','�','bad','�','�','trunc']
+SELECT tokens('\xE4\xB8', 'stringzilla');
+['�','�']
+-- More tokens than one batch of segments
+SELECT length(tokens(repeat('a b ', 1000), 'stringzilla')), length(tokens(repeat('中', 1000), 'stringzilla'));
+2000	1000
+SELECT tokens(repeat(' ', 1000) || 'x' || repeat('.', 1000), 'stringzilla');
+['x']
+-- tokensForLikePattern: a token next to a wildcard is dropped unless whitespace separates them, since the wildcard may continue it
+SELECT tokensForLikePattern('', 'stringzilla');
+[]
+SELECT tokensForLikePattern('%%__', 'stringzilla');
+[]
+SELECT tokensForLikePattern('abc', 'stringzilla');
+['abc']
+SELECT tokensForLikePattern('%abc', 'stringzilla');
+[]
+SELECT tokensForLikePattern('abc%', 'stringzilla');
+[]
+SELECT tokensForLikePattern('%abc def ghi%', 'stringzilla');
+['def']
+SELECT tokensForLikePattern('a_b%c_d', 'stringzilla');
+[]
+SELECT tokensForLikePattern('_a c%', 'stringzilla');
+[]
+SELECT tokensForLikePattern('%%__abc def', 'stringzilla');
+['def']
+-- `%.bar` may be `foo.bar`, `%,000` may be `1,000`
+SELECT tokensForLikePattern('%.bar baz', 'stringzilla');
+['baz']
+SELECT tokensForLikePattern('foo bar.%', 'stringzilla');
+['foo']
+SELECT tokensForLikePattern($$foo bar'%$$, 'stringzilla');
+['foo']
+SELECT tokensForLikePattern('%, 3 4,%', 'stringzilla');
+['3']
+SELECT tokensForLikePattern('%. bar baz .%', 'stringzilla');
+['bar','baz']
+SELECT tokensForLikePattern('%,000 rows%', 'stringzilla');
+[]
+SELECT tokensForLikePattern('%1,000 rows,%', 'stringzilla');
+[]
+-- Escaped wildcards and backslashes are literal characters
+SELECT tokensForLikePattern('a\\%b a\\_c', 'stringzilla');
+['a','b','a_c']
+SELECT tokensForLikePattern('a\\_b%c', 'stringzilla');
+[]
+SELECT tokensForLikePattern('a\\_b\\%c', 'stringzilla');
+['a_b','c']
+SELECT tokensForLikePattern('x \\_foo y', 'stringzilla');
+['x','_foo','y']
+SELECT tokensForLikePattern('x a\\\\%b y', 'stringzilla');
+['x','y']
+SELECT tokensForLikePattern('x y\\', 'stringzilla');
+['x','y']
+SELECT tokensForLikePattern('x caf\\é y', 'stringzilla');
+['x','café','y']
+SELECT tokensForLikePattern('%the quick brown\\_fox jumps over\\% the lazy dog%', 'stringzilla');
+['quick','brown_fox','jumps','over','the','lazy']
+-- CJK
+SELECT tokensForLikePattern('你', 'stringzilla');
+['你']
+SELECT tokensForLikePattern('abc你好', 'stringzilla');
+['abc','你','好']
+SELECT tokensForLikePattern('%你好%世界%', 'stringzilla');
+[]
+SELECT tokensForLikePattern('%错误502需要%', 'stringzilla');
+['误','502','需']
+SELECT tokensForLikePattern('%한국어 텍스트%', 'stringzilla');
+[]

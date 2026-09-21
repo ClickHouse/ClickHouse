@@ -11,9 +11,12 @@
 #include <Common/PODArray.h>
 #include <Functions/Regexps.h>
 #include <IO/VarInt.h>
+#include <base/find_symbols.h>
 
 #include <algorithm>
 #include <limits>
+
+#include <stringzilla/stringzilla.hpp>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -40,8 +43,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-#if USE_ICU
     extern const int LOGICAL_ERROR;
+#if USE_ICU
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
 }
@@ -1047,6 +1050,259 @@ void AsciiCJKTokenizer::substringToTokens(
     const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+
+namespace
+{
+
+/// Whether the codepoint at `data` is Unicode punctuation, a symbol or whitespace.
+bool startsWithDelimiter(const char * data, size_t length)
+{
+    const size_t codepoint_length = std::min(UTF8::seqLength(static_cast<UInt8>(*data)), length);
+    sz_size_t offset = 0;
+    sz_size_t match_length = 0;
+    sz_size_t bytes_consumed = 0;
+    return sz_utf8_delimiters(data, codepoint_length, &offset, &match_length, 1, &bytes_consumed) == 1 && offset == 0;
+}
+
+bool isUnescapedWildcard(const char * data, size_t pos)
+{
+    if (data[pos] != '%' && data[pos] != '_')
+        return false;
+
+    size_t backslashes = 0;
+    while (pos > backslashes && data[pos - backslashes - 1] == '\\')
+        ++backslashes;
+    return backslashes % 2 == 0;
+}
+
+/// Unescapes the literal of a `LIKE` pattern from `pos` up to the next wildcard or the end of the pattern into `literal`,
+/// and moves `pos` there.
+void readLikeLiteral(const char * data, size_t length, size_t & pos, String & literal)
+{
+    literal.clear();
+    while (pos < length)
+    {
+        const char * special = find_first_symbols<'%', '_', '\\'>(data + pos, data + length);
+        literal.append(data + pos, special);
+        pos = special - data;
+        if (pos == length || data[pos] != '\\')
+            return;
+
+        const bool escaped = pos + 1 < length;
+        literal.push_back(data[pos + escaped]);
+        pos += 1 + escaped;
+    }
+}
+
+/// The position in the pattern of byte `literal_pos` of the literal read by `readLikeLiteral` from `pos`.
+size_t likeLiteralToPatternPos(const char * data, size_t length, size_t pos, size_t literal_pos)
+{
+    for (; literal_pos > 0; --literal_pos)
+        pos += data[pos] == '\\' && pos + 1 < length ? 2 : 1;
+    return pos;
+}
+
+bool hasWhitespace(const char * data, size_t length)
+{
+    sz_size_t offset = 0;
+    sz_size_t match_length = 0;
+    sz_size_t bytes_consumed = 0;
+    return length > 0 && sz_utf8_whitespaces(data, length, &offset, &match_length, 1, &bytes_consumed) > 0;
+}
+
+/// Calls `callback(token_start, token_length)` for the tokens of a fragment of a longer text, until it returns true.
+/// UAX #29 joins words across punctuation (`1,000`, `foo.bar`) but never across whitespace, so at a side where the text
+/// continues (not a prefix / not a suffix), the outermost token is complete only if whitespace separates it from that side.
+template <typename Tokenizer, typename Callback>
+void forEachCompleteToken(const Tokenizer & tokenizer, const char * data, size_t length, bool is_prefix, bool is_suffix, Callback && callback)
+{
+    size_t cur = 0;
+    size_t start = 0;
+    size_t len = 0;
+    bool is_first = true;
+    std::optional<std::pair<size_t, size_t>> previous; /// Emitted once the next token shows it is not the last one.
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, start, len))
+    {
+        if (previous && callback(previous->first, previous->second))
+            return;
+        previous.reset();
+
+        const bool skip = is_first && !is_prefix && !hasWhitespace(data, start);
+        is_first = false;
+        if (!skip)
+            previous.emplace(start, len);
+    }
+
+    if (previous)
+    {
+        const size_t end = previous->first + previous->second;
+        if (is_suffix || hasWhitespace(data + end, length - end))
+            callback(previous->first, previous->second);
+    }
+}
+
+namespace sz = ashvardanian::stringzilla;
+
+/// Position in the UAX #29 word segments of a string. StringZilla's iterator fetches the segments in batches.
+struct WordSegmentCursor
+{
+    using Iterator = sz::utf8_wordbreaks_view<sz::string_view>::iterator;
+
+    const char * data = nullptr;
+    size_t length = 0;
+    Iterator iterator;
+
+    bool continues(const char * data_, size_t length_, size_t pos) const
+    {
+        return pos != 0 && data_ == data && length_ == length && iterator != sz::end_sentinel_type{}
+            && (*iterator).data() == data_ + pos;
+    }
+
+    void reset(const char * data_, size_t length_, size_t pos)
+    {
+        data = data_;
+        length = length_;
+        iterator = Iterator(sz::string_view(data_ + pos, length_ - pos));
+        if (iterator == sz::end_sentinel_type{})
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No UAX #29 word segments in a non-empty string");
+    }
+};
+
+}
+
+bool StringZillaTokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    /// The tokenizer is shared between threads, so the cursor is per thread, like the ICU iterator of `IcuTokenizer`.
+    /// It is reset at the start of each string and whenever the call does not continue the previous one, so callers
+    /// must start each string at `pos == 0`, as all loops over `nextInString` do.
+    thread_local WordSegmentCursor cursor;
+
+    while (pos < length)
+    {
+        if (!cursor.continues(data, length, pos))
+            cursor.reset(data, length, pos);
+
+        const auto segment = *cursor.iterator;
+        ++cursor.iterator;
+
+        const size_t start = segment.data() - data;
+        const size_t segment_length = segment.size();
+        const size_t end = start + segment_length;
+        pos = end;
+
+        /// The segments cover the whole string: skip the separators between words, i.e. the segments starting with
+        /// a delimiter after optional underscores (`__`, `, `, `\r\n`, emoji).
+        size_t first = start;
+        while (first < end && data[first] == '_')
+            ++first;
+
+        if (first == end)
+            continue;
+        if (isASCII(data[first]) ? !isAlphaNumericASCII(data[first]) : startsWithDelimiter(data + first, end - first))
+            continue;
+
+        token_start = start;
+        token_length = segment_length;
+        return true;
+    }
+
+    return false;
+}
+
+bool StringZillaTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
+{
+    String literal;
+    while (pos < length)
+    {
+        if (data[pos] == '%' || data[pos] == '_')
+        {
+            ++pos;
+            continue;
+        }
+
+        const size_t literal_start = pos;
+        const bool after_wildcard = pos > 0 && isUnescapedWildcard(data, pos - 1);
+        readLikeLiteral(data, length, pos, literal);
+
+        std::optional<std::pair<size_t, size_t>> found;
+        forEachCompleteToken(*this, literal.data(), literal.size(), !after_wildcard, pos == length, [&](size_t start, size_t len)
+        {
+            found.emplace(start, len);
+            return true;
+        });
+
+        if (found)
+        {
+            token.assign(literal, found->first, found->second);
+            pos = likeLiteralToPatternPos(data, length, literal_start, found->first + found->second);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+namespace
+{
+
+/// Calls `callback(literal, token_start, token_length)` for the complete tokens of each unescaped literal between the
+/// wildcards of a `LIKE` pattern. The literals are tokenized once each, so this is linear in the pattern length.
+template <typename Callback>
+void forEachLikePatternToken(const StringZillaTokenizer & tokenizer, const char * data, size_t length, Callback && callback)
+{
+    String literal;
+    size_t pos = 0;
+    while (pos < length)
+    {
+        if (data[pos] == '%' || data[pos] == '_')
+        {
+            ++pos;
+            continue;
+        }
+
+        /// A literal starts either at the beginning of the pattern or right after a wildcard.
+        const bool after_wildcard = pos > 0;
+        readLikeLiteral(data, length, pos, literal);
+
+        forEachCompleteToken(tokenizer, literal.data(), literal.size(), !after_wildcard, pos == length, [&](size_t start, size_t len)
+        {
+            callback(literal, start, len);
+            return false;
+        });
+    }
+}
+
+}
+
+void StringZillaTokenizer::stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    forEachLikePatternToken(*this, data, length, [&](const String & literal, size_t start, size_t len)
+    {
+        tokens.emplace_back(literal, start, len);
+    });
+}
+
+void StringZillaTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    forEachCompleteToken(*this, data, length, is_prefix, is_suffix, [&](size_t start, size_t len)
+    {
+        bloom_filter.add(data + start, len);
+        return false;
+    });
+}
+
+void StringZillaTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    forEachCompleteToken(*this, data, length, is_prefix, is_suffix, [&](size_t start, size_t len)
+    {
+        tokens.emplace_back(data + start, len);
+        return false;
+    });
 }
 
 #if USE_JIEBA

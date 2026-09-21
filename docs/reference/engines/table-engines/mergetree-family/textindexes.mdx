@@ -83,6 +83,7 @@ CREATE TABLE table
                                             | splitByString[(S)]
                                             | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
+                                            | stringzilla
                                             | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
@@ -123,6 +124,7 @@ ALTER TABLE table
                                             | splitByString[(S)]
                                             | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
+                                            | stringzilla
                                             | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
@@ -169,6 +171,12 @@ ALTER TABLE table DROP INDEX text_idx;
   - with `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded. For example, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexes `hello` and `world` from `tag:hello tag:world`, dropping the `tag:` prefix. Matching uses [RE2](https://github.com/google/re2), the same engine every regex-based function in ClickHouse uses; only the first capture group is ever used, so further groups merely constrain what matches. A capture group that did not participate in the match, or that matched an empty string, contributes no token, and scanning always resumes after the whole match rather than after the captured span (so matches never overlap).
   With `match_tokens = true`, note that search needles in text search functions are tokenized with the index's own tokenizer, so a plain string needle that does not itself match `regexp` yields no tokens and therefore no results. Needles passed as arrays to text search functions are not tokenized, and are therefore recommended for use with regexp tokenizers.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `stringzilla` splits strings into words using the full [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/) word boundary rules, as implemented by the [StringZilla](https://github.com/ashvardanian/StringZilla) library, and drops the segments made of whitespace, punctuation and symbols (including emoji).
+  Unlike `asciiCJK`, words in all scripts are kept whole: for example, `café naïve` becomes `['café', 'naïve']` rather than `['caf', 'é', 'na', 'ï', 've']`, `한국어` and `テキスト` are one token each, and `1,000,000` is one token.
+  Chinese ideographs and Hiragana still become single-character tokens, as UAX #29 does not segment them without a dictionary (use `chinese`, `japanese` or `icu` for that).
+  `LIKE`, `startsWith` and `endsWith` are supported. A token of the pattern next to a wildcard is used for index lookups only if whitespace separates them: for example, for `LIKE '%,000 rows loaded%'` only `rows` is looked up, because the text may contain `1,000`, which is a single token, and `loaded` may continue.
+  `stringzilla` produces different tokens than `asciiCJK`, and the tokenizer of an existing index cannot be changed in place: to switch, drop the index and add it again with the new tokenizer (or add a new index), then build it for the existing data with [`MATERIALIZE INDEX`](/reference/statements/alter/skipping-index#materialize-index).
+  The word boundary rules follow the Unicode version of the bundled StringZilla library. If a ClickHouse upgrade changes them, rebuild existing `stringzilla` indexes with `MATERIALIZE INDEX`, otherwise searches may miss rows in parts built before the upgrade.
 - `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
   Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
 - `icu(locale)` splits strings into word tokens using the [ICU](https://icu.unicode.org/) library's Unicode word segmentation (UAX #29). For scripts that do not put whitespace between words (e.g., Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so — unlike `asciiCJK` — such text is split into meaningful multi-character words instead of single characters. Here, "dictionary" means ICU's bundled word lists for those scripts (see [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU chooses the most likely split over those words.
@@ -274,6 +282,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 *Working with non-ASCII inputs.*
 Text indexes can be built on top of text data in any language and character set.
 For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
+To keep words of non-Latin scripts whole (for example `café` or `한국어`) instead of splitting them into single characters, use the `stringzilla` tokenizer.
 For languages that do not separate words by whitespace (for example Chinese, Japanese, or Thai), the `icu(locale)` tokenizer produces meaningful multi-character word tokens via ICU's dictionary-based word segmentation.
 For Japanese specifically, the `japanese` tokenizer (MeCab) segments text into words rather than single characters and generally gives better search results.
 For Chinese specifically, the `chinese` tokenizer (jieba) segments text into words rather than single characters and generally gives better search results.
@@ -533,16 +542,16 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `stringzilla`, `icu` | yes³ |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla`, `array`⁴ | yes⁴ |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla`, `array`⁴ | yes⁴ |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla`¹ | yes¹ |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
-| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla` | yes |
+| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `stringzilla` | yes |
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
@@ -829,7 +838,7 @@ Function [hasPhrase](/reference/functions/regular-functions/string-search-functi
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `stringzilla`, or `icu` tokenizers.
 
 Example:
 
@@ -1274,7 +1283,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, and `icu`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, `stringzilla`, and `icu`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 

@@ -2537,6 +2537,7 @@ static const std::unordered_set<String> string_case_functions
 static const Strings text_index_tokenizers
     = {"array",
        "asciiCJK",
+       "stringzilla",
        "chinese",
        "icu",
        "japanese",

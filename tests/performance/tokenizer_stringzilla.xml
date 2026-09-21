@@ -1,0 +1,63 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>tokenizer</name>
+            <values>
+                <value>'asciiCJK'</value>
+                <value>'stringzilla'</value>
+                <value>'icu', 'en'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>text</name>
+            <values>
+                <value>ascii</value>
+                <value>cjk</value>
+                <value>mixed</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>like_tokenizer</name>
+            <values>
+                <value>'splitByNonAlpha'</value>
+                <value>'stringzilla'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>index</name>
+            <values>
+                <value>ascii_cjk</value>
+                <value>stringzilla</value>
+                <value>icu</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE tokenizer_text (ascii String, cjk String, mixed String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE tokenizer_index_ascii_cjk (text String, INDEX idx text TYPE text(tokenizer = asciiCJK)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE tokenizer_index_stringzilla (text String, INDEX idx text TYPE text(tokenizer = stringzilla)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE tokenizer_index_icu (text String, INDEX idx text TYPE text(tokenizer = icu('en'))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>
+        INSERT INTO tokenizer_text
+        WITH
+            ['the', 'quick', 'brown', 'fox', 'ClickHouse', 'user_id', '3.14', 'don''t', 'e-mail', 'café', 'naïve', 'Москва'] AS ascii_words,
+            ['中', '文', '分', '词', '数', '据', '库', '，', '。', 'テキスト', 'ひ', '한국어'] AS cjk_words
+        SELECT
+            arrayStringConcat(arrayMap(x -> ascii_words[rand(number * 60 + x) % 12 + 1], range(40)), ' '),
+            arrayStringConcat(arrayMap(x -> cjk_words[rand(number * 60 + x) % 12 + 1], range(80)), ''),
+            arrayStringConcat(arrayMap(x -> if(x % 2 = 0, ascii_words, cjk_words)[rand(number * 60 + x) % 12 + 1], range(60)), ' ')
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT count() FROM tokenizer_text WHERE NOT ignore(tokens({text}, {tokenizer}))</query>
+    <query>INSERT INTO tokenizer_index_{index} SELECT mixed FROM tokenizer_text</query>
+    <!-- LIKE pattern tokenization must be linear in the pattern length -->
+    <query>SELECT sum(length(tokensForLikePattern(concat('%', repeat('ab ', 30000 + number), '%'), 'stringzilla'))) FROM numbers(200)</query>
+    <query>SELECT count() FROM tokenizer_text WHERE NOT ignore(tokensForLikePattern(concat('%', {text}, '%'), {like_tokenizer}))</query>
+
+    <drop_query>DROP TABLE IF EXISTS tokenizer_text</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tokenizer_index_ascii_cjk</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tokenizer_index_stringzilla</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tokenizer_index_icu</drop_query>
+</test>

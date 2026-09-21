@@ -35,6 +35,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        StringZilla,
         KeyValuePairs,
 #if USE_JIEBA
         Chinese,
@@ -600,6 +601,41 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// Parser extracting words by the UAX #29 word boundary rules of the StringZilla library.
+/// Separators (whitespace, punctuation, symbols) are skipped. Unlike `asciiCJK`, words of all scripts are kept whole
+/// (`café`, `한국어`), Chinese ideographs and Hiragana become single-character tokens.
+/// The tokens follow the word boundary tables of the bundled StringZilla version, and text indexes store them: an update
+/// of `contrib/StringZilla` that changes the segmentation requires existing indexes to be rebuilt.
+struct StringZillaTokenizer final : public ITokenizerHelper<StringZillaTokenizer>
+{
+    explicit StringZillaTokenizer()
+        : ITokenizerHelper(Type::StringZilla)
+    {
+    }
+
+    static const char * getName() { return "stringzilla"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t & __restrict pos,
+        size_t & __restrict token_start,
+        size_t & __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    /// Tokenize each literal of the pattern once: `nextInStringLike` re-reads the rest of the literal on every call.
+    void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
+
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
+};
+
 #if USE_JIEBA
 /// Parser segmenting Chinese text using the cppjieba library.
 /// Two granularities are supported:
@@ -741,6 +777,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::StringZilla:
+        {
+            const auto & stringzilla_tokenizer = assert_cast<const StringZillaTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(stringzilla_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::KeyValuePairs:

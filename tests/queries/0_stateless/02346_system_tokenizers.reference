@@ -10,6 +10,7 @@ sparse_grams
 splitByNonAlpha
 splitByRegexp
 splitByString
+stringzilla
 tokenbf_v1
 unicodeWord
 unicode_word
