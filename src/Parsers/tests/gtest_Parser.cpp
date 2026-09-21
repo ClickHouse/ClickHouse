@@ -296,8 +296,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
 {
-    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
-    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    /// A `nats_url` override carrying an '@' is hidden whole, the same way the `SETTINGS` clause form
+    /// is masked: libnats reads a credential that no URI masker can bound.
     const String query =
         "CREATE TABLE test_nats (key UInt64) "
         "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
@@ -308,7 +308,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
     const String masked = ast->formatForLogging();
 
     EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    EXPECT_NE(masked.find("nats_url = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
