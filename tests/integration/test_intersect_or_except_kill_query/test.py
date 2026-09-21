@@ -128,7 +128,7 @@ def test_intersect_all_kill_query(started_cluster):
 INTERSECT ALL
 SELECT number FROM numbers(10000000)
 FORMAT Null
-SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0"""
+SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0, optimize_rewrite_intersect_except_to_join=0"""
 
     run_kill_query_failpoint_test(
         query,
@@ -154,7 +154,7 @@ def test_except_all_kill_query(started_cluster):
 EXCEPT ALL
 SELECT number FROM numbers(10000000)
 FORMAT Null
-SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0"""
+SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0, optimize_rewrite_intersect_except_to_join=0"""
 
     run_kill_query_failpoint_test(
         query,
