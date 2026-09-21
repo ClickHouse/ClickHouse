@@ -1,0 +1,24 @@
+a) unparsable String: CANNOT_PARSE_TEXT
+a) rows committed: 0
+b) String out of range of the column: CANNOT_PARSE_TEXT
+b) rows committed: 0
+c) a genuine NULL still round-trips:
+3	\N
+d) mixed rows, one unparsable: CANNOT_PARSE_TEXT
+d) the same rows without it keep a source NULL apart from a cast NULL:
+4	7
+5	\N
+h) a value the column can represent is committed:
+9	42
+i) with delta_lake_accurate_write_cast = 0 the plain cast still commits NULL:
+10	\N
+j) numeric value out of range, as before: CANNOT_CONVERT_TYPE
+e) unparsable array element: CANNOT_PARSE_TEXT
+f) a NULL array element still round-trips:
+8	[5,NULL]
+g) unparsable partition key: CANNOT_PARSE_TEXT
+g) partition directories created: 0
+g) log versions: 1
+g) a partition key the column can represent, and a NULL one, are committed:
+7	a
+\N	b
