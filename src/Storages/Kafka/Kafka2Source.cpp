@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
+
 Kafka2Source::Kafka2Source(
     StorageKafka2 & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -67,6 +72,20 @@ Chunk Kafka2Source::generateImpl()
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
         {
+            /// A lost registration is a state the table has to recover from: no peer counts this replica
+            /// anymore, so nothing will make it usable again until the activating task re-registers it.
+            /// With no materialized view attached there is no streaming cycle to notice it, so a direct read
+            /// has to ask for the reactivation itself, and fail instead of pretending the topic is empty.
+            if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive)
+            {
+                storage.scheduleReactivation();
+                throw Exception(
+                    ErrorCodes::ABORTED,
+                    "Replica is not registered as active in Keeper anymore, the table is being reactivated "
+                    "(replica path: {})",
+                    storage.replica_path);
+            }
+
             LOG_DEBUG(log, "Cannot poll consumer for direct read");
             return {};
         }

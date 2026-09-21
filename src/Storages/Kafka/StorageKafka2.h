@@ -217,6 +217,8 @@ private:
     void parsePartitionAffinitySettings();
 
     void assertActive() const;
+    /// Asks the activating task to re-register this replica in Keeper as soon as possible.
+    void scheduleReactivation();
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.

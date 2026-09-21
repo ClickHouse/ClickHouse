@@ -441,6 +441,12 @@ void StorageKafka2::activateAndReschedule()
     }
 }
 
+void StorageKafka2::scheduleReactivation()
+{
+    LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
+    activating_task->schedule();
+}
+
 void StorageKafka2::assertActive() const
 {
     /// The table becomes inactive at any moment when the Keeper session expires and `partialShutdown` runs,
@@ -954,12 +960,32 @@ bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keep
     if (stored_data != getReplicaRegistrationData())
         return false;
 
-    return keeper_to_use->exists(fs::path(replica_path) / "is_active");
+    /// Peers count only an ephemeral `is_active` as a sign of life, so a session-less node with that name
+    /// leaves us out of their quota just like a missing one. Treat it as a broken registration here too,
+    /// otherwise the repair would be skipped and this replica would stall forever.
+    Coordination::Stat is_active_stat;
+    if (!keeper_to_use->exists(fs::path(replica_path) / "is_active", &is_active_stat))
+        return false;
+
+    return is_active_stat.ephemeralOwner != 0;
 }
 
 void StorageKafka2::restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use)
 {
     const String replica_data = getReplicaRegistrationData();
+
+    /// This server only ever creates `is_active` as an ephemeral node, so a persistent one at that path can
+    /// only come from outside. It would block the `create` below forever, so remove it as part of the repair.
+    const String is_active_path = fs::path(replica_path) / "is_active";
+    Coordination::Stat is_active_stat;
+    if (keeper_to_use->exists(is_active_path, &is_active_stat) && is_active_stat.ephemeralOwner == 0)
+    {
+        LOG_WARNING(log, "The node {} is not ephemeral, it was not created by this server. Removing it", is_active_path);
+        const auto remove_code = keeper_to_use->tryRemove(is_active_path, is_active_stat.version);
+        if (remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
+            && remove_code != Coordination::Error::ZBADVERSION)
+            throw Coordination::Exception::fromPath(remove_code, is_active_path);
+    }
 
     Coordination::Stat stat;
     String stored_data;
@@ -1495,10 +1521,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
         {
             if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive)
-            {
-                LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
-                activating_task->schedule();
-            }
+                scheduleReactivation();
             return getStallKind(*cannot_poll_reason);
         }
 

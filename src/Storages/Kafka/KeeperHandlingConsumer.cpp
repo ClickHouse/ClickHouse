@@ -340,6 +340,9 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     }
 
     /// The replica znode is persistent and outlives a dead replica, so is_active is the liveness signal.
+    /// Only an ephemeral `is_active` carries that meaning: it is tied to the session of a running replica
+    /// and disappears with it. A persistent or otherwise session-less node with the same name (e.g. re-created
+    /// from outside the server) says nothing about liveness, so it must not be counted.
     Strings is_active_paths;
     is_active_paths.reserve(candidates.size());
     for (const auto & name : candidates)
@@ -354,6 +357,16 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     {
         if (is_active_responses[i].error != Coordination::Error::ZOK)
             continue;
+
+        if (is_active_responses[i].stat.ephemeralOwner == 0)
+        {
+            LOG_WARNING(
+                log,
+                "The node {}/replicas/{}/is_active is not ephemeral, so it does not indicate a live replica. Not counting it",
+                keeper_path.string(),
+                candidates[i]);
+            continue;
+        }
 
         ++active_replica_count;
         if (candidates[i] == replica_name)

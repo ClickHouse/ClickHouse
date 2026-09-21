@@ -664,3 +664,186 @@ def test_registration_loss_releases_partition_locks(kafka_cluster):
             time.sleep(1.0)
         else:
             pytest.fail(f"Timed out waiting for the topic-partition locks to be released, still held: {remaining!r}")
+
+
+def test_persistent_is_active_marker_not_counted(kafka_cluster):
+    """A session-less `is_active` node must not make a dead replica look alive.
+
+    `is_active` means "there is a live session behind this replica" only because it is ephemeral.
+    A node with the same name that is not tied to a session - e.g. re-created from outside the
+    server - says nothing about liveness, so counting it brings back the very quota bug this
+    change fixes: the live replica would share the partitions with a replica that consumes nothing.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_persistent_marker_topic"
+    num_partitions = 4
+    keeper_path = "/clickhouse/test/zk_persistent_marker"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        # Create the Kafka table first: it registers `r1` in Keeper, but nothing is consumed and no
+        # partition lock is taken until the materialized view is attached.
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            """
+        )
+
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            # A replica that died without cleaning up, whose `is_active` marker was re-created as a
+            # plain persistent node. `keeper-client create` makes persistent nodes by default, which
+            # is exactly the out-of-band recreation we want to reject here.
+            zk.create(f"{keeper_path}/replicas/ghost", "0")
+            zk.create(f"{keeper_path}/replicas/ghost/is_active", "1")
+
+        ghost_marker = f"{keeper_path}/replicas/ghost/is_active"
+        kazoo = kafka_cluster.get_kazoo_client("zoo1")
+        try:
+            # The planted marker has to be the kind of node this test is about: not tied to any
+            # session, so it outlives the client that created it.
+            assert kazoo.exists(ghost_marker).ephemeralOwner == 0
+        finally:
+            kazoo.stop()
+            kazoo.close()
+
+        # Now start consuming: the first lock assignment happens with the ghost replica present.
+        instance.query(
+            "CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka"
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(2 * num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+
+        # `r1` is the only live replica, so it must own every partition. If the persistent marker
+        # were counted, the node quota would be `num_partitions / 2` and `r1` would never own the
+        # whole lock set.
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # And our own registration must still be considered valid: the repair in `activate` must
+        # not tear down a healthy replica because of a foreign node.
+        kazoo = kafka_cluster.get_kazoo_client("zoo1")
+        try:
+            assert kazoo.exists(f"{keeper_path}/replicas/r1/is_active").ephemeralOwner != 0
+            assert kazoo.exists(ghost_marker).ephemeralOwner == 0
+        finally:
+            kazoo.stop()
+            kazoo.close()
+
+
+def test_direct_read_triggers_reactivation(kafka_cluster):
+    """A direct `SELECT` must not hide a lost registration behind an empty result.
+
+    Without a materialized view there is no streaming cycle to notice that this replica is not
+    among the active ones anymore, so the direct read is the only entry point that can ask for the
+    reactivation. Returning an empty chunk instead would look exactly like "the topic is empty"
+    and leave the table broken until the next periodic activation check, a minute later.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_direct_read_reactivation_topic"
+    num_partitions = 2
+    keeper_path = "/clickhouse/test/zk_direct_read_reactivation"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        # No materialized view on purpose: the table is only ever read directly.
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+
+            {create_kafka};
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        # A healthy direct read works and does not disturb the registration.
+        instance.query_with_retry(
+            "SELECT count() FROM test.kafka",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # Drop our own registration behind the server's back.
+        is_active_path = f"{keeper_path}/replicas/r1/is_active"
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            zk.rm(is_active_path)
+            assert "is_active" not in set(zk.ls(f"{keeper_path}/replicas/r1"))
+
+        # A consumer keeps its current assignment for `LOCKS_REFRESH_POLLS` polls before it looks at
+        # the lock distribution again, and a direct read polls only once, so it takes a handful of
+        # reads until the check runs. The periodic activation check can re-create the marker in the
+        # meantime, so plant the loss again whenever that happens - the read has to fail eventually
+        # instead of pretending there is nothing to read.
+        error = ""
+        for _ in range(60):
+            try:
+                instance.query("SELECT count() FROM test.kafka")
+            except Exception as e:  # noqa: BLE001 - the error text is what is under test
+                error = str(e)
+                break
+
+            with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                if "is_active" in set(zk.ls(f"{keeper_path}/replicas/r1")):
+                    zk.rm(is_active_path)
+        assert "ABORTED" in error, (
+            f"the direct read never failed while the registration was lost: {error!r}"
+        )
+
+        # ... and it must have scheduled the reactivation right away. The periodic activation check
+        # runs only once a minute, so a marker that is back well before that can only come from the
+        # reactivation the direct read asked for.
+        deadline = time.time() + 20.0
+        while time.time() < deadline:
+            with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                if "is_active" in set(zk.ls(f"{keeper_path}/replicas/r1")):
+                    break
+            time.sleep(0.5)
+        else:
+            pytest.fail(
+                f"Timed out waiting for {is_active_path} to be re-created: the direct read did not "
+                "schedule the reactivation"
+            )
+
+        # And reads must work again afterwards.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        instance.query_with_retry(
+            "SELECT count() FROM test.kafka",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=120,
+            sleep_time=1,
+        )
