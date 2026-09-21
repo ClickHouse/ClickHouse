@@ -50,6 +50,11 @@ struct EngineStatedInDefinition
 };
 EngineStatedInDefinition getEngineStatedInDefinition(const StorageID & table_id, ContextPtr context);
 
+/// What a table's own `SETTINGS` clause states, described with the metadata the engine's registered settings give
+/// each stated setting. The base `IStorage::getTableSettings` is this, for a storage that keeps no settings of its
+/// own; an override that does keep them reports those instead.
+SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_id, ContextPtr context);
+
 /// Returns `settings` with every setting the table's own `SETTINGS` clause names marked `Definition`, matching
 /// aliases too. The second form takes a clause already read, for an engine that needs its values as well as its
 /// names, so that both come from one reading.

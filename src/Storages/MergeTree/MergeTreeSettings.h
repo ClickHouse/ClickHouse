@@ -107,16 +107,22 @@ struct MergeTreeSettings
     SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
+    /// What `loadFromQuery` needs to know about the query it is loading from, named at the call site rather than
+    /// read off three trailing booleans.
+    struct LoadFromQuery
+    {
+        /// The table is being loaded from metadata that already exists, rather than created or fully attached.
+        bool is_loading_from_existing_metadata = false;
+        /// The table belongs to the `system` database, whose tables resolve their disk differently.
+        bool for_system_database = false;
+        /// Whether `storage_def` is the definition that will be stored - true for `CREATE`, a full `ATTACH`, a
+        /// replay or `RESTORE`; false where the table is loaded from what is already stored, and what this writes
+        /// into `storage_def` stays in memory.
+        bool stores_definition = true;
+    };
+
     /// NOTE: will rewrite the AST to add immutable settings.
-    /// `stores_definition`: whether `storage_def` is the definition that will be stored - true for `CREATE`, a
-    /// full `ATTACH`, a replay or `RESTORE`; false where the table is loaded from what is already stored and the
-    /// settings this writes into `storage_def` stay in memory.
-    void loadFromQuery(
-        ASTStorage & storage_def,
-        ContextPtr context,
-        bool is_loading_from_existing_metadata,
-        bool for_system_database = false,
-        bool stores_definition = true);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, LoadFromQuery from);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;

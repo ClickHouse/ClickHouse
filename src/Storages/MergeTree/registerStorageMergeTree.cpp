@@ -962,8 +962,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `loadFromQuery` adds to it stays in memory rather than becoming the definition's.
         const bool stores_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
         storage_settings->loadFromQuery(
-            *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, stores_definition);
+            *args.storage_def,
+            args.getLocalContext(),
+            {
+                .is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode),
+                .for_system_database = args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE,
+                .stores_definition = stores_definition,
+            });
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A

@@ -39,9 +39,9 @@ namespace ErrorCodes
 ///
 /// `formatImpl`, `hasSecretParts` and `maskEngineSettingValue` all read this list, so they cannot
 /// disagree on what is secret.
-std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
+std::span<const EngineSettingsToHide * const> engineSettingsToHide()
 {
-    return {
+    static constexpr std::array registries{
         &DataLake::SETTINGS_TO_HIDE,
         &RabbitMQ::SETTINGS_TO_HIDE,
         &NATS::SETTINGS_TO_HIDE,
@@ -49,6 +49,7 @@ std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
         &AzureQueue::SETTINGS_TO_HIDE,
         &S3Queue::SETTINGS_TO_HIDE,
     };
+    return registries;
 }
 
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for

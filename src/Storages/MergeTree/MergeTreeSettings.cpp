@@ -2584,8 +2584,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public SettingsWithRecordedOrigin<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(
-        ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, MergeTreeSettings::LoadFromQuery from);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -2623,9 +2622,12 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(
-    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, MergeTreeSettings::LoadFromQuery from)
 {
+    const bool is_loading_from_existing_metadata = from.is_loading_from_existing_metadata;
+    const bool for_system_database = from.for_system_database;
+    const bool stores_definition = from.stores_definition;
+
     if (storage_def.settings)
     {
         try
@@ -3124,10 +3126,9 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(
-    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stores_definition)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, LoadFromQuery from)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stores_definition);
+    impl->loadFromQuery(storage_def, context, from);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

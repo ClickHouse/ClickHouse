@@ -2,9 +2,9 @@
 
 #include <base/types.h>
 
-#include <array>
 #include <functional>
 #include <optional>
+#include <span>
 #include <unordered_map>
 
 namespace DB
@@ -20,6 +20,6 @@ using EngineSettingsToHide = std::unordered_map<String, std::function<std::optio
 /// map per engine family. `ASTSetQuery`, which prints these settings as SQL, and
 /// `maskEngineSettingValue`, which prints them in a system table, both read this list, so the two
 /// cannot disagree on what is secret.
-std::array<const EngineSettingsToHide *, 6> engineSettingsToHide();
+std::span<const EngineSettingsToHide * const> engineSettingsToHide();
 
 }
