@@ -376,23 +376,19 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
-# Stack canary: a guard value is placed between the local variables and the return address and checked
-# before returning, so that an overflow of a local buffer aborts instead of returning to an address the
-# attacker wrote. 'strong' instruments only the functions that can actually be overflowed, those with a
-# local array, an address-taken local or an alloca, which keeps the cost low enough to always enable.
-# It goes into COMPILER_FLAGS rather than straight into CMAKE_C_FLAGS/CMAKE_CXX_FLAGS so that it is in
-# place before cmake/linux/default_libs.cmake adds libc++, libc++abi, libunwind, base/glibc-compatibility
-# and base/harmful: a subdirectory sees the flags as they were when it was added. Two bundled pieces stay
-# out: compiler-rt, because contrib/compiler-rt-cmake resets the inherited flags to an allowlist, and on
-# x86-64 the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake, which carry an explicit
-# no_stack_protector so that their CPU dispatch stays a plain tail call.
-# The fuzzer build is the third exception. `clickhouse_fuzzer` links every `src/` library plus the
-# libFuzzer and Address Sanitizer runtimes into a single image that already sits just under the 2 GiB
-# reach of the small code model's `R_X86_64_PC32` relocations, and the extra prologue and epilogue in
-# every instrumented function is enough to push it over, so the link fails with `relocation
-# R_X86_64_PC32 out of range`. Nothing is lost by leaving it out there: the fuzzers are test artifacts,
-# never shipped, and Address Sanitizer already diagnoses the stack buffer overflows a canary would catch,
-# earlier and with a full report rather than an abort.
+# Puts a canary between the locals and the return address and checks it before returning, so that an
+# overflow of a local buffer aborts instead of returning to an address the attacker wrote. 'strong'
+# instruments only the functions that can be overflowed - a local array, an address-taken local, an
+# alloca - which keeps the cost low enough to always enable.
+# It goes into COMPILER_FLAGS rather than CMAKE_C_FLAGS/CMAKE_CXX_FLAGS so that it is in place before
+# cmake/linux/default_libs.cmake adds libc++, libc++abi, libunwind, base/glibc-compatibility and
+# base/harmful: a subdirectory sees the flags as they were when it was added.
+# Three things stay out. contrib/compiler-rt-cmake resets the inherited flags to an allowlist. On x86-64
+# the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake carry an explicit
+# no_stack_protector so that their CPU dispatch stays a plain tail call. And `clickhouse_fuzzer` links
+# every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
+# under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
+# shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()

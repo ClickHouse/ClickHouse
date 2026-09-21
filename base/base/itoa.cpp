@@ -715,8 +715,8 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     return writeEighteenFixedDigits(out, low_block);
 }
 
-/// Only values above the 128-bit range reach here. Kept out of line so that the digit buffer, and the
-/// stack canary that any local array forces, stay off the common path.
+/// Only values above the 128-bit range reach here. Out of line so the digit buffer, and the
+/// `-fstack-protector-strong` canary that any local array forces, stay off the common path.
 NO_INLINE char * writeUIntTextAbove128(const UInt256 & _x, char * p)
 {
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
@@ -741,8 +741,8 @@ NO_INLINE char * writeUIntTextAbove128(const UInt256 & _x, char * p)
     return writeDigitPairs(out, two_values, current_pos);
 }
 
-/// Taken by reference: by value a 256-bit integer is a `byval` aggregate holding an array, which alone
-/// puts a stack canary on the function.
+/// By reference: by value a 256-bit integer is a `byval` aggregate holding an array, and that alone
+/// puts a `-fstack-protector-strong` canary on the function.
 ALWAYS_INLINE inline char * writeUIntText(const UInt256 & _x, char * p)
 {
     /// If possible, treat it as a smaller integer as they are much faster to print
@@ -758,8 +758,8 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
     return pos + 1;
 }
 
-/// Everything outside the fast path below needs a 256-bit local, and a local of that type carries an
-/// array, which forces a stack canary. Keep it out of line so the fast path stays free of one.
+/// Out of line: everything but the fast path needs a 256-bit local, which holds an array and so gets a
+/// `-fstack-protector-strong` canary.
 NO_INLINE char * writeSInt256TextSlow(const Int256 & x, char * pos)
 {
     if (x < 0)
@@ -794,8 +794,8 @@ ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
 
     if constexpr (std::is_same_v<T, Int256>)
     {
-        /// A clear top limb means the value is non-negative and fits into 128 bits, which is the common
-        /// case. Reading the limbs through the reference avoids a copy, and a copy would mean a canary.
+        /// Clear top limbs mean the value fits into 128 bits, the common case. Reading through the
+        /// reference avoids a copy, and a copy would cost a `-fstack-protector-strong` canary.
         if (likely(x.items[Int256::_impl::little(3)] == 0 && x.items[Int256::_impl::little(2)] == 0))
             return writeUIntText(UInt128{x.items[Int256::_impl::little(0)], x.items[Int256::_impl::little(1)]}, pos);
 
@@ -926,8 +926,8 @@ char * writeFixedDigits(UInt128 value, UInt32 width, char * p)
     return end;
 }
 
-/// Only values above the 128-bit range reach here. The running quotient is a local 256-bit value, so it
-/// carries an array and forces a stack canary; keeping it out of line keeps that off the common path.
+/// Only values above the 128-bit range reach here. Out of line: the running quotient is a local 256-bit
+/// value, which holds an array and so gets a `-fstack-protector-strong` canary.
 static NO_INLINE char * writeFixedDigitsAbove128(UInt256 value, UInt32 width, char * p)
 {
     char * const end = p + width;

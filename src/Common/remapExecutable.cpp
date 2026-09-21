@@ -43,10 +43,10 @@ namespace
 #    define NO_PROFILE_INSTRUMENTATION
 #endif
 
-/** The two functions below read and write the return address at a fixed offset from the stack pointer.
-  * A stack canary sits between the locals and the return address and moves it, so `8(%rsp)` would then
-  * refer to the canary instead. `-fstack-protector-strong` does not instrument either of them today
-  * (neither has locals), but the attribute pins that down rather than leaving it to the heuristic.
+/** The two below read and write the return address at a fixed offset from `%rsp`. A
+  * `-fstack-protector-strong` canary sits between the locals and the return address and moves it, so
+  * `8(%rsp)` would then find the canary. Neither has locals today, so neither is instrumented; the
+  * attribute pins that down rather than trusting the heuristic.
   */
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
 NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) int64_t our_syscall(...)

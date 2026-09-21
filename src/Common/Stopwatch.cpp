@@ -6,8 +6,8 @@
 #include <system_error>
 
 
-/// Out of line and uninstrumented: `clock_gettime` needs a `timespec` address, and an inlined copy of
-/// that buffer would make `-fstack-protector-strong` put a canary on every caller.
+/// Out of line and uninstrumented: `clock_gettime` needs a `timespec` address, and inlining that
+/// buffer would put a `-fstack-protector-strong` canary on every caller.
 NO_STACK_PROTECTOR NO_INLINE UInt64 clock_gettime_ns(clockid_t clock_type)
 {
     struct timespec ts{};

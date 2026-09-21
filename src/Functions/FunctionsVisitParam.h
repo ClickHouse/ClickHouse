@@ -189,8 +189,8 @@ struct ExtractParamToStringImpl
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-        /// Owned here rather than inside `extract`: a buffer local to that per row function would put a
-        /// stack canary on it, and it is cheaper to reuse one buffer across rows anyway.
+        /// Owned here, not inside the per-row `extract`: a buffer local to it would get a
+        /// `-fstack-protector-strong` canary, and reusing one buffer across rows is cheaper anyway.
         typename ParamExtractor::Scratch scratch;
 
         /// We will search for the next occurrence in all strings at once.

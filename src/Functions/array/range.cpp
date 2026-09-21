@@ -136,11 +136,10 @@ private:
         return nullptr;
     }
 
-    /// Out of line so ThinLTO cannot inline it into `executeImpl`, where the loop's alignment ends up
-    /// depending on the surrounding code. The value comes from the index rather than an accumulator:
-    /// ranges here are short, so the vectoriser's scalar remainder dominates and independent values
-    /// let it fill that remainder much better. `iotaWithStep` keeps an accumulator instead, because
-    /// its caller generates whole blocks where a per-element multiply would cost more.
+    /// Out of line so ThinLTO cannot inline it into `executeImpl`, where surrounding code decides the
+    /// loop's alignment. The value comes from the index, not an accumulator: ranges here are short, so
+    /// the vectoriser's scalar remainder dominates and independent values fill it better. `iotaWithStep`
+    /// keeps an accumulator because its caller generates whole blocks, where a multiply would cost more.
     template <typename T>
     static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
     {

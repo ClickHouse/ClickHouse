@@ -23,7 +23,7 @@
 FOR_INTEGER_TYPES(INSTANTIATION)
 
 /// The 256-bit types are taken by reference. By value they are `byval` aggregates holding an array, and
-/// that alone makes the compiler put a stack canary on the function.
+/// that alone puts a `-fstack-protector-strong` canary on the function.
 char * itoa(const UInt256 & i, char * p);
 char * itoa(const Int256 & i, char * p);
 

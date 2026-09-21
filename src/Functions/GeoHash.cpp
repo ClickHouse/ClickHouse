@@ -219,9 +219,8 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
         return;
     }
 
-    /// At most 12 symbols of 5 bits, so the whole geohash fits in one word. Keeping it there instead of
-    /// one array byte per bit also keeps the stack free of a buffer, which would put a canary on this
-    /// per row function.
+    /// At most 12 symbols of 5 bits, so the whole geohash fits in one word. That also avoids a local
+    /// buffer, which would put a `-fstack-protector-strong` canary on this per-row function.
     UInt64 bits = 0;
     for (size_t i = 0; i < precision; ++i)
     {

@@ -66,9 +66,9 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
-/// `NullOutput` discards everything and holds no state, so a single shared instance is enough and is
-/// safe to use concurrently. A local one would hand the readers the address of a stack slot, which puts
-/// a stack canary on this per field function.
+/// `NullOutput` discards everything and holds no state, so one shared instance is enough and is safe
+/// to share. A local one escapes into the readers, which puts a `-fstack-protector-strong` canary on
+/// this per-field function.
 static_assert(std::is_empty_v<NullOutput>);
 static NullOutput shared_null_output;
 
