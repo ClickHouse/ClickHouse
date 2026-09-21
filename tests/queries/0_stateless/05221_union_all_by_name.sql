@@ -93,6 +93,21 @@ FROM
 )
 ORDER BY a;
 
+SELECT 'mixed positional sibling pruning';
+SELECT a
+FROM
+(
+    (
+        SELECT 1 AS a, toUInt8(10) AS b
+        UNION ALL BY NAME
+        SELECT toUInt8(20) AS b, 2 AS a
+    )
+    UNION ALL
+    SELECT toUInt8(number + 3) AS a, throwIf(number = 0) AS unused
+    FROM numbers(1)
+)
+ORDER BY a;
+
 SELECT 'position then name';
 SELECT *
 FROM

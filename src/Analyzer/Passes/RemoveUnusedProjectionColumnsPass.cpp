@@ -43,7 +43,7 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
 {
     if (auto * union_node = query_or_union_node->as<UnionNode>())
     {
-        if (union_node->hasNameMatchedUnion())
+        if (union_node->getColumnMatchMode() == SetOperationColumnMatchMode::Name)
             return;
 
         auto union_node_mode = union_node->getUnionMode();
@@ -171,7 +171,7 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         for (auto & [query_or_union_node, used_columns] : node_to_used_columns)
         {
             if (const auto * union_node = query_or_union_node->as<UnionNode>();
-                union_node && union_node->hasNameMatchedUnion())
+                union_node && union_node->getColumnMatchMode() == SetOperationColumnMatchMode::Name)
                 continue;
 
             /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql

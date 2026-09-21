@@ -26,6 +26,10 @@ name then position
 1	one
 2	two
 3	three
+mixed positional sibling pruning
+1
+2
+3
 position then name
 1	one
 2	two

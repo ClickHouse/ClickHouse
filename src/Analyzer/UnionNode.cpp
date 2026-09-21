@@ -240,7 +240,7 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     /// Projection indexes are indexes in the canonical UNION result. For BY NAME each operand
     /// has a different local order, so passing those indexes to every branch can silently select
     /// a different column. Keep all branch projections until name-aware pruning is implemented.
-    if (hasNameMatchedUnion())
+    if (column_match_mode == SetOperationColumnMatchMode::Name)
         return;
 
     /// We can't remove unused projections in the case of EXCEPT and INTERSECT
