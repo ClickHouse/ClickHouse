@@ -379,6 +379,153 @@ TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
+namespace
+{
+/// Formats a statement the way `executeQuery` builds `query_for_logging`, so the assertions below are
+/// about the string that reaches `system.query_log.query` and the server log.
+String maskedForLogging(const String & query)
+{
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
+    return ast->formatForLogging();
+}
+}
+
+TEST(ParserCreateQuery, MaskRedisTableEngineUnreadableOverrideKeys)
+{
+    /// An override key the parser evaluates but the finder cannot read as a plain literal must have its
+    /// value hidden (fail closed), because that override still reaches `StorageRedis` as the password.
+    const String expression_key
+        = maskedForLogging("CREATE TABLE t (x String, v String) "
+                           "ENGINE = Redis(nc, concat('pass', 'word') = 'S7') PRIMARY KEY x");
+    EXPECT_EQ(expression_key.find("S7"), String::npos);
+    /// The key and the collection name are not secrets and stay visible.
+    EXPECT_NE(expression_key.find("concat('pass', 'word') = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(expression_key.find("Redis(nc, concat("), String::npos);
+
+    const String numeric_key = maskedForLogging(
+        "CREATE TABLE t (x String, v String) ENGINE = Redis(nc, 0 = 'S7') PRIMARY KEY x");
+    EXPECT_EQ(numeric_key.find("S7"), String::npos);
+    EXPECT_NE(numeric_key.find("0 = '[HIDDEN]'"), String::npos);
+
+    /// Every override is applied in turn, so a readable credential key is not a reason to stop looking:
+    /// both values must be hidden.
+    const String readable_then_expression
+        = maskedForLogging("CREATE TABLE t (x String, v String) ENGINE = Redis(nc, password = 'S1', "
+                           "concat('pass', 'word') = 'S7') PRIMARY KEY x");
+    EXPECT_EQ(readable_then_expression.find("S1"), String::npos);
+    EXPECT_EQ(readable_then_expression.find("S7"), String::npos);
+
+    const String non_secret = maskedForLogging(
+        "CREATE TABLE t (x String, v String) ENGINE = Redis(nc, pool_size = 16) PRIMARY KEY x");
+    EXPECT_NE(non_secret.find("pool_size = 16"), String::npos);
+    EXPECT_EQ(non_secret.find("[HIDDEN]"), String::npos);
+
+    /// The positional forms must render exactly as before. `StorageRedis` folds every positional
+    /// argument through `evaluateConstantExpressionOrIdentifierAsLiteral`, so `0 = 1` is a legal
+    /// db_index and the password stays at argument 2.
+    const String positional
+        = maskedForLogging("CREATE TABLE t (x String, v String) ENGINE = Redis('h:6379', 0, 'S9') PRIMARY KEY x");
+    EXPECT_EQ(positional.find("S9"), String::npos);
+    EXPECT_NE(positional.find("Redis('h:6379', 0, '[HIDDEN]')"), String::npos);
+
+    const String folded_positional = maskedForLogging(
+        "CREATE TABLE t (x String, v String) ENGINE = Redis('127.0.0.1:6379', 0 = 1, 'S9', 16) PRIMARY KEY x");
+    EXPECT_EQ(folded_positional.find("S9"), String::npos);
+    EXPECT_NE(folded_positional.find("Redis('127.0.0.1:6379', 0 = 1, '[HIDDEN]', 16)"), String::npos);
+
+    /// An `equals` at the password slot is hidden WHOLE, so a secret in its left operand cannot escape.
+    const String left_operand_secret = maskedForLogging(
+        "CREATE TABLE t (x String, v String) ENGINE = Redis('h:6379', 0, 'LEFT_SECRET' = 'x') PRIMARY KEY x");
+    EXPECT_EQ(left_operand_secret.find("LEFT_SECRET"), String::npos);
+    EXPECT_NE(left_operand_secret.find("Redis('h:6379', 0, '[HIDDEN]')"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskArrowFlightUnreadableOverrideKeys)
+{
+    /// One finder serves the `ArrowFlight` engine, `arrowFlight` and the obsolete `arrowflight` alias,
+    /// so each dispatched name needs its own row.
+    for (const String & query : {"CREATE TABLE t (x UInt8) ENGINE = ArrowFlight(nc, concat('pass', 'word') = 'S7')"s,
+                                 "SELECT * FROM arrowFlight(nc, concat('pass', 'word') = 'S7')"s,
+                                 "SELECT * FROM arrowflight(nc, concat('pass', 'word') = 'S7')"s})
+    {
+        const String masked = maskedForLogging(query);
+        EXPECT_EQ(masked.find("S7"), String::npos) << query;
+        EXPECT_NE(masked.find("concat('pass', 'word') = '[HIDDEN]'"), String::npos) << query;
+        EXPECT_NE(masked.find("(nc, concat("), String::npos) << query;
+    }
+
+    const String numeric_key = maskedForLogging("CREATE TABLE t (x UInt8) ENGINE = ArrowFlight(nc, 0 = 'S7')");
+    EXPECT_EQ(numeric_key.find("S7"), String::npos);
+    EXPECT_NE(numeric_key.find("0 = '[HIDDEN]'"), String::npos);
+
+    const String non_secret = maskedForLogging("SELECT * FROM arrowFlight(nc, dataset = 'ds')");
+    EXPECT_NE(non_secret.find("dataset = 'ds'"), String::npos);
+    EXPECT_EQ(non_secret.find("[HIDDEN]"), String::npos);
+
+    const String positional = maskedForLogging("SELECT * FROM arrowFlight('h:5006', 'ds', 'usr', 'S9')");
+    EXPECT_EQ(positional.find("S9"), String::npos);
+    EXPECT_NE(positional.find("arrowFlight('h:5006', 'ds', 'usr', '[HIDDEN]')"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskYTsaurusNamedCollectionCredentials)
+{
+    /// `StorageYTsaurus` reads `oauth_token` from a named collection, which this finder never scanned
+    /// for, so even a plain readable key leaked.
+    for (const String & query : {"CREATE TABLE t (x UInt8) ENGINE = YTsaurus(nc, oauth_token = 'S7')"s,
+                                 "SELECT * FROM ytsaurus(nc, oauth_token = 'S7')"s})
+    {
+        const String masked = maskedForLogging(query);
+        EXPECT_EQ(masked.find("S7"), String::npos) << query;
+        EXPECT_NE(masked.find("oauth_token = '[HIDDEN]'"), String::npos) << query;
+    }
+
+    const String expression_key
+        = maskedForLogging("CREATE TABLE t (x UInt8) ENGINE = YTsaurus(nc, concat('oauth', '_token') = 'S7')");
+    EXPECT_EQ(expression_key.find("S7"), String::npos);
+    EXPECT_NE(expression_key.find("concat('oauth', '_token') = '[HIDDEN]'"), String::npos);
+
+    const String non_secret = maskedForLogging("CREATE TABLE t (x UInt8) ENGINE = YTsaurus(nc, cypress_path = '//tbl')");
+    EXPECT_NE(non_secret.find("cypress_path = '//tbl'"), String::npos);
+    EXPECT_EQ(non_secret.find("[HIDDEN]"), String::npos);
+
+    /// Argument 2 carries the token in the positional form, and an identifier at argument 0 does not
+    /// make it safe: such a call is rejected, but it is formatted for the log first, so the token at
+    /// that slot must still be hidden (fail closed).
+    for (const String & query : {"CREATE TABLE t (x UInt8) ENGINE = YTsaurus('http://proxy', '//tbl', 'S9')"s,
+                                 "CREATE TABLE t (x UInt8) ENGINE = YTsaurus(nc, 'a', 'S9')"s,
+                                 "CREATE TABLE t (x UInt8) ENGINE = YTsaurus(nc, 'a', 'S9', extra = 1)"s,
+                                 "SELECT * FROM ytsaurus(nc, 'a', 'S9', 'x UInt8')"s})
+    {
+        const String masked = maskedForLogging(query);
+        EXPECT_EQ(masked.find("S9"), String::npos) << query;
+        EXPECT_NE(masked.find("'[HIDDEN]'"), String::npos) << query;
+    }
+}
+
+TEST(ParserCreateQuery, MaskUnreadableOverrideKeysMatchesExistingCarriers)
+{
+    /// The rule and the helper are shared with the carriers that already fail closed, so their renders
+    /// must be unchanged. The `mysql` rows also cover the extraction of the helper out of
+    /// `findTLSCredentialsSecretArguments`, which reaches it from both a collection and a positional start.
+    const String s3_expression_key = maskedForLogging("SELECT * FROM s3(nc, concat('secret_access', '_key') = 'S7')");
+    EXPECT_EQ(s3_expression_key.find("S7"), String::npos);
+    EXPECT_NE(s3_expression_key.find("concat('secret_access', '_key') = '[HIDDEN]'"), String::npos);
+
+    const String s3_numeric_key = maskedForLogging("SELECT * FROM s3(nc, 0 = 1)");
+    EXPECT_NE(s3_numeric_key.find("0 = '[HIDDEN]'"), String::npos);
+
+    const String mysql_collection = maskedForLogging("SELECT * FROM mysql(nc, concat('ssl_ca', '_pem') = 'S7', table = 't')");
+    EXPECT_EQ(mysql_collection.find("S7"), String::npos);
+    EXPECT_NE(mysql_collection.find("concat('ssl_ca', '_pem') = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(mysql_collection.find("`table` = 't'"), String::npos);
+
+    const String mysql_positional
+        = maskedForLogging("SELECT * FROM mysql('h:3306', 'db', 't', 'usr', 'S9', concat('ssl_ca', '_pem') = 'S7')");
+    EXPECT_EQ(mysql_positional.find("S9"), String::npos);
+    EXPECT_EQ(mysql_positional.find("S7"), String::npos);
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());
