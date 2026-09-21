@@ -1043,12 +1043,11 @@ struct ByteJaroSimilarityImpl
         Int32 first[256];
         std::fill(first, first + 256, -1);
 
+        static constexpr Int32 matched_marker = -2;
         PODArrayWithStackMemory<Int32, 64 * sizeof(Int32)> next_same;
         PODArrayWithStackMemory<UInt8, 64> matched_s1;
-        PODArrayWithStackMemory<UInt8, 64> matched_s2;
         next_same.resize(s2len);
-        matched_s1.resize(s1len);
-        matched_s2.assign(s2len, 0);
+        matched_s1.resize(std::min(s1len, s2len));
 
         for (int j = s2len - 1; j >= 0; --j)
         {
@@ -1071,8 +1070,9 @@ struct ByteJaroSimilarityImpl
                 continue;
 
             matched_s1[matches++] = s1[i];
-            matched_s2[j] = 1;
-            j = next_same[j];
+            const Int32 matched_j = j;
+            j = next_same[matched_j];
+            next_same[matched_j] = matched_marker;
         }
 
         if (matches == 0)
@@ -1082,7 +1082,7 @@ struct ByteJaroSimilarityImpl
         int k = 0;
         for (int j = 0; j < s2len; ++j)
         {
-            if (matched_s2[j])
+            if (next_same[j] == matched_marker)
                 trans2 += matched_s1[k++] != s2[j];
         }
 
