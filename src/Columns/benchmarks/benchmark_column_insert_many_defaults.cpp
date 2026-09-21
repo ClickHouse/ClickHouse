@@ -107,6 +107,37 @@ static void BM_insertManyDefaultsBatches(benchmark::State & state)
     state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
 }
 
+template <const std::string & str_type, bool caller_reserve>
+static void BM_insertManyDefaultsCallerReserve(benchmark::State & state)
+{
+    const auto type = DataTypeFactory::instance().get(str_type);
+    const size_t length = state.range(0);
+    size_t retained_allocated_bytes = 0;
+
+    for ([[maybe_unused]] auto _ : state)
+    {
+        state.PauseTiming();
+        auto column = type->createColumn();
+        state.ResumeTiming();
+
+        /// Model the fully-expired column-TTL caller before and after it stops
+        /// pre-reserving empty Map key/value storage.
+        if constexpr (caller_reserve)
+            column->reserve(length);
+        column->insertManyDefaults(length);
+        benchmark::DoNotOptimize(column->size());
+        benchmark::ClobberMemory();
+
+        state.PauseTiming();
+        retained_allocated_bytes = column->allocatedBytes();
+        column.reset();
+        state.ResumeTiming();
+    }
+
+    state.SetItemsProcessed(state.iterations() * length);
+    state.counters["retained_allocated_bytes"] = static_cast<double>(retained_allocated_bytes);
+}
+
 static const String type_map_uint64 = "Map(UInt64, UInt64)";
 static const String type_map_uint8 = "Map(UInt8, UInt8)";
 static const String type_map_string = "Map(String, String)";
@@ -131,3 +162,12 @@ REGISTER_MAP_DEFAULT_BENCHMARKS(type_map_wide, false);
 REGISTER_MAP_DEFAULT_BENCHMARKS(type_map_wide, true);
 
 #undef REGISTER_MAP_DEFAULT_BENCHMARKS
+
+#define REGISTER_MAP_CALLER_RESERVE_BENCHMARKS(type) \
+    BENCHMARK_TEMPLATE(BM_insertManyDefaultsCallerReserve, type, false)->Arg(65521)->Arg(ROWS); \
+    BENCHMARK_TEMPLATE(BM_insertManyDefaultsCallerReserve, type, true)->Arg(65521)->Arg(ROWS)
+
+REGISTER_MAP_CALLER_RESERVE_BENCHMARKS(type_map_uint64);
+REGISTER_MAP_CALLER_RESERVE_BENCHMARKS(type_map_wide);
+
+#undef REGISTER_MAP_CALLER_RESERVE_BENCHMARKS
