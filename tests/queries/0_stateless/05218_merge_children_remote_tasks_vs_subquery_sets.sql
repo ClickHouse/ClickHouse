@@ -36,7 +36,7 @@ SYSTEM FLUSH LOGS query_log;
 WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_05218') AS run_start
 SELECT log_comment, countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_remote_tasks
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND log_comment LIKE '05218 %'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND log_comment LIKE '05218 %'
 GROUP BY log_comment
 ORDER BY log_comment;
 
