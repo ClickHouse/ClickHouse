@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -74,7 +75,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     bool restricted_seek_,
     std::optional<size_t> read_until_position_,
     BlobStorageLogWriterPtr blob_storage_log_,
-    String container_for_logging_)
+    String container_for_logging_,
+    String expected_etag_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -85,6 +87,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
+    , expected_etag(std::move(expected_etag_))
     , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
@@ -286,6 +289,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
         length = {static_cast<int64_t>(*read_until_position - offset)};
 
     download_options.Range = {static_cast<int64_t>(offset), length};
+    setAccessConditions(download_options);
 
     Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
 
@@ -305,6 +309,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
             checkReturnedRange(download_response.Value, offset, path);
+            checkReturnedGeneration(download_response.Value.Details);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
@@ -335,6 +340,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
 
+            rethrowIfGenerationChanged(e);
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -355,8 +361,10 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at attempt {}/{}: {}", path, i + 1, max_single_download_retries, getCurrentExceptionMessage(false));
-            /// It doesn't make sense to retry allocator errors
-            if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            /// It doesn't make sense to retry allocator errors, and a blob that has been replaced
+            /// stays replaced.
+            if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || getCurrentExceptionCode() == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ)
                 throw;
 
             if (i + 1 == max_single_download_retries)
@@ -396,6 +404,34 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
         total = std::min(total, *read_until_position_);
 
     return total;
+}
+
+void ReadBufferFromAzureBlobStorage::setAccessConditions(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const
+{
+    if (!expected_etag.empty())
+        download_options.AccessConditions.IfMatch = Azure::ETag(expected_etag);
+}
+
+void ReadBufferFromAzureBlobStorage::checkReturnedGeneration(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const
+{
+    /// A response without an `ETag` cannot be checked, the same as in `ReadBufferFromS3`.
+    if (expected_etag.empty() || !details.ETag.HasValue())
+        return;
+
+    if (details.ETag.ToString() != expected_etag)
+        throw Exception(
+            ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
+            "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query",
+            path, expected_etag, details.ETag.ToString());
+}
+
+void ReadBufferFromAzureBlobStorage::rethrowIfGenerationChanged(const Azure::Core::RequestFailedException & e) const
+{
+    if (!expected_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        throw Exception(
+            ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
+            "Azure blob {} was replaced during read (If-Match on ETag {} failed); retry the query",
+            path, expected_etag);
 }
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
@@ -446,10 +482,12 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
+            setAccessConditions(download_options);
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
             checkReturnedRange(download_response.Value, range_begin, path);
+            checkReturnedGeneration(download_response.Value.Details);
 
             if (blob_storage_log)
             {
@@ -487,6 +525,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
 
+            rethrowIfGenerationChanged(e);
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
 
@@ -507,8 +546,10 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at attempt {}/{}: {}", path, i + 1, max_single_download_retries, getCurrentExceptionMessage(false));
-            /// It doesn't make sense to retry allocator errors
-            if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            /// It doesn't make sense to retry allocator errors, and a blob that has been replaced
+            /// stays replaced.
+            if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || getCurrentExceptionCode() == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ)
                 throw;
 
             if (i + 1 == max_single_download_retries)

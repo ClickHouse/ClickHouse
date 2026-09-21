@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -270,7 +271,11 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
             ? std::optional<size_t>(object.bytes_size)
             : std::nullopt,
         std::move(blob_storage_log),
-        connection_params.getContainer());
+        connection_params.getContainer(),
+        /// The size is only a correct bound for the generation of the object it was recorded for,
+        /// so the read is pinned to that generation when the caller has recorded its `ETag`, and
+        /// a replaced object is rejected instead of being truncated to the stale size.
+        object.etag);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -286,6 +291,15 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
     {
         SmallObjectDataWithMetadata result;
         result.metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
+
+        /// No request pinned this read to the generation the caller has seen, so the check that
+        /// `readObject` performs on the `ETag` of the response is made on the properties instead.
+        if (!object.etag.empty() && result.metadata.etag != object.etag)
+            throw Exception(
+                ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
+                "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query",
+                object.remote_path, object.etag, result.metadata.etag);
+
         return result;
     }
 

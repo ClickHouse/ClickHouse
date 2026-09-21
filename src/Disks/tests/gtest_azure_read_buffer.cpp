@@ -23,6 +23,11 @@
 
 #include <gtest/gtest.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
+}
+
 namespace
 {
 
@@ -276,7 +281,13 @@ namespace
 class CountingRangeTransport : public Azure::Core::Http::HttpTransport
 {
 public:
-    explicit CountingRangeTransport(size_t extra_bytes_) : extra_bytes(extra_bytes_)
+    static constexpr auto default_etag = "\"0x8DA000000000000\"";
+
+    /// The blob is served with `etag_` as its current generation. An honest endpoint rejects a
+    /// download whose `If-Match` names another generation with `412 Precondition Failed`; one with
+    /// `honours_if_match_ == false` ignores the condition and serves the current generation anyway.
+    explicit CountingRangeTransport(size_t extra_bytes_, std::string etag_ = default_etag, bool honours_if_match_ = true)
+        : extra_bytes(extra_bytes_), etag(std::move(etag_)), honours_if_match(honours_if_match_)
     {
     }
 
@@ -284,12 +295,32 @@ public:
     /// that allows no bytes at all does not go to the endpoint in the first place.
     size_t getDownloadCount() const { return downloads; }
 
+    /// The `If-Match` condition of the last download, or empty if it had none.
+    const std::string & getLastIfMatch() const { return last_if_match; }
+
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
         const bool is_download = request.GetMethod() == Azure::Core::Http::HttpMethod::Get;
         if (is_download)
+        {
             ++downloads;
+
+            /// The SDK stores the names of the headers of a request in lower case.
+            const auto headers = request.GetHeaders();
+            auto it = headers.find("if-match");
+            last_if_match = it == headers.end() ? "" : it->second;
+
+            if (honours_if_match && !last_if_match.empty() && last_if_match != etag)
+            {
+                auto rejection = std::make_unique<Azure::Core::Http::RawResponse>(
+                    1, 1, Azure::Core::Http::HttpStatusCode::PreconditionFailed, "Precondition Failed");
+                rejection->SetHeader("x-ms-error-code", "ConditionNotMet");
+                rejection->SetHeader("Content-Length", "0");
+                rejection->SetBodyStream(std::make_unique<FixedBodyStream>(std::vector<uint8_t>{}, 0));
+                return rejection;
+            }
+        }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
             1,
@@ -297,7 +328,7 @@ public:
             is_download ? Azure::Core::Http::HttpStatusCode::PartialContent : Azure::Core::Http::HttpStatusCode::Ok,
             is_download ? "Partial Content" : "OK");
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
-        response->SetHeader("ETag", "\"0x8DA000000000000\"");
+        response->SetHeader("ETag", etag);
         response->SetHeader("x-ms-blob-type", "BlockBlob");
 
         if (!is_download)
@@ -347,7 +378,10 @@ private:
 
     static constexpr size_t blob_size = 1024;
     size_t extra_bytes;
+    std::string etag;
+    bool honours_if_match;
     size_t downloads = 0;
+    std::string last_if_match;
 };
 
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeCountingBuffer(size_t extra_bytes, size_t buffer_size)
@@ -644,6 +678,175 @@ TEST(AzureReadObject, EmptyObjectStillReportsMetadata)
     ASSERT_TRUE(result.data.empty());
     ASSERT_EQ(result.metadata.size_bytes, static_cast<size_t>(0));
     ASSERT_EQ(result.metadata.etag, "\"0x8DA000000000000\"");
+}
+
+namespace
+{
+
+/// An `AzureObjectStorage` whose every request is answered by `CountingRangeTransport`, so that the
+/// blob has a generation (`etag`) and the endpoint either honours `If-Match` or ignores it.
+std::unique_ptr<DB::AzureObjectStorage> makeCountingObjectStorage(std::shared_ptr<CountingRangeTransport> transport)
+{
+    DB::AzureBlobStorage::ConnectionParams connection_params;
+    connection_params.endpoint.container_name = "container";
+    connection_params.client_options.Retry.MaxRetries = 0;
+    connection_params.client_options.Transport.Transport = std::move(transport);
+
+    auto container_client = std::make_unique<DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", connection_params.client_options),
+        /* blob_prefix */ "");
+
+    return std::make_unique<DB::AzureObjectStorage>(
+        "azure",
+        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
+        std::move(container_client),
+        std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
+        connection_params,
+        /* object_namespace */ "container",
+        /* description */ "azure",
+        /* common_key_prefix */ "");
+}
+
+constexpr auto listed_etag = "\"0x8DA000000000000\"";
+constexpr auto replaced_etag = "\"0x8DA000000000001\"";
+
+/// Runs `action` and asserts that it fails with `AZURE_OBJECT_CHANGED_DURING_READ`.
+template <typename Action>
+void assertRejectsReplacedBlob(Action && action)
+{
+    try
+    {
+        action();
+        FAIL() << "the read of a replaced blob succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ) << e.message();
+    }
+}
+
+}
+
+/// `StoredObject::bytes_size` and `StoredObject::etag` describe one generation of the object. When
+/// the blob has been replaced with a longer one after the listing, a read bounded by the stale size
+/// alone would return a clean EOF after the first `bytes_size` bytes of the new generation. The
+/// download is pinned to the listed generation with `If-Match`, so an honest endpoint rejects it
+/// with `412 Precondition Failed`, which is reported as `AZURE_OBJECT_CHANGED_DURING_READ` and is
+/// not retried as if it were transient.
+TEST(AzureReadObject, RejectsReplacedBlobThroughIfMatch)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    object.etag = listed_etag;
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    assertRejectsReplacedBlob([&] { DB::readStringUntilEOF(data, *buffer); });
+
+    ASSERT_TRUE(data.empty());
+    ASSERT_EQ(transport->getLastIfMatch(), listed_etag);
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(1));
+}
+
+/// An endpoint that ignores `If-Match` and answers `206` with the current generation must not get
+/// its bytes through either: the `ETag` of the response is checked against the listed one.
+TEST(AzureReadObject, RejectsReplacedBlobWhenIfMatchIsIgnored)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ false);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    object.etag = listed_etag;
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    assertRejectsReplacedBlob([&] { DB::readStringUntilEOF(data, *buffer); });
+
+    ASSERT_TRUE(data.empty());
+}
+
+/// The blob that was listed is the one that is read: the download carries the listed `ETag` as its
+/// `If-Match` condition and the bytes come through, bounded by the listed size.
+TEST(AzureReadObject, ReadsTheListedGeneration)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 28, listed_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    object.etag = listed_etag;
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+    ASSERT_EQ(transport->getLastIfMatch(), listed_etag);
+}
+
+/// A caller that has not seen a generation of the blob sets no condition and gets whatever the
+/// endpoint currently holds.
+TEST(AzureReadObject, UnknownGenerationIsNotPinned)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    ASSERT_TRUE(transport->getLastIfMatch().empty());
+}
+
+/// An object listed as empty is read without a download, so no `If-Match` pins it; the `ETag` of
+/// the properties that stand in for the response is checked against the listed one instead.
+TEST(AzureReadObject, EmptyObjectMetadataRejectsReplacedBlob)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 0);
+    object.etag = listed_etag;
+
+    assertRejectsReplacedBlob([&] { object_storage->readSmallObjectAndGetObjectMetadata(object, DB::ReadSettings{}, /* max_size_bytes */ 4096); });
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
+}
+
+/// `readBigAt` issues its own downloads, so it carries the same condition and the same check.
+TEST(AzureReadBigAt, RejectsReplacedBlobThroughIfMatch)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ true);
+
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = transport;
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadBufferFromAzureBlobStorage buffer(
+        container_client,
+        "blob",
+        DB::ReadSettings{},
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 3,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ std::nullopt,
+        /* blob_storage_log */ nullptr,
+        /* container_for_logging */ "",
+        listed_etag);
+
+    std::array<char, 64> out{};
+    assertRejectsReplacedBlob([&] { buffer.readBigAt(out.data(), out.size(), /* range_begin */ 100, nullptr); });
+
+    /// A replaced blob stays replaced, so the rejection is not retried.
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(1));
 }
 
 #endif

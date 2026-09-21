@@ -35,7 +35,8 @@ public:
         bool restricted_seek_ = false,
         std::optional<size_t> read_until_position_ = {},
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        String container_for_logging_ = {});
+        String container_for_logging_ = {},
+        String expected_etag_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -76,6 +77,19 @@ private:
     /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
     static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, std::optional<size_t> read_until_position_);
 
+    /// Pins the download to the generation of the blob named by `expected_etag`, if there is one,
+    /// so that the endpoint rejects the request with `412 Precondition Failed` once the blob has
+    /// been replaced.
+    void setAccessConditions(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const;
+
+    /// Rejects a response whose `ETag` differs from `expected_etag`: an endpoint that ignored the
+    /// `If-Match` condition must not be able to hand out the bytes of another generation.
+    void checkReturnedGeneration(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const;
+
+    /// Turns the `412 Precondition Failed` that the `If-Match` condition produces into
+    /// `AZURE_OBJECT_CHANGED_DURING_READ`, which is never retried.
+    void rethrowIfGenerationChanged(const Azure::Core::RequestFailedException & e) const;
+
     /// Creates the client on first use. Thread-safe.
     const AzureBlobStorage::BlobClient & getBlobClient() const;
 
@@ -101,6 +115,14 @@ private:
     /// `[0, 0)` - is honoured as a bound and reports EOF right away, as `supportsRightBoundedReads`
     /// promises, instead of being taken for an unbounded read.
     std::optional<size_t> read_until_position;
+
+    /// The `ETag` of the generation of the blob that the caller has seen (from a listing or from
+    /// the properties), or empty when the caller has not seen one. A locally known size is only a
+    /// correct bound for that generation: a blob that was replaced with a longer one after the
+    /// listing would otherwise be silently truncated to the stale size instead of rejected.
+    /// So, as `ReadBufferFromS3` does, each download is pinned to it with `If-Match` and the `ETag`
+    /// of the response is checked against it.
+    const String expected_etag;
 
     off_t offset = 0;
     size_t total_size{};
