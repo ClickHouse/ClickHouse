@@ -98,6 +98,42 @@ def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
     assert loader.classify_eval(hist[-1]) == "excluded_native_histogram"
 
 
+def test_native_histogram_selector_exclusion(tmp_path: Path):
+    text = textwrap.dedent(
+        """
+        load 5m
+          http_requests{path="/foo"} 0+10x10
+          http_requests{path="/bar"} {{schema:0 sum:1 count:1}}x10
+
+        eval instant at 50m rate(http_requests[5m])
+            {path="/bar"} 1
+
+        eval instant at 50m sum({path="/bar"})
+            {} 1
+
+        eval instant at 50m {__name__=~"http_requests"}
+            {path="/bar"} 1
+
+        eval instant at 50m http_requests{path!="/bar"}
+            http_requests{path="/foo"} 100
+
+        eval instant at 50m label_replace(http_requests{path="/foo"}, "dst", "http_requests", "path", "(.*)")
+            http_requests{path="/foo", dst="http_requests"} 100
+        """
+    )
+    path = tmp_path / "histogram.test"
+    path.write_text(text)
+    scenarios = loader.parse_test_file(path)
+    by_expr = {ev.expr: ev for sc in scenarios for ev in sc.evals}
+    for expr in ("rate(http_requests[5m])", 'sum({path="/bar"})', '{__name__=~"http_requests"}'):
+        assert loader.classify_eval(by_expr[expr]) == "excluded_native_histogram", expr
+    for expr in (
+        'http_requests{path!="/bar"}',
+        'label_replace(http_requests{path="/foo"}, "dst", "http_requests", "path", "(.*)")',
+    ):
+        assert by_expr[expr].exclusion_reason() is None, expr
+
+
 def test_snapshot_manifest_is_complete():
     scenarios = loader.parse_all_files()
     loader.assert_manifest_complete(scenarios)

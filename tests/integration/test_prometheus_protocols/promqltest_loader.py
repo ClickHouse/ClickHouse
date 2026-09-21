@@ -32,6 +32,7 @@ _UNITS = {
     "y": 365 * 86400.0,
 }
 _LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
+_MATCHER_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*"((?:[^"\\]|\\.)*)"')
 _METRIC_NAME_RE = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 _NUMBER_RE = r"[+-]?(?:Inf|inf|NaN|nan|[0-9]*\.?[0-9]+(?:e[+-]?[0-9]+)?)"
 _EXPAND_RE = re.compile(
@@ -96,7 +97,7 @@ class EvalCase:
     has_scalar: bool = False
     native_histogram: bool = False
     load_with_nhcb: bool = False
-    native_hist_metric_names: set[str] = field(default_factory=set)
+    native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
     unparsed_expected: bool = False
 
@@ -114,7 +115,11 @@ class EvalCase:
         if self.annotation_asserts:
             return "annotation_assertion"
         query_names = set(_METRIC_NAME_RE.findall(self.expr))
-        if query_names & self.native_hist_metric_names:
+        if any(
+            selector_matches(matchers, labels)
+            for matchers in parse_selectors(self.expr)
+            for labels in self.native_hist_series
+        ):
             return "query_uses_native_histogram_metric"
         if query_names & self.start_ts_metric_names or self.unparsed_expected:
             return "start_timestamp"
@@ -138,7 +143,7 @@ class Scenario:
     line: int
     loads: list[LoadBlock]
     evals: list[EvalCase]
-    native_hist_metric_names: set[str] = field(default_factory=set)
+    native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
     load_with_nhcb: bool = False
 
@@ -234,6 +239,51 @@ def parse_metric_and_labels(ident: str) -> tuple[str, dict[str, str]]:
     name = ident[:brace]
     labels = {k: _unescape_label(v) for k, v in _LABEL_RE.findall(ident[brace:])}
     return name, labels
+
+
+def parse_selectors(expr: str) -> list[list[tuple[str, str, str]]]:
+    """Split a query into vector selectors, each a list of (label, op, value) matchers."""
+    selectors: list[list[tuple[str, str, str]]] = []
+    i = 0
+    while i < len(expr):
+        char = expr[i]
+        if char in "\"'`":
+            i += 1
+            while i < len(expr) and expr[i] != char:
+                i += 2 if expr[i] == "\\" else 1
+            i += 1
+            continue
+        matchers: list[tuple[str, str, str]] = []
+        name = _METRIC_NAME_RE.match(expr, i)
+        if name and (i == 0 or not (expr[i - 1].isalnum() or expr[i - 1] in "_:")):
+            i = name.end()
+            if i < len(expr) and expr[i] == "(":
+                continue
+            matchers.append(("__name__", "=", name.group(0)))
+        elif char != "{":
+            i += 1
+            continue
+        if i < len(expr) and expr[i] == "{":
+            end = _skip_quoted_braces(expr, i)
+            matchers.extend(
+                (label, op, _unescape_label(value))
+                for label, op, value in _MATCHER_RE.findall(expr[i:end])
+            )
+            i = end
+        if matchers:
+            selectors.append(matchers)
+    return selectors
+
+
+def selector_matches(matchers: list[tuple[str, str, str]], labels: dict[str, str]) -> bool:
+    for label, op, value in matchers:
+        if op in ("=~", "!~"):
+            hit = re.fullmatch(value, labels.get(label, "")) is not None
+        else:
+            hit = labels.get(label, "") == value
+        if hit != (op in ("=", "=~")):
+            return False
+    return True
 
 
 def _parse_number(token: str) -> float:
@@ -409,7 +459,7 @@ def parse_test_file(path: Path) -> list[Scenario]:
         nonlocal pending_eval
         if pending_eval is None:
             return
-        pending_eval.native_hist_metric_names = set(current.native_hist_metric_names)
+        pending_eval.native_hist_series = list(current.native_hist_series)
         pending_eval.start_ts_metric_names = set(current.start_ts_metric_names)
         pending_eval.load_with_nhcb = current.load_with_nhcb
         if any(s.native_histogram for s in pending_eval.expected_series):
@@ -464,7 +514,7 @@ def parse_test_file(path: Path) -> list[Scenario]:
                             series.metric = name_m.group(0)
                     block.series.append(series)
                     if series.native_histogram:
-                        current.native_hist_metric_names.add(series.metric)
+                        current.native_hist_series.append(series.label_map())
                     if series.start_timestamp:
                         current.start_ts_metric_names.add(series.metric)
                     i += 1
