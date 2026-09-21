@@ -21,11 +21,9 @@ namespace DB
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
 #if defined(__aarch64__) && defined(__ARM_NEON)
-    /// This one stays written by hand. The generic formulation used below reduces every 16-byte
-    /// group on its own, which costs four `addv` and four vector-to-general moves per 64 bytes,
-    /// 29 instructions in total. The pairwise-add tree here folds the four groups together and
-    /// needs a single move out of the vector unit, 19 instructions. Unrolling does not close the
-    /// gap, because each 64-byte block produces an independent result.
+    /// NEON has no instruction that extracts a bit per lane, so the mask is built by hand: each
+    /// lane keeps its own bit of the result, and a pairwise-add tree folds the four groups into
+    /// one register, leaving a single move out of the vector unit.
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     const auto * src = reinterpret_cast<const unsigned char *>(bytes64);
     const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
@@ -44,8 +42,8 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 #else
     if constexpr (std::endian::native == std::endian::little)
     {
-        /// Clang turns this into exactly the code the movemask intrinsics produce: `vpcmpeqb` plus
-        /// `vpmovmskb` at `x86-64-v3`, and a single `vptestmb` plus `kmovq` at `x86-64-v4`.
+        /// Compiles to `vpcmpeqb` plus `vpmovmskb` at `x86-64-v3`, and to a single `vptestmb`
+        /// plus `kmovq` at `x86-64-v4`.
         using ByteVector = UInt8 __attribute__((ext_vector_type(64)));
         using BitMask = bool __attribute__((ext_vector_type(64)));
 

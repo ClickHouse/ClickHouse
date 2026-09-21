@@ -13,10 +13,9 @@ namespace DB
 
 namespace
 {
-    /// One counter per byte of a 64-byte block. Clang turns the loops below into four
-    /// accumulators updated in place: `vpcmpeqb` plus `vpaddb` on x86, `cmtst` plus `sub` on NEON,
-    /// with no mask extraction and no horizontal step per block. Where the target has no vector
-    /// unit this is scalarised, which is still no worse than counting the bytes one at a time.
+    /// One counter per byte of a 64-byte block, so the loops below keep four accumulators in
+    /// registers and touch no scalar code per block: `vpcmpeqb` plus `vpaddb` on x86, `cmtst`
+    /// plus `sub` on NEON.
     using ByteCounters = UInt8 __attribute__((ext_vector_type(64)));
     using WideCounters = UInt16 __attribute__((ext_vector_type(64)));
 
