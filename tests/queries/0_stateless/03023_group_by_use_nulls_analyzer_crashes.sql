@@ -50,7 +50,7 @@ SELECT arrayMap(x -> '.', range(number % 10)) AS k FROM remote('127.0.0.{2,3}', 
 
 SELECT count('Lambda as function parameter') AS c FROM (SELECT ignore(ignore('Lambda as function parameter', 28, 28, 28, 28, 28, 28), 28), materialize('Lambda as function parameter'), 28, 28, 'world', 5 FROM system.numbers WHERE ignore(materialize('Lambda as function parameter'), materialize(toLowCardinality(28)), 28, 28, 28, 28, toUInt128(28)) LIMIT 2) GROUP BY GROUPING SETS ((toLowCardinality(0)), (toLowCardinality(toNullable(28))), (1)) HAVING nullIf(c, 10) < 50 ORDER BY c ASC NULLS FIRST settings group_by_use_nulls=1; -- { serverError ILLEGAL_AGGREGATION }
 
-SELECT arraySplit(x -> 0, []) WHERE materialize(1) GROUP BY 0, ignore('a') WITH ROLLUP SETTINGS group_by_use_nulls = 1;
+SELECT arraySplit(x -> 0, []) WHERE materialize(1) GROUP BY materialize(0), ignore('a') WITH ROLLUP SETTINGS group_by_use_nulls = 1;
 
 SELECT arraySplit(x -> toUInt8(number), []) from numbers(1) GROUP BY toUInt8(number) WITH ROLLUP SETTINGS group_by_use_nulls = 1;
 
