@@ -25,7 +25,7 @@ namespace ErrorCodes
 /// Segment + block + delta framework for serializing a posting list in a compact block-compressed format.
 ///
 /// Values are delta-compressed, then each fixed-size block (physical chunk, controlled by BLOCK_SIZE) is encoded
-/// by a per-block payload codec (IPostingListBlockCodec — currently bitpacking). The block payload is the only
+/// by a per-block payload codec (IPostingListBlockCodec). The block payload is the only
 /// codec-specific part; the segment / block / Index Section layout below is shared by all block codecs.
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
@@ -34,6 +34,8 @@ namespace ErrorCodes
 /// Assumes that input row ids are strictly increasing.
 class SegmentedPostingListCodec
 {
+    static constexpr size_t BLOCK_SIZE = IPostingListBlockCodec::BLOCK_SIZE;
+
     /// Header written at the beginning of each segment before the payload.
     struct Header
     {
@@ -211,7 +213,7 @@ private:
 
 /// Codec for serializing a postings list to/from a binary stream in a compact block-compressed format.
 ///
-/// Values are delta-compressed within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE),
+/// Values are delta-compressed within fixed-size blocks (physical chunks of `getBlockSize` row ids),
 /// and each block payload is produced by an IPostingListBlockCodec chosen by `getType`.
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
@@ -225,7 +227,9 @@ class SegmentedPostingListCodecBase : public IPostingListCodec
 public:
     explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
-    /// Normalizes the requested segment size to a multiple of BLOCK_SIZE, because the SIMD
+    size_t getBlockSize() const override { return IPostingListBlockCodec::BLOCK_SIZE; }
+
+    /// Normalizes the requested segment size to a multiple of `getBlockSize`, because the SIMD
     /// bit-packing implementation expects block-aligned sizes for efficient processing.
     size_t getSegmentSize(size_t posting_list_block_size) const override;
 

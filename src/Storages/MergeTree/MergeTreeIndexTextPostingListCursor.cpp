@@ -221,7 +221,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
-    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
     const UInt64 per_block_cap = block_codec->maxBlockBytes();
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
@@ -304,7 +304,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     }
 
     segment.block_count = num_blocks;
-    segment.tail_size = segment.doc_count % BLOCK_SIZE;
+    segment.tail_size = segment.doc_count % IPostingListBlockCodec::BLOCK_SIZE;
     return segment;
 }
 
@@ -330,8 +330,8 @@ void PostingListCursor::decodeBlock(size_t block_idx)
         last_decoded_doc_id = segment.block_last_row_ids[block_idx - 1];
     }
 
-    /// Determine block element count: BLOCK_SIZE for full blocks, tail_size for the last block.
-    size_t count = BLOCK_SIZE;
+    /// Determine block element count: a full block, or `tail_size` for the last block.
+    size_t count = IPostingListBlockCodec::BLOCK_SIZE;
     if (block_idx == segment.block_count - 1 && segment.tail_size > 0)
         count = segment.tail_size;
 

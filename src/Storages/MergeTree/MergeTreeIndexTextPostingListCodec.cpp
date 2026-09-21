@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Common/PODArray.h>
 
@@ -14,7 +13,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-static_assert(IPostingListEncoder::append_granularity % BLOCK_SIZE == 0,
+static_assert(IPostingListEncoder::append_granularity % IPostingListBlockCodec::BLOCK_SIZE == 0,
     "append_granularity must be a multiple of the physical block size of the segmented posting list codec");
 
 /// Returns `num_bytes` contiguous bytes read from `in` and advances it past them.
@@ -249,7 +248,8 @@ void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinali
 
 size_t SegmentedPostingListCodecBase::getSegmentSize(size_t posting_list_block_size) const
 {
-    return (posting_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
+    const size_t block_size = getBlockSize();
+    return (posting_list_block_size + block_size - 1) / block_size * block_size;
 }
 
 std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder() const

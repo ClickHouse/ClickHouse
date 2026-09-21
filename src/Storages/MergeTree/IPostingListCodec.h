@@ -64,8 +64,12 @@ public:
 
     Type getType() const { return type; }
 
+    /// Number of row ids in one block of an encoded segment, for codecs that split segments into fixed-size blocks.
+    /// Returns 0 for codecs that do not split segments into blocks.
+    virtual size_t getBlockSize() const { return 0; }
+
     /// Returns the effective segment size for the requested `posting_list_block_size`.
-    /// Codecs may round the requested size.
+    /// Codecs may round the requested size, e.g. to a multiple of `getBlockSize`.
     virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
 
     /// Creates an accumulator that encodes segments of row ids into this codec's format.
