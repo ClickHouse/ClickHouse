@@ -87,9 +87,22 @@ static bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
     constexpr size_t max_probe_points = 1024;
     const size_t probe_stride = (size - 1) / max_probe_points + 1;
 
+    /// Do not turn a bounded probe into a full scan for small filters. The regular path
+    /// will inspect the filter anyway, so scanning every byte here only duplicates work.
+    if (probe_stride == 1)
+        return false;
+
     /// Probe a bounded number of evenly spaced bytes from both directions. This keeps mixed
     /// filters with an interior or near-tail outlier on the regular path in the common case
     /// while keeping the probe much cheaper than the later filter-counting pass.
+    /// A strided probe can alias with a periodic mixed mask. Check one contiguous
+    /// machine-word-sized window at each end first so dense mixed masks stay on the
+    /// regular optimized filtering path instead of being rebuilt range by range.
+    const UInt64 expected_mask = value ? ~UInt64{0} : UInt64{0};
+    if (bytes64MaskToBits64Mask(filter.data()) != expected_mask
+        || bytes64MaskToBits64Mask(filter.data() + size - 64) != expected_mask)
+        return false;
+
     if ((filter.back() != 0) != value)
         return false;
 
