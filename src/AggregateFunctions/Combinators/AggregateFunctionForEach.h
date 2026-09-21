@@ -290,7 +290,7 @@ public:
     }
 
     /// Optimized batch aggregation for rows belonging to the same place.
-    void addBatchSinglePlace(
+    void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
@@ -328,7 +328,7 @@ public:
     }
 
     /// Optimized batch aggregation across places.
-    void addBatch(
+    void addBatch( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
