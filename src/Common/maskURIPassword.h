@@ -73,9 +73,7 @@ inline bool maskURIPassword(std::string * uri)
     return false;
 }
 
-/** The offset just past the `://` of a value that starts with an RFC 3986 scheme, and `npos` when it
-  * does not start with one. A value with no scheme at its start has no authority that a URI parser
-  * would recognise, so nothing in it can be located as a credential by position.
+/** The offset just past the `://` of a value that starts with an RFC 3986 scheme, `npos` otherwise.
   */
 inline size_t findURIAuthority(std::string_view uri)
 {

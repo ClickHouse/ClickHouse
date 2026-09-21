@@ -114,15 +114,12 @@ protected:
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
-    /// `nats_url` is not here because the documented form (`'localhost:4222'`) carries no credential and
-    /// stays visible; it is handled separately, by the presence of an '@'.
+    /// `nats_url` is not here: it is hidden only when its value carries an '@'.
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
     static constexpr std::string_view nats_secret_keys[]
         = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
 
-    /// Named arguments carrying RabbitMQ credentials, as the setting names, for the same reason as
-    /// `nats_secret_keys`. `rabbitmq_address` is not here because the documented form carries no
-    /// credential and stays visible; it is handled by the presence of an '@'.
+    /// As `nats_secret_keys`, for RabbitMQ; `rabbitmq_address` is hidden only when it carries an '@'.
     /// Keep in sync with `RabbitMQ::SETTINGS_TO_HIDE`.
     static constexpr std::string_view rabbitmq_secret_keys[] = {"rabbitmq_password"};
 
@@ -203,13 +200,6 @@ protected:
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
-    /// Masks the named-collection override form of a broker engine
-    /// (`NATS(collection, nats_token = '...')`, `RabbitMQ(collection, rabbitmq_address = '...')`).
-    /// `secret_keys` are hidden whole; `address_key` is hidden only when its value carries an '@',
-    /// because the documented address form carries no credential. Fails closed on a positional
-    /// argument and on a key this finder cannot read as a plain literal.
-    /// Keep the key lists in sync with the engine's own `SETTINGS_TO_HIDE`, which masks the same
-    /// settings in the `SETTINGS` clause.
     void findBrokerTableEngineSecretArguments(
         std::span<const std::string_view> secret_keys, std::string_view address_key);
     void findNATSTableEngineSecretArguments();
@@ -233,16 +223,11 @@ protected:
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
 
-    /// Hides the value of every `key = value` argument from `start` on whose key this finder cannot read
-    /// as a plain literal or identifier. The named-collection parser evaluates such a key as a constant
-    /// expression, so it can name a secret argument that `findNamedArgument` never sees.
+    /// Hides the value of every `key = value` argument from `start` on whose key is not a plain literal.
     void markNamedArgumentsWithUnreadableKeys(size_t start);
 
-    /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order, so a
-    /// branch that knows a secret's positional slot can find the argument that actually holds it. A
-    /// positional argument after the first named one is hidden instead of listed: the parsers reject that
-    /// mix, the statement is formatted for logging before they do, and the slot it was meant to fill is
-    /// then unknowable. `classifyS3Arguments` applies the same rule to the `s3` signatures.
+    /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order. A
+    /// positional argument after the first named one is hidden instead of listed: its slot is unknowable.
     std::vector<size_t> classifyPositionalArguments(size_t start = 0);
 
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,

@@ -443,12 +443,11 @@ void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
 
 void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
 {
-    /// The connection string is never parsed by ClickHouse: `ITableFunctionXDBC` forwards it verbatim
-    /// to the bridge, so its grammar belongs to the JDBC/ODBC driver. It can carry the password in a
-    /// query parameter (`jdbc('mysql://host:3306/?user=root&password=root', ...)`, from this function's
-    /// own documentation) or as `Pwd=` in a `KEY=value;` list, neither of which a URI scan locates.
-    /// There is no extent that can be kept visible, so the value is hidden whole;
-    /// `format_display_secrets_in_show_and_select` still shows the real one to a privileged reader.
+    /// The connection string goes verbatim to the bridge, so its grammar is the JDBC/ODBC driver's: the
+    /// password can sit in a query parameter (`?password=`) or as `Pwd=` in a `KEY=value;` list.
+    /// An invalid call is formatted for logging before validation rejects it, so both branches below
+    /// fail closed: after a collection name a positional argument can be the connection string, and a
+    /// named argument means the call is not the positional form at all.
     if (isNamedCollectionName(0))
     {
         /// jdbc(named_collection, ..., datasource = 'DSN', ...)
@@ -471,9 +470,6 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
         findSecretNamedArgument("connection_settings", 1);
         markNamedArgumentsWithUnreadableKeys(1);
 
-        /// After the collection name every argument must be a named override. A positional one is
-        /// invalid, and the statement is formatted for logging before validation rejects it, so it
-        /// can carry the connection string itself: hide it whole (fail closed).
         for (size_t i = 1; i < function->arguments->size(); ++i)
         {
             const auto equals_func = function->arguments->at(i)->getFunction();
@@ -489,9 +485,6 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
         /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
         markSecretArgument(0, false);
 
-        /// A named argument means this is not the positional form at all, and the connection string
-        /// can then sit at any index under either alias. Validation rejects such a call only after the
-        /// statement has been formatted for logging, so hide those values too (fail closed).
         findSecretNamedArgument("datasource", 1);
         findSecretNamedArgument("connection_settings", 1);
         markNamedArgumentsWithUnreadableKeys(1);
@@ -893,12 +886,8 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
     else if (engine_name == "Kafka")
     {
-        /// Kafka(named_collection, kafka_sasl_password = '...') - `registerStorageKafka` reads named
-        /// overrides of the collection, so an override carries the secret the `SETTINGS` clause form
-        /// hides through `Kafka::SETTINGS_TO_HIDE`. The legacy positional form
-        /// (`Kafka('brokers', 'topics', 'group', 'format', ...)`) carries no secret and stays visible,
-        /// so this form does not fail closed on a positional argument. That form also makes the
-        /// collection name optional, so the scan starts at index 0: a named argument can be the first.
+        /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+        /// secret and makes the collection name optional, so a named argument can be the first one.
         findSecretNamedArgument("kafka_sasl_password", 0);
         markNamedArgumentsWithUnreadableKeys(0);
     }
@@ -918,14 +907,11 @@ void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
     ///      [, nats_url = 'nats://user:password@host:4222']
     ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
-    /// RabbitMQ(named_collection [, rabbitmq_password = 'password']
-    ///          [, rabbitmq_address = 'amqp://user:password@host:5672/vhost'], ...)
+    /// RabbitMQ(named_collection [, rabbitmq_password = '...'] [, rabbitmq_address = 'amqp://user:pass@host'], ...)
     /// The only positional argument these engines accept is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by the engine's own `SETTINGS_TO_HIDE`, and this function masks the same keys the
-    /// same way: the secrets are hidden whole, and so is an address that carries an '@'.
-    /// A key list can hold a destination (`nats_server_list`), which is hidden whole because each
-    /// list entry can carry userinfo credentials.
+    /// separately by the engine's own `SETTINGS_TO_HIDE`, which this function must stay in sync with.
+    /// A destination key (`nats_server_list`) is hidden whole: each list entry can carry userinfo.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -952,8 +938,7 @@ void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
             String url;
             if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
             {
-                /// An '@' is the only reliable sign of a credential here, and there is no extent to
-                /// keep visible; see the address rule in the engine's `_fwd.h` for why.
+                /// An '@' is the only reliable sign of a credential here; see the engine's `_fwd.h`.
                 if (url.contains('@'))
                     markSecretArgument(i, /* argument_is_named= */ true);
             }
