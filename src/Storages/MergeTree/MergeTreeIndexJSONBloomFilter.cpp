@@ -43,11 +43,13 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/transformEndianness.h>
 
+#include <array>
 #include <iterator>
 #include <list>
 #include <ranges>
@@ -220,7 +222,14 @@ bool JSONBloomPathMatcher::shouldVisit(std::string_view path) const
 namespace
 {
 
-std::pair<DataTypePtr, SerializationPtr>
+struct DecodedJSONDataType
+{
+    DataTypePtr type;
+    SerializationPtr serialization;
+    std::string_view name;
+};
+
+DecodedJSONDataType
 decodeJSONDataType(ReadBuffer & buffer, UnorderedMapWithMemoryTracking<String, SerializationPtr> & serializations_cache)
 {
     char type_index = 0;
@@ -233,14 +242,14 @@ decodeJSONDataType(ReadBuffer & buffer, UnorderedMapWithMemoryTracking<String, S
     {
         ++buffer.position();
         const auto & element = simple_types_cache.getElement(binary_type_index);
-        return {element.type, element.serialization};
+        return {element.type, element.serialization, element.name};
     }
 
     auto type = decodeDataType(buffer);
     auto [it, inserted] = serializations_cache.try_emplace(type->getName());
     if (inserted)
         it->second = type->getDefaultSerialization();
-    return {std::move(type), it->second};
+    return {std::move(type), it->second, it->first};
 }
 
 enum class JSONBloomRole : UInt8
@@ -569,7 +578,11 @@ private:
         bool has_dynamic_structure = false;
         bool is_dynamic_complex = false;
         bool raw_value = false;
-        mutable MapWithMemoryTracking<std::pair<String, JSONBloomRole>, ScalarPlan> scalar_plans;
+        mutable UnorderedMapWithMemoryTracking<
+            String,
+            std::array<ScalarPlan, 3>,
+            StringHashForHeterogeneousLookup,
+            std::equal_to<>> scalar_plans;
     };
 
     struct PathInfo
@@ -597,15 +610,34 @@ private:
         const DataTypeObject * type = nullptr;
     };
 
-    const TypeInfo & getTypeInfo(const DataTypePtr & type, SerializationPtr serialization = {})
+    struct SharedPathPlan
     {
-        auto [it, inserted] = type_infos.try_emplace(type.get());
-        if (!inserted)
+        String logical_path;
+        String hash_path;
+        bool should_visit = false;
+        bool should_index = false;
+    };
+
+    const TypeInfo & getTypeInfo(
+        const DataTypePtr & type,
+        SerializationPtr serialization = {},
+        std::string_view known_name = {})
+    {
+        String name;
+        if (known_name.empty())
+        {
+            name = type->getName();
+            known_name = name;
+        }
+        auto it = type_infos.find(known_name);
+        if (it != type_infos.end())
             return it->second;
+
+        it = type_infos.try_emplace(String(known_name)).first;
 
         auto & info = it->second;
         info.type = type;
-        info.name = type->getName();
+        info.name = it->first;
         info.which = WhichDataType(type);
         info.has_json_path_descendants = hasJSONPathDescendants(type);
         info.has_dynamic_structure = type->hasDynamicStructure();
@@ -730,6 +762,11 @@ private:
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
+        UnorderedMapWithMemoryTracking<
+            String,
+            SharedPathPlan,
+            StringHashForHeterogeneousLookup,
+            std::equal_to<>> shared_path_plans;
 
         chassert(start_row <= shared_data_offsets.size());
         const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
@@ -798,14 +835,24 @@ private:
             for (size_t shared_index = start; shared_index != end; ++shared_index)
             {
                 const auto path = shared_data_paths->getDataAt(shared_index);
-                const auto logical_path = appendPath(logical_prefix, path);
-                if (!path_matcher.shouldVisit(logical_path))
+                auto plan_it = shared_path_plans.find(path);
+                if (plan_it == shared_path_plans.end())
+                {
+                    SharedPathPlan shared_plan;
+                    shared_plan.logical_path = appendPath(logical_prefix, path);
+                    shared_plan.hash_path = appendPath(hash_prefix, path);
+                    shared_plan.should_visit = path_matcher.shouldVisit(shared_plan.logical_path);
+                    shared_plan.should_index = path_matcher.shouldIndex(shared_plan.logical_path);
+                    plan_it = shared_path_plans.try_emplace(String(path), std::move(shared_plan)).first;
+                }
+                const auto & shared_plan = plan_it->second;
+                if (!shared_plan.should_visit)
                     continue;
                 emitSharedValue(
-                    appendPath(hash_prefix, path),
-                    logical_path,
+                    shared_plan.hash_path,
+                    shared_plan.logical_path,
                     role,
-                    path_matcher.shouldIndex(logical_path),
+                    shared_plan.should_index,
                     shared_data_values->getDataAt(shared_index));
             }
         }
@@ -819,8 +866,8 @@ private:
         std::string_view value_data)
     {
         ReadBufferFromMemory buffer(value_data);
-        auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
-        const auto & type_info = getTypeInfo(type, serialization);
+        auto [type, serialization, type_name] = decodeJSONDataType(buffer, serializations_cache);
+        const auto & type_info = getTypeInfo(type, serialization, type_name);
         if (type_info.which.isNothing())
             return;
 
@@ -1091,20 +1138,27 @@ private:
         ScalarPlan & keyed_plan)
     {
         /// Reuse preparation for shared paths. Keyed map scopes can differ on every row.
-        auto & plan = path == logical_path ? type_info.scalar_plans[{String(path), role}] : keyed_plan;
-        if (!plan.tokens)
+        auto * plan = &keyed_plan;
+        if (path == logical_path)
         {
-            plan.tokens = &path_filters[String(logical_path)];
-            plan.seed = hashToken(path, role, JSONBloomDomain::Typed, type_info.name, {});
+            auto plan_it = type_info.scalar_plans.find(path);
+            if (plan_it == type_info.scalar_plans.end())
+                plan_it = type_info.scalar_plans.try_emplace(String(path)).first;
+            plan = &plan_it->second[static_cast<size_t>(role) - 1];
         }
-        if (is_dynamic && !plan.has_dynamic_presence)
+        if (!plan->tokens)
         {
-            plan.tokens->presence.insert(dynamicTypePresenceHash(path, role, type_info.name));
-            plan.tokens->dynamic_types[unsupportedDynamicTypeHash(path, role)].insert(type_info.encoded_type);
-            plan.has_dynamic_presence = true;
+            plan->tokens = &path_filters[String(logical_path)];
+            plan->seed = hashToken(path, role, JSONBloomDomain::Typed, type_info.name, {});
+        }
+        if (is_dynamic && !plan->has_dynamic_presence)
+        {
+            plan->tokens->presence.insert(dynamicTypePresenceHash(path, role, type_info.name));
+            plan->tokens->dynamic_types[unsupportedDynamicTypeHash(path, role)].insert(type_info.encoded_type);
+            plan->has_dynamic_presence = true;
         }
 
-        return plan;
+        return *plan;
     }
 
     void emitScalar(
@@ -1198,7 +1252,11 @@ private:
     const JSONBloomPathMatcher & path_matcher;
     UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<MutableColumnPtr>> shared_columns_cache;
-    UnorderedMapWithMemoryTracking<const IDataType *, TypeInfo> type_infos;
+    UnorderedMapWithMemoryTracking<
+        String,
+        TypeInfo,
+        StringHashForHeterogeneousLookup,
+        std::equal_to<>> type_infos;
     UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
     size_t temporary_column_depth = 0;
     WriteBufferFromOwnString value_buffer;
