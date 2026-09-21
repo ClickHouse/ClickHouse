@@ -43,9 +43,8 @@ public:
         if (scope.is_blocker)
             --blockers_on_path;
 
-        /// A blocker constrains its own subtree, whose reads it drives, and its ancestors, which plan
-        /// it. It says nothing about a node in a sibling branch: `Planner` plans the branches of a
-        /// union independently.
+        /// `Planner` plans the branches of a union independently, so a blocker binds its own subtree
+        /// and its ancestors, which plan it, but not a sibling branch.
         const bool blocker_in_subtree = blockers_seen > scope.blockers_seen_before;
         if (blockers_on_path == 0 && !blocker_in_subtree)
             return;
@@ -73,18 +72,16 @@ private:
 
         if (const auto * union_node = node->as<UnionNode>())
         {
-            /// A recursive CTE is initiator-local: its source owns a pair of temporary tables, rotates
-            /// them between iterations and rewrites the CTE's self-reference in place, so the
-            /// fixed-point loop has no distributed form.
+            /// A recursive CTE is initiator-local: its source rotates a pair of temporary tables
+            /// between iterations and rewrites the self-reference in place, so it has no distributed form.
             return union_node->isCorrelated() || union_node->hasRecursiveCTETable();
         }
 
         return false;
     }
 
-    /// Every (sub)query carries its own context, and a nested `SETTINGS` clause can enable parallel
-    /// replicas for one alone, so eligibility is a property of this node rather than of the query.
-    /// It is also false on a follower, which must keep reading its assigned ranges.
+    /// `canUseParallelReplicasOnInitiator` is false on a follower, which must keep reading the ranges
+    /// it was assigned, and it reads this node's own context, which a nested `SETTINGS` clause can change.
     static void disable(const ContextMutablePtr & node_context)
     {
         if (!node_context->canUseParallelReplicasOnInitiator())
