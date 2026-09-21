@@ -3,10 +3,18 @@ from uuid import uuid4
 
 import pytest
 
+from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/async_insert.xml"])
+node = cluster.add_instance(
+    "node", main_configs=["configs/async_insert.xml"], stay_alive=True
+)
+node_no_flush = cluster.add_instance(
+    "node_no_flush",
+    main_configs=["configs/async_insert.xml", "configs/no_flush_on_shutdown.xml"],
+    stay_alive=True,
+)
 
 FAILPOINT = "async_insert_flush_pause_in_executor"
 ADMISSION_FAILPOINT = "async_insert_pause_before_schedule"
@@ -195,3 +203,58 @@ def test_forced_flush_waits_for_batch_before_pool_admission(tables, trigger, bad
             assert metric("PendingAsyncInsert") == 0
         finally:
             node.query(f"SYSTEM DISABLE FAILPOINT {ADMISSION_FAILPOINT}")
+
+
+@pytest.mark.parametrize("flush_on_shutdown", [False, True])
+def test_shutdown_handles_batch_before_pool_admission(flush_on_shutdown):
+    shutdown_node = node if flush_on_shutdown else node_no_flush
+    introspection = Client(shutdown_node.ip_address, 9010, command=cluster.client_bin_path)
+    table = f"shutdown_pending_{uuid4().hex}"
+    shutdown_node.query(f"CREATE TABLE {table} (x UInt64) ENGINE = MergeTree ORDER BY x")
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            stop = None
+            try:
+                shutdown_node.query(f"SYSTEM ENABLE FAILPOINT {ADMISSION_FAILPOINT}")
+                # A deadline-triggered batch contains an acknowledged insert and has no
+                # producer connection left for server shutdown to wait on.
+                assert (
+                    shutdown_node.http_query(
+                        f"INSERT INTO {table} FORMAT TSV",
+                        data="1\n",
+                        params={
+                            **SETTINGS,
+                            "async_insert_max_data_size": 1024,
+                            "async_insert_busy_timeout_min_ms": 1000,
+                            "async_insert_busy_timeout_max_ms": 1000,
+                        },
+                        timeout=30,
+                    )
+                    == ""
+                )
+                shutdown_node.query(f"SYSTEM WAIT FAILPOINT {ADMISSION_FAILPOINT} PAUSE", timeout=30)
+                assert shutdown_node.query("SELECT value FROM system.metrics WHERE metric = 'AsynchronousInsertThreadsScheduled'") == "0\n"
+
+                stop = executor.submit(shutdown_node.stop_clickhouse, stop_wait_sec=60, kill=False)
+                shutdown_node.wait_for_log_line("Shutting down the asynchronous insertion queue", timeout=30)
+                assert not stop.done()
+                # Normal listeners have closed. The introspection listener remains
+                # available until after the async queue and database catalog shut down.
+                introspection.query(f"SYSTEM DISABLE FAILPOINT {ADMISSION_FAILPOINT}", timeout=30)
+                stop.result(timeout=90)
+                assert shutdown_node.contains_in_log("Asynchronous insertion queue finished", from_host=True)
+                assert shutdown_node.contains_in_log("Background threads finished", from_host=True)
+            finally:
+                if stop is None:
+                    shutdown_node.query(f"SYSTEM DISABLE FAILPOINT {ADMISSION_FAILPOINT}")
+                elif not stop.done():
+                    introspection.query(f"SYSTEM DISABLE FAILPOINT {ADMISSION_FAILPOINT}", timeout=30)
+                    stop.result(timeout=90)
+                if stop is not None:
+                    shutdown_node.start_clickhouse()
+
+        expected = "1\n" if flush_on_shutdown else "0\n"
+        assert shutdown_node.query(f"SELECT count() FROM {table}") == expected
+    finally:
+        shutdown_node.query(f"DROP TABLE {table}")

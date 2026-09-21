@@ -375,8 +375,8 @@ void AsynchronousInsertQueue::flushAndShutdown()
 {
     try
     {
-        LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
         shutdown = true;
+        LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
 
         if (flush_on_shutdown)
         {
@@ -1137,9 +1137,14 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
+    /// A batch may have left the shard queue before shutdown and waited for pool admission.
+    /// Check when the worker starts, after that wait, so the non-flushing shutdown path
+    /// also cancels detached batches through the normal exception and accounting cleanup.
+    if (shutdown && !flush_on_shutdown)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Async insert cancelled during shutdown");
+
     DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
 
-    const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     /// Fail closed if the authentication method that queued this insert has expired between enqueue
