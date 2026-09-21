@@ -193,10 +193,14 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
 
 
 @pytest.mark.parametrize("read_method", ["read", "threadpool"])
-def test_remote_read_stops_after_partial_result_cancel(cluster, read_method):
+@pytest.mark.parametrize(
+    "read_failpoint", ["hdfs_read_before_open", "hdfs_read_before_read"]
+)
+def test_remote_read_stops_after_partial_result_cancel(
+    cluster, read_method, read_failpoint
+):
     node = cluster.instances["node"]
     query_id = uuid.uuid4().hex
-    read_failpoint = "hdfs_read_before_read"
     pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
 
     create_table(cluster, "hdfs_test", additional_settings="min_rows_for_wide_part=0")

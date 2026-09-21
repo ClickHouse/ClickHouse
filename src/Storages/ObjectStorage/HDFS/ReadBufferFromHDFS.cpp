@@ -21,6 +21,7 @@ namespace DB
 
 namespace FailPoints
 {
+extern const char hdfs_read_before_open[];
 extern const char hdfs_read_before_pread[];
 extern const char hdfs_read_before_read[];
 }
@@ -66,13 +67,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , read_until_position(read_until_position_)
         , enable_pread(read_settings_.remote_fs_settings.enable_hdfs_pread)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_open);
+        read_settings.read_cancellation.checkIfNotCancelled();
         fs = createHDFSFS(builder.get());
-        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
-
-        if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-                "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
 
         if (file_size_.has_value())
         {
@@ -80,15 +77,21 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         else
         {
+            read_settings.read_cancellation.checkIfNotCancelled();
             auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, fs.get(), hdfs_file_path.c_str());
             if (!file_info)
-            {
-                hdfsCloseFile(fs.get(), fin);
                 throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
-            }
             file_size = static_cast<size_t>(file_info->mSize);
             hdfsFreeFileInfo(file_info, 1);
         }
+
+        read_settings.read_cancellation.checkIfNotCancelled();
+        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
+
+        if (fin == nullptr)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+                "Unable to open HDFS file: {}. Error: {}",
+                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
     }
 
     ~ReadBufferFromHDFSImpl() override

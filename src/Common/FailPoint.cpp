@@ -87,6 +87,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(s3_read_before_get_object) \
     PAUSEABLE_ONCE(azure_read_before_download) \
     PAUSEABLE_ONCE(azure_read_before_read) \
+    PAUSEABLE_ONCE(hdfs_read_before_open) \
     PAUSEABLE_ONCE(hdfs_read_before_pread) \
     PAUSEABLE_ONCE(hdfs_read_before_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
