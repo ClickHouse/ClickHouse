@@ -397,6 +397,22 @@ public:
         }
     }
 
+    /// `IAggregateFunctionHelper` overrides this with a row-at-a-time loop over `add`, which would
+    /// bypass the batch path above. `Aggregator` routes the ordinary grouped case here as soon as the
+    /// hash table has materialized every state, so without this the fast path never runs for GROUP BY.
+    /// The base declaration delegates the same way.
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const AggregateFunctionForEachData & rhs_state = data(rhs);
