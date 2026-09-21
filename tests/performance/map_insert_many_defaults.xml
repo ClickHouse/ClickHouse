@@ -1,61 +1,39 @@
 <test>
+    <substitutions>
+        <substitution>
+            <name>map_type</name>
+            <values>
+                <value>Map(UInt8, UInt8)</value>
+                <value>Map(UInt64, UInt64)</value>
+                <value>Map(String, String)</value>
+                <value>Map(UInt64, FixedString(256))</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>rows</name>
+            <values>
+                <value>65521</value>
+                <value>65536</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <settings>
-        <allow_experimental_map_type>1</allow_experimental_map_type>
         <input_format_defaults_for_omitted_fields>1</input_format_defaults_for_omitted_fields>
         <max_threads>1</max_threads>
-        <max_insert_block_size>65536</max_insert_block_size>
+        <max_block_size>65536</max_block_size>
     </settings>
 
-    <create_query>
-        CREATE TABLE map_default_perf
-        (
-            id UInt64,
-            m1 Map(UInt64, FixedString(256)),
-            m2 Map(UInt64, FixedString(256)),
-            m3 Map(UInt64, FixedString(256)),
-            m4 Map(UInt64, FixedString(256))
-        )
-        ENGINE = Null
-    </create_query>
-
     <!--
-        The native-protocol query uses inline JSONColumns data and is the
-        memory-measurable version of this test. It omits the Map columns, so
-        the input format calls insertManyDefaults for each one. The wide value
-        type makes the old generic implementation allocate nested storage even
-        though every Map is empty. Keeping this as a normal SQL query lets the
-        performance runner record server-side memory usage.
+        perf.py executes SQL with clickhouse_driver, which does not support
+        inline INSERT FORMAT data. Use format() to parse JSONColumns on the
+        server and include its allocations in the query memory measurement.
+        The omitted Map columns reach insertManyDefaults in the input format.
 
-        Keep the shell query below as end-to-end coverage for the same input
-        format. Shell queries report client time only.
-
-        Keep several omitted Map columns so the allocation cost is visible in
-        the end-to-end benchmark instead of being hidden by JSON processing.
+        Consume every Map column and check the row count so an empty input or
+        a count-only workload cannot look like a successful fast benchmark.
+        Include narrow maps, not just the wide allocation-sensitive case.
+        There is no timed process startup, producer process, or table DDL.
     -->
     <query file="map_insert_many_defaults.sql" />
-
-    <query type="shell"><![CDATA[
-        $CLICKHOUSE_LOCAL --max_block_size=65536 --query "
-            SELECT number AS id
-            FROM numbers(1048576)
-            FORMAT JSONColumns
-        " |
-        $CLICKHOUSE_LOCAL --max_block_size=65536 --async_insert=0 \
-            --allow_experimental_map_type=1 \
-            --input_format_defaults_for_omitted_fields=1 \
-            --query "
-                CREATE TABLE map_default_perf
-                (
-                    id UInt64,
-                    m1 Map(UInt64, FixedString(256)),
-                    m2 Map(UInt64, FixedString(256)),
-                    m3 Map(UInt64, FixedString(256)),
-                    m4 Map(UInt64, FixedString(256))
-                )
-                ENGINE = Null;
-                INSERT INTO map_default_perf FORMAT JSONColumns
-        " > /dev/null
-    ]]></query>
-
-    <drop_query>DROP TABLE IF EXISTS map_default_perf</drop_query>
 </test>
