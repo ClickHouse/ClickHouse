@@ -106,7 +106,6 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key)
 
 struct ExponentialTimeDecayingFloat64Value
 {
-    UInt128 ordering_key;
     UInt64 ordering_prefix;
     Float64 value_at_anchor;
     Float64 anchor_time;
@@ -118,7 +117,7 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
     if (value == 0)
     {
         const auto ordering_key = getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(0, 0);
-        return {ordering_key, static_cast<UInt64>(ordering_key >> 1), 0, 0};
+        return {static_cast<UInt64>(ordering_key >> 1), 0, 0};
     }
 
     const Float64 unit_timestamp
@@ -126,7 +125,6 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
     const auto ordering_key
         = getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(unit_timestamp, value);
     return {
-        ordering_key,
         static_cast<UInt64>(ordering_key >> 1),
         value,
         time};
