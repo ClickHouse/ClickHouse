@@ -570,7 +570,7 @@ namespace
 void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "BackupQuery");
-    w.writeString("kind", std::string(magic_enum::enum_name(kind)));
+    w.writeString("kind", magic_enum::enum_name(kind));
     w.writeChild("backup_name", backup_name);
     w.writeChild("base_backup_name", base_backup_name);
     w.writeChild("base_snapshot_name", base_snapshot_name);

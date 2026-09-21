@@ -686,7 +686,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
 #endif
     JSONObjectWriter w(out, "SystemQuery");
-    w.writeString("query_type", std::string(magic_enum::enum_name(type)));
+    w.writeString("query_type", magic_enum::enum_name(type));
     w.writeChild("database", database);
     w.writeChild("table", table);
     if (if_exists)
@@ -743,13 +743,13 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
     if (fail_point_action != FailPointAction::UNSPECIFIED)
-        w.writeString("fail_point_action", std::string(magic_enum::enum_name(fail_point_action)));
+        w.writeString("fail_point_action", magic_enum::enum_name(fail_point_action));
     if (!delta_kernel_tracing_level.empty())
         w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
     if (!coverage_test_name.empty())
         w.writeString("coverage_test_name", coverage_test_name);
     if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-        w.writeString("sync_replica_mode", std::string(magic_enum::enum_name(sync_replica_mode)));
+        w.writeString("sync_replica_mode", magic_enum::enum_name(sync_replica_mode));
     if (!src_replicas.empty())
     {
         w.writeKey("src_replicas");

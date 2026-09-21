@@ -165,7 +165,6 @@ Checks: [
   '-modernize-use-designated-initializers',
   '-modernize-use-scoped-lock',
   '-modernize-use-integer-sign-comparison',
-  '-modernize-use-std-bit', # TODO: evaluate separately
   '-modernize-use-string-view', # too noisy
   '-modernize-use-structured-binding', # controversial, e.g. suggests structured bindings instead of `std::tie` into existing variables
 
@@ -176,7 +175,6 @@ Checks: [
   '-performance-inefficient-string-concatenation',
   '-performance-inefficient-vector-operation',
   '-performance-no-int-to-ptr',
-  '-performance-string-view-conversions', # TODO: evaluate separately
   '-performance-unnecessary-value-param',
   '-performance-use-std-move', # too noisy
 

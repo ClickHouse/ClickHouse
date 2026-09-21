@@ -137,7 +137,7 @@ ASTPtr ASTAlterCommand::clone() const
 void ASTAlterCommand::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "AlterCommand");
-    w.writeString("command_type", std::string(magic_enum::enum_name(type)));
+    w.writeString("command_type", magic_enum::enum_name(type));
 
     w.writeBool("detach", detach);
     w.writeBool("part", part);
@@ -151,7 +151,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeBool("replace", replace);
 
     if (type == ASTAlterCommand::MOVE_PARTITION)
-        w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
+        w.writeString("move_destination_type", magic_enum::enum_name(move_destination_type));
 
     if (!move_destination_name.empty())
         w.writeString("move_destination_name", move_destination_name);

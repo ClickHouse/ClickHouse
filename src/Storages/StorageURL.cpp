@@ -2533,7 +2533,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     /// and must stay loadable after a revoke; every other statement introduces one to check.
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!from_existing_metadata)
-        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
 
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(engine_name);
