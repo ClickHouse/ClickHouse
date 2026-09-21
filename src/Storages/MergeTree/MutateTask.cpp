@@ -4150,7 +4150,7 @@ bool MutateTask::prepare()
         ctx->for_file_renames,
         ctx->log);
 
-    const bool primary_key_integer_widening = hasPrimaryKeyIntegerWidening(
+    const bool primary_key_integer_widening = MutationHelpers::hasPrimaryKeyIntegerWidening(
         ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
