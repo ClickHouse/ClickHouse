@@ -171,8 +171,15 @@ def test_unsupported_not_implemented():
         expr="foo()",
         time_s=0,
     )
-    status, _ = loader.compare_eval(case, "", "Function foo is not implemented")
-    assert status == "unsupported"
+    errors = (
+        "Function foo is not implemented",
+        "Code: 48. DB::Exception: Function quantile_over_time is unavailable",
+        "DB::Exception: Feature unavailable (NOT_IMPLEMENTED)",
+        "Function quantile_over_time is not supported",
+    )
+    for error in errors:
+        status, _ = loader.compare_eval(case, "", error)
+        assert status == "unsupported", error
 
 
 def test_insert_sql_skips_native_histogram():

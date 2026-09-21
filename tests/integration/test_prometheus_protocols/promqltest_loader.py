@@ -711,7 +711,13 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
     """Return (status, reason) status in passed/failed/unsupported."""
     if error:
         err_l = error.lower()
-        if "not implemented" in err_l or "501" in err_l:
+        if (
+            "not implemented" in err_l
+            or "not_implemented" in err_l
+            or "not supported" in err_l
+            or "code: 48" in err_l
+            or "501" in err_l
+        ):
             return "unsupported", error
         if case.expect_fail:
             return "passed", ""
