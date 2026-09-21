@@ -2,6 +2,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -56,7 +57,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         if (query_status && !query_status->checkTimeLimit())
             break;
 
-        StoragePtr storage = dropped_table.table;
+        auto storage = castStorage<MergeTreeData>(dropped_table.table, StorageResolution::Peek);
         if (!storage)
             continue;
 
@@ -73,9 +74,6 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
         });
-
-        if (!dynamic_cast<MergeTreeData *>(storage.get()))
-            continue;
 
         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
             continue;

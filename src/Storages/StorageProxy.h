@@ -16,6 +16,10 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
+    /// The wrapped storage if it already exists, or null. Never creates it, so an observer
+    /// iterating every table cannot trigger a load.
+    virtual StoragePtr tryGetNested() const { return nullptr; }
+
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
@@ -184,5 +188,46 @@ public:
 
 };
 
+/// Resolves a proxy to the storage it wraps, for callers that cast to a concrete engine type.
+/// Returns the proxy unchanged while the real storage does not exist, so the cast still fails.
+inline StoragePtr resolveStorageProxy(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+    {
+        if (auto nested = proxy->tryGetNested())
+            return nested;
+    }
+    return storage;
+}
+
+/// Same, but creates the wrapped storage when it does not exist yet. For operations that name a
+/// table explicitly, where loading it is the expected cost of the operation.
+inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return proxy->getNested();
+    return storage;
+}
+
+/// How a cast should treat a table that has not been loaded yet.
+enum class StorageResolution : uint8_t
+{
+    /// Create the wrapped storage if it does not exist. For an operation that names the table.
+    Load,
+    /// Leave a not-yet-loaded table unresolved, so the cast fails. For an observer that walks every
+    /// table and must not turn a listing into a load.
+    Peek,
+};
+
+/// The single way to cast a catalog pointer to a concrete engine type. A lazily loaded table is
+/// reached through `StorageTableProxy`, so a direct cast fails even once the table is loaded.
+template <typename T>
+std::shared_ptr<T> castStorage(const StoragePtr & storage, StorageResolution resolution)
+{
+    if (!storage)
+        return nullptr;
+    auto resolved = resolution == StorageResolution::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
+    return std::dynamic_pointer_cast<T>(resolved);
+}
 
 }

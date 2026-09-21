@@ -33,6 +33,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -951,7 +952,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 ConditionSelectivityEstimatorPtr estimator;
                 if (has_statistics && has_multiple_conditions && context->getSettingsRef()[Setting::use_statistics])
                 {
-                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+                    if (const auto merge_tree = castStorage<MergeTreeData>(storage, StorageResolution::Load))
                     {
                         auto filter = ExpressionAnalyzer(query.where()->clone(), syntax_analyzer_result, context).getActionsDAG(true);
                         parts_for_estimator = ReadFromMergeTree::filterPartsForStatistics(
@@ -1218,7 +1219,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, StorageResolution::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 

@@ -3,6 +3,7 @@ import json
 import math
 import multiprocessing
 import os
+import pathlib
 import re
 import shlex
 from concurrent.futures import ProcessPoolExecutor
@@ -878,6 +879,125 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
+# taken from `DatabaseCatalog` may be the proxy rather than the engine.
+DEFERRABLE_STORAGE_CLASSES = (
+    "MergeTreeData",
+    "StorageMergeTree",
+    "StorageReplicatedMergeTree",
+    "StorageSharedMergeTree",
+    "StorageSetOrJoinBase",
+    "StorageSet",
+    "StorageJoin",
+    "StorageSharedSet",
+    "StorageSharedJoin",
+    "StorageEmbeddedRocksDB",
+    "IKeyValueEntity",
+    "IStorageURLBase",
+    "IBackgroundOperation",
+    "StorageWithCommonVirtualColumns",
+    "StorageLog",
+    "StorageStripeLog",
+    "StorageURL",
+    "StorageObjectStorage",
+    "StorageKeeperMap",
+    "StorageMySQL",
+    "StoragePostgreSQL",
+    "StorageMongoDB",
+    "StorageRedis",
+    "StorageSQLite",
+    "StorageXDBC",
+    "StorageHive",
+    "StorageArrowFlight",
+    "StorageYTsaurus",
+    "StorageBigQuery",
+    "StorageKafka",
+    "StorageKafka2",
+    "StorageFileLog",
+    "StorageRabbitMQ",
+    "StorageNATS",
+    "StorageObjectStorageQueue",
+    "IStreamingStorage",
+)
+
+# Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
+_NOT_A_CATALOG_POINTER = re.compile(
+    r"^(?:\*?this\b"
+    r"|shared_from_this\(\)"
+    r"|&?\w*(?:snapshot|storage_snapshot)->storage\b"
+    r"|&?\w*reading->getMergeTreeData\(\)"
+    r")"
+)
+
+
+def _without_comments(text):
+    """Blanks out comments, keeping the line layout so offsets and line numbers still match."""
+    return re.sub(
+        r"//[^\n]*|/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S
+    )
+
+
+def _cast_operand(text, open_paren):
+    """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
+    depth = 0
+    for i in range(open_paren, min(open_paren + 2000, len(text))):
+        depth += (text[i] == "(") - (text[i] == ")")
+        if not depth:
+            return " ".join(text[open_paren + 1 : i].split())
+    return None
+
+
+def check_storage_casts(files) -> str:
+    """Require `castStorage` for casts to an engine that supports deferred loading.
+
+    Such a table lives behind `StorageTableProxy` until its first access and the catalog keeps
+    handing out that proxy afterwards, so a direct cast fails for the whole life of the table.
+    """
+    types = "|".join(DEFERRABLE_STORAGE_CLASSES)
+    cast_head = re.compile(
+        r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
+        r"(?:const\s+)?(?:" + types + r")\s*[*&]?\s*>\s*\("
+    )
+    # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
+    as_cast = re.compile(
+        r"(?P<operand>[\w.\[\]()]+)(?:->|\.)as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
+    )
+    resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
+
+    violations = []
+    for path in files:
+        # The helpers and the proxy itself have to reach the nested storage directly.
+        if not path.endswith((".cpp", ".h")) or path.endswith(
+            ("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")
+        ):
+            continue
+        try:
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+
+        text = _without_comments("\n".join(lines))
+        casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
+        casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
+
+        for match, cast, operand in casts:
+            if not operand or _NOT_A_CATALOG_POINTER.match(operand) or any(r in operand for r in resolvers):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            # The marker goes on the cast or, when the line is long, the one above it.
+            if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
+                continue
+            violations.append(
+                f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
+                "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
+                "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
+                "StorageResolution::Load) when the query names this table, or StorageResolution::Peek "
+                "when this walks every table and must not load one. If the pointer cannot come from "
+                "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
+            )
+    return "\n".join(violations)
+
+
 def check_file_names(files):
     files_set = set()
     for file in files:
@@ -1473,6 +1593,15 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_catch_all,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_casts"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_casts,
                 files=cpp_files,
             )
         )

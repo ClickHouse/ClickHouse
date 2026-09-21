@@ -2,6 +2,7 @@
 #include <Storages/Utils.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageProxy.h>
 
 
 namespace CurrentMetrics
@@ -25,7 +26,8 @@ namespace DB
         {
             return {CurrentMetrics::AttachedDictionary};
         }
-        if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
+        /// Asked while attaching, so this must not load a lazy table.
+        if (castStorage<StorageReplicatedMergeTree>(storage, StorageResolution::Peek))
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};
         }

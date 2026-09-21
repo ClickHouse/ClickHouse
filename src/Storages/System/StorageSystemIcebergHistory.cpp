@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/extractTableNameFilter.h>
@@ -110,7 +111,7 @@ void StorageSystemIcebergHistory::fillData(
                 // Table was dropped while acquiring the lock, skipping table
                 return;
 
-            auto * object_storage = dynamic_cast<StorageObjectStorage *>(storage.get());
+            auto * object_storage = castStorage<StorageObjectStorage>(storage, StorageResolution::Peek).get();
 
             if (!object_storage || !object_storage->isIcebergStorage())
                 return;
