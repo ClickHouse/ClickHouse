@@ -13,8 +13,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Result equivalence cannot show this, because ClickHouse reapplies the `WHERE` either way; the
 # `ProfileEvents` of the pushdown are what proves the set reached the scan.
 
-USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-WORKING_DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
+WORKING_DIR="${USER_FILES_PATH%/}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "${WORKING_DIR}"
 DATA_FILE="${WORKING_DIR}/data.vortex"
 
