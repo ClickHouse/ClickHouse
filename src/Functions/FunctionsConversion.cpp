@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -1040,9 +1041,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
             if (to_type->getElements().size() == logical_tuple.getElements().size())
             {
-                auto logical_wrapper = createTupleWrapper(logical_type, to_type);
+                auto decay_logical_wrapper = createTupleWrapper(logical_type, to_type);
                 const Float64 decay_length = decaying_type->getDecayLength();
-                return [logical_wrapper = std::move(logical_wrapper), logical_type, decay_length]
+                return [logical_wrapper = std::move(decay_logical_wrapper), logical_type, decay_length]
                     (ColumnsWithTypeAndName & arguments,
                      const DataTypePtr & result_type,
                      const ColumnNullable * nullable_source,
@@ -3333,9 +3334,9 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                 const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
                 if (from_tuple->getElements().size() == logical_tuple.getElements().size())
                 {
-                    auto logical_wrapper = createTupleWrapper(from_type, &logical_tuple);
+                    auto decay_logical_wrapper = createTupleWrapper(from_type, &logical_tuple);
                     const Float64 decay_length = decaying_type.getDecayLength();
-                    return [logical_wrapper = std::move(logical_wrapper), logical_type, decay_length]
+                    return [logical_wrapper = std::move(decay_logical_wrapper), logical_type, decay_length]
                         (ColumnsWithTypeAndName & arguments,
                          const DataTypePtr &,
                          const ColumnNullable * nullable_source,
