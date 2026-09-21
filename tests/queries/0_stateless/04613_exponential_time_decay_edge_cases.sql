@@ -58,8 +58,8 @@ SELECT
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
 
 
--- Calculation budget 0 preserves exact behavior.
-SET exponential_time_decay_aggregate_function_calculation_budget = 0;
+-- A zero finalized-value cutoff preserves exact behavior.
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 0;
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -67,9 +67,9 @@ SELECT round(
     6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
--- Raw rows do not carry a calculation index, so a positive budget leaves their
--- aggregation exact.
-SET exponential_time_decay_aggregate_function_calculation_budget = 5;
+-- Raw rows do not carry a calculation index, so the finalized-value cutoff leaves
+-- their aggregation exact.
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 5;
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -78,7 +78,7 @@ SELECT round(
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
 -- This remains exact as well, even though the old contribution would be outside
--- the budget if an index had been supplied.
+-- the configured distance if an index had been supplied.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -102,7 +102,7 @@ SELECT abs(actual - expected) <= 1e-12 * greatest(1., abs(expected))
 FROM VALUES('value Float64, time Float64', (1000000, 0), (2, 100));
 
 -- Aggregate-state merges remain exact. In particular, storage-engine merges do
--- not inherit a query's approximation budget.
+-- not inherit a query's finalized-value cutoff.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSumMerge(10)(state),
@@ -118,8 +118,8 @@ FROM
 );
 
 -- Finalized values already carry the unit-magnitude timestamp. This is the only
--- input form on which the calculation budget is applied; sorting these values by
--- their calculation-index timestamp makes the fast rejection path especially effective.
+-- input form on which this cutoff is applied; sorting these values by their
+-- calculation-index timestamp makes the fast rejection path especially effective.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(decaying_value),
@@ -153,8 +153,8 @@ SELECT round(exponentialTimeDecayingValueAt(value, toFloat64(100)), 6)
 FROM time_decay_budget_engine_exact;
 DROP TABLE time_decay_budget_engine_exact;
 
-SET exponential_time_decay_aggregate_function_calculation_budget = -1;
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = -1;
 SELECT exponentialTimeDecayedSum(10)(value, time)
 FROM VALUES('value Float64, time Float64', (1, 0)); -- { serverError BAD_ARGUMENTS }
 
-SET exponential_time_decay_aggregate_function_calculation_budget = 0;
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 0;

@@ -24,7 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
-    extern const SettingsFloat exponential_time_decay_aggregate_function_calculation_budget;
+    extern const SettingsFloat exponential_time_decay_finalized_value_max_distance_in_decay_lengths;
 }
 
 namespace ErrorCodes
@@ -94,7 +94,7 @@ struct ExponentialTimeDecayedState
     {
         /// Approximation is only allowed when the input already carries its
         /// calculation index. Query-local partial states preserve that index, so
-        /// parallel aggregation has the same budget semantics as adding rows to a
+        /// parallel aggregation has the same cutoff semantics as adding rows to a
         /// single state. Aggregate functions reconstructed for storage-engine
         /// merges have an infinite budget and therefore always take the exact path.
         if (input_has_calculation_index && std::isfinite(max_decay_distance) && !empty() && !rhs.empty())
@@ -319,18 +319,18 @@ Float64 getMaxDecayDistance(const String & name, const Settings * settings, Floa
     if (!settings)
         return std::numeric_limits<Float64>::infinity();
 
-    const Float64 calculation_budget
-        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget]);
-    if (!std::isfinite(calculation_budget) || calculation_budget < 0)
+    const Float64 max_distance_in_decay_lengths
+        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_finalized_value_max_distance_in_decay_lengths]);
+    if (!std::isfinite(max_distance_in_decay_lengths) || max_distance_in_decay_lengths < 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting exponential_time_decay_aggregate_function_calculation_budget must be finite and non-negative for aggregate function {}",
+            "Setting exponential_time_decay_finalized_value_max_distance_in_decay_lengths must be finite and non-negative for aggregate function {}",
             name);
 
-    if (calculation_budget == 0)
+    if (max_distance_in_decay_lengths == 0)
         return std::numeric_limits<Float64>::infinity();
 
-    return calculation_budget * decay_length;
+    return max_distance_in_decay_lengths * decay_length;
 }
 
 Float64 getDecayLength(const String & name, const Array & parameters)

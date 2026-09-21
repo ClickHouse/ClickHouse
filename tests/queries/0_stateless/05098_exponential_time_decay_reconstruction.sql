@@ -1,8 +1,8 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
-SET exponential_time_decay_aggregate_function_calculation_budget = 5;
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 5;
 
 -- The constructor alias accepts indexed values too. Persisted states must keep
--- their small contributions even when the query opts into approximate merging.
+-- their small contributions even when the query enables the finalized-value cutoff.
 DROP TABLE IF EXISTS time_decay_reconstruction;
 CREATE TABLE time_decay_reconstruction
 (
@@ -31,9 +31,9 @@ FROM
     SELECT CAST((1., 100., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
 );
 
--- Reconstructing stored type names must not consult an unrelated query budget,
--- even when that budget would be rejected for a new aggregate invocation.
-SET exponential_time_decay_aggregate_function_calculation_budget = -1;
+-- Reconstructing stored type names must not consult an unrelated query cutoff,
+-- even when that cutoff value would be rejected for a new aggregate invocation.
+SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = -1;
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayingFloat64(10), Float64, Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedCount(10), Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedAvg(10), Float64, Float64)'));
