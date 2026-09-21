@@ -65,8 +65,8 @@ SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN t_in_empty_set
 SET serialize_query_plan = 0, enable_parallel_replicas = 0, prefer_localhost_replica = 1, optimize_skip_unused_shards = 0;
 SELECT count() FROM (
     EXPLAIN indexes = 1, distributed = 1
-    SELECT sum(b) FROM (SELECT * FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk))
-    WHERE a IN (SELECT toInt32(number) FROM numbers(0))
+    SELECT sum(b) FROM (SELECT * FROM remote('127.0.0.{1,2}', currentDatabase(), t_in_empty_set_pk)
+        PREWHERE a IN (SELECT toInt32(number) FROM numbers(0)))
 ) WHERE explain ILIKE '%0-element set%';
 
 DROP TABLE t_in_empty_set;
