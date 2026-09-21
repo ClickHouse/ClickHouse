@@ -891,6 +891,20 @@ void ColumnObject::doInsertManyFrom(const IColumn & src, size_t position, size_t
     const auto & src_object = assert_cast<const ColumnObject &>(src);
     takeMaxDynamicPathsUpperBoundFrom(src_object);
 
+    /// A fresh destination has not learned the source paths yet. Insert one row to
+    /// establish them, then apply the same layout, promotion and aliasing checks.
+    if (&src != this && empty() && dynamic_paths.empty() && !src_object.dynamic_paths.empty()
+        && src_object.dynamic_paths.size() <= max_dynamic_paths)
+    {
+        insertFrom(src, position);
+        --length;
+        if (length == 1)
+        {
+            insertFrom(src, position);
+            return;
+        }
+    }
+
     /// Copying shared data directly must not skip promotion into dynamic paths.
     bool can_insert_directly
         = &src != this && dynamicStructureEquals(src) && (!canAddNewDynamicPath() || src_object.shared_data->isDefaultAt(position));

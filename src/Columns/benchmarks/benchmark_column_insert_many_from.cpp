@@ -222,6 +222,7 @@ static void BM_insertRepeatedObject(benchmark::State & state)
     const size_t paths = static_cast<size_t>(state.range(0));
     const size_t length = static_cast<size_t>(state.range(1));
     const bool matching_layout = state.range(2);
+    const bool reserve_destination = state.range(3);
     auto source = type->createColumn();
     Object value;
     for (size_t i = 0; i < paths; ++i)
@@ -233,9 +234,11 @@ static void BM_insertRepeatedObject(benchmark::State & state)
     {
         state.PauseTiming();
         destination = matching_layout ? source->cloneEmpty() : type->createColumn();
+        if (reserve_destination)
+            destination->reserve(length);
         state.ResumeTiming();
 
-        /// Include all destination buffer growth in both measurements.
+        /// Include any growth beyond the optional caller-style reservation.
         if constexpr (bulk)
             insertManyFromRepeatedly(*destination, *source, length);
         else
@@ -252,17 +255,21 @@ static const String type_object_typed = "JSON(p0 UInt64, p1 String)";
 
 #define REGISTER_OBJECT_REPEATED_BENCHMARKS(type, bulk) \
     BENCHMARK_TEMPLATE(BM_insertRepeatedObject, type, bulk) \
-        ->Args({0, ROWS, 1}) \
-        ->Args({1, ROWS, 1}) \
-        ->Args({16, 1, 1}) \
-        ->Args({16, 2, 1}) \
-        ->Args({256, 2, 1}) \
-        ->Args({256, 4, 1}) \
-        ->Args({16, 16, 1}) \
-        ->Args({16, 256, 1}) \
-        ->Args({16, ROWS, 1}) \
-        ->Args({16, 2, 0}) \
-        ->Args({16, 256, 0})
+        ->Args({0, ROWS, 1, 0}) \
+        ->Args({1, ROWS, 1, 0}) \
+        ->Args({16, 1, 1, 0}) \
+        ->Args({16, 2, 1, 0}) \
+        ->Args({256, 2, 1, 0}) \
+        ->Args({256, 4, 1, 0}) \
+        ->Args({16, 16, 1, 0}) \
+        ->Args({16, 256, 1, 0}) \
+        ->Args({16, ROWS, 1, 0}) \
+        ->Args({16, 2, 0, 0}) \
+        ->Args({16, 256, 0, 0}) \
+        ->Args({16, ROWS, 0, 0}) \
+        ->Args({16, 256, 1, 1}) \
+        ->Args({16, ROWS, 1, 1}) \
+        ->Args({16, ROWS, 0, 1})
 
 REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object, false);
 REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object, true);
