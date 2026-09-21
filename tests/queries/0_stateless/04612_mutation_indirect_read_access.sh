@@ -172,6 +172,17 @@ check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable ARRAY 
 echo "-- An array column of the subquery's own table on the right of IN is a column, not a table"
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT r.id FROM readable r WHERE 1 IN r.arr) AND 0 SETTINGS $off"
 
+# An expression alias of a `SELECT` level is not a table either: `AddDefaultDatabaseVisitor` keeps a
+# name on the right of `IN` as written when that level defines it as an alias, so the mutation reads
+# a column of its own query and requiring `SELECT` on a table of that name would deny a mutation the
+# user's grants allow. An `ARRAY JOIN` alias is collected the same way.
+echo "-- An expression alias on the right of IN is not a table, an ARRAY JOIN alias included"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT 3 AS col3 FROM dim WHERE 3 IN col3) AND 0 SETTINGS $off"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable ARRAY JOIN arr AS elem WHERE 1 IN elem) AND 0 SETTINGS $off"
+# The alias goes out of scope with its level, so the same name below it, or after it, is a table again.
+echo "-- That alias is out of scope in a nested SELECT and after its own level"
+check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT 3 AS secret_set FROM dim WHERE id IN (SELECT id FROM dim WHERE 1 IN secret_set)) SETTINGS $off"
+
 # A virtual column of a subquery's table needs no grant of its own, exactly as in a plain `SELECT`
 # from that table, so requiring one would deny a mutation the equivalent `SELECT` is allowed to run.
 echo "-- A virtual column of a subquery's table needs no grant"

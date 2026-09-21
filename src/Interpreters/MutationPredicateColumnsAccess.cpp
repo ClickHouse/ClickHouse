@@ -388,6 +388,16 @@ private:
             with_scalars.resize(enclosing_with_scalars);
         });
 
+        /// An expression alias is visible only at the `SELECT` level that defines it - not in a
+        /// nested one, and not in the enclosing one - so this level's aliases replace the enclosing
+        /// level's for as long as it is being visited, the same scoping `AddDefaultDatabaseVisitor`
+        /// applies when it decides whether to qualify a name on the right of `IN`.
+        auto enclosing_expression_aliases = std::move(expression_aliases);
+        expression_aliases.clear();
+        for (const auto & child : select.children)
+            collectExpressionAliases(child);
+        SCOPE_EXIT({ expression_aliases = std::move(enclosing_expression_aliases); });
+
         if (const auto with = select.with())
         {
             for (const auto & child : with->children)
@@ -593,11 +603,14 @@ private:
     /// Whether an identifier on the right of `IN` names a table (or a set) rather than reading an
     /// array-valued column: the two are the same identifier as far as the AST is concerned.
     ///
-    /// A one-part name is always a table here. The mutation expression is qualified with a database
-    /// before it is stored, so `WHERE 1 IN arr` becomes `1 IN (db.arr)` and reads a table `db.arr` on
-    /// every entry point, even when `arr` is an array column of the mutated table - the column is
-    /// only read by a qualified `WHERE 1 IN t.arr`. A `WITH` name is not a table to grant on, and a
-    /// temporary table needs no grant, exactly as in a plain `SELECT`.
+    /// A one-part name is a table here unless the qualifier leaves it alone. The mutation expression
+    /// is qualified with a database before it is stored, so `WHERE 1 IN arr` becomes `1 IN (db.arr)`
+    /// and reads a table `db.arr` on every entry point, even when `arr` is an array column of the
+    /// mutated table - the column is only read by a qualified `WHERE 1 IN t.arr`. A `WITH` name is
+    /// not a table to grant on, and a temporary table needs no grant, exactly as in a plain `SELECT`.
+    /// Neither is an expression alias of the `SELECT` level the name appears at: `AddDefaultDatabaseVisitor`
+    /// keeps such a name as written instead of making a table identifier of it, so the mutation reads
+    /// a column and asking for `SELECT` on a table of that name would deny a mutation the grants allow.
     ///
     /// A qualified name is a column when it resolves to one: against the mutated table's columns at
     /// the top level of the mutation expression, and against the columns of the enclosing subquery's
@@ -607,6 +620,9 @@ private:
     {
         const String & name = identifier.name();
         if (isCteName(name))
+            return false;
+
+        if (expression_aliases.contains(name))
             return false;
 
         if (!identifier.compound())
@@ -698,6 +714,24 @@ private:
                    StorageID{"", table_id.table_name}, Context::ResolveExternal));
     }
 
+    /// The aliases of the expressions of one `SELECT` level, including those of an `ARRAY JOIN`
+    /// list, collected exactly as `AddDefaultDatabaseVisitor::collectAliases` collects them: the
+    /// rule that decides a name on the right of `IN` is an alias rather than a table has to be the
+    /// same one that decided whether to qualify it, or the access this asks for is not the access
+    /// the mutation takes. A nested `SELECT` and a table expression are skipped - their aliases
+    /// belong to their own level.
+    void collectExpressionAliases(const ASTPtr & ast)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
+            return;
+
+        if (const String alias = ast->tryGetAlias(); !alias.empty())
+            expression_aliases.insert(alias);
+
+        for (const auto & child : ast->children)
+            collectExpressionAliases(child);
+    }
+
     bool isCteName(const String & name) const
     {
         return std::ranges::find(cte_names, name) != cte_names.end();
@@ -760,6 +794,8 @@ private:
     std::vector<WithScalar> with_scalars;
     /// The column names visible at each enclosing subquery level, innermost last; see `visibleColumns`.
     std::vector<NameSet> subquery_levels;
+    /// The expression aliases of the `SELECT` level being visited; see `collectExpressionAliases`.
+    NameSet expression_aliases;
     bool inside_subquery = false;
 };
 

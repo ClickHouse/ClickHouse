@@ -33,6 +33,11 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- An array column of the subquery's own table on the right of IN is a column, not a table
 OK
+-- An expression alias on the right of IN is not a table, an ARRAY JOIN alias included
+OK
+OK
+-- That alias is out of scope in a nested SELECT and after its own level
+ACCESS_DENIED
 -- A virtual column of a subquery's table needs no grant
 OK
 -- dictGet and joinGet name their object instead of reading it as a column
