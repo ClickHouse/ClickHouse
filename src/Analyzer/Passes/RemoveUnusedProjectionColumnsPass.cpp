@@ -44,7 +44,35 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     if (auto * union_node = query_or_union_node->as<UnionNode>())
     {
         if (union_node->getColumnMatchMode() == SetOperationColumnMatchMode::Name)
+        {
+            const auto union_projection_columns = union_node->computeProjectionColumns(false);
+            std::unordered_map<String, size_t> union_column_name_to_index;
+            union_column_name_to_index.reserve(union_projection_columns.size());
+            for (size_t i = 0; i < union_projection_columns.size(); ++i)
+                union_column_name_to_index.emplace(union_projection_columns[i].name, i);
+
+            for (const auto & query_node : union_node->getQueries().getNodes())
+            {
+                std::unordered_set<size_t> child_used_projection_indexes;
+                updateUsedProjectionIndexes(query_node, child_used_projection_indexes);
+
+                NamesAndTypes child_projection_columns;
+                if (const auto * query_node_typed = query_node->as<QueryNode>())
+                    child_projection_columns = query_node_typed->getProjectionColumns();
+                else
+                    child_projection_columns = query_node->as<UnionNode>()->computeProjectionColumns(false);
+                for (const auto index : child_used_projection_indexes)
+                {
+                    if (index >= child_projection_columns.size())
+                        continue;
+
+                    if (auto it = union_column_name_to_index.find(child_projection_columns[index].name);
+                        it != union_column_name_to_index.end())
+                        used_projection_columns_indexes.insert(it->second);
+                }
+            }
             return;
+        }
 
         auto union_node_mode = union_node->getUnionMode();
         bool is_distinct = union_node_mode == SelectUnionMode::UNION_DISTINCT ||
@@ -170,10 +198,6 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         /// Pass information about used columns to subqueries and remove unused projection columns
         for (auto & [query_or_union_node, used_columns] : node_to_used_columns)
         {
-            if (const auto * union_node = query_or_union_node->as<UnionNode>();
-                union_node && union_node->getColumnMatchMode() == SetOperationColumnMatchMode::Name)
-                continue;
-
             /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
             if (auto * query_node = query_or_union_node->as<QueryNode>())
             {

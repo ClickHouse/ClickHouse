@@ -237,11 +237,55 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     if (recursive_cte_table)
         return;
 
-    /// Projection indexes are indexes in the canonical UNION result. For BY NAME each operand
-    /// has a different local order, so passing those indexes to every branch can silently select
-    /// a different column. Keep all branch projections until name-aware pruning is implemented.
     if (column_match_mode == SetOperationColumnMatchMode::Name)
+    {
+        const auto union_projection_columns = computeProjectionColumns(false);
+        std::unordered_set<String> used_projection_column_names;
+        used_projection_column_names.reserve(used_projection_columns_indexes.size());
+
+        for (const auto index : used_projection_columns_indexes)
+        {
+            if (index >= union_projection_columns.size())
+                return;
+            used_projection_column_names.insert(union_projection_columns[index].name);
+        }
+
+        std::vector<std::pair<QueryTreeNodePtr, std::unordered_set<size_t>>> children_projection_indexes;
+        children_projection_indexes.reserve(getQueries().getNodes().size());
+
+        for (const auto & query_node : getQueries().getNodes())
+        {
+            NamesAndTypes projection_columns;
+            if (const auto * query_node_typed = query_node->as<QueryNode>())
+                projection_columns = query_node_typed->getProjectionColumns();
+            else
+                projection_columns = query_node->as<UnionNode>()->computeProjectionColumns(false);
+
+            std::unordered_set<size_t> child_used_projection_indexes;
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                if (used_projection_column_names.contains(projection_columns[i].name))
+                    child_used_projection_indexes.insert(i);
+            }
+
+            /// If a used column is absent in one operand, keep the full union. The planner
+            /// needs the complete operand shape to add the missing NULL column by name.
+            if (child_used_projection_indexes.size() != used_projection_column_names.size())
+                return;
+
+            children_projection_indexes.emplace_back(query_node, std::move(child_used_projection_indexes));
+        }
+
+        for (auto & [query_node, child_used_projection_indexes] : children_projection_indexes)
+        {
+            if (auto * query_node_typed = query_node->as<QueryNode>())
+                query_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
+            else if (auto * union_node_typed = query_node->as<UnionNode>())
+                union_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
+        }
+
         return;
+    }
 
     /// We can't remove unused projections in the case of EXCEPT and INTERSECT
     /// because it can lead to incorrect query results. Example:
