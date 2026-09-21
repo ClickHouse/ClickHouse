@@ -52,6 +52,7 @@ static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
 /// How far ahead the `ReaderExecutor` resolves cache residency into its held `ReadPlan` (a cheap
 /// probe, not a read) so one resolve serves many windows.
 static constexpr size_t DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD = 16_MiB;
+static constexpr size_t MAX_READER_EXECUTOR_PLAN_LOOK_AHEAD = 40_MiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
 
 /// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
