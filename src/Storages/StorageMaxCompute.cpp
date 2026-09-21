@@ -3,6 +3,7 @@
 #include <Storages/OdpsRecordReader.h>
 
 #if USE_ODPS_TUNNEL
+#    include <odps_clickhouse_adapter.h>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
@@ -21,6 +22,8 @@
 #    include <Interpreters/Context.h>
 #    include <Interpreters/ProcessList.h>
 #    include <Interpreters/evaluateConstantExpression.h>
+#    include <IO/Operators.h>
+#    include <IO/WriteBufferFromString.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/ASTSetQuery.h>
@@ -40,12 +43,12 @@
 #    include <Common/assert_cast.h>
 #    include <Common/logger_useful.h>
 #    include <Poco/URI.h>
+#    include <base/defines.h>
 #    include <base/range.h>
 #    include <algorithm>
 #    include <initializer_list>
 #    include <map>
 #    include <set>
-#    include <sstream>
 #    include <string_view>
 #    include <utility>
 
@@ -56,7 +59,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int UNKNOWN_SETTING;
@@ -277,7 +279,7 @@ namespace
             case TypeIndex::Dynamic:    return "Dynamic";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <typename To, typename From>
@@ -341,7 +343,7 @@ namespace
             case ODPSColumnType::ODPS_DECIMAL:
                 return record.GetDecimalValue(idx, len);
             case ODPSColumnType::ODPS_JSON:
-                return record.GetJsonValue(idx, len);
+                return apsara::odps::sdk::clickhouse::getJSONValue(record, idx, len);
             default:
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Cannot cast MaxCompute data type {} to ClickHouse String at column {}", odpsDataTypeName(odps_column_type), col_name);
@@ -755,9 +757,9 @@ namespace
     ///  - `STRING`, `CHAR` and `VARCHAR` are wrapped in `"` with no escaping, so a value that
     ///    itself contains `"` produces something that is not valid JSON;
     ///  - `BINARY` and `DECIMAL` are emitted unquoted, `BINARY` as raw bytes;
-    ///  - `TINYINT` is streamed as `int8_t`, i.e. through `operator<<` for a character type,
+    ///  - `TINYINT` preserves the old `int8_t` stream output for a character type,
     ///    so it renders as a character rather than as a number;
-    ///  - `DOUBLE` and `FLOAT` get the default stream precision of 6 significant digits;
+    ///  - `DOUBLE` and `FLOAT` retain the old stream precision of 6 significant digits;
     ///  - an empty container renders as the empty string, not as `[]` or `{}`.
     ///
     /// Changing any of that would change query results, so it is deliberately left as it was.
@@ -772,17 +774,17 @@ namespace
         if (container.IsNull(idx))
             return "null";
 
-        std::stringstream out;
+        WriteBufferFromOwnString out;
         switch (odps_column_type)
         {
             case ODPSColumnType::ODPS_BIGINT:
                 out << container.GetBigInt(idx);
                 break;
             case ODPSColumnType::ODPS_DOUBLE:
-                out << container.GetDouble(idx);
+                out << fmt::format("{:.6g}", container.GetDouble(idx));
                 break;
             case ODPSColumnType::ODPS_TINYINT:
-                out << container.GetTinyInt(idx);
+                writeChar(static_cast<char>(container.GetTinyInt(idx)), out);
                 break;
             case ODPSColumnType::ODPS_BOOLEAN:
                 out << (container.GetBool(idx) ? "true" : "false");
@@ -818,7 +820,7 @@ namespace
                 out << container.GetTimestamp(idx).ToString();
                 break;
             case ODPSColumnType::ODPS_FLOAT:
-                out << container.GetFloat(idx);
+                out << fmt::format("{:.6g}", container.GetFloat(idx));
                 break;
             case ODPSColumnType::ODPS_INTERVAL_YEAR_MONTH:
                 out << container.GetIntervalYearMonthValue(idx);

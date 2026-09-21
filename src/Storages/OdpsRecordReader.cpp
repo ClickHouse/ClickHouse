@@ -2,6 +2,8 @@
 
 #if USE_ODPS_TUNNEL
 
+#include <odps_clickhouse_adapter.h>
+
 #include <algorithm>
 #include <array>
 #include <condition_variable>
@@ -53,7 +55,7 @@ OdpsReadErrorKind classifyOdpsReadError(const apsara::odps::sdk::OdpsException &
 
     const String exception_message = ex.ToString();
     if (exception_message == "Connection Timeout"
-        || exception_message.starts_with("ArrowHttpInputStream Deserialize Exception"))
+        || apsara::odps::sdk::clickhouse::isArrowDeserializeError(exception_message))
         return OdpsReadErrorKind::Retryable;
 
     return OdpsReadErrorKind::Unrecoverable;
