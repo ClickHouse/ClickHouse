@@ -279,6 +279,16 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t> read_hint) const
 {
+    /// An object whose size is known to be zero is read as empty without issuing a single
+    /// `Download` request, because `readObject` bounds the read by that size. There is then no
+    /// response to take the metadata from, so it is requested explicitly.
+    if (object.bytes_size == 0)
+    {
+        SmallObjectDataWithMetadata result;
+        result.metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
+        return result;
+    }
+
     auto buffer = readObject(object, read_settings, read_hint);
     SmallObjectDataWithMetadata result;
     WriteBufferFromString out(result.data);

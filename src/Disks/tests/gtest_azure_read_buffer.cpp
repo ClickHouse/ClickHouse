@@ -629,4 +629,21 @@ TEST(AzureReadObject, EmptyObjectReadsAsEmpty)
     ASSERT_TRUE(buffer->eof());
 }
 
+/// Bounding the read by `bytes_size` means an empty object is read without issuing a single
+/// request, so the metadata of the last request does not exist. `readSmallObjectAndGetObjectMetadata`
+/// must still return the metadata of the object instead of throwing `NOT_INITIALIZED`.
+TEST(AzureReadObject, EmptyObjectStillReportsMetadata)
+{
+    auto object_storage = makeObjectStorage(/* claimed_size */ 0, /* served_size */ 0);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 0);
+
+    DB::SmallObjectDataWithMetadata result;
+    ASSERT_NO_THROW(result = object_storage->readSmallObjectAndGetObjectMetadata(object, DB::ReadSettings{}, /* max_size_bytes */ 4096));
+
+    ASSERT_TRUE(result.data.empty());
+    ASSERT_EQ(result.metadata.size_bytes, static_cast<size_t>(0));
+    ASSERT_EQ(result.metadata.etag, "0x8DA000000000000");
+}
+
 #endif
