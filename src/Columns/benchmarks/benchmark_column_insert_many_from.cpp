@@ -256,6 +256,8 @@ static const String type_object_typed = "JSON(p0 UInt64, p1 String)";
         ->Args({1, ROWS, 1}) \
         ->Args({16, 1, 1}) \
         ->Args({16, 2, 1}) \
+        ->Args({256, 2, 1}) \
+        ->Args({256, 4, 1}) \
         ->Args({16, 16, 1}) \
         ->Args({16, 256, 1}) \
         ->Args({16, ROWS, 1}) \
