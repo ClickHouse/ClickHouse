@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 
@@ -24,6 +25,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
+    extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool optimize_rewrite_intersect_except_to_join;
 }
 
@@ -183,8 +187,12 @@ bool keyBreaksMergeJoinEquivalence(const DataTypePtr & type)
 /// only equivalent when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE`,
 /// `PREFER_PARTIAL_MERGE` and `FULL_SORTING_MERGE` run one directly, and `AUTO` switches to one once the right
 /// side outgrows the limits.
-bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key)
+///
+/// `GRACE_HASH` only counts when it can run: the planner throws for it without a spill threshold or without
+/// temporary storage, while the set operation needs neither.
+bool joinAlgorithmSupports(const ContextPtr & context, JoinStrictness strictness, bool has_merge_unsafe_key)
 {
+    const auto & settings = context->getSettingsRef();
     const auto & algorithms = settings[Setting::join_algorithm].value;
     auto enabled = [&](JoinAlgorithm algorithm) { return TableJoin::isEnabledAlgorithm(algorithms, algorithm); };
 
@@ -193,7 +201,13 @@ bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness,
     if (has_merge_unsafe_key && can_reach_merge_join)
         return false;
 
-    if (enabled(JoinAlgorithm::HASH) || enabled(JoinAlgorithm::PARALLEL_HASH) || enabled(JoinAlgorithm::GRACE_HASH)
+    const bool grace_hash_has_spill_trigger = settings[Setting::legacy_join_size_limits_trigger_spilling]
+        || JoinSettings::getMaxBytesBeforeExternalJoin(
+            settings[Setting::max_bytes_before_external_join], settings[Setting::max_bytes_ratio_before_external_join]) > 0;
+    const bool can_run_grace_hash
+        = enabled(JoinAlgorithm::GRACE_HASH) && grace_hash_has_spill_trigger && context->getTempDataOnDisk();
+
+    if (enabled(JoinAlgorithm::HASH) || enabled(JoinAlgorithm::PARALLEL_HASH) || can_run_grace_hash
         || enabled(JoinAlgorithm::AUTO) || enabled(JoinAlgorithm::PREFER_PARTIAL_MERGE))
         return true;
 
@@ -231,7 +245,7 @@ public:
         const auto result_columns = union_node->computeProjectionColumns();
         const bool has_merge_unsafe_key
             = std::ranges::any_of(result_columns, [](const auto & column) { return keyBreaksMergeJoinEquivalence(column.type); });
-        if (!joinAlgorithmSupports(getSettings(), strictness, has_merge_unsafe_key))
+        if (!joinAlgorithmSupports(getContext(), strictness, has_merge_unsafe_key))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());
