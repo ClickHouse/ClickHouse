@@ -497,9 +497,15 @@ try
         /// `--ignore-error` has already reported every failed statement and elected to carry on,
         /// so the run is not a failure. Reporting one here would mean reporting whichever error
         /// the final statement happened to hit, which says nothing about the rest of the batch;
-        /// `clickhouse-local --ignore-error` returns success in the same situation. BuzzHouse is
-        /// the exception: it stops the run on an error, so it keeps the error code.
-        if (buzz_house || !ignore_error)
+        /// `clickhouse-local --ignore-error` returns success in the same situation.
+        ///
+        /// Only a user asking for `--ignore-error` gets that, though, and `ignore_error` alone
+        /// does not say who asked: the fuzzing modes turn it on themselves, in `processOptions`,
+        /// to tolerate unparseable input. They keep the error code. BuzzHouse stops the run on an
+        /// error, and the AST fuzzer reports an early stop - losing the server, say - only
+        /// through this exit code, so granting it success would end a truncated fuzzer run with
+        /// `Fuzzer exited with success`.
+        if (buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error)
         {
             // If exception code isn't zero, we should return non-zero return
             // code anyway.
