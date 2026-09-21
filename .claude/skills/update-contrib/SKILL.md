@@ -74,33 +74,38 @@ git -C "contrib/$LIB" fetch --unshallow --tags origin 2>/dev/null || git -C "con
 git -C "contrib/$LIB" describe --tags --abbrev=0 2>/dev/null || echo "no tags"
 ```
 
-Then locate the integration file. There are two shapes:
+Then locate the integration file(s) and keep them in `$INTEGRATION`; every later step works from that variable.
+Three shapes exist:
 
 ```bash
-ls contrib/${LIB}-cmake/CMakeLists.txt 2>/dev/null        # plain CMake integration
-ls rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null       # Rust workspace integration (see rust.md)
+INTEGRATION=$(ls contrib/${LIB}-cmake/CMakeLists.txt rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null)
+# Shared wrapper: no directory of its own, built by another contrib's CMake file
+# (aws-c-auth → contrib/aws-cmake/, the aws-c-* family; individual boost libs → contrib/boost-cmake/).
+[ -n "$INTEGRATION" ] || INTEGRATION=$(grep -rl "contrib/${LIB}\b" contrib/*-cmake/CMakeLists.txt)
+echo "$INTEGRATION"; [ -n "$INTEGRATION" ] || echo "no integration file found — stop and report"
 grep -n "\b${LIB}\b" contrib/CMakeLists.txt rust/workspace/CMakeLists.txt   # where it is added
 ```
 
-A library may have both a `contrib/<lib>-cmake/` directory and a Rust build (`chdig`, `delta-kernel-rs`: the
-`*-cmake/` file drives cargo), or only a Rust workspace directory (`wasmtime`). If nothing matches, the library
-is consumed by another contrib's CMake file (`grep -rl "contrib/${LIB}" contrib/*-cmake/`).
+- plain CMake: `contrib/<lib>-cmake/CMakeLists.txt`;
+- Rust: either `rust/workspace/<lib>/CMakeLists.txt` (`wasmtime`) or a `contrib/<lib>-cmake/` file that drives
+  cargo (`chdig`, `delta-kernel-rs`) — see [rust.md](rust.md);
+- shared wrapper: the fallback above; the wrapper's file list and aliases (`ch_contrib::aws_s3` for every
+  `aws-c-*` library) are what steps 8, 9 and 11 must use.
 
-Do not assume the exported target is `ch_contrib::${LIB}`. Take the actual alias names from the integration file
+Do not assume the exported target is `ch_contrib::${LIB}`. Take the actual alias names from `$INTEGRATION`
 and grep for those — Rust-backed libraries export `ch_rust::*` (`ch_rust::wasmtime`, `ch_rust::chdig`,
 `ch_rust::delta_kernel_rs`), a few keep upstream-style names (`OpenSSL::SSL`, `boost::filesystem`), and one
 library can export several:
 
 ```bash
-INTEGRATION=$(ls contrib/${LIB}-cmake/CMakeLists.txt rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null)
-ALIASES=$(grep -ho 'add_library *( *[A-Za-z0-9_:.-]*::[A-Za-z0-9_.-]* *ALIAS' $INTEGRATION \
+ALIASES$(grep -ho 'add_library *( *[A-Za-z0-9_:.-]*::[A-Za-z0-9_.-]* *ALIAS' $INTEGRATION \
           | sed -E 's/add_library *\( *//; s/ *ALIAS$//' | sort -u)
 echo "$ALIASES"
 for a in $ALIASES; do grep -rl --include=CMakeLists.txt -F "$a" src programs base rust; done | sort -u   # consumers
 ```
 
-Read the integration file once; it tells you which sources are compiled, which defines and generated headers exist,
-and whether the library is header-only (`add_library(... INTERFACE)` — then nothing of it is compiled and only its
+Read `$INTEGRATION` once; it tells you which sources are compiled, which defines and generated headers exist, and
+whether the library is header-only (`add_library(... INTERFACE)` — then nothing of it is compiled and only its
 consumers can break). The consumer list is what steps 9 and 11 work from.
 
 ### 2. Determine the target version
@@ -216,8 +221,8 @@ version floors that force co-bumps).
 
 ### 8. Update build integration files
 
-Update the integration file found in step 1 (`contrib/<lib>-cmake/CMakeLists.txt`, or the Rust workspace files —
-see [rust.md](rust.md)) to reflect the new version:
+Update the file(s) in `$INTEGRATION` from step 1 (`contrib/<lib>-cmake/CMakeLists.txt`, a shared wrapper such as
+`contrib/aws-cmake/CMakeLists.txt`, or the Rust files — see [rust.md](rust.md)) to reflect the new version:
 
 1. Compare source file lists against the actual files in the updated submodule; add new files after the first
    existing sibling from the same directory, remove deleted ones.
@@ -255,12 +260,13 @@ existing `build*/` directory; configure one with `cmake -S . -B <dir>` only if n
 ```bash
 ninja -C "$BUILD_DIR" <lib-target> > "$BUILD_DIR/build_bump_${LIB}_lib.log" 2>&1; echo "exit=$?"
 ninja -C "$BUILD_DIR" clickhouse  > "$BUILD_DIR/build_bump_${LIB}.log" 2>&1;     echo "exit=$?"
-grep -c ' error:' "$BUILD_DIR/build_bump_${LIB}.log"
+grep ' error:' "$BUILD_DIR/build_bump_${LIB}.log" | head -20 || true   # grep exits 1 on a clean log: not a failure
 ```
 
 Run builds in the foreground and wait for them; never start them in the background and poll, and never use
-`pgrep -f`/`kill -0` loops on a pattern that matches your own shell. The exit code and `grep ' error:'` tell you
-whether the build passed; do not spawn a sub-agent to read the log. For a header-only library the `clickhouse`
+`pgrep -f`/`kill -0` loops on a pattern that matches your own shell. The ninja exit code decides whether the build
+passed (`exit=0`); the `grep` only lists the errors to fix, and its own exit status is `1` when there are none, so
+do not chain it with `&&` or run it under `set -e`. Do not spawn a sub-agent to read the log. For a header-only library the `clickhouse`
 target is the only thing that can break. Fix errors iteratively, committing each logical fix separately.
 
 Do not run unit-test or gtest binaries unless the task asks for it, and never run any binary with the repository
