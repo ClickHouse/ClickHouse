@@ -1,0 +1,3 @@
+conflicts reported by the lock request and by the commit 1 1
+node removed while resolving the second one 1
+insert bounded by the retry limit 1

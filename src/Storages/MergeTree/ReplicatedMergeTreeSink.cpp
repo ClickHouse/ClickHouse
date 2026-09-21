@@ -90,6 +90,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNFINISHED;
 }
 
 namespace
@@ -1209,6 +1210,8 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         return retry_context.stage;
     };
 
+    size_t vanished_conflict_resolutions = 0;
+
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -1232,11 +1235,21 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                 return;
             }
 
-            /// RESOLVE_CONFLICTS -> LOCK_AND_COMMIT can cycle while the deduplication node keeps
-            /// reappearing, and this loop never yields to ZooKeeperRetriesControl's own check.
-            /// Same reason as the bounded quorum wait below.
-            if (auto process_list_element = context->getProcessListElement())
-                process_list_element->checkTimeLimit();
+            /// A concurrent insert can re-create the node a resolution has just found gone, so
+            /// RESOLVE_CONFLICTS -> LOCK_AND_COMMIT is the only edge here that can repeat.
+            if (prev_stage == CommitRetryContext::RESOLVE_CONFLICTS)
+            {
+                ++vanished_conflict_resolutions;
+                if (vanished_conflict_resolutions > 1)
+                {
+                    /// retries_ctl counts the attempt against insert_keeper_max_retries and backs off.
+                    retries_ctl.setUserError(Exception(
+                        ErrorCodes::UNFINISHED,
+                        "Deduplication nodes for block IDs '{}' keep being created and removed by concurrent queries",
+                        fmt::join(deduplication_block_ids, ", ")));
+                    return;
+                }
+            }
         }
     });
 
