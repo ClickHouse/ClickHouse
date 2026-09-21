@@ -31,4 +31,16 @@ SELECT sumForEach(arr), minForEach(arr), maxForEach(arr)
 FROM test_foreach_batch
 WHERE grp = 1;
 
+-- A multi-argument -ForEach must still reject a row whose arrays have different sizes. The batch
+-- paths take the row boundaries from the first argument only, so they have to make the check the
+-- row-at-a-time path makes; the single-argument aggregates above cannot catch that.
+DROP TABLE IF EXISTS test_foreach_mismatch;
+CREATE TABLE test_foreach_mismatch (grp UInt32, a Array(Float64), b Array(Float64)) ENGINE = Memory;
+INSERT INTO test_foreach_mismatch VALUES (1, [1.0, 2.0], [3.0, 4.0]), (1, [1.0, 2.0], [3.0]);
+
+-- addBatchSinglePlace (no GROUP BY) and addBatch (grouped).
+SELECT corrForEach(a, b) FROM test_foreach_mismatch; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT grp, corrForEach(a, b) FROM test_foreach_mismatch GROUP BY grp; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+DROP TABLE test_foreach_mismatch;
 DROP TABLE test_foreach_batch;

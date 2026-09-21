@@ -289,6 +289,29 @@ public:
         }
     }
 
+    /// The row-at-a-time `add` rejects a row whose array arguments do not share boundaries. The
+    /// batch paths take the boundaries from the first argument alone, so they make the same check.
+    absl::InlinedVector<const IColumn::Offsets *, 5> collectTrailingOffsets(const IColumn ** columns) const
+    {
+        absl::InlinedVector<const IColumn::Offsets *, 5> trailing_offsets;
+        for (size_t i = 1; i < num_arguments; ++i)
+            trailing_offsets.push_back(&assert_cast<const ColumnArray &>(*columns[i]).getOffsets());
+        return trailing_offsets;
+    }
+
+    void assertArraySizesMatch(
+        const absl::InlinedVector<const IColumn::Offsets *, 5> & trailing_offsets,
+        size_t row,
+        size_t begin,
+        size_t end) const
+    {
+        for (const auto * offsets : trailing_offsets)
+            if ((*offsets)[row] != end || (row != 0 && (*offsets)[row - 1] != begin))
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arrays passed to {} aggregate function have different sizes", getName());
+    }
+
     /// Optimized batch aggregation for rows belonging to the same place.
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
@@ -311,11 +334,13 @@ public:
 
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
 
         for (size_t row = row_begin; row < row_end; ++row)
         {
             size_t begin = offsets[row - 1];
             size_t end = offsets[row];
+            assertArraySizesMatch(trailing_offsets, row, begin, end);
             AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
 
             char * nested_state = state.array_of_aggregate_datas;
@@ -350,6 +375,7 @@ public:
 
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
 
         for (size_t row = row_begin; row < row_end; ++row)
         {
@@ -359,6 +385,7 @@ public:
             AggregateDataPtr place = places[row] + place_offset;
             size_t begin = offsets[row - 1];
             size_t end = offsets[row];
+            assertArraySizesMatch(trailing_offsets, row, begin, end);
             AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
 
             char * nested_state = state.array_of_aggregate_datas;
