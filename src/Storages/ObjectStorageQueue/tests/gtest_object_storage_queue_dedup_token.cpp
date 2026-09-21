@@ -2,6 +2,11 @@
 
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 using namespace DB;
 
 namespace
@@ -119,8 +124,10 @@ TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheRefresh)
         {
             ObjectStorageQueueSource::makeDeduplicationToken(metadata, "data/one.csv", 0);
         }
-        catch (...)
+        catch (const Exception & e)
         {
+            /// The refusal is the one `UNSUPPORTED_METHOD` the source reports for an unidentifiable file.
+            EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << "etag: " << etag;
             token_built = false;
         }
         EXPECT_EQ(ObjectStorageQueueSource::hasStrongETag(metadata), token_built) << "etag: " << etag;
