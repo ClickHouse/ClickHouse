@@ -92,8 +92,10 @@ namespace
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
+        /// The expanded query of a view: the pointer sets of this class point into it.
+        ASTPtr expanded_select;
         /// Identifiers `ApplyWithSubqueryVisitor` left as references to `MATERIALIZED` CTEs.
-        std::unordered_set<const IAST *> skip_identifiers;
+        std::unordered_set<const IAST *> kept_cte_references;
         QualifiedTableName table_name;
         String default_database;
         String current_database;
@@ -173,10 +175,10 @@ namespace
                 {
                     /// A name declared by a `WITH` list is not a table, so the dependencies of a view
                     /// are collected from a copy of its query with the CTE references expanded.
-                    auto select_copy = create.select->clone();
-                    ApplyWithSubqueryVisitor::visit(select_copy);
+                    expanded_select = create.select->clone();
+                    ApplyWithSubqueryVisitor::visit(expanded_select);
                     skip_asts.insert(create.select);
-                    visitExpandedViewQuery(select_copy, *this);
+                    visitExpandedViewQuery(expanded_select, *this);
 
                     if (create.is_materialized_view)
                     {
@@ -192,7 +194,7 @@ namespace
                             else
                                 mv_db_context->setCurrentDatabaseUnchecked(table_name.database);
                         }
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(expanded_select, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
@@ -250,7 +252,7 @@ namespace
                 return;
 
             /// A reference to a `MATERIALIZED` CTE is not a table.
-            if (skip_identifiers.contains(expr.database_and_table_name.get()))
+            if (kept_cte_references.contains(expr.database_and_table_name.get()))
                 return;
 
             const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
@@ -477,12 +479,12 @@ namespace
             const auto & arg = args[arg_idx];
             QualifiedTableName qualified_name;
 
+            /// A reference to a `MATERIALIZED` CTE is not a table.
+            if (kept_cte_references.contains(arg.get()))
+                return {};
+
             if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
             {
-                /// A reference to a `MATERIALIZED` CTE is not a table.
-                if (skip_identifiers.contains(arg.get()))
-                    return {};
-
                 /// ASTIdentifier or ASTTableIdentifier
                 auto table_identifier = identifier->createTable();
                 if (!table_identifier)
