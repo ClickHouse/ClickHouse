@@ -299,7 +299,7 @@ Index 0 is invalid.
     FunctionDocumentation::Syntax syntax = "arrayRemoveAt(arr, index)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "Source array.", {"Array(T)"}},
-        {"index", "Non-Nullable integer index of the element to remove. Negative indexes count from the end.", {"Integer"}}
+        {"index", "Non-Nullable integer index of the element to remove. Negative indexes count from the end.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns the source array without the element at `index`, or the original array if `index` is out of bounds.",
