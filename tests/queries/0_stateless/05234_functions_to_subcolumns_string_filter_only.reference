@@ -1,0 +1,13 @@
+length uses String size with full column
+1
+empty uses String size with full column
+1
+notEmpty uses String size with full column
+1
+full String stays available after the filter
+1	hello
+3	world
+optimization disabled keeps the original filter
+1
+1	hello
+3	world
