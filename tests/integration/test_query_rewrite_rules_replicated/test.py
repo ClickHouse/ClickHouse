@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -90,4 +92,37 @@ def test_ddl_consults_keeper_not_the_stale_cache(started_cluster):
 
     # And the rule really is gone everywhere.
     assert_eq_with_retry(node1, "SELECT count() FROM system.query_rules", "0")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")
+
+
+def test_reload_retried_after_a_transient_failure(started_cluster):
+    # `list` observes the new Keeper state, and only then does the reload read the rule znodes
+    # and publish them. A failure in between must leave the update outstanding: the served state
+    # is promoted by `commitUpdate` after the rules are in memory, not by `list`.
+    node1.query("CREATE RULE rule_retry AS (SELECT 100) REWRITE TO (SELECT 200)")
+    assert_eq_with_retry(
+        node2, "SELECT 100", "200", settings={"query_rules": "rule_retry"}
+    )
+
+    # From here on every reload on node2 throws right after listing.
+    node2.query("SYSTEM ENABLE FAILPOINT rewrite_rules_reload_fail_after_list")
+
+    node1.query("ALTER RULE rule_retry AS (SELECT 100) REWRITE TO (SELECT 300)")
+
+    # The watcher polls on `update_timeout_ms` (1000 ms here), so several cycles have gone by
+    # and every one of them has failed: node2 still serves the rule it loaded before.
+    time.sleep(5)
+    assert (
+        node2.query("SELECT 100", settings={"query_rules": "rule_retry"}).strip()
+        == "200"
+    )
+
+    # Nothing moves in Keeper from now on, so the only thing that can still bring node2 up to
+    # date is the update having stayed outstanding across all those failures.
+    node2.query("SYSTEM DISABLE FAILPOINT rewrite_rules_reload_fail_after_list")
+    assert_eq_with_retry(
+        node2, "SELECT 100", "300", settings={"query_rules": "rule_retry"}
+    )
+
+    node1.query("DROP RULE rule_retry")
     assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")

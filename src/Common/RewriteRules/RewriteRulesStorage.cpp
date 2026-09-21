@@ -18,6 +18,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/FailPoint.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -39,6 +40,12 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char rewrite_rules_reload_fail_after_list[];
 }
 
 /// Not `query_rules_storage`: SQL-defined HTTP handlers already read a section of that name
@@ -498,7 +505,17 @@ MutableRewriteRuleObjectPtr RewriteRulesStorage::get(const std::string & rule_na
 RewriteRuleObjectsList RewriteRulesStorage::getAll() const
 {
     RewriteRuleObjectsList result;
-    for (const auto & rule_name : listRules())
+    const auto rule_names = listRules();
+
+    /// The reload has listed the rules but read none of them yet. This is the window in which a
+    /// replicated reload can still fail after `list` has observed a new Keeper snapshot, which is
+    /// what `commitUpdate` exists for; the fault makes that window reachable from a test.
+    fiu_do_on(FailPoints::rewrite_rules_reload_fail_after_list,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after listing the rewrite rules");
+    });
+
+    for (const auto & rule_name : rule_names)
     {
         const bool already_present = std::any_of(
             result.begin(), result.end(),
