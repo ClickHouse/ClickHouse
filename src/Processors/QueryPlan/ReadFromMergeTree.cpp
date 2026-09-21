@@ -3161,8 +3161,21 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
     if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
         return false;
 
-    const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    /// exclude float columns: -0.0 compares equal to 0.0 and NaN payloads compare equal to each other,
+    /// so a policy like toString(f) = '0' can give different verdicts to rows of one dedup group
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    NameSet sorting_key_set;
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        bool has_float = isFloat(removeLowCardinalityAndNullable(sorting_key.data_types[i]));
+        sorting_key.data_types[i]->forEachChild([&](const IDataType & child)
+        {
+            if (!has_float && WhichDataType(child).isFloat())
+                has_float = true;
+        });
+        if (!has_float)
+            sorting_key_set.insert(sorting_key.column_names[i]);
+    }
 
     const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
         query_info.row_level_filter->column_name);
