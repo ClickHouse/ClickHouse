@@ -197,7 +197,8 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(new_log_number, new_log_description);
 
     /// Nothing below can throw.
-    if (current_writer)
+    /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+    if (current_writer && !current_writer->isCanceled())
     {
         try
         {
@@ -240,7 +241,9 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            disk->removeFile(itr->second.path);
+            /// A writer that was canceled instead of finalized never published its path on an
+            /// object-storage disk, so the log this entry names may not exist.
+            disk->removeFileIfExists(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;
@@ -275,6 +278,16 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, "Error while rotating MergeTree deduplication log in " + logs_dir + ", will retry on the next operation");
     }
+}
+
+void MergeTreeDeduplicationLog::prepareToWrite()
+{
+    /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
+    /// writer must be replaced. `rotate` also works on a disk that cannot append.
+    if (!current_writer || current_writer->isCanceled() || current_writer->isFinalized())
+        rotate();
+
+    chassert(current_writer != nullptr);
 }
 
 void MergeTreeDeduplicationLog::assertMayWriteSharedState(WriteStage stage) const
@@ -357,7 +370,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    prepareToWrite();
 
     /// Under `leader_election`, re-check the lease immediately before every durable mutation of
     /// the shared log, not only once per batch: the caller checked it at its entry point, but the
@@ -410,8 +423,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
-
     /// See the matching check in `addPart`: the lease is re-checked before every record, not
     /// only once per call, because on the `S3` path `rotateAndDropIfNeeded` rotates/finalizes a
     /// whole log file after every record (append is unsupported), so dropping a large covering
@@ -427,7 +438,11 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
+            /// The fence comes first because `prepareToWrite` can rotate, which finalizes and
+            /// rewrites shared log files — a mutation a stale leader must not reach either.
             assertMayWriteSharedState(records_written_in_batch > 0 ? WriteStage::NextRecordOfBatch : WriteStage::FirstRecordOfBatch);
+
+            prepareToWrite();
 
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
@@ -513,7 +528,9 @@ void MergeTreeDeduplicationLog::shutdown()
         /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
-            current_writer->finalize();
+            /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+            if (!current_writer->isCanceled())
+                current_writer->finalize();
             current_writer.reset();
         }
         catch (...)
