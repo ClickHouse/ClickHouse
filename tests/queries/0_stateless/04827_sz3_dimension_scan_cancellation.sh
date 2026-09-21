@@ -20,7 +20,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `KILL ... SYNC` returns when the query is gone, so the bound below covers observing the
+# cancellation *and* tearing the squashed block down. At 4M rows that block peaks near 2 GiB, and on
+# a sanitizer or debug build the teardown alone measured 13-17 s in CI against a 15 s bound, so the
+# test failed about half the time for a reason that has nothing to do with the cancellation point.
+# Shrink the block on those builds instead of widening the bound: the scan this test is about is
+# proportional to the row count too, so an unfixed writer still blocks the `KILL` for far longer
+# than the bound, and the bound stays a real assertion rather than a formality.
 ROWS=4000000
+if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ] \
+    || [ "$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")" = "Debug" ]; then
+    ROWS=1000000
+fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_sz3_cancel_src"
 
