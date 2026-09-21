@@ -14,12 +14,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROFILE="profile_113711b_${CLICKHOUSE_DATABASE}"
 MAJOR=$(${CLICKHOUSE_CLIENT} -q "SELECT concat(splitByChar('.', version())[1], '.', splitByChar('.', version())[2])")
 
+${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS $PROFILE"
 ${CLICKHOUSE_CLIENT} -nm -q "
 DROP TABLE IF EXISTS mv_eff_113711b, mv_eff_compat_113711b, mv_eff_profile_113711b, mv_eff_cluster_113711b, src_eff_113711b, dst_eff_113711b;
 CREATE TABLE src_eff_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE dst_eff_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
 "
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS $PROFILE"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE $PROFILE SETTINGS enable_global_with_statement = 0"
 
 DEFINITION="WITH r_eff_113711b AS MATERIALIZED (SELECT id FROM src_eff_113711b) SELECT id FROM r_eff_113711b"

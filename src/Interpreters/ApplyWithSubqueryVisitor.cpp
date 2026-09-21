@@ -12,6 +12,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/assert_cast.h>
 #include <Common/SettingSource.h>
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
@@ -175,8 +176,8 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 {
     if (table.database_and_table_name)
     {
-        chassert(table.database_and_table_name->as<ASTTableIdentifier>());
-        auto table_id = table.database_and_table_name->as<ASTTableIdentifier>()->getTableId();
+        /// The parser always puts an `ASTTableIdentifier` here.
+        auto table_id = assert_cast<ASTTableIdentifier &>(*table.database_and_table_name).getTableId();
         if (table_id.database_name.empty())
         {
             auto subquery_it = data.subqueries.find(table_id.table_name);
