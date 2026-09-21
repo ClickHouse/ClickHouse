@@ -15,6 +15,7 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <unordered_set>
 #include <optional>
 #include <Common/CopyableMutex.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -175,6 +176,27 @@ public:
         if (std::erase_if(paths, [&](const auto & p) { return p.path == path; }) == 0)
             return;
         onPathsUpdatedUnlocked();
+    }
+
+    /// A key that a write has chosen but has not committed yet is in the list of the paths of neither the
+    /// table nor the object storage: the readers must not see it before the object is there, and the object
+    /// appears only when the write is finalized. Nothing would then stop a concurrent insert into the same
+    /// table from generating the same key and overwriting the data of the first one. A writer therefore
+    /// reserves every key it generates, and the key generation of the other writers steps over the reserved
+    /// keys exactly like it steps over the objects that already exist. The reservations are writer-only:
+    /// no read ever sees them, and they are released when the insert is over - see `WrittenPathReservations`.
+    ///
+    /// Returns false when the key is already reserved by another insert into this table.
+    bool tryReservePathForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_reserved_for_write.insert(path).second;
+    }
+
+    void releasePathReservedForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        paths_reserved_for_write.erase(path);
     }
 
     virtual String getDataSourceDescription() const = 0;
@@ -440,6 +462,18 @@ protected:
 
     /// The mutex belongs to the object, so a copy of the configuration gets its own fresh one.
     mutable CopyableMutex paths_mutex;
+
+    /// The keys of the objects that the inserts into this table are writing right now, see `tryReservePathForWrite`.
+    /// Guarded by `paths_mutex`. The reservations belong to the writers of this very object, so a copy of the
+    /// configuration starts with none of them, like it starts with a fresh mutex.
+    struct ReservedPaths : public std::unordered_set<String>
+    {
+        ReservedPaths() = default;
+        ReservedPaths(const ReservedPaths &) {}
+        /// Nothing is copied, so self-assignment needs no special handling.
+        ReservedPaths & operator=(const ReservedPaths &) { clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
+    };
+    ReservedPaths paths_reserved_for_write;
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

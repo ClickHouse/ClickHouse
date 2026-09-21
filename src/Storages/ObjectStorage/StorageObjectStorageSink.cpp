@@ -223,6 +223,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)
+    , reservations(std::make_shared<WrittenPathReservations>(configuration_))
 {
 }
 
@@ -246,8 +247,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     const NumberedFileNames numbered_keys = configuration->getNumberedPathsForWrite(partition_id, file_path);
     size_t sequence_number = numbered_keys.start_sequence_number;
 
+    /// See the same reservation in `StorageObjectStorage::write`: a generated key is invisible both for the
+    /// readers and in the object storage until the object is committed, so it is held against the concurrent
+    /// inserts into this table for as long as this insert lasts. The reservations of every partition belong to
+    /// the partitioned sink, which outlives the sinks of the partitions it has created.
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, numbered_keys, sequence_number))
+            *object_storage, *configuration, query_settings, file_path, numbered_keys, sequence_number, *reservations))
     {
         file_path = *new_key;
     }
@@ -273,9 +278,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
                 query_settings.create_new_file_on_insert,
                 getLogger("PartitionedStorageObjectStorageSink"));
 
-        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, reservations = reservations]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations);
         };
     }
 

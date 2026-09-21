@@ -921,8 +921,13 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// had to step aside from an existing object into a numbered key.
     const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
     size_t sequence_number = numbered_keys.start_sequence_number;
+    /// Every generated key is reserved until the insert is over, so that a concurrent insert into the same
+    /// table generates a different one: a key is published for the readers only after its object has been
+    /// committed, and until then the object storage does not have it either, so nothing else would tell the
+    /// two inserts apart and one of them would overwrite the data of the other.
+    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number))
+            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
     {
         first_key = *new_key;
         first_key_is_published = false;
@@ -933,9 +938,9 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     StorageObjectStorageSink::PublishPathCallback publish_path;
     if (settings.split_on_write_by_size_bytes)
     {
-        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings, numbered_keys, sequence_number, reservations]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations);
         };
     }
 
@@ -948,7 +953,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// reallocated under it.
     if (!first_key_is_published || get_next_path)
     {
-        publish_path = [config = configuration](const String & new_key)
+        /// The reservations of the generated keys are captured here as well: they have to outlive the sink,
+        /// and this callback is created exactly when the insert has generated a key - the first one, a next
+        /// one of a split, or both.
+        publish_path = [config = configuration, reservations](const String & new_key)
         {
             config->appendPath({new_key});
         };

@@ -46,7 +46,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
     const NumberedFileNames & numbered_keys,
-    size_t & sequence_number)
+    size_t & sequence_number,
+    WrittenPathReservations & reservations)
 {
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))
@@ -60,7 +61,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
             new_key = numbered_keys.getName(sequence_number);
             ++sequence_number;
         }
-        while (object_storage.exists(StoredObject(new_key)));
+        /// A key is free when the object is not there and no other insert into this table is writing it.
+        while (object_storage.exists(StoredObject(new_key)) || !reservations.tryReserve(new_key));
 
         return new_key;
     }
@@ -78,7 +80,8 @@ String getNextKeyForSplittingBySize(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const NumberedFileNames & numbered_keys,
-    size_t & sequence_number)
+    size_t & sequence_number,
+    WrittenPathReservations & reservations)
 {
     while (true)
     {
@@ -91,17 +94,25 @@ String getNextKeyForSplittingBySize(
         /// removed by number for the same reason (see `removeStaleSplitObjectsByNumber`). The objects this table has
         /// written itself are removed before the rewrite starts, so a key that is still taken when the rewrite rolls
         /// over into it belongs to someone else, and is stepped over rather than overwritten.
-        if ((settings.truncate_on_insert && !settings.create_new_file_on_insert) || !object_storage.exists(StoredObject(new_key)))
+        const bool key_is_free
+            = (settings.truncate_on_insert && !settings.create_new_file_on_insert) || !object_storage.exists(StoredObject(new_key));
+
+        /// A key that another insert into this table is writing right now is skipped whatever the settings are:
+        /// its object is not there yet, so nothing tells it apart from a free key, and both inserts would write it.
+        if (key_is_free && reservations.tryReserve(new_key))
             return new_key;
 
-        /// The name is already taken: either skip it and try the next number, or refuse to write.
-        if (!settings.create_new_file_on_insert)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Object in bucket {} with key {} already exists, but it is needed to continue writing the data split by size. "
-                "If you want to overwrite it, enable setting {}_truncate_on_insert, if you want to skip the taken names, "
-                "enable setting {}_create_new_file_on_insert",
-                configuration.getNamespace(), new_key, configuration.getTypeName(), configuration.getTypeName());
+        if (!key_is_free)
+        {
+            /// The name is already taken: either skip it and try the next number, or refuse to write.
+            if (!settings.create_new_file_on_insert)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Object in bucket {} with key {} already exists, but it is needed to continue writing the data split by size. "
+                    "If you want to overwrite it, enable setting {}_truncate_on_insert, if you want to skip the taken names, "
+                    "enable setting {}_create_new_file_on_insert",
+                    configuration.getNamespace(), new_key, configuration.getTypeName(), configuration.getTypeName());
+        }
     }
 }
 

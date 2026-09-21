@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
@@ -112,6 +113,9 @@ private:
     SharedHeader sample_block;
     const ContextPtr context;
     String last_written_object_path;
+    /// The keys generated for the partitions of this insert, held until the insert is over so that a
+    /// concurrent insert into the same table does not generate the same ones - see `WrittenPathReservations`.
+    WrittenPathReservationsPtr reservations;
 };
 
 }

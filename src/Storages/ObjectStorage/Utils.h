@@ -11,27 +11,68 @@ namespace DB
 
 class IObjectStorage;
 
+/// The keys that one insert has generated for the objects it is writing, held for as long as the insert
+/// lasts, so that a concurrent insert into the same table cannot generate the same key while the object
+/// is not there yet - see `StorageObjectStorageConfiguration::tryReservePathForWrite`. The reservations
+/// are released when the object is destroyed, which is when the sink of the insert is gone: by then every
+/// key of the insert either names a committed object, or names nothing at all because the insert failed.
+class WrittenPathReservations
+{
+public:
+    explicit WrittenPathReservations(StorageObjectStorageConfigurationPtr configuration_)
+        : configuration(std::move(configuration_))
+    {
+    }
+
+    WrittenPathReservations(const WrittenPathReservations &) = delete;
+    WrittenPathReservations & operator=(const WrittenPathReservations &) = delete;
+
+    ~WrittenPathReservations()
+    {
+        for (const auto & path : reserved)
+            configuration->releasePathReservedForWrite(path);
+    }
+
+    /// Returns false when another insert into the same table is already writing this key.
+    bool tryReserve(const std::string & path)
+    {
+        if (!configuration->tryReservePathForWrite(path))
+            return false;
+        reserved.push_back(path);
+        return true;
+    }
+
+private:
+    StorageObjectStorageConfigurationPtr configuration;
+    std::vector<std::string> reserved;
+};
+
+using WrittenPathReservationsPtr = std::shared_ptr<WrittenPathReservations>;
+
 /// Checks whether the insert can write into the object with the given key. If the object exists and
 /// `*_create_new_file_on_insert` is enabled, returns the first free key of `numbered_keys` starting from
 /// `sequence_number`, which is advanced past the returned key so that an insert split by size continues
-/// the numbering from it.
+/// the numbering from it. A key that another insert into the same table has reserved is taken as well.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
     const NumberedFileNames & numbered_keys,
-    size_t & sequence_number);
+    size_t & sequence_number,
+    WrittenPathReservations & reservations);
 
 /// Returns the key of the next object to write when the data is split by size (see `*_split_on_write_by_size_bytes`).
 /// `sequence_number` is advanced past the returned key. If the generated key is already taken, either the number is
-/// skipped (when `create_new_file_on_insert` is enabled) or an exception is thrown.
+/// skipped (when `create_new_file_on_insert` is enabled) or an exception is thrown. A key reserved by another insert
+/// into the same table is skipped whatever the settings are: the object is not there yet, but it is being written.
 std::string getNextKeyForSplittingBySize(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const NumberedFileNames & numbered_keys,
-    size_t & sequence_number);
+    size_t & sequence_number,
+    WrittenPathReservations & reservations);
 
 /// A truncating insert overwrites the whole dataset of the table. If the previous insert has produced
 /// more objects than the current one, the leftovers have to be deleted - otherwise the stale data will be
