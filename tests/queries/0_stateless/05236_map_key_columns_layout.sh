@@ -21,7 +21,6 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     map_serialization_version = 'with_key_columns',
-    map_serialization_version_for_zero_level_parts = 'with_key_columns',
     min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, min_level_for_full_part_storage = 0,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,

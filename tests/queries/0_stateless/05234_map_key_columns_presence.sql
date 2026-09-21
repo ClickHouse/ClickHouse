@@ -13,8 +13,7 @@ CREATE TABLE t_presence_plain
     m Map(String, UInt64)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 INSERT INTO t_presence_plain VALUES
     (1, {'a': 1, 'b': 2}),   -- a and b present
@@ -38,8 +37,7 @@ CREATE TABLE t_presence_nullable
     m Map(String, Nullable(UInt64))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 INSERT INTO t_presence_nullable VALUES
     (1, {'a': 1, 'b': NULL}),   -- a present with value, b present NULL

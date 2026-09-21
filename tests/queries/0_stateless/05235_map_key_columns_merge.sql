@@ -11,8 +11,7 @@ CREATE TABLE t_merge_union
     m Map(String, UInt64)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 SYSTEM STOP MERGES t_merge_union;
 -- Part 1: only key a. Part 2: keys b and c. Part 3: only empty maps.
@@ -49,8 +48,7 @@ CREATE TABLE t_merge_default
     v UInt64
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 SYSTEM STOP MERGES t_merge_default;
 INSERT INTO t_merge_default VALUES (1, 100), (2, 200);

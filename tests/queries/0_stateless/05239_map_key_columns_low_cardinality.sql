@@ -10,8 +10,7 @@ CREATE TABLE t_lc_value
     m Map(String, LowCardinality(String))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 SYSTEM STOP MERGES t_lc_value;
 INSERT INTO t_lc_value VALUES (1, {'a': 'x', 'b': 'y'}), (2, {'a': 'z'});

@@ -2,8 +2,7 @@ DROP TABLE IF EXISTS map_kc;
 
 CREATE TABLE map_kc (id UInt32, m Map(String, Nullable(UInt64)))
 ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_key_columns',
-         map_serialization_version_for_zero_level_parts = 'with_key_columns';
+SETTINGS map_serialization_version = 'with_key_columns';
 
 INSERT INTO map_kc VALUES (1, {'a': 1, 'b': 2}), (2, {'a': 10, 'c': 30});
 INSERT INTO map_kc VALUES (3, {'b': 200, 'd': NULL});
