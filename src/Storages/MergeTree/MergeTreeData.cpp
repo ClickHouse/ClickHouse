@@ -5277,8 +5277,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
-        /// Same-statement `RENAME COLUMN` is replayed into the mutation stream, so
-        /// `CLEAR COLUMN` of the new name still rewrites the stored source column.
+        /// Same-statement `RENAME COLUMN` / `ADD COLUMN` is replayed into the mutation
+        /// stream, so `CLEAR COLUMN` of the new name still rewrites stored data.
         ColumnsDescription working_columns = old_metadata.columns;
         const bool share_nested_offsets_for_uk = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
@@ -5318,7 +5318,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             /// CLEAR COLUMN rewrites the part and drops `unique_key_index.sst`. Reject a stored
             /// target (`hasColumnOrNested` when offsets are shared, else exact `hasPhysical`),
-            /// including a name that only exists after an earlier `RENAME COLUMN` in this ALTER.
+            /// including a name that only exists after an earlier `RENAME COLUMN` or `ADD COLUMN`
+            /// in this ALTER.
             if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
                 && !uk_set.contains(command.column_name)
                 && (share_nested_offsets_for_uk
@@ -5353,6 +5354,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (!command.ignore && command.type == AlterCommand::RENAME_COLUMN
                 && working_columns.has(command.column_name))
                 working_columns.rename(command.column_name, command.rename_to);
+            else if (!command.ignore && command.type == AlterCommand::ADD_COLUMN && command.data_type)
+                working_columns.addIfNotExists(ColumnDescription(command.column_name, command.data_type));
         }
     }
 

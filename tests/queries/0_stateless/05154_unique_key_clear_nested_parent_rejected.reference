@@ -13,3 +13,6 @@ state_intact_mixed	2	2	20
 clear_after_rename_rejected
 state_intact_rename	1	10
 state_intact_rename	2	20
+clear_after_add_rejected
+state_intact_add	1
+state_intact_add	2
