@@ -268,6 +268,25 @@ SerializationPtr DataTypeExponentialTimeDecayingFloat64::doGetSerialization(cons
         nested_type->getDefaultSerialization(), decay_length);
 }
 
+SerializationPtr DataTypeExponentialTimeDecayingFloat64::getSerialization(const SerializationInfo & info) const
+{
+    /// Before this type became first-class it was a customized DataTypeTuple.
+    /// Preserve DataTypeTuple's adaptive serialization path exactly.
+    return nested_type->getSerialization(info);
+}
+
+MutableSerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::createSerializationInfo(
+    const SerializationInfoSettings & settings) const
+{
+    return nested_type->createSerializationInfo(settings);
+}
+
+SerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::getSerializationInfo(
+    const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    return nested_type->getSerializationInfo(column, settings);
+}
+
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
     return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(decay_length);

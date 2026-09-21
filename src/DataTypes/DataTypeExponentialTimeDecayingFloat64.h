@@ -74,6 +74,10 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
 
     Float64 getDecayLength() const { return decay_length; }
     const DataTypePtr & getNestedType() const { return nested_type; }
