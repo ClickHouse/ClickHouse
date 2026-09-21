@@ -65,6 +65,10 @@ missing non-nullable-capable type
 recursive CTE
 recursive CTE with nested BY NAME
 1	2
+recursive CTE with nested BY NAME in recursive member
+1	10
+2	20
+3	30
 UNION BY NAME with INTERSECT
 1
 2
