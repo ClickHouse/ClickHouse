@@ -436,10 +436,10 @@ void Set::processDateTime64Column(
     }
 }
 
-/// Whether `castColumnAccurateOrNull` can report every tuple element it cannot represent, instead of
-/// silently substituting a converted value. It reports one as a NULL for the whole tuple, and only a
-/// leaf conversion asked for a `Nullable` result selects a converter that produces that NULL: the
-/// request is dropped for composite targets, and honoured only for a `String` or numeric source.
+/// Which elements of a `Tuple` key `castColumnAccurateOrNull` converts without substituting a value
+/// that could match: one needing no conversion, or a `String` or numeric source to a `Nullable`
+/// numeric target, the leaf conversions that select the converter returning a NULL for what it cannot
+/// convert. Other pairings are excluded conservatively, not because the cast cannot report them.
 static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(from_type).get());
@@ -462,7 +462,13 @@ static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_typ
     for (size_t i = 0; i < to_elements.size(); ++i)
     {
         if (from_elements[i]->equals(*to_elements[i]))
+        {
+            /// The cast reconstructs the NULLs of an element that holds them outside a `Nullable` and
+            /// reports them as a failed conversion of the whole tuple, not as the key values they are.
+            if (!isNullableOrLowCardinalityNullable(to_elements[i]) && canContainNull(*to_elements[i]))
+                return false;
             continue;
+        }
 
         if (!to_elements[i]->isNullable())
             return false;

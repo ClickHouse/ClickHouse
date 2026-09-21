@@ -7,5 +7,7 @@ tuple key, every value representable	1
 tuple key, literal set	1
 tuple key over a primary key	1
 single column key	1
+variant element NULL is a key value	1
+variant element NULL, NOT IN	0
 tuple of array key	1
 date source element	1

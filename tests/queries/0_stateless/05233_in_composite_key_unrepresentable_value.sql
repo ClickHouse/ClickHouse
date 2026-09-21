@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS t_05233_left_int16;
 DROP TABLE IF EXISTS t_05233_left_array;
 DROP TABLE IF EXISTS t_05233_left_300;
 DROP TABLE IF EXISTS t_05233_mt;
+DROP TABLE IF EXISTS t_05233_left_variant;
+DROP TABLE IF EXISTS t_05233_right_variant;
 
 CREATE TABLE t_05233_left (s String, g UInt8) ENGINE = Memory;
 INSERT INTO t_05233_left VALUES ('abc', 1), ('42', 1);
@@ -74,6 +76,22 @@ SELECT 'single column key' AS arm, count()
 FROM t_05233_left WHERE s IN (SELECT v FROM t_05233_right)
 SETTINGS transform_null_in = 0;
 
+-- A Variant element holds its NULLs outside a Nullable, and such a NULL is a key value like any other
+-- rather than a failed conversion of the tuple: the row is a member, and is not a member of NOT IN.
+CREATE TABLE t_05233_left_variant (v Variant(Int32, String), s String) ENGINE = Memory;
+INSERT INTO t_05233_left_variant VALUES (NULL, '42');
+
+CREATE TABLE t_05233_right_variant (v Variant(Int32, String), n Nullable(Int32)) ENGINE = Memory;
+INSERT INTO t_05233_right_variant VALUES (NULL, 42);
+
+SELECT 'variant element NULL is a key value' AS arm, count()
+FROM t_05233_left_variant WHERE (v, s) IN (SELECT (v, n) FROM t_05233_right_variant)
+SETTINGS transform_null_in = 0;
+
+SELECT 'variant element NULL, NOT IN' AS arm, count()
+FROM t_05233_left_variant WHERE (v, s) NOT IN (SELECT (v, n) FROM t_05233_right_variant)
+SETTINGS transform_null_in = 0;
+
 -- Controls. Each set key type below is one the cast cannot report a failed element for, so the query
 -- keeps aborting; admitting any of them would answer a match on a value the left row does not hold.
 
@@ -125,3 +143,5 @@ DROP TABLE t_05233_left_int16;
 DROP TABLE t_05233_left_array;
 DROP TABLE t_05233_left_300;
 DROP TABLE t_05233_mt;
+DROP TABLE t_05233_left_variant;
+DROP TABLE t_05233_right_variant;
