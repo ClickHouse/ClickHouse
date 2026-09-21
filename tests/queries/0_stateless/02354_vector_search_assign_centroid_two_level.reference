@@ -1,0 +1,7 @@
+-- a probe copied from a fine centroid comes back with it
+2560	2560
+-- and it agrees with a flat scan of the same fine centroids
+2560
+-- a perturbed probe keeps the same answer
+366	366
+-- errors
