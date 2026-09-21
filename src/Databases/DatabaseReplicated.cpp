@@ -1626,6 +1626,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
