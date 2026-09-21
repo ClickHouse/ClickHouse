@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #if defined(OS_DARWIN)
+#include <mutex>
 #include <vector>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -132,7 +133,8 @@ Epoll::Epoll() : events_count(0)
         throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot create kqueue descriptor");
 }
 
-Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
+Epoll::Epoll(Epoll && other) noexcept
+    : epoll_fd(other.epoll_fd), events_count(other.events_count.load()), registered_fds(std::move(other.registered_fds))
 {
     other.epoll_fd = -1;
 }
@@ -142,11 +144,18 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
     events_count.store(other.events_count.load());
+    registered_fds = std::move(other.registered_fds);
     return *this;
 }
 
 void Epoll::add(int fd, void * ptr, uint32_t events)
 {
+    {
+        std::lock_guard lock(registered_fds_mutex);
+        if (!registered_fds.insert(fd).second)
+            throw Exception(ErrorCodes::EPOLL_ERROR, "Descriptor {} is already registered in kqueue", fd);
+    }
+
     epoll_data_t data{};
     if (ptr)
         data.ptr = ptr;
@@ -155,7 +164,7 @@ void Epoll::add(int fd, void * ptr, uint32_t events)
 
     struct kevent changes[2];
     int n = 0;
-    /// EV_ADD is idempotent and re-arms the filter; kqueue read/write filters are level-triggered like epoll.
+    /// kqueue read/write filters are level-triggered like epoll.
     if (events & EPOLLIN)
         EV_SET(&changes[n++], fd, EVFILT_READ, EV_ADD, 0, 0, reinterpret_cast<void *>(data.u64));
     if (events & EPOLLOUT)
@@ -168,11 +177,17 @@ void Epoll::add(int fd, void * ptr, uint32_t events)
     ++events_count;
 
     if (kevent(epoll_fd, changes, n, nullptr, 0, nullptr) == -1)
-        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot add new descriptor to kqueue");
+        throw ErrnoException(
+            ErrorCodes::EPOLL_ERROR, "Cannot add descriptor {} (events {}) to kqueue {}", fd, events, epoll_fd);
 }
 
 void Epoll::remove(int fd)
 {
+    {
+        std::lock_guard lock(registered_fds_mutex);
+        registered_fds.erase(fd);
+    }
+
     --events_count;
 
     struct kevent changes[2];
