@@ -134,8 +134,8 @@ SELECT 'Test 19: rejected nullable-only probe is not listed as a `Statistics` ke
 SELECT
     countIf(explain LIKE '%Statistics%') > 0,
     countIf(explain LIKE '%Parts: 2/4%') > 0,
-    countIf(trim(explain) = 'value_for_range') > 0,
-    countIf(trim(explain) = 'value_lc') = 0
+    countIf(trim(replaceAll(explain, '│', '')) = 'value_for_range') > 0,
+    countIf(trim(replaceAll(explain, '│', '')) = 'value_lc') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND value_lc != 'x');
 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND value_lc != 'x';
 
@@ -143,12 +143,35 @@ SELECT 'Test 20: rejected OR-nested `IS NULL` probe is not listed as a `Statisti
 SELECT
     countIf(explain LIKE '%Statistics%') > 0,
     countIf(explain LIKE '%Parts: 2/4%') > 0,
-    countIf(trim(explain) = 'value_for_range') > 0,
-    countIf(trim(explain) = 'value_lc') = 0
+    countIf(trim(replaceAll(explain, '│', '')) = 'value_for_range') > 0,
+    countIf(trim(replaceAll(explain, '│', '')) = 'value_lc') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND (value_lc IS NULL OR value IS NOT NULL));
 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND (value_lc IS NULL OR value IS NOT NULL);
 
 DROP TABLE test_nullcount_pruning;
+
+DROP TABLE IF EXISTS test_nullable_only_keys;
+CREATE TABLE test_nullable_only_keys
+(
+    a Nullable(String) STATISTICS(basic),
+    b Nullable(String) STATISTICS(basic)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS auto_statistics_types = '';
+
+INSERT INTO test_nullable_only_keys VALUES (NULL, NULL);
+INSERT INTO test_nullable_only_keys VALUES ('z', 'z');
+
+SELECT 'Test 21: nullable-only `!=` is not a `Statistics` key when a sibling range already prunes';
+SELECT
+    countIf(explain LIKE '%Statistics%') > 0,
+    countIf(trim(replaceAll(explain, '│', '')) = 'a') > 0,
+    countIf(trim(replaceAll(explain, '│', '')) = 'b') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullable_only_keys WHERE a > 'm' AND b != 'x');
+SELECT count() FROM test_nullable_only_keys WHERE a > 'm' AND b != 'x';
+
+DROP TABLE test_nullable_only_keys;
 
 DROP TABLE IF EXISTS test_float_inf_pruning;
 CREATE TABLE test_float_inf_pruning

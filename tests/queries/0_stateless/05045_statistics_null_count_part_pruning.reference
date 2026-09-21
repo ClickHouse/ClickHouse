@@ -56,6 +56,9 @@ Test 19: rejected nullable-only probe is not listed as a `Statistics` key
 Test 20: rejected OR-nested `IS NULL` probe is not listed as a `Statistics` key
 1	1	1	1
 4
+Test 21: nullable-only `!=` is not a `Statistics` key when a sibling range already prunes
+1	1	1
+1
 Test 14a: real +Inf max does not disable tightened-range pruning
 1
 0

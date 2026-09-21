@@ -106,6 +106,16 @@ bool hasBasicStatsOnNullableType(const ColumnDescription & col)
         && isNullableOrLowCardinalityNullable(col.type);
 }
 
+bool rejectsNullCountWitness(const KeyCondition & key_condition, const DataTypePtr & type)
+{
+    const DataTypes types{type};
+    const bool all_null_possible = key_condition.checkInHyperrectangle(
+        Hyperrectangle(1, Range(POSITIVE_INFINITY, true, POSITIVE_INFINITY, true)), types).can_be_true;
+    const bool no_null_possible = key_condition.checkInHyperrectangle(
+        Hyperrectangle(1, Range::createWholeUniverseWithoutNull()), types).can_be_true;
+    return !all_null_possible || !no_null_possible;
+}
+
 bool isConstantZero(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
@@ -301,38 +311,18 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
         useless = false;
     }
 
-    if (!nullable_only_columns.empty())
+    /// Keep a nullable-only column only when it can exclude all-NULL or no-NULL parts by itself.
+    for (const auto & [col_name, col_type] : nullable_only_columns)
     {
-        NamesAndTypesList probe_columns;
-        for (const auto & [col_name, col_type] : nullable_only_columns)
-            probe_columns.emplace_back(col_name, col_type);
+        NamesAndTypesList one_col;
+        one_col.emplace_back(col_name, col_type);
+        KeyCondition * key_condition = getKeyConditionForEstimates(one_col, /*record_used_columns=*/ false);
+        if (!key_condition || !rejectsNullCountWitness(*key_condition, col_type))
+            continue;
 
-        if (KeyCondition * key_condition = getKeyConditionForEstimates(probe_columns, /*record_used_columns=*/ false))
-        {
-            DataTypes types;
-            for (const auto & col : probe_columns)
-                types.push_back(col.type);
-
-            const Hyperrectangle all_null(types.size(), Range(POSITIVE_INFINITY, true, POSITIVE_INFINITY, true));
-            const Hyperrectangle no_null(types.size(), Range::createWholeUniverseWithoutNull());
-            if (!key_condition->checkInHyperrectangle(all_null, types).can_be_true
-                || !key_condition->checkInHyperrectangle(no_null, types).can_be_true)
-            {
-                const auto column_names = probe_columns.getNames();
-                for (size_t col_idx : key_condition->getUsedColumns())
-                {
-                    if (col_idx >= column_names.size())
-                        continue;
-                    auto it = nullable_only_columns.find(column_names[col_idx]);
-                    if (it != nullable_only_columns.end())
-                    {
-                        stats_column_name_to_type_map[it->first] = it->second;
-                        used_column_names.insert(it->first);
-                        useless = false;
-                    }
-                }
-            }
-        }
+        stats_column_name_to_type_map[col_name] = col_type;
+        used_column_names.insert(col_name);
+        useless = false;
     }
 }
 
