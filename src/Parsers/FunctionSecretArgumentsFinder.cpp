@@ -313,11 +313,8 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     }
 }
 
-void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t start)
 {
-    for (const auto & key : tls_credentials_secret_keys)
-        findSecretNamedArgument(key, start);
-
     /// The named-collection parser does not require the key of a `key = value` argument to be a plain
     /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
     /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
@@ -338,6 +335,14 @@ void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t sta
 
         markSecretArgument(i, /* argument_is_named= */ true);
     }
+}
+
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+{
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
+
+    markNamedArgumentsWithUnreadableKeys(start);
 }
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
@@ -410,12 +415,17 @@ void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
 
 void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
 {
+    /// The connection string is never parsed by ClickHouse: `ITableFunctionXDBC` forwards it verbatim
+    /// to the bridge, so its grammar belongs to the JDBC/ODBC driver. It can carry the password in a
+    /// query parameter (`jdbc('mysql://host:3306/?user=root&password=root', ...)`, from this function's
+    /// own documentation) or as `Pwd=` in a `KEY=value;` list, neither of which a URI scan locates.
+    /// There is no extent that can be kept visible, so the value is hidden whole;
+    /// `format_display_secrets_in_show_and_select` still shows the real one to a privileged reader.
     if (isNamedCollectionName(0))
     {
         /// jdbc(named_collection, ..., datasource = 'DSN', ...)
         /// odbc(named_collection, ..., connection_settings = 'DSN', ...)
         /// `datasource` and `connection_settings` are mutually exclusive aliases.
-        /// If the value is a URI, mask only the password; otherwise hide the whole value.
         /// If somehow both are present (invalid query), hide all named arguments.
         ssize_t ds_idx = findNamedArgument(nullptr, "datasource", 1);
         ssize_t cs_idx = findNamedArgument(nullptr, "connection_settings", 1);
@@ -426,53 +436,19 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
             result.start = 1;
             result.count = function->arguments->size() - 1;
             result.are_named = true;
+            return;
         }
-        else if (ds_idx >= 0)
-            maskXDBCSecretNamedArgument("datasource", 1);
-        else if (cs_idx >= 0)
-            maskXDBCSecretNamedArgument("connection_settings", 1);
+
+        findSecretNamedArgument("datasource", 1);
+        findSecretNamedArgument("connection_settings", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
     }
     else
     {
         /// jdbc('DSN', schema, table) / jdbc('DSN', table)
         /// odbc('DSN', schema, table) / odbc('DSN', table)
         /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
-        /// The connection string may be a URI with credentials embedded,
-        /// e.g. scheme://username:password@host:port/dbname
-        /// If so, mask only the password part; otherwise hide the whole argument.
-        String uri;
-        if (tryGetStringFromArgument(0, &uri))
-        {
-            if (maskURIPassword(&uri))
-            {
-                chassert(result.count == 0);
-                result.start = 0;
-                result.count = 1;
-                result.replacement = std::move(uri);
-                return;
-            }
-        }
         markSecretArgument(0, false);
-    }
-}
-
-void FunctionSecretArgumentsFinder::maskXDBCSecretNamedArgument(std::string_view key, size_t start)
-{
-    String value;
-    ssize_t arg_idx = findNamedArgument(&value, key, start);
-    if (arg_idx < 0)
-        return;
-
-    if (!value.empty() && maskURIPassword(&value))
-    {
-        result.are_named = true;
-        result.start = arg_idx;
-        result.count = 1;
-        result.replacement = std::move(value);
-    }
-    else
-    {
-        markSecretArgument(arg_idx, /* argument_is_named= */ true);
     }
 }
 
@@ -882,7 +858,7 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
     /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
     /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
-    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// the secrets are hidden whole, and so is a `nats_url` that carries an '@'.
     /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
@@ -910,8 +886,10 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
             String url;
             if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
             {
-                if (maskURIPassword(&url))
-                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
+                /// An '@' is the only reliable sign of a credential here, and there is no extent to
+                /// keep visible; see the `nats_url` rule in `NATS_fwd.h` for why.
+                if (url.contains('@'))
+                    markSecretArgument(i, /* argument_is_named= */ true);
             }
             else
             {

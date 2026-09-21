@@ -113,6 +113,8 @@ protected:
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
+    /// `nats_url` is not here because the documented form (`'localhost:4222'`) carries no credential and
+    /// stays visible; it is handled separately, by the presence of an '@'.
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
     static constexpr std::string_view nats_secret_keys[]
         = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
@@ -163,11 +165,6 @@ protected:
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
     void findXDBCSecretArguments();
-
-    /// Similar to `findSecretNamedArgument`, but if the value is a URI with credentials,
-    /// masks only the password part instead of hiding the entire value.
-    void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
-
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
@@ -218,6 +215,11 @@ protected:
     /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
+
+    /// Hides the value of every `key = value` argument from `start` on whose key this finder cannot read
+    /// as a plain literal or identifier. The named-collection parser evaluates such a key as a constant
+    /// expression, so it can name a secret argument that `findNamedArgument` never sees.
+    void markNamedArgumentsWithUnreadableKeys(size_t start);
 
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
     /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
