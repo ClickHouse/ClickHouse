@@ -7,3 +7,5 @@ query	collected_own_statistics
 05234_query_5_sampled	1
 05234_query_6_a_uint8	1
 05234_query_7_au_int8	1
+05234_query_8_policy_a	1
+05234_query_9_policy_b	1
