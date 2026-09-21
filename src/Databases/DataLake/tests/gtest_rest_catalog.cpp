@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 }
 
@@ -376,7 +377,6 @@ TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
         /* onelake_client_id */"",
         /* onelake_client_secret */"",
         /* bearer_token */"token-1",
-        /* refresh_token */"",
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
