@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <set>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
@@ -161,31 +163,35 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         return;
     }
 
+    /// Plain LRU: the caches live for one query and readers sweep the segments in task order.
+    /// Not using SLRU, because it would only pin stale entries.
+    static constexpr auto cache_policy = "LRU";
+    /// Local caches: ~10% of the query memory budget, capped at 200 MiB.
+    static constexpr size_t local_cache_size_cap = 200ULL * 1024 * 1024;
+
     const auto & settings = context_->getSettingsRef();
-    static constexpr auto cache_policy = "SLRU";
-    /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
-    static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
     const size_t query_memory_limit = settings[Setting::max_memory_usage];
-    const size_t local_cache_max_size
-        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
+    const size_t local_cache_max_size = query_memory_limit == 0
+        ? local_cache_size_cap
+        : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
     if (settings[Setting::use_text_index_tokens_cache])
         tokens_cache = context_->getTextIndexTokensCache();
     else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     use_global_header_cache = settings[Setting::use_text_index_header_cache];
     if (use_global_header_cache)
         header_cache = context_->getTextIndexHeaderCache();
     else
-        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     if (settings[Setting::use_text_index_postings_cache])
         postings_cache = context_->getTextIndexPostingsCache();
     else
-        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, /*size_ratio=*/ 0.0);
 
     rpn = std::move(RPNBuilder<RPNElement>(
         predicate,
@@ -914,6 +920,13 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
+    /// branch below, because every shape is matched the same way.
+    if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
+        return {};
+
     auto compile_pattern = [&](const String & pattern)
     {
         std::vector<OptimizedRegularExpression> patterns;
@@ -1556,7 +1569,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+        if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
         if (has_postprocessor)
             return false;
