@@ -1131,7 +1131,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     /// Perform top-K optimization during index analysis itself?
     const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
-    const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
+    const bool top_k_uses_lossy_decay_key
+        = perform_top_k_optimization
+        && std::ranges::any_of(
+            skip_indexes.skip_index_for_top_k_filtering->index.data_types,
+            [](const DataTypePtr & type)
+            {
+                return containsExponentialTimeDecayingFloat64(type);
+            });
+    const bool top_k_handle_ties
+        = perform_top_k_optimization
+        && (top_k_filter_info->num_sort_columns > 1
+            || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1
+            || top_k_uses_lossy_decay_key);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
