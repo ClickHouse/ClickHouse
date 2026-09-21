@@ -2550,7 +2550,10 @@ static void serializeNodeList(
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
+    /// Peers that do not know a flag ignore it, so a flag here must only tune how the join is executed.
     UInt8 flags = 0;
+    if (is_set_operation)
+        flags |= 1;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2635,6 +2638,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+    step->is_set_operation = bool(flags & 1);
 
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
     {
@@ -2688,6 +2692,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->is_set_operation = is_set_operation;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;
