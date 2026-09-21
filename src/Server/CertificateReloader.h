@@ -75,9 +75,11 @@ public:
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static CertificateReloader & instance();
+    static CertificateReloader & instance()
+    {
+        static CertificateReloader instance;
+        return instance;
+    }
 
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
@@ -87,9 +89,6 @@ public:
 
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
-
-    /// Register an additional SSL_CTX to share certificates with the primary context
-    bool registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix);
 
     /// Handle configuration reload for all contexts
     void tryReloadAll(const Poco::Util::AbstractConfiguration & config);

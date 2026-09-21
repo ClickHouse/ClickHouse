@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- An EXPERIMENTAL `MergeTree` setting set by the operator. If its tier changes, use another one -->
+    <merge_tree>
+        <notify_newest_block_number>1</notify_newest_block_number>
+    </merge_tree>
+</clickhouse>

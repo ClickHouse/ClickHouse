@@ -9,9 +9,6 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <limits>
-#include <map>
-#include <source_location>
 #include <string>
 #include <vector>
 #include <optional>
@@ -28,38 +25,15 @@ namespace DB
 
 class ReadBuffer;
 
-/// Per-entity values of a "key-value" metric: one value per CPU core, block device, network interface, etc.
-/// Ordered by key for deterministic output.
-using AsynchronousMetricKeyValues = std::map<String, double>;
-
 struct AsynchronousMetricValue
 {
-    /// The value of a scalar metric. For key-value metrics it is NaN: an aggregate across entities
-    /// (sum, average, ...) is not meaningful for every metric, so none is provided.
-    double value = 0;
-    /// The values of a key-value metric (exposed as `Map(String, Float64)` in `system.asynchronous_metrics`).
-    /// Empty for scalar metrics.
-    AsynchronousMetricKeyValues key_values;
-    /// For key-value metrics: what the key means, e.g. "cpu", "device", "disk". It is used as the label name
-    /// for the Prometheus endpoint. Non-null if and only if the metric is a key-value metric.
-    const char * key_label = nullptr;
-    const char * documentation = nullptr;
-    /// The source file where this metric and its documentation are produced. Asynchronous metrics are defined across
-    /// several files (`AsynchronousMetrics.cpp`, `ServerAsynchronousMetrics.cpp`, `KeeperAsynchronousMetrics.cpp`, ...),
-    /// so it is captured per metric at the construction site via the constructor's default argument. Used by
-    /// `system.documentation`. May be `nullptr` for a default-constructed value (before it is assigned).
-    const char * source = nullptr;
+    double value;
+    const char * documentation;
 
     template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_, std::source_location source_ = std::source_location::current())
-        : value(static_cast<double>(value_)), documentation(documentation_), source(source_.file_name()) {}
-    AsynchronousMetricValue(const char * key_label_, AsynchronousMetricKeyValues key_values_, const char * documentation_,
-        std::source_location source_ = std::source_location::current())
-        : value(std::numeric_limits<double>::quiet_NaN()), key_values(std::move(key_values_)), key_label(key_label_)
-        , documentation(documentation_), source(source_.file_name()) {}
+    AsynchronousMetricValue(T value_, const char * documentation_)
+        : value(static_cast<double>(value_)), documentation(documentation_) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
-
-    bool isMap() const { return key_label != nullptr; }
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
@@ -218,22 +192,6 @@ private:
         ProcStatValuesCPU operator-(const ProcStatValuesCPU & other) const;
     };
 
-    /// Accumulators for the per-CPU-core breakdown of the `/proc/stat` metrics,
-    /// published as key-value metrics (`OSUserTimeCPU` and friends) keyed by the CPU core number.
-    struct ProcStatPerCPUMaps
-    {
-        AsynchronousMetricKeyValues user;
-        AsynchronousMetricKeyValues nice;
-        AsynchronousMetricKeyValues system;
-        AsynchronousMetricKeyValues idle;
-        AsynchronousMetricKeyValues iowait;
-        AsynchronousMetricKeyValues irq;
-        AsynchronousMetricKeyValues softirq;
-        AsynchronousMetricKeyValues steal;
-        AsynchronousMetricKeyValues guest;
-        AsynchronousMetricKeyValues guest_nice;
-    };
-
     struct ProcStatValuesOther
     {
         uint64_t interrupts;
@@ -309,9 +267,7 @@ private:
         double multiplier);
 
     void applyCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
-
-    void applyPerCPUMetricsUpdate(AsynchronousMetricValues & new_values, ProcStatPerCPUMaps && per_cpu_maps);
+        AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
     void applyNormalizedCPUMetricsUpdate(
         AsynchronousMetricValues & new_values,

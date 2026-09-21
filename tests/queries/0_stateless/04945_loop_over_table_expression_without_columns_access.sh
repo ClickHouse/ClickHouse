@@ -6,7 +6,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 username="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
+# The `Alias` engine is still experimental on this branch, unlike on master where the setting is
+# obsolete and the guard is gone, so every alias test here has to enable it.
 ${CLICKHOUSE_CLIENT} -m --query "
+    SET allow_experimental_alias_table_engine = 1;
+
     DROP USER IF EXISTS ${username};
     DROP TABLE IF EXISTS loop_access_target;
     DROP TABLE IF EXISTS loop_access_alias;

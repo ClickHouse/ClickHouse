@@ -12,7 +12,6 @@
 #    pragma clang diagnostic pop
 
 #    include <cmath>
-#    include <limits>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -20,7 +19,7 @@
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
-#    include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
@@ -37,7 +36,7 @@ extern const int ILLEGAL_COLUMN;
  * 4. Inverse of the dominant frequency component is the period.
 */
 
-class FunctionSeriesPeriodDetectFFT final : public IFunction
+class FunctionSeriesPeriodDetectFFT : public IFunction
 {
 public:
     static constexpr auto name = "seriesPeriodDetectFFT";
@@ -78,7 +77,7 @@ public:
 
         ColumnArray::Offset prev_src_offset = 0;
 
-        Float64 period = 0;
+        Float64 period;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnArray::Offset curr_offset = offsets[i];
@@ -119,15 +118,12 @@ public:
         size_t len = end - start;
         if (len < 4)
         {
-            period = std::numeric_limits<Float64>::quiet_NaN(); // At least four data points are required to detect period
+            period = NAN; // At least four data points are required to detect period
             return true;
         }
 
-        VectorWithMemoryTracking<Float64> src;
-        src.reserve(len);
-        for (size_t i = start; i < end; ++i)
-            src.push_back(static_cast<Float64>(src_vec[i]));
-        VectorWithMemoryTracking<std::complex<double>> out((len / 2) + 1);
+        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
+        std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
 
@@ -208,5 +204,4 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }
 }
-
 #endif

@@ -1,6 +1,4 @@
 #pragma once
-#include <optional>
-
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
@@ -74,10 +72,6 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
-    /// Set when the adaptive aggregation is enabled for this aggregation (see
-    /// `AdaptiveAggregationSession`); shared by all the participating transforms.
-    AdaptiveAggregationSessionPtr adaptive_session;
-
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
@@ -127,16 +121,13 @@ public:
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
-    void onCancel() noexcept override;
 
 protected:
     void consume(Chunk chunk);
 
 private:
-    size_t getGeneratingStepGroup() const;
-
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -155,12 +146,6 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
-
-    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
-    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
-    /// included header (see `AdaptiveAggregationImpl.h`).
-    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
-
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

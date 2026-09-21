@@ -39,7 +39,7 @@ namespace ErrorCodes
   * range(start, end): [start, end)
   * range(start, end, step): [start, end) with step increments.
   */
-class FunctionRange final : public IFunction
+class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
@@ -186,20 +186,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            /// Last iteration is peeled to avoid a trailing `value += step` that would
-            /// overflow for valid runs at the high end of the range (e.g. start = Int64::max - 1,
-            /// step = 2 emits one element and would then signed-overflow). Inner loop stays
-            /// branchless so the compiler can keep vectorising it.
-            T value = start;
-            size_t n = row_length[row_idx];
-            for (size_t idx = 0; idx + 1 < n; ++idx)
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset + idx] = value;
-                value += step;
+                out_data[offset] = static_cast<T>(start + idx * step);
+                ++offset;
             }
-            if (n > 0)
-                out_data[offset + n - 1] = value;
-            offset += n;
             out_offsets[row_idx] = offset;
         }
 
@@ -589,7 +580,7 @@ The supported types are:
 - `Int8/16/32/64]`
 
 - All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
-- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](/reference/settings/session-settings/function#function_range_max_elements_in_block).
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](../../operations/settings/settings.md#function_range_max_elements_in_block).
 - Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
     )";
     FunctionDocumentation::Syntax syntax = "range([start, ] end [, step])";

@@ -6,8 +6,6 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/IDiskTransaction.h>
 
-#include <Common/ThreadPool_fwd.h>
-
 #include <memory>
 
 namespace DB
@@ -29,9 +27,6 @@ protected:
     const MetadataStoragePtr metadata_storage;
     const ObjectStorageRouterPtr object_storages;
     const BlobKillerThreadPtr blob_killer;
-    /// Thread pool used by `copyFile` to dispatch `copyObjectToAnotherObjectStorage`
-    /// calls in parallel. Owned by `DiskObjectStorage` and shared across transactions.
-    const std::shared_ptr<ThreadPool> copy_object_pool;
     const bool wait_blob_removal;
     const std::string read_resource_name;
     const std::string write_resource_name;
@@ -40,26 +35,12 @@ protected:
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
     std::unordered_map<Location, StoredObjects> written_blobs;
 
-    /// Execute the operation right away if the metadata storage applies operations eagerly,
-    /// otherwise queue it until commit.
-    void addOperation(std::function<void(MetadataTransactionPtr tx)> op);
-
 public:
-    /// Record locations still missing the blob, for blobs without a per-file metadata node.
-    void recordBlobReplication(const StoredObject & object, const Locations & missing_locations);
-
-    /// Register a blob for background removal, committed atomically with this transaction.
-    void submitBlobForRemoval(const std::string & remote_path);
-
-    /// The metadata transaction this disk transaction executes against.
-    MetadataTransactionPtr getMetadataTransaction() const { return metadata_transaction; }
-
     DiskObjectStorageTransaction(
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
         BlobKillerThreadPtr blob_killer_,
-        std::shared_ptr<ThreadPool> copy_object_pool_,
         bool wait_blob_removal_,
         std::string read_resource_name_,
         std::string write_resource_name_);
@@ -81,10 +62,6 @@ public:
     void createFile(const String & path) override;
 
     void truncateFile(const String & path, size_t size) override;
-
-    void incrementBlobRefCount(const std::string & blob) override;
-
-    void decrementBlobRefCount(const std::string & blob) override;
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 
@@ -121,20 +98,6 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
-protected:
-    /// Shared between `DiskObjectStorageTransaction::copyFile` and
-    /// `MultipleDisksObjectStorageTransaction::copyFile`. Reads source blobs from the
-    /// passed-in source triple and writes them onto this transaction's destination
-    /// (`metadata_transaction`, `object_storages`, `written_blobs`, `operations_to_execute`).
-    void copyFileImpl(
-        const MetadataStoragePtr & src_metadata_storage,
-        const ClusterConfigurationPtr & src_cluster,
-        const ObjectStorageRouterPtr & src_object_storages,
-        const std::string & from_file_path,
-        const std::string & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings);
-
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
         bool autocommit,
@@ -158,7 +121,6 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         ClusterConfigurationPtr destination_cluster_,
         MetadataStoragePtr destination_metadata_storage_,
         ObjectStorageRouterPtr destination_object_storages_,
-        std::shared_ptr<ThreadPool> copy_object_pool_,
         std::string read_resource_name_,
         std::string write_resource_name_);
 
