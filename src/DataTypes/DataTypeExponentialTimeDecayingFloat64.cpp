@@ -855,10 +855,15 @@ The decay length is part of the logical type: `ExponentialTimeDecaying(decay_len
 stored per row. The persisted payload contains only the authoritative
 `(value_at_anchor, anchor_time)` pair. The default in-memory representation is ordered: it derives
 an 8-byte `shiftOneBitAndSign(unit_timestamp)` prefix for fast comparison without persisting that
-redundant prefix for every row. Arithmetic uses only the direct payload and prefix ties fall back
-to the compensated direct comparator.
+redundant prefix for every row. Arithmetic uses only the direct payload.
 
-For a nonzero curve, `unit_time = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
+For a direct MergeTree primary-key column, the sparse `primary.idx` stores only that UInt64 prefix
+for each mark. Prefix collisions are treated conservatively as the same index bucket, so they can
+cause extra reads but must not exclude matching rows. Because detached Field-based extrema cannot
+preserve that bucket semantics yet, this experimental version does not support the type in
+`PARTITION BY` or explicit `minmax` indexes.
+
+For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
 time at which its magnitude is one. SQL/text compatibility with the earlier experimental spelling
 keeps exposing `(sign, signed_unit_time, decay_length)`, but the decay length is synthesized from
 the type rather than stored in each row.
