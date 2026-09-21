@@ -841,7 +841,7 @@ namespace
             case ViewTarget::Samples:
             {
                 engine_is_generated = !has_arguments && (engine_name == "MergeTree");
-                if (sorting_key_equals("id, timestamp"))
+                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
                     inner_engine.reset(inner_engine.order_by);
                 remove_settings({{"index_granularity", settings[TimeSeriesSetting::samples_index_granularity].value}});
                 break;
@@ -850,7 +850,7 @@ namespace
             case ViewTarget::RecentSamples:
             {
                 engine_is_generated = !has_arguments && (engine_name == "MergeTree");
-                if (sorting_key_equals("id, timestamp"))
+                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
                     inner_engine.reset(inner_engine.order_by);
 
                 /// The partition key is the `recent_samples_partition_by` setting if set, otherwise the default one.
@@ -913,7 +913,7 @@ namespace
             case ViewTarget::MetricFamilies:
             {
                 engine_is_generated = !has_arguments && (engine_name == "ReplacingMergeTree");
-                if (sorting_key_equals("metric_family_name"))
+                if (!inner_engine.primary_key && sorting_key_equals("metric_family_name"))
                     inner_engine.reset(inner_engine.order_by);
                 break;
             }
@@ -1401,6 +1401,10 @@ namespace
         auto is_merge_tree = [&] { return inner_engine.engine->name.ends_with("MergeTree"); };
 
         /// A declared MergeTree engine without keys gets the same keys as a generated one.
+        /// A dropped sorting key is only regenerated while no explicit primary key survives, so the three
+        /// branches above refuse to drop one when a primary key is present. Otherwise a copied table would
+        /// reach MergeTree with neither, and be rejected with "ORDER BY cannot be empty". The tags branch
+        /// drops the pair together, so it is not affected.
         auto needs_sorting_key = [&] { return is_merge_tree() && !inner_engine.order_by && !inner_engine.primary_key; };
 
         /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family_name`.
