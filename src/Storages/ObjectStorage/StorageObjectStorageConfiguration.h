@@ -53,6 +53,9 @@ struct StorageObjectStorageQuerySettings
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
     bool ignore_non_existent_file;
+    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
+    /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
+    bool skip_hidden_files = false;
 };
 
 
