@@ -290,7 +290,13 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
+            break;
         case ObjectStorageQueueMode::EXCLUSIVE:
+            /// Returned without the local active nodes registry on purpose: exclusive metadata
+            /// keeps no processing node in keeper (it is constructed with an empty
+            /// `processing_node_path` and changes nothing there), so there is nothing for the
+            /// cleanup to delete and nothing to register - and registering an empty path would
+            /// make the second concurrent file of this table look like one the cleanup is holding.
             return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
                 path,
                 file_status,
@@ -300,7 +306,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
-            break;
     }
     file_metadata->setLocalActiveNodes(local_active_nodes);
     return file_metadata;
