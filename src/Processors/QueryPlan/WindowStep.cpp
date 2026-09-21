@@ -419,7 +419,7 @@ void WindowStep::serialize(Serialization & ctx) const
     /// A peer below this version has no aggregate tree at all and always takes the recompute path, so the
     /// legacy layout without the field is exact whenever this step could not use the tree either. Otherwise
     /// the result would depend on which peer version runs the fragment: fail closed instead.
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+    if (ctx.step_version >= 1)
         writeVarUInt(min_frame_rows_for_aggregate_tree, ctx.out);
     else if (mayUseAggregateTree(window_description, window_functions, min_frame_rows_for_aggregate_tree))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -468,7 +468,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     /// one that checked this step cannot use it (see `serialize`); either way the semantics are the
     /// recompute path: keep it by disabling the tree for this step.
     UInt64 min_frame_rows_for_aggregate_tree = std::numeric_limits<UInt64>::max();
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+    if (ctx.step_version >= 1)
         readVarUInt(min_frame_rows_for_aggregate_tree, ctx.in);
 
     return std::make_unique<WindowStep>(
@@ -482,7 +482,9 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Window", WindowStep::deserialize);
+    /// Version 1 appends `min_frame_rows_for_aggregate_tree`.
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD}};
+    registry.registerStep("Window", WindowStep::deserialize, versions);
 }
 
 }

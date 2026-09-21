@@ -8,11 +8,17 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/WindowDescription.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
+
+namespace DB
+{
+void registerWindowStep(QueryPlanStepRegistry & registry);
+}
 
 namespace DB::ErrorCodes
 {
@@ -82,10 +88,14 @@ bool serializes(const String & function_name, const WindowFrame & frame, UInt64 
 
     WindowStep step(header, description, {function}, /*streams_fan_out_=*/false, threshold);
 
+    QueryPlanStepRegistry step_registry;
+    registerWindowStep(step_registry);
+
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
     ctx.version = version;
+    ctx.step_version = step_registry.versionToWrite(step.getSerializationName(), version);
     try
     {
         step.serialize(ctx);
@@ -125,4 +135,16 @@ TEST(WindowStepAggregateTreeVersion, AcceptsOlderPeerWhenTheTreeCannotRun)
 TEST(WindowStepAggregateTreeVersion, AcceptsCurrentPeer)
 {
     EXPECT_TRUE(serializes("sum", rowsFrame(default_threshold), default_threshold, DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
+}
+
+TEST(WindowStepAggregateTreeVersion, StepVersionFollowsThePlanVersion)
+{
+    QueryPlanStepRegistry registry;
+    registerWindowStep(registry);
+
+    EXPECT_EQ(registry.versionToWrite("Window", pre_threshold_version), 0u);
+    EXPECT_EQ(registry.versionToWrite("Window", DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 1u);
+    EXPECT_NO_THROW(registry.checkVersionReadable("Window", 0));
+    EXPECT_NO_THROW(registry.checkVersionReadable("Window", 1));
+    EXPECT_ANY_THROW(registry.checkVersionReadable("Window", 2));
 }
