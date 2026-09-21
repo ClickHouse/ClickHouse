@@ -231,7 +231,7 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, context));
 
-    const auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get();
+    const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

@@ -168,7 +168,7 @@ StoragesInfo StoragesInfoStreamBase::next()
 
         info.engine = info.storage->getName();
 
-        info.data = castStorage<MergeTreeData>(info.storage, StorageResolution::Peek).get();
+        info.data = castStorage<MergeTreeData>(info.storage, DeferredTable::Skip).get();
         if (!info.data)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
 
@@ -335,7 +335,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
                     slowDownSystemPartsDiscovery(table_name);
 
-                    auto storage = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek);
+                    auto storage = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
                     if (!storage)
                         continue;
 

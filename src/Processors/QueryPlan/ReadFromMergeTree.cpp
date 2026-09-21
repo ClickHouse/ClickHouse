@@ -6915,7 +6915,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
-    auto * merge_tree = castStorage<MergeTreeData>(storage_ptr, StorageResolution::Load).get();
+    auto * merge_tree = castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
             "Table {} is not a MergeTree table", table_id.getNameForLogs());

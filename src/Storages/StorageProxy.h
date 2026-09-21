@@ -354,24 +354,24 @@ inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
     return storage;
 }
 
-/// How a cast should treat a table that has not been loaded yet.
-enum class StorageResolution : uint8_t
+/// What a cast does with a table that is not loaded yet.
+enum class DeferredTable : uint8_t
 {
-    /// Create the wrapped storage if it does not exist. For an operation that names the table.
+    /// Load it. For an operation that names the table, where loading is its expected cost.
     Load,
-    /// Leave a not-yet-loaded table unresolved, so the cast fails. For an observer that walks every
-    /// table and must not turn a listing into a load.
-    Peek,
+    /// Leave it unloaded, so the cast yields null and the caller skips it. For an observer that
+    /// walks every table and must not turn a listing into a load.
+    Skip,
 };
 
 /// The single way to cast a catalog pointer to a concrete engine type. A lazily loaded table is
 /// reached through `StorageTableProxy`, so a direct cast fails even once the table is loaded.
 template <typename T>
-std::shared_ptr<T> castStorage(const StoragePtr & storage, StorageResolution resolution)
+std::shared_ptr<T> castStorage(const StoragePtr & storage, DeferredTable deferred_table)
 {
     if (!storage)
         return nullptr;
-    auto resolved = resolution == StorageResolution::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
+    auto resolved = deferred_table == DeferredTable::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
     return std::dynamic_pointer_cast<T>(resolved);
 }
 

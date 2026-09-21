@@ -53,7 +53,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            auto table_data = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek);
+            auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table_data)
                 continue;
 

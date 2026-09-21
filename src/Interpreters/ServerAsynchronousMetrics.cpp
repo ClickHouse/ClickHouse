@@ -500,7 +500,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (!table)
                     continue;
 
-                if (auto table_merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Peek))
+                if (auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip))
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
@@ -542,7 +542,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     }
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Peek).get())
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
                 {
                     StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -685,7 +685,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek))
+            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip))
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {

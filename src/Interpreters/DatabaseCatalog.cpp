@@ -1888,7 +1888,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = castStorage<MergeTreeData>(table.table, StorageResolution::Peek);
+        auto table_merge_tree = castStorage<MergeTreeData>(table.table, DeferredTable::Skip);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 

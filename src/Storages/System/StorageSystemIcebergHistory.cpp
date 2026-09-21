@@ -111,7 +111,7 @@ void StorageSystemIcebergHistory::fillData(
                 // Table was dropped while acquiring the lock, skipping table
                 return;
 
-            auto * object_storage = castStorage<StorageObjectStorage>(storage, StorageResolution::Peek).get();
+            auto * object_storage = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip).get();
 
             if (!object_storage || !object_storage->isIcebergStorage())
                 return;

@@ -62,7 +62,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, StorageResolution::Peek) : nullptr;
+            RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, DeferredTable::Skip) : nullptr;
             if (!rocksdb_table)
                 continue;
 

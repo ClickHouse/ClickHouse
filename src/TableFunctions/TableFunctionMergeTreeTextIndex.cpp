@@ -129,7 +129,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    const auto * merge_tree = castStorage<MergeTreeData>(source_table_ptr, StorageResolution::Load).get();
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 

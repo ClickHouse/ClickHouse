@@ -229,7 +229,7 @@ protected:
             if (!lock)
                 return false;
 
-            auto object_storage_table = castStorage<StorageObjectStorage>(storage, StorageResolution::Peek);
+            auto object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip);
             if (!object_storage_table || !object_storage_table->isIcebergStorage())
                 return false;
 

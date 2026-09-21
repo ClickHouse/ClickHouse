@@ -1796,7 +1796,7 @@ void TCPHandler::processTablesStatusRequest()
         /// Only a replicated table has a delay to report, and the proxy of a table that is not loaded
         /// yet answers that from the engine name, so a probe materializes nothing else.
         if (auto * replicated_table = table->supportsReplication()
-                ? castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get()
+                ? castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get()
                 : nullptr)
         {
             status.is_replicated = true;

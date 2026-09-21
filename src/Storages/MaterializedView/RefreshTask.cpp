@@ -1331,7 +1331,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
-            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, StorageResolution::Load).get();
+            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, DeferredTable::Load).get();
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;

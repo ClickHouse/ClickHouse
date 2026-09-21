@@ -89,7 +89,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            auto table = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek);
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
                 continue;
 

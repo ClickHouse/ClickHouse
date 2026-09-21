@@ -412,7 +412,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    if (!castStorage<MergeTreeData>(source_table, StorageResolution::Load))
+    if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
 
     StorageInMemoryMetadata storage_metadata;

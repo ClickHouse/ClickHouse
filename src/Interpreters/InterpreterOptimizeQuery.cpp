@@ -62,7 +62,7 @@ BlockIO InterpreterOptimizeQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
 
 #if USE_AVRO
-        auto object_storage_table = castStorage<StorageObjectStorage>(table, StorageResolution::Peek);
+        auto object_storage_table = castStorage<StorageObjectStorage>(table, DeferredTable::Skip);
         if (!object_storage_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
@@ -115,7 +115,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     if (ast.dry_run)
     {
-        auto * merge_tree_data = castStorage<MergeTreeData>(table, StorageResolution::Load).get();
+        auto * merge_tree_data = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is only supported for MergeTree family tables");
 

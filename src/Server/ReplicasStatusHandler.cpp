@@ -73,7 +73,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 auto table = iterator->table();
                 if (!table || !table->supportsReplication())
                     continue;
-                auto table_replicated = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load);
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
                 if (!table_replicated)
                     continue;
 

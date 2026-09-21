@@ -597,7 +597,7 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
     result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
 
-    result.storage_join = castStorage<StorageJoin>(storage, StorageResolution::Load);
+    result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)
         return result;
 
@@ -609,7 +609,7 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
         return result;
     }
 
-    result.storage_key_value = castStorage<IKeyValueEntity>(storage, StorageResolution::Load);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
     if (result.storage_key_value)
         return result;
 

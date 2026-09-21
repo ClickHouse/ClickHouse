@@ -157,7 +157,7 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
-    const auto * merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load).get();
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 

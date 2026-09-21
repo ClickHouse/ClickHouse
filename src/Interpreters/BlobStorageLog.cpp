@@ -109,7 +109,7 @@ static std::string_view normalizePath(std::string_view path)
 void BlobStorageLog::prepareTable()
 {
     SystemLog<BlobStorageLogElement>::prepareTable();
-    if (auto merge_tree_table = castStorage<MergeTreeData>(getStorage(), StorageResolution::Peek))
+    if (auto merge_tree_table = castStorage<MergeTreeData>(getStorage(), DeferredTable::Skip))
     {
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();

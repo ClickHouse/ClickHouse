@@ -312,7 +312,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     if (alter && alter->partitions)
     {
         auto resolved_storage = resolveStorageProxyLoading(storage);
-        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, StorageResolution::Load);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
         auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
 
         auto func = makeASTFunction("in");
@@ -337,7 +337,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         String partition_id;
 
         auto resolved_storage = resolveStorageProxyLoading(storage);
-        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, StorageResolution::Load);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
         auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
@@ -410,7 +410,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return castStorage<MergeTreeData>(storage, StorageResolution::Load).get();
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -491,7 +491,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), StorageResolution::Load))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

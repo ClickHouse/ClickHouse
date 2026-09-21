@@ -211,7 +211,7 @@ void SelectStreamFactory::createForShardImpl(
             return;
         }
 
-        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, StorageResolution::Load).get();
+        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, DeferredTable::Load).get();
 
         if (!replicated_storage)
         {

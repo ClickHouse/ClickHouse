@@ -992,7 +992,7 @@ def check_storage_casts(files) -> str:
                 f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
                 "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
                 "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
-                "StorageResolution::Load) when the query names this table, or StorageResolution::Peek "
+                "DeferredTable::Load) when the query names this table, or DeferredTable::Skip "
                 "when this walks every table and must not load one. If the pointer cannot come from "
                 "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
             )

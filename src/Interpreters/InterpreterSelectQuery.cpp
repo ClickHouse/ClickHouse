@@ -952,7 +952,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 ConditionSelectivityEstimatorPtr estimator;
                 if (has_statistics && has_multiple_conditions && context->getSettingsRef()[Setting::use_statistics])
                 {
-                    if (const auto merge_tree = castStorage<MergeTreeData>(storage, StorageResolution::Load))
+                    if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
                     {
                         auto filter = ExpressionAnalyzer(query.where()->clone(), syntax_analyzer_result, context).getActionsDAG(true);
                         parts_for_estimator = ReadFromMergeTree::filterPartsForStatistics(
@@ -1219,7 +1219,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = castStorage<MergeTreeData>(storage, StorageResolution::Load);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 

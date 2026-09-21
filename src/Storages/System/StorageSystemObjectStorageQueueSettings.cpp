@@ -67,7 +67,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
-                if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, StorageResolution::Peek))
+                if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, DeferredTable::Skip))
                 {
                     add_table(iterator, *queue_table);
                 }
