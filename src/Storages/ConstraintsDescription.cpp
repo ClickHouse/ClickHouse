@@ -141,12 +141,17 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     {
         CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
+
+        /// `pushNotIn` does not always manage to remove the negation: `NOT (x < c)` is not `x >= c` when
+        /// `x` can be a `NaN`, so an ordered comparison keeps its `NOT`. The comparison graph stores plain
+        /// relations and has nowhere to put the negation, so such an atom is left out of it - taking it in
+        /// as if it were positive would state the opposite of what the constraint says.
+        if (atom.negative)
+            continue;
+
         auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.contains(func->name))
-        {
-            chassert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
-        }
     }
 
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
@@ -286,12 +291,14 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             Analyzer::CNFAtomicFormula atom{atomic_formula.negative, atomic_formula.node_with_hash.node->clone()};
             atom = Analyzer::CNF::pushNotIntoFunction(atom, context);
 
+            /// See the same check in `buildGraph`: an ordered comparison over an argument that can be a
+            /// `NaN` keeps its negation, which the comparison graph cannot represent.
+            if (atom.negative)
+                continue;
+
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
             if (function_node && relations.contains(function_node->getFunctionName()))
-            {
-                chassert(!atom.negative);
                 constraints_for_graph.push_back(atom.node_with_hash.node);
-            }
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
     }

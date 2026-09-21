@@ -110,6 +110,11 @@ namespace
         CNFQuery::OrGroup result;
         for (const auto & atom : group)
         {
+            /// A negated ordered comparison - `NOT (A < C)`, which is not `A >= C` when an argument can
+            /// be a `NaN` - says nothing about where `A` sits relative to `C`, so no hint follows from it.
+            if (atom.negative)
+                return {};
+
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
