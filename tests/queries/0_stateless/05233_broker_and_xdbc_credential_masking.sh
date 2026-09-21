@@ -42,7 +42,7 @@ arm f1_rabbitmq_engine_argument  "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitM
 arm f2_rabbitmq_engine_password  "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_password = 'leak05233rmqpw')"
 arm f3_rabbitmq_engine_control   "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_address = 'amqp://h:5672/v')"
 arm f4_kafka_engine_password     "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka(nc05233, kafka_sasl_password = 'leak05233kafkapw')"
-arm f5_kafka_positional_control  "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka('broker05233:9092', 'topic05233', 'group05233', 'JSONEachRow')"
+arm f5_kafka_positional_control  "CREATE TABLE db05233absent.t05233 (x UInt8) ENGINE = Kafka('broker05233:9092', 'topic05233', 'group05233', 'JSONEachRow')"
 # That positional form also makes the collection name optional, so a named override can be the first
 # argument. The positional beside it stays visible, so this arm is its own over-masking control.
 arm f6_kafka_first_argument_secret "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka(kafka_sasl_password = 'leak05233kafkafirst', 'clickhouse')"
