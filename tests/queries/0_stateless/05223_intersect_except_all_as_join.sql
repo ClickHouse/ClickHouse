@@ -101,6 +101,10 @@ SET join_algorithm = 'grace_hash,hash';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT number FROM numbers(3) INTERSECT ALL SELECT number FROM numbers(2))
 WHERE explain LIKE '%Algorithm%' OR explain LIKE '%IntersectOrExcept%';
 SET join_algorithm = DEFAULT;
+SET enable_join_key_only_hash_tables = 0;
+SELECT trim(explain) FROM (EXPLAIN SELECT number FROM numbers(3) INTERSECT ALL SELECT number FROM numbers(2))
+WHERE explain LIKE '%Join%' OR explain LIKE '%IntersectOrExcept%';
+SET enable_join_key_only_hash_tables = DEFAULT;
 SELECT trim(explain) FROM (EXPLAIN SELECT number::Dynamic AS x FROM numbers(3) INTERSECT ALL SELECT number::Dynamic FROM numbers(2) SETTINGS allow_experimental_dynamic_type = 1)
 WHERE explain LIKE '%Join%' OR explain LIKE '%IntersectOrExcept%';
 SELECT trim(explain) FROM (EXPLAIN SELECT number, number FROM numbers(3) INTERSECT ALL SELECT number, number FROM numbers(2))

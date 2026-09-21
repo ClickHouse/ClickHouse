@@ -74,6 +74,7 @@ IntersectOrExcept
 │  Type: left | Strictness: semi | Algorithm: HashJoin
 IntersectOrExcept
 IntersectOrExcept
+IntersectOrExcept
 2
 0	0
 1	1

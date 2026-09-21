@@ -2437,8 +2437,13 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
     if (!settings[Setting::optimize_rewrite_intersect_except_to_join])
         return nullptr;
 
-    /// Only the hash joins count the right rows of a key, see `JoinOperator::multiset`.
     JoinSettings join_settings(settings, query_context->getJoinAnalyzeMode());
+
+    /// The multiset join always counts the right rows in a key-only hash table, which this setting opts out of.
+    if (!join_settings.enable_join_key_only_hash_tables)
+        return nullptr;
+
+    /// Only the hash joins count the right rows of a key, see `JoinOperator::multiset`.
     const auto enabled_algorithms = std::exchange(join_settings.join_algorithms, {});
     for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH})
         if (TableJoin::isEnabledAlgorithm(enabled_algorithms, algorithm))
