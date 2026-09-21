@@ -179,14 +179,6 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 并行副本中 custom key 使用的过滤器类型。default - 对 custom key 使用 modulo 运算，range - 在 custom key 上使用 range filter，并基于 custom key 值类型的所有可能值进行处理。
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "只有在启用 analyzer 时才支持并行副本"}]}]} />
-
-要使用并行副本，必须启用 analyzer。如果 analyzer 被禁用，则查询执行会回退到本地执行，即使已启用从副本进行并行读取也是如此。不支持在未启用 analyzer 的情况下使用并行副本。
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />

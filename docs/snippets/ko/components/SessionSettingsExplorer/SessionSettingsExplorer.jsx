@@ -2204,7 +2204,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "parallel_replicas_*",
-      count: 23,
+      count: 22,
       settings: [
         { name: "parallel_replicas_allow_in_with_subquery", path: "/parallel-replicas#parallel_replicas_allow_in_with_subquery", default: "1" },
         { name: "parallel_replicas_allow_materialized_views", path: "/parallel-replicas#parallel_replicas_allow_materialized_views", default: "1" },
@@ -2224,7 +2224,6 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "parallel_replicas_mark_segment_size", path: "/parallel-replicas#parallel_replicas_mark_segment_size", default: "0" },
         { name: "parallel_replicas_min_number_of_rows_per_replica", path: "/parallel-replicas#parallel_replicas_min_number_of_rows_per_replica", default: "0" },
         { name: "parallel_replicas_mode", path: "/parallel-replicas#parallel_replicas_mode", default: "read_tasks" },
-        { name: "parallel_replicas_only_with_analyzer", path: "/parallel-replicas#parallel_replicas_only_with_analyzer", default: "1" },
         { name: "parallel_replicas_plan_based", path: "/parallel-replicas#parallel_replicas_plan_based", default: "0" },
         { name: "parallel_replicas_prefer_local_join", path: "/parallel-replicas#parallel_replicas_prefer_local_join", default: "1" },
         { name: "parallel_replicas_prefer_local_replica", path: "/parallel-replicas#parallel_replicas_prefer_local_replica", default: "1" },

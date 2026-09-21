@@ -179,14 +179,6 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 並列レプリカでカスタムキーとともに使用するフィルターの種類。default - カスタムキーに対して剰余演算を使用します。range - カスタムキーの値の型で取り得るすべての値を使って、カスタムキーに範囲フィルターを適用します。
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "並列レプリカは、アナライザが有効な場合にのみサポートされます"}]}]} />
-
-並列レプリカを使用するには、アナライザを有効にする必要があります。アナライザが無効な場合は、レプリカからの並列読み取りが有効になっていても、クエリ実行はローカル実行にフォールバックします。アナライザを有効にせずに並列レプリカを使用することはサポートされていません
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />

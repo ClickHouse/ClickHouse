@@ -3245,6 +3245,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+도입 버전: v26.9.0
+
+Iceberg `day` 파티션 변환을 구현합니다. UTC 기준으로 계산한 1970-01-01 이후의 일수입니다.
+https://iceberg.apache.org/spec/#partition-transforms 를 참조하십시오.
+
+**구문**
+
+```sql
+icebergDay(value)
+```
+
+**인수**
+
+* `value` — 변환할 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+
+**반환 값**
+
+1970-01-01부터 경과한 일수이며, 1970년 이전 값은 음수입니다 [`Int32`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+도입 버전: v26.9.0
+
+Iceberg의 `hour` 파티션 변환을 구현합니다. 1970-01-01 00:00:00부터 경과한 시간(hour) 수이며, UTC 기준으로 계산됩니다.
+https://iceberg.apache.org/spec/#partition-transforms 를 참조하십시오.
+
+**구문**
+
+```sql
+icebergHour(value)
+```
+
+**인수**
+
+* `value` — 변환할 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+
+**반환 값**
+
+1970-01-01 00:00:00 이후의 시간(hour) 수이며, 1970년 이전 값은 음수입니다. [`Int32`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+도입 버전: v26.9.0
+
+Iceberg의 `month` 파티션 변환을 구현합니다. 1970-01-01부터 경과한 개월 수를 UTC 기준으로 계산합니다.
+https://iceberg.apache.org/spec/#partition-transforms 를 참조하십시오.
+
+**구문**
+
+```sql
+icebergMonth(value)
+```
+
+**인수**
+
+* `value` — 변환할 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+
+**반환 값**
+
+1970-01-01부터 경과한 개월 수이며, 1970년 이전 값은 음수입니다. [`Int32`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 도입 버전: v25.3.0
@@ -3275,6 +3374,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+도입 버전: v26.9.0
+
+Iceberg의 `year` 파티션 변환(transform)을 구현합니다. UTC 기준으로 계산한 1970년 이후의 연 수입니다.
+https://iceberg.apache.org/spec/#partition-transforms 를 참조하십시오.
+
+**구문**
+
+```sql
+icebergYear(value)
+```
+
+**인수**
+
+* `value` — 변환할 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+
+**반환 값**
+
+1970년 이후 경과한 연수이며, 1970년 이전 값은 음수입니다 [`Int32`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

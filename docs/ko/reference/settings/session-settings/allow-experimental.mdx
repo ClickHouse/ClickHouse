@@ -24,7 +24,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 v26.9부터 사용되지 않음(obsolete): 분석기는 더 이상 비활성화할 수 없습니다.
 
-분석기는 v24.3부터 기본으로 사용되어 온 쿼리 분석 및 계획 수립 인프라입니다. v26.9에서 이전 쿼리 분석이 더 이상 권장되지 않게 되었으며(deprecated), 이 설정은 지원되는 유일한 값인 `1`로 고정되었습니다. `0`으로 설정하려는 시도는 거부되며, `compatibility` 설정으로도 되돌릴 수 없습니다. 쿼리, 세션 설정, 설정 프로필, 클라이언트 구성에서 `enable_analyzer = 0`을 제거하십시오. 이전 쿼리 분석과 쿼리의 동작이나 성능을 비교하려면 v26.9보다 이전 ClickHouse 버전을 사용하십시오.
+분석기는 v24.3부터 기본으로 사용되어 온 쿼리 분석 및 계획 수립 인프라입니다. v26.9에서 이 설정은 지원되는 유일한 값인 `1`로 고정되었습니다. `0`으로 설정하려는 시도는 거부되며, `compatibility` 설정으로도 되돌릴 수 없습니다. v26.10에서는 이 설정으로 전환하던 이전 쿼리 분석이 제거되었습니다. 쿼리, 세션 설정, 설정 프로필, 클라이언트 구성에서 `enable_analyzer = 0`을 제거하십시오. 이전 쿼리 분석과 쿼리의 동작이나 성능을 비교하려면 v26.9보다 이전 ClickHouse 버전을 사용하십시오.
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

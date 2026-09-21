@@ -3246,6 +3246,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+أُضيف في: v26.9.0
+
+يُنفّذ تحويل التقسيم `day` الخاص بـ Iceberg: عدد الأيام منذ 1970-01-01، محسوبًا بتوقيت UTC.
+انظر https://iceberg.apache.org/spec/#partition-transforms.
+
+**الصيغة**
+
+```sql
+icebergDay(value)
+```
+
+**الوسيطات**
+
+* `value` — القيمة المراد تحويلها. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+
+**القيمة المُعادة**
+
+عدد الأيام منذ 1970-01-01، ويكون سالبًا للقيم السابقة لعام 1970 [`Int32`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+أُضيف في: v26.9.0
+
+ينفّذ تحويل التقسيم `hour` الخاص بـ Iceberg: عدد الساعات المنقضية منذ 1970-01-01 00:00:00، محسوبًا بالتوقيت العالمي المنسق (UTC).
+انظر https://iceberg.apache.org/spec/#partition-transforms.
+
+**الصيغة**
+
+```sql
+icebergHour(value)
+```
+
+**الوسيطات**
+
+* `value` — القيمة المراد تحويلها. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+
+**القيمة المُعادة**
+
+عدد الساعات منذ 1970-01-01 00:00:00، ويكون سالبًا للقيم السابقة لعام 1970 [`Int32`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+أُضيف في: v26.9.0
+
+يُنفّذ تحويل التقسيم `month` في Iceberg: عدد الأشهر منذ 1970-01-01، محسوبًا بتوقيت UTC.
+انظر https://iceberg.apache.org/spec/#partition-transforms.
+
+**الصيغة**
+
+```sql
+icebergMonth(value)
+```
+
+**الوسيطة**
+
+* `value` — القيمة المراد تحويلها. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+
+**القيمة المُعادة**
+
+عدد الأشهر منذ 1970-01-01، وتكون سالبة للقيم السابقة لعام 1970 [`Int32`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 أُضيف في: v25.3.0
@@ -3276,6 +3375,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+أُضيف في: v26.9.0
+
+ينفّذ تحويل التقسيم `year` في Iceberg: عدد السنوات منذ عام 1970، محسوبًا بتوقيت UTC.
+انظر https://iceberg.apache.org/spec/#partition-transforms.
+
+**الصيغة**
+
+```sql
+icebergYear(value)
+```
+
+**الوسيطة**
+
+* `value` — القيمة المراد تحويلها. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+
+**القيمة المُعادة**
+
+عدد السنوات منذ عام 1970، ويكون سالبًا للقيم السابقة لعام 1970 [`Int32`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

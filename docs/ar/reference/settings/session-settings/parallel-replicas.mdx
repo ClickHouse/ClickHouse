@@ -179,14 +179,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 نوع عامل التصفية الذي يُستخدم مع المفتاح المخصص للنسخ المتماثلة المتوازية. default - استخدام عملية modulo للمفتاح المخصص، range - استخدام عامل تصفية النطاق على المفتاح المخصص باستخدام جميع القيم الممكنة لنوع قيمة المفتاح المخصص.
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "لا تكون النسخ المتماثلة المتوازية مدعومة إلا عند تمكين المحلل"}]}]} />
-
-يجب تمكين المحلل لاستخدام النسخ المتماثلة المتوازية. عند تعطيل المحلل، يعود تنفيذ الاستعلام إلى التنفيذ المحلي حتى إذا كانت القراءة المتوازية من النسخ المتماثلة ممكّنة. ولا يُدعم استخدام النسخ المتماثلة المتوازية من دون تمكين المحلل.
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />

@@ -179,14 +179,6 @@ Limite le nombre de répliques utilisées dans une requête à (nombre estimé d
 
 Type de filtre à utiliser avec la clé personnalisée pour les répliques parallèles. default - utilise l&#39;opération modulo sur la clé personnalisée, range - utilise un filtre de plage sur la clé personnalisée en utilisant toutes les valeurs possibles du type de valeur de la clé personnalisée.
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Les répliques parallèles ne sont prises en charge que lorsque l’analyseur est activé"}]}]} />
-
-L’analyseur doit être activé pour utiliser les répliques parallèles. Lorsque l’analyseur est désactivé, l’exécution de la requête retombe sur une exécution locale, même si la lecture parallèle depuis les répliques est activée. L’utilisation des répliques parallèles sans l’analyseur activé n’est pas prise en charge
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />

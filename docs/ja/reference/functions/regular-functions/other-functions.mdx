@@ -3246,6 +3246,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+導入バージョン: v26.9.0
+
+Iceberg の `day` パーティション変換を実装します。UTC で計算した、1970-01-01 からの日数を返します。
+https://iceberg.apache.org/spec/#partition-transforms を参照してください。
+
+**構文**
+
+```sql
+icebergDay(value)
+```
+
+**引数**
+
+* `value` — 変換する値。[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
+
+**戻り値**
+
+1970-01-01 からの日数。1970 年より前の値の場合は負の値になります。 [`Int32`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+導入バージョン: v26.9.0
+
+Iceberg の `hour` パーティション変換を実装します。1970-01-01 00:00:00 からの経過時間数 (UTC で計算) を返します。
+https://iceberg.apache.org/spec/#partition-transforms を参照してください。
+
+**構文**
+
+```sql
+icebergHour(value)
+```
+
+**引数**
+
+* `value` — 変換する値。[`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+
+**戻り値**
+
+1970-01-01 00:00:00 からの時間数。1970 年より前の値の場合は負の値 [`Int32`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+導入バージョン: v26.9.0
+
+Iceberg の `month` パーティション変換を実装します。1970-01-01 からの月数を UTC で計算します。
+https://iceberg.apache.org/spec/#partition-transforms を参照してください。
+
+**構文**
+
+```sql
+icebergMonth(value)
+```
+
+**引数**
+
+* `value` — 変換する値。[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
+
+**戻り値**
+
+1970-01-01 からの月数。1970 年より前の値の場合は負の値 [`Int32`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 導入バージョン: v25.3.0
@@ -3276,6 +3375,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+導入バージョン: v26.9.0
+
+Iceberg の `year` パーティション変換を実装します。UTC で計算した、1970 年からの経過年数を返します。
+https://iceberg.apache.org/spec/#partition-transforms を参照してください。
+
+**構文**
+
+```sql
+icebergYear(value)
+```
+
+**引数**
+
+* `value` — 変換する値。[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
+
+**戻り値**
+
+1970年からの経過年数。1970年より前の値の場合は負の値になります。 [`Int32`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

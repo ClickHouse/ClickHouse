@@ -3246,6 +3246,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+Добавленный в: v26.9.0
+
+Реализует преобразование партиции `day` из Iceberg: количество дней с 1970-01-01, вычисляемое в UTC.
+См. https://iceberg.apache.org/spec/#partition-transforms.
+
+**Синтаксис**
+
+```sql
+icebergDay(value)
+```
+
+**Аргументы**
+
+* `value` — Значение для преобразования. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+
+**Возвращаемое значение**
+
+Количество дней с 1970-01-01, отрицательное для значений до 1970 года [`Int32`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+Добавленный в: v26.9.0
+
+Реализует преобразование партиции `hour` из Iceberg: количество часов, прошедших с 1970-01-01 00:00:00, вычисленное в UTC.
+См. https://iceberg.apache.org/spec/#partition-transforms.
+
+**Синтаксис**
+
+```sql
+icebergHour(value)
+```
+
+**Аргументы**
+
+* `value` — значение для преобразования. [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+
+**Возвращаемое значение**
+
+Количество часов, прошедших с 1970-01-01 00:00:00; для значений до 1970 года — отрицательное [`Int32`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+Добавленный в: v26.9.0
+
+Реализует преобразование партиций Iceberg `month`: количество месяцев, прошедших с 1970-01-01, вычисляемое в UTC.
+См. https://iceberg.apache.org/spec/#partition-transforms.
+
+**Синтаксис**
+
+```sql
+icebergMonth(value)
+```
+
+**Аргументы**
+
+* `value` — Значение для преобразования. [`Date`](/ru/reference/data-types/date), [`Date32`](/ru/reference/data-types/date32), [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+
+**Возвращаемое значение**
+
+Число месяцев, прошедших с 1970-01-01; для значений до 1970 года — отрицательное [`Int32`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 Добавленный в: v25.3.0
@@ -3276,6 +3375,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+Добавленный в: v26.9.0
+
+Реализует преобразование партиции Iceberg `year`: количество лет, прошедших с 1970 года, вычисленное в UTC.
+См. https://iceberg.apache.org/spec/#partition-transforms.
+
+**Синтаксис**
+
+```sql
+icebergYear(value)
+```
+
+**Аргументы**
+
+* `value` — значение для преобразования. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+
+**Возвращаемое значение**
+
+Количество лет, прошедших с 1970 года; для значений до 1970 года — отрицательное [`Int32`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

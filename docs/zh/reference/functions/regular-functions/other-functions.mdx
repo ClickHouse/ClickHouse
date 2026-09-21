@@ -3246,6 +3246,105 @@ SELECT icebergBucket(5, 1.0 :: Float32)
 4
 ```
 
+## icebergDay {#icebergDay}
+
+引入版本：v26.9.0
+
+实现 Iceberg 的 `day` 分区转换：自 1970-01-01 起的天数，按 UTC 计算。
+参见 https://iceberg.apache.org/spec/#partition-transforms。
+
+**语法**
+
+```sql
+icebergDay(value)
+```
+
+**参数**
+
+* `value` — 要转换的值。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+
+**返回值**
+
+自 1970-01-01 起的天数，1970 年之前的值为负数 [`Int32`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT icebergDay(toDate32('1969-12-31'))
+```
+
+```response title=Response
+-1
+```
+
+## icebergHour {#icebergHour}
+
+引入版本：v26.9.0
+
+实现 Iceberg 的 `hour` 分区转换：按 UTC 计算的自 1970-01-01 00:00:00 以来的小时数。
+参见 https://iceberg.apache.org/spec/#partition-transforms。
+
+**语法**
+
+```sql
+icebergHour(value)
+```
+
+**参数**
+
+* `value` — 要转换的值。[`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+
+**返回值**
+
+自 1970-01-01 00:00:00 起的小时数，1970 年之前的值为负数 [`Int32`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT icebergHour(toDateTime64('1970-01-01 01:30:00', 6, 'UTC'))
+```
+
+```response title=Response
+1
+```
+
+## icebergMonth {#icebergMonth}
+
+引入版本：v26.9.0
+
+实现 Iceberg 的 `month` 分区转换：按 UTC 计算的自 1970-01-01 起的月数。
+参见 https://iceberg.apache.org/spec/#partition-transforms。
+
+**语法**
+
+```sql
+icebergMonth(value)
+```
+
+**参数**
+
+* `value` — 要转换的值。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+
+**返回值**
+
+自 1970-01-01 起的月数，1970 年之前的值为负数 [`Int32`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT icebergMonth(toDate32('1969-01-01'))
+```
+
+```response title=Response
+-12
+```
+
 ## icebergTruncate {#icebergTruncate}
 
 在 v25.3.0 中引入
@@ -3276,6 +3375,39 @@ SELECT icebergTruncate(3, 'iceberg')
 
 ```response title=Response
 ice
+```
+
+## icebergYear {#icebergYear}
+
+引入版本：v26.9.0
+
+实现 Iceberg 的 `year` 分区转换：自 1970 年起的年数，以 UTC 计算。
+参见 https://iceberg.apache.org/spec/#partition-transforms。
+
+**语法**
+
+```sql
+icebergYear(value)
+```
+
+**参数**
+
+* `value` — 要转换的值。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+
+**返回值**
+
+自 1970 年起的年数，1970 年之前的值为负数 [`Int32`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT icebergYear(toDate32('1969-05-05'))
+```
+
+```response title=Response
+-1
 ```
 
 ## identity {#identity}

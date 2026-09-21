@@ -24,7 +24,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Obsoleto desde v26.9: el analizador ya no se puede desactivar.
 
-El analizador es la infraestructura de análisis y planificación de consultas que se utiliza de forma predeterminada desde v26.9...
+El analizador es la infraestructura de análisis y planificación de consultas que se utiliza de forma predeterminada desde v24.3. En v26.9 este ajuste quedó fijado en su único valor admitido, `1`: cualquier intento de establecerlo en `0` se rechaza, y el ajuste `compatibility` ya no lo revierte. En v26.10 se eliminó el análisis de consultas al que solía cambiar. Elimine `enable_analyzer = 0` de las consultas, los ajustes de sesión, los perfiles de configuración y las configuraciones de client. Para comparar el comportamiento o el rendimiento de una consulta con el antiguo análisis de consultas, utilice una versión de ClickHouse anterior a v26.9.
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

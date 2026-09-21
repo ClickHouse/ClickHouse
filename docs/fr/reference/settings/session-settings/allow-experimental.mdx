@@ -24,7 +24,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Obsolète depuis la v26.9 : l&#39;analyseur ne peut plus être désactivé.
 
-L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des requêtes utilisée par défaut depuis la v24.3. Dans la v26.9, l&#39;ancienne analyse de requête a été dépréciée et ce paramètre a été figé sur sa seule valeur prise en charge, `1` : toute tentative de le définir à `0` est rejetée, et le paramètre `compatibility` ne le rétablit plus. Supprimez `enable_analyzer = 0` de vos requêtes, de vos paramètre de session, de vos settings profile et de vos configurations client. Pour comparer le comportement ou les performances d&#39;une requête avec l&#39;ancienne analyse de requête, utilisez une version de ClickHouse antérieure à la v26.9.
+L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des requêtes utilisée par défaut depuis la v24.3. Dans la v26.9, ce paramètre a été figé sur sa seule valeur prise en charge, `1` : toute tentative de le définir à `0` est rejetée, et le paramètre `compatibility` ne le rétablit plus. Dans la v26.10, l&#39;analyse de requête vers laquelle il permettait de basculer a été supprimée. Supprimez `enable_analyzer = 0` de vos requêtes, de vos paramètre de session, de vos settings profile et de vos configurations client. Pour comparer le comportement ou les performances d&#39;une requête avec l&#39;ancienne analyse de requête, utilisez une version de ClickHouse antérieure à la v26.9.
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

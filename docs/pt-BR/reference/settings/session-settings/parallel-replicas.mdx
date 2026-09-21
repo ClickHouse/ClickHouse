@@ -179,14 +179,6 @@ Limita o número de réplicas usadas em uma consulta a (linhas estimadas para le
 
 Tipo de filtro a ser usado com chave personalizada para réplicas paralelas. default - usa a operação de módulo na chave personalizada, range - usa um filtro de intervalo na chave personalizada, usando todos os valores possíveis para o tipo de valor da chave personalizada.
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Réplicas paralelas têm suporte apenas com o analisador habilitado"}]}]} />
-
-O analisador deve estar habilitado para usar réplicas paralelas. Com o analisador desabilitado, a execução da consulta volta para a execução local, mesmo que a leitura paralela a partir de réplicas esteja habilitada. O uso de réplicas paralelas sem o analisador habilitado não tem suporte
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />

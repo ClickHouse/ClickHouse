@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="short_circuit_function_evaluation">
-  ## short_circuit_function_evaluation
-</div>
+## short_circuit_function_evaluation {#short_circuit_function_evaluation}
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -27,19 +25,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `force_enable` — Включает вычисление функций с коротким замыканием для всех функций.
 * `disable` — Отключает вычисление функций с коротким замыканием.
 
-<div id="short_circuit_function_evaluation_for_nulls">
-  ## short_circuit_function_evaluation_for_nulls
-</div>
+## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Разрешает выполнять функции с аргументами типа Nullable только для строк, в которых все аргументы имеют значения, отличные от NULL"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Разрешает выполнять функции с аргументами Nullable только для строк, в которых все аргументы имеют значения, отличные от NULL"}]}]} />
 
 Оптимизирует вычисление функций, которые возвращают NULL, если хотя бы один аргумент равен NULL. Когда доля NULL-значений в аргументах функции превышает short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold, система пропускает построчное вычисление функции. Вместо этого она сразу возвращает NULL для всех строк, избегая лишних вычислений.
 
-<div id="short_circuit_function_evaluation_for_nulls_threshold">
-  ## short_circuit_function_evaluation_for_nulls_threshold
-</div>
+Эта настройка управляет только оптимизацией. Функции, которые не могут быть выполнены со значениями по умолчанию своих аргументов — такие как `parseDateTime`, `IPv4StringToNum` или `intDiv` — всегда пропускают строки, содержащие NULL, независимо от этой настройки: за NULL хранится значение по умолчанию для типа аргумента, и выполнение над ним сгенерировало бы исключение на в остальном корректных данных.
+
+## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

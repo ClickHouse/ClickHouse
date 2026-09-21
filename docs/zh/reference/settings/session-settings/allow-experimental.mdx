@@ -24,7 +24,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 自 v26.9 起过时：analyzer 已无法禁用。
 
-analyzer 是自 v24.3 起默认启用的查询分析与查询计划基础设施。在 v26.9 中，旧的查询分析已弃用，该设置被固定为唯一受支持的值 `1`：尝试将其设为 `0` 会被拒绝，`compatibility` 设置也不再使其恢复旧行为。请从查询、会话设置、profile 及客户端配置中移除 `enable_analyzer = 0`。如需对比查询在旧查询分析下的行为或性能，请使用 v26.9 之前的 ClickHouse 版本。
+analyzer 是自 v24.3 起默认启用的查询分析与查询计划基础设施。在 v26.9 中，该设置被固定为唯一受支持的值 `1`：尝试将其设为 `0` 会被拒绝，`compatibility` 设置也不再使其恢复旧行为。在 v26.10 中，它原先所切换到的查询分析已被移除。请从查询、会话设置、profile 及客户端配置中移除 `enable_analyzer = 0`。如需对比查询在旧查询分析下的行为或性能，请使用 v26.9 之前的 ClickHouse 版本。
 
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 

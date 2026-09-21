@@ -45,7 +45,7 @@ La caché de tokens inexistentes utiliza la caché de tokens de índice de texto
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Se habilitó globalmente la caché de posting lists del índice de texto. Anteriormente, cada consulta usaba una caché privada limitada a 100 MiB, lo que provocaba que las posting lists y los resultados de phrase search se recalcularan dentro de una misma consulta en tablas grandes."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Se habilitó globalmente la caché de posting lists del índice de texto. Anteriormente, cada consulta usaba una pequeña caché privada, lo que provocaba que las posting lists y los resultados de phrase search se recalcularan dentro de una misma consulta en tablas grandes."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Si se almacenan en memoria las listas de postings deserializadas del índice de texto.
 Usar la caché de postings del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con una gran cantidad de consultas sobre índice de texto.

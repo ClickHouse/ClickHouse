@@ -45,7 +45,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "在全局范围内启用了文本索引倒排列表缓存。此前每个查询使用上限为 100 MiB 的私有缓存，导致在大表上单个查询内会重复计算倒排列表和短语搜索结果。"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "在全局范围内启用了文本索引倒排列表缓存。此前每个查询使用一个较小的私有缓存，导致在大表上单个查询内会重复计算倒排列表和短语搜索结果。"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 是否在内存中缓存反序列化后的文本索引倒排列表。
 在处理大量文本索引查询时，使用文本索引倒排列表缓存可以显著降低延迟并提高吞吐量。
