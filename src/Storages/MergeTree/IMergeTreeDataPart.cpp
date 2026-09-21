@@ -1047,14 +1047,10 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
-        /// to be evicted, so the keys must be derived from what is actually on disk.
-        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        /// Not what this part holds: resolving that needs I/O, which must not run during part
+        /// destruction. Evicting an absent key is a no-op, so the superset is free.
+        for (const auto & substream : skip_index->getPotentialSubstreams())
         {
             auto full_stream_name = index_name + substream.suffix;
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
