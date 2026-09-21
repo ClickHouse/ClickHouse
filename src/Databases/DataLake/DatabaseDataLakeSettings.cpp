@@ -117,13 +117,23 @@ bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
     return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
 }
 
-const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
+static const String & getSettingNameByOffset(size_t offset)
 {
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
-    const size_t index = accessor.findByOffset(setting.offset);
+    const size_t index = accessor.findByOffset(offset);
     if (index == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown database DataLake setting");
     return accessor.getName(index);
+}
+
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
+{
+    return getSettingNameByOffset(setting.offset);
+}
+
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsBool setting)
+{
+    return getSettingNameByOffset(setting.offset);
 }
 
 }

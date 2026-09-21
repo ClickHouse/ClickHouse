@@ -1355,7 +1355,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     SettingsChanges catalog_settings_changes;
     for (const auto & change : settings_changes)
     {
-        if (change.name != "use_unity_catalog_v2")
+        if (change.name != DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2))
             catalog_settings_changes.push_back(change);
     }
 

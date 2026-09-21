@@ -30,6 +30,11 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
+}
+
 namespace
 {
 
@@ -45,13 +50,16 @@ bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::
         DB::DatabaseDataLakeCatalogType::UNITY,
         [](const DB::DatabaseDataLakeSettings &, const DB::SettingsChanges & changes)
         {
+            const auto & alterable_setting
+                = DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::use_unity_catalog_v2);
             for (const auto & change : changes)
             {
-                if (change.name != "use_unity_catalog_v2")
+                if (change.name != alterable_setting)
                     throw DB::Exception(
                         DB::ErrorCodes::BAD_ARGUMENTS,
-                        "Setting `{}` cannot be altered for a Unity catalog (alterable settings are: use_unity_catalog_v2)",
-                        change.name);
+                        "Setting `{}` cannot be altered for a Unity catalog (alterable settings are: {})",
+                        change.name,
+                        alterable_setting);
             }
         });
     return true;
