@@ -296,6 +296,7 @@ private:
     void onProfileInfo(const ProfileInfo & profile_info);
     void onEndOfStream();
     void onProfileEvents(Block & block);
+    void onProfileTraces(const Block & block);
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
