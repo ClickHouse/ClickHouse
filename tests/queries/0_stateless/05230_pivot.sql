@@ -116,6 +116,9 @@ SETTINGS prefer_column_name_to_alias = 0;
 -- Existing implicit table alias + column-alias-list syntax named `pivot` must not be stolen.
 SELECT number FROM numbers(1) pivot(x);
 
+-- PIVOT is exposed through parser keyword metadata.
+SELECT keyword FROM system.keywords WHERE keyword = 'PIVOT';
+
 -- Error surfaces.
 -- A scalar root must not accidentally become a valid PIVOT aggregate.
 SELECT * FROM values('k String, v UInt64', ('a', 1))
