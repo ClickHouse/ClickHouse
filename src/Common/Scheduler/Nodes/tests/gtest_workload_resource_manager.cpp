@@ -392,10 +392,9 @@ TEST(SchedulerWorkloadResourceManager, MultipleRoots)
     g.unlock();
 }
 
-// Changing the priority of a parentless workload via CREATE OR REPLACE must re-position it among
-// the implicit root's children, not merely update its settings: two equal-priority parentless
-// workloads share one fair branch, and giving one a distinct priority introduces a "prio" policy
-// node under the implicit root.
+// Changing the priority of a parentless workload via CREATE OR REPLACE re-positions it among the
+// implicit root's children: two equal-priority parentless workloads share one fair branch, and
+// giving one a distinct priority introduces a "prio" policy node under the implicit root.
 TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
 {
     ResourceTest t;
@@ -424,9 +423,8 @@ TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattache
         << "priority change on a parentless workload was not re-positioned under the implicit root";
 }
 
-// The implicit anonymous root workload (and the inter-root scheduling nodes it holds) must be
-// exposed by forEachNode so system.scheduler is complete. It is not a user workload, so it is
-// reached only through this traversal; having an empty basename it renders at the root path "/".
+// The implicit anonymous root workload is exposed by forEachNode so system.scheduler is complete:
+// it has an empty basename and renders at the root path "/".
 TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
 {
     ResourceTest t;

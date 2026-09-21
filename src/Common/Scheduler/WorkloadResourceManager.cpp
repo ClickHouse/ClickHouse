@@ -101,8 +101,8 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
-    // Multiple root workloads (workloads without a parent) are allowed: each attaches as a child of
-    // this resource's implicit anonymous root workload (see setup()), not directly to the scheduler.
+    // A workload without a parent attaches as a child of this resource's implicit anonymous root
+    // workload (see setup()).
 
     executeInSchedulerThread([&, this]
     {
@@ -192,11 +192,8 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             new_info.settings,
             getSharingMode(getUnit())))
         {
-            // A parentless workload is a child of the implicit root, so it must be detached from and
-            // reattached to the implicit root (not skipped) so a priority/precedence change also
-            // re-positions it among the implicit root's children rather than only updating settings.
-            // (Parent presence cannot change here; that is rejected above, so old and new parent are
-            // both empty or both the same explicit workload.)
+            // Detach here and reattach below so the workload is re-positioned among its siblings
+            // (under the implicit root when it is parentless) for the new priority/precedence.
             if (!old_info.parent.empty())
                 node_for_workload[old_info.parent]->detachWorkloadChild(node);
             else
@@ -537,8 +534,8 @@ void WorkloadResourceManager::Resource::forEachResourceNode(IResourceManager::Vi
     executeInSchedulerThread([&, this]
     {
         // Expose the implicit root workload and the inter-root scheduling nodes it holds, so
-        // system.scheduler stays complete: with several root workloads the fairness/priority node
-        // that multiplexes them lives on the implicit root rather than on any user workload.
+        // system.scheduler is complete: with several root workloads, the fairness/priority node that
+        // multiplexes them lives on the implicit root.
         if (implicit_root)
             implicit_root->forEachSchedulerNode([&] (ISchedulerNode * scheduler_node)
             {

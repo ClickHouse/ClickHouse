@@ -245,9 +245,8 @@ private:
             // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
             // settings make the implicit root transparent when there is a single root workload.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
-            // Anonymous: an empty basename cannot collide with any user workload (workload names are
-            // never empty), so no workload name is reserved. getPath() skips the empty segment, so a
-            // workload directly under the implicit root renders as "/all", not "//all".
+            // Anonymous root: an empty basename, which getPath() skips, so a workload directly under
+            // the implicit root renders as "/all".
             implicit->basename = {};
             implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
