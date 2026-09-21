@@ -395,7 +395,7 @@ void walkDepthFirst(const SpanForest & forest, Visit && visit)
     /// Explicit DFS stack: a trace is unbounded in depth, recursion is not.
     struct Frame
     {
-        size_t row;
+        size_t row = 0;
         String prefix;
         String connector;
     };
