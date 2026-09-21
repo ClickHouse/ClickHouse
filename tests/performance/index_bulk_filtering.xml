@@ -21,8 +21,9 @@
         SETTINGS index_granularity = 5;
     </create_query>
 
-    <!-- Each merge widens a part's value range past the sought keys, and with squashing off a part holds exactly one source block,
-         so the queries below are only comparable while merges are held and the source block size is pinned rather than left to the default. -->
+    <!-- Stop merges, so that none happens while the queries below are benchmarked.
+         65409 is the default `max_block_size`, written out so that the part layout stays the same
+         if that default changes. -->
     <fill_query>SYSTEM STOP MERGES test_set_index</fill_query>
     <fill_query>SYSTEM STOP MERGES test_minmax_index</fill_query>
 
