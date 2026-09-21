@@ -858,10 +858,10 @@ an 8-byte `shiftOneBitAndSign(unit_timestamp)` prefix for fast comparison withou
 redundant prefix for every row. Arithmetic uses only the direct payload.
 
 For a direct MergeTree primary-key column, the sparse `primary.idx` stores only that UInt64 prefix
-for each mark. Prefix collisions are treated conservatively as the same index bucket, so they can
-cause extra reads but must not exclude matching rows. Because detached Field-based extrema cannot
-preserve that bucket semantics yet, this experimental version does not support the type in
-`PARTITION BY` or explicit `minmax` indexes.
+for each mark. Explicit `minmax` indexes use the same UInt64 projection for their extrema.
+Prefix collisions are treated conservatively as the same index bucket, so they can cause extra
+reads but must not exclude matching rows. `PARTITION BY` remains unsupported because partition
+identity requires exact logical equality rather than a lossy index projection.
 
 For a nonzero curve, `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
 time at which its magnitude is one. SQL/text compatibility with the earlier experimental spelling

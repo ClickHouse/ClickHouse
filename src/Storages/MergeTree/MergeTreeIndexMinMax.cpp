@@ -73,7 +73,7 @@ bool getDecayPrefixExtremes(
     if (!isExponentialTimeDecayingFloat64(nested_type))
         return false;
 
-    ColumnPtr full = source->convertToFullColumnIfLowCardinality();
+    ColumnPtr full = source->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(full.get());
     const IColumn * nested_column = full.get();
     if (nullable_column)
