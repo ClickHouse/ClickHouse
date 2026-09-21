@@ -513,7 +513,7 @@ public:
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
         bool allow_non_deterministic_functions,
-        /// `0` disables the check; otherwise a conjunct is pushed only if every `IN` set it probes is built and at most this size.
+        /// `0` disables the check; otherwise a conjunct is pushed only if every `IN` set reachable from it in this DAG is built and at most this size.
         size_t max_set_rows_for_push_down = 0);
 
     struct ActionsForJOINFilterPushDown;
