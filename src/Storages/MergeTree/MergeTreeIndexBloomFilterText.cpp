@@ -430,18 +430,10 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
             if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
                 /// `transform_null_in = 1` renames the family; a NULL element is refused above.
-                if (function_name == "notIn" || function_name == "globalNotIn"
-                    || function_name == "notNullIn" || function_name == "globalNotNullIn")
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-                if (function_name == "in" || function_name == "globalIn"
-                    || function_name == "nullIn" || function_name == "globalNullIn")
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
+                const bool negated = function_name == "notIn" || function_name == "globalNotIn"
+                    || function_name == "notNullIn" || function_name == "globalNotNullIn";
+                out.function = negated ? RPNElement::FUNCTION_NOT_IN : RPNElement::FUNCTION_IN;
+                return true;
             }
         }
         else if (function_name == "equals" ||
