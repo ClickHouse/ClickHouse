@@ -70,16 +70,79 @@ public:
     SerializationExponentialTimeDecayingFloat64(
         SerializationPtr storage_serialization_,
         SerializationPtr logical_serialization_,
+        DataTypePtr storage_type_,
         DataTypePtr logical_type_,
         Float64 decay_length_)
         : SerializationWrapper(std::move(storage_serialization_))
         , logical_serialization(std::move(logical_serialization_))
+        , storage_type(std::move(storage_type_))
         , logical_type(std::move(logical_type_))
         , decay_length(decay_length_)
     {
     }
 
     bool supportsPooling() const override { return false; }
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override
+    {
+        auto next_data = SubstreamData(nested_serialization)
+                             .withType(data.type ? storage_type : nullptr)
+                             .withColumn(
+                                 data.column
+                                     ? assert_cast<const ColumnExponentialTimeDecaying &>(*data.column).getStoragePtr()
+                                     : nullptr)
+                             .withSerializationInfo(data.serialization_info)
+                             .withDeserializeState(data.deserialize_state);
+        nested_serialization->enumerateStreams(settings, callback, next_data);
+    }
+
+    void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override
+    {
+        nested_serialization->serializeBinaryBulkStatePrefix(
+            assert_cast<const ColumnExponentialTimeDecaying &>(column).getStorageColumn(),
+            settings,
+            state);
+    }
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override
+    {
+        nested_serialization->serializeBinaryBulkWithMultipleStreams(
+            assert_cast<const ColumnExponentialTimeDecaying &>(column).getStorageColumn(),
+            offset,
+            limit,
+            settings,
+            state);
+    }
+
+    void serializeForHashCalculation(
+        const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+    {
+        const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(column);
+        const auto & tuple = decaying.getStorageTuple();
+        const Float64 value
+            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+        const Float64 time
+            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
+
+        const auto score = getExponentialTimeDecayingOrderingScore(value, time, decay_length);
+        const UInt64 prefix = shiftOneBitAndSign(score.high, value);
+        const Float64 sign = value == 0 ? 0 : std::copysign(1.0, value);
+
+        writeBinaryLittleEndian(prefix, ostr);
+        writeBinaryLittleEndian(sign * score.high, ostr);
+        writeBinaryLittleEndian(sign * score.low, ostr);
+    }
 
     void serializeBinaryBulk(
         const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override
@@ -249,6 +312,7 @@ private:
     }
 
     const SerializationPtr logical_serialization;
+    const DataTypePtr storage_type;
     const DataTypePtr logical_type;
     const Float64 decay_length;
 };
@@ -335,13 +399,21 @@ void DataTypeExponentialTimeDecayingFloat64::updateHashImpl(SipHash & hash) cons
 SerializationPtr DataTypeExponentialTimeDecayingFloat64::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
-        storage_type->getDefaultSerialization(), logical_type->getDefaultSerialization(), logical_type, decay_length);
+        storage_type->getDefaultSerialization(),
+        logical_type->getDefaultSerialization(),
+        storage_type,
+        logical_type,
+        decay_length);
 }
 
 SerializationPtr DataTypeExponentialTimeDecayingFloat64::getSerialization(const SerializationInfo & info) const
 {
     return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
-        storage_type->getSerialization(info), logical_type->getDefaultSerialization(), logical_type, decay_length);
+        storage_type->getSerialization(info),
+        logical_type->getDefaultSerialization(),
+        storage_type,
+        logical_type,
+        decay_length);
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::createSerializationInfo(
