@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NullableUtils.h>
@@ -99,6 +100,19 @@ public:
             }
             return arguments[2].type;
         }
+        else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*decaying->getNestedType());
+            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, tuple, number_of_arguments);
+            if (index.has_value())
+            {
+                DataTypePtr element_type = tuple.getElements()[index.value()];
+                if (is_input_type_nullable)
+                    element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
+                return wrapInArrays(std::move(element_type), count_arrays);
+            }
+            return arguments[2].type;
+        }
         else if (const DataTypeQBit * qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
             if (is_input_type_nullable)
@@ -141,7 +155,7 @@ public:
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecayingFloat64, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -196,6 +210,19 @@ public:
             if (null_map_column)
                 res = applyOuterNullMap(res, input_type_as_tuple->getElements()[index.value()], null_map_column);
         }
+        else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getNestedType());
+            const auto & tuple_column = checkAndGetColumn<ColumnTuple>(*input_col);
+            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, tuple_type, arguments.size());
+
+            if (!index.has_value())
+                return arguments[2].column;
+
+            res = tuple_column.getColumnPtr(index.value());
+            if (null_map_column)
+                res = applyOuterNullMap(res, tuple_type.getElements()[index.value()], null_map_column);
+        }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
             if (null_map_column)
@@ -236,7 +263,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecayingFloat64, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
