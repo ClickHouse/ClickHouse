@@ -213,15 +213,6 @@ public:
             const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
             const Float64 sign = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
             const Float64 signed_unit_time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
-            const Float64 stored_decay_length
-                = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
-            if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Stored decay length {} does not match decay length {} of aggregate function {}",
-                    stored_decay_length,
-                    decay_length,
-                    getName());
             if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -296,8 +287,7 @@ public:
 
             Tuple decaying_value{
                 Field(normalized.sign),
-                Field(normalized.signed_unit_time),
-                Field(decay_length)};
+                Field(normalized.signed_unit_time)};
             to.insert(Field(decaying_value));
         }
     }

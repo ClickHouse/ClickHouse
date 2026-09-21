@@ -68,7 +68,6 @@ struct DecayingColumnView
 {
     const ColumnFloat64 & sign;
     const ColumnFloat64 & signed_unit_time;
-    const ColumnFloat64 & stored_decay_length;
     Float64 decay_length;
 };
 
@@ -81,7 +80,6 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     return {
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
         *decay_length,
     };
 }
@@ -93,15 +91,6 @@ bool isEmptyRow(const DecayingColumnView & input, size_t row)
 
 void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const Float64 stored_decay_length = input.stored_decay_length.getData()[row];
-    if (!std::isfinite(stored_decay_length) || stored_decay_length != input.decay_length)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Stored decay length {} does not match type decay length {} in function {}",
-            stored_decay_length,
-            input.decay_length,
-            function_name);
-
     const Float64 sign = input.sign.getData()[row];
     const Float64 signed_unit_time = input.signed_unit_time.getData()[row];
     if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
@@ -141,24 +130,21 @@ struct DecayingColumnBuilder
 
         sign->insertValue(normalized.sign);
         signed_unit_time->insertValue(normalized.signed_unit_time);
-        decay_length->insertValue(decay_length_value);
     }
 
-    void appendCanonical(Float64 sign_value, Float64 signed_unit_time_value, Float64 decay_length_value)
+    void appendCanonical(Float64 sign_value, Float64 signed_unit_time_value)
     {
         sign->insertValue(sign_value);
         signed_unit_time->insertValue(signed_unit_time_value);
-        decay_length->insertValue(decay_length_value);
     }
 
     ColumnPtr build()
     {
-        return ColumnTuple::create(Columns{std::move(sign), std::move(signed_unit_time), std::move(decay_length)});
+        return ColumnTuple::create(Columns{std::move(sign), std::move(signed_unit_time)});
     }
 
     ColumnFloat64::MutablePtr sign = ColumnFloat64::create();
     ColumnFloat64::MutablePtr signed_unit_time = ColumnFloat64::create();
-    ColumnFloat64::MutablePtr decay_length = ColumnFloat64::create();
 };
 
 class FunctionExponentialTimeDecayingAdd final : public IFunction
@@ -211,16 +197,14 @@ public:
             {
                 result.appendCanonical(
                     right.sign.getData()[row],
-                    right.signed_unit_time.getData()[row],
-                    left.decay_length);
+                    right.signed_unit_time.getData()[row]);
                 continue;
             }
             if (isEmptyRow(right, row))
             {
                 result.appendCanonical(
                     left.sign.getData()[row],
-                    left.signed_unit_time.getData()[row],
-                    left.decay_length);
+                    left.signed_unit_time.getData()[row]);
                 continue;
             }
 
