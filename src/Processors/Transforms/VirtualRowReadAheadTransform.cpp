@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
+#include <base/defines.h>
 
 #include <algorithm>
 
@@ -59,6 +60,28 @@ Columns VirtualRowReadAheadTransform::extractKey(const Chunk & virtual_row) cons
 
 void VirtualRowReadAheadTransform::setStage(Lane & lane, Stage stage)
 {
+    /// A lane only moves forward: the first chunk decides between announcing and data,
+    /// the window may wake a deferred lane, data makes a lane active, anything can finish.
+    chassert(stage != lane.stage);
+    switch (lane.stage)
+    {
+        case Stage::Fresh:
+            chassert(stage == Stage::Deferred || stage == Stage::Active || stage == Stage::Finished);
+            break;
+        case Stage::Deferred:
+            chassert(stage == Stage::Prefetched || stage == Stage::Active || stage == Stage::Finished);
+            break;
+        case Stage::Prefetched:
+            chassert(stage == Stage::Active || stage == Stage::Finished);
+            break;
+        case Stage::Active:
+            chassert(stage == Stage::Finished);
+            break;
+        case Stage::Finished:
+            chassert(false);
+            break;
+    }
+
     if (lane.stage == Stage::Fresh)
         --num_fresh;
     if (lane.stage == Stage::Prefetched)
@@ -229,7 +252,8 @@ void VirtualRowReadAheadTransform::processLane(size_t i, bool asked)
             if (lane.delivered_data || !lane.key.empty())
                 last_lane_with_data = static_cast<ssize_t>(i);
             lane.delivered_data = true;
-            setStage(lane, Stage::Active);
+            if (lane.stage != Stage::Active)
+                setStage(lane, Stage::Active);
         }
         output.push(std::move(chunk));
     }
