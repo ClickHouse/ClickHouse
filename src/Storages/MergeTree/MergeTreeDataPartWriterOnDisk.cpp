@@ -300,8 +300,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         if (settings.save_primary_index_in_memory && index_columns.empty())
         {
             index_columns.reserve(primary_index_block.columns());
-            for (const auto & value : primary_index_block)
+            for (size_t i = 0; i < primary_index_block.columns(); ++i)
             {
+                const auto & value = primary_index_block.getByPosition(i);
                 if (isExponentialTimeDecayingFloat64(value.type))
                     index_columns.push_back(ColumnUInt64::create());
                 else
