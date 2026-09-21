@@ -1,6 +1,7 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache.
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
+-- Tag no-parallel-replicas: The initiator and the workers run under different settings, this confused the query condition cache
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key
 -- is partitioned by `COLLATE` locale so two re-runs with the same locale reuse
