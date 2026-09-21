@@ -9,6 +9,7 @@ feature generates, and by carrying the comment those definitions have always car
 """
 
 import os
+import threading
 
 import pytest
 
@@ -142,3 +143,70 @@ def test_user_tables_on_union_names_survive(started_cluster):
         create = show_create(table)
         assert "AS clusterAllReplicas('system_logs_cluster', merge('system'," in create
         assert MARKER in create
+
+
+def test_user_table_created_during_the_replacement_survives(started_cluster):
+    """A user table created while the union table is being created must not be replaced.
+
+    The union table's owner is classified outside any `DDLGuard`, so between that decision and the
+    exchange that publishes the new table another session can put a table of its own on the name. The
+    replacement is gated on a re-check that `InterpreterCreateQuery` runs under the target name's
+    `DDLGuard`, immediately before the exchange, so that table is left alone.
+    """
+    # Start from the state the previous test leaves: the union tables exist and are up to date.
+    node.query("SELECT 42")
+    node.query("SYSTEM FLUSH LOGS")
+    assert MARKER in show_create("all_query_log")
+
+    # Dropping it is what makes the next flush create it again - the creation this test races with.
+    node.query("DROP TABLE system.all_query_log SYNC")
+
+    node.query("SYSTEM ENABLE FAILPOINT create_or_replace_before_rename")
+    # The flush prepares the union table and parks before the exchange that publishes it. It only
+    # runs the preparation when the log has something to write, hence the query before it.
+    node.query("SELECT 'racing the union table creation'")
+    flush = threading.Thread(target=lambda: node.query("SYSTEM FLUSH LOGS query_log"))
+    flush.start()
+    try:
+        node.query("SYSTEM WAIT FAILPOINT create_or_replace_before_rename PAUSE")
+
+        # The window: a user takes the name and puts data in it.
+        node.query(
+            "CREATE TABLE system.all_query_log (d Date, note String) ENGINE = MergeTree ORDER BY d"
+        )
+        node.query(
+            "INSERT INTO system.all_query_log SELECT '2026-01-01', 'precious' FROM numbers(10)"
+        )
+    finally:
+        node.query("SYSTEM NOTIFY FAILPOINT create_or_replace_before_rename")
+        node.query("SYSTEM DISABLE FAILPOINT create_or_replace_before_rename")
+    flush.join()
+
+    # The exchange saw the user's table under the guard and refused to replace it.
+    assert (
+        node.query("SELECT count() FROM system.all_query_log WHERE note = 'precious'")
+        == "10\n"
+    )
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
+        )
+        == "MergeTree\n"
+    )
+    # The message of the re-check that ran under the `DDLGuard`, not the one of the up-front check.
+    assert node.contains_in_log(
+        "the name was taken by a table that this server did not generate for it while the"
+    )
+    # The aborted replacement left no filled temporary table behind.
+    assert (
+        node.query(
+            "SELECT count() FROM system.tables WHERE database = 'system' AND name LIKE '%tmp_replace%'"
+        )
+        == "0\n"
+    )
+
+    # Once the user's table is gone, the union table takes the name again.
+    node.query("DROP TABLE system.all_query_log SYNC")
+    node.query("SELECT 'after the collision is resolved'")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert MARKER in show_create("all_query_log")

@@ -3043,8 +3043,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
         interpreter_rename.setSkipAccessCheck(true);
         interpreter_rename.setPreSwapCheck(
-            [&current_context](const StorageID & to_drop_id)
+            [&current_context, this](const StorageID & to_drop_id)
             {
+                /// The caller's own condition on the table being replaced, re-checked here because this
+                /// runs under the target name's `DDLGuard` while the caller's decision did not.
+                if (replaced_table_check)
+                    replaced_table_check(to_drop_id);
+
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
