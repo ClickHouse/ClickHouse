@@ -16,7 +16,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const Array & parameters,
     const Settings * settings);
 
-AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecaying(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
