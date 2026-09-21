@@ -307,24 +307,6 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
     return JoinActionRef(nullptr);
 }
 
-JoinActionRef JoinExpressionActions::findInput(const String & column_name, JoinTableSide side, bool throw_if_not_found) const
-{
-    const size_t source_relation = side == JoinTableSide::Left ? 0 : 1;
-    for (const auto * node : data->actions_dag.getInputs())
-    {
-        if (node->result_name != column_name)
-            continue;
-
-        if (auto it = data->expression_sources.find(node); it != data->expression_sources.end() && it->second.test(source_relation))
-            return JoinActionRef(node, data);
-    }
-
-    if (throw_if_not_found)
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Cannot find column {} among the inputs of the {} side of actions DAG:\n{}",
-            column_name, side == JoinTableSide::Left ? "left" : "right", data->actions_dag.dumpDAG());
-    return JoinActionRef(nullptr);
-}
-
 JoinActionRef JoinExpressionActions::addInput(const String & column_name, const DataTypePtr & type, size_t source_relation)
 {
     const auto * actions_dag_node = &data->actions_dag.addInput(column_name, type);

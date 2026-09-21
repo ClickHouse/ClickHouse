@@ -109,6 +109,7 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM 
 
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 0;
 SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 1;
+SELECT count() FROM t WHERE id IN (SELECT k AS `__table1.id` FROM s) SETTINGS rewrite_in_to_join = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 SELECT '-- The same IN in the projection and in INTERPOLATE, which keeps its set';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0

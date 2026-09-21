@@ -268,9 +268,11 @@ void buildQueryPlanForUncorrelatedInSubquery(
         query_plan.addInterpreterContext(context);
 
     ///`IN` matches the columns of its subquery with the elements of its key by position, while a join reads
-    /// its input columns by name, so subquery columns must be renamed to have unique names.
+    /// its input columns by name, so subquery columns must be renamed to have unique names. A column of the
+    /// subquery must not carry the name of one of the outer query either.
     auto unique_names_header = *subquery_plan.getCurrentHeader();
-    makeUniqueColumnNamesInBlock(unique_names_header);
+    auto outer_column_names = query_plan.getCurrentHeader()->getNames();
+    makeUniqueColumnNamesInBlock(unique_names_header, NameSet(outer_column_names.begin(), outer_column_names.end()));
     if (!blocksHaveEqualStructure(unique_names_header, *subquery_plan.getCurrentHeader()))
     {
         auto unique_names_dag = ActionsDAG::makeConvertingActions(
@@ -304,8 +306,8 @@ void buildQueryPlanForUncorrelatedInSubquery(
     for (size_t i = 0; i < key_column_names.size(); ++i)
     {
         std::vector<JoinActionRef> eq_arguments;
-        eq_arguments.push_back(join_expression_actions.findInput(key_column_names[i], JoinTableSide::Left));
-        eq_arguments.push_back(join_expression_actions.findInput(subquery_column_names[i], JoinTableSide::Right));
+        eq_arguments.push_back(join_expression_actions.findNode(key_column_names[i], /*is_input=*/ true));
+        eq_arguments.push_back(join_expression_actions.findNode(subquery_column_names[i], /*is_input=*/ true));
         predicates.push_back(
             JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
     }

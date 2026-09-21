@@ -195,7 +195,6 @@ public:
     JoinExpressionActions clone(ActionsDAG::NodeMapping & node_map) const;
 
     JoinActionRef findNode(const String & column_name, bool is_input = false, bool throw_if_not_found = true) const;
-    JoinActionRef findInput(const String & column_name, JoinTableSide side, bool throw_if_not_found = true) const;
     JoinActionRef addInput(const String & column_name, const DataTypePtr & type, size_t source_relation);
 
     std::shared_ptr<ActionsDAG> getActionsDAG() const;

@@ -249,9 +249,9 @@ std::optional<String> getInFunctionNameForPassCreatedNode(
     return String(null_in_function_name);
 }
 
-void makeUniqueColumnNamesInBlock(Block & block)
+void makeUniqueColumnNamesInBlock(Block & block, const NameSet & taken_names)
 {
-    NameSet block_column_names;
+    NameSet block_column_names = taken_names;
     size_t unique_column_name_counter = 1;
 
     for (auto & column_with_type : block)

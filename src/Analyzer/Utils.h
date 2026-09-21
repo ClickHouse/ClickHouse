@@ -49,8 +49,8 @@ bool isNameOfGlobalInFunction(const std::string & function_name);
 /// Returns global IN function name for local IN function name
 std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
 
-/// Add unique suffix to names of duplicate columns in block
-void makeUniqueColumnNamesInBlock(Block & block);
+/// Add unique suffix to names of duplicate columns in block, and of those that carry a name in `taken_names`
+void makeUniqueColumnNamesInBlock(Block & block, const NameSet & taken_names = {});
 
 /// Returns true, if node is allowed to be a part of expression
 bool isExpressionNodeType(QueryTreeNodeType node_type);
