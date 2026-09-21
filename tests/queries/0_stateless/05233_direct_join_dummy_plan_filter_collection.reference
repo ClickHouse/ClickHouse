@@ -2,5 +2,9 @@ count	1000
 direct join used	1
 distributed count	100
 distributed direct join used	1
+plan-based count	1000
+plan-based direct join used	1
 filtered join estimate is selective	1
 unfiltered join uses replicas	1
+plan-based filtered join estimate is selective	1
+plan-based unfiltered join uses replicas	1

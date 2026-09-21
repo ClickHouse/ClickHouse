@@ -59,6 +59,25 @@ FROM (EXPLAIN optimize = 1, description = 0
 SETTINGS enable_parallel_replicas = 0, parallel_replicas_min_number_of_rows_per_replica = 0,
          prefer_localhost_replica = 1;
 
+-- Arm D reaches that first plan in plan-based parallel-replicas mode, where the conversion happens at a
+-- different call site: with the mode on, the traversal that would convert the joins leaves them logical
+-- for `applyParallelReplicas` and a deferred pass converts whatever is left afterwards, so the arms above
+-- only ever reach the first site. The mode reaches the dummy plan because that plan's optimization
+-- settings come from the original query context, not from the copy its own tree carries.
+SELECT 'plan-based count', count() FROM dj_dummy_l AS t0 INNER JOIN dj_dummy_r AS t1 ON t1.EventId = t0.Id
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+         parallel_replicas_plan_based = 1, parallel_replicas_min_number_of_rows_per_replica = 1;
+
+SELECT 'plan-based direct join used', countIf(explain LIKE '%DirectKeyValueJoin%') > 0
+FROM (EXPLAIN optimize = 1, description = 0
+      SELECT count() FROM dj_dummy_l AS t0 INNER JOIN dj_dummy_r AS t1 ON t1.EventId = t0.Id)
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+         parallel_replicas_plan_based = 1, parallel_replicas_min_number_of_rows_per_replica = 1;
+
 DROP TABLE IF EXISTS dj_dummy_est_l SYNC;
 DROP TABLE IF EXISTS dj_dummy_est_r SYNC;
 
@@ -91,6 +110,29 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          use_query_condition_cache = 0, join_algorithm = 'hash',
          log_comment = '05233_unfiltered_join' FORMAT Null;
 
+-- The same pair in plan-based mode, which is the one mode where `applyParallelReplicas` runs on the
+-- filter-collection plan too. It cannot rewrite that plan: it only acts through split markers, and those
+-- are planted above `MergeTree` reads, of which the dummy replacement leaves none. These two rows are
+-- what would notice if that ever stopped holding.
+SELECT sum(l.key) FROM dj_dummy_est_l AS l INNER JOIN dj_dummy_est_r AS r ON r.key = l.key
+WHERE l.key < 1000
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+         parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0,
+         parallel_replicas_min_number_of_rows_per_replica = 200000,
+         use_query_condition_cache = 0, join_algorithm = 'hash',
+         log_comment = '05233_pb_filtered_join' FORMAT Null;
+
+SELECT sum(l.key) FROM dj_dummy_est_l AS l INNER JOIN dj_dummy_est_r AS r ON r.key = l.key
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+         parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+         parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0,
+         parallel_replicas_min_number_of_rows_per_replica = 200000,
+         use_query_condition_cache = 0, join_algorithm = 'hash',
+         log_comment = '05233_pb_unfiltered_join' FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'filtered join estimate is selective', ProfileEvents['ParallelReplicasUsedCount'] = 0
@@ -105,6 +147,20 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND initial_query_id = query_id
   AND log_comment = '05233_unfiltered_join'
+SETTINGS enable_parallel_replicas = 0;
+
+SELECT 'plan-based filtered join estimate is selective', ProfileEvents['ParallelReplicasUsedCount'] = 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND initial_query_id = query_id
+  AND log_comment = '05233_pb_filtered_join'
+SETTINGS enable_parallel_replicas = 0;
+
+SELECT 'plan-based unfiltered join uses replicas', ProfileEvents['ParallelReplicasUsedCount'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND initial_query_id = query_id
+  AND log_comment = '05233_pb_unfiltered_join'
 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE dj_dummy_l SYNC;
