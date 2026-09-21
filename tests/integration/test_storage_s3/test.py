@@ -1466,27 +1466,30 @@ def _write_wide_parquet(instance, started_cluster, shape):
     return table_function
 
 
-# Limits sit between the two readers' measured peaks on 26.2.19.43, taken from
-# system.query_log. Reads: 715 MiB arrow / 1.25 GiB v3 from one row group,
-# 608 MiB arrow / 257-337 MiB v3 from many. Inserts: 717 MiB / 1.25 GiB from one row
-# group, 609 MiB / 871 MiB from many.
+# Limits sit above what the reader needs on a healthy build and below the peaks
+# these shapes used to reach. Measured on 26.2.19.43 from system.query_log:
+# reads 1.25 GiB from one row group and 257-337 MiB from many, inserts 1.25 GiB
+# and 871 MiB.
 READ_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "512Mi"}
 INSERT_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "720Mi"}
 
-WIDE_ROWS_READER_SETTINGS = "input_format_parquet_use_native_reader_v3={v3}"
+# Empty in tree: master has one Parquet reader, and
+# `input_format_parquet_use_native_reader_v3` no longer selects between two.
+# wide_rows_memory_matrix.sh rewrites this in its checkout of an older release,
+# where the setting still picks Arrow or v3, to compare the two.
+WIDE_ROWS_EXTRA_SETTINGS = ""
 
 
 @pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
-@pytest.mark.parametrize("use_native_reader_v3", [0, 1])
-def test_parquet_wide_rows_read_memory(started_cluster, shape, use_native_reader_v3):
+def test_parquet_wide_rows_read_memory(started_cluster, shape):
     instance = started_cluster.instances["dummy"]
     source = _write_wide_parquet(instance, started_cluster, shape)
     assert (
         int(
             instance.query(
                 f"SELECT max(length(payload)) FROM {source} "
-                f"SETTINGS max_memory_usage='{READ_MEMORY_LIMIT[shape]}', "
-                + WIDE_ROWS_READER_SETTINGS.format(v3=use_native_reader_v3)
+                f"SETTINGS max_memory_usage='{READ_MEMORY_LIMIT[shape]}'"
+                + WIDE_ROWS_EXTRA_SETTINGS
             )
         )
         == 12000000
@@ -1494,18 +1497,16 @@ def test_parquet_wide_rows_read_memory(started_cluster, shape, use_native_reader
 
 
 @pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
-@pytest.mark.parametrize("use_native_reader_v3", [0, 1])
-def test_parquet_wide_rows_insert_memory(started_cluster, shape, use_native_reader_v3):
+def test_parquet_wide_rows_insert_memory(started_cluster, shape):
     instance = started_cluster.instances["dummy"]
     source = _write_wide_parquet(instance, started_cluster, shape)
-    dest_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_out_{shape}_{use_native_reader_v3}.parquet"
+    dest_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_out_{shape}.parquet"
     dest = f"s3('{dest_url}', 'minio', '{minio_secret_key}', 'Parquet')"
     instance.query(
         f"INSERT INTO TABLE FUNCTION {dest} SELECT * FROM {source} "
         f"SETTINGS max_memory_usage='{INSERT_MEMORY_LIMIT[shape]}', s3_truncate_on_insert=1, "
-        + WIDE_ROWS_READER_SETTINGS.format(v3=use_native_reader_v3)
-        + ", output_format_parquet_row_group_size=1, "
-        "output_format_parquet_row_group_size_bytes=33554432"
+        "output_format_parquet_row_group_size=1, "
+        "output_format_parquet_row_group_size_bytes=33554432" + WIDE_ROWS_EXTRA_SETTINGS
     )
     assert int(instance.query(f"SELECT count() FROM {dest}")) == 20
 
