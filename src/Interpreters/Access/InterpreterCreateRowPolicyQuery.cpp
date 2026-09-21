@@ -6,11 +6,13 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/StorageJoin.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -20,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -76,6 +79,17 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     getContext()->checkAccess(required_access);
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+    /// A `Join` table is a prebuilt hash table read by JOIN and `joinGet` as is, so its rows cannot be filtered.
+    for (const auto & full_name : query.names->full_names)
+    {
+        if (full_name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            continue;
+        auto table = DatabaseCatalog::instance().tryGetTable({full_name.database, full_name.table_name}, getContext());
+        if (table && typeid_cast<StorageJoin *>(table.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Row policies are not supported for table {} with the Join engine", table->getStorageID().getNameForLogs());
+    }
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
