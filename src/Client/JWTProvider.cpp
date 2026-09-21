@@ -225,9 +225,6 @@ void JWTProvider::openURLInBrowser(const std::string & url)
     if (command.empty())
         return;
 
-    /// Pass our environment through, otherwise the child starts with an empty environment
-    /// and `xdg-open` cannot see `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`, `BROWSER`, etc.
-    /// It then assumes a text-only session and opens a terminal browser such as `lynx`.
     pid_t pid = 0;
     const char * argv[] = {command.c_str(), url.c_str(), nullptr};
     int status = posix_spawnp(&pid, command.c_str(), nullptr, nullptr, const_cast<char * const *>(argv), environ);
