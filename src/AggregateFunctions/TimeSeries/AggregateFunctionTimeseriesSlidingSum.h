@@ -121,7 +121,8 @@ public:
         }
     }
 
-    SummaryType getCurrentSum() const
+    /// The reference is valid until the next `add` or `removeBefore`.
+    const SummaryType & getCurrentSum() const
     {
         if constexpr (is_invertible)
         {
@@ -129,12 +130,12 @@ public:
         }
         else if (use_two_stacks)
         {
-            SummaryType combined;
+            current_sum = SummaryType{};
             if (!front_stack.empty())
-                combined.merge(front_stack.back().combined);
+                current_sum.merge(front_stack.back().combined);
             if (!back_stack.empty())
-                combined.merge(back_stack.back().combined);
-            return combined;
+                current_sum.merge(back_stack.back().combined);
+            return current_sum;
         }
         else
         {

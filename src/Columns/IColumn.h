@@ -247,8 +247,11 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
+    /// The result may share the original column. Use `IColumn::mutate` before modifying it.
     [[nodiscard]] virtual Ptr cut(size_t start, size_t length) const
     {
+        if (start == 0 && length == size())
+            return getPtr();
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
         return res;
