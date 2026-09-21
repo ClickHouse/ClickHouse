@@ -51,7 +51,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <base/EnumReflection.h>
 
 #include <ranges>
 #include <vector>
@@ -132,15 +131,16 @@ void resetSettings(SettingsChanges & settings_from_storage, const std::set<Strin
     }
 }
 
-/// The parser keeps `name = DEFAULT` entries of a `SETTINGS` clause apart from `changes`, and such an
-/// entry means a reset. A setting cannot be modified and reset, or reset twice, in one clause.
-void checkSettingsResets(const ASTSetQuery & set_query)
+/// Splits a parsed `SETTINGS` clause into changes and resets.
+/// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
+void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
 {
-    std::set<String> settings_resets;
+    settings_changes = set_query.changes;
+
     for (const auto & setting_name : set_query.default_settings)
     {
         auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-        if (std::ranges::any_of(set_query.changes, same_setting))
+        if (std::ranges::any_of(settings_changes, same_setting))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is both modified and reset in one command", backQuote(setting_name));
 
         auto insertion = settings_resets.emplace(setting_name);
@@ -240,25 +240,6 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-    /// Every parser rewrites `MODIFY SETTING name = DEFAULT` into a `RESET SETTING` command with
-    /// `rewriteSettingsResetsInAlterCommands`, so the modify syntax of a reset reaches here only when
-    /// the command contradicts itself, which is rejected right below. `ALTER DATABASE` is the other
-    /// exception: it has no reset at all and is rejected further down.
-    if (command_ast->settings_changes && command_ast->type != ASTAlterCommand::MODIFY_DATABASE_SETTING)
-    {
-        const auto & set_query = command_ast->settings_changes->as<const ASTSetQuery &>();
-        if (!set_query.default_settings.empty())
-        {
-            checkSettingsResets(set_query);
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Setting {} of the {} command is reset to DEFAULT: the parser which produced the command did not "
-                "rewrite the reset into a RESET SETTING command",
-                backQuote(set_query.default_settings.front()),
-                command_ast->type);
-        }
-    }
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -374,14 +355,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-        {
-            /// A `SETTINGS (...)` clause of a column declaration is not a command of its own, so its
-            /// `name = DEFAULT` entries are read here instead of being rewritten by the parser.
-            const auto & set_query = ast_col_decl.getSettings()->as<ASTSetQuery &>();
-            checkSettingsResets(set_query);
-            command.settings_changes = set_query.changes;
-            command.settings_resets.insert(set_query.default_settings.begin(), set_query.default_settings.end());
-        }
+            parseSettingsChangesAndResets(
+                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -389,7 +364,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
             command.append_column_setting = true;
         }
 
@@ -659,7 +635,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        parseSettingsChangesAndResets(command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
         return command;
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
@@ -780,6 +756,26 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
         std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
 
     return columns_to_add;
+}
+
+
+std::optional<AlterCommand> AlterCommand::extractSettingsResets()
+{
+    if (type != MODIFY_SETTING || settings_resets.empty())
+        return {};
+
+    if (settings_changes.empty())
+    {
+        type = RESET_SETTING;
+        return {};
+    }
+
+    AlterCommand reset_command;
+    reset_command.ast = ast;
+    reset_command.type = RESET_SETTING;
+    reset_command.settings_resets = std::move(settings_resets);
+    settings_resets.clear();
+    return reset_command;
 }
 
 

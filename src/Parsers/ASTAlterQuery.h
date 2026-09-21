@@ -316,10 +316,4 @@ protected:
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
-/// `MODIFY SETTING name = DEFAULT` is a reset written in the modify syntax. Rewrites such an entry
-/// into a `RESET SETTING` command, splitting the command in two when it changes other settings too,
-/// so that everything downstream sees a single spelling of a reset. Every parser which produces
-/// alter commands has to call this; `AlterCommand::parse` rejects a command which still carries one.
-void rewriteSettingsResetsInAlterCommands(ASTExpressionList & command_list);
-
 }
