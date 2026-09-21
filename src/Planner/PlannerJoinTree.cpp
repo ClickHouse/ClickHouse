@@ -2675,9 +2675,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
 
-                            /// This analysis only sizes the replica count and the executed read analyzes again,
-                            /// so throwing row limits must not be enforced on it. Range analysis takes those
-                            /// limits from the analyzed step's own context.
+                            /// This analysis only sizes the replica count and the executed read analyzes again, so a throwing row
+                            /// limit must not fire on it. Range analysis reads those limits from the analyzed step's own context.
                             const auto & reading_step_settings = reading_step->getContext()->getSettingsRef();
                             const bool has_throwing_row_limit
                                 = (reading_step_settings[Setting::read_overflow_mode] == OverflowMode::THROW
