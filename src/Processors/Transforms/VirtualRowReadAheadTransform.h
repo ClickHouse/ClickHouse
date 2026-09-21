@@ -39,6 +39,19 @@ public:
     Status prepare() override;
 
 private:
+    /// A lane's standing with the read-ahead window. Independent of `Lane::parked`, which is
+    /// the merge's flow control: an announcement was delivered and the merge has not asked
+    /// for the lane since.
+    enum class Stage
+    {
+        Fresh,      /// no chunk seen yet
+        Deferred,   /// announced itself; neither the merge nor the window has reached it
+        Prefetched, /// woken by the window; holds one of its slots until data arrives or it runs dry
+        Requested,  /// the merge asked for it after an announcement; no data delivered yet
+        Active,     /// delivered data: resident for the merge's sake, not the window's
+        Finished,
+    };
+
     struct Lane
     {
         InputPort * input = nullptr;
@@ -49,27 +62,16 @@ private:
         UInt64 rows_read = 0;
         /// Sort key of the initial virtual row; empty for a lane that started with data.
         Columns key;
-        bool started = false;
-        /// A virtual row was delivered and the merge has not asked for the lane since.
+        Stage stage = Stage::Fresh;
         bool parked = false;
-        /// Started with a virtual row, and neither the merge nor the window has reached it.
-        bool deferred = false;
-        /// Woken by the window; holds a slot until its data arrives or it runs dry.
-        bool prefetched = false;
-        bool demanded = false;
-        bool had_data = false;
-        bool finished = false;
     };
 
-    void finishLane(Lane & lane);
-    void releaseSlot(Lane & lane);
     /// Records the chunk in the lane's state; returns false for an empty chunk to drop.
     bool accept(Lane & lane, const Chunk & chunk);
-    void deliver(size_t lane_num, Chunk chunk);
-    void wakeDeferredLanes();
     Columns extractKey(const Chunk & virtual_row) const;
-    bool keyLess(size_t lhs, size_t rhs) const;
-    bool canBuffer(const Lane & lane) const;
+    void finishLane(Lane & lane);
+    /// Wakes deferred lanes in key order while fewer than `read_ahead_window` are prefetching.
+    void wakeDeferredLanes(size_t prefetching);
 
     const SharedHeader header;
     const SortDescription description;
@@ -81,14 +83,12 @@ private:
     std::vector<size_t> sort_positions;
 
     std::vector<Lane> lanes;
-    size_t finished_lanes = 0;
 
     /// Deferred lanes in the order the merge will reach them, fixed once every lane has
     /// announced itself; `next_deferred` walks it, so each lane is woken at most once.
     std::vector<size_t> deferred_order;
     bool deferred_order_built = false;
     size_t next_deferred = 0;
-    size_t prefetches_in_flight = 0;
     /// The merge asked for a lane other than the one whose data it was consuming, or a lane
     /// it asked for ran dry: with a `LIMIT`, this is what justifies reading ahead.
     bool merge_advanced = false;

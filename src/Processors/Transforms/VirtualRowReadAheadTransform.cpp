@@ -39,25 +39,6 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
         sort_positions.push_back(header->getPositionByName(column.column_name));
 }
 
-void VirtualRowReadAheadTransform::finishLane(Lane & lane)
-{
-    lane.input->close();
-    lane.output->finish();
-    lane.chunks.clear();
-    lane.finished = true;
-    ++finished_lanes;
-}
-
-void VirtualRowReadAheadTransform::releaseSlot(Lane & lane)
-{
-    lane.deferred = false;
-    if (lane.prefetched)
-    {
-        lane.prefetched = false;
-        --prefetches_in_flight;
-    }
-}
-
 Columns VirtualRowReadAheadTransform::extractKey(const Chunk & virtual_row) const
 {
     /// Conversion mutates the metadata's block, and the merge must apply its own conversions
@@ -73,36 +54,18 @@ Columns VirtualRowReadAheadTransform::extractKey(const Chunk & virtual_row) cons
     return key;
 }
 
-bool VirtualRowReadAheadTransform::keyLess(size_t lhs, size_t rhs) const
-{
-    const auto & left = lanes[lhs].key;
-    const auto & right = lanes[rhs].key;
-    for (size_t i = 0; i < description.size(); ++i)
-    {
-        int order = description[i].direction * left[i]->compareAt(0, 0, *right[i], description[i].nulls_direction);
-        if (order)
-            return order < 0;
-    }
-    return lhs < rhs;
-}
-
-bool VirtualRowReadAheadTransform::canBuffer(const Lane & lane) const
-{
-    /// As in `BufferChunksTransform`: the queue fills until both thresholds are reached.
-    return lane.buffered_rows < max_rows_to_buffer || lane.buffered_bytes < max_bytes_to_buffer;
-}
-
 bool VirtualRowReadAheadTransform::accept(Lane & lane, const Chunk & chunk)
 {
     bool is_virtual_row = isVirtualRow(chunk);
-    if (!lane.started)
+    if (lane.stage == Stage::Fresh)
     {
-        lane.started = true;
         if (is_virtual_row)
         {
-            lane.deferred = true;
+            lane.stage = Stage::Deferred;
             lane.key = extractKey(chunk);
         }
+        else
+            lane.stage = Stage::Active;
     }
 
     if (is_virtual_row)
@@ -113,8 +76,7 @@ bool VirtualRowReadAheadTransform::accept(Lane & lane, const Chunk & chunk)
         return false;
 
     /// Real data: the reader is resident for the merge's sake, not the window's.
-    lane.had_data = true;
-    releaseSlot(lane);
+    lane.stage = Stage::Active;
 
     /// As in `BufferChunksTransform`, a merge needs at most `LIMIT` rows per source.
     lane.rows_read += chunk.getNumRows();
@@ -123,45 +85,50 @@ bool VirtualRowReadAheadTransform::accept(Lane & lane, const Chunk & chunk)
     return true;
 }
 
-void VirtualRowReadAheadTransform::deliver(size_t lane_num, Chunk chunk)
+void VirtualRowReadAheadTransform::finishLane(Lane & lane)
 {
-    auto & lane = lanes[lane_num];
-    if (isVirtualRow(chunk))
-        lane.parked = true;
-    else
-        last_lane_with_data = static_cast<ssize_t>(lane_num);
-    lane.output->push(std::move(chunk));
+    lane.input->close();
+    lane.output->finish();
+    lane.chunks.clear();
+    lane.stage = Stage::Finished;
 }
 
-void VirtualRowReadAheadTransform::wakeDeferredLanes()
+void VirtualRowReadAheadTransform::wakeDeferredLanes(size_t prefetching)
 {
     if (!deferred_order_built)
     {
         /// The order is by the announced keys, so it needs every lane's first chunk.
         for (const auto & lane : lanes)
-            if (!lane.started && !lane.finished)
+            if (lane.stage == Stage::Fresh)
                 return;
 
         for (size_t i = 0; i < lanes.size(); ++i)
             if (!lanes[i].key.empty())
                 deferred_order.push_back(i);
-        std::sort(deferred_order.begin(), deferred_order.end(), [this](size_t lhs, size_t rhs) { return keyLess(lhs, rhs); });
+        std::sort(deferred_order.begin(), deferred_order.end(), [this](size_t lhs, size_t rhs)
+        {
+            const auto & left = lanes[lhs].key;
+            const auto & right = lanes[rhs].key;
+            for (size_t i = 0; i < description.size(); ++i)
+                if (int order = description[i].direction * left[i]->compareAt(0, 0, *right[i], description[i].nulls_direction))
+                    return order < 0;
+            return lhs < rhs;
+        });
         deferred_order_built = true;
     }
 
     /// Keep the next `read_ahead_window` deferred lanes reading, in the order the merge will
     /// need them; the lanes past the window wait until the merge comes closer, so the number
     /// of resident readers is bounded by the window rather than by the number of parts.
-    while (next_deferred < deferred_order.size() && prefetches_in_flight < read_ahead_window)
+    while (next_deferred < deferred_order.size() && prefetching < read_ahead_window)
     {
         auto & lane = lanes[deferred_order[next_deferred++]];
-        if (!lane.deferred || lane.finished)
+        if (lane.stage != Stage::Deferred)
             continue;
 
-        lane.deferred = false;
-        lane.prefetched = true;
+        lane.stage = Stage::Prefetched;
         lane.parked = false;
-        ++prefetches_in_flight;
+        ++prefetching;
         if (!lane.input->isFinished())
             lane.input->setNeeded();
     }
@@ -169,73 +136,46 @@ void VirtualRowReadAheadTransform::wakeDeferredLanes()
 
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
+    size_t finished = 0;
+    size_t prefetching = 0;
     for (size_t i = 0; i < lanes.size(); ++i)
     {
         auto & lane = lanes[i];
-        if (lane.finished)
-            continue;
-
         auto & input = *lane.input;
         auto & output = *lane.output;
-        if (output.isFinished())
-        {
-            releaseSlot(lane);
+
+        if (output.isFinished() && lane.stage != Stage::Finished)
             finishLane(lane);
+        if (lane.stage == Stage::Finished)
+        {
+            ++finished;
             continue;
         }
 
-        if (output.canPush())
+        if (lane.parked && output.canPush())
         {
-            if (lane.parked)
-            {
-                /// The merge reached the announced key: the lane is active from here on.
-                lane.parked = false;
-                lane.demanded = true;
-                releaseSlot(lane);
-                if (last_lane_with_data >= 0 && last_lane_with_data != static_cast<ssize_t>(i))
-                    merge_advanced = true;
-            }
-
-            if (!lane.chunks.empty())
-            {
-                Chunk chunk = std::move(lane.chunks.front());
-                lane.chunks.pop_front();
-                if (!isVirtualRow(chunk))
-                {
-                    lane.buffered_rows -= chunk.getNumRows();
-                    lane.buffered_bytes -= chunk.bytes();
-                }
-                deliver(i, std::move(chunk));
-            }
-            else if (input.hasData())
-            {
-                Chunk chunk = input.pull(/* set_not_needed */ true);
-                if (accept(lane, chunk))
-                    deliver(i, std::move(chunk));
-            }
-        }
-
-        if (input.isFinished() && lane.chunks.empty() && !output.hasData())
-        {
-            releaseSlot(lane);
-            /// A lane the merge asked for ran dry without data: the merge has to move on to
-            /// another lane, which is as good an advance as consuming one.
-            if (lane.demanded && !lane.had_data)
+            /// The merge reached the announced key: the lane is active from here on.
+            lane.parked = false;
+            if (lane.stage != Stage::Active)
+                lane.stage = Stage::Requested;
+            if (last_lane_with_data >= 0 && last_lane_with_data != static_cast<ssize_t>(i))
                 merge_advanced = true;
-            finishLane(lane);
-            continue;
         }
 
-        /// Read ahead into the buffer, but not while parked and not past an announcement the
-        /// merge has not seen yet: it may park the lane there, and reading beyond would be
-        /// the window's decision, not the buffer's.
-        auto may_read = [&]
+        /// One chunk is pulled per pass: always when the merge is waiting for this lane with
+        /// nothing queued, otherwise to read ahead into the buffer, but not while parked and not
+        /// past an announcement the merge has not seen yet: it may park the lane there, and
+        /// reading beyond would be the window's decision, not the buffer's.
+        bool merge_waiting = output.canPush() && lane.chunks.empty();
+        auto may_read_ahead = [&]
         {
             bool announcement_pending = !lane.chunks.empty() && isVirtualRow(lane.chunks.back());
-            return !lane.parked && !announcement_pending && canBuffer(lane) && !input.isFinished();
+            /// As in `BufferChunksTransform`: the queue fills until both thresholds are reached.
+            bool below_caps = lane.buffered_rows < max_rows_to_buffer || lane.buffered_bytes < max_bytes_to_buffer;
+            return !lane.parked && !announcement_pending && below_caps && !input.isFinished();
         };
 
-        if (may_read() && input.hasData())
+        if (input.hasData() && (merge_waiting || may_read_ahead()))
         {
             Chunk chunk = input.pull(/* set_not_needed */ true);
             if (accept(lane, chunk))
@@ -250,8 +190,9 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
                 }
                 else
                 {
-                    /// Queued chunks outlive the reader; measure what the merge will consume.
-                    compactReplicatedColumns(chunk);
+                    /// A queued chunk outlives the reader; measure what the merge will consume.
+                    if (!merge_waiting)
+                        compactReplicatedColumns(chunk);
                     lane.buffered_rows += chunk.getNumRows();
                     lane.buffered_bytes += chunk.bytes();
                     lane.chunks.push_back(std::move(chunk));
@@ -259,7 +200,36 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
             }
         }
 
-        if (may_read())
+        if (output.canPush() && !lane.chunks.empty())
+        {
+            Chunk chunk = std::move(lane.chunks.front());
+            lane.chunks.pop_front();
+            if (isVirtualRow(chunk))
+                lane.parked = true;
+            else
+            {
+                lane.buffered_rows -= chunk.getNumRows();
+                lane.buffered_bytes -= chunk.bytes();
+                last_lane_with_data = static_cast<ssize_t>(i);
+            }
+            output.push(std::move(chunk));
+        }
+
+        if (input.isFinished() && lane.chunks.empty() && !output.hasData())
+        {
+            /// A lane the merge asked for ran dry without data: the merge has to move on to
+            /// another lane, which is as good an advance as consuming one.
+            if (lane.stage == Stage::Requested)
+                merge_advanced = true;
+            finishLane(lane);
+            ++finished;
+            continue;
+        }
+
+        if (lane.stage == Stage::Prefetched)
+            ++prefetching;
+
+        if (may_read_ahead())
             input.setNeeded();
         else
             input.setNotNeeded();
@@ -269,9 +239,9 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
     /// overlaps work. With one, wait for the merge to move past a lane: as long as it keeps
     /// asking the front lane for more, the lanes behind it may never be needed.
     if (read_ahead_window && (limit == 0 || merge_advanced))
-        wakeDeferredLanes();
+        wakeDeferredLanes(prefetching);
 
-    return finished_lanes == lanes.size() ? Status::Finished : Status::NeedData;
+    return finished == lanes.size() ? Status::Finished : Status::NeedData;
 }
 
 }
