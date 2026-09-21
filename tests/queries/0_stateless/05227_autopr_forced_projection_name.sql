@@ -34,7 +34,7 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, force_op
 SYSTEM FLUSH LOGS query_log;
 
 SELECT has(projections, concat(currentDatabase(), '.t_autopr_forced_projection.p_by_val')) AS projection_used,
-       ProfileEvents['AutoParallelReplicasSkippedForcedProjection'] = 1 AS declined_for_the_projection,
+       ProfileEvents['AutoParallelReplicasSkippedDueToSettings'] = 1 AS declined_for_the_projection,
        ProfileEvents['AutoParallelReplicasPlanBuildAttempts'] = 0 AS never_built_a_candidate,
        ProfileEvents['AutoParallelReplicasApplied'] = 0 AS not_applied
 FROM system.query_log

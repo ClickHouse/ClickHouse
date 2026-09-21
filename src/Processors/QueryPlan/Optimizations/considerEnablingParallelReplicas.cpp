@@ -36,7 +36,7 @@ namespace ProfileEvents
 {
 extern const Event AutoParallelReplicasPlanBuildAttempts;
 extern const Event AutoParallelReplicasMicroseconds;
-extern const Event AutoParallelReplicasSkippedForcedProjection;
+extern const Event AutoParallelReplicasSkippedDueToSettings;
 extern const Event AutoParallelReplicasPlanShapeNotSupported;
 extern const Event AutoParallelReplicasPlanNotSuitable;
 extern const Event AutoParallelReplicasNoStatistics;
@@ -340,7 +340,7 @@ void considerEnablingParallelReplicas(
     /// not a guarantee, so state the requirement here instead of relying on it.
     if (optimization_settings.force_use_projection || !optimization_settings.force_projection_name.empty())
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedForcedProjection);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToSettings);
         LOG_TRACE(
             getLogger("optimizeTree"),
             "force_optimize_projection or force_optimize_projection_name is set, cannot guarantee projection usage. "
