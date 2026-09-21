@@ -5863,8 +5863,8 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
             value, time, decay_type->getDecayLength());
     }
 
-    /// Keep accepting the earlier experimental SQL/text carrier while the tests
-    /// still exercise it. It is not the physical row representation.
+    /// SQL/text presentation uses sign, signed unit timestamp, and decay length.
+    /// It is not the physical row representation.
     if (tuple.size() == 3)
     {
         const Float64 sign = tuple[0].safeGet<Float64>();
