@@ -16,6 +16,9 @@ node = cluster.add_instance(
         "configs/users.d/users.xml",
     ],
     with_minio=True,
+    # `test_url_s3_scheme_with_parallel_replicas` needs a `ReplicatedMergeTree` destination so that the
+    # distributed `INSERT ... SELECT` path is actually entered.
+    with_zookeeper=True,
 )
 
 
@@ -177,9 +180,18 @@ def test_url_s3_scheme_with_parallel_replicas(started_cluster):
         == "10\n"
     )
 
+    # The destination must support replication: `distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage`
+    # returns early for a plain `MergeTree`, so with one the `INSERT` would never even reach the point where the
+    # source is examined and the regression could not show up. With a `ReplicatedMergeTree` the distributed path is
+    # entered and rejects the query only because the delegated `url` resolved to a plain storage rather than to an
+    # `IStorageCluster` - which is exactly the property under test. If the delegate ever fans out again, the
+    # forwarded query names `urlCluster('s3://...')` and every replica reads the whole file.
     node.query("DROP TABLE IF EXISTS url_s3_parallel_replicas SYNC")
     node.query(
-        "CREATE TABLE url_s3_parallel_replicas (a UInt32) ENGINE = MergeTree ORDER BY a"
+        """
+            CREATE TABLE url_s3_parallel_replicas (a UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/url_s3_parallel_replicas', 'r1') ORDER BY a
+        """
     )
     node.query(
         f"""
