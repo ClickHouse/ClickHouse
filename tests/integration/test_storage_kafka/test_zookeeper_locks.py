@@ -6,6 +6,7 @@ from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 from helpers.keeper_utils import KeeperClient
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -827,6 +828,128 @@ def test_direct_read_triggers_reactivation(kafka_cluster):
         # ... and it must have scheduled the reactivation right away. The periodic activation check
         # runs only once a minute, so a marker that is back well before that can only come from the
         # reactivation the direct read asked for.
+        deadline = time.time() + 20.0
+        while time.time() < deadline:
+            with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                if "is_active" in set(zk.ls(f"{keeper_path}/replicas/r1")):
+                    break
+            time.sleep(0.5)
+        else:
+            pytest.fail(
+                f"Timed out waiting for {is_active_path} to be re-created: the direct read did not "
+                "schedule the reactivation"
+            )
+
+        # And reads must work again afterwards.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        instance.query_with_retry(
+            "SELECT count() FROM test.kafka",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=120,
+            sleep_time=1,
+        )
+
+
+def test_keeper_session_loss_triggers_reactivation(kafka_cluster):
+    """An expired Keeper session must be recovered as soon as a consumer runs into it.
+
+    The activating task checks the session only once a minute. Until it does, the table still
+    counts as active, so a consumer that finds its session expired used to stall the stream, and a
+    direct read used to return nothing, for up to a minute: the topic looked empty, while every
+    ephemeral node of the replica, `is_active` included, was already gone. The consumer that notices
+    the expiry has to ask for the reactivation right away, and a direct read has to fail instead of
+    pretending there is nothing to read.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_session_loss_reactivation_topic"
+    num_partitions = 2
+    keeper_path = "/clickhouse/test/zk_session_loss_reactivation"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        # No materialized view on purpose: the table is only ever read directly, so the direct read is
+        # the only thing that can notice the expired session before the periodic check does.
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+
+            {create_kafka};
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.kafka",
+            check_callback=lambda res: int(res.strip()) > 0,
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # Phase the partition on the periodic activation check. If that check ran while the session
+        # is cut off, it would deactivate the table itself and its own retry loop would bring it back
+        # once the network is restored, so the consumer's reaction would not be what recovers the
+        # table. Waiting for the check to run leaves the whole minute until the next one, and the
+        # session expires well within it.
+        check_marker = "StorageKafka2 (test.kafka .*No need to activate"
+        checks_before = int(instance.count_in_log(check_marker))
+        deadline = time.time() + 90.0
+        while time.time() < deadline:
+            if int(instance.count_in_log(check_marker)) > checks_before:
+                break
+            time.sleep(0.5)
+        else:
+            pytest.fail("Timed out waiting for the periodic activation check to run")
+
+        is_active_path = f"{keeper_path}/replicas/r1/is_active"
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(instance)
+            # Keeper drops the ephemeral nodes of the session once it expires. That is the moment
+            # from which the peers do not count this replica anymore, and it is also when Keeper
+            # closes the connection, so the server side of the session is gone too.
+            deadline = time.time() + 120.0
+            while time.time() < deadline:
+                with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                    if "is_active" not in set(zk.ls(f"{keeper_path}/replicas/r1")):
+                        break
+                time.sleep(1.0)
+            else:
+                pytest.fail(f"Timed out waiting for Keeper to expire the session owning {is_active_path}")
+
+        # The network is back, but nothing has told the table about the expired session yet. The
+        # direct read has to notice it and fail, rather than pretend the topic is empty. Right after
+        # the partition the consumer can still run into the closing of the old connection, which
+        # surfaces as an ordinary Keeper error, so give it a few reads.
+        error = ""
+        for _ in range(30):
+            try:
+                result = instance.query("SELECT count() FROM test.kafka")
+            except Exception as e:  # noqa: BLE001 - the error text is what is under test
+                error = str(e)
+                if "ABORTED" in error:
+                    break
+                time.sleep(1.0)
+                continue
+            pytest.fail(
+                f"the direct read returned {result.strip()!r} while the Keeper session was expired, "
+                "instead of failing and asking for the reactivation"
+            )
+        assert "ABORTED" in error, f"the direct read did not fail with ABORTED: {error!r}"
+        assert "Keeper session has expired" in error, error
+
+        # ... and it must have scheduled the reactivation right away. The periodic activation check
+        # runs only once a minute and has just run, so a marker that is back well before that can
+        # only come from the reactivation the direct read asked for.
         deadline = time.time() + 20.0
         while time.time() < deadline:
             with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:

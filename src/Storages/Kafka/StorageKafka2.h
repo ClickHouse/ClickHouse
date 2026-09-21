@@ -217,8 +217,11 @@ private:
     void parsePartitionAffinitySettings();
 
     void assertActive() const;
+    /// Whether the consumer could not poll because this replica has to be re-registered in Keeper, i.e. the
+    /// activating task has to run again before any consumer of this table can make progress.
+    static bool needsReactivation(KeeperHandlingConsumer::CannotPollReason reason);
     /// Asks the activating task to re-register this replica in Keeper as soon as possible.
-    void scheduleReactivation();
+    void scheduleReactivation(KeeperHandlingConsumer::CannotPollReason reason);
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.

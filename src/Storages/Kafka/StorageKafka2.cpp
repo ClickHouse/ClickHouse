@@ -441,9 +441,31 @@ void StorageKafka2::activateAndReschedule()
     }
 }
 
-void StorageKafka2::scheduleReactivation()
+bool StorageKafka2::needsReactivation(KeeperHandlingConsumer::CannotPollReason reason)
 {
-    LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
+    switch (reason)
+    {
+        case KeeperHandlingConsumer::CannotPollReason::NoPartitions:
+            [[fallthrough]];
+        case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
+            return false;
+        /// The session is gone together with every ephemeral node it owned, `is_active` included. The activating
+        /// task notices that on its own only once a minute, so the consumer that has just run into it asks for
+        /// the new session right away instead of stalling until then.
+        case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
+            [[fallthrough]];
+        case KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive:
+            return true;
+    }
+}
+
+void StorageKafka2::scheduleReactivation(KeeperHandlingConsumer::CannotPollReason reason)
+{
+    chassert(needsReactivation(reason));
+    if (reason == KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded)
+        LOG_INFO(log, "The Keeper session has expired, scheduling reactivation");
+    else
+        LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
     activating_task->schedule();
 }
 
@@ -1520,8 +1542,8 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
         {
-            if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive)
-                scheduleReactivation();
+            if (needsReactivation(*cannot_poll_reason))
+                scheduleReactivation(*cannot_poll_reason);
             return getStallKind(*cannot_poll_reason);
         }
 
@@ -1774,9 +1796,10 @@ StorageKafka2::StallKind StorageKafka2::getStallKind(const KeeperHandlingConsume
             [[fallthrough]];
         case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
             return StallKind::LongStall;
+        /// The activating task has just been asked to re-register the replica (see `needsReactivation`),
+        /// so the stream should be able to continue soon.
         case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
             [[fallthrough]];
-        /// The activating task re-registers the replica, so the stream should be able to continue soon.
         case KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive:
             return StallKind::ShortStall;
     }

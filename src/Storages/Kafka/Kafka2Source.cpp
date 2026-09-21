@@ -72,13 +72,19 @@ Chunk Kafka2Source::generateImpl()
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
         {
-            /// A lost registration is a state the table has to recover from: no peer counts this replica
-            /// anymore, so nothing will make it usable again until the activating task re-registers it.
-            /// With no materialized view attached there is no streaming cycle to notice it, so a direct read
-            /// has to ask for the reactivation itself, and fail instead of pretending the topic is empty.
-            if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive)
+            /// A lost registration or an expired Keeper session is a state the table has to recover from: no
+            /// peer counts this replica anymore, so nothing will make it usable again until the activating task
+            /// re-registers it. With no materialized view attached there is no streaming cycle to notice it, so
+            /// a direct read has to ask for the reactivation itself, and fail instead of pretending the topic
+            /// is empty.
+            if (StorageKafka2::needsReactivation(*cannot_poll_reason))
             {
-                storage.scheduleReactivation();
+                storage.scheduleReactivation(*cannot_poll_reason);
+                if (*cannot_poll_reason == KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded)
+                    throw Exception(
+                        ErrorCodes::ABORTED,
+                        "The Keeper session has expired, the table is being reactivated (replica path: {})",
+                        storage.replica_path);
                 throw Exception(
                     ErrorCodes::ABORTED,
                     "Replica is not registered as active in Keeper anymore, the table is being reactivated "
