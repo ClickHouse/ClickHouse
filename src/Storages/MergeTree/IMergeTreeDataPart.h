@@ -206,6 +206,11 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
+    /// Rewrite the `serialization_infos` of Map columns whose recorded version is `basic`
+    /// (i.e. `serialization.json` carries no Map specialization) to the table's effective
+    /// map serialization version, and rebuild `serializations` accordingly.
+    void applyTableMapSerializationVersionForBasicInfos();
+
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_, bool validate_against_loaded_columns = true);
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
@@ -1001,6 +1006,9 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
+
+    /// Reject Compact parts and mixed `basic` / `with_buckets` / `with_key_columns` Map layouts.
+    void checkMapKeyColumnsCompatibility() const;
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
