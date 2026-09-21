@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
@@ -812,11 +813,40 @@ void StorageMaterializedView::alter(
     /// Check the materialized view's inner table structure.
     if (has_inner_table)
     {
+        auto target_table = getTargetTable();
+        /// Bypass the query's metadata cache, which would otherwise keep serving the snapshot taken
+        /// before the inner table's own alter below.
+        auto target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+
         /// If this materialized view has an inner table it should always have the same columns as this materialized view.
         /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
         const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
+
+        /// The copy below replaces the view's column descriptions with the inner table's, so a column
+        /// comment has to be set there. `isCommentAlter()` also covers the view's own table comment.
+        AlterCommands column_comment_commands = params;
+        std::erase_if(column_comment_commands, [](const AlterCommand & command)
+        {
+            return !command.isCommentAlter() || command.type == AlterCommand::COMMENT_TABLE;
+        });
+        /// Altering the inner table commits separately from this view, so it has to come after every
+        /// check that can still reject the statement.
+        if (!column_comment_commands.empty())
+        {
+            auto target_alter_lock = target_table->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+            /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
+            /// this lock, and the alter below reads the inner table's metadata through that cache.
+            if (auto metadata_cache = local_context->getQueryMetadataCache())
+            {
+                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+                cache->clear();
+            }
+            target_table->checkAlterIsPossible(column_comment_commands, local_context);
+            target_table->alter(column_comment_commands, local_context, target_alter_lock);
+            target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+        }
+
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
     }
@@ -824,19 +854,6 @@ void StorageMaterializedView::alter(
     {
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
-
-    /// A column comment belongs to the view, not to its inner table and not to its query's sample
-    /// block, while the copy above and MODIFY QUERY both replace the view's column descriptions
-    /// wholesale. Restore the view's comments, then apply the ones this ALTER sets.
-    for (const auto & column : view_metadata->columns)
-        if (new_metadata.columns.has(column.name))
-            new_metadata.columns.setComment(column.name, column.comment);
-    /// Any command carrying a comment sets it, not just a comment-only one: `ADD COLUMN ... COMMENT`
-    /// and a `MODIFY COLUMN` that also restates the type are not comment alters, and the restore above
-    /// would otherwise put the old comment back over the one this ALTER just set.
-    for (const auto & command : params)
-        if (!command.ignore && command.comment.has_value() && new_metadata.columns.has(command.column_name))
-            new_metadata.columns.setComment(command.column_name, *command.comment);
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 

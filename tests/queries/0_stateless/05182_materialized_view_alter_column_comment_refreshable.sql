@@ -19,6 +19,9 @@ ALTER TABLE rmv_comment COMMENT COLUMN id 'changed';
 SYSTEM REFRESH VIEW rmv_comment;
 SYSTEM WAIT VIEW rmv_comment;
 SELECT 'refreshed rows', count() FROM rmv_comment;
+-- An accepted unrelated ALTER copies the replacement table's columns into the view, so the comment
+-- read below comes from that table and not from the view's pre-refresh metadata.
+ALTER TABLE rmv_comment MODIFY COMMENT 'view comment';
 SELECT 'comment column', comment FROM system.columns
 WHERE database = currentDatabase() AND table = 'rmv_comment' AND name = 'id';
 
