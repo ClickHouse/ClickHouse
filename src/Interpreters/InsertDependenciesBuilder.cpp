@@ -785,6 +785,45 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
 }
 
 
+bool InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(source_table_id))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        if (!view)
+            return true;
+
+        /// Only a `MaterializedView` is known to hand the chunk - deduplication info included - to its
+        /// target's sink within this pipeline, where `storageDeduplicatesBlocksOnInsert` describes what
+        /// happens to it. Any other kind of dependent view is not cheaply known here: fail closed.
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            return true;
+
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target)
+            return true;
+
+        if (storageDeduplicatesBlocksOnInsert(target, depth + 1))
+            return true;
+
+        /// The target may have dependent views of its own, which the insert into it pushes to in turn.
+        /// A target that expands them only inside a nested `INSERT` (an `Alias`) hides that graph from
+        /// the catalog walk below, so it is not cheaply known whether something behind it deduplicates.
+        if (forwardedInsertHidesDependentView(target, depth + 1))
+            return true;
+
+        if (dependentViewsDeduplicateBlocksOnInsert(target->getStorageID(), context, depth + 1))
+            return true;
+    }
+
+    return false;
+}
+
+
 bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)

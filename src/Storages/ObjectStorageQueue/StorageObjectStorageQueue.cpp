@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -807,14 +808,17 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     const bool is_deduplication_v2 = deduplication_v2_is_set
         && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     /// The per-chunk deduplication token is only ever consumed by the insert into the dependent
-    /// materialized views, and only when that insert deduplicates. A direct `SELECT` inserts
-    /// nowhere (`is_direct_select`), and `streamToViews` enables deduplication for the insert by
-    /// setting `async_insert_deduplicate` on the context it passes here, so ask the same question
-    /// the insert itself will ask. The table setting alone is not the answer: attaching a token to
-    /// a pipeline that never deduplicates would only make the token's own requirements - a strong
-    /// `ETag` - fail reads that are perfectly safe.
+    /// materialized views, and only by a target sink that deduplicates. A direct `SELECT` inserts
+    /// nowhere (`is_direct_select`); `streamToViews` enables deduplication for the insert by setting
+    /// `async_insert_deduplicate` on the context it passes here, so ask the same question the insert
+    /// itself will ask; and even then the token is dead weight when no dependent target deduplicates
+    /// (`Memory`, a `MergeTree` with the deduplication window disabled): `MergeTreeSink` consults
+    /// block ids only under its own `deduplicate` flag. The table setting alone is not the answer:
+    /// attaching a token to a pipeline that never deduplicates would only make the token's own
+    /// requirements - a strong `ETag` - fail reads that are perfectly safe.
     const bool add_deduplication_info = deduplication_v2_is_set && !is_direct_select
-        && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef());
+        && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef())
+        && InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(getStorageID(), local_context);
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
