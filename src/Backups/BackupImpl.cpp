@@ -1654,7 +1654,15 @@ void BackupImpl::finalizeWriting()
         /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
         /// initiator writes the manifest.
         if (!params.is_internal_backup)
+        {
+#if CLICKHOUSE_CLOUD && USE_SSL
+            /// Payload, not metadata: written outside the archive and not a backup entry, so no other
+            /// sync covers it, and the data files do not decrypt without it. Key infos exist iff it does.
+            if (!encryption_sidecar->getKeyInfos().empty())
+                writer->syncFileToDisk(encryption_sidecar->fileName());
+#endif
             writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
+        }
 
         /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
         /// CLUSTER, which write their own data files.
