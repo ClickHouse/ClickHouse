@@ -45,7 +45,8 @@ for attempt in {1..5}; do
     hash=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.zookeeper WHERE path = '$HASHES'")
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FAILPOINT"
 
-    query_id="04953_${CLICKHOUSE_DATABASE}_$attempt"
+    # The nonce keeps this unique across executions sharing a database, as conflicted() requires.
+    query_id="04953_${CLICKHOUSE_DATABASE}_${attempt}_$(random_str 10)"
     started=$(date +%s%3N)
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "INSERT INTO t_04953 SETTINGS $INSERT_SETTINGS VALUES (1)" &
     insert_job=$!
