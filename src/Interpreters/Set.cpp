@@ -467,10 +467,10 @@ static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_typ
             continue;
         }
 
-        if (!to_elements[i]->isNullable())
+        if (!isNullableOrLowCardinalityNullable(to_elements[i]))
             return false;
 
-        const WhichDataType to_which(removeNullable(to_elements[i]));
+        const WhichDataType to_which(removeNullable(removeLowCardinality(to_elements[i])));
         if (!to_which.isInt() && !to_which.isUInt() && !to_which.isFloat())
             return false;
 

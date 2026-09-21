@@ -98,6 +98,33 @@ SELECT 'variant element NULL, NOT IN' AS arm, count()
 FROM t_05233_left_variant WHERE (v, s) NOT IN (SELECT (v, n) FROM t_05233_right_variant)
 SETTINGS transform_null_in = 0;
 
+-- LowCardinality is an encoding the cast unwraps before converting and re-applies afterwards, so a
+-- LowCardinality(Nullable(<numeric>)) element reports a failed conversion as a plain Nullable one does.
+-- Such an element type is only creatable with allow_suspicious_low_cardinality_types.
+SELECT 'tuple key, LowCardinality(Nullable) set element' AS arm, count()
+FROM t_05233_left_int16 WHERE (n, g) IN (SELECT (CAST(v, 'LowCardinality(Nullable(Int8))'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0, allow_suspicious_low_cardinality_types = 1;
+
+SELECT 'tuple key, LowCardinality(Nullable) does not match the wrap artifact' AS arm, count()
+FROM t_05233_left_int16 WHERE (n, g) IN (SELECT (CAST(44, 'LowCardinality(Nullable(Int8))'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0, allow_suspicious_low_cardinality_types = 1;
+
+-- A failed conversion of such an element must set the tuple-level failure mask rather than become an
+-- inner NULL: as an inner NULL it would match a genuine NULL key, which answers 1 here.
+SELECT 'tuple key, LowCardinality(Nullable) set holds only NULL' AS arm, count()
+FROM t_05233_left_int16 WHERE (n, g) IN (SELECT (CAST(NULL, 'LowCardinality(Nullable(Int8))'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0, allow_suspicious_low_cardinality_types = 1;
+
+-- The other direction through the dictionary unwrap: a NULL the source carried is a key value and does
+-- match. This answers 1 on the strict path too; it is live against the source-NULL subtraction.
+SELECT 'tuple key, LowCardinality(Nullable) source NULL matches set NULL' AS arm, count()
+FROM t_05233_left_nullable WHERE (s, g) IN (SELECT (CAST(NULL, 'LowCardinality(Nullable(Int8))'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0, allow_suspicious_low_cardinality_types = 1;
+
+SELECT 'tuple key, LowCardinality source element' AS arm, count()
+FROM t_05233_left WHERE (CAST(s, 'LowCardinality(String)'), g) IN (SELECT (v, g) FROM t_05233_right)
+SETTINGS transform_null_in = 0;
+
 -- Controls. Each set key type below is one the cast cannot report a failed element for, so the query
 -- keeps aborting; admitting any of them would answer a match on a value the left row does not hold.
 
@@ -106,6 +133,11 @@ SETTINGS transform_null_in = 0;
 SELECT count() FROM t_05233_left_300
 WHERE (s, g) IN (SELECT (CAST(44, 'Int8'), g) FROM t_05233_right)
 SETTINGS transform_null_in = 0; -- { serverError CANNOT_PARSE_TEXT }
+
+-- A LowCardinality element whose dictionary type is not Nullable has nowhere to report a failure either.
+SELECT count() FROM t_05233_left_300
+WHERE (s, g) IN (SELECT (CAST(44, 'LowCardinality(Int8)'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0, allow_suspicious_low_cardinality_types = 1; -- { serverError CANNOT_PARSE_TEXT }
 
 -- Element target is Nullable(<composite>): the cast drops the request for a composite wrapper, and the
 -- element would silently become (44).
