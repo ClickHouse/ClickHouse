@@ -72,6 +72,10 @@ SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) EXCEPT ALL SELECT number %
 -- drawing, so only the strictness and the conditions are kept.
 -- Parallel replicas execute the whole join remotely, which changes the plan shape.
 SET enable_parallel_replicas = 0;
+-- The preliminary DISTINCT of the inputs is planned only for several threads, and a swap of the join sides reorders
+-- the inputs of the nested set operation.
+SET max_threads = 2;
+SET query_plan_join_swap_table = 'false';
 SELECT 'plan';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
