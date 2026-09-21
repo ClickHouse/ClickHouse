@@ -238,6 +238,7 @@ public:
     }
 
     virtual bool supportsDelete() const { return false; }
+    virtual bool supportsTruncate() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
         StoragePtr /*storage_ptr*/,

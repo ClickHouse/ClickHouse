@@ -185,6 +185,8 @@ public:
 
     bool supportsDelete() const override;
 
+    bool supportsTruncate() const override;
+
     bool supportsParallelInsert() const override;
 
     void mutate(const MutationCommands &, ContextPtr) override;

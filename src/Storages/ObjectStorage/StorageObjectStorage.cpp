@@ -446,6 +446,15 @@ bool StorageObjectStorage::supportsDelete() const
     return configuration->supportsDelete();
 }
 
+bool StorageObjectStorage::supportsTruncate() const
+{
+    if (!configuration->isDataLakeConfiguration())
+        return true;
+
+    configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsTruncate();
+}
+
 bool StorageObjectStorage::supportsParallelInsert() const
 {
     /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
