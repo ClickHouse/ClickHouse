@@ -141,34 +141,29 @@ SELECT levenshteinDistanceUTF8('詳で恥総げちうづ住池高そもぽょ宗
 SELECT levenshteinDistanceUTF8('半テ絶力へじづひ情日ヲフオマ型読9緊覧だづや田立だリ九高わす二申むドい生著るべや断彰ユカツ複95済モナス稿国ネサナユ近無メエ飯承ぱ項天法ら抜乾凍刷くゃイあ。公当記てあ茂全ー間仙サエ藤96送域エチキル資属企済7開フリセラ高5数なル名惑もせむ春午く済並めぜれ数なル名惑もせむ春午く済並めぜ', '話ゅへ成写ミヨ異読サ週製事ぼげ成権ク公地ウコトヘ録物内ンで手制ぜ江務たほ沼部よイとげ所46入ぽ閉載ハウ強集ヘ立問えろ後応披ぜやまよ裁捕藤やこも。京チ食相つてふば予真りぞ熱4一発ヤヒリ月能まぽどお曜主ずンぴ載告キヱ界未ヨセラ意古林ぐめ勝禁ヘヱナワ際無えくちゃ話稿けび文担達リ。公全ツハネレ失16変え軽将ケムトリ量4紙ミカ説海ちレろし年邦健ルチタ養未8既杉乾凍つンろめ。問えろ後応披ぜやまよJapanese Lorem Ipsum is based') AS actual, 215 AS expected;
 
 SELECT '-- jaroSimilarity/jaroWinklerSimilarity: SIMD kernel boundary and match-order coverage';
--- jaroSimilarity dispatches on the shorter of the two arguments: <= 64 bytes uses the jaroSmall
--- kernel, > 64 uses the jaroScan sliding-window kernel. All strings below contain repeated
--- bytes with overlapping match windows, so a matcher that picks a different (but still valid)
--- occurrence than the leftmost one changes the transposition count and therefore the result.
--- needle length 64 (jaroSmall, exactly at the boundary)
+-- Cover the 64-byte optimized-kernel boundary and greedy match ordering. All strings below
+-- contain repeated bytes with overlapping match windows, so a matcher that picks a different
+-- (but still valid) occurrence than the leftmost one changes the transposition count and result.
+-- length 64 (exactly at the short-kernel boundary)
 SELECT jaroSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABA'));
 SELECT jaroWinklerSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABA'));
--- needle length 65 (jaroScan, just past the boundary)
+-- length 65 (just past the short-kernel boundary)
 SELECT jaroSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABC'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAC'));
 SELECT jaroWinklerSimilarity(materialize('ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABC'), materialize('BABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAC'));
--- needle length 199 (jaroScan, exercises the 16-byte and tail loops)
+-- length 199 (exercises the general matcher)
 SELECT jaroSimilarity(materialize('XYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZQ'), materialize('ZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXQ'));
 SELECT jaroWinklerSimilarity(materialize('XYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZQ'), materialize('ZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXZYXQ'));
--- haystack longer than 64, needle (kernel selector) at exactly 60: still jaroSmall
+-- asymmetric lengths around the short-kernel boundary
 SELECT jaroSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
 SELECT jaroWinklerSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
--- haystack 40 bytes, needle 70 bytes: the needle is the longer side, so the arguments are
--- swapped internally to reach jaroSmall; also exercises the jaroWinklerSimilarity
--- common-prefix boost, which must still be computed on the original argument order
+-- asymmetric 40/70-byte inputs also exercise the jaroWinklerSimilarity common-prefix boost,
+-- which must still be computed on the original argument order
 SELECT jaroSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
 SELECT jaroWinklerSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
 
--- Which of the two arguments arrives as the needle is not under the control of the
--- implementation: `FunctionStringDistanceImpl::vectorConstant` forwards
--- `jaroSimilarity(column, const)` through `constantVector(const, column)`, so a row value can
--- arrive as the needle. The kernel must therefore be selected by the shorter side, and all four
--- shapes below - both argument orders, `column, const` and `const, column` - must give exactly
--- the same result as the plain `column, column` call.
+-- `FunctionStringDistanceImpl::vectorConstant` can reverse the internal argument order.
+-- Verify both argument orders and the `column, const` / `const, column` shapes remain exactly
+-- equivalent to the plain `column, column` call.
 SELECT jaroSimilarity(materialize(h), materialize(n)) FROM (SELECT repeat('AB', 60) AS h, repeat('BA', 21) AS n);
 SELECT
     jaroSimilarity(materialize(n), materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS symmetric,
