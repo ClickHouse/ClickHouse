@@ -94,3 +94,67 @@ SELECT count() FROM (
     EXPLAIN QUERY TREE SELECT 1 FROM file('nonexistent_04708.parquet', Parquet, 't Tuple(a Tuple(b UInt64), c UInt64)')
     WHERE tupleElement(tupleElement(t, 'a'), 'b') = 5)
 WHERE explain ILIKE '%column_name: t.a%';
+
+DROP TABLE IF EXISTS t_array_tuple_merge;
+DROP TABLE IF EXISTS t_array_tuple_file;
+
+CREATE TABLE t_array_tuple_file
+(
+    id UInt64,
+    a Array(Tuple(code UInt32, payload String)),
+    nested Array(Array(Tuple(code UInt32, payload String)))
+)
+ENGINE = File(Parquet);
+
+INSERT INTO t_array_tuple_file VALUES
+    (1, [(10, 'ten'), (11, 'eleven')], [[(10, 'ten')], [], [(11, 'eleven')]]),
+    (2, [], [[], []]),
+    (3, [(30, 'thirty')], []);
+
+CREATE TABLE t_array_tuple_merge AS t_array_tuple_file
+ENGINE = Merge(currentDatabase(), '^t_array_tuple_file$');
+
+SELECT '-- file Array(Tuple) values and types without rewriting';
+SELECT id, tupleElement(a, 'code'), tupleElement(a, 1), tupleElement(a, -1),
+       toTypeName(tupleElement(a, 'code')), tupleElement(nested, 'code'),
+       toTypeName(tupleElement(nested, 'code'))
+FROM t_array_tuple_file ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT '-- file Array(Tuple) values and types with rewriting';
+SELECT id, tupleElement(a, 'code'), tupleElement(a, 1), tupleElement(a, -1),
+       toTypeName(tupleElement(a, 'code')), tupleElement(nested, 'code'),
+       toTypeName(tupleElement(nested, 'code'))
+FROM t_array_tuple_file ORDER BY id;
+
+SELECT '-- array tuple elements reach file, Merge, and table-function subcolumns';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_file)
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 1) FROM t_array_tuple_file)
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, -1) FROM t_array_tuple_file)
+WHERE explain ILIKE '%column_name: a.payload%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(nested, 'code') FROM t_array_tuple_file)
+WHERE explain ILIKE '%column_name: nested.code%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_file)
+WHERE explain ILIKE '%function_name: tupleElement%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_merge)
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT tupleElement(a, 'code')
+    FROM file('nonexistent_04708_array.parquet', Parquet, 'a Array(Tuple(code UInt32, payload String))'))
+WHERE explain ILIKE '%column_name: a.code%';
+
+SELECT '-- other array subcolumns, nullable tuple wrappers, and unnamed file fields stay unchanged';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(a) FROM t_array_tuple_file)
+WHERE explain ILIKE '%column_name: a.size0%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT tupleElement(a, 'code')
+    FROM file('nonexistent_04708_array.parquet', Parquet, 'a Array(Nullable(Tuple(code UInt32, payload String)))'))
+WHERE explain ILIKE '%column_name: a.code%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT tupleElement(a, 1)
+    FROM file('nonexistent_04708_array.parquet', Parquet, 'a Array(Tuple(UInt32, String))'))
+WHERE explain ILIKE '%column_name: a.1%';
+
+DROP TABLE t_array_tuple_merge;
+DROP TABLE t_array_tuple_file;

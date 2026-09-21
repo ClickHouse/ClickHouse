@@ -1214,8 +1214,17 @@ bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, 
 {
     if (storage.supportsOptimizationToSubcolumns())
         return true;
-    /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
-    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
+
+    if (!storage.supportsOptimizationToTupleElementSubcolumns() || function_name != "tupleElement")
+        return false;
+
+    /// Preserve Nullable(Tuple) support, then look through Array wrappers only.
+    /// Array(Nullable(Tuple)) must stay on the function path.
+    auto nested_type = removeNullable(type.getPtr());
+    while (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type.get()))
+        nested_type = array_type->getNestedType();
+
+    return isTuple(nested_type);
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
