@@ -80,8 +80,8 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
     const auto & tuple = decaying.getStorageTuple();
     return {
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(3)),
         *decay_length,
     };
 }
@@ -125,43 +125,23 @@ struct DecayingColumnBuilder
     void append(Float64 value, Float64 time)
     {
         const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
-        if (!std::isfinite(normalized.signed_unit_time))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "ExponentialTimeDecaying value cannot be represented with a finite ordering index");
-
-        sign->insertValue(normalized.sign);
-        signed_unit_time->insertValue(normalized.signed_unit_time);
+        ordering_prefix->insertValue(normalized.ordering_prefix);
         value_at_anchor->insertValue(normalized.value_at_anchor);
         anchor_time->insertValue(normalized.anchor_time);
-    }
-
-    void appendPhysical(
-        Float64 sign_value,
-        Float64 signed_unit_time_value,
-        Float64 value,
-        Float64 time)
-    {
-        sign->insertValue(sign_value);
-        signed_unit_time->insertValue(signed_unit_time_value);
-        value_at_anchor->insertValue(value);
-        anchor_time->insertValue(time);
     }
 
     ColumnPtr build()
     {
         auto tuple = ColumnTuple::create(
             Columns{
-                std::move(sign),
-                std::move(signed_unit_time),
+                std::move(ordering_prefix),
                 std::move(value_at_anchor),
                 std::move(anchor_time)});
         return ColumnExponentialTimeDecaying::create(tuple->assumeMutable(), decay_length);
     }
 
     const Float64 decay_length;
-    ColumnFloat64::MutablePtr sign = ColumnFloat64::create();
-    ColumnFloat64::MutablePtr signed_unit_time = ColumnFloat64::create();
+    ColumnUInt64::MutablePtr ordering_prefix = ColumnUInt64::create();
     ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
     ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
 };

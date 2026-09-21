@@ -220,10 +220,35 @@ public:
             if (!index.has_value())
                 return arguments[2].column;
 
-            if (*index < 2)
-                res = storage_tuple.getColumnPtr(*index);
+            if (*index == 2)
+            {
+                res = ColumnFloat64::create(
+                    decaying_column.size(), input_type_as_decaying->getDecayLength());
+            }
             else
-                res = ColumnFloat64::create(decaying_column.size(), input_type_as_decaying->getDecayLength());
+            {
+                const auto & values
+                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(1)).getData();
+                const auto & times
+                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(2)).getData();
+                auto result = ColumnFloat64::create();
+                result->reserve(decaying_column.size());
+                for (size_t row = 0; row < decaying_column.size(); ++row)
+                {
+                    if (*index == 0)
+                        result->insertValue(values[row] == 0 ? 0 : std::copysign(1.0, values[row]));
+                    else if (values[row] == 0)
+                        result->insertValue(0);
+                    else
+                    {
+                        const Float64 sign = std::copysign(1.0, values[row]);
+                        const auto score = getExponentialTimeDecayingOrderingScore(
+                            values[row], times[row], input_type_as_decaying->getDecayLength());
+                        result->insertValue(sign * score.high);
+                    }
+                }
+                res = std::move(result);
+            }
 
             if (null_map_column)
                 res = applyOuterNullMap(res, logical_tuple.getElements()[*index], null_map_column);

@@ -204,8 +204,8 @@ public:
         {
             const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
             const auto & tuple = decaying.getStorageTuple();
-            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
-            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(3)).getData()[row_num];
+            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
             if (value == 0)
                 return;
         }
@@ -264,15 +264,8 @@ public:
                 result,
                 state.empty() ? 0 : state.max_time,
                 decay_length);
-            if (!std::isfinite(normalized.signed_unit_time))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Result of aggregate function {} cannot be represented by ExponentialTimeDecaying",
-                    getName());
-
             Tuple decaying_value{
-                Field(normalized.sign),
-                Field(normalized.signed_unit_time),
+                Field(normalized.ordering_prefix),
                 Field(normalized.value_at_anchor),
                 Field(normalized.anchor_time)};
             to.insert(Field(decaying_value));

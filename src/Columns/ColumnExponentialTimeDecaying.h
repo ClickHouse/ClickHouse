@@ -78,12 +78,9 @@ public:
         storage->deserializeAndInsertFromArena(in, settings);
     }
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override { storage->updateHashWithValue(n, hash); }
-    void updateHashFast(SipHash & hash) const override { storage->updateHashFast(hash); }
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
-    {
-        storage->computeHashInto(row_begin, row_end, hash_out, initial);
-    }
+    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashFast(SipHash & hash) const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;

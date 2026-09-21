@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <Common/HashTable/Hash.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/assert_cast.h>
@@ -41,7 +43,7 @@ ColumnExponentialTimeDecaying::ColumnExponentialTimeDecaying(
     , decay_length(decay_length_)
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(*storage);
-    chassert(tuple.tupleSize() == 4);
+    chassert(tuple.tupleSize() == 3);
 }
 
 std::string ColumnExponentialTimeDecaying::getName() const
@@ -112,10 +114,10 @@ int ColumnExponentialTimeDecaying::compareDirect(
     const auto & left_tuple = getStorageTuple();
     const auto & right_tuple = rhs.getStorageTuple();
 
-    const auto & left_values = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(2)).getData();
-    const auto & left_times = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(3)).getData();
-    const auto & right_values = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(2)).getData();
-    const auto & right_times = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(3)).getData();
+    const auto & left_values = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(1)).getData();
+    const auto & left_times = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(2)).getData();
+    const auto & right_values = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(1)).getData();
+    const auto & right_times = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(2)).getData();
 
     const Float64 left_value = left_values[n];
     const Float64 right_value = right_values[m];
@@ -134,27 +136,52 @@ int ColumnExponentialTimeDecaying::compareDirect(
     if (left_negative != right_negative)
         return left_negative ? -1 : 1;
 
-    const long double score_difference
-        = (static_cast<long double>(left_times[n]) - static_cast<long double>(right_times[m]))
-            / static_cast<long double>(decay_length)
-        + std::log(std::abs(static_cast<long double>(left_value)))
-        - std::log(std::abs(static_cast<long double>(right_value)));
+    const auto left_score = getExponentialTimeDecayingOrderingScore(
+        left_value, left_times[n], decay_length);
+    const auto right_score = getExponentialTimeDecayingOrderingScore(
+        right_value, right_times[m], decay_length);
 
-    if (score_difference < 0)
-        return left_negative ? 1 : -1;
-    if (score_difference > 0)
-        return left_negative ? -1 : 1;
+    int result = 0;
+    if (left_score.high < right_score.high)
+        result = -1;
+    else if (left_score.high > right_score.high)
+        result = 1;
+    else if (left_score.low < right_score.low)
+        result = -1;
+    else if (left_score.low > right_score.low)
+        result = 1;
 
-    /// Keep equality consistent with the physical hash key.
-    if (left_value < right_value)
-        return -1;
-    if (left_value > right_value)
-        return 1;
-    if (left_times[n] < right_times[m])
-        return -1;
-    if (left_times[n] > right_times[m])
-        return 1;
-    return 0;
+    return left_negative ? -result : result;
+}
+
+namespace
+{
+
+void updateCanonicalHash(
+    const ColumnExponentialTimeDecaying & column, size_t row, SipHash & hash)
+{
+    const auto & tuple = column.getStorageTuple();
+    const Float64 value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
+    const Float64 time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row];
+
+    const Int8 sign = value == 0 ? 0 : (std::signbit(value) ? -1 : 1);
+    const auto score = getExponentialTimeDecayingOrderingScore(
+        value, time, column.getDecayLength());
+    const Float64 high = score.high == 0 ? 0 : score.high;
+    const Float64 low = score.low == 0 ? 0 : score.low;
+    hash.update(sign);
+    hash.update(high);
+    hash.update(low);
+}
+
+UInt32 canonicalWeakHash(
+    const ColumnExponentialTimeDecaying & column, size_t row)
+{
+    SipHash hash;
+    updateCanonicalHash(column, row, hash);
+    return static_cast<UInt32>(hash.get64());
+}
+
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -171,15 +198,34 @@ int ColumnExponentialTimeDecaying::doCompareAt(
     const auto & left_tuple = getStorageTuple();
     const auto & right_tuple = rhs.getStorageTuple();
 
-    const int sign_compare = left_tuple.getColumn(0).compareAt(n, m, right_tuple.getColumn(0), nan_direction_hint);
-    if (sign_compare != 0)
-        return sign_compare;
-
-    const int index_compare = left_tuple.getColumn(1).compareAt(n, m, right_tuple.getColumn(1), nan_direction_hint);
-    if (index_compare != 0)
-        return index_compare;
+    const int prefix_compare
+        = left_tuple.getColumn(0).compareAt(n, m, right_tuple.getColumn(0), nan_direction_hint);
+    if (prefix_compare != 0)
+        return prefix_compare;
 
     return compareDirect(n, m, rhs);
+}
+
+void ColumnExponentialTimeDecaying::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    updateCanonicalHash(*this, n, hash);
+}
+
+void ColumnExponentialTimeDecaying::updateHashFast(SipHash & hash) const
+{
+    for (size_t row = 0; row < size(); ++row)
+        updateCanonicalHash(*this, row, hash);
+}
+
+void ColumnExponentialTimeDecaying::computeHashInto(
+    size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    for (size_t row = row_begin; row < row_end; ++row)
+    {
+        const UInt32 value = canonicalWeakHash(*this, row);
+        UInt32 & out = hash_out[row - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnExponentialTimeDecaying::getPermutation(
