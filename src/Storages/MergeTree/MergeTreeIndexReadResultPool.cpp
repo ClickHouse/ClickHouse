@@ -160,17 +160,22 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     if (dynamic_predicate_builder && !ranges.empty() && (prune_primary_key || !usable_dynamic_skip_indexes.empty()))
     {
-        /// Pruning by the primary key needs the part itself.
-        auto data_part = part_info->getDataPart();
-        if (!data_part)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Read-time dynamic predicate pruning is not supported for part {}, which has no concrete data part",
-                part_info->getPartName());
-
+        /// Ask for the predicate before anything else: a filter that kept neither an exact value set nor a
+        /// `[min, max]` range yields no predicate at all, and then this part must stay a true no-op. That is
+        /// not an exotic case - a key type outside `RuntimeFilterIndexAnalysis::supportsDataType` (`String`
+        /// and friends) never records a range, so once its filter overflows `join_runtime_filter_exact_values_limit`
+        /// it can never prune again, however index-capable the probe side is.
         ActionsDAG predicate_dag;
         const ActionsDAG::Node * predicate = dynamic_predicate_builder(predicate_dag);
         if (predicate)
         {
+            /// Pruning by the primary key needs the part itself.
+            auto data_part = part_info->getDataPart();
+            if (!data_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Read-time dynamic predicate pruning is not supported for part {}, which has no concrete data part",
+                    part_info->getPartName());
+
             const size_t granules_before = ranges.getNumberOfMarks();
             ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
 
