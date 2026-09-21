@@ -55,6 +55,35 @@ void ITableFunction::checkEngineAccess(ContextPtr context) const
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
 }
 
+AccessRightsElements ITableFunction::getRequiredAccessForRead() const
+{
+    AccessRightsElements result;
+
+    if (const auto access_object = getSourceAccessObject())
+    {
+        AccessRightsElement source{AccessType::READ};
+        source.parameter = toStringSource(*access_object);
+        result.emplace_back(std::move(source));
+    }
+
+    if (requiresTableEngineGrant())
+    {
+        if (const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
+            engine && *engine)
+        {
+            AccessRightsElement table_engine{AccessType::TABLE_ENGINE};
+            table_engine.parameter = engine;
+            result.emplace_back(std::move(table_engine));
+        }
+    }
+
+    const auto properties = TableFunctionFactory::instance().tryGetProperties(getName());
+    if (!properties || !properties->allow_readonly)
+        result.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+
+    return result;
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.

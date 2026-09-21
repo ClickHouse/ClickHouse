@@ -3,6 +3,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -131,6 +132,17 @@ public:
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
+
+    /// The access a read through this function requires, as far as it is known without the
+    /// arguments of the call: the source of its engine, the `TABLE ENGINE` grant of the engines
+    /// that require one, and `CREATE TEMPORARY TABLE` unless the function is allowed in readonly
+    /// mode - the same three checks `execute` performs. The source is required on every object of
+    /// that source, because the URI the call reads is known only to a parsed instance of the
+    /// function, so a grant filtered by URI does not satisfy this.
+    /// For callers that have to state the requirement before the call is built: the mutation read
+    /// pre-check does, because a table function in a mutation expression is otherwise built only by
+    /// the background mutation, under full access.
+    AccessRightsElements getRequiredAccessForRead() const;
 
     virtual ~ITableFunction() = default;
 

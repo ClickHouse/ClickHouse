@@ -46,14 +46,21 @@ void addExpressionColumnsSelectAccess(
 /// produces a column-level requirement. Every other shape - a join, several tables, a nested
 /// subquery or table function in `FROM`, an asterisk, a dotted name that may itself be a column -
 /// falls back to requiring `SELECT` on the whole table, which is a superset and so never
-/// under-requires. `WITH` names (within the `SELECT` that defines them and its subqueries) and
-/// session temporary tables are not tables to grant on and are skipped. A table function inside a
-/// subquery is not covered: its privilege is derived from an instance of the function, which is
-/// what validation builds.
+/// under-requires. `WITH` names (within the `SELECT` that defines them and its subqueries) are not
+/// tables to grant on and are skipped; a session temporary or external table of the same name is
+/// not, because the background mutation that replays the expression has no such table and the name
+/// can only be read there as a permanent one.
+///
+/// A table function - on the right of an `IN` or in the `FROM` of a subquery - requires the access
+/// a call of it requires (`ITableFunction::getRequiredAccessForRead`), on the whole source of its
+/// engine: the data it reads is named by its arguments rather than by an object to grant on, and
+/// the instance that would check the access is otherwise built only by the background mutation,
+/// under full access.
 ///
 /// An unqualified table is required in `mutated_database` - the database the mutation expression is
 /// qualified with before it is stored, and so the one it is read from - rather than in the session's
-/// current database; `dictGet` and `joinGet` names keep their current-database resolution.
+/// current database, and so is the object of a `dictGet` or `joinGet`, which the same visitor
+/// qualifies with the same database.
 /// `mutated_table` and `mutated_metadata` are used only to tell a table from a column on the right
 /// of `IN`: `... WHERE x IN arr` reads an array column, `... WHERE x IN other` reads a table, and the
 /// two are the same identifier in the AST. `mutated_metadata` may be null when the table is not

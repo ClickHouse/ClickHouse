@@ -16,6 +16,17 @@ NOT_DENIED
 NOT_DENIED
 -- Once that subquery ends its WITH names are out of scope, and a later IN of the same name reads a table
 ACCESS_DENIED
+-- A session temporary table does not make a name grant-free in a mutation
+OK
+ACCESS_DENIED
+-- A table function read requires the source access of its call, on the right of IN and in a FROM
+ACCESS_DENIED
+ACCESS_DENIED
+-- A read-only table function with no source of its own needs no grant, as in a plain SELECT
+NOT_DENIED
+-- With the source grant the same mutations are accepted
+NOT_DENIED
+NOT_DENIED
 -- An unqualified table is read from the mutated table's database, not the session's
 ACCESS_DENIED
 ACCESS_DENIED

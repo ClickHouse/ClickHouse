@@ -26,6 +26,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageJoin.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
@@ -230,6 +232,12 @@ private:
                     required_access.emplace_back(
                         AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name);
             }
+            /// `x IN file(...)` reads through a table function, which is a table expression here and
+            /// not an ordinary call - `PlannerJoinTree` tells the two apart by the same name lookup.
+            else if (const auto * right = arguments[1]->as<ASTFunction>(); right && isTableFunctionName(right->name))
+            {
+                visitTableFunction(*right);
+            }
         }
         else if (functionIsJoinGet(function.name) && arguments.size() >= 2)
         {
@@ -265,6 +273,47 @@ private:
                 required_access.emplace_back(AccessType::dictGet);
             else if (dictionary_id)
                 required_access.emplace_back(dictionaryAccess(*dictionary_id));
+        }
+    }
+
+    /// Whether a name in a table expression position is a table function, decided the same way the
+    /// analyzer decides it (`QueryAnalyzer::resolveTableFunction`, `PlannerJoinTree`).
+    static bool isTableFunctionName(const String & name)
+    {
+        return TableFunctionFactory::instance().isTableFunctionName(name);
+    }
+
+    /// A table function read (`... WHERE id IN file('data.tsv', 'TSV', 'id UInt32')`, or one in the
+    /// `FROM` of a subquery) requires the access a call of that function requires - the source of
+    /// its engine, a `TABLE ENGINE` grant, `CREATE TEMPORARY TABLE` - which `ITableFunction::execute`
+    /// checks when the function is built. For a mutation that happens in the background, under full
+    /// access, so nothing would be checked against the submitting user without this; and unlike a
+    /// table, a table function names the data it reads in its arguments, so there is no grant on an
+    /// object to ask for instead.
+    ///
+    /// The requirement is the one of the function, not of the call: the arguments are not parsed
+    /// here, so a source grant narrowed by a URI does not satisfy it. That is the conservative side
+    /// - a mutation reading a source the user may read only through one URI is refused, rather than
+    /// a mutation reading a source the user may not read at all being accepted.
+    void visitTableFunction(const ASTFunction & function)
+    {
+        if (auto table_function = TableFunctionFactory::instance().tryGet(function.name, context))
+        {
+            for (auto & element : table_function->getRequiredAccessForRead())
+                required_access.emplace_back(std::move(element));
+        }
+
+        if (!function.arguments)
+            return;
+
+        /// A table function may take another one among its arguments, and any of them may hold a
+        /// subquery.
+        for (const auto & argument : function.arguments->children)
+        {
+            if (const auto * nested = argument->as<ASTFunction>(); nested && isTableFunctionName(nested->name))
+                visitTableFunction(*nested);
+            else
+                visitExpression(argument.get());
         }
     }
 
@@ -489,10 +538,12 @@ private:
                 attributable = false;
                 all_tables_named = false;
             }
-            else if (table_expression->table_function)
+            else if (const auto & table_function = table_expression->table_function)
             {
-                /// Not covered - walk the arguments for nested subqueries at least.
-                visitExpression(table_expression->table_function.get());
+                if (const auto * function = table_function->as<ASTFunction>())
+                    visitTableFunction(*function);
+                else
+                    visitExpression(table_function.get());
                 attributable = false;
                 all_tables_named = false;
             }
@@ -509,8 +560,8 @@ private:
                 auto table_id = identifier->getTableId();
                 if (needsNoGrant(table_id))
                 {
-                    /// A `WITH` element or a temporary table needs no grant, but its columns are not
-                    /// known from the catalog either.
+                    /// A `WITH` element needs no grant, but its columns are not known from the
+                    /// catalog either.
                     all_tables_named = false;
                     continue;
                 }
@@ -652,7 +703,7 @@ private:
     /// is qualified with a database before it is stored, so `WHERE 1 IN arr` becomes `1 IN (db.arr)`
     /// and reads a table `db.arr` on every entry point, even when `arr` is an array column of the
     /// mutated table - the column is only read by a qualified `WHERE 1 IN t.arr`. A `WITH` name is
-    /// not a table to grant on, and a temporary table needs no grant, exactly as in a plain `SELECT`.
+    /// not a table to grant on; a session temporary table of that name is one, see `needsNoGrant`.
     /// Neither is an expression alias of the `SELECT` level the name appears at: `AddDefaultDatabaseVisitor`
     /// keeps such a name as written instead of making a table identifier of it, so the mutation reads
     /// a column and asking for `SELECT` on a table of that name would deny a mutation the grants allow.
@@ -793,16 +844,18 @@ private:
         return names;
     }
 
-    /// A `WITH` name and a session temporary table are not tables to grant `SELECT` on, exactly as
-    /// in a plain `SELECT`.
+    /// A `WITH` name is not a table to grant `SELECT` on: it is defined by the expression itself.
+    ///
+    /// A session temporary or external table of the same name is deliberately not exempted, unlike
+    /// in a plain `SELECT`. A mutation is not executed in the session that submits it: the stored
+    /// expression is replayed by a background mutation, which has neither the temporary tables of
+    /// that session nor a current database, and `AddDefaultDatabaseVisitor` leaves a name that the
+    /// session answers with a temporary table unqualified. Exempting such a name would let a
+    /// session-scoped table stand in for a permanent one of that name for as long as it takes to
+    /// enqueue the mutation, so the name is required here as the table it can only be read as.
     bool needsNoGrant(const StorageID & table_id) const
     {
-        if (!table_id.database_name.empty())
-            return false;
-
-        return isCteName(table_id.table_name)
-            || static_cast<bool>(context->tryResolveStorageID(
-                   StorageID{"", table_id.table_name}, Context::ResolveExternal));
+        return table_id.database_name.empty() && isCteName(table_id.table_name);
     }
 
     /// The aliases of the expressions of one `SELECT` level, including those of an `ARRAY JOIN`

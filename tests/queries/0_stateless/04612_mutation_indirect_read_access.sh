@@ -138,6 +138,35 @@ echo "-- Once that subquery ends its WITH names are out of scope, and a later IN
 check_not_denied "ALTER TABLE arr_tab DELETE WHERE 1 IN (WITH secret_set AS (SELECT 0) SELECT 0) OR id IN secret_set SETTINGS validate_mutation_query = 0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE arr_tab SYNC"
 
+# A mutation is not executed in the session that submits it: the stored expression is replayed by a
+# background mutation, which has no temporary tables of that session and no current database. A name
+# a session temporary table answers is therefore not a grant-free name here - it is only readable
+# there as a permanent table of that name.
+echo "-- A session temporary table does not make a name grant-free in a mutation"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO $user_name"
+# The session may create that temporary table and read it, so the denial below is the mutation's.
+check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); SELECT count() FROM secret_set"
+check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
+
+# A table function names the data it reads in its arguments instead of naming an object to grant on,
+# and the instance of it that checks the source access is built only when the set is built - for a
+# mutation, in the background, under full access. So the access its call requires is required here.
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE tf_tab (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tf_tab VALUES (1);
+GRANT ALTER DELETE, SELECT ON $CLICKHOUSE_DATABASE.tf_tab TO $user_name;
+"
+echo "-- A table function read requires the source access of its call, on the right of IN and in a FROM"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv', 'TSV', 'id UInt32') SETTINGS validate_mutation_query = 0"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) SETTINGS validate_mutation_query = 0"
+echo "-- A read-only table function with no source of its own needs no grant, as in a plain SELECT"
+check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN numbers(2) AND 0 SETTINGS validate_mutation_query = 0"
+echo "-- With the source grant the same mutations are accepted"
+$CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO $user_name"
+check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv', 'TSV', 'id UInt32') AND 0 SETTINGS validate_mutation_query = 0"
+check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) AND 0 SETTINGS validate_mutation_query = 0"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tf_tab SYNC"
+
 # The mutation expression is qualified with the database of the mutated table before it is stored,
 # so an unqualified table in it is read from that database - not from the session's current one,
 # where the user may read a table of the same name (here, one that does not even exist).
