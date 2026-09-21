@@ -43,6 +43,9 @@ arm f2_rabbitmq_engine_password  "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitM
 arm f3_rabbitmq_engine_control   "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_address = 'amqp://h:5672/v')"
 arm f4_kafka_engine_password     "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka(nc05233, kafka_sasl_password = 'leak05233kafkapw')"
 arm f5_kafka_positional_control  "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka('broker05233:9092', 'topic05233', 'group05233', 'JSONEachRow')"
+# That positional form also makes the collection name optional, so a named override can be the first
+# argument. The positional beside it stays visible, so this arm is its own over-masking control.
+arm f6_kafka_first_argument_secret "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka(kafka_sasl_password = 'leak05233kafkafirst', 'clickhouse')"
 
 # An XDBC connection string is forwarded to the driver verbatim, so its grammar is the driver's: the
 # password can sit in a query parameter or in a `KEY=value;` list, and no URI scan bounds it. The
@@ -59,6 +62,9 @@ arm d7_jdbc_both_aliases     "SELECT * FROM jdbc(nc05233, datasource = 'a://u:le
 arm d8_mysql_computed_key    "SELECT * FROM mysql(nc05233, concat('ssl_ca', '_pem') = 'leak05233mysql', table = 't')"
 # After the collection name every argument must be named, so a positional one is hidden whole.
 arm d9_jdbc_positional_after_collection "SELECT * FROM jdbc(nc05233, 'jdbc://u:leak05233pos@h/db')"
+# A named argument at index 0 is not a collection name, so the connection string can then sit at any
+# index under either alias.
+arm d10_jdbc_named_without_collection "SELECT * FROM jdbc(external_table = 't05233', datasource = 'DSN=x;Uid=u;Pwd=leak05233nocoll')"
 
 # The query-level URL settings are read through `Poco::URI`, so host and path stay visible and only
 # the userinfo is hidden. A value with no scheme in front of it is hidden whole instead.
