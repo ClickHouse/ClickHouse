@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -33,15 +33,17 @@ ClickHouse を Holistics に接続すると、コードベースのセマンテ�
 専用ユーザーには、クエリ対象のテーブルに対する`SELECT`権限に加え、`system`テーブルに対する権限 (スキーマ検出用) も必要です。
 
 ```sql
--- Example: Grant read access to a specific database
+-- 例: 特定のデータベースへの読み取りアクセスを付与する
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Grant access to system metadata
+-- システムメタデータへのアクセスを付与する
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step title="接続情報を確認する" id="step-1-gather-connection-details">
+  <Step>
+    ## 接続情報を確認する
+
     HTTP(S) を使用して ClickHouse に接続するには、次の情報が必要です。
 
     | **Parameter**     | **Description**                                                              |
@@ -57,7 +59,9 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="ClickHouse Cloud console における Connect ボタンの場所" border />
   </Step>
 
-  <Step title="ネットワークアクセスを設定する" id="step-2-configure-network-access">
+  <Step>
+    ## ネットワークアクセスを設定する
+
     Holistics はクラウドベースのアプリケーションのため、その server から database に接続できる必要があります。方法は 2 つあります。
 
     1. **Direct Connection (推奨) :** ファイアウォールまたは ClickHouse Cloud の IP Access List で、Holistics の IP アドレスを許可リストに追加します。IP アドレスの一覧は [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) で確認できます。
@@ -67,14 +71,16 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Reverse SSH Tunnel:** database がプライベートネットワーク (VPC) 内にあり、公開できない場合は、[Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel) を使用します。
   </Step>
 
-  <Step title="Holistics で データソース を追加する" id="step-3-add-data-source-in-holistics">
+  <Step>
+    ## Holistics で data source を追加する
+
     1. Holistics で **Settings → データソース** に移動します。
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Holistics の設定で データソース に移動する" border />
 
     2. **New Data Source** をクリックし、**ClickHouse** を選択します。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="新しい データソース の一覧から ClickHouse を選択する" border />
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="新しい data source の一覧から ClickHouse を選択する" border />
 
     3. ステップ 1 で確認した情報をフォームに入力します。
 

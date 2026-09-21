@@ -1,0 +1,72 @@
+---
+noindex: true
+title: "运行预检"
+sidebarTitle: "运行预检"
+description: "为确保您的环境已就绪，或在升级前进行验证，我们提供预检。"
+---
+
+为确保您的环境已就绪，或在升级前进行验证，我们提供预检。预检基于 [Troubleshoot](https://troubleshoot.sh/) 运行；它是一个用于集群诊断的 Kubernetes 插件。整个过程中不会导出任何数据。
+
+以下操作指南说明如何运行预检。
+
+<div id="install-the-plugin">
+  ## 安装插件
+</div>
+
+```bash
+kubectl krew install preflight
+```
+
+或者参阅 [Troubleshoot 文档](https://troubleshoot.sh/docs/)，了解其他安装选项。
+
+<div id="copy-the-preflight-helm-chart">
+  ## 复制 预检 Helm 图表
+</div>
+
+将 预检 图表添加到 ECR 复制步骤中：
+
+```text
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>> docker://$TARGET_ECR_REPO/helm/preflight-check:<<PREFLIGHT_CHART_TAG>>
+```
+
+<div id="run-the-checks">
+  ## 运行检查
+</div>
+
+使用 `helm template` 渲染 预检 规范，然后通过管道将其传给 `kubectl preflight`：
+
+```ini
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+CHART_VERSION=<<PREFLIGHT_CHART_TAG>>
+CLUSTER_NAME=default-xx-01
+
+helm template clickhouse-preflight \
+    oci://$ECR_HOST/helm/preflight-check \
+    --version=$CHART_VERSION \
+    --set preflight.clickhouseClusterName=$CLUSTER_NAME | \
+kubectl preflight -
+```
+
+这会验证节点标记、StorageClass 配置及其他要求。它还会检查现有 ClickHouse 集群是否已做好升级准备，并报告已弃用的功能开关或新增要求。
+
+输出会显示每项检查及其状态。如果某项检查失败，还会提供修复该问题的建议。
+
+要针对自定义 StorageClass 进行验证：
+
+```text
+    --set preflight.checks.prerequisites.storageClassName=<your-storage-class>
+```
+
+<div id="required-permissions">
+  ### 所需权限
+</div>
+
+执行 `kubectl preflight` 的用户或服务账号需要对以下资源具有只读权限：
+
+| 范围                                           | 资源                                                                                        |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 集群级                                          | `nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, `customresourcedefinitions` |
+| Operator 命名空间 (`clickhouse-operator-system`) | `deployments`, `replicasets`, `pods`, `services`, `configmaps`, `events`                  |
+| 集群命名空间 (`ns-<cluster-name>`)                 | `statefulsets`, `pods`, `persistentvolumeclaims`, `services`, `configmaps`, `events`      |
+
+具有内置 `view` 集群角色，并对相关命名空间拥有 `view` 访问权限的主体即可满足要求。

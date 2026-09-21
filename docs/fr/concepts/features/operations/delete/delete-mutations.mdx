@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: 'Mutations de suppression'
+title: 'Mutations de suppression'
+hide_title: false
+description: 'Page décrivant les mutations de suppression - requêtes ALTER qui modifient les données d’une table via des suppressions'
+keywords: ['mutations de suppression', 'ALTER TABLE DELETE', 'mutations de données', 'réécriture des data parts', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+Les mutations de suppression désignent des requêtes `ALTER` qui modifient les données d’une table via des suppressions. Il s’agit notamment de requêtes comme `ALTER TABLE DELETE`, entre autres. L’exécution de telles requêtes produit de nouvelles versions mutées des data parts. Cela signifie que ces instructions déclenchent la réécriture de data parts entières pour toutes les données insérées avant la mutation, ce qui entraîne un grand nombre de requêtes d’écriture.
+
+<Info>
+  Pour les suppressions, vous pouvez éviter ce volume important de requêtes d’écriture en utilisant des moteurs de table spécialisés comme [ReplacingMergeTree](/fr/concepts/features/operations/update/replacing-merge-tree) ou [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree) à la place du moteur de table MergeTree par défaut.
+</Info>
+
+import DeleteMutations from '/snippets/fr/delete.mdx';
+
+<DeleteMutations />

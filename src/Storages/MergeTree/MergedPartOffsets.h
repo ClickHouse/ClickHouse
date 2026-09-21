@@ -37,10 +37,10 @@ private:
     struct Page
     {
     public:
-        /// Page of consecutive values: min_val and num_vals describe it fully, nothing is packed
-        Page(UInt64 min_val_, size_t num_vals_)
-            : num_vals(num_vals_)
-            , min_val(min_val_)
+        /// Special page that holds only one value
+        explicit Page(UInt64 val)
+            : num_vals(1)
+            , min_val(val)
             , bits_per_val(0)
             , compressed_data(nullptr)
         {
@@ -92,9 +92,9 @@ private:
         {
             chassert(i < num_vals);
 
-            // Nothing is packed for a run of consecutive values, and min_val is also the first value of a packed page
-            if (bits_per_val == 0 || i == 0)
-                return min_val + i;
+            // First value is always the minimum value
+            if (i == 0)
+                return min_val;
 
             // Calculate bit position and decode compressed value
             size_t bits = (i - 1) * bits_per_val;
@@ -142,12 +142,10 @@ public:
         if (current_page_values.empty())
             return;
 
-        /// A merge that does not interleave this part's rows - parts covering disjoint ranges of the sorting
-        /// key, or a table without one - inserts consecutive runs, which span exactly size() - 1.
-        if (current_page_values.back() - current_page_values.front() == current_page_values.size() - 1)
+        if (current_page_values.size() == 1)
         {
-            pages.emplace_back(current_page_values.front(), current_page_values.size());
-            current_page_values.clear();
+            /// Construct a single value page
+            pages.emplace_back(current_page_values[0]);
             return;
         }
 

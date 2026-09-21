@@ -7,9 +7,6 @@ from helpers.cluster import ClickHouseCluster
 # 'bitpacking', where DDL recovery is the only way to decode old segments.
 OLD_VERSION_TAG = "26.4"
 
-# 26.4 rejects a `v1_with_codec` part on its version check, before reaching the codec type.
-CODEC_AWARE_VERSION_TAG = "26.8"
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -33,14 +30,6 @@ def started_cluster():
             with_installed_binary=True,
             stay_alive=True,
             user_configs=["configs/compatibility.xml"],
-        )
-        # Parses the header but does not know `pfor`.
-        cluster.add_instance(
-            "node_codec_aware",
-            image="clickhouse/clickhouse-server",
-            tag=CODEC_AWARE_VERSION_TAG,
-            with_installed_binary=True,
-            stay_alive=True,
         )
         cluster.start()
         yield cluster
@@ -126,13 +115,11 @@ def create_and_populate(node, table, posting_list_codec):
     node.query(f"OPTIMIZE TABLE {table} FINAL")
 
 
-SEARCH_SETTINGS = {
-    # Exercise the lazy posting list apply mode against the upgraded binary:
-    # pre-V1_WithCodec granules silently fall back to eager mode, while the new-format
-    # part inserted after the upgrade actually uses the cursor-based reader.
+# Exercise the lazy posting list apply mode against the upgraded binary:
+# pre-V1_WithCodec granules silently fall back to eager mode, while the new-format
+# part inserted after the upgrade actually uses the cursor-based reader.
+LAZY_APPLY_SETTINGS = {
     "text_index_posting_list_apply_mode": "lazy",
-    # Keep count() on the index-scan plan (Name: idx), not the count-from-index rewrite.
-    "query_plan_optimize_count_from_text_index": 0,
 }
 
 
@@ -145,49 +132,6 @@ def run_search_queries(node, table, settings=None):
 
 def expected_results():
     return [expected for _, expected in SEARCH_QUERIES]
-
-
-# The count-from-index rewrite (default on) applies to a bare count() with a
-# text predicate; the arraySort(groupArray(...)) query is not a count.
-COUNT_QUERIES = [q for q, _ in SEARCH_QUERIES if q.lstrip().startswith("SELECT count()")]
-
-
-COUNT_OPTIMIZATION_SETTINGS = {
-    "query_plan_optimize_count_from_text_index": 1,
-    "query_plan_direct_read_from_text_index": 1,
-    "optimize_trivial_count_query": 1,
-}
-
-
-def assert_count_from_index_agrees(node, table):
-    # The rewrite answers count() from posting/dictionary cardinalities instead
-    # of scanning rows. Prove it agrees with the index-scan count on whatever
-    # parts the table currently holds, so its decode is checked against
-    # pre-V1_WithCodec and mixed-format segments, not only new-format ones.
-
-    # Fail loud if the rewrite is not engaged, otherwise the checks below pass
-    # vacuously (both paths would just be the index scan).
-    plan = node.query(
-        ("EXPLAIN " + COUNT_QUERIES[0]).format(table=table),
-        settings=COUNT_OPTIMIZATION_SETTINGS,
-    )
-    assert "ReadFromTextIndexCount" in plan, (
-        f"count-from-index rewrite not engaged after upgrade:\n{plan}"
-    )
-
-    for q in COUNT_QUERIES:
-        optimized = node.query(
-            q.format(table=table),
-            settings=COUNT_OPTIMIZATION_SETTINGS,
-        ).strip()
-        reader = node.query(
-            q.format(table=table),
-            settings={"query_plan_optimize_count_from_text_index": 0},
-        ).strip()
-        assert optimized == reader, (
-            f"count-from-index disagrees with the index scan for `{q}`: "
-            f"optimized={optimized} reader={reader}"
-        )
 
 
 @pytest.mark.parametrize(
@@ -212,21 +156,18 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
 
     # Same data, same queries, same answers under the upgraded binary.
     # Lazy mode falls back to materialize for these pre-V1_WithCodec granules.
-    assert run_search_queries(node, table, settings=SEARCH_SETTINGS) == expected_results()
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == expected_results()
 
     # Confirm the text index is engaged after upgrade; without this check a
     # silent fallback to full scan would still pass the queries above.
     explain = node.query(
         f"EXPLAIN indexes = 1 "
         f"SELECT count() FROM {table} WHERE hasToken(s, 'unique42')",
-        settings=SEARCH_SETTINGS,
+        settings=LAZY_APPLY_SETTINGS,
     )
     assert "Name: idx" in explain, (
         f"text index `idx` not picked up after upgrade:\n{explain}"
     )
-
-    # count-from-index must decode the pre-V1_WithCodec segments on its own path.
-    assert_count_from_index_agrees(node, table)
 
     # Insert a third part via the upgraded binary so the table has both old-
     # and new-format index segments side-by-side.
@@ -257,16 +198,13 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     ]
     # Mixed run: old-format parts take the materialize fallback; the new-format
     # part can satisfy the lazy-mode preconditions.
-    assert run_search_queries(node, table, settings=SEARCH_SETTINGS) == mixed_expected
-
-    # count-from-index across mixed old- and new-format parts in one query.
-    assert_count_from_index_agrees(node, table)
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == mixed_expected
 
     # Confirm the new-format part is indexed for the new token.
     assert (
         node.query(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')",
-            settings=SEARCH_SETTINGS,
+            settings=LAZY_APPLY_SETTINGS,
         ).strip()
         == "1"
     )
@@ -289,17 +227,14 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     # Same queries against the merged part: checks mixed-version index data
     # was correctly merged, not just readable. The merged part is new-format,
     # so lazy mode is now actually engaged for every query.
-    assert run_search_queries(node, table, settings=SEARCH_SETTINGS) == mixed_expected
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == mixed_expected
     assert (
         node.query(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')",
-            settings=SEARCH_SETTINGS,
+            settings=LAZY_APPLY_SETTINGS,
         ).strip()
         == "1"
     )
-
-    # count-from-index on the merged new-format part built from mixed segments.
-    assert_count_from_index_agrees(node, table)
 
     node.query(f"DROP TABLE {table} SYNC")
     node.restart_with_original_version()
@@ -458,53 +393,6 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
         assert_index_used(node, table)
-
-        node.query(f"DROP TABLE {table} SYNC")
-    finally:
-        if new_version_active:
-            node.restart_with_original_version()
-
-
-def test_downgrade_after_writing_pfor(started_cluster):
-    """An unknown codec must be refused, not decoded - which is why `pfor` needs no version bump."""
-    node = started_cluster.instances["node_codec_aware"]
-    table = "text_index_downgrade_pfor"
-
-    create_and_populate(node, table, posting_list_codec=None)
-    assert run_search_queries(node, table) == expected_results()
-
-    node.restart_with_latest_version()
-    new_version_active = True
-    try:
-        assert run_search_queries(node, table) == expected_results()
-
-        # The table now mixes the original parts with parts naming an unknown codec.
-        node.query(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'pfor'"
-        )
-
-        insert_new_part(node, table)
-        assert run_search_queries(node, table) == MIXED_EXPECTED
-        assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
-        assert_index_used(node, table)
-
-        node.query(f"OPTIMIZE TABLE {table} FINAL")
-        assert_single_active_part(node, table)
-        assert run_search_queries(node, table) == MIXED_EXPECTED
-
-        # Reset it so the metadata loads and the failure below can only come from the part.
-        node.query(f"ALTER TABLE {table} RESET SETTING text_index_posting_list_codec")
-
-        node.restart_with_original_version()
-        new_version_active = False
-
-        error = node.query_and_get_error(
-            f"SELECT count() FROM {table} WHERE hasToken(s, 'common')"
-        )
-        assert "Unknown posting list codec type" in error, (
-            f"expected the old server to reject the `pfor` part on its codec check, "
-            f"got:\n{error}"
-        )
 
         node.query(f"DROP TABLE {table} SYNC")
     finally:

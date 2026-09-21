@@ -26,11 +26,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
 namespace ErrorCodes
 {
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
@@ -186,9 +181,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
-    /// The analyze mode must reach every join the report walker can reach, including the joins of
-    /// this view's inner query.
-    new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -203,11 +195,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
         new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
     }
-
-    /// Transport wiring, not invoker identity: a cluster table function inside the view sends its
-    /// read-task request over this callback, and only the initiator can decide whether to serve it.
-    if (context->hasClusterFunctionReadTaskCallback())
-        new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
     auto changed_settings = context->getSettingsRef().changes();
     /// Invoker filters must not be injected into a DEFINER/NONE body.
@@ -229,26 +216,17 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->applySettingsChanges(changed_settings);
         if (drop_custom_key)
             dropParallelReplicasCustomKey(*new_context);
-    }
-    else
-    {
-        new_context->setUser(getDefinerID(context));
-
-        new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
-        new_context->applySettingsChanges(changed_settings);
-        new_context->setSetting("allow_ddl", 1);
-        /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
-        if (drop_custom_key)
-            dropParallelReplicasCustomKey(*new_context);
+        return new_context;
     }
 
-    /// The obsolete `allow_experimental_analyzer` is normalized in `executeQuery`, which this context
-    /// does not go through: it starts from the global context and then takes the definer's profile,
-    /// and a settings profile is applied without consulting the constraints that refuse a `0`. The
-    /// body of this view is analyzed by the analyzer either way, so a `0` left here would only make
-    /// `getSetting` inside the body report an analysis that did not happen.
-    if (!new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        new_context->setSetting("allow_experimental_analyzer", true);
+    new_context->setUser(getDefinerID(context));
+
+    new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
+    new_context->applySettingsChanges(changed_settings);
+    new_context->setSetting("allow_ddl", 1);
+    /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
+    if (drop_custom_key)
+        dropParallelReplicasCustomKey(*new_context);
 
     return new_context;
 }
@@ -500,10 +478,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
-    {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
-        add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
-    }
 
     for (const auto & entry : getGroupByTTLs())
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
@@ -519,6 +494,8 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
+
+    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);

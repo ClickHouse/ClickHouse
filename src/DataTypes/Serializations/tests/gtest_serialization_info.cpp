@@ -5,9 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -239,84 +237,6 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
 }
 
-TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
-{
-    SerializationInfoSettings settings;
-    settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
-
-    SerializationInfoByName infos(settings);
-    infos.setMissingColumns({
-        {.name = "z", .type_name = "String"},
-        {.name = "a", .type_name = "UInt64"},
-    });
-
-    WriteBufferFromOwnString out;
-    infos.writeJSON(out);
-    const auto json = out.str();
-    auto restored = SerializationInfoByName::readJSONFromString({}, json);
-
-    EXPECT_LT(json.find(R"("name":"a")"), json.find(R"("name":"z")"));
-    EXPECT_EQ(infos.getVersion(), settings.version);
-    EXPECT_EQ(restored.getVersion(), settings.version);
-    ASSERT_EQ(restored.getMissingColumns().size(), 2);
-    EXPECT_EQ(restored.getMissingColumns()[0].name, "a");
-    EXPECT_EQ(restored.getMissingColumns()[0].type_name, "UInt64");
-    EXPECT_EQ(restored.getMissingColumns()[1].name, "z");
-    EXPECT_EQ(restored.getMissingColumns()[1].type_name, "String");
-    ASSERT_NE(restored.getMissingColumnInfo("a"), nullptr);
-    EXPECT_EQ(restored.getMissingColumnInfo("a")->type_name, "UInt64");
-}
-
-TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
-{
-    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64"}],"version":1})";
-    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
-}
-
-TEST(SerializationInfoByNameJSON, RejectsDuplicateMissingColumns)
-{
-    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"},{"name":"value","type":"String"}],"version":2})";
-    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
-}
-
-TEST(SerializationInfoByNameJSON, RejectsUnknownMissingColumnField)
-{
-    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64","expression":"1"}],"version":2})";
-    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
-}
-
-TEST(SerializationInfoByNameJSON, RejectsPhysicalMissingColumnConflict)
-{
-    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"}],"version":2})";
-    NamesAndTypesList columns{{"value", std::make_shared<DataTypeUInt64>()}};
-    EXPECT_THROW(SerializationInfoByName::readJSONFromString(columns, json), DB::Exception);
-}
-
-TEST(SerializationInfoByNameJSON, RejectsInvalidMissingColumnType)
-{
-    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"NotAType"}],"version":2})";
-    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
-}
-
-TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
-{
-    SerializationInfoSettings with_types;
-    with_types.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-    with_types.tryDowngradeToBasic();
-    EXPECT_EQ(with_types.version, MergeTreeSerializationInfoVersion::BASIC);
-
-    SerializationInfoSettings with_nested_propagation;
-    with_nested_propagation.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-    with_nested_propagation.propagate_types_serialization_versions_to_nested_types = true;
-    with_nested_propagation.tryDowngradeToBasic();
-    EXPECT_EQ(with_nested_propagation.version, MergeTreeSerializationInfoVersion::WITH_TYPES);
-
-    SerializationInfoSettings with_missing;
-    with_missing.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
-    with_missing.tryDowngradeToBasic();
-    EXPECT_EQ(with_missing.version, MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
-}
-
 /// Malformed kind tests.
 /// stringToKind throws LOGICAL_ERROR which aborts in debug builds
 /// but throws a catchable exception in release builds.
@@ -390,49 +310,6 @@ TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
-}
-
-/// Only a reader that accepts `Kind::DETACHED` at all reaches this check, and no such reader is exposed
-/// to a client, so it cannot be covered by a functional test.
-TEST(SerializationInfoBinary, RejectsDetachedThatIsNotOutermost)
-{
-    /// COMBINATION encoding of {Default, Detached, Sparse}.
-    const char kinds[] = {5, 3, 0, 2, 1};
-    ReadBufferFromMemory in(kinds, sizeof(kinds));
-
-    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
-    EXPECT_THROW(info.deserializeFromKindsBinary(in, ISerialization::KindSet::all()), Exception);
-}
-
-TEST(SerializationInfoBinary, AcceptsDetachedOverSparse)
-{
-    /// COMBINATION encoding of {Default, Sparse, Detached}.
-    const char kinds[] = {5, 3, 0, 1, 2};
-    ReadBufferFromMemory in(kinds, sizeof(kinds));
-
-    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
-    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
-
-    ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED};
-    EXPECT_EQ(info.getKindStack(), expected);
-}
-
-/// The full stack a writer can build, with every kind in its canonical position.
-TEST(SerializationInfoBinary, AcceptsDetachedOverReplicatedOverSparse)
-{
-    /// COMBINATION encoding of {Default, Sparse, Replicated, Detached}.
-    const char kinds[] = {5, 4, 0, 1, 3, 2};
-    ReadBufferFromMemory in(kinds, sizeof(kinds));
-
-    SerializationInfo info({ISerialization::Kind::DEFAULT}, defaultSettings());
-    info.deserializeFromKindsBinary(in, ISerialization::KindSet::all());
-
-    ISerialization::KindStack expected{
-        ISerialization::Kind::DEFAULT,
-        ISerialization::Kind::SPARSE,
-        ISerialization::Kind::REPLICATED,
-        ISerialization::Kind::DETACHED};
-    EXPECT_EQ(info.getKindStack(), expected);
 }
 
 }

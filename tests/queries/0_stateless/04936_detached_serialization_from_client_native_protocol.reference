@@ -1,9 +1,0 @@
-detached: caught expected exception INCORRECT_DATA
-detached over sparse: caught expected exception INCORRECT_DATA
-detached in a combination: caught expected exception INCORRECT_DATA
-detached tuple element: caught expected exception INCORRECT_DATA
-repeated kind: caught expected exception INCORRECT_DATA
-kinds in the wrong order: caught expected exception INCORRECT_DATA
-kind stack without default: caught expected exception INCORRECT_DATA
-too many kinds: caught expected exception INCORRECT_DATA
-server alive	45

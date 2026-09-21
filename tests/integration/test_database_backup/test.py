@@ -12,17 +12,6 @@ instance = cluster.add_instance(
     with_minio=True,
 )
 
-# `test_database_backup_metadata_with_quoted_locator_loads_on_restart` rewrites a database metadata file
-# in place, and such a file only exists when the metadata lives on the local disk, so that test runs on an
-# instance which keeps the local database disk.
-instance_local_metadata = cluster.add_instance(
-    "instance_local_metadata",
-    main_configs=["configs/backups.xml"],
-    stay_alive=True,
-    with_minio=True,
-    with_remote_database_disk=False,
-)
-
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -160,65 +149,6 @@ def test_database_backup_table(backup_destination):
 @pytest.mark.parametrize(
     "backup_destination",
     [
-        "Disk('backup_disk_s3_plain', 'test_database_backup')",
-    ],
-)
-def test_multiple_databases_from_same_backup(backup_destination):
-    # Written by @orloffv in https://github.com/ClickHouse/ClickHouse/pull/83220
-    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/83219
-    cleanup_backup_files(instance)
-
-    instance.query(
-        f"""
-        DROP DATABASE IF EXISTS test_database SYNC;
-        DROP DATABASE IF EXISTS test_database_backup_1 SYNC;
-        DROP DATABASE IF EXISTS test_database_backup_2 SYNC;
-
-        CREATE DATABASE test_database;
-
-        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-        INSERT INTO test_database.test_table VALUES (1, 'from_backup');
-
-        BACKUP DATABASE test_database TO {backup_destination};
-
-        CREATE DATABASE test_database_backup_1 ENGINE=Backup('test_database', {backup_destination});
-        CREATE DATABASE test_database_backup_2 ENGINE=Backup('test_database', {backup_destination});
-    """
-    )
-
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup_1.test_table")
-        == "1\tfrom_backup\n"
-    )
-
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup_2.test_table")
-        == "1\tfrom_backup\n"
-    )
-
-    # Both databases must still read after a restart: the storage policy name is derived
-    # again on every open, so it has to come out identical.
-    instance.restart_clickhouse()
-
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup_1.test_table")
-        == "1\tfrom_backup\n"
-    )
-
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup_2.test_table")
-        == "1\tfrom_backup\n"
-    )
-
-    instance.query("DROP DATABASE IF EXISTS test_database_backup_1 SYNC")
-    instance.query("DROP DATABASE IF EXISTS test_database_backup_2 SYNC")
-    instance.query("DROP DATABASE IF EXISTS test_database SYNC")
-    cleanup_backup_files(instance)
-
-
-@pytest.mark.parametrize(
-    "backup_destination",
-    [
         "File('test_database_backup_file')",
         "Disk('backup_disk_local', 'test_database_backup')",
         "Disk('backup_disk_s3_plain', 'test_database_backup')",
@@ -282,94 +212,3 @@ def test_database_backup_unavailable_but_server_starts(backup_destination):
     instance.query("DROP DATABASE IF EXISTS test_database_backup SYNC")
     instance.query("DROP DATABASE IF EXISTS test_database SYNC")
     cleanup_backup_files(instance)
-
-
-def test_database_backup_metadata_with_quoted_locator_loads_on_restart():
-    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/118349
-    # An older server regenerated the definition of a `Backup` database with the locator quoted into a
-    # string literal, and `ALTER DATABASE ... MODIFY COMMENT` wrote that back into `metadata/<db>.sql`.
-    # The next start replays the stored full `ATTACH DATABASE ... ENGINE = Backup(...)` statement, which
-    # is neither the short `ATTACH` nor a force-restore load, so it has to accept that form on its own.
-    #
-    # The metadata file is rewritten in place here, so this runs on the instance whose metadata is a file
-    # on the local disk rather than an object on a remote database disk.
-    instance = instance_local_metadata
-
-    cleanup_backup_files(instance)
-
-    instance.query(
-        """
-        DROP DATABASE IF EXISTS test_database SYNC;
-        DROP DATABASE IF EXISTS test_database_backup SYNC;
-
-        CREATE DATABASE test_database;
-
-        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
-        INSERT INTO test_database.test_table VALUES (0, 'test_database.test_table');
-
-        BACKUP DATABASE test_database TO File('test_database_backup_file');
-        CREATE DATABASE test_database_backup ENGINE = Backup('test_database', File('test_database_backup_file'));
-    """
-    )
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup.test_table")
-        == "0\ttest_database.test_table\n"
-    )
-
-    # The metadata file exactly as a pre-fix server left it after a comment change.
-    instance.stop_clickhouse()
-    metadata = (
-        "ATTACH DATABASE test_database_backup\n"
-        "ENGINE = Backup('test_database', 'File(\\'test_database_backup_file\\')')\n"
-        "COMMENT 'written by an older server'\n"
-    )
-    instance.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cat > /var/lib/clickhouse/metadata/test_database_backup.sql <<'SQL'\n"
-            + metadata
-            + "SQL\n",
-        ],
-        user="root",
-    )
-    assert "'File(\\'test_database_backup_file\\')'" in instance.exec_in_container(
-        ["cat", "/var/lib/clickhouse/metadata/test_database_backup.sql"]
-    )
-    instance.start_clickhouse()
-
-    # The server started and the database loaded with its tables and comment.
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup.test_table")
-        == "0\ttest_database.test_table\n"
-    )
-    assert (
-        instance.query(
-            "SELECT comment FROM system.databases WHERE name = 'test_database_backup'"
-        )
-        == "written by an older server\n"
-    )
-    # The definition is regenerated with the locator as the function it is.
-    assert (
-        "ENGINE = Backup('test_database', File('test_database_backup_file'))"
-        in instance.query("SHOW CREATE DATABASE test_database_backup FORMAT TSVRaw")
-    )
-
-    # A comment change on this server writes the function form, and that survives a restart too.
-    instance.query(
-        "ALTER DATABASE test_database_backup MODIFY COMMENT 'written by this server'"
-    )
-    instance.restart_clickhouse()
-    assert (
-        instance.query("SELECT id, value FROM test_database_backup.test_table")
-        == "0\ttest_database.test_table\n"
-    )
-    assert (
-        instance.query(
-            "SELECT comment FROM system.databases WHERE name = 'test_database_backup'"
-        )
-        == "written by this server\n"
-    )
-
-    instance.query("DROP DATABASE test_database_backup SYNC")
-    instance.query("DROP DATABASE test_database SYNC")

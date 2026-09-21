@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "ClickHouse Private의 FIPS 140-2 컴플라이언스"
+sidebarTitle: "FIPS 컴플라이언스"
+description: "이 문서는 ClickHouse Private 환경에서 FIPS 140-2 컴플라이언스의 의미와 FIPS 준수 구성으로 배포할 때 변경되는 사항을 설명합니다."
+---
+
+이 문서는 ClickHouse Private 환경에서 FIPS 140-2 컴플라이언스의 의미와 FIPS 준수 구성으로 배포할 때 변경되는 사항을 설명합니다.
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## ClickHouse Private에서 FIPS 140-2의 의미
+</div>
+
+FIPS 140-2(Federal Information Processing Standard)는 암호화 모듈에 관한 미국 정부 표준입니다. 정부 환경(예: AWS GovCloud)에서 운영하는 조직이나 민감한 정부 데이터를 처리하는 조직은 모든 암호화 연산에 FIPS 검증을 거친 알고리즘과 구현이 사용되도록 보장해야 하는 경우가 많습니다.
+
+ClickHouse Private를 FIPS 모드로 배포하면 구성 요소 간 TLS 연결, AWS 서비스 연결, 인증서 생성 등을 포함한 모든 암호화 연산에 FIPS 준수 알고리즘과 라이브러리를 사용해야 합니다.
+
+<div id="what-changes-in-a-fips-deployment">
+  ## FIPS 배포에서 달라지는 점
+</div>
+
+FIPS 배포는 표준 ClickHouse Private 배포와 비교할 때 몇 가지 주요한 차이점이 있습니다:
+
+<div id="fips-server-images">
+  ### FIPS 서버 이미지
+</div>
+
+ClickHouse 서버와 Keeper 이미지는 FIPS 전용 변형을 사용해야 합니다. 이는 이미지 태그에 `-fips` 접미사가 붙어 있는 것으로 구분할 수 있습니다(예: 서버는 `25.12.1.1497-fips`, Keeper는 `26.2.1.258-fips`). FIPS 이미지는 FIPS 검증을 거친 암호화 라이브러리로 빌드됩니다. 오퍼레이터 이미지에는 별도의 FIPS 변형이 없습니다.
+
+<div id="fips-ecr-endpoints">
+  ### FIPS ECR 엔드포인트
+</div>
+
+Amazon ECR에서 컨테이너 이미지를 가져올 때는 FIPS 준수 ECR 엔드포인트를 사용해야 합니다. 이러한 엔드포인트는 표준 ECR 호스트명 대신 `0000000000.dkr-ecr-fips.<region>.on.aws` 형식입니다.
+
+<div id="fips-s3-endpoints">
+  ### FIPS S3 엔드포인트
+</div>
+
+ClickHouse는 데이터를 S3에 저장하며, FIPS 모드에서는 FIPS 준수 S3 엔드포인트를 구성해야 합니다. AWS는 각 서비스와 리전의 FIPS 엔드포인트 목록을 [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/)에 게시합니다.
+
+<div id="s3-bucket-naming-restriction">
+  ### S3 버킷 이름 제한
+</div>
+
+FIPS 모드에서는 **S3 버킷 이름에 마침표**(`.`)**를 포함할 수 없습니다**. 이는 FIPS S3 엔드포인트가 가상 호스트 방식 주소 지정(예: `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`)을 요구하기 때문입니다. 버킷 이름에 마침표가 포함되면 마침표로 인해 와일드카드 인증서와 일치하지 않는 추가 하위 도메인 수준이 생겨, 가상 호스트 방식 URL에 대한 TLS 인증서 검증이 실패합니다.
+
+이는 S3 인프라를 설정할 때 반드시 고려해야 할 중요한 사항입니다. 이름에 마침표가 포함된 기존 버킷이 있다면 해당 버킷은 FIPS S3 엔드포인트와 함께 사용할 수 없습니다.
+
+<div id="certificate-requirements">
+  ## 인증서 요구 사항
+</div>
+
+FIPS 배포에서는 모든 ClickHouse 구성 요소 간 암호화 통신을 위해 TLS 인증서가 필요합니다. 다음 3개의 인증서 세트를 생성해야 합니다:
+
+| Certificate Set | Purpose                                                   | Files                      |
+| --------------- | --------------------------------------------------------- | -------------------------- |
+| **서버**          | clickhouse-server로 유입되는 연결을 보호합니다                         | `server.crt`, `server.key` |
+| **Keeper**      | clickhouse-keeper 연결을 보호합니다                               | `keeper.crt`, `keeper.key` |
+| **클라이언트**       | clickhouse-server의 아웃바운드 연결(예: keeper, HTTPS 딕셔너리)에 사용됩니다 | `client.crt`, `client.key` |
+
+세 가지 인증서 세트는 모두 공통 인증 기관(Certificate Authority, `ca.crt`)에서 서명됩니다.
+
+<div id="fips-compliant-algorithm-requirements">
+  ### FIPS 준수 알고리즘 요구 사항
+</div>
+
+FIPS 컴플라이언스가 필요한 경우 모든 인증서는 다음 조건을 충족해야 합니다.
+
+* **FIPS 준수 알고리즘을 사용해 생성되어야 합니다** -- 예를 들어, 키 크기가 최소 3072비트인 RSA를 사용해야 합니다.
+* **FIPS가 활성화된 환경에서 생성되어야 합니다** -- 키 생성 및 서명 과정의 암호화 작업에는 FIPS 검증 모듈을 사용해야 합니다. 한 가지 방법은 FIPS 모드가 활성화된 Red Hat UBI 컨테이너를 사용하는 것입니다.
+* **자체 키도 FIPS 준수 방식으로 생성된 인증 기관(certificate authority)의 서명을 받아야 합니다.**
+
+<div id="subject-alternative-names-sans">
+  ### 주체 대체 이름(SAN)
+</div>
+
+Kubernetes 클러스터 내 구성 요소 간 통신에서 TLS 검증이 정상적으로 이루어지려면 각 인증서에 올바른 SAN 항목이 포함되어야 합니다. SAN 형식은 다음 패턴을 따릅니다.
+
+* 서버: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` 및 `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+프로비저닝하는 각 ClickHouse 클러스터마다 고유한 인증서 세트(CA 인증서 제외)를 생성해야 합니다.
+
+<div id="certificate-expiration">
+  ### 인증서 만료
+</div>
+
+인증서에는 정해진 유효 기간이 있습니다. 인증서 만료를 모니터링하고 만료되기 전에 인증서를 교체하는 절차를 마련해야 합니다. 일반적인 기본값은 365일이지만, 조직의 보안 요구 사항에 맞게 조정해야 합니다.
+
+<div id="further-reading">
+  ## 추가 자료
+</div>
+
+* FIPS 준수 인증서 생성에 대한 단계별 안내는 [FIPS 인증서 구성](/ko/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) How-To 가이드를 참조하십시오.
+* ClickHouse Private에서 PKI와 mTLS의 작동 방식(인증서의 용도, 검증 모드, 교체 방식 포함)은 [ClickHouse Private의 PKI 및 mTLS](/ko/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)를 참조하십시오.

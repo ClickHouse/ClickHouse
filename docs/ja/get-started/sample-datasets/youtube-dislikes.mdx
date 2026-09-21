@@ -26,7 +26,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
 </div>
 
 <Steps>
-  <Step title="データの探索" id="data-exploration">
+  <Step>
+    ### データの探索
+
     データがどのようなものか見てみましょう。`s3cluster` テーブル関数はテーブルを返すため、その結果を `DESCRIBE` できます。
 
     ```sql
@@ -65,7 +67,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
     ```
   </Step>
 
-  <Step title="テーブルを作成する" id="create-the-table">
+  <Step>
+    ### テーブルを作成する
+
     推論されたスキーマに基づいて、データ型を調整し、主キーを追加しました。
     以下のテーブルを定義します。
 
@@ -99,7 +103,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
     ```
   </Step>
 
-  <Step title="データを挿入する" id="insert-data">
+  <Step>
+    ### データを挿入する
+
     次のコマンドは、S3 ファイルのレコードを `youtube` テーブルにストリーミングします。
 
     <Warning>
@@ -144,7 +150,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
     * テーブルに `NULL` 値が入らないように、`ifNull` を使用しました。入力値が `NULL` の場合、`ifNull` 関数によってその値は空文字列に設定されます
   </Step>
 
-  <Step title="行数を確認する" id="count-row-numbers">
+  <Step>
+    ### 行数を確認する
+
     ClickHouse Cloud の SQL Console で新しいタブを開くか、新しい `clickhouse-client` ウィンドウを開いて、件数が増えていく様子を確認します。
     4.56B 行を insert するには、サーバーリソースに応じてしばらく時間がかかります。 (設定をまったく調整しない場合、約 4.5 時間かかります。)
 
@@ -160,7 +168,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
     ```
   </Step>
 
-  <Step title="データを確認する" id="explore-the-data">
+  <Step>
+    ### データを確認する
+
     データを挿入したら、お気に入りの動画やチャンネルの低評価数を数えてみましょう。では、ClickHouse がアップロードした動画が何本あるか見てみましょう。
 
     ```sql

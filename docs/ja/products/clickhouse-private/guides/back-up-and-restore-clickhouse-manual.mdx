@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "ClickHouse のバックアップと復元（手動）"
+sidebarTitle: "バックアップと復元"
+description: "SQL コマンドと S3 ストレージを使用して、ClickHouse データを手動でバックアップおよび復元します。"
+---
+
+SQL コマンドと S3 ストレージを使用して、ClickHouse データを手動でバックアップおよび復元します。構文の詳細については、[ClickHouse のバックアップに関するアップストリームドキュメント](https://clickhouse.com/docs/operations/backup)を参照してください。
+
+API を使用したバックアップ操作については、[API 経由でバックアップを管理する](/ja/products/clickhouse-private/guides/manage-backups-via-the-private-api)を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* クラスターと同じリージョンにある S3 バケット
+* Kubernetes のサービスアカウントに関連付けられた IAM ロールには、バケットに対する閲覧、書き込み、および一覧取得の権限が必要です
+
+<div id="s3-path-format">
+  ## S3 パスの形式
+</div>
+
+すべてのバックアップコマンドでは、次の S3 パスを使用します。
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | 説明                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `$REGION`            | S3 のリージョン (例: `us-west-2`)                                                                     |
+| `$S3_BUCKET`         | バックアップ用の S3 バケット名                                                                              |
+| `$CLUSTER_S3_PREFIX` | クラスター用の S3 キー プレフィックス。`clickhousecluster` リソースの `spec.s3.keyPrefix` にあります (例: `ch-s3-{uuid}`)  |
+| `$BACKUP_ID`         | このバックアップを一意に識別する ID (UUID)                                                                     |
+
+<div id="perform-a-full-backup">
+  ## フルバックアップを実行する
+</div>
+
+サーバーポッドのいずれかで、次を実行します:
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+バックアップは非同期に実行されます。進捗は [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups) テーブルで確認できます。
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## インクリメンタルバックアップ
+</div>
+
+アップストリームのドキュメントにある[インクリメンタルバックアップの取得](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup)を参照してください。
+
+<div id="restore-from-a-backup">
+  ## バックアップからの復元
+</div>
+
+復元先のクラスターで実行します:
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` は、復元処理に割り当てる任意の一意な識別子です。

@@ -2,8 +2,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <boost/functional/hash.hpp>
@@ -73,7 +71,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
     /// QCC write for the WHERE filter of a TopK read: such reads can drop granules during execution
     /// depending on the running `__topKFilter` threshold, so the WHERE filter's "matches no rows"
     /// result no longer holds for every granule of the part.
@@ -85,21 +83,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())
         return;
-
-    /// The read step neither consults nor populates the cache for such filters (see the comment at
-    /// the declaration), so don't tag the filter step either.
-    if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
-        return;
-
-    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
-    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
-    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
-    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
-    {
-        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !isDeterministicAllowingTopKFilter(prewhere_node))
-            return;
-    }
 
     const auto & outputs = filter_actions_dag->getOutputs();
 
@@ -126,9 +109,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-            size_t condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getOutputs()[0]->getHash(),
-                queryConditionCacheSettingsSalt(read_from_merge_tree->getContext()->getSettingsRef()));
+            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
 
             /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
             /// filter is no longer "applies to every granule of every part" — it applies only to
@@ -138,7 +119,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             /// entry, never reusing a row-set computed under different TopK conditions.
             if (const auto & top_k_filter_info = read_from_merge_tree->getTopKFilterInfo())
                 boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
-
 
             String condition = filter_actions_dag->getNames()[0];
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
