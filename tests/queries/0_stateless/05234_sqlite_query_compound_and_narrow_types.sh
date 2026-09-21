@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # must not trust it, and a value that does not fit the column type exactly must fail the read instead of
 # being wrapped or rounded into it.
 
-DB="${CLICKHOUSE_TMP}/05233.sqlite3"
+DB="${CLICKHOUSE_TMP}/05234.sqlite3"
 rm -f "$DB"
 
 sqlite3 "$DB" 'CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT, val REAL);'
