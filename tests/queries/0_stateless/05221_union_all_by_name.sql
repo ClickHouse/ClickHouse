@@ -60,6 +60,16 @@ FROM
 )
 ORDER BY b;
 
+SELECT 'missing selected column pruning';
+SELECT a
+FROM
+(
+    SELECT 1 AS a
+    UNION ALL BY NAME
+    SELECT throwIf(1) AS b
+)
+ORDER BY isNull(a), a;
+
 SELECT 'derived table aliases';
 SELECT x
 FROM
@@ -271,7 +281,7 @@ SELECT 'derived table result alias pruning';
 SELECT y
 FROM
 (
-    SELECT 1 AS a, 2 AS b
+    SELECT throwIf(1) AS a, 2 AS b
     UNION ALL BY NAME
     SELECT 3 AS b, 4 AS a
 ) AS union_by_name_aliases(x, y)

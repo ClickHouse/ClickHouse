@@ -234,9 +234,7 @@ NamesAndTypes UnionNode::computeProjectionColumns(bool apply_projection_aliases)
 
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
-    /// Result aliases refer to the original UNION column order. Keep that shape until
-    /// pruning can also update the aliases consistently across every operand.
-    if (recursive_cte_table || !projection_aliases_to_override.empty())
+    if (recursive_cte_table)
         return;
 
     if (column_match_mode == SetOperationColumnMatchMode::Name)
@@ -270,11 +268,6 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
                     child_used_projection_indexes.insert(i);
             }
 
-            /// If a used column is absent in one operand, keep the full union. The planner
-            /// needs the complete operand shape to add the missing NULL column by name.
-            if (child_used_projection_indexes.size() != used_projection_column_names.size())
-                return;
-
             children_projection_indexes.emplace_back(query_node, std::move(child_used_projection_indexes));
         }
 
@@ -284,6 +277,22 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
                 query_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
             else if (auto * union_node_typed = query_node->as<UnionNode>())
                 union_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
+        }
+
+        if (!projection_aliases_to_override.empty())
+        {
+            std::unordered_map<String, String> column_name_to_alias;
+            column_name_to_alias.reserve(union_projection_columns.size());
+            for (size_t i = 0; i < union_projection_columns.size(); ++i)
+                column_name_to_alias.emplace(union_projection_columns[i].name, projection_aliases_to_override[i]);
+
+            Names pruned_projection_aliases;
+            const auto pruned_projection_columns = computeProjectionColumns(false);
+            pruned_projection_aliases.reserve(pruned_projection_columns.size());
+            for (const auto & projection_column : pruned_projection_columns)
+                pruned_projection_aliases.push_back(column_name_to_alias.at(projection_column.name));
+
+            projection_aliases_to_override = std::move(pruned_projection_aliases);
         }
 
         return;

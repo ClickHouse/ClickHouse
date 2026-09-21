@@ -17,6 +17,9 @@ outer projection: a
 outer projection: b
 2
 3
+missing selected column pruning
+1
+\N
 derived table aliases
 1
 2
