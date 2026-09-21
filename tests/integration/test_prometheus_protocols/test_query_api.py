@@ -162,6 +162,19 @@ def test_query_stats():
     assert instant_stats["clickhouse"]["readBytes"] > 0
     assert instant_stats["clickhouse"]["peakMemoryUsage"] >= 0
 
+    instant_all_stats = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"stats": "all"},
+    )
+    assert instant_all_stats.status_code == requests.codes.ok, instant_all_stats.text
+    instant_all_data = instant_all_stats.json()["data"]
+    assert instant_all_data["result"] == instant_data_without_stats["result"]
+    assert set(instant_all_data["stats"]["clickhouse"]) == set(instant_stats["clickhouse"])
+
     instant_empty_stats = get_response_to_http_api_query(
         node.ip_address,
         9093,
