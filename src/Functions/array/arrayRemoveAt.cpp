@@ -69,6 +69,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments[0]->onlyNull())
+            return arguments[0];
+
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
             throw Exception(
@@ -89,9 +92,12 @@ public:
 
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & /*result_type*/,
+        const DataTypePtr & result_type,
         size_t input_rows_count) const override
     {
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
         ColumnPtr array_column = arguments[0].column;
         bool array_is_const = false;
         if (const auto * const_array = checkAndGetColumnConst<ColumnArray>(array_column.get()))
@@ -299,7 +305,7 @@ Index 0 is invalid.
     FunctionDocumentation::Syntax syntax = "arrayRemoveAt(arr, index)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "Source array.", {"Array(T)"}},
-        {"index", "Non-Nullable integer index of the element to remove. Negative indexes count from the end.", {"(U)Int*"}}
+        {"index", "Non-Nullable integer index of the element to remove. Negative indexes count from the end.", {"(U)Int8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns the source array without the element at `index`, or the original array if `index` is out of bounds.",

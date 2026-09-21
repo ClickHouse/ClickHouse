@@ -12,6 +12,7 @@ SELECT arrayRemoveAt([], 1);
 
 SELECT arrayRemoveAt(['a', 'b', 'c'], 2);
 SELECT arrayRemoveAt(CAST([1, NULL, 3], 'Array(Nullable(Int8))'), 2);
+SELECT arrayRemoveAt(NULL, 1);
 
 SELECT
     number,
@@ -32,6 +33,7 @@ ORDER BY number;
 
 -- Constant index is read once. A position larger than the whole nested column is guaranteed out of bounds.
 SELECT number, arrayRemoveAt([number, number + 1, number + 2], toInt8(2)) FROM numbers(3) ORDER BY number;
+SELECT number, arrayRemoveAt([number, number + 1, number + 2], toInt8(-1)) FROM numbers(3) ORDER BY number;
 SELECT number, arrayRemoveAt([number, number + 1], toUInt64(18446744073709551615)) FROM numbers(3) ORDER BY number;
 
 SELECT arrayRemoveAt([1, 2, 3], toUInt64(18446744073709551615));
