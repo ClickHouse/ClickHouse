@@ -27,6 +27,7 @@ itself: when the back-off works, a second thread never gets there.
 
 import logging
 import re
+import threading
 import time
 from multiprocessing.dummy import Pool
 
@@ -211,17 +212,17 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
         "so the leader is not backing off"
     )
 
-    # Whether a thread reaches the wait at all is not something this test can force: the arm
-    # that waits and the condition that pauses the leader are the same predicate, so the
-    # requests that would reach the wait are the ones the pause stops. The wait, its bound and
-    # its deadline are exercised by test_one_thread_waits_when_the_leader_is_never_paused, which
-    # removes the pause. What belongs here is the pause itself: no thread should ever find
-    # another one already waiting, because the leader is stopped before a second request
-    # carrying entries arrives.
-    assert not grep_log(node2, ADMISSION_DECLINED), (
-        "a second thread of the Raft event loop reached the wait, so the leader was never "
-        "paused - the negative batch size hint regressed"
-    )
+    # Nothing here asserts on the wait. Whether a thread reaches it at all is not something this
+    # test can force - the arm that waits and the condition that pauses the leader are the same
+    # predicate, so the requests that would reach the wait are the ones the pause stops - and a
+    # thread finding the wait occupied is not a regression either: the leader re-sends after
+    # `raft_limits_reconnect_limit` heartbeats, which is the same 100 ms as the deadline here, so
+    # a second request can legitimately arrive while the first waiter is still in it. The bound
+    # on waiters, the deadline and the refusal are exercised by
+    # test_one_thread_waits_when_the_leader_is_never_paused, where a failpoint makes them
+    # certain. What this test asserts about the hint is the count above: if it regressed, the
+    # leader would keep sending and the refusals would grow with the replay instead of staying
+    # flat.
 
     # 6) node2 is a working member of the cluster again.
     zk = get_fake_zk(node2)
@@ -332,10 +333,6 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
             f"{timestamp}, when thread {thread} started waiting"
         )
     assert waiting == 0, "a thread of the Raft event loop is still waiting for log preprocessing"
-    assert not grep_log(node2, ADMISSION_DECLINED), (
-        "a second thread of the Raft event loop reached the wait, so the leader was never "
-        "paused - the negative batch size hint regressed"
-    )
 
     # 5) node2 agrees with the rest again: it dropped what only it had and took what it missed.
     zk = get_fake_zk(node2)
@@ -455,16 +452,44 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
             "node2 restarted with nothing to replay, so this test checks nothing"
         )
 
-        # One thread is parked at the failpoint; the leader re-sends to a peer that stopped
-        # answering, and that request is what meets the occupied gate.
-        for _ in range(240):
-            if count_in_log(node2, ADMISSION_DECLINED):
-                break
-            time.sleep(0.5)
-        else:
-            raise Exception(
-                "no thread reached the admission gate while one was parked at the failpoint"
-            )
+        # A thread is parked at the failpoint holding the gate, and every later request that
+        # reaches the wait meets it. Producing those requests is the test's job, not the
+        # leader's: the tail was written before the restart, so it is one batch, and the parked
+        # request already took it. What the leader sends after that carries no entries and
+        # returns before the gate. So keep writing while we wait - then the leader has entries
+        # to send and the second thread arrives because something made it arrive.
+        stop_writing = threading.Event()
+
+        def keep_writing():
+            writer_zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+            try:
+                seq = 0
+                while not stop_writing.is_set():
+                    writer_zk.create(f"/unpaused_stream_{seq:06d}", b"")
+                    seq += 1
+            except Exception as e:
+                logging.info("the writer feeding the parked gate stopped: %s", e)
+            finally:
+                try:
+                    writer_zk.stop()
+                    writer_zk.close()
+                except Exception:
+                    pass
+
+        writer = threading.Thread(target=keep_writing)
+        writer.start()
+        try:
+            for _ in range(240):
+                if count_in_log(node2, ADMISSION_DECLINED):
+                    break
+                time.sleep(0.5)
+            else:
+                raise Exception(
+                    "no thread reached the admission gate while one was parked at the failpoint"
+                )
+        finally:
+            stop_writing.set()
+            writer.join(timeout=60)
 
         # Release it, so the replay can finish.
         node2.query(f"SYSTEM DISABLE FAILPOINT {WAIT_FAILPOINT}")
