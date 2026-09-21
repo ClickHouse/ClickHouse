@@ -62,6 +62,7 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
+        case TypeIndex::ExponentialTimeDecayingFloat64:
             return false;
         case TypeIndex::Array:
         {
