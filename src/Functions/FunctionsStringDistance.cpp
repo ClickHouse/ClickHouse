@@ -774,7 +774,7 @@ struct ByteDamerauLevenshteinDistanceImpl
 #if USE_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 
-/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
+/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo < hi <= 64.
 inline UInt64 jaroWindowMask(int lo, int hi)
 {
     const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
@@ -990,7 +990,7 @@ inline UInt64 jaroNeonEqMask64(const unsigned char * data, uint8x16_t target)
         vceqq_u8(c3, target));
 }
 
-/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
+/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo < hi <= 64.
 inline UInt64 jaroWindowMask(int lo, int hi)
 {
     const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
