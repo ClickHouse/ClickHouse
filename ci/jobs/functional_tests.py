@@ -141,6 +141,16 @@ def parse_args():
     return parser.parse_args()
 
 
+# Mirror of the `--timeout` default and of `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER` in
+# `tests/clickhouse-test`, which is a script and cannot be imported. Only used to size the
+# external safety net in `run_tests`, so a drift makes that net the wrong size, nothing worse.
+CLICKHOUSE_TEST_DEFAULT_TIMEOUT = 600
+FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER = 3
+# What the run needs after the last per-test alarm fires: the workers stop, the server is
+# checked and the results are written.
+WIND_DOWN_MARGIN_SECONDS = 180
+
+
 def run_tests(
     batch_num: int,
     batch_total: int,
@@ -189,12 +199,25 @@ def run_tests(
     # Allow a margin over the graceful budget for the run to wind down before the
     # external hard kill engages. The last in-flight test can be deep inside its
     # own per-test alarm window when the deadline is reached: `clickhouse-test`
-    # arms that alarm as `int(args.timeout * 1.1) + 60` (720s with the default
+    # arms that alarm as `int(timeout * 1.1) + 60` (720s with the default
     # `--timeout 600`), after which it stops gracefully. The margin must exceed
     # that bound (plus the worker shutdown wind-down) so the external SIGTERM
     # fires only for a genuinely frozen process and never pre-empts the graceful
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
-    outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
+    #
+    # In a flaky check a `long` test gets `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`
+    # times `--timeout`, so its alarm window - and with it the margin the graceful
+    # stop needs - grows by the same factor. Derived rather than written out, so the
+    # two cannot drift apart; for a job that is not a flaky check this is the same
+    # 900s the margin has always been.
+    per_test_timeout = CLICKHOUSE_TEST_DEFAULT_TIMEOUT
+    if "--flaky-check" in extra_args:
+        per_test_timeout *= FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
+    outer_timeout = (
+        global_time_limit + int(per_test_timeout * 1.1) + 60 + WIND_DOWN_MARGIN_SECONDS
+        if global_time_limit > 0
+        else None
+    )
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 

@@ -213,6 +213,17 @@ VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
 
+# A flaky check gives every worker the *same* changed test, so one heavy test contends with
+# `--jobs N` copies of itself instead of with N unrelated tests. Measured on
+# `03927_autopr_input_bytes_estimation_prewhere_filter`, whose p50 under any `asan` lane on
+# master is 33s: in the `amd_asan_ubsan` flaky check it takes 307-383s, and the other five
+# AutoPR estimation tests of the same job are 4.1x to 5.6x their own master p50. That is the
+# check's shape, not a property of the test, which is why a `long` test is already exempt from
+# the `TEST_MAX_RUN_TIME_IN_SECONDS` verdict below. Without the same exemption in wall-clock
+# terms the default `--timeout` killed it anyway, so a pull request that merely edits such a
+# test draws a red at ~600.3s: #96844, #119350 and #100736 all hit exactly that.
+FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER = 3
+
 
 def detect_cgroup_version():
     if os.path.exists("/sys/fs/cgroup/cgroup.controllers"):
@@ -3148,6 +3159,18 @@ class TestCase:
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
 
+    def get_timeout(self, args) -> int:
+        """Wall-clock budget for one run of this test.
+
+        `long` tests of a flaky check get a multiple of `--timeout`, for the reason spelled out
+        at `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`. Everything else keeps `--timeout` as is,
+        so the ordinary jobs - where the workers run different tests and nothing inflates a
+        single test's wall clock - are unaffected.
+        """
+        if args.flaky_check and "long" in self.tags:
+            return args.timeout * FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
+        return args.timeout
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -4008,6 +4031,9 @@ class TestCase:
         pattern = "{test} > {stdout} 2> {stderr}"
 
         tests_env = os.environ.copy()
+        # A `.sh` test budgets itself against the harness through this variable, so it has to
+        # carry the budget this test will actually get, not the `--timeout` default.
+        tests_env["CLICKHOUSE_TEST_TIMEOUT"] = str(self.get_timeout(args))
         if args.trace:
             tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
@@ -4033,7 +4059,7 @@ class TestCase:
         write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
-            proc.wait(args.timeout)
+            proc.wait(self.get_timeout(args))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4350,7 +4376,7 @@ class TestCase:
             return
 
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
-        timeout = max(args.timeout - time_passed, 20)
+        timeout = max(self.get_timeout(args) - time_passed, 20)
 
         try:
             self._cleanup_database(args, timeout)
@@ -5194,7 +5220,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 60)
+                signal.alarm(int(test_case.get_timeout(args) * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
