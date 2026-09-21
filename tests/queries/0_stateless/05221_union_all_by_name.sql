@@ -80,6 +80,15 @@ FROM
 ) AS t(x)
 ORDER BY x;
 
+SELECT 'CTE result aliases';
+WITH t(x, y) AS
+(
+    SELECT 1 AS a, 2 AS b
+    UNION ALL BY NAME
+    SELECT 3 AS b, 4 AS a
+)
+SELECT * FROM t ORDER BY x;
+
 SELECT 'nested BY NAME under a single-child wrapper';
 SELECT (
     SELECT sum(a)

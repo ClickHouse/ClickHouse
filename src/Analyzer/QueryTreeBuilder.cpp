@@ -88,6 +88,18 @@ namespace ErrorCodes
 namespace
 {
 
+Names collectProjectionAliases(const ASTPtr & aliases)
+{
+    Names collected_aliases;
+    const auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
+    collected_aliases.reserve(override_aliases_children.size());
+
+    for (const auto & child : override_aliases_children)
+        collected_aliases.push_back(child->as<ASTIdentifier &>().name());
+
+    return collected_aliases;
+}
+
 class QueryTreeBuilder
 {
 public:
@@ -218,9 +230,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
+
+    if (aliases)
+        union_node->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     return union_node;
 }
@@ -263,9 +278,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
+
+    if (aliases)
+        union_node->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     return union_node;
 }
@@ -383,20 +401,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     // Apply the override aliases to the projection nodes
     if (aliases)
-    {
-        // Collect the aliases into a vector of strings
-        Names collected_aliases;
-        auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
-        collected_aliases.reserve(override_aliases_children.size());
-
-        for (const auto & child : override_aliases_children)
-        {
-            const auto & alias_ast = child->as<ASTIdentifier &>();
-            collected_aliases.push_back(alias_ast.name());
-        }
-
-        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
-    }
+        current_query_tree->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)

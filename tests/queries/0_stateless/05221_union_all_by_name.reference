@@ -23,6 +23,9 @@ missing selected column pruning
 derived table aliases
 1
 2
+CTE result aliases
+1	2
+4	3
 nested BY NAME under a single-child wrapper
 3
 name then position
