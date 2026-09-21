@@ -242,9 +242,9 @@ public:
                     else
                     {
                         const Float64 sign = std::copysign(1.0, values[row]);
-                        const auto score = getExponentialTimeDecayingOrderingScore(
+                        const Float64 unit_timestamp = getExponentialTimeDecayingUnitTimestamp(
                             values[row], times[row], input_type_as_decaying->getDecayLength());
-                        result->insertValue(sign * score.high);
+                        result->insertValue(sign * unit_timestamp);
                     }
                 }
                 res = std::move(result);

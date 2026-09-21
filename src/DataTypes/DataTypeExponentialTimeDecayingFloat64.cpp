@@ -135,13 +135,10 @@ public:
         const Float64 time
             = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
 
-        const auto score = getExponentialTimeDecayingOrderingScore(value, time, decay_length);
-        const UInt64 prefix = shiftOneBitAndSign(score.high, value);
-        const Float64 sign = value == 0 ? 0 : std::copysign(1.0, value);
-
-        writeBinaryLittleEndian(prefix, ostr);
-        writeBinaryLittleEndian(sign * score.high, ostr);
-        writeBinaryLittleEndian(sign * score.low, ostr);
+        writeBinaryLittleEndian(
+            getExponentialTimeDecayingOrderingKey(
+                value, time, decay_length),
+            ostr);
     }
 
     void serializeBinaryBulk(
@@ -656,9 +653,10 @@ ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
         }
 
         const Float64 sign = std::copysign(1.0, value);
-        const auto score = getExponentialTimeDecayingOrderingScore(value, times[row], decay_length);
+        const Float64 unit_timestamp
+            = getExponentialTimeDecayingUnitTimestamp(value, times[row], decay_length);
         signs->insertValue(sign);
-        signed_unit_times->insertValue(sign * score.high);
+        signed_unit_times->insertValue(sign * unit_timestamp);
     }
 
     return ColumnTuple::create(

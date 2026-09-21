@@ -11,25 +11,13 @@ namespace DB
 
 class DataTypeFactory;
 
-struct ExponentialTimeDecayingOrderingScore
-{
-    Float64 high;
-    Float64 low;
-};
-
-inline ExponentialTimeDecayingOrderingScore getExponentialTimeDecayingOrderingScore(
+inline Float64 getExponentialTimeDecayingUnitTimestamp(
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (value == 0)
-        return {0, 0};
+        return 0;
 
-    const Float64 logarithmic_time = decay_length * std::log(std::abs(value));
-    const Float64 high = time + logarithmic_time;
-    const Float64 time_virtual = high - logarithmic_time;
-    const Float64 logarithmic_virtual = high - time_virtual;
-    const Float64 time_error = time - time_virtual;
-    const Float64 logarithmic_error = logarithmic_time - logarithmic_virtual;
-    return {high, time_error + logarithmic_error};
+    return time + decay_length * std::log(std::abs(value));
 }
 
 inline UInt64 getExponentialTimeDecayingSortableFloatKey(Float64 value)
@@ -38,24 +26,87 @@ inline UInt64 getExponentialTimeDecayingSortableFloatKey(Float64 value)
     return bits & (UInt64(1) << 63) ? ~bits : bits | (UInt64(1) << 63);
 }
 
-/// Compact ordered prefix. One low-order bit of the sortable unit-timestamp key is
-/// discarded and the recovered bit capacity separates negative, zero, and positive curves.
-/// Unequal keys preserve curve order; equal keys fall back to the direct payload.
+inline Float64 getExponentialTimeDecayingFloatFromSortableKey(UInt64 key)
+{
+    const UInt64 bits
+        = key & (UInt64(1) << 63)
+        ? key & ~(UInt64(1) << 63)
+        : ~key;
+    return std::bit_cast<Float64>(bits);
+}
+
+/// Exact logical ordering identity for the Float64 ordered representation.
+///
+/// The middle value is zero. Negative curves occupy the range below it in
+/// reverse unit-timestamp order, and positive curves occupy the range above it
+/// in forward unit-timestamp order. A finite Float64 unit timestamp leaves the
+/// whole key below 2^65, so the lossy compact representation is simply key >> 1.
+inline UInt128 getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(
+    Float64 unit_timestamp, Float64 value_at_anchor)
+{
+    constexpr UInt128 midpoint = UInt128(1) << 64;
+
+    if (value_at_anchor == 0)
+        return midpoint;
+
+    const UInt64 sortable = getExponentialTimeDecayingSortableFloatKey(unit_timestamp);
+    if (std::signbit(value_at_anchor))
+        return midpoint - UInt128(1) - UInt128(sortable);
+
+    return midpoint + UInt128(1) + UInt128(sortable);
+}
+
+inline UInt128 getExponentialTimeDecayingOrderingKey(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    return getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(
+        getExponentialTimeDecayingUnitTimestamp(value, time, decay_length),
+        value);
+}
+
+/// Compact ordered projection. It intentionally discards the least-significant
+/// bit of the exact 65-bit ordering identity.
 inline UInt64 shiftOneBitAndSign(
     Float64 unit_timestamp, Float64 value_at_anchor)
 {
-    if (value_at_anchor == 0)
-        return UInt64(1) << 63;
+    return static_cast<UInt64>(
+        getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(
+            unit_timestamp, value_at_anchor)
+        >> 1);
+}
 
-    const UInt64 shifted = getExponentialTimeDecayingSortableFloatKey(unit_timestamp) >> 1;
-    if (std::signbit(value_at_anchor))
-        return std::numeric_limits<UInt64>::max() / 2 - shifted;
+inline UInt64 getExponentialTimeDecayingOrderingPrefix(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    return static_cast<UInt64>(
+        getExponentialTimeDecayingOrderingKey(value, time, decay_length) >> 1);
+}
 
-    return (UInt64(1) << 63) | shifted;
+struct ExponentialTimeDecayingCanonicalDirectValue
+{
+    Float64 value_at_anchor;
+    Float64 anchor_time;
+};
+
+inline ExponentialTimeDecayingCanonicalDirectValue
+getExponentialTimeDecayingCanonicalDirectValue(UInt128 ordering_key)
+{
+    constexpr UInt128 midpoint = UInt128(1) << 64;
+
+    if (ordering_key == midpoint)
+        return {0, 0};
+
+    const bool negative = ordering_key < midpoint;
+    const UInt64 sortable = negative
+        ? static_cast<UInt64>(midpoint - UInt128(1) - ordering_key)
+        : static_cast<UInt64>(ordering_key - midpoint - UInt128(1));
+    const Float64 unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
+    return {negative ? -1.0 : 1.0, unit_timestamp};
 }
 
 struct ExponentialTimeDecayingFloat64Value
 {
+    UInt128 ordering_key;
     UInt64 ordering_prefix;
     Float64 value_at_anchor;
     Float64 anchor_time;
@@ -65,10 +116,20 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (value == 0)
-        return {shiftOneBitAndSign(0, 0), 0, 0};
+    {
+        const auto ordering_key = getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(0, 0);
+        return {ordering_key, static_cast<UInt64>(ordering_key >> 1), 0, 0};
+    }
 
-    const auto score = getExponentialTimeDecayingOrderingScore(value, time, decay_length);
-    return {shiftOneBitAndSign(score.high, value), value, time};
+    const Float64 unit_timestamp
+        = getExponentialTimeDecayingUnitTimestamp(value, time, decay_length);
+    const auto ordering_key
+        = getExponentialTimeDecayingOrderingKeyFromUnitTimestamp(unit_timestamp, value);
+    return {
+        ordering_key,
+        static_cast<UInt64>(ordering_key >> 1),
+        value,
+        time};
 }
 
 inline bool isCanonicalExponentialTimeDecayingFloat64Value(
@@ -77,7 +138,13 @@ inline bool isCanonicalExponentialTimeDecayingFloat64Value(
     if (!std::isfinite(value) || !std::isfinite(time))
         return false;
 
-    const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
+    const Float64 unit_timestamp
+        = getExponentialTimeDecayingUnitTimestamp(value, time, decay_length);
+    if (value != 0 && !std::isfinite(unit_timestamp))
+        return false;
+
+    const auto normalized = normalizeExponentialTimeDecayingFloat64(
+        value, time, decay_length);
     return normalized.ordering_prefix == ordering_prefix
         && normalized.value_at_anchor == value
         && normalized.anchor_time == time;

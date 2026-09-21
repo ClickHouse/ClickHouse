@@ -7,13 +7,21 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/transformEndianness.h>
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <cmath>
+#include <cstring>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -31,7 +39,7 @@ MutableColumnPtr buildOrderingPrefix(const IColumn & storage, Float64 decay_leng
 
     for (size_t row = 0; row < tuple.size(); ++row)
         prefix->insertValue(
-            normalizeExponentialTimeDecayingFloat64(values[row], times[row], decay_length).ordering_prefix);
+            getExponentialTimeDecayingOrderingPrefix(values[row], times[row], decay_length));
 
     return prefix;
 }
@@ -53,31 +61,30 @@ using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<Comparator
 using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
 using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
+UInt128 getCanonicalOrderingKey(
+    const ColumnExponentialTimeDecaying & column, size_t row)
+{
+    const auto & tuple = column.getStorageTuple();
+    const Float64 value
+        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
+    const Float64 time
+        = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
+    return getExponentialTimeDecayingOrderingKey(
+        value, time, column.getDecayLength());
+}
+
 void updateCanonicalHash(
     const ColumnExponentialTimeDecaying & column, size_t row, SipHash & hash)
 {
-    const auto & tuple = column.getStorageTuple();
-    const Float64 value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
-    const Float64 time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
-
-    const auto score = getExponentialTimeDecayingOrderingScore(
-        value, time, column.getDecayLength());
-    const UInt64 prefix = shiftOneBitAndSign(score.high, value);
-    const Float64 sign = value == 0 ? 0 : std::copysign(1.0, value);
-    const Float64 signed_high = sign * score.high;
-    const Float64 signed_low = sign * score.low;
-
-    hash.update(prefix);
-    hash.update(signed_high == 0 ? 0 : signed_high);
-    hash.update(signed_low == 0 ? 0 : signed_low);
+    hash.update(getCanonicalOrderingKey(column, row));
 }
 
 UInt32 canonicalWeakHash(
     const ColumnExponentialTimeDecaying & column, size_t row)
 {
-    SipHash hash;
-    updateCanonicalHash(column, row, hash);
-    return static_cast<UInt32>(hash.get64());
+    const UInt128 key = getCanonicalOrderingKey(column, row);
+    return static_cast<UInt32>(
+        hashCRC32(key, WEAK_HASH32_INITIAL_VALUE));
 }
 
 }
@@ -132,7 +139,7 @@ void ColumnExponentialTimeDecaying::appendOrderingPrefix(size_t row)
     const Float64 value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
     const Float64 time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
     assert_cast<ColumnUInt64 &>(*ordering_prefix).insertValue(
-        normalizeExponentialTimeDecayingFloat64(value, time, decay_length).ordering_prefix);
+        getExponentialTimeDecayingOrderingPrefix(value, time, decay_length));
 }
 
 void ColumnExponentialTimeDecaying::rebuildOrderingPrefix()
@@ -168,9 +175,30 @@ MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) co
 
 void ColumnExponentialTimeDecaying::insertData(const char * pos, size_t length)
 {
-    const size_t previous_size = size();
-    storage->insertData(pos, length);
-    syncOrderingPrefixFrom(previous_size);
+    if (length != sizeof(UInt128))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialized ExponentialTimeDecaying key must contain {} bytes, got {}",
+            sizeof(UInt128),
+            length);
+
+    UInt128 ordering_key;
+    std::memcpy(&ordering_key, pos, sizeof(ordering_key));
+    transformEndianness<std::endian::native, std::endian::little>(ordering_key);
+
+    const auto direct
+        = getExponentialTimeDecayingCanonicalDirectValue(ordering_key);
+    if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
+        || getExponentialTimeDecayingOrderingKey(
+               direct.value_at_anchor, direct.anchor_time, decay_length)
+            != ordering_key)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialized ExponentialTimeDecaying ordering key is invalid");
+
+    storage->insert(
+        Tuple{direct.value_at_anchor, direct.anchor_time});
+    appendOrderingPrefix(size() - 1);
 }
 
 void ColumnExponentialTimeDecaying::insert(const Field & x)
@@ -244,58 +272,91 @@ void ColumnExponentialTimeDecaying::popBack(size_t n)
     ordering_prefix->popBack(n);
 }
 
-void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
-    ReadBuffer & in, const IColumn::SerializationSettings * settings)
+std::string_view ColumnExponentialTimeDecaying::serializeValueIntoArena(
+    size_t n,
+    Arena & arena,
+    char const *& begin,
+    const IColumn::SerializationSettings *) const
 {
-    const size_t previous_size = size();
-    storage->deserializeAndInsertFromArena(in, settings);
-    syncOrderingPrefixFrom(previous_size);
+    UInt128 ordering_key = getCanonicalOrderingKey(*this, n);
+    transformEndianness<std::endian::little>(ordering_key);
+
+    char * memory = arena.allocContinue(sizeof(ordering_key), begin);
+    std::memcpy(memory, &ordering_key, sizeof(ordering_key));
+    return {memory, sizeof(ordering_key)};
+}
+
+char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
+    size_t n,
+    char * memory,
+    const IColumn::SerializationSettings *) const
+{
+    UInt128 ordering_key = getCanonicalOrderingKey(*this, n);
+    transformEndianness<std::endian::little>(ordering_key);
+    std::memcpy(memory, &ordering_key, sizeof(ordering_key));
+    return memory + sizeof(ordering_key);
+}
+
+void ColumnExponentialTimeDecaying::collectSerializedValueSizes(
+    PaddedPODArray<UInt64> & sizes,
+    const UInt8 * is_null,
+    const IColumn::SerializationSettings *) const
+{
+    const size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Size of serialized-size array {} does not match ExponentialTimeDecaying column size {}",
+            sizes.size(),
+            rows);
+
+    if (is_null)
+    {
+        for (size_t row = 0; row < rows; ++row)
+            sizes[row] += 1 + (is_null[row] ? 0 : sizeof(UInt128));
+    }
+    else
+    {
+        for (size_t row = 0; row < rows; ++row)
+            sizes[row] += sizeof(UInt128);
+    }
+}
+
+void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
+    ReadBuffer & in,
+    const IColumn::SerializationSettings *)
+{
+    UInt128 ordering_key;
+    readBinaryLittleEndian(ordering_key, in);
+
+    const auto direct
+        = getExponentialTimeDecayingCanonicalDirectValue(ordering_key);
+    if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
+        || getExponentialTimeDecayingOrderingKey(
+               direct.value_at_anchor, direct.anchor_time, decay_length)
+            != ordering_key)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialized ExponentialTimeDecaying ordering key is invalid");
+
+    storage->insert(
+        Tuple{direct.value_at_anchor, direct.anchor_time});
+    appendOrderingPrefix(size() - 1);
 }
 
 int ColumnExponentialTimeDecaying::compareDirect(
     size_t n, size_t m, const ColumnExponentialTimeDecaying & rhs) const
 {
-    const auto & left_tuple = getStorageTuple();
-    const auto & right_tuple = rhs.getStorageTuple();
+    const UInt128 left_key = getCanonicalOrderingKey(*this, n);
+    const UInt128 right_key = getCanonicalOrderingKey(rhs, m);
 
-    const auto & left_values = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(0)).getData();
-    const auto & left_times = assert_cast<const ColumnFloat64 &>(left_tuple.getColumn(1)).getData();
-    const auto & right_values = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(0)).getData();
-    const auto & right_times = assert_cast<const ColumnFloat64 &>(right_tuple.getColumn(1)).getData();
-
-    const Float64 left_value = left_values[n];
-    const Float64 right_value = right_values[m];
-
-    if (left_value == 0 || right_value == 0)
-    {
-        if (left_value < right_value)
-            return -1;
-        if (left_value > right_value)
-            return 1;
-        return 0;
-    }
-
-    const bool left_negative = std::signbit(left_value);
-    const bool right_negative = std::signbit(right_value);
-    if (left_negative != right_negative)
-        return left_negative ? -1 : 1;
-
-    const auto left_score = getExponentialTimeDecayingOrderingScore(
-        left_value, left_times[n], decay_length);
-    const auto right_score = getExponentialTimeDecayingOrderingScore(
-        right_value, right_times[m], decay_length);
-
-    int result = 0;
-    if (left_score.high < right_score.high)
-        result = -1;
-    else if (left_score.high > right_score.high)
-        result = 1;
-    else if (left_score.low < right_score.low)
-        result = -1;
-    else if (left_score.low > right_score.low)
-        result = 1;
-
-    return left_negative ? -result : result;
+    if (left_key < right_key)
+        return -1;
+    if (left_key > right_key)
+        return 1;
+    return 0;
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

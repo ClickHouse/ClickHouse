@@ -80,32 +80,24 @@ public:
     void popBack(size_t n) override;
 
     std::string_view serializeValueIntoArena(
-        size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
-    {
-        return storage->serializeValueIntoArena(n, arena, begin, settings);
-    }
+        size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(
-        size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
-    {
-        return storage->serializeValueIntoMemory(n, memory, settings);
-    }
+        size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
     std::optional<size_t> getSerializedValueSize(
-        size_t n, const IColumn::SerializationSettings * settings) const override
+        size_t, const IColumn::SerializationSettings *) const override
     {
-        return storage->getSerializedValueSize(n, settings);
+        return sizeof(UInt128);
     }
 
     void collectSerializedValueSizes(
         PaddedPODArray<UInt64> & sizes,
         const UInt8 * is_null,
-        const IColumn::SerializationSettings * settings) const override
-    {
-        storage->collectSerializedValueSizes(sizes, is_null, settings);
-    }
+        const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void deserializeAndInsertFromArena(
+        ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashFast(SipHash & hash) const override;
