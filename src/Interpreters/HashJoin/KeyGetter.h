@@ -273,6 +273,18 @@ struct ConsecutiveKeyGetterForJoin
     }
 };
 
+template <bool use_cache, typename BaseMethod, typename Mapped>
+struct ProbeKeyGetterForJoin
+{
+    using Type = BaseMethod;
+};
+
+template <typename BaseMethod, typename Mapped>
+struct ProbeKeyGetterForJoin<true, BaseMethod, Mapped>
+{
+    using Type = ConsecutiveKeyGetterForJoin<BaseMethod, Mapped>;
+};
+
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
@@ -399,11 +411,9 @@ struct KeyGetterForType
         || type == HashJoin::Type::two_level_keys32
         || type == HashJoin::Type::two_level_keys64
         || type == HashJoin::Type::two_level_keys128
-        || type == HashJoin::Type::two_level_keys256;
+        || type == HashJoin::Type::two_level_keys256)
+        && !std::is_void_v<Mapped>;
 
-    using ProbeType = std::conditional_t<
-        use_consecutive_probe_cache,
-        ConsecutiveKeyGetterForJoin<Type, Mapped>,
-        Type>;
+    using ProbeType = typename ProbeKeyGetterForJoin<use_consecutive_probe_cache, Type, Mapped>::Type;
 };
 }
