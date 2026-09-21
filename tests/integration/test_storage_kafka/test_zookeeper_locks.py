@@ -592,3 +592,75 @@ def test_corrupted_shard_marker_triggers_reregistration(kafka_cluster):
             retry_count=120,
             sleep_time=1,
         )
+
+
+def test_registration_loss_releases_partition_locks(kafka_cluster):
+    """The partition locks must be given up as soon as this replica stops being registered.
+
+    The peers distribute the partitions among the replicas they can see, so once this replica is out of
+    that set its old locks are not backed by anything: the partitions they cover stay wedged for everyone
+    else. The lock holders are ephemeral, but the Keeper session is untouched here, so nothing expires
+    them - the reactivation path itself has to drop them.
+
+    To observe that, the registration is removed in a way that cannot be repaired: with the whole
+    `replicas` parent gone, re-creating `replicas/r1` fails with `ZNONODE`, so the locks can only
+    disappear because they were explicitly released.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_registration_loss_locks_topic"
+    num_partitions = 4
+    keeper_path = "/clickhouse/test/zk_registration_loss_locks"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        # Remove the registration of every replica behind the server's back, while the session stays alive.
+        with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+            zk.rmr(f"{keeper_path}/replicas")
+            assert "replicas" not in set(zk.ls(keeper_path))
+
+        # The locks this replica is not entitled to anymore have to go, without waiting for the session.
+        deadline = time.time() + 180.0
+        remaining = None
+        while time.time() < deadline:
+            with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                remaining = [lock for lock in zk.ls(base) if lock]
+            if not remaining:
+                break
+            time.sleep(1.0)
+        else:
+            pytest.fail(f"Timed out waiting for the topic-partition locks to be released, still held: {remaining!r}")

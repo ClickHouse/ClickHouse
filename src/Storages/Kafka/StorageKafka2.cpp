@@ -245,11 +245,36 @@ void StorageKafka2::partialShutdown()
         task->holder->deactivate();
     }
     is_active = false;
+    /// The consumers own the topic-partition locks, and nothing else releases them: `setKeeper` only runs when the
+    /// session is gone, so after a registration loss on a live session the locks would stay in Keeper while the
+    /// reactivation is retried, even though the peers already distribute the partitions without this replica.
+    releaseConsumersLocks();
     /// Reset the active node holder while the old ZooKeeper session is still alive (even if expired).
     /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
     /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
     /// destructor would then access a dangling reference when checking zookeeper.expired().
     replica_is_active_node = nullptr;
+}
+
+void StorageKafka2::releaseConsumersLocks()
+{
+    std::lock_guard lock(consumers_mutex);
+    for (const auto & consumer : consumers)
+    {
+        if (!consumer)
+            continue;
+
+        /// A consumer can still be held by a direct `SELECT`, which is not stopped by `partialShutdown`.
+        /// Touching its assignment here would race with the reader, so leave it alone: once it is released,
+        /// its next `prepareToPoll` sees that this replica is not active and drops the locks itself.
+        if (consumer->isInUse())
+        {
+            LOG_INFO(log, "Consumer is in use, its topic-partition locks will be released when it is free");
+            continue;
+        }
+
+        consumer->releaseLocks();
+    }
 }
 
 bool StorageKafka2::activate()

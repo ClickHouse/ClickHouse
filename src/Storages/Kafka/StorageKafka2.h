@@ -211,6 +211,8 @@ private:
     bool activate();
     void activateAndReschedule();
     void partialShutdown();
+    /// Drops the topic-partition locks held by the consumers that are not in use at the moment.
+    void releaseConsumersLocks();
 
     void parsePartitionAffinitySettings();
 

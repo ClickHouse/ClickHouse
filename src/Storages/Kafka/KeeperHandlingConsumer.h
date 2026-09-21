@@ -94,6 +94,12 @@ public:
     bool needsNewKeeper() const;
     void setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_);
 
+    /// Gives up every topic-partition lock held by this consumer and forgets the current assignment.
+    /// The lock holders are ephemeral nodes, so when the Keeper session is still alive the locks are
+    /// actually removed and the partitions become available to the other replicas right away, instead of
+    /// staying wedged until this session expires. Must not be called while the consumer is polling.
+    void releaseLocks();
+
     /// The concept of `prepareToPoll` and `poll` is quite a bit quirky, but I didn't find a better way to:
     ///   1. Separate the logic of converting messages to rows with virtual columns and everything else
     ///   2. Do not expose KafkaConsumer2, so KeeperHandlingConsumer has some kind of control over the offsets

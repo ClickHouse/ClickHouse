@@ -136,20 +136,25 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
     return keeper->expired();
 }
 
-void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
+void KeeperHandlingConsumer::releaseLocks()
 {
-    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
-    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
     }
-    keeper = keeper_;
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
     poll_count = 0;
+}
+
+void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
+{
+    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
+    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
+    releaseLocks();
+    keeper = keeper_;
 }
 
 std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll()
@@ -205,10 +210,15 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
     /// We are not registered as active in Keeper anymore, so the peers distribute the locks without us.
-    /// Don't grab anything this round: the storage reacts to this by deactivating and activating the table
-    /// again, which re-creates our `is_active` node and releases the locks we are still holding.
+    /// Give up the locks we are still holding right here: the peers don't count us in their quota any longer,
+    /// so keeping them would wedge those partitions for as long as the reactivation takes. The storage reacts
+    /// to this reason by deactivating and activating the table again, which re-creates our `is_active` node.
     if (!active_replicas_info.self_is_active)
+    {
+        LOG_INFO(log, "This replica is not active in Keeper anymore, releasing the topic-partition locks of consumer {}", idx);
+        releaseLocks();
         return CannotPollReason::ReplicaNotActive;
+    }
 
     chassert(active_replicas_info.active_replica_count > 0);
     /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
