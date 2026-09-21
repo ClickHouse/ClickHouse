@@ -6,6 +6,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -470,7 +471,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
+    ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
@@ -479,7 +480,23 @@ bool IcebergMetadata::optimize(
     if (!compaction_enabled)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables.");
+#else
+    if (!context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+#endif
 
+    auto snapshots_info = getHistory(context);
+    /// `getHistory` marks no record a current ancestor when the table has no current snapshot, and a
+    /// rewrite republishes a chain built from append history, so it would resurrect the rows.
+    if (std::ranges::none_of(
+            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; }))
+    {
+        LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
+        return true;
+    }
+
+#if CLICKHOUSE_CLOUD
     if (!iceberg_compaction_metadata_generator)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Background compaction is not initialized. This is a bug.");
@@ -487,26 +504,17 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
-    {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            data_lake_settings,
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
-    }
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    compactIcebergTable(
+        snapshots_info,
+        persistent_components,
+        object_storage,
+        data_lake_settings,
+        format_settings,
+        sample_block,
+        context,
+        write_format);
+    return true;
 #endif
 }
 
