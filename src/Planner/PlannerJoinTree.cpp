@@ -2672,8 +2672,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             const bool allow_query_condition_cache
                                 = !mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings);
-                            /// This only sizes the replica set. Under a throwing read row limit it must not enforce it: the
-                            /// read that executes analyzes again, once projections and read order can exempt it.
                             auto result_ptr = (reading_step->hasThrowingReadRowLimit() || !allow_query_condition_cache)
                                 ? reading_step->selectRangesToReadForEstimation(allow_query_condition_cache)
                                 : reading_step->selectRangesToRead();
