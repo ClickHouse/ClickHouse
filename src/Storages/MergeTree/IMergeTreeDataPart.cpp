@@ -737,10 +737,11 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
             || !isOrderPreservingIntegerWidening(physical_column->type.get(), primary_key.data_types[i].get()))
             continue;
 
-        logical_index[i] = castColumn(
+        auto logical_column = IColumn::mutate(castColumn(
             {physical_index->at(i), physical_column->type, primary_key.column_names[i]},
-            primary_key.data_types[i]);
-        logical_index[i]->protect();
+            primary_key.data_types[i]));
+        logical_column->protect();
+        logical_index[i] = std::move(logical_column);
     }
 
     return std::make_shared<Index>(std::move(logical_index));
