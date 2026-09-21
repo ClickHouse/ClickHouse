@@ -16,6 +16,10 @@ SET use_uncompressed_cache=0;
 
 SET use_query_condition_cache=0;
 
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
+
 create table t(a UInt64) engine=MergeTree order by a;
 insert into t select number from numbers_mt(1e6);
 
