@@ -14,12 +14,12 @@ namespace DB
         extern const int BAD_ARGUMENTS;
     }
 
-    void checkExpressionDoesntContainSubqueries(const IAST & ast)
+    void checkExpressionDoesntContainSubqueries(const IAST & ast, std::string_view subject)
     {
         checkStackSize();
 
         if (ast.as<ASTSubquery>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain subqueries");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot contain subqueries", subject);
 
         /// An `IN` operator whose right-hand side is a table reference (e.g. `x IN table`) builds a
         /// FutureSet that nobody fills outside of a SELECT pipeline, so evaluating the key during INSERT
@@ -32,12 +32,12 @@ namespace DB
             {
                 const auto & rhs = args->children[1];
                 if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain a table in the 'IN' operator");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot contain a table in the 'IN' operator", subject);
             }
         }
 
         for (const auto & child : ast.children)
-            checkExpressionDoesntContainSubqueries(*child);
+            checkExpressionDoesntContainSubqueries(*child, subject);
     }
 
     ASTPtr extractKeyExpressionList(const ASTPtr & node)

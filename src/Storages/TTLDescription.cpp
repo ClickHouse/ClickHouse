@@ -1444,7 +1444,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     else /// It's columns TTL without any additions, just copy it
         result.expression_ast = definition_ast->clone();
 
-    checkExpressionDoesntContainSubqueries(*result.expression_ast);
+    checkExpressionDoesntContainSubqueries(*result.expression_ast, "Key expressions");
 
     const bool skip_validation = validation_mode != TTLValidationMode::Validate;
 
