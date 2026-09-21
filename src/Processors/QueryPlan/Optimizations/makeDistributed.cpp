@@ -65,12 +65,8 @@ String findDictionaryFunction(const IQueryPlanStep & step);
 
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
-/// `isSerializable` cannot tell, and no function attribute marks "needs an object of the initiator"; the only
-/// place the dependency is visible is the function node inside the step's expressions, hence a DAG walk. It
-/// has to look beyond `ExpressionStep`/`FilterStep`: by the time the decision runs the optimizer has moved
-/// filters into the read (prewhere, row-level filter, pushed-down filter) and into the join expression, and a
-/// dictionary call left there would slip through. Temporary: the check goes away once the workers receive the
-/// dictionaries a distributed plan reads (tracked internally).
+/// `isSerializable` cannot tell, hence a DAG walk.
+///  The check goes away once the workers receive the dictionaries a distributed plan reads.
 String findDictionaryFunction(const IQueryPlanStep & step)
 {
     auto find_in_dag = [](const ActionsDAG & dag) -> String
