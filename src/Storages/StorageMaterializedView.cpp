@@ -957,7 +957,9 @@ void StorageMaterializedView::alter(
                 cache->clear();
             }
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
-            target_table->alter(column_comment_commands, local_context, target_alter_lock);
+            /// `IStorage::alter` takes a null guard when the caller already holds one, and the caller holds this view's.
+            DDLGuardPtr target_ddl_guard;
+            target_table->alter(column_comment_commands, local_context, target_alter_lock, target_ddl_guard);
             target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
         }
 
