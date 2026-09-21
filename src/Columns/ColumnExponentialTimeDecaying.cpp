@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -84,7 +85,7 @@ UInt32 canonicalWeakHash(
 {
     const UInt128 key = getCanonicalOrderingKey(column, row);
     return static_cast<UInt32>(
-        hashCRC32(key, WEAK_HASH32_INITIAL_VALUE));
+        intHashCRC32(key, WEAK_HASH32_INITIAL_VALUE));
 }
 
 }
