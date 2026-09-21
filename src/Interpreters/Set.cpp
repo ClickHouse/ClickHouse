@@ -437,9 +437,7 @@ void Set::processDateTime64Column(
 }
 
 /// Which elements of a `Tuple` key `castColumnAccurateOrNull` converts exactly as `castColumnAccurate`
-/// would, or reports as a NULL of the whole tuple rather than substituting a value of its own: one
-/// needing no conversion and keeping its NULLs in a `Nullable`, or a `String` or numeric source to a
-/// `Nullable` numeric target. A `FixedString`, `Date` or `DateTime` source substitutes a value instead.
+/// would, or reports as a NULL of the whole tuple; a `FixedString`, `Date` or `DateTime` source substitutes a value.
 static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(from_type).get());
@@ -447,9 +445,8 @@ static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_typ
     if (!from_tuple || !to_tuple)
         return false;
 
-    /// The cast matches elements by name as soon as both tuples are named and share one name, dropping
-    /// and default-filling the rest, so pairing by position is what it will do only when at most one
-    /// side is named, or the names already agree.
+    /// The cast pairs elements by name as soon as both tuples are named and share one name, dropping and
+    /// default-filling the rest; with at most one side named, or names agreeing, it pairs by position.
     if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
         && from_tuple->getElementNames() != to_tuple->getElementNames())
         return false;
@@ -535,9 +532,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable();
 
-        /// A Tuple target also needs the OrNull cast to be able to report a failed element; the
-        /// tuple-level Nullable it reports one with is stripped by `extractNestedColumnsAndNullMap`
-        /// below, leaving the key columns Set matches on unchanged.
+        /// `extractNestedColumnsAndNullMap` below strips the tuple-level `Nullable` the OrNull cast
+        /// reports a failed element with, leaving the key columns Set matches on unchanged.
         if (use_cast_accurate_or_null && isTuple(removeNullable(data_types[i])))
             use_cast_accurate_or_null = canBeAccurateCastOrNullTarget(data_types[i])
                 && tupleElementsCanReportInexactConversion(column_to_cast.type, data_types[i]);
