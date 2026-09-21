@@ -6,6 +6,7 @@
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -3067,6 +3068,18 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (indexes_mapping.empty())
         return false;
 
+    /// The sparse primary index intentionally stores ExponentialTimeDecaying
+    /// keys as a lossy UInt64 bucket. Set-index negation and exact membership
+    /// cannot use that bucket without additional collision handling, so leave
+    /// IN/NOT IN to the row-level predicate for now.
+    if (std::ranges::any_of(
+            data_types,
+            [](const DataTypePtr & type)
+            {
+                return isExponentialTimeDecayingFloat64(removeNullable(type));
+            }))
+        return false;
+
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
@@ -4697,6 +4710,29 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             return false;
+        }
+
+        /// The sparse primary index stores ExponentialTimeDecaying as one UInt64
+        /// bucket per mark. A bucket collision is deliberately treated as "possibly equal":
+        /// weaken strict bounds to include the boundary bucket and mark the atom relaxed so
+        /// exact-count/projection optimizations still evaluate the row predicate. Negative
+        /// predicates are not safe under a lossy bucket because excluding one bucket could
+        /// exclude a different value that merely collided with the constant.
+        const auto key_type_for_index = removeNullable(key_expr_type);
+        if (isExponentialTimeDecayingFloat64(key_type_for_index))
+        {
+            if (!chain.empty())
+                return false;
+
+            if (func_name == "notEquals")
+                return false;
+
+            if (func_name == "less")
+                func_name = "lessOrEquals";
+            else if (func_name == "greater")
+                func_name = "greaterOrEquals";
+
+            out.relaxed = true;
         }
 
         /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
