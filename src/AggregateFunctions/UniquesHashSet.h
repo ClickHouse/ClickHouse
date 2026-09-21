@@ -380,7 +380,10 @@ public:
                 /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
+                /// The three batch loops are fully unrolled on purpose: clang 23 stopped unrolling them on its own and
+                /// spills the hashes to the stack instead, which defeats the instruction-level parallelism of the batch.
                 std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+#pragma clang loop unroll(full)
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
@@ -388,11 +391,13 @@ public:
                 i += insert_many_batch_size;
 
                 std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+#pragma clang loop unroll(full)
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     place_value_batch[j] = place(hash_value[j]);
                 }
 
+#pragma clang loop unroll(full)
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     const HashValue & x = hash_value[j];

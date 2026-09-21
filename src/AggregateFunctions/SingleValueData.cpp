@@ -489,6 +489,29 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     }
 }
 
+/// Fallback for types without a `findExtreme*Index` implementation (128/256-bit integers and decimals): a scalar scan
+/// that updates the index behind a branch. The index is kept behind an opaque pointer (hence NO_INLINE) so that the
+/// compiler does not turn the branch into a chain of selects: clang 23 on AArch64 does that for the inlined loop, and
+/// on monotonic input, where the branch is perfectly predictable, the select chain makes every iteration wait for the
+/// previous one and the scan gets 3x slower.
+template <typename T, bool is_min>
+static NO_INLINE void findExtremeIndexScalarImpl(const T * __restrict ptr, size_t i, size_t row_end, size_t * __restrict index)
+{
+    for (; i < row_end; i++)
+    {
+        if constexpr (is_min)
+        {
+            if (ptr[i] < ptr[*index])
+                *index = i;
+        }
+        else
+        {
+            if (ptr[i] > ptr[*index])
+                *index = i;
+        }
+    }
+}
+
 template <typename T>
 std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
@@ -516,9 +539,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         }
         else
         {
-            for (size_t i = index + 1; i < row_end; i++)
-                if (vec.getData()[i] < vec.getData()[index])
-                    index = i;
+            findExtremeIndexScalarImpl<T, true>(vec.getData().data(), index + 1, row_end, &index);
         }
         return index;
     }
@@ -549,9 +570,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         }
         else
         {
-            for (size_t i = index + 1; i < row_end; i++)
-                if (vec.getData()[i] > vec.getData()[index])
-                    index = i;
+            findExtremeIndexScalarImpl<T, false>(vec.getData().data(), index + 1, row_end, &index);
         }
         return index;
     }

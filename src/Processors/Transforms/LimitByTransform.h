@@ -46,7 +46,11 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
+    /// Called once per run boundary from the row loop of `consumeImpl`. It must be inlined there: as an out-of-line
+    /// call, clang 23 on AArch64 pairs the callee-saved register that holds the loop-invariant hash-table pointer with
+    /// the one that holds the group index just loaded from the table in a single `stp`, which makes the next row's
+    /// bucket address depend on the previous row's lookup and slows `LIMIT BY` down 2x.
+    ALWAYS_INLINE void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
 
     template <typename Method>
     requires MapAggregationMethod<Method>
