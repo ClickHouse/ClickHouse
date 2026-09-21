@@ -1,0 +1,48 @@
+-- A name declared by a `WITH` list is not a table, so a stored view must not record a referential
+-- dependency on a table of that name: the CTE hides it.
+-- https://github.com/ClickHouse/ClickHouse/issues/113711
+-- The real dependency (the table the CTE body reads) must survive, so the two `DROP`s below differ.
+
+SET enable_materialized_cte = 1;
+
+DROP TABLE IF EXISTS v_dep_113711b, v_dep_in_113711b, v_dep_plain_113711b, mv_dep_113711b;
+DROP TABLE IF EXISTS src_dep_113711b, c_dep_113711b, mv_src_dep_113711b, mv_c_dep_113711b, mv_dst_dep_113711b;
+
+CREATE TABLE src_dep_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO src_dep_113711b VALUES (1), (2), (3);
+-- A real table carrying the CTE's name: rows 100, 200 below would mean a reference bound to it.
+CREATE TABLE c_dep_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO c_dep_113711b VALUES (100), (200);
+
+CREATE VIEW v_dep_113711b AS WITH c_dep_113711b AS MATERIALIZED (SELECT id FROM src_dep_113711b) SELECT * FROM c_dep_113711b;
+CREATE VIEW v_dep_in_113711b AS WITH c_dep_113711b AS MATERIALIZED (SELECT id FROM src_dep_113711b) SELECT id FROM src_dep_113711b WHERE id IN c_dep_113711b;
+CREATE VIEW v_dep_plain_113711b AS WITH c_dep_113711b AS (SELECT id FROM src_dep_113711b) SELECT * FROM c_dep_113711b;
+
+SELECT '-- every view reads the CTE, not the same-named table';
+SELECT * FROM v_dep_113711b ORDER BY id;
+SELECT * FROM v_dep_in_113711b ORDER BY id;
+SELECT * FROM v_dep_plain_113711b ORDER BY id;
+
+SELECT '-- the CTE name is not a dependency of any of the three views';
+DROP TABLE c_dep_113711b SETTINGS check_referential_table_dependencies = 1;
+SELECT * FROM v_dep_113711b ORDER BY id;
+
+SELECT '-- the table the CTE body reads is a dependency';
+DROP TABLE src_dep_113711b SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE v_dep_113711b, v_dep_in_113711b, v_dep_plain_113711b;
+DROP TABLE src_dep_113711b SETTINGS check_referential_table_dependencies = 1;
+
+SELECT '-- the same for a materialized view writing to a target table';
+CREATE TABLE mv_src_dep_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_c_dep_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_dst_dep_113711b (id UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_dep_113711b TO mv_dst_dep_113711b AS
+WITH mv_c_dep_113711b AS MATERIALIZED (SELECT id FROM mv_src_dep_113711b) SELECT id FROM mv_c_dep_113711b;
+INSERT INTO mv_src_dep_113711b VALUES (1), (2);
+SELECT * FROM mv_dst_dep_113711b ORDER BY id;
+DROP TABLE mv_c_dep_113711b SETTINGS check_referential_table_dependencies = 1;
+DROP TABLE mv_src_dep_113711b SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE mv_dst_dep_113711b SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+
+DROP TABLE mv_dep_113711b;
+DROP TABLE mv_dst_dep_113711b, mv_src_dep_113711b;
