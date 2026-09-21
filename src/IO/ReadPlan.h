@@ -5,7 +5,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <limits>
 #include <variant>
 
 namespace DB
@@ -40,13 +39,9 @@ public:
     size_t end() const { return range_end; }
     bool contains(size_t offset) const { return offset >= range_start && offset < range_end; }
 
-    /// The run at `offset` (see `PlanRun`). Serving order: the memory hold, then the fastest tier that
-    /// covers `offset` (a hit, or a miss committed through it), else a FETCH. The FETCH extent is built
-    /// as: right - coalesce to the nearest byte any tier already holds, capped at `max_fetch_ahead` (the
-    /// window); left - down to the write frontier of each populating segment over `offset` (an
-    /// incremental segment fills from its frontier); then widened to cover every whole-segment cell it
-    /// enters (those populate only via one all-or-nothing write). Non-FETCH runs ignore `max_fetch_ahead`.
-    PlanRun runAt(size_t offset, size_t max_fetch_ahead = std::numeric_limits<size_t>::max()) const;
+    /// How to serve `offset` (see `PlanRun`): the memory hold, the fastest tier covering it, else a
+    /// `Fetch` from source, whose range may reach past the asked one on either side.
+    PlanRun runAt(size_t offset, size_t fetch_limit) const;
 
     /// The populating tiers' writers overlapping `range` - the write-up targets for one FETCH read.
     VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;

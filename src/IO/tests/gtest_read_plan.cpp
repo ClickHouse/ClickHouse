@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace DB;
 using CacheResolution = ICacheProvider::CacheResolution;
 
@@ -73,6 +75,9 @@ VectorWithMemoryTracking<PlanTier> tiers(Ts &&... ts)
     return out;
 }
 
+/// `runAt` with no cap on the fetch extent.
+constexpr size_t NO_LIMIT = std::numeric_limits<size_t>::max();
+
 /// Extract a specific `PlanRun` alternative from `run`, or nullptr if it is a different outcome.
 template <typename T>
 const T * as(const ReadPlan::PlanRun & run) { return std::get_if<T>(&run); }
@@ -90,13 +95,13 @@ TEST(ReadPlan, HitsServeFromReaderPerCell)
     plan.reset(0);
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
-    auto r0 = plan.runAt(0);
+    auto r0 = plan.runAt(0, NO_LIMIT);
     const auto * hit0 = as<ReadPlan::ServeFromReader>(r0);
     ASSERT_NE(hit0, nullptr);
     EXPECT_EQ(hit0->range.offset, 0u);
     EXPECT_EQ(hit0->range.end(), 1u);   /// serves to the hit cell end
 
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
 }
 
 TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
@@ -112,7 +117,7 @@ TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
     plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     /// [0,2) is an uncommitted miss run; it coalesces and stops at the hit at 2.
-    auto r = plan.runAt(0);
+    auto r = plan.runAt(0, NO_LIMIT);
     const auto * fetch = as<ReadPlan::Fetch>(r);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.offset, 0u);
@@ -122,7 +127,7 @@ TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
     EXPECT_EQ(plan.writersFor({0, 2}).size(), 2u);
 
     /// The hit caps the run and is servable.
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
 }
 
 TEST(ReadPlan, CommittedWriterBecomesServable)
@@ -135,10 +140,10 @@ TEST(ReadPlan, CommittedWriterBecomesServable)
     c.push_back(std::move(missed));
     plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));
 
-    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0)), nullptr);   /// nothing committed yet
+    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0, NO_LIMIT)), nullptr);   /// nothing committed yet
 
     writer->commit({0, 2});                 /// the executor filled it
-    auto r = plan.runAt(0);
+    auto r = plan.runAt(0, NO_LIMIT);
     const auto * srv = as<ReadPlan::ServeFromWriter>(r);
     ASSERT_NE(srv, nullptr);
     EXPECT_EQ(srv->range.end(), 2u);
@@ -163,13 +168,13 @@ TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
         tier(CacheTier::FilesystemCache, std::move(fs))));
 
     /// [0,2) miss on both tiers -> fetch, capped at the fs hit at 2.
-    auto r = plan.runAt(0);
+    auto r = plan.runAt(0, NO_LIMIT);
     const auto * fetch = as<ReadPlan::Fetch>(r);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.end(), 2u);
 
     /// At 2 the fs tier serves it (fastest tier missed).
-    auto r2 = plan.runAt(2);
+    auto r2 = plan.runAt(2, NO_LIMIT);
     const auto * hit2 = as<ReadPlan::ServeFromReader>(r2);
     ASSERT_NE(hit2, nullptr);
     EXPECT_EQ(hit2->range.end(), 4u);
@@ -191,7 +196,7 @@ TEST(ReadPlan, DropBeforeReleasesConsumedPrefix)
 
     plan.dropBefore(2);
     EXPECT_EQ(plan.begin(), 2u);
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
 }
 
 TEST(ReadPlan, ExtendKeepsTheSuffixOfAStraddlingCell)
@@ -208,7 +213,7 @@ TEST(ReadPlan, ExtendKeepsTheSuffixOfAStraddlingCell)
     warmer.push_back(hit({0, 4}));   /// same segment, now committed through 4
     plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(warmer))));
 
-    auto run = plan.runAt(2);
+    auto run = plan.runAt(2, NO_LIMIT);
     const auto * grown = as<ReadPlan::ServeFromReader>(run);
     ASSERT_NE(grown, nullptr);
     EXPECT_EQ(grown->range.end(), 4u);
@@ -232,9 +237,9 @@ TEST(ReadPlan, ExtendKeepsThePartialSegmentsWriter)
     plan.extend(6, tiers(tier(CacheTier::FilesystemCache, std::move(partial))));
 
     EXPECT_EQ(plan.writersFor({4, 2}).size(), 1u);
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
     /// The tail is a fetch that starts at the frontier, not below it.
-    auto tail = plan.runAt(4);
+    auto tail = plan.runAt(4, NO_LIMIT);
     const auto * fetch = as<ReadPlan::Fetch>(tail);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.offset, 4u);
@@ -253,15 +258,15 @@ TEST(ReadPlan, DropAfterReleasesTheUnreachedTail)
 
     plan.dropAfter(1);
     EXPECT_EQ(plan.end(), 1u);
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(0)), nullptr);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(1)));
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(0, NO_LIMIT)), nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(1, NO_LIMIT)));
 
     std::vector<CacheResolution> again;
     again.push_back(hit({1, 1}));
     again.push_back(hit({2, 1}));
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(again))));
     EXPECT_EQ(plan.end(), 3u);
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
 }
 
 TEST(ReadPlan, DropAfterKeepsTheCellStraddlingTheCut)
@@ -276,8 +281,8 @@ TEST(ReadPlan, DropAfterKeepsTheCellStraddlingTheCut)
 
     plan.dropAfter(3);
     EXPECT_EQ(plan.end(), 3u);
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(3)));
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(3, NO_LIMIT)));
 }
 
 TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
@@ -297,12 +302,12 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
 
     EXPECT_EQ(plan.end(), 4u);
     /// [1,3) is one coalesced miss (not doubled); the hit at 3 caps it.
-    auto r = plan.runAt(1);
+    auto r = plan.runAt(1, NO_LIMIT);
     const auto * fetch = as<ReadPlan::Fetch>(r);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.end(), 3u);
     EXPECT_EQ(plan.writersFor({1, 3}).size(), 1u);   /// one writer, not two
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3, NO_LIMIT)), nullptr);
 }
 
 /// `CacheTier` does not identify a tier: a stacked cache-on-cache chain has two `FilesystemCache`
@@ -330,9 +335,9 @@ TEST(ReadPlan, StackedSameTierLayersKeepTheirOwnCells)
 
     EXPECT_EQ(plan.end(), 4u);
     /// The fast layer's cell serves 2 ...
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2, NO_LIMIT)), nullptr);
     /// ... and the slow layer keeps its OWN cell, so 3 is served rather than re-fetched.
-    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3)), nullptr);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3, NO_LIMIT)), nullptr);
 }
 
 TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
@@ -349,7 +354,7 @@ TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
     plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(c))));
 
     /// Virgin: the fetch extends left to the segment start (0), not `offset` (2).
-    auto r = plan.runAt(2);
+    auto r = plan.runAt(2, NO_LIMIT);
     const auto * fetch = as<ReadPlan::Fetch>(r);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.offset, 0u);
@@ -364,7 +369,7 @@ TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
 
     /// After committing [0,2), a read at 3 fetches from the frontier 2, not the segment start.
     writer->commit({0, 2});
-    auto r2 = plan.runAt(3);
+    auto r2 = plan.runAt(3, NO_LIMIT);
     const auto * fetch2 = as<ReadPlan::Fetch>(r2);
     ASSERT_NE(fetch2, nullptr);
     EXPECT_EQ(fetch2->range.offset, 2u);
@@ -383,7 +388,7 @@ TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
     plan.reset(0);
     plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));   /// range_end = 2, cell to 4
 
-    auto r = plan.runAt(0, /*max_fetch_ahead=*/1);
+    auto r = plan.runAt(0, /*fetch_limit=*/1);
     const auto * fetch = as<ReadPlan::Fetch>(r);
     ASSERT_NE(fetch, nullptr);
     EXPECT_EQ(fetch->range.offset, 0u);
@@ -422,8 +427,8 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnDrop)
     plan.hold(std::move(held));
 
     /// A miss offset not held → FETCH; a held offset → memory, up to the hold's end.
-    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0)), nullptr);
-    auto r = plan.runAt(1);
+    EXPECT_NE(as<ReadPlan::Fetch>(plan.runAt(0, NO_LIMIT)), nullptr);
+    auto r = plan.runAt(1, NO_LIMIT);
     const auto * mem = as<ReadPlan::ServeFromMemory>(r);
     ASSERT_NE(mem, nullptr);
     EXPECT_EQ(mem->range.offset, 1u);
@@ -432,5 +437,5 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnDrop)
 
     /// Drop past the hold frees it; the offset is then a plain miss again.
     plan.dropBefore(3);
-    EXPECT_EQ(as<ReadPlan::ServeFromMemory>(plan.runAt(3)), nullptr);
+    EXPECT_EQ(as<ReadPlan::ServeFromMemory>(plan.runAt(3, NO_LIMIT)), nullptr);
 }

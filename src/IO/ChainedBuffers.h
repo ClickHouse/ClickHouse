@@ -132,6 +132,9 @@ public:
     /// True when every byte in `req` is reachable from the cursor.
     bool covers(ByteRange req) const;
 
+    /// True when the byte at `offset` is reachable from the cursor.
+    bool contains(size_t offset) const { return covers(ByteRange{offset, 1}); }
+
     /// Sub-ranges of `req` not reachable. Empty iff `covers(req)`.
     VectorWithMemoryTracking<ByteRange> gaps(ByteRange req) const;
 

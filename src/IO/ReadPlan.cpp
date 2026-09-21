@@ -38,13 +38,13 @@ size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t range_e
 
 }
 
-ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
+ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t fetch_limit) const
 {
     if (offset < range_start || offset >= range_end)
         return std::monostate{};
 
     /// memory hold - serve to its first gap
-    if (!memory.empty() && memory.covers(ByteRange{offset, 1}))
+    if (memory.contains(offset))
     {
         size_t end = memory.range().end();
         if (auto g = memory.gaps(ByteRange{offset, end - offset}); !g.empty())
@@ -68,21 +68,19 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         }
     }
 
-    /// FETCH extent. Right: coalesce to the nearest resident byte, capped at the window.
+    /// Fetch end: the first byte any tier can already serve, or `fetch_limit` out if sooner.
+    /// Fetch start: down to the write frontier of a populating segment over `offset`.
     size_t fetch_end = range_end;
-    for (const auto & tier : tiers)
-        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, range_end));
-    if (max_fetch_ahead < range_end - offset)
-        fetch_end = std::min(fetch_end, offset + max_fetch_ahead);
-
-    /// Left: down to each covering segment's write frontier.
     size_t fetch_start = offset;
     for (const auto & tier : tiers)
     {
+        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, range_end));
         const CacheResolution * cell = cellCovering(tier, offset);
         if (cell && cell->kind == CacheResolution::Kind::Miss && cell->writer)
             fetch_start = std::min(fetch_start, cell->writer->committed());
     }
+    if (fetch_limit < range_end - offset)
+        fetch_end = std::min(fetch_end, offset + fetch_limit);
 
     /// Widen to complete every whole-segment cell the fetch enters (fixpoint).
     for (bool grew = true; grew;)
