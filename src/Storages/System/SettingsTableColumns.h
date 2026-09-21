@@ -64,7 +64,14 @@ public:
     }
 
     /// Whether the query reads the next column - for a value that is work to build.
-    bool wants() const { return columns_mask[src_index]; }
+    bool wants() const
+    {
+        /// The mask has one entry per column the table declares, so running out of it means the table wrote
+        /// more columns than it declared - or that it does not override `supportsColumnsMask`, which leaves
+        /// the mask empty and every read past its end.
+        chassert(src_index < columns_mask.size());
+        return columns_mask[src_index];
+    }
 
     /// Writes the next column of the current row, or skips it. A template, so that the `Field` - a copy of a string,
     /// often - is built only for a column the query reads. An empty `optional` is written as `NULL`.
