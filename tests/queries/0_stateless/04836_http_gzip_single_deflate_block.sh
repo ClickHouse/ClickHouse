@@ -52,7 +52,8 @@ open(sys.argv[2], 'wb').write(blob)
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04836 (s String) ENGINE = MergeTree ORDER BY ()"
 
-suffix="${CLICKHOUSE_DATABASE}_${RANDOM}"
+# Unique per invocation, not per database: the query_log reads below key on query_id alone.
+suffix="${CLICKHOUSE_DATABASE}_$(random_str 10)"
 qid_multi="04836_multi_${suffix}"
 qid_single="04836_single_${suffix}"
 
