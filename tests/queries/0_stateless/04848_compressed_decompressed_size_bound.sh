@@ -56,27 +56,25 @@ frame 158 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompre
 echo '-- nor may it understate the uncompressed size'
 frame 2 3 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (3)'
 
-# No-regression control: the shortcut is the ordinary read path for compressed marks and for the Log
-# family, so engines reading frames they wrote themselves have to keep working.
+# No-regression control: only a NONE-coded frame takes the shortcut, so the column, the marks and
+# the primary key are all stored uncompressed here. StripeLog is absent because it compresses its
+# whole stream with the default codec and ignores the column codec, so its reads never take it.
 echo '-- engines keep working on ordinary data'
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_log_bound;
-    DROP TABLE IF EXISTS t_stripe_bound;
     DROP TABLE IF EXISTS t_mt_bound;
 
-    CREATE TABLE t_log_bound (s String) ENGINE = Log;
-    CREATE TABLE t_stripe_bound (s String) ENGINE = StripeLog;
-    CREATE TABLE t_mt_bound (k UInt64, s String, INDEX idx_s s TYPE minmax GRANULARITY 1)
+    CREATE TABLE t_log_bound (s String CODEC(NONE)) ENGINE = Log;
+    CREATE TABLE t_mt_bound (k UInt64, s String CODEC(NONE), INDEX idx_s s TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8, compress_marks = 1, compress_primary_key = 1,
-                 min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0;
+                 min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0,
+                 marks_compression_codec = 'NONE', primary_key_compression_codec = 'NONE';
 
     INSERT INTO t_log_bound SELECT repeat('a', 100) FROM numbers(1000);
-    INSERT INTO t_stripe_bound SELECT repeat('a', 100) FROM numbers(1000);
     INSERT INTO t_mt_bound SELECT number, repeat('a', 100) FROM numbers(1000);
 
     SELECT count(), sum(length(s)) FROM t_log_bound;
-    SELECT count(), sum(length(s)) FROM t_stripe_bound;
     SELECT count(), sum(length(s)) FROM t_mt_bound WHERE s LIKE '%a%';
     SELECT count() FROM t_mt_bound WHERE k = 42;
     -- packed_skip_index_max_bytes = 0 keeps the index in its own file, which is the skip-index class
@@ -84,6 +82,5 @@ ${CLICKHOUSE_CLIENT} --query "
     CHECK TABLE t_mt_bound SETTINGS check_query_single_value_result = 1;
 
     DROP TABLE t_log_bound;
-    DROP TABLE t_stripe_bound;
     DROP TABLE t_mt_bound;
 "
