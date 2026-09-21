@@ -273,6 +273,16 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
+    bool isPivotRewrite() const
+    {
+        return is_pivot_rewrite;
+    }
+
+    void setIsPivotRewrite(bool is_pivot_rewrite_value)
+    {
+        is_pivot_rewrite = is_pivot_rewrite_value;
+    }
+
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
     bool isOrderByAll() const
     {
@@ -772,6 +782,7 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    bool is_pivot_rewrite = false;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
     bool is_limit_after_all = false;
