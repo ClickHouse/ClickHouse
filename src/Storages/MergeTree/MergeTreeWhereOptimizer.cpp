@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
@@ -108,6 +109,33 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
     return table_columns;
 }
 
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+/// Only these columns make a condition safe to evaluate before the FINAL merge: rows of one dedup
+/// group share their values. That holds for value identity, not for comparator equality, and the two
+/// differ for floats (`-0.0` compares equal to `0.0`, `NaN` payloads compare equal to each other), so
+/// float columns are excluded - a condition like `toString(f) = '0'` can drop the group's winner.
+NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+{
+    NameSet names;
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        if (!typeContainsFloat(sorting_key.data_types[i]))
+            names.insert(sorting_key.column_names[i]);
+    return names;
+}
+
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -123,8 +151,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{NameSet(
-          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
+    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
