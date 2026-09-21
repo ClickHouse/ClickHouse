@@ -2337,9 +2337,8 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
 
-    /// A transform is rebuilt and evaluated whenever a part's index is written (INSERT, merge, mutation),
-    /// and rebuilt again on part removal; none of those has a SELECT pipeline to fill a set. Not rejected on
-    /// attach, so a table that already exists stays loadable and its index droppable.
+    /// A transform is rebuilt and evaluated on every index write (INSERT, merge, mutation) and again on part removal, none of
+    /// which has a SELECT pipeline to fill a set. Attach is exempt: an existing table stays loadable.
     if (!attach)
     {
         if (preprocessor_ast)
