@@ -631,13 +631,6 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
 
     for (const auto & column : index.sample_block)
     {
-        if (containsExponentialTimeDecayingFloat64(column.type))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Data type {} of column {} is not allowed in a minmax index because its exact ordering requires the column comparator",
-                column.type->getName(),
-                column.name);
-
         if (!column.type->isComparable())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
