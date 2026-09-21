@@ -23,13 +23,9 @@ ALWAYS_INLINE bool hasInBlock(const T * data, T value)
     return found != 0;
 }
 
-template <typename T>
+template <SupportedUnsignedInteger T>
 ALWAYS_INLINE bool findUIntHasInternal(const T * data, size_t size, T value)
 {
-    static_assert(
-        std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32>
-        || std::is_same_v<T, UInt64>);
-
     if constexpr (std::is_same_v<T, UInt8>)
     {
         return std::memchr(data, static_cast<int>(value), size) != nullptr;
@@ -107,13 +103,9 @@ ALWAYS_INLINE size_t findScalarPrefix(const T * data, size_t size, T value)
     return static_cast<size_t>(-1);
 }
 
-template <typename T>
+template <SupportedUnsignedInteger T>
 ALWAYS_INLINE size_t findUIntIndexOfInternal(const T * data, size_t size, T value)
 {
-    static_assert(
-        std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16> || std::is_same_v<T, UInt32>
-        || std::is_same_v<T, UInt64>);
-
     if constexpr (std::is_same_v<T, UInt8>)
     {
         const auto * found = static_cast<const UInt8 *>(std::memchr(data, static_cast<int>(value), size));

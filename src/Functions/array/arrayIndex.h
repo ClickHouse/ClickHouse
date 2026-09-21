@@ -52,6 +52,10 @@ using NullMap = PaddedPODArray<UInt8>;
 namespace ArrayIndexImpl
 {
 template <typename T>
+concept SupportedUnsignedInteger = std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16>
+    || std::is_same_v<T, UInt32> || std::is_same_v<T, UInt64>;
+
+template <typename T>
 bool findUIntHas(const T * data, size_t size, T value);
 
 template <typename T>
@@ -226,8 +230,7 @@ public:
         if constexpr (
             Case == 1 && RightArgIsConstant && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
             && std::is_same_v<Data, PaddedPODArray<Initial>> && std::is_same_v<Target, Result> && std::is_same_v<Initial, Result>
-            && (std::is_same_v<Initial, UInt8> || std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>
-                || std::is_same_v<Initial, UInt64>))
+            && ArrayIndexImpl::SupportedUnsignedInteger<Initial>)
         {
             /// Keep short rows on the scalar path. The continuation is deliberately out of line so its vectorized
             /// loop does not change the code layout of this hot prefix.
