@@ -3,7 +3,6 @@
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
-#include <base/sort.h>
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -156,6 +155,40 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
+/// An EXPLAIN-shaped dump of a plan with every step's hash beside it. The hashes are computed
+/// bottom-up, so when two plans that should match do not, the deepest level at which two dumps stop
+/// agreeing is where they actually diverge. That is the one thing a failed match needs and a single
+/// log line cannot carry, which is why this sits at the test level and the summary stays at trace.
+String explainPlanWithHashes(const QueryPlan::Node & root, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+{
+    String out;
+    struct Frame
+    {
+        const QueryPlan::Node * node;
+        size_t depth;
+    };
+    std::vector<Frame> stack{{&root, 0}};
+    while (!stack.empty())
+    {
+        const auto frame = stack.back();
+        stack.pop_back();
+
+        const auto * step = frame.node->step.get();
+        const auto it = hashes.find(frame.node);
+        out += fmt::format(
+            "{}{} ({}) hash={}\n",
+            String(frame.depth * 2, ' '),
+            step->getUniqID(),
+            step->getStepDescription().empty() ? step->getName() : String(step->getStepDescription()),
+            it != hashes.end() ? fmt::format("{}", it->second) : "<not hashed>");
+
+        /// Reversed, so that the children come out of the stack in plan order.
+        for (auto child = frame.node->children.rbegin(); child != frame.node->children.rend(); ++child)
+            stack.push_back({*child, frame.depth + 1});
+    }
+    return out;
+}
+
 /// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
 /// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
@@ -189,28 +222,24 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        /// Say what was looked for and what was on offer. Without the hash and the step there is
-        /// nothing to act on: this is by far the most common reason the optimization gives up, and
-        /// the message alone does not distinguish a plan shape that cannot match from a hash that
-        /// should have matched and did not.
+        /// Both plans in full, each step tagged with its hash. `LOG_IMPL` leaves before it touches
+        /// its arguments when the level is off, so neither plan is walked unless someone asked for
+        /// this.
+        LOG_TEST(
+            getLogger("AutoParallelReplicas"),
+            "No match for hash {}. Plan with parallel replicas:\n{}\nSingle-node plan:\n{}",
+            it->second,
+            explainPlanWithHashes(parallel_replicas_plan_root, pr_node_hashes),
+            explainPlanWithHashes(single_replica_plan_root, nopr_node_hashes));
+
+        /// Say what was looked for. Without the hash and the step there is nothing to act on: this
+        /// is by far the most common reason the optimization gives up.
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
-            "Cannot find step with matching hash {} in single-node plan for {} ({}). Single-node plan offers: {}",
+            "Cannot find step with matching hash {} in single-node plan for {} ({})",
             it->second,
             final_node_in_replica_plan.step->getName(),
-            final_node_in_replica_plan.step->getUniqID(),
-            fmt::join(
-                std::invoke(
-                    [&]
-                    {
-                        Strings offered;
-                        offered.reserve(nopr_node_hashes.size());
-                        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
-                            offered.push_back(fmt::format("{}={}", nopr_node->step->getUniqID(), nopr_hash));
-                        ::sort(offered.begin(), offered.end());
-                        return offered;
-                    }),
-                ", "));
+            final_node_in_replica_plan.step->getUniqID());
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         return std::make_pair(nullptr, 0);
     }
