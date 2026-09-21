@@ -164,46 +164,37 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
     range_end = new_end;
 }
 
+void ReadPlan::dropCellsOutsideRange()
+{
+    const ByteRange kept{range_start, range_end > range_start ? range_end - range_start : 0};
+    for (auto & tier : tiers)
+        std::erase_if(tier.cells, [&](const CacheResolution & c) { return !c.range.overlaps(kept); });
+}
+
 void ReadPlan::dropBefore(size_t offset)
 {
     if (offset <= range_start)
         return;
-    for (auto & tier : tiers)
-    {
-        auto & cells = tier.cells;
-        /// Consumed cells (ending at/before `offset`) form a leading run - erase it, releasing pins.
-        auto first_live = std::find_if(cells.begin(), cells.end(),
-            [&](const CacheResolution & c) { return c.range.end() > offset; });
-        cells.erase(cells.begin(), first_live);
-    }
-    /// Free the memory hold the cursor has passed; keep what is still ahead.
+    range_start = std::min(offset, range_end);
+    dropCellsOutsideRange();
     if (!memory.empty())
     {
         const size_t mend = memory.range().end();
-        memory = offset < mend ? memory.slice(ByteRange{offset, mend - offset}) : ChainedBuffers{};
+        memory = range_start < mend ? memory.slice(ByteRange{range_start, mend - range_start}) : ChainedBuffers{};
     }
-    range_start = std::min(offset, range_end);
 }
 
 void ReadPlan::dropAfter(size_t offset)
 {
     if (offset >= range_end)
         return;
-    const size_t new_end = std::max(offset, range_start);
-    for (auto & tier : tiers)
-    {
-        auto & cells = tier.cells;
-        auto first_dead = std::find_if(cells.begin(), cells.end(),
-            [&](const CacheResolution & c) { return c.range.offset >= new_end; });
-        cells.erase(first_dead, cells.end());
-    }
-    /// `runAt` stops at `range_end`, so held bytes past it are unreachable.
+    range_end = std::max(offset, range_start);
+    dropCellsOutsideRange();
     if (!memory.empty())
     {
         const size_t mstart = memory.range().offset;
-        memory = new_end > mstart ? memory.slice(ByteRange{mstart, new_end - mstart}) : ChainedBuffers{};
+        memory = range_end > mstart ? memory.slice(ByteRange{mstart, range_end - mstart}) : ChainedBuffers{};
     }
-    range_end = new_end;
 }
 
 void ReadPlan::reset(size_t start_offset)

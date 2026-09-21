@@ -61,11 +61,10 @@ public:
     /// `dropBefore` passes them, so already-fetched bytes are never re-read.
     void hold(ChainedBuffers bytes);
 
-    /// Drop cells that end at or before `offset` (release their pins) and advance `begin` to it.
+    /// Move `begin` forward to `offset`, releasing what it leaves behind.
     void dropBefore(size_t offset);
 
-    /// `dropBefore` from the right, for when the look-ahead shrinks: drop cells starting at or after
-    /// `offset` and pull `end` back. A cell straddling `offset` is kept, overhanging the range.
+    /// Move `end` back to `offset`, releasing what lies past it - for when the look-ahead shrinks.
     void dropAfter(size_t offset);
 
     /// Discard everything and re-anchor the (empty) range at `start_offset` - a seek, a backward jump,
@@ -73,6 +72,8 @@ public:
     void reset(size_t start_offset);
 
 private:
+    void dropCellsOutsideRange();
+
     size_t range_start = 0;
     size_t range_end = 0;   /// `[range_start, range_end)` is resolved
     VectorWithMemoryTracking<PlanTier> tiers;   /// fastest-first, 1:1 with the cache chain
