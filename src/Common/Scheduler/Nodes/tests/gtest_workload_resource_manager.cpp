@@ -3849,6 +3849,61 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
     t.wait();
 }
 
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingSeparateMasterWorkerResources)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE master_cpu (MASTER THREAD)");
+    t.query("CREATE RESOURCE worker_cpu (WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "master_cpu", "worker_cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // Separate master and worker queues can process requests out of order.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"));
+
+        std::vector<AcquiredSlotPtr> slots;
+        if (auto first = lease->acquire())
+            slots.push_back(std::move(first));
+
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                slots.push_back(std::move(slot));
+            return slots.size() >= 5;
+        });
+        ASSERT_TRUE(got_all) << "Separate resources lease granted only " << slots.size() << "/5 slots";
+        EXPECT_EQ(slots.size(), 5u);
+
+        // Test clean cancellation and release with separate queues
+        slots.clear();
+        lease->free();
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingSeparateResourcesCancel)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE master_cpu (MASTER THREAD)");
+    t.query("CREATE RESOURCE worker_cpu (WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "master_cpu", "worker_cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"));
+
+        // Acquire master slot and immediately free while worker requests might be in flight
+        auto first = lease->acquire();
+        ASSERT_TRUE(first);
+        first.reset();
+        lease->free();
+    });
+
+    t.wait();
+}
+
 // Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
 struct UnsubscribeProbe
 {

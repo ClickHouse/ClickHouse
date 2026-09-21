@@ -128,8 +128,29 @@ CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_
         request.lease = lease;
 }
 
+ResourceCost CPULeaseAllocation::RequestChain::getMaxConsumed() const
+{
+    auto it = tail;
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        if (it->state == RequestState::CONSUMING)
+            return it->max_consumed;
+        it = next(it);
+    }
+    return tail->max_consumed;
+}
+
 void CPULeaseAllocation::RequestChain::finish()
 {
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        if (tail->state == RequestState::CONSUMING)
+            break;
+        tail = next(tail);
+    }
+
+    chassert(tail->state == RequestState::CONSUMING);
+
     if (lease_ptr && lease_ptr->settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder span("CPU_LEASE_REQUEST_FINISH");
@@ -141,32 +162,51 @@ void CPULeaseAllocation::RequestChain::finish()
     tail->finish();
     if (tail->is_master_slot)
         request_master_slot = true;
+    tail->state = RequestState::FREE;
     tail = next(tail);
 }
 
-void CPULeaseAllocation::RequestChain::granted()
+void CPULeaseAllocation::RequestChain::markGranted(Request * request)
 {
-    next_grant = next(next_grant);
+    chassert(request);
+    chassert(request->state == RequestState::INFLIGHT);
+    request->grant_time_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+    request->state = RequestState::GRANTED;
+    chassert(enqueued_count > 0);
+    --enqueued_count;
+
+    if (wait_cancel)
+        cancel_cv.notify_all();
 }
 
-void CPULeaseAllocation::RequestChain::recordGrantTime()
+void CPULeaseAllocation::RequestChain::markFailed(Request * request)
 {
-    next_grant->grant_time_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+    chassert(request);
+    chassert(request->state == RequestState::INFLIGHT);
+    request->state = RequestState::FAILED;
+    chassert(enqueued_count > 0);
+    --enqueued_count;
+
+    if (wait_cancel)
+        cancel_cv.notify_all();
 }
 
 bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost requested_ns_)
 {
     chassert(enqueued_count < max_inflight_requests);
+    chassert(next_enqueue->state == RequestState::FREE);
 
     next_enqueue->reset(cost);
     next_enqueue->is_master_slot = std::exchange(request_master_slot, false);
     next_enqueue->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
     next_enqueue->enqueue_time_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+    next_enqueue->grant_time_ns = 0;
     next_enqueue->request_seq = ++request_seq_counter;
 
     if (auto * queue = next_enqueue->is_master_slot ? master_link.queue : worker_link.queue)
     {
         next_enqueue->is_noncompeting = false;
+        next_enqueue->state = RequestState::INFLIGHT;
         // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
         // Instead we do budgeting for every query independently for better fairness
         queue->enqueueRequest(&*next_enqueue);
@@ -177,6 +217,8 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
     else // noncompeting slot - provide immediately for free
     {
         next_enqueue->is_noncompeting = true;
+        next_enqueue->state = RequestState::GRANTED;
+        next_enqueue->grant_time_ns = next_enqueue->enqueue_time_ns;
         next_enqueue = next(next_enqueue);
         return false; // No need to enqueue, we will grant it immediately
     }
@@ -186,9 +228,32 @@ void CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
 {
     while (enqueued_count > 0)
     {
-        auto * queue = next_grant->is_master_slot ? master_link.queue : worker_link.queue;
+        auto it = next_grant;
+        bool found = false;
+        for (size_t i = 0; i < requests.size(); ++i)
+        {
+            if (it->state == RequestState::INFLIGHT)
+            {
+                found = true;
+                break;
+            }
+            it = next(it);
+        }
+
+        if (!found)
+        {
+            // All requests currently scanned have finished or are in callback.
+            // Wait for the active scheduler callback to decrement enqueued_count.
+            size_t current_count = enqueued_count;
+            wait_cancel = true;
+            cancel_cv.wait(lock, [this, current_count] { return enqueued_count < current_count; });
+            wait_cancel = false;
+            continue;
+        }
+
+        auto * queue = it->is_master_slot ? master_link.queue : worker_link.queue;
         chassert(queue);
-        bool canceled = queue->cancelRequest(&*next_grant);
+        bool canceled = queue->cancelRequest(&*it);
         if (!canceled) // Request is currently processed by the scheduler thread, we have to wait
         {
             size_t current_count = enqueued_count;
@@ -199,22 +264,9 @@ void CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
         else
         {
             --enqueued_count;
-            next_grant = next(next_grant);
+            it->state = RequestState::FAILED;
         }
     }
-}
-
-void CPULeaseAllocation::RequestChain::scheduled(bool was_granted)
-{
-    // It is either executed (granted) or failed, but it is not enqueued anymore
-    chassert(enqueued_count > 0);
-    --enqueued_count;
-    if (!was_granted)
-        next_grant = next(next_grant);
-
-    // Notify cancel() that pending request is detached from the scheduler
-    if (wait_cancel)
-        cancel_cv.notify_all();
 }
 
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
@@ -276,6 +328,26 @@ void CPULeaseAllocation::free()
 
     // Properly cancel pending resource request (if any)
     requests.cancel(lock);
+
+    // Process any buffered grants that arrived before or during cancellation
+    while (requests.hasGrantReady())
+    {
+        Request & current = requests.peekNextGrant();
+        if (current.state == RequestState::FAILED)
+        {
+            requests.advanceGrant(/* was_granted = */ false);
+            continue;
+        }
+
+        chassert(current.state == RequestState::GRANTED);
+        ++allocated;
+        ++granted;
+
+        if (current.is_noncompeting)
+            ++noncompeting_granted;
+
+        requests.advanceGrant(/* was_granted = */ true);
+    }
 
     // Finish all resource requests in consumption state
     while (allocated > 0)
@@ -429,11 +501,11 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
     LOG_EVENT(R);
 }
 
-void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
+void CPULeaseAllocation::failed(const std::exception_ptr & ptr, Request * request)
 {
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
-    requests.scheduled(/* was_granted = */ false);
+    requests.markFailed(request);
     scheduled_increment.sub();
     wait_timer.reset();
     if (requests.hasEnqueued())
@@ -447,12 +519,11 @@ void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
     LOG_EVENT(F);
 }
 
-void CPULeaseAllocation::grant()
+void CPULeaseAllocation::grant(Request * request)
 {
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
-    requests.recordGrantTime();
-    requests.scheduled(/* was_granted = */ true);
+    requests.markGranted(request);
     scheduled_increment.sub();
     wait_timer.reset();
     if (requests.hasEnqueued())
@@ -462,16 +533,23 @@ void CPULeaseAllocation::grant()
 
 void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
 {
-    // Cycle is required to deal with noncompeting requests, so the main case is a single iteration here
-    do
+    while (requests.hasGrantReady())
     {
+        Request & current = requests.peekNextGrant();
+        if (current.state == RequestState::FAILED)
+        {
+            requests.advanceGrant(/* was_granted = */ false);
+            continue;
+        }
+
+        chassert(current.state == RequestState::GRANTED);
         ++allocated;
         ++granted;
         if (granted > 0 && !shutdown)
             acquirable.store(true, std::memory_order_relaxed);
         LOG_EVENT(G);
 
-        if (requests.currentIsNoncompeting())
+        if (current.is_noncompeting)
             ++noncompeting_granted;
 
         if (settings.trace_cpu_scheduling)
@@ -479,16 +557,21 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
             OpenTelemetry::SpanHolder span("CPU_LEASE_REQUEST");
             span.addAttribute("workload", settings.workload);
             span.addAttribute("lease_id", lease_id);
-            span.addAttribute("request_seq", requests.currentRequestSeq());
-            span.addAttribute("is_master", requests.currentIsMaster());
-            span.addAttribute("is_noncompeting", requests.currentIsNoncompeting());
-            auto wait_us = requests.currentWaitQueueUs();
-            if (wait_us.has_value())
-                span.addAttribute("wait_queue_us", *wait_us);
+            span.addAttribute("request_seq", current.request_seq);
+            span.addAttribute("is_master", current.is_master_slot);
+            span.addAttribute("is_noncompeting", current.is_noncompeting);
+            if (current.grant_time_ns >= current.enqueue_time_ns && current.enqueue_time_ns > 0)
+                span.addAttribute("wait_queue_us", (current.grant_time_ns - current.enqueue_time_ns) / 1000);
         }
 
-        requests.granted();
-    } while (!schedule(lock));
+        requests.advanceGrant(/* was_granted = */ true);
+
+        if (!schedule(lock))
+        {
+            // Non-competing request was enqueued and marked GRANTED, continue loop to grant it
+            continue;
+        }
+    }
 
     // Resume preempted threads if necessary
     while (granted > 0)

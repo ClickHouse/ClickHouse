@@ -120,10 +120,19 @@ private:
 
     /// Represents a resource request for a cpu slot.
     /// Request is send to the scheduler every time lease requires to be renewed.
-    /// Only one request may be enqueued at a time.
-    /// Multiple requests may be in consumption state.
+    /// Multiple requests may be in flight or in consumption state.
     class Request;
     friend class Request; // for failed() and grant()
+
+    enum class RequestState : uint8_t
+    {
+        FREE,        /// Not currently in use
+        INFLIGHT,    /// Enqueued to the scheduler queue, waiting for callback
+        GRANTED,     /// Granted by scheduler (or noncompeting), waiting for in-order processing
+        FAILED,      /// Failed by scheduler, waiting to be skipped in-order
+        CONSUMING,   /// Granted and currently in consumption
+    };
+
     class Request final : public ResourceRequest
     {
     public:
@@ -134,20 +143,21 @@ private:
         void execute() override
         {
             chassert(lease);
-            lease->grant();
+            lease->grant(this);
         }
 
         /// Callback to trigger an error in case if resource is unavailable.
         void failed(const std::exception_ptr & ptr) override
         {
             chassert(lease);
-            lease->failed(ptr);
+            lease->failed(ptr, this);
         }
 
         CPULeaseAllocation * lease = nullptr;
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
         bool is_master_slot = false; /// (true) master or (false) worker slot
         bool is_noncompeting = false; /// Noncompeting slot has `ResourceLink::queue == nullptr` and is granted immediately w/o scheduling
+        RequestState state = RequestState::FREE;
         UInt64 enqueue_time_ns = 0;
         UInt64 grant_time_ns = 0;
         size_t request_seq = 0;
@@ -206,10 +216,10 @@ private:
     void resetPreempted(size_t thread_num);
 
     /// Resource request failed.
-    void failed(const std::exception_ptr & ptr);
+    void failed(const std::exception_ptr & ptr, Request * request);
 
     /// Grant a slot and enqueue another resource request if necessary.
-    void grant();
+    void grant(Request * request);
     void grantImpl(std::unique_lock<std::mutex> & lock);
 
     /// Report real CPU consumption by a thread.
@@ -310,28 +320,26 @@ private:
 
         RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
         void finish();
-        void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
         void cancel(std::unique_lock<std::mutex> & lock);
-        void scheduled(bool was_granted = true);
-        ResourceCost getMaxConsumed() const { return tail->max_consumed; }
+        void markGranted(Request * request);
+        void markFailed(Request * request);
+        bool hasGrantReady() const { return next_grant->state == RequestState::GRANTED || next_grant->state == RequestState::FAILED; }
+        Request & peekNextGrant() { return *next_grant; }
+        void advanceGrant(bool was_granted)
+        {
+            next_grant->state = was_granted ? RequestState::CONSUMING : RequestState::FREE;
+            next_grant = next(next_grant);
+        }
+        ResourceCost getMaxConsumed() const;
         bool hasEnqueued() const { return enqueued_count > 0; }
         bool canEnqueue() const { return enqueued_count < max_inflight_requests; }
         size_t getEnqueuedCount() const { return enqueued_count; }
-        bool currentIsNoncompeting() const { return next_grant->is_noncompeting; }
-        bool currentIsMaster() const { return next_grant->is_master_slot; }
-        size_t currentRequestSeq() const { return next_grant->request_seq; }
-        std::optional<UInt64> currentWaitQueueUs() const
-        {
-            if (next_grant->grant_time_ns >= next_grant->enqueue_time_ns && next_grant->enqueue_time_ns > 0)
-                return (next_grant->grant_time_ns - next_grant->enqueue_time_ns) / 1000;
-            return std::nullopt;
-        }
-        void recordGrantTime();
 
     private:
         using Requests = std::vector<Request>;
-        Requests::iterator next(Requests::iterator it)
+        template <typename It>
+        It next(It it) const
         {
             ++it;
             if (it == requests.end())
