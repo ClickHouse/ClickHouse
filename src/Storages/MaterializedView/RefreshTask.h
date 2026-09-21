@@ -252,9 +252,14 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Other replicas' "requested-*" znodes, with when this replica first saw each pending with nothing running:
-        /// a Keeper session timeout later it runs it itself (`doScheduling`). Ours: `scheduling.out_of_schedule_refresh_requested`.
-        std::map<String, std::optional<std::chrono::system_clock::time_point>> other_replicas_requests;
+        /// Other replicas' "requested-*" znodes: czxid (a re-created znode is a new request) and when this replica first saw
+        /// that request pending with nothing running; a Keeper session timeout later it runs it itself (`doScheduling`).
+        struct OtherReplicaRequest
+        {
+            Int64 czxid = 0;
+            std::optional<std::chrono::system_clock::time_point> pending_since {};
+        };
+        std::map<String, OtherReplicaRequest> other_replicas_requests;
         /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
         /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
         UInt64 znode_reads_started = 0;

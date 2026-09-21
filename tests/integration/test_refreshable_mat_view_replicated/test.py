@@ -964,3 +964,55 @@ def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
     node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
     zk.sync(path)
     assert zk.exists(path) is None
+
+
+def test_takeover_waits_for_recreated_request(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # ~20 s per refresh: longer than the Keeper session timeout (15 s) a takeover waits for.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # node2 sees node's request pending with nothing running and starts its takeover clock.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    time.sleep(2)
+    # node2 misses the window in which node runs that request and queues a new one behind it: the same znode name,
+    # but a new request, so the clock must start over once nothing is running.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        node.query("SYSTEM START VIEW test_rmv")
+        get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        # Leaves the queued request to node2 without cancelling the running refresh.
+        node.query("SYSTEM PAUSE VIEW test_rmv")
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] == "RunningOnAnotherReplica",
+        max_attempts=100,
+    )
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] != "RunningOnAnotherReplica",
+        max_attempts=400,
+        delay=0.1,
+    )
+    first_refresh_ended = time.monotonic()
+    get_rmv_info(
+        node2, "test_rmv", condition=lambda x: x["status"] == "Running", max_attempts=400, delay=0.1
+    )
+    assert time.monotonic() - first_refresh_ended >= 10
+    node.query("SYSTEM START VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)

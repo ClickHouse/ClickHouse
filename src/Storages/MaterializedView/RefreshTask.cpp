@@ -1197,13 +1197,13 @@ void RefreshTask::doScheduling(bool is_shutdown)
         auto takeover_deadline = std::chrono::system_clock::time_point::max();
         if (!out_of_schedule)
         {
-            for (auto & [znode, pending_since] : coordination.other_replicas_requests)
+            for (auto & [znode, request] : coordination.other_replicas_requests)
             {
                 /// The requesting replica starts its refresh itself, unless a Keeper session timeout has passed since this replica
                 /// first saw the request pending with nothing running (e.g. it's stopped or gone): then any replica does. Wake up then.
-                if (!pending_since)
-                    pending_since = start_time;
-                auto deadline = *pending_since + std::chrono::milliseconds(zookeeper->getSessionTimeoutMS());
+                if (!request.pending_since)
+                    request.pending_since = start_time;
+                auto deadline = *request.pending_since + std::chrono::milliseconds(zookeeper->getSessionTimeoutMS());
                 if (deadline < takeover_deadline)
                 {
                     takeover_deadline = deadline;
@@ -1858,47 +1858,56 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (syncs_requested)
         zookeeper->sync(coordination.path);
 
-    /// Do separate requests just to add watches.
+    /// Do separate requests just to add watches. The children listed here name the "requested-*" znodes, see `run`.
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
         watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
     zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
-    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
+    Strings children = zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
-    /// Do an atomic multi-read, including the children: the "requested-*" znodes, see `run`.
+    /// Do an atomic multi-read, with those znodes: a re-created one has a new czxid, i.e. is a new request.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
-    Coordination::Requests ops;
-    for (const String & path : paths)
-        ops.emplace_back(zkutil::makeGetRequest(path));
-    ops.emplace_back(zkutil::makeSimpleListRequest(coordination.path));
-    Coordination::Responses responses;
-    zookeeper->tryMulti(ops, responses);
+    Strings request_znodes;
+    for (const String & child : children)
+        if (child.starts_with(request_znode_prefix))
+        {
+            request_znodes.push_back(child);
+            paths.push_back(coordination.path + "/" + child);
+        }
+    auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
-    if (responses[0]->error != Coordination::Error::ZOK)
-        throw Coordination::Exception::fromPath(responses[0]->error, paths[0]);
-    for (size_t i = 1; i < ops.size(); ++i)
-        if (responses[i]->error != Coordination::Error::ZOK && responses[i]->error != Coordination::Error::ZNONODE)
-            throw Coordination::Exception::fromPath(responses[i]->error, ops[i]->getPath());
+    if (responses[0].error != Coordination::Error::ZOK)
+        throw Coordination::Exception::fromPath(responses[0].error, paths[0]);
+    for (size_t i = 1; i < paths.size(); ++i)
+        if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
+            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
 
-    bool running_znode_exists = responses[1]->error == Coordination::Error::ZOK;
-    const auto & root_response = dynamic_cast<const Coordination::GetResponse &>(*responses[0]);
+    bool running_znode_exists = responses[1].error == Coordination::Error::ZOK;
     CoordinationZnode znode;
-    znode.parse(root_response.data, running_znode_exists, getLogger());
-    const Strings & children = dynamic_cast<const Coordination::ListResponse &>(*responses[3]).names;
+    znode.parse(responses[0].data, running_znode_exists, getLogger());
 
     lock.lock();
 
     coordination.root_znode = znode;
-    coordination.root_znode.version = root_response.stat.version;
+    coordination.root_znode.version = responses[0].stat.version;
     coordination.running_znode_exists = running_znode_exists;
-    coordination.paused_znode_exists = responses[2]->error == Coordination::Error::ZOK;
+    coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
     scheduling.out_of_schedule_refresh_requested = false;
     decltype(coordination.other_replicas_requests) other_replicas_requests;
-    for (const String & child : children)
+    for (size_t i = 0; i < request_znodes.size(); ++i)
     {
-        if (child == requestZnodeName())
+        const auto & response = responses[3 + i];
+        if (response.error != Coordination::Error::ZOK)
+            continue;
+        if (request_znodes[i] == requestZnodeName())
+        {
             scheduling.out_of_schedule_refresh_requested = true;
-        else if (child.starts_with(request_znode_prefix))
-            other_replicas_requests.emplace(child, coordination.other_replicas_requests[child]);
+            continue;
+        }
+        CoordinationState::OtherReplicaRequest request {.czxid = response.stat.czxid};
+        auto it = coordination.other_replicas_requests.find(request_znodes[i]);
+        if (it != coordination.other_replicas_requests.end() && it->second.czxid == request.czxid)
+            request.pending_since = it->second.pending_since;
+        other_replicas_requests.emplace(request_znodes[i], request);
     }
     coordination.other_replicas_requests = std::move(other_replicas_requests);
     coordination.znode_reads_finished = coordination.znode_reads_started;
