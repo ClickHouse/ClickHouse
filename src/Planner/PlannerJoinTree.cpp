@@ -2670,10 +2670,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr
-                                = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings)
-                                ? reading_step->estimateRangesToReadWithoutQueryConditionCache()
-                                : reading_step->selectRangesToRead();
+                            const bool allow_query_condition_cache
+                                = !mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings);
+                            /// This analysis only sizes the replica set, so it must not enforce the read row
+                            /// limits: the read that executes analyzes again once its final mode is known.
+                            auto result_ptr = reading_step->hasThrowingReadRowLimit()
+                                ? reading_step->selectRangesToReadForEstimation(allow_query_condition_cache)
+                                : (allow_query_condition_cache
+                                       ? reading_step->selectRangesToRead()
+                                       : reading_step->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/false));
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)

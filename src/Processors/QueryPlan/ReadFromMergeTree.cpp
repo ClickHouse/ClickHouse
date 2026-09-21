@@ -2742,7 +2742,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
     /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
@@ -2763,33 +2763,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         indexes,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
-        /*allow_query_condition_cache_=*/false,
-        supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true);
-}
-
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
-{
-    return selectRangesToRead(
-        getParts(),
-        mutations_snapshot,
-        vector_search_parameters,
-        top_k_filter_info,
-        storage_snapshot->metadata,
-        query_info,
-        context,
-        requested_num_streams,
-        max_block_numbers_to_read,
-        data,
-        data_settings,
-        all_column_names,
-        log,
-        indexes,
-        /*find_exact_ranges=*/false,
-        is_parallel_reading_from_replicas,
-        allow_query_condition_cache,
+        allow_query_condition_cache && allow_query_condition_cache_,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false);
+}
+
+bool ReadFromMergeTree::hasThrowingReadRowLimit() const
+{
+    const auto & settings = context->getSettingsRef();
+    return (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 
 std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const

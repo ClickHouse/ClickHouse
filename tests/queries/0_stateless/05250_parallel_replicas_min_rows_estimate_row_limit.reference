@@ -1,0 +1,12 @@
+--- implicit projection serves the query within the budget ---
+9
+9
+--- the limit still applies to the read that executes ---
+--- unchanged without parallel replicas ---
+9
+--- read order bounds the rows the query needs ---
+0
+1
+2
+3
+4
