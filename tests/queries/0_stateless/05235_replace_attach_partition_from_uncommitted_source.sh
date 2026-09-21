@@ -79,8 +79,26 @@ tx 5 "COMMIT"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_republish_control ATTACH PARTITION tuple() FROM t_republish_src"
 $CLICKHOUSE_CLIENT -q "SELECT x FROM t_republish_control ORDER BY x"
 
+# Case 6: with a ReplicatedMergeTree destination, `ATTACH PARTITION ALL FROM` walks the source
+# partitions one at a time and each one is committed and its log entry enqueued before the next is
+# looked at, so the refusal has to come before any partition is published. Ten committed partitions
+# alongside the uncommitted one, because the destination must be left empty no matter which subset
+# the statement would otherwise have copied first.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_republish_all_src (x UInt64) ENGINE = MergeTree PARTITION BY x ORDER BY x"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_republish_all_dst (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_republish_all_dst', 'r1') PARTITION BY x ORDER BY x"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_republish_all_src VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)"
+tx 6 "BEGIN TRANSACTION"
+tx 6 "INSERT INTO t_republish_all_src SETTINGS async_insert = 0 VALUES (99)"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_republish_all_dst ATTACH PARTITION ALL FROM t_republish_all_src" 2>&1 \
+    | grep -o -F "SERIALIZATION_ERROR" | head -1
+tx 6 "ROLLBACK"
+# A non-zero count is a statement that failed after applying part of itself.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM t_republish_all_dst"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_src"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_replace"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_attach"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_control"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_replicated"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_all_src"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_republish_all_dst"

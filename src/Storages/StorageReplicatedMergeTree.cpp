@@ -9415,6 +9415,19 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     if (partitions.empty())
         return;
 
+    /// `replacePartitionFromImpl` commits its partition and enqueues its log entry before the next
+    /// partition is looked at, so every source partition is checked before the first one is published.
+    DataPartsVector src_parts_to_republish;
+    {
+        auto parts_lock = src_data.readLockParts();
+        for (const auto & partition_id : partitions)
+        {
+            auto partition_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id, parts_lock);
+            src_parts_to_republish.insert(src_parts_to_republish.end(), partition_parts.begin(), partition_parts.end());
+        }
+    }
+    src_data.checkPartsCanBeRepublishedNonTransactionally(src_parts_to_republish);
+
     const Stopwatch watch;
     ProfileEventsScope profile_events_scope;
     const auto zookeeper = getZooKeeper();
