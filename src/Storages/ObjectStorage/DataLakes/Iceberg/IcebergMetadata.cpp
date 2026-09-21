@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
@@ -8,6 +7,7 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -138,7 +138,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsBool allow_geo_types_in_iceberg;
+extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
@@ -209,7 +209,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -217,7 +217,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(
-            table_location, root_derivation.table_root, Iceberg::BlobStorageDescription::fromConfiguration(*configuration)),
+            table_location, root_derivation.table_root, configuration->getTypeName(), configuration->getNamespace()),
         .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
     };
 }
@@ -327,9 +327,6 @@ Int32 IcebergMetadata::parseTableSchema(
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -379,8 +376,6 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -404,7 +399,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 }
 
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
-    Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
+    Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {
     if (!snapshot_object->has(f_manifest_list))
         throw Exception(
@@ -415,7 +410,6 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
-    std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
     {
@@ -430,9 +424,6 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
-
-        if (summary_object->has(f_refresh_cursor))
-            refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -446,17 +437,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes,
-        refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
-}
-
-std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
-{
-    auto state = getRelevantState(local_context);
-    if (!state.first)
-        return std::nullopt;
-    return state.first->refresh_cursor;
+        total_position_deletes);
 }
 
 IcebergDataSnapshotPtr
@@ -466,7 +447,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, object, snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
 }
 
 bool IcebergMetadata::optimize(
@@ -492,26 +473,6 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
-
-        /// `getHistory` fills `ancestors` only when the table has a current snapshot, so with none -
-        /// `current-snapshot-id` absent, `null` or negative alike - no record is a current ancestor.
-        /// Compaction does not check that: `getPlan` marks a rewrite as needed from any historical
-        /// position delete, and the rewrite republishes a snapshot chain built from append history.
-        /// The table that `SELECT` reads as empty would come back with its historical rows. Nothing
-        /// is expired here, so refuse the rewrite and leave the table as it is (fail-close).
-        ///
-        /// A `current-snapshot-id` that names a snapshot missing from `snapshots` lands here too:
-        /// that metadata is corrupt, and refusing the rewrite is the fail-close answer for it as
-        /// well, so the condition is stated as what was observed - no current ancestor - rather
-        /// than as a claim about `current-snapshot-id`.
-        const bool has_current_ancestor = std::ranges::any_of(
-            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; });
-        if (!has_current_ancestor)
-        {
-            LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
-            return true;
-        }
-
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -835,8 +796,7 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components,
-            catalog_, storage_id.getTableName());
+            args, context, object_storage_, data_lake_settings, persistent_components);
     }
     else
     {
@@ -879,7 +839,15 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        std::vector<String> metadata_files;
+        try
+        {
+            metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        }
+        catch (const Exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+        }
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -891,11 +859,11 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
-    else if (!location_path.contains("://") && !location_path.starts_with('/'))
+    if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
+    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+        location_path
+            = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
@@ -943,10 +911,8 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
-        auto catalog_filename = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace(),
-            configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
+            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
@@ -968,7 +934,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
         metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
 DataLakeMetadataPtr IcebergMetadata::create(
@@ -1031,9 +997,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             parents_list[snapshot_id] = 0;
     }
 
-    /// For empty table we may have no snapshots. `has` is true for a JSON null, and `getValue<Int64>`
-    /// throws on one; null means "no current snapshot" just like an absent key.
-    if (metadata_object->has(f_current_snapshot_id) && !metadata_object->isNull(f_current_snapshot_id))
+    /// For empty table we may have no snapshots
+    if (metadata_object->has(f_current_snapshot_id))
     {
         auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         /// Add current snapshot-id to ancestors list
@@ -1150,7 +1115,6 @@ IcebergFileRecord buildIcebergFileRecord(
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
-    record.first_row_id = processed->first_row_id;
 
     for (const auto & [column_id, info] : parsed.columns_infos)
     {
@@ -1433,7 +1397,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (iceberg_object_info->info.hasPositionDeletes())
+    if (!iceberg_object_info->info.position_deletes_objects.empty())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -1569,7 +1533,7 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is in beta. "
+            "Insert into iceberg is in beta."
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }
@@ -1679,7 +1643,8 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         .path_resolver = IcebergPathResolver(
             table_location,
             standard_persistent_components.table_path,
-            Iceberg::BlobStorageDescription::fromConfiguration(*configuration_ptr)),
+            configuration_ptr->getTypeName(),
+            configuration_ptr->getNamespace()),
         /// Consistent with the resolver above, which is rooted at `table_path` itself.
         .table_root_was_derived = false};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);

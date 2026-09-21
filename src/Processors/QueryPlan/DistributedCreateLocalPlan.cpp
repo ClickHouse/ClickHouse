@@ -2,6 +2,7 @@
 
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
@@ -10,6 +11,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(
@@ -45,13 +47,21 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
     select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
-    /// Positional arguments in the outer query were already resolved by the initiator.
-    /// Use a context flag instead of disabling enable_positional_arguments so that
-    /// view-inner queries on this node (which were never resolved by the initiator) are
-    /// still processed correctly. See https://github.com/ClickHouse/ClickHouse/issues/62289.
-    new_context->setPositionalArgumentsAlreadyResolved(true);
-    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
-    query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        /// Positional arguments in the outer query were already resolved by the initiator.
+        /// Use a context flag instead of disabling enable_positional_arguments so that
+        /// view-inner queries on this node (which were never resolved by the initiator) are
+        /// still processed correctly. See https://github.com/ClickHouse/ClickHouse/issues/62289.
+        new_context->setPositionalArgumentsAlreadyResolved(true);
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
+        interpreter.buildQueryPlan(*query_plan);
+    }
 
     addConvertingActions(*query_plan, header, new_context);
     return query_plan;

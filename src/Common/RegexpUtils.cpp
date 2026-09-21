@@ -1,5 +1,4 @@
 #include <Common/RegexpUtils.h>
-#include <Common/UTF8Helpers.h>
 
 #include <algorithm>
 #include <utility>
@@ -137,82 +136,6 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
     return common_prefix;
 }
 
-/// A quantifier that allows zero occurrences makes the literal before it optional. RE2 compiles a
-/// valid UTF-8 pattern in UTF-8 mode, where such a literal is a whole code point, so the whole code
-/// point has to go: `^é*c` requires nothing, while dropping one byte leaves the malformed prefix
-/// `0xC3` which no matching string starts with. A pattern that is not valid UTF-8 falls back to
-/// Latin-1, where the quantifier applies to the last byte only; dropping the continuation bytes in
-/// front of it as well merely weakens the prefix, which stays correct.
-void dropLastLiteral(String & fixed_prefix)
-{
-    if (fixed_prefix.empty())
-        return;
-
-    size_t new_size = fixed_prefix.size() - 1;
-    while (new_size > 0 && UTF8::isContinuationOctet(static_cast<UInt8>(fixed_prefix[new_size])))
-        --new_size;
-
-    fixed_prefix.resize(new_size);
-}
-
-/// Whether `pos` points at a quantifier that allows zero occurrences of whatever precedes it.
-bool isZeroAllowingQuantifier(const char * pos, const char * end)
-{
-    if (pos >= end)
-        return false;
-
-    if (*pos == '*' || *pos == '?')
-        return true;
-
-    /// `{0}` and `{0,n}` allow zero occurrences; every other `{...}` requires at least one.
-    return *pos == '{' && pos + 1 < end && pos[1] == '0';
-}
-
-/// The position after a pure inline flag group - `(?i)`, `(?-i)`, `(?ims)` - which RE2 treats as a
-/// zero-width operator. Returns nullptr when `pos` does not point at such a group; `(?i:x)` and `()`
-/// are groups with a body instead, and a quantifier after those applies to the group itself.
-const char * findEndOfPureFlagGroup(const char * pos, const char * end)
-{
-    if (pos + 2 >= end || pos[1] != '?')
-        return nullptr;
-
-    auto is_flag_char = [](char c) { return c == 'i' || c == 'm' || c == 's' || c == 'U' || c == 'u' || c == '-'; };
-
-    const char * flags_begin = pos + 2;
-    const char * it = flags_begin;
-    while (it < end && is_flag_char(*it))
-        ++it;
-
-    if (it == flags_begin || it == end || *it != ')')
-        return nullptr;
-
-    return it + 1;
-}
-
-/// The position after a chain of zero-width constructs - pure inline flag groups and empty `\Q\E`
-/// quotes - that starts at `pos`. RE2 keeps the atom before such a chain on the parser stack, so a
-/// quantifier written after the whole chain applies to that atom: `^ab(?i)(?m)*c` requires only `a`.
-/// Returns `pos` itself when there is no zero-width construct at `pos`.
-const char * skipZeroWidthConstructs(const char * pos, const char * end)
-{
-    while (pos < end)
-    {
-        if (*pos == '(')
-        {
-            const char * after_flag_group = findEndOfPureFlagGroup(pos, end);
-            if (!after_flag_group)
-                break;
-            pos = after_flag_group;
-        }
-        else if (*pos == '\\' && pos + 3 < end && pos[1] == 'Q' && pos[2] == '\\' && pos[3] == 'E')
-            pos += 4;
-        else
-            break;
-    }
-
-    return pos;
-}
-
 /// Extracts the prefix and its flags without looking at `requires_perfect_prefix`.
 RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
 {
@@ -242,15 +165,7 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
                 /// A trailing escape is an invalid pattern which the matcher rejects,
                 /// so never report it as exact.
                 if (pos == end || !isLiteralEscape(*pos))
-                {
-                    /// An empty `\Q\E` quote is zero-width, like a pure flag group, so a quantifier
-                    /// written after it - or after a whole chain of such constructs - applies to the
-                    /// character before it: both `^ab\Q\E*c` and `^ab\Q\E(?i)*c` require only `a`.
-                    if (isZeroAllowingQuantifier(skipZeroWidthConstructs(pos - 1, end), end))
-                        dropLastLiteral(fixed_prefix);
-
                     return {.prefix = fixed_prefix};
-                }
 
                 fixed_prefix += *pos;
                 ++pos;
@@ -276,31 +191,20 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
             case '|':
                 return {};
 
-            case '(':
-                /// A pure inline flag group such as `(?i)` is a zero-width operator for RE2: it
-                /// leaves nothing for a quantifier to apply to, so a quantifier written after it
-                /// applies to the character before the group, and the same holds for a whole chain
-                /// of such constructs. `^ab(?i)*c` and `^ab(?i)(?m)*c` therefore require only `a`,
-                /// and reporting `ab` as required pruned granules holding matching rows.
-                if (const char * after_zero_width = skipZeroWidthConstructs(pos, end); after_zero_width != pos)
-                {
-                    if (isZeroAllowingQuantifier(after_zero_width, end))
-                        dropLastLiteral(fixed_prefix);
-                }
-                return {.prefix = fixed_prefix};
-
             /// None of these gives another fixed character.
+            case '(':
             case ')':
             case '[':
             case '^':
             case '+':
                 return {.prefix = fixed_prefix};
 
-            /// Quantifiers that allow a zero number of occurrences make the previous literal optional.
+            /// Quantifiers that allow a zero number of occurrences make the previous character optional.
             case '{':
             case '?':
             case '*':
-                dropLastLiteral(fixed_prefix);
+                if (!fixed_prefix.empty())
+                    fixed_prefix.pop_back();
                 return {.prefix = fixed_prefix};
 
             default:

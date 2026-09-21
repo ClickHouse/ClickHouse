@@ -24,7 +24,6 @@ public:
     {
         None,
         Bitpacking,
-        PFor,
     };
 
     IPostingListCodec() = default;
@@ -52,18 +51,6 @@ public:
 private:
     Type type{};
 };
-
-inline constexpr bool isValidPostingListCodecType(UInt64 value)
-{
-    return value <= static_cast<UInt64>(IPostingListCodec::Type::PFor);
-}
-
-/// `None` is excluded: an uncompressed posting list has no segments.
-inline constexpr bool isValidPostingListBlockCodecType(UInt64 value)
-{
-    return value == static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
-        || value == static_cast<UInt64>(IPostingListCodec::Type::PFor);
-}
 
 class PostingListCodecFactory : public boost::noncopyable
 {

@@ -64,6 +64,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
@@ -504,6 +505,13 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
+        return make_document();
+    }
+
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (throw_on_error)
@@ -535,7 +543,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
+    if (query_tree.hasLimit())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)
@@ -680,10 +688,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 | `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
 
-<Tip>
+:::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
-</Tip>
+:::
 
 Alternatively, you can pass a URI:
 
@@ -776,7 +784,7 @@ Such expressions are translated to MongoDB query language and executed on the se
 You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
 In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
 
-<Note>
+:::note
 It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
 For example you want to filter by `Date`:
 
@@ -791,7 +799,8 @@ SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024
 ```
 
 This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
-</Note>
+
+:::
 
 ## Usage example {#usage-example}
 

@@ -73,7 +73,7 @@ namespace
         Int64 scale_multiplier = 1;
         Int64 scale_divisor = 1;
 
-        switch (interval_kind)
+        switch (interval_kind.kind)
         {
             case IntervalKind::Kind::Nanosecond:
             {
@@ -165,8 +165,7 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(
-                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
+            if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
                 return result;
 
             /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
@@ -178,8 +177,7 @@ namespace
         }
         else
         {
-            if (PrometheusQueryParsingUtil::tryParseDuration(
-                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
+            if (PrometheusQueryParsingUtil::tryParseDuration(str, scale, result, &error_message, &error_pos))
                 return result;
         }
 

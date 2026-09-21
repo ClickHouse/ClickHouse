@@ -30,7 +30,6 @@
 
 #include "config.h"
 
-#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -159,7 +158,6 @@ class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
 class HypotheticalObjectStore;
-class SessionQueryIdsHistory;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -316,14 +314,6 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
-
-struct StreamingCursor
-{
-    std::mutex mutex;
-    CursorTreeNodePtr tree;
-};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -383,15 +373,6 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
-    /// If not null, the access rights are limited to the intersection with these elements.
-    /// This comes from the GRANTS clause of the authentication method the user logged in with.
-    std::shared_ptr<const AccessRightsElements> authentication_grants;
-    /// Expiry (VALID UNTIL) of the authentication method the user logged in with, 0 if none.
-    /// Carried alongside `authentication_grants` so deferred-execution paths (asynchronous insert
-    /// flush, `QueryRunner` invoker jobs) can fail closed if the credential has expired between
-    /// enqueue and execution; the synchronous path re-checks it per query in
-    /// `Session::makeQueryContextImpl` (via `Session::checkIfUserIsStillValid`) for every protocol.
-    time_t authentication_valid_until = 0;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -436,8 +417,6 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
-    /// History of query ids for `system.session_query_ids`, lives on the session context.
-    mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
@@ -756,10 +735,6 @@ protected:
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
-    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
-    /// parallel reading streams serialize their merges into the one tree.
-    std::shared_ptr<StreamingCursor> streaming_cursor;
-
     /// Use copy constructor or createGlobal() instead
     ContextData();
     ContextData(const ContextData &);
@@ -863,11 +838,11 @@ public:
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
         ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        CLICKHOUSE_BUILT_IN_DEBUG_MODE,
-        CLICKHOUSE_BUILT_WITH_COVERAGE,
-        CLICKHOUSE_BUILT_WITH_SANITIZERS,
-        CLICKHOUSE_LOGGING_LEVEL_TEST,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_COVERAGE,
+        SERVER_BUILT_WITH_SANITIZERS,
         SERVER_CPU_OVERLOAD,
+        SERVER_LOGGING_LEVEL_TEST,
         SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
@@ -929,32 +904,8 @@ public:
 
     /// Sets the current user, assuming they are already authenticated.
     /// WARNING: This function doesn't check the password!
-    /// `authentication_grants_` limits the access rights to the intersection with these elements
-    /// (it comes from the GRANTS clause of the authentication method the user logged in with);
-    /// it is reset if not specified, because it is a property of the authentication, not of the user.
-    /// `authentication_valid_until_` records the method's expiry (0 = none) for the same reason; it is
-    /// likewise reset if not specified, so switching the principal never keeps a stale expiry.
-    /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
-    /// must read both limits back from the source context and pass them here, so the session cannot
-    /// escape its credential's limit by impersonating a less restricted principal.
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
-
-    /// Limits the access rights to the intersection with the elements (or resets the limit if null).
-    /// See the GRANTS clause of the authentication methods in CREATE USER.
-    void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);
-
-    /// Returns the credential grant limit of the current session (null if the session is not limited).
-    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
-    /// the `QueryRunner` invoker) must carry this over, otherwise a limited credential would regain
-    /// full rights when its work is replayed under a freshly-built context.
-    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
-
-    /// Records the expiry (VALID UNTIL) of the authentication method used to log in (0 = no expiry).
-    /// Like `authentication_grants`, deferred executors carry this over so a credential's queued work
-    /// can be failed closed if the credential has expired before the deferred job runs.
-    void setAuthenticationValidUntil(time_t authentication_valid_until_);
-    time_t getAuthenticationValidUntil() const;
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
@@ -964,11 +915,6 @@ public:
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
-    /// The external (pushed) roles received from another node over the interserver protocol.
-    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
-    /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
-    /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.
-    std::vector<UUID> getExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
@@ -1078,7 +1024,6 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
-    void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace
     {
@@ -1104,9 +1049,6 @@ public:
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
-
-    /// Per-session history of query ids for `system.session_query_ids`.
-    SessionQueryIdsHistory & getSessionQueryIdsHistory() const;
 
     HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
@@ -1330,25 +1272,10 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
-
-    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
-    void stopAcceptingNewBackupsAndRestores() const;
-
     void waitAllBackupsAndRestores() const;
-
-    /// Returns false if `deadline` was reached while some operation was still running.
-    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
-
-    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
-    bool hasUnfinishedBackupsAndRestores() const;
-
+    void cancelAllBackupsAndRestores() const;
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
-
-    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
-    /// it (under its mutex), and the outer query reads it back.
-    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
-    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1785,7 +1712,6 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
-    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -1863,6 +1789,12 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
+
+    /// Server-wide override for the analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -2117,10 +2049,6 @@ private:
 
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
-
-    void setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> & lock);
-
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
@@ -2202,7 +2130,6 @@ public:
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
-    void reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
