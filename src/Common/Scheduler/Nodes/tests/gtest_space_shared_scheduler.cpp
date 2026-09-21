@@ -2447,8 +2447,8 @@ TEST(SchedulerSpaceShared, ReservationTimeoutEndsRecoveryDuringDedicatedSpill)
     std::promise<void> started;
     auto started_future = started.get_future();
     std::promise<void> release;
-    auto release_future = release.get_future();
-    processor->runOnDedicatedSpill([&]
+    std::shared_future<void> release_future = release.get_future().share();
+    processor->runOnDedicatedSpill([&, release_future]
     {
         started.set_value();
         release_future.wait();
