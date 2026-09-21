@@ -552,8 +552,9 @@ def test_tsv_rows_carry_the_abstention_marker():
     assert "not_judged" not in plain_tsv, plain_tsv
     assert plain_tsv != tsv
 
-    # The JSON and human paths call the three-argument form and must stay
-    # byte-identical: they carry the abstention on the key set instead.
+    # A run where no shard abstained passes an empty key set, which is falsy and so
+    # reaches this same form: the SQL must then be exactly what it was before the
+    # marker existed, for every output mode.
     js = fpr.build_detail_sql(args, data_path, has_thresholds=True)
     assert "not_judged" not in js, js
     assert "FORMAT JSONEachRow" in js, js
@@ -636,6 +637,106 @@ def test_default_tsv_output_reaches_the_consumer_as_unjudged():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_default_non_tsv_paths_emit_the_unjudged_rows():
+    """End to end through the real main(), which is where the --json and default human
+    paths choose their detail filter. Both are documented without --all
+    (.claude/CLAUDE.md), and an unjudged shard flags nothing, so a flag-only filter
+    drops every row those paths promise to label: --json omits the shard's queries
+    entirely while the shard-level n/j line still prints. Only main() wires this, so no
+    test of output_json / output_human can reach it."""
+    import json as _json
+    import sys as _sys
+
+    if shutil.which("clickhouse") is None:
+        print("SKIP: clickhouse binary not available")
+        return
+
+    def shards(abstained):
+        return [
+            {"name": "Performance Comparison (arm_release, master_head, 1/6)",
+             "arch": "arm", "shard_num": 1,
+             "status": "SKIPPED" if abstained else "FAILURE",
+             "has_metrics_artifact": True, "info": "",
+             "tsv_url": "https://example.invalid/arm.tsv"},
+            {"name": "Performance Comparison (amd_release, master_head, 2/6)",
+             "arch": "amd", "shard_num": 2, "status": "FAILURE",
+             "has_metrics_artifact": True, "info": "",
+             "tsv_url": "https://example.invalid/amd.tsv"},
+        ]
+
+    def rows_of(shard, abstained):
+        """(query name, diff, changed_threshold, unstable_threshold) per shard.
+
+        Only an abstention makes the exported bars infinite, so the judged control
+        gets finite ones. Reusing inf bars for a shard the tool treats as judged
+        would assert that an unjudged row may be reported as unchanged, which is the
+        very claim this marker exists to refute.
+        """
+        if (shard["arch"], shard["shard_num"]) != ("arm", 1):
+            return [("amd2_changed", 0.30, "0.20", "0.25"),
+                    ("amd2_steady", 0.00, "0.20", "0.25")]
+        bars = ("inf", "inf") if abstained else ("0.20", "0.25")
+        return [("arm1_big", 1.00) + bars, ("arm1_steady", 0.00) + bars]
+
+    def run(extra_argv, abstained=True):
+        """Real main(): only shard discovery and the download are stubbed."""
+        def fake_download(shard, tmpdir):
+            dest = os.path.join(tmpdir, f"{shard['arch']}_{shard['shard_num']}.tsv")
+            with open(dest, "w") as f:
+                for name, diff, c_thr, u_thr in rows_of(shard, abstained):
+                    f.write("\t".join([
+                        shard["arch"], str(shard["shard_num"]), "client_time",
+                        "1.0", f"{1.0 + diff}", f"{diff}", f"{abs(diff) + 1.0}",
+                        "0.05", "test_a", "0", name, c_thr, u_thr,
+                    ]) + "\n")
+            return shard, dest, None
+
+        saved = (_sys.argv, fpr.get_performance_shards, fpr.download_shard)
+        out = io.StringIO()
+        try:
+            _sys.argv = ["fetch_perf_report.py",
+                         "https://s3.amazonaws.com/x/json.html?PR=1&sha=deadbeef"] + extra_argv
+            fpr.get_performance_shards = lambda base, pr, sha: shards(abstained)
+            fpr.download_shard = fake_download
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                fpr.main()
+        finally:
+            _sys.argv, fpr.get_performance_shards, fpr.download_shard = saved
+        return out.getvalue()
+
+    # B1 -- default human mode: the shard line and the promised rows must agree.
+    human = run([])
+    assert "[ n/j]" in human, human
+    assert "NOT JUDGED (2 queries" in human, human
+    assert "CHANGES IN PERFORMANCE" in human, human
+    # Proves this is the default mode and not --all: the judged shard's steady row is
+    # still filtered, so the widened filter did not become a blanket "show everything".
+    assert "ALL QUERIES" not in human, human
+
+    # B2 -- default --json: the rows the shard flag refers to must be in `queries`.
+    js = _json.loads(run(["--json"]))
+    arm1 = [q for q in js["queries"] if (q["arch"], q["shard"]) == ("arm", 1)]
+    assert sorted(q["query"] for q in arm1) == ["arm1_big", "arm1_steady"], js
+    assert all(q["not_judged"] is True for q in arm1), js
+    # The SQL marker is an integer; output_json's own bool must win, or a consumer
+    # testing `is True` silently sees every row as judged.
+    judged = [q for q in js["queries"] if q["query"] == "amd2_changed"]
+    assert judged and judged[0]["not_judged"] is False, js
+    assert "amd2_steady" not in [q["query"] for q in js["queries"]], js
+    assert [s["not_judged"] for s in js["shards"]] == [False, True], js
+
+    # B3 -- reversal control: the same two shards with finite bars on arm/1, so nothing
+    # abstained. Both modes must be exactly what they were before the marker existed,
+    # and arm/1's rows must now be classified normally rather than quarantined.
+    plain_human = run([], abstained=False)
+    assert "NOT JUDGED" not in plain_human and "[ n/j]" not in plain_human, plain_human
+    assert "arm1_big" in plain_human, plain_human
+    assert "ALL QUERIES" not in plain_human, plain_human
+    plain_js = _json.loads(run(["--json"], abstained=False))
+    assert sorted(q["query"] for q in plain_js["queries"]) == ["amd2_changed", "arm1_big"], plain_js
+    assert not any(q["not_judged"] for q in plain_js["queries"]), plain_js
+
+
 if __name__ == "__main__":
     test_classification_matches_compare_sh()
     test_summary_counts()
@@ -650,4 +751,5 @@ if __name__ == "__main__":
     test_detail_rows_disclose_unjudged_shards()
     test_tsv_rows_carry_the_abstention_marker()
     test_default_tsv_output_reaches_the_consumer_as_unjudged()
+    test_default_non_tsv_paths_emit_the_unjudged_rows()
     print("All fetch_perf_report tests passed (or skipped).")

@@ -556,8 +556,6 @@ def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow",
 
     display_filter = "" if args.show_all else "WHERE is_changed OR is_unstable"
 
-    # --tsv has no shard-level line to carry the abstention, so the marker rides
-    # on the row. Absent for the JSON and human paths, which key on the set.
     if not_judged_keys:
         pairs = " OR ".join(
             f"(arch = '{_sql_escape(a)}' AND shard_num = {int(n)})"
@@ -990,7 +988,8 @@ def main():
         if args.tsv:
             output_tsv(args, merged_path, has_thresholds, not_judged_keys)
         elif args.json:
-            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds,
+                                          not_judged_keys=not_judged_keys)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_json(summary_rows, detail_rows, pr_number, sha, args.metric,
                         not_judged, not_judged_keys)
@@ -998,7 +997,8 @@ def main():
             output_human(summary_rows, [], pr_number, args.metric, multi_shard,
                          not_judged, not_judged_keys)
         else:
-            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds,
+                                          not_judged_keys=not_judged_keys)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_human(summary_rows, detail_rows, pr_number, args.metric,
                          multi_shard, not_judged, not_judged_keys)
