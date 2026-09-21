@@ -426,7 +426,8 @@ void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlit
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Cannot read a value of the SQLite storage class {} into column {} of type {}: "
-            "the result column has no declared SQLite type, so its values must have the storage class of that type in every row. "
+            "a SQLite query result column carries no type contract for its cells - a declared type, when SQLite reports one at "
+            "all, is taken from a single arm of the query - so its values must have the storage class of that type in every row. "
             "Select the column as a string (for example, by declaring the column as `String`, or by casting it to text in the SQLite query) "
             "to read values of mixed storage classes",
             storageClassName(storage_class),
@@ -437,8 +438,8 @@ void SQLiteStatementReader::checkStorageClass(const ColumnReadInfo & info, sqlit
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Cannot read the SQLite value {} into column {} of type {}: "
-            "the result column has no declared SQLite type, so its values are read without conversion and must be exactly "
-            "representable in that type in every row. "
+            "a SQLite query result column carries no type contract for its cells, so its values are read without conversion "
+            "and must be exactly representable in that type in every row. "
             "Declare the column with a type that holds the value (for example, `Int64` or `Float64`), or as `String` "
             "to read the values as text",
             getTextValue(statement, idx),
