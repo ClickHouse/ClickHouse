@@ -30,8 +30,7 @@ namespace ErrorCodes
 }
 
 
-/// Cache-line aligned state to prevent false sharing during parallel aggregation.
-struct alignas(64) AggregateFunctionForEachData
+struct AggregateFunctionForEachData
 {
     size_t dynamic_array_size = 0;
     char * array_of_aggregate_datas = nullptr;
@@ -83,7 +82,7 @@ private:
 
             char * old_state = state.array_of_aggregate_datas;
 
-            char * new_state = arena.alignedAlloc(allocation_size, std::max<size_t>(64, nested_func->alignOfData()));
+            char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
             size_t i = 0;
             try
