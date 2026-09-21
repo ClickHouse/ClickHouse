@@ -26,12 +26,15 @@ namespace DB
 class LibdeflateInflatingReadBuffer : public CompressedReadBufferWrapper
 {
 public:
+    /// `max_block_output_` caps the output of one DEFLATE block, which has to be buffered whole; 0
+    /// means no cap. See the grow path in decompressImpl for when a cap is worth setting.
     LibdeflateInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         CompressionMethod compression_method,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
-        size_t alignment = 0);
+        size_t alignment = 0,
+        size_t max_block_output_ = 0);
 
     ~LibdeflateInflatingReadBuffer() override;
 
@@ -60,6 +63,7 @@ private:
 
     libdeflate_decompressor * decompressor = nullptr;
     const bool gzip;
+    const size_t max_block_output;
 
     enum class State
     {

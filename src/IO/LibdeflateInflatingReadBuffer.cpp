@@ -25,11 +25,6 @@ namespace
     constexpr size_t DEFLATE_WINDOW = 32768;
     /// Max compressed bytes pulled into in_buf per refill (bounds memory regardless of nested buffer size).
     constexpr size_t INPUT_CHUNK = 1u << 20;
-    /// Ceiling for the output of one DEFLATE block, which has to be buffered whole (see the grow path
-    /// in decompressImpl). Real encoders stay far below it: zlib flushes roughly every lit_bufsize
-    /// symbols and libdeflate's SOFT_MAX_BLOCK_LENGTH is 300000 bytes. Only a crafted stream reaches
-    /// it, and without the ceiling such a stream allocates one buffer of its own chosen size.
-    constexpr size_t MAX_BLOCK_OUTPUT = 64u << 20;
 
     /// gzip header flag bits (RFC 1952).
     constexpr uint8_t GZIP_FHCRC = 1 << 1;
@@ -56,10 +51,12 @@ LibdeflateInflatingReadBuffer::LibdeflateInflatingReadBuffer(
     CompressionMethod compression_method,
     size_t buf_size,
     char * /*existing_memory*/,
-    size_t alignment)
+    size_t alignment,
+    size_t max_block_output_)
     /// memory holds [32 KiB window][output region]; we manage existing_memory ourselves, so don't pass it.
     : CompressedReadBufferWrapper(std::move(in_), DEFLATE_WINDOW + buf_size, nullptr, alignment)
     , gzip(compression_method == CompressionMethod::Gzip)
+    , max_block_output(max_block_output_)
     , state(State::Header)
     , out_capacity(buf_size)
 {
@@ -362,16 +359,35 @@ bool LibdeflateInflatingReadBuffer::decompressImpl()
                             /* A single DEFLATE block's uncompressed size exceeds the whole output buffer.
                              * libdeflate's streaming decoder only suspends at block boundaries, so the whole
                              * block must be buffered before any of its output is exposed: grow the buffer (the
-                             * 32 KiB window at the front is preserved) and retry, up to MAX_BLOCK_OUTPUT. */
-                            if (memory.size() - window_nbytes >= MAX_BLOCK_OUTPUT)
-                                throw Exception(
-                                    ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
-                                    "A single {} block decompresses to more than {} bytes",
-                                    gzip ? "gzip" : "zlib",
-                                    MAX_BLOCK_OUTPUT);
+                             * 32 KiB window at the front is preserved) and retry.
+                             *
+                             * Without `max_block_output` we grow geometrically and don't impose a ceiling; the
+                             * buffer is allocated through ClickHouse's tracked allocator, so a crafted
+                             * single-block decompression bomb runs into the query/server memory limit and
+                             * throws MEMORY_LIMIT_EXCEEDED, exactly like any other oversized allocation. Every
+                             * mainstream gzip/zlib/deflate encoder bounds its blocks to well under a megabyte
+                             * of uncompressed data (zlib flushes roughly every lit_bufsize symbols,
+                             * libdeflate's SOFT_MAX_BLOCK_LENGTH is 300000 bytes, etc.), so a real-world stream
+                             * never reaches this grow path; only a hand-crafted one does.
+                             *
+                             * A ceiling is worth setting where the memory limit of the query does not cover
+                             * this allocation yet, as for a server request body. */
+                            if (max_block_output)
+                            {
+                                if (memory.size() - window_nbytes >= max_block_output)
+                                    throw Exception(
+                                        ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+                                        "A single {} block decompresses to more than {} bytes",
+                                        gzip ? "gzip" : "zlib",
+                                        max_block_output);
 
-                            memory.resize(std::min(
-                                std::max(memory.size() + out_capacity, memory.size() * 2), window_nbytes + MAX_BLOCK_OUTPUT));
+                                memory.resize(std::min(
+                                    std::max(memory.size() + out_capacity, memory.size() * 2), window_nbytes + max_block_output));
+                            }
+                            else
+                            {
+                                memory.resize(std::max(memory.size() + out_capacity, memory.size() * 2));
+                            }
                             continue;
                         }
                         /// Output buffer full at a block boundary: the stream is provably incomplete (the

@@ -817,11 +817,18 @@ void HTTPHandler::processQuery(
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     /// TODO check
     /// input stream are hold inside in_post instance
+    /// The body carries the query text, so it is read before the query enters the process list and
+    /// before `max_memory_usage` applies. Bound the one allocation the gzip/zlib decoder makes on its
+    /// own account, the buffer for a whole DEFLATE block.
     auto in_post = wrapReadBufferWithCompressionMethod(
         wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
-        snappy_mode);
+        snappy_mode,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        /* existing_memory= */ nullptr,
+        /* alignment= */ 0,
+        MAX_DEFLATE_BLOCK_OUTPUT_FOR_REQUEST_BODY);
     LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
 
 

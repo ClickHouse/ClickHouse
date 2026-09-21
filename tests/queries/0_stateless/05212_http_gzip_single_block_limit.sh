@@ -38,6 +38,10 @@ sys.stdout.buffer.write(b"\x1f\x8b\x08\x00" + b"\x00" * 4 + b"\x00\xff" + bytes(
 ${CLICKHOUSE_CURL} -sS -H 'Content-Encoding: gzip' --data-binary "@$bomb" "${CLICKHOUSE_URL}" \
     | grep -o -m1 'A single gzip block decompresses to more than [0-9]* bytes'
 
+# The ceiling belongs to the request body, not to the gzip codec: the same stream read as a file has
+# no ceiling, because that allocation is already covered by the memory limit of the query.
+${CLICKHOUSE_LOCAL} -q "SELECT length(raw_blob) FROM file('$bomb', 'RawBLOB')"
+
 # An ordinary gzip body is unaffected.
 printf 'SELECT 1' | gzip -c > "$plain"
 ${CLICKHOUSE_CURL} -sS -H 'Content-Encoding: gzip' --data-binary "@$plain" "${CLICKHOUSE_URL}"
