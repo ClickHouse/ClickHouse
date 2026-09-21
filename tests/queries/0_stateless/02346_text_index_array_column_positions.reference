@@ -1,0 +1,22 @@
+Array column
+hasAllTokens quick fox
+[1,4]
+[1,4]
+[1,4]
+hasAnyTokens jumps dog
+[1,5]
+[1,5]
+[1,5]
+hasAllTokens brown
+[1,2]
+[1,2]
+[1,2]
+Array column with a postprocessor
+hasAllTokens quick fox, lowercased
+[1]
+[1]
+[1]
+hasAnyTokens lazy, lowercased
+[3]
+[3]
+[3]

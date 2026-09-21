@@ -502,10 +502,10 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
     // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    void addToken(std::string_view token);
 
     void incrementCurrentRow();
-    void setCurrentRow(size_t row) { current_row = row; }
+    void setCurrentRow(size_t row);
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
@@ -519,6 +519,8 @@ struct MergeTreeIndexTextGranuleBuilder
 
     bool is_empty = true;
     UInt64 current_row = 0;
+    /// Position of the next token within the current row. Every token of a row shares one sequence.
+    UInt32 current_token_position = 0;
     UInt64 num_processed_tokens = 0;
     /// Pointers to posting lists for each token.
     TokenToPostingsBuilderMap tokens_map;
