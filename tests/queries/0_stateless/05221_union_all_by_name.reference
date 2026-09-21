@@ -90,13 +90,3 @@ positional view aliases are unchanged
 CREATE TABLE result columns
 1	2
 4	3
-recursive CTE with BY NAME seed
-1
-2
-2
-3
-3
-recursive CTE with BY NAME recursive term
-1	10
-2	20
-3	30

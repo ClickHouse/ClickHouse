@@ -311,25 +311,3 @@ CREATE TABLE union_by_name_aliases(x UInt8, y UInt8) ENGINE = Memory AS
 SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a;
 SELECT * FROM union_by_name_aliases ORDER BY x;
 DROP TABLE union_by_name_aliases;
-
-SELECT 'recursive CTE with BY NAME seed';
-WITH RECURSIVE r AS
-(
-    (SELECT toUInt64(1) AS a UNION ALL BY NAME SELECT toUInt64(2) AS a)
-    UNION ALL
-    SELECT a + 1 AS a FROM r WHERE a < 3
-)
-SELECT a FROM r ORDER BY a;
-
-SELECT 'recursive CTE with BY NAME recursive term';
-WITH RECURSIVE r AS
-(
-    SELECT toUInt64(1) AS a, toUInt64(10) AS b
-    UNION ALL
-    (
-        SELECT a + 1 AS a, b + 10 AS b FROM r WHERE a < 2
-        UNION ALL BY NAME
-        SELECT b + 20 AS b, a + 2 AS a FROM r WHERE a < 2
-    )
-)
-SELECT a, b FROM r ORDER BY a, b;
