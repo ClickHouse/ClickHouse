@@ -1,14 +1,6 @@
 -- Tags: no-parallel-replicas
--- Point-read rescore when the lazy read carries more than the vector column. The `Quantized`-codec vector search
--- point-reads the block-aligned vector column, while any other lazily materialized column is read with an ordinary
--- reader for the same row offsets and merged into the same chunk. Two things are checked here:
---   * the row -> value mapping of those other columns survives the merge, including when several shortlisted rows
---     fall into the same granule (they are then read by continuing forward through the granule rather than by
---     re-seeking to its mark, so an off-by-one in the skipped-row accounting would shift the payload);
---   * a lazy read holding two quantized vector columns still returns correct results (the step cannot tell which one
---     the search ranks by, so it declines the fast path and reads everything by granule).
--- Vectors are correlated with the sort key on purpose, so the shortlist concentrates in few granules.
--- Note: `ORDER BY` must hold the distance and nothing else, otherwise the two-stage rewrite does not engage at all.
+-- Point-read rescore when other columns are lazily read too: they are read normally and merged in. Checks their row ->
+-- value mapping survives, two vector columns decline the fast path, and `ORDER BY` holds only the distance (else no rewrite).
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
@@ -61,16 +53,13 @@ SELECT 'aligned_eq_unaligned',
     (SELECT arraySort(groupArray((id, payload))) FROM (SELECT id, payload FROM quantize_pr_mc_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 100 SETTINGS vector_search_index_fetch_multiplier = 20))
     = (SELECT arraySort(groupArray((id, payload))) FROM (SELECT id, payload FROM quantize_pr_mc_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 100 SETTINGS vector_search_index_fetch_multiplier = 20));
 
--- A shortlist packed into a single granule: every candidate is read from the same granule of `payload`, which is read
--- once by continuing forward through it rather than once per candidate.
+-- A shortlist packed into one granule: `payload` is read once by continuing forward, not once per candidate.
 WITH (SELECT vec FROM quantize_pr_mc_aligned WHERE id = 300) AS ref
 SELECT 'dense_granule_payload_matches_row', countIf(payload = repeat(concat('p', toString(id), '_'), 8)), count()
 FROM (SELECT id, payload FROM quantize_pr_mc_aligned WHERE id < 512 ORDER BY L2Distance(vec, ref) ASC LIMIT 200 SETTINGS vector_search_index_fetch_multiplier = 20);
 
--- Same, but with a granule that spans many compressed blocks of the payload column (8192 rows of ~2 KB against a
--- 64 KB minimum block). Re-seeking to the mark per candidate would decompress the blocks between the mark and the
--- candidate again for every one of them, which costs orders of magnitude more than the granule itself; reading
--- forward touches each block once. Wrong skip accounting shows up as a mismatched payload.
+-- Same, with a granule spanning many compressed blocks of `payload` (8192 rows of ~2 KB vs a 64 KB minimum block):
+-- re-seeking per candidate would re-decompress the blocks before it. Wrong skip accounting shows as a bad payload.
 DROP TABLE IF EXISTS quantize_pr_mc_wide_granule;
 
 CREATE TABLE quantize_pr_mc_wide_granule
@@ -106,11 +95,9 @@ WITH (SELECT vec FROM quantize_pr_mc_aligned WHERE id = 2500) AS ref
 SELECT 'two_vector_columns_match_row', countIf(vec2 = arrayMap(j -> toFloat32(sipHash64(j, toUInt64(id)) % 2000 / 1000.0 - 1.0), range(64))), count()
 FROM (SELECT id, vec2 FROM quantize_pr_mc_aligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20);
 
--- The point read addresses the part's files directly, so it must decline any part that needs a read-time conversion
--- or that does not store one of the lazy columns. Both cases below return correct results only on the granule read.
+-- The point read must decline a part needing a read-time conversion, or missing one of the lazy columns.
 
--- A pending `DROP COLUMN` is metadata-only: the part keeps the old data and the reader is supposed to ignore it. If
--- the point read served this part it would hand back the pre-drop bytes of the re-added column.
+-- A pending `DROP COLUMN` is metadata-only: point-reading the part would return the pre-drop bytes.
 DROP TABLE IF EXISTS quantize_pr_mc_dropped;
 
 CREATE TABLE quantize_pr_mc_dropped
@@ -140,8 +127,7 @@ FROM (SELECT id, payload FROM quantize_pr_mc_dropped ORDER BY L2Distance(vec, re
 
 DROP TABLE quantize_pr_mc_dropped;
 
--- A column added after the part was written is absent from it and has to be synthesized from its `DEFAULT`. Here it is
--- the only lazy column besides the vector one, so nothing else carries the row count into the default evaluation.
+-- A column added after the part was written must be synthesized from its `DEFAULT`; here nothing else carries the row count.
 DROP TABLE IF EXISTS quantize_pr_mc_added;
 
 CREATE TABLE quantize_pr_mc_added

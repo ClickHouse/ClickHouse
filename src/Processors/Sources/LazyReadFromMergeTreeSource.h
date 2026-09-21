@@ -59,11 +59,8 @@ private:
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     Processors buildReaders();
-    /// Point-read fast path: when the lazy read carries a vector column with a `Quantized(...)` codec that every part
-    /// stores one vector per compressed block, fetch each shortlisted row's single block for that column instead of
-    /// decompressing whole granules; the other lazy columns are read normally alongside it and merged into the same
-    /// chunk. Returns the sources when the whole read qualifies, or nothing to fall back on the granule read.
-    /// See MergeTreePointReadSource.
+    /// Point-read fast path for a `Quantized(...)` vector column stored one vector per block: fetch each shortlisted
+    /// row's single block instead of whole granules. Empty result = fall back to the granule read. See MergeTreePointReadSource.
     Processors tryBuildPointReadSources();
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;
 };

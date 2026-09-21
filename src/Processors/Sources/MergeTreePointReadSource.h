@@ -16,19 +16,8 @@ namespace DB
 class CompressedReadBufferFromFile;
 class IMergeTreeReader;
 
-/// Point-reads a fixed-size, uncompressed (`CODEC(NONE)`) `Array` column for a set of exact row offsets, fetching each
-/// row's single compressed block instead of decompressing whole granules. Used by lazy materialization for the
-/// two-phase quantized-codes vector search rescore.
-///
-/// The lazy read may also require other (non point-readable) columns alongside the vector column; those are read with a
-/// standard `MergeTreeReaderWide` for the same row offsets and merged into the output chunk, so the source produces the
-/// full `lazy_header` in a single pass. Only the fixed-size vector column is point-read; the others pay the usual
-/// granule read (unavoidable for variable-width data), but the heavy vector column - the point of the optimization -
-/// avoids it.
-///
-/// Precondition for the vector column (established by the per-column `max_compress_block_size` alignment and re-checked
-/// by `isEligible`): its element stream is one vector per compressed block, so block/row `r` is at
-/// `r * (framing + row_size)`, `framing = checksum(16) + header(9) = 25`. Checksums are kept.
+/// Point-reads a fixed-size `CODEC(NONE)` `Array` column for exact row offsets, fetching row `r`'s single compressed
+/// block at `r * (25 + row_size)`. Other lazy columns are read by a standard `MergeTreeReaderWide` and merged in.
 class MergeTreePointReadSource final : public ISource
 {
 public:
@@ -48,9 +37,7 @@ public:
 
     String getName() const override { return "MergeTreePointReadSource"; }
 
-    /// Returns true if `part`'s `column` is stored with a one-row-per-block layout so point reads are exact.
-    /// Definitive and cheap: the element `.bin` size equals `rows_count * (framing + row_size)` iff every block
-    /// holds exactly one vector.
+    /// True if `column` is stored one vector per compressed block, so point reads are exact.
     static bool isEligible(const RangesInDataPart & part, const NameAndTypePair & column, size_t dimensions);
 
 protected:
@@ -81,8 +68,7 @@ private:
     bool initialized = false;
     size_t next_offset_index = 0;
 
-    /// Position `other_reader` was left at by the previous `readRows` call: the mark it read from, and the first row it
-    /// has not consumed yet. Used to keep reading forward instead of re-seeking for survivors in the same granule.
+    /// Where the previous `readRows` left `other_reader`: its mark, and the first row not yet consumed.
     static constexpr size_t no_mark = std::numeric_limits<size_t>::max();
     size_t last_read_mark = no_mark;
     UInt64 next_unread_row = 0;

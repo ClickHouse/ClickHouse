@@ -35,20 +35,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// The vector column of a lazy read that `MergeTreePointReadSource` can serve, and the dimension count its
-/// `Quantized(...)` codec declares.
+/// The vector column a point read can serve, with the dimension count its `Quantized(...)` codec declares.
 struct PointReadVectorColumn
 {
     NameAndTypePair column;
     size_t dimensions;
 };
 
-/// The single vector column the point read may serve, if the lazy header holds exactly one.
-///
-/// The step is not told which column the vector search ranks by, and only that column is worth point-reading: the
-/// others are payload the query happens to select. With one candidate there is nothing to confuse, so it must be the
-/// rescored one; with several we could point-read a payload column and leave the heavy rescored one on the granule
-/// read, which is the case this optimization exists to avoid. Then it is better not to engage at all.
+/// The single vector column the point read may serve, if the lazy header holds exactly one. The step is not told which
+/// column the search ranks by, so with several we could point-read payload and leave the rescored one on the granule read.
 std::optional<PointReadVectorColumn> findPointReadVectorColumn(const Block & lazy_header, const ColumnsDescription & columns_desc)
 {
     std::optional<PointReadVectorColumn> found;
@@ -69,14 +64,8 @@ std::optional<PointReadVectorColumn> findPointReadVectorColumn(const Block & laz
     return found;
 }
 
-/// Whether `part` may be served by the point read instead of the ordinary granule read.
-///
-/// The point read addresses the part's base `.bin` files directly and its secondary reader is built without alter
-/// conversions, so it applies none of the read-time machinery `MergeTreeReadTask` provides - data mutations, patch
-/// parts, lightweight deletes, renames, ignoring a column dropped by a pending mutation - and it cannot synthesize a
-/// column the part does not store. Instead of listing the conversions to refuse, which silently admits every kind
-/// added later, this requires a part that needs no conversion at all and stores every lazy column. Anything else, now
-/// or in the future, reads by granule.
+/// Whether `part` may be point-read: it addresses base `.bin` files directly and applies none of the read-time machinery
+/// of `MergeTreeReadTask`, so require a part needing no conversion at all (not a stale list) that stores every lazy column.
 bool canPointReadPart(
     const RangesInDataPart & part,
     const PointReadVectorColumn & vector_column,

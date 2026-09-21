@@ -1,14 +1,6 @@
 -- Tags: no-parallel-replicas
--- Point-read rescore for `Quantized`-codec vector search. A per-column `max_compress_block_size` equal to exactly one
--- vector's byte size (`dimensions * sizeof(element)`) stores the full-precision `Array` elements one vector per
--- compressed block, so the two-phase quantized-codes search rescores each shortlisted candidate with a single-block
--- point read instead of decompressing a whole granule. The setting is applied to the element substream only, so the
--- companion codes and (for `product`) the single-value per-part codebook keep their default block size.
---
--- There are no easily assertable I/O metrics here, so this test checks correctness: the block-aligned (point-read) path
--- must return exactly the same results as the unaligned (granule-read) path - same codes give the same shortlist, and
--- both read the same full-precision vectors, just addressed differently. Covered for a flat `int8` codec and the
--- trained `product` codec (whose codebook must not be re-blocked by the per-column setting).
+-- Point-read rescore for `Quantized`-codec vector search: a per-column `max_compress_block_size` of one vector's bytes
+-- stores one vector per block. Checks the aligned (point-read) path returns exactly what the unaligned path returns.
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
@@ -60,8 +52,7 @@ WITH (SELECT vec FROM quantize_pr_int8_aligned WHERE id = 2500) AS ref
 SELECT 'int8_nearest_is_self',
     (SELECT id FROM quantize_pr_int8_aligned ORDER BY L2Distance(vec, ref) ASC LIMIT 1 SETTINGS vector_search_index_fetch_multiplier = 100) = 2500;
 
--- --- BFloat16 base: element size is 2 bytes, so one vector = 64 * 2 = 128 bytes per block (checks the
--- `sizeof(element)` path of the alignment). ---
+-- --- BFloat16 base: element size 2 bytes, so one vector = 64 * 2 = 128 bytes per block. ---
 
 CREATE TABLE quantize_pr_bf16_aligned
 (
@@ -119,8 +110,7 @@ SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.
 FROM numbers(5000);
 INSERT INTO quantize_pr_pq_unaligned SELECT * FROM quantize_pr_pq_aligned;
 
--- The codebook is a single per-part value: aligning the element stream to 256-byte blocks must leave it in one block,
--- so every granule still reads the full 65536-byte codebook (regression guard for the elements-only alignment).
+-- Regression guard: aligning the element stream must leave the single per-part codebook readable in full.
 SELECT 'pq_aligned_codebook_intact',
     countIf(length(vec.product_quantization_codebook) = 65536), count()
 FROM quantize_pr_pq_aligned SETTINGS max_block_size = 512;

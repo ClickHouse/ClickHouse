@@ -57,10 +57,8 @@ public:
     bool hasMutations() const { return !mutation_commands.empty(); }
     bool hasLightweightDelete() const;
 
-    /// True if the part needs any conversion at all when read: a data mutation, a patch, a lightweight delete, a
-    /// rename or a column dropped by a pending mutation. Readers that go to a part's files directly, instead of
-    /// through `MergeTreeReadTask`, apply none of these, so they must refuse such a part rather than enumerate the
-    /// conversions they know about - that list goes stale as new kinds of conversion are added.
+    /// True if the part needs any read-time conversion (mutation, patch, lightweight delete, rename, dropped column).
+    /// Readers bypassing `MergeTreeReadTask` must refuse such parts rather than enumerate the kinds they know about.
     bool hasAnyConversions() const
     {
         return !mutation_commands.empty() || !patch_parts.empty() || !rename_map.empty() || !dropped_columns.empty()

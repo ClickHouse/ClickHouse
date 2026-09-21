@@ -238,14 +238,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
                 max_compress_block_size = value->safeGet<UInt64>();
 
-        /// For a `Quantized(...)` vector column, a per-column `max_compress_block_size` is honored ONLY on the
-        /// full-precision `Array` elements substream. Set it to exactly one vector's byte size
-        /// (`dimensions * sizeof(element)`) to store one vector per compressed block, so the two-phase quantized-codes
-        /// vector search can rescore a single candidate with a single-block point read (see MergeTreePointReadSource)
-        /// instead of decompressing a whole granule. The companion substreams keep the default block size: the per-part
-        /// PQ codebook is a single large value that must stay in one block (re-blocking it breaks its read), and the
-        /// small `.quantized` codes gain nothing from re-blocking. Non-quantized columns honor the setting on every
-        /// substream, as usual.
+        /// For a `Quantized(...)` column a per-column `max_compress_block_size` applies ONLY to the `Array` elements
+        /// substream - set it to one vector's bytes for the point read (see MergeTreePointReadSource). Companions gain nothing.
         if (max_compress_block_size && tryExtractQuantizedCodecParams(effective_codec_desc))
         {
             bool is_array_elements = false;

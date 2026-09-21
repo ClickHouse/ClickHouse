@@ -204,20 +204,15 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
         const UInt64 row = row_offsets[base + i];
         const size_t from_mark = index_granularity.getMarkRangeForRowOffset(row).begin;
 
-        /// `MergeTreeReaderWide::readRows` seeks back to the mark and drops its substream caches on every call, so asking
-        /// for one row at a time would decompress the whole granule once per survivor - for a granule holding several
-        /// shortlisted rows that is worse than the plain granule read this source replaces. The offsets are ascending,
-        /// so survivors of the same granule arrive consecutively: keep the streams where the previous call left them
-        /// (`continue_reading` suppresses the seek) and skip the rows in between. Each granule is then decompressed at
-        /// most once, regardless of how many of its rows survive.
+        /// Offsets ascend, so survivors of one granule arrive consecutively: continue where the last `readRows` left the
+        /// streams rather than re-seeking to the mark, which would decompress the whole granule once per survivor.
         bool continue_reading = from_mark == last_read_mark && row >= next_unread_row;
         const size_t rows_to_skip = continue_reading
             ? row - next_unread_row
             : row - index_granularity.getMarkStartingRow(from_mark);
 
-        /// `readRows` has no way to skip leading rows, so the rows in between are dropped the same way
-        /// `MergeTreeRangeReader::DelayedStream::finalize` drops them: read them into throwaway columns. They are
-        /// decompressed either way - only the copy into the columns is wasted, and it is bounded by the granule.
+        /// `readRows` cannot skip leading rows, so drop them like `MergeTreeRangeReader::DelayedStream::finalize` does:
+        /// read into throwaway columns. They are decompressed anyway; only the copy is wasted, bounded by the granule.
         if (rows_to_skip)
         {
             MutableColumns skipped_columns(other_columns.size());
@@ -231,25 +226,20 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
         next_unread_row = row + 1;
     }
 
-    /// The normalization below operates on immutable columns; the entries left null by the reader (columns absent from
-    /// the part) stay null and are filled in by `fillMissingColumns`.
+    /// Normalization below works on immutable columns; entries left null by the reader are filled by `fillMissingColumns`.
     dst_columns.clear();
     dst_columns.reserve(read_columns.size());
     for (auto & read_column : read_columns)
         dst_columns.push_back(std::move(read_column));
 
-    /// Normalize exactly like the standard read path: synthesize columns and defaults that are absent from older parts
-    /// and fix partially read Array/Nested offsets, then apply any required type conversions. Without this a lazy column
-    /// added by a later ALTER (or a shared-offset array payload) could be returned invalid/null.
+    /// Normalize like the standard read path: synthesize missing columns and defaults, fix partial Array/Nested offsets,
+    /// then convert types - otherwise a column added by a later ALTER could come back invalid.
     bool should_evaluate_missing_defaults = false;
     other_reader->fillMissingColumns(dst_columns, should_evaluate_missing_defaults, batch);
     if (should_evaluate_missing_defaults)
     {
-        /// The default expressions are evaluated over a block, so it has to carry the row count - exactly what
-        /// `MergeTreeReadersChain::executeActionsBeforePrewhere` does before the same call. Columns that were read stay
-        /// in `dst_columns` and are added to the block by `evaluateMissingDefaults` itself, but when every requested
-        /// column is missing from the part (a lazy column added by a later ALTER, with the rest of the lazy read
-        /// covered by the point-read column) the block would otherwise be empty and the evaluation has no row count.
+        /// Defaults are evaluated over a block that must carry the row count (as
+        /// `MergeTreeReadersChain::executeActionsBeforePrewhere` does): with every requested column missing it is empty.
         Block additional_columns;
         addDummyColumnWithRowCount(additional_columns, batch);
         other_reader->evaluateMissingDefaults(additional_columns, dst_columns);
@@ -274,8 +264,7 @@ Chunk MergeTreePointReadSource::generate()
     if (!other_columns.empty())
         readOtherColumns(next_offset_index, batch, other_result);
 
-    /// Assemble the output in `header` order: the vector column from the point read, the rest from `other_result`
-    /// (which is in `other_columns` order == header order minus the vector column).
+    /// Assemble in `header` order: the vector column from the point read, the rest from `other_result` (same order).
     ColumnPtr vector_col_ptr = std::move(vector_col);
     Columns result;
     result.reserve(header->columns());
