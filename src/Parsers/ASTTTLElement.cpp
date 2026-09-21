@@ -125,6 +125,8 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     setTTL(std::move(ttl_child));
 
     auto where_child = r.readChild("where_expr");
+    if (where_child && mode != TTLMode::DELETE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'where_expr' is only valid for TTL DELETE during AST JSON deserialization");
     if (where_child)
         setWhere(std::move(where_child));
 
