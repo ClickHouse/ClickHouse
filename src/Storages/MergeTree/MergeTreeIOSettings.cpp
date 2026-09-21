@@ -13,6 +13,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 low_cardinality_max_dictionary_size;
     extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
     extern const SettingsUInt64 min_compress_block_size;
@@ -135,6 +136,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
+    result.max_read_time_without_output_us = settings[Setting::interactive_delay];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
