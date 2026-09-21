@@ -643,7 +643,7 @@ TEST(AzureReadObject, EmptyObjectStillReportsMetadata)
 
     ASSERT_TRUE(result.data.empty());
     ASSERT_EQ(result.metadata.size_bytes, static_cast<size_t>(0));
-    ASSERT_EQ(result.metadata.etag, "0x8DA000000000000");
+    ASSERT_EQ(result.metadata.etag, "\"0x8DA000000000000\"");
 }
 
 #endif
