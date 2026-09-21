@@ -434,24 +434,22 @@ public:
     ///   - `limit`, which bounds how much an ordered read has to produce;
     ///   - the filters `FINAL` defers past deduplication, which must not be applied before it.
     /// They are adopted together rather than one at a time as each turns out to be needed.
+    /// Taken over wholesale rather than only where this read has nothing: it is called together with
+    /// `setAnalyzedResult`, which replaces the ranges outright, and these are the conditions those ranges
+    /// were selected by. Keeping anything of this read's own would pair one read's ranges with another's
+    /// conditions. Nothing here is built by a plan optimized without the pass named above, so in practice
+    /// there is nothing to replace; this makes that independent of whether something prefilled it.
     void adoptFiltersFrom(const ReadFromMergeTree & other)
     {
-        if (!indexes)
-            indexes = other.indexes;
+        indexes = other.indexes;
 
-        if (!filter_actions_dag && other.filter_actions_dag)
-        {
-            filter_actions_dag = other.filter_actions_dag;
-            query_info.filter_actions_dag = filter_actions_dag;
-        }
+        filter_actions_dag = other.filter_actions_dag;
+        query_info.filter_actions_dag = filter_actions_dag;
 
-        if (!limit && other.limit)
-            limit = other.limit;
+        limit = other.limit;
 
-        if (!deferred_row_level_filter)
-            deferred_row_level_filter = other.deferred_row_level_filter;
-        if (!deferred_prewhere_info)
-            deferred_prewhere_info = other.deferred_prewhere_info;
+        deferred_row_level_filter = other.deferred_row_level_filter;
+        deferred_prewhere_info = other.deferred_prewhere_info;
     }
 
     /// selectRangesToRead() will always re-analyze

@@ -46,6 +46,16 @@ FORMAT Null SETTINGS log_comment = '05100_warmup';
 SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
 FORMAT Null SETTINGS log_comment = '05100_with_replicas';
 
+-- Again with `parallel_replicas_min_number_of_rows_per_replica` set, which makes the planner run index
+-- analysis of its own before the filters are attached. The conditions the candidate ends up with have
+-- to be the ones the single-node plan built, whatever was there before.
+SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
+FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1000, log_comment = '05100_warmup';
+
+SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
+FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1000,
+    log_comment = '05100_with_replicas';
+
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
