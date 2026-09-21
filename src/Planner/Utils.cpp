@@ -830,8 +830,8 @@ void appendBuiltSetsFromActionsDAG(const ActionsDAG & dag, BuiltSetsByHash & bui
         if (!set_and_key || !set_and_key->set || !set_and_key->set->isCreated())
             continue;
 
-        /// A `GLOBAL IN` set's fill also populates the temporary table the remote replicas read, so a
-        /// consumer that adopted the set instead of filling it would skip that write. Never offer one.
+        /// Filling a `GLOBAL IN` set also populates the temporary table the remote replicas read, so
+        /// adopting such a set in place of a fill would skip that write.
         if (set_and_key->external_table_expected || from_subquery->hasExternalTable())
             continue;
 

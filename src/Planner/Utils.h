@@ -126,8 +126,7 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
-/// Collect the sets `dag` references that are already filled, keyed by `FutureSet::getHash`, for
-/// `reuseBuiltSets` to adopt into another build of the same query. Sets tied to an external table are not offered.
+/// Collects the already-filled sets `dag` references, except those tied to an external table.
 void appendBuiltSetsFromActionsDAG(const ActionsDAG & dag, BuiltSetsByHash & built);
 
 /// If the window frame is not set in sql, try to use the default frame from window function

@@ -260,8 +260,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto interpreter = InterpreterSelectQueryAnalyzer(local_query_tree, new_context, select_query_options);
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
-    /// The row-count estimate for parallel replicas index-analyzed the scan above at plan-build time, and
-    /// that filled the sets its filter references. Re-planning the query got fresh, empty ones.
+    /// The parallel-replicas row-count estimate already index-analyzed this scan and filled its filter's sets.
     if (const auto * analyzed_merge_tree = typeid_cast<const ReadFromMergeTree *>(analyzed_read_from_merge_tree.get()))
     {
         if (const auto & filter_dag = analyzed_merge_tree->getQueryInfo().filter_actions_dag)
