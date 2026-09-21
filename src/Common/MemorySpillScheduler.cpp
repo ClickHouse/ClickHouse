@@ -282,7 +282,7 @@ void MemorySpillScheduler::executeForcedSpillUntil(UInt64 epoch, std::chrono::st
                 std::exception_ptr exception;
                 try
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "MemSpill");
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::MEMORY_SPILL);
                     self->executeForcedSpill(epoch);
                 }
                 catch (...)
