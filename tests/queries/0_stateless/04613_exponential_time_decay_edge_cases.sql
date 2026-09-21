@@ -1,5 +1,15 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
+-- Keep the aggregate-state alignment regression out of the legacy window test.
+-- The combination of differently aligned aggregate states previously exposed a UBSan failure.
+SELECT 'unaligned aggregate state regression'
+FROM VALUES('id Int8, time DateTime', (1,1),(1,2),(2,3),(3,3),(3,5))
+HAVING NOT (
+    anyLast(id) = 3
+    AND toUInt32(anyLast(time)) = 5
+    AND isFinite(exponentialTimeDecayedAvg(10)(id, time))
+);
+
 -- Empty aggregates use the canonical zero representation.
 SELECT
     tupleElement(decaying_sum, 'sign'),
