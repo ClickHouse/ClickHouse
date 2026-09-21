@@ -235,16 +235,14 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, [[maybe_unused]] SnappyMode snappy_mode, [[maybe_unused]] size_t max_deflate_block_output)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, [[maybe_unused]] SnappyMode snappy_mode)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
 #if USE_LIBDEFLATE
         /// libdeflate is faster than zlib for decompression.
-        return std::make_unique<LibdeflateInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment, max_deflate_block_output);
+        return std::make_unique<LibdeflateInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
 #else
-        /// zlib's `inflate` exposes output from inside a block, so it never buffers a whole one and
-        /// `max_deflate_block_output` has nothing to bound.
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
 #endif
     }
@@ -275,11 +273,11 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, size_t max_deflate_block_output)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max, snappy_mode, max_deflate_block_output);
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max, snappy_mode);
 }
 
 

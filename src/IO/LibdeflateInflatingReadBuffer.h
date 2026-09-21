@@ -16,9 +16,10 @@ struct libdeflate_decompressor;
 namespace DB
 {
 
-/// Streaming gzip/zlib decompressor built on libdeflate's block-boundary-suspendable decoder
+/// Streaming gzip/zlib decompressor built on libdeflate's symbol-boundary-suspendable decoder
 /// (libdeflate_deflate_decompress_stream, a ClickHouse addition). It is faster than the zlib
-/// streaming path while keeping memory bounded.
+/// streaming path while keeping memory bounded and time linear regardless of the stream's
+/// DEFLATE block structure (a single block may span the whole stream, as with zlib-ng level 1).
 ///
 /// We parse the gzip/zlib header and trailer ourselves and feed the raw DEFLATE body to libdeflate,
 /// carrying the last 32 KiB of output as the back-reference window. Concatenated members are handled
@@ -26,15 +27,12 @@ namespace DB
 class LibdeflateInflatingReadBuffer : public CompressedReadBufferWrapper
 {
 public:
-    /// `max_block_output_` caps the output of one DEFLATE block, which has to be buffered whole; 0
-    /// means no cap. See the grow path in decompressImpl for when a cap is worth setting.
     LibdeflateInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         CompressionMethod compression_method,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
-        size_t alignment = 0,
-        size_t max_block_output_ = 0);
+        size_t alignment = 0);
 
     ~LibdeflateInflatingReadBuffer() override;
 
@@ -63,7 +61,6 @@ private:
 
     libdeflate_decompressor * decompressor = nullptr;
     const bool gzip;
-    const size_t max_block_output;
 
     enum class State
     {

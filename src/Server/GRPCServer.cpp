@@ -1203,13 +1203,9 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        /// Same request-body bound as in the HTTP handler: cap the buffer the gzip/zlib decoder needs
-        /// for a whole DEFLATE block, which it allocates outside the query's own accounting.
         read_buffer = wrapReadBufferWithCompressionMethod(
             std::move(read_buffer), input_compression_method,
-            /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode],
-            DBMS_DEFAULT_BUFFER_SIZE, /*existing_memory=*/ nullptr, /*alignment=*/ 0,
-            MAX_DEFLATE_BLOCK_OUTPUT_FOR_REQUEST_BODY);
+            /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
 
         chassert(!pipeline);
 
@@ -1295,9 +1291,7 @@ namespace
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
                     buf = wrapReadBufferWithCompressionMethod(
                         std::move(buf), chooseCompressionMethod("", external_table.compression_type()),
-                        /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode],
-                        DBMS_DEFAULT_BUFFER_SIZE, /*existing_memory=*/ nullptr, /*alignment=*/ 0,
-                        MAX_DEFLATE_BLOCK_OUTPUT_FOR_REQUEST_BODY);
+                        /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
 
                     auto in = external_table_context->getInputFormat(
                         format,

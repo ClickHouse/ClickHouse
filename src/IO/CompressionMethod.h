@@ -54,14 +54,6 @@ CompressionMethod chooseHTTPCompressionMethod(const std::string & list);
 /// Get a range of the valid compression levels for the compression method.
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method);
 
-/// Ceiling for the output of one DEFLATE block, for the places that decompress a request body before
-/// the query owns the allocation. Real encoders stay three orders of magnitude below it: zlib flushes
-/// roughly every lit_bufsize symbols and libdeflate's SOFT_MAX_BLOCK_LENGTH is 300000 bytes. Only a
-/// crafted stream reaches it, and such a stream otherwise allocates one buffer of its own chosen size.
-constexpr size_t MAX_DEFLATE_BLOCK_OUTPUT_FOR_REQUEST_BODY = 64u << 20;
-
-/// `max_deflate_block_output` bounds the output of a single gzip/zlib block, which the decoder has to
-/// buffer whole; 0 means no bound, and the allocation is covered by the memory tracker alone.
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,
@@ -69,8 +61,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
-    size_t alignment = 0,
-    size_t max_deflate_block_output = 0);
+    size_t alignment = 0);
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
