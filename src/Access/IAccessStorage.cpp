@@ -672,6 +672,12 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
                     auth_result.authentication_data = auth_method;
+
+                    /// Consume the code only once the whole authentication succeeded: the credential
+                    /// checks above are pure, so a failed attempt cannot consume a valid code.
+                    if (!Authentication::consumeOneTimePassword(credentials, auth_method))
+                        throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
+
                     return auth_result;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)

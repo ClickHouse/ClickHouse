@@ -53,7 +53,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="接続オプションを備えた ClickHouse Cloud の稼働中インスタンスのダッシュボード" />
 
-EMQX Cloud とのインテグレーションのためのデータベースとテーブルを作成するには、&quot;Connect to SQL Console&quot; をクリックします。
+EMQX Cloud と連携するためのデータベースとテーブルを作成するには、&quot;Connect to SQL Console&quot; をクリックします。
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_5.webp" size="lg" border alt="ClickHouse Cloud の SQL Console インターフェイス" />
 
@@ -136,7 +136,7 @@ ClickHouse 連携の設定を開始する前に、まず NAT ゲートウェイ�
   ## EMQX Cloud と ClickHouse Cloud のインテグレーション
 </div>
 
-[EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) は、EMQX のメッセージフローやデバイスイベントを処理し、それらに応答するためのルールを設定する際に使用されます。Data Integrations は、明確で柔軟な「設定可能な」アーキテクチャを提供するだけでなく、開発プロセスを簡素化し、ユーザビリティを向上させ、業務システムと EMQX Cloud の結合度を低減します。さらに、EMQX Cloud 固有の機能をカスタマイズするための優れたインフラストラクチャも提供します。
+[EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) は、EMQX のメッセージフローやデバイスイベントを処理し、それらに応答するためのルールを設定する際に使用されます。Data Integrations は、明確で柔軟な「設定可能な」アーキテクチャを提供するだけでなく、開発プロセスを簡素化し、ユーザビリティを向上させ、業務システムと EMQX Cloud の結合度を低減します。さらに、EMQX Cloud 固有の機能をカスタマイズするための優れたインフラストラクチャも提供します。
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="利用可能なコネクタを示す EMQX Cloud Data Integration のオプション" />
 
@@ -166,7 +166,7 @@ ClickHouse のカードをクリックして、新しいリソースを作成し
 
 リソースの作成中にポップアップが表示され、&#39;New&#39; をクリックすると、ルール作成ページに移動します。
 
-EMQX には強力な [ルールエンジン](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html) が用意されており、生の MQTT メッセージをサードパーティシステムに送信する前に、変換やデータの拡充を行えます。
+EMQX には強力な [ルールエンジン](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html) が用意されており、生の MQTT メッセージをサードパーティシステムに送信する前に、変換やデータの拡充を行えます。
 
 このチュートリアルで使用するルールは次のとおりです。
 
@@ -253,7 +253,7 @@ MQTTX で &quot;New Connection&quot; をクリックし、接続フォームに�
 入力内容:
 
 1. ペイロードのフォーマットを &quot;JSON&quot; に設定します。
-2. トピックを `temp_hum/emqx` に設定します (先ほどルールで設定したトピックです)
+2. トピックを `temp_hum/emqx` に設定します (先ほどルールで設定したトピックです) 
 3. JSON 本文:
 
 ```bash

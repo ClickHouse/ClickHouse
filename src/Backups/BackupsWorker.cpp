@@ -65,7 +65,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 readonly;
-    extern const SettingsBool resumable_backup_from_snapshot;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -87,7 +86,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int WRONG_BACKUP_SETTINGS;
 }
 
 using OperationID = BackupOperationID;
@@ -149,28 +147,6 @@ namespace
     size_t getNumActiveRestoresChange(BackupStatus status)
     {
         return status == BackupStatus::RESTORING;
-    }
-
-    /// A base backup is only ever opened for reading, lazily, and an internal leg's context has no user,
-    /// so an explicitly requested one is authorized here: as the real user, before the query is
-    /// distributed.
-    void checkAccessToExplicitBaseBackup(
-        const BackupInfo & backup_info,
-        const std::optional<BackupInfo> & base_backup_info,
-        bool use_same_s3_credentials_for_base_backup,
-        bool is_internal,
-        const ContextPtr & context)
-    {
-        if (!base_backup_info || is_internal)
-            return;
-
-        /// Authorize the locator that will actually be opened: `BackupImpl::getBaseBackupUnlocked`
-        /// fills the credentials from the outer locator first, so a base missing them is not malformed.
-        BackupInfo effective_base_backup_info = *base_backup_info;
-        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
-
-        BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
     }
 
     /// We use slightly different read and write settings for backup/restore
@@ -428,18 +404,7 @@ struct BackupsWorker::BackupStarter
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_context->makeQueryContext();
 
-        /// `makeQueryContext` above resets `backup_context` to a fresh, empty `QueryPrivilegesInfo`. Sharing
-        /// the originating one accounts privileges checked on copies of `backup_context` to the BACKUP query,
-        /// so they reach the `used_privileges`/`missing_privileges` columns of `system.query_log`.
-        /// `QueryPrivilegesInfo` has its own mutex and is not a field a concurrent originating thread mutates.
-        backup_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
-
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
-        const bool resumable_backup_from_snapshot = backup_context->getSettingsRef()[Setting::resumable_backup_from_snapshot];
-        if (resumable_backup_from_snapshot)
-            throw Exception(
-                ErrorCodes::WRONG_BACKUP_SETTINGS,
-                "Setting `resumable_backup_from_snapshot` is only supported in ClickHouse Cloud");
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
 
@@ -674,12 +639,6 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.context = context;
     backup_create_params.backup_info = backup_info;
     backup_create_params.base_backup_info = backup_settings.base_backup_info;
-    checkAccessToExplicitBaseBackup(
-        backup_info,
-        backup_settings.base_backup_info,
-        backup_settings.use_same_s3_credentials_for_base_backup,
-        backup_settings.internal,
-        context);
     backup_create_params.compression_method = backup_settings.compression_method;
     backup_create_params.compression_level = backup_settings.compression_level;
     backup_create_params.password = backup_settings.password;
@@ -1137,12 +1096,6 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.context = context;
     backup_open_params.backup_info = backup_info;
     backup_open_params.base_backup_info = restore_settings.base_backup_info;
-    checkAccessToExplicitBaseBackup(
-        backup_info,
-        restore_settings.base_backup_info,
-        restore_settings.use_same_s3_credentials_for_base_backup,
-        restore_settings.internal,
-        context);
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
     backup_open_params.allow_azure_native_copy = restore_settings.allow_azure_native_copy;
@@ -1384,7 +1337,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
+        backup_log->add(BackupLogElement{info});
 
     infos[id] = std::move(extended_info);
 
@@ -1429,7 +1382,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
+        backup_log->add(BackupLogElement{info});
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

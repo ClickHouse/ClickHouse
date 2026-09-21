@@ -351,7 +351,7 @@ void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory
 {
     /// distinctJSONPaths documentation
     FunctionDocumentation::Description description_distinctJSONPaths = R"(
-Calculates a list of distinct paths stored in a [JSON](/reference/data-types/newjson) column.
+Calculates a list of distinct paths stored in a [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
     )";
     FunctionDocumentation::Syntax syntax_distinctJSONPaths = R"(
 distinctJSONPaths(json)
@@ -398,7 +398,7 @@ SELECT distinctJSONPaths(json) FROM test_json;
 
     /// distinctJSONPathsAndTypes documentation
     FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
-Calculates the list of distinct paths and their types stored in [JSON](/reference/data-types/newjson) column.
+Calculates the list of distinct paths and their types stored in [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
 
 :::note
 If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.

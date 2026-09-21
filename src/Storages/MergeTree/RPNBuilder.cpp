@@ -508,6 +508,24 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
     return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
+std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() const
+{
+    if (ast_node)
+    {
+        const auto * ast_function = typeid_cast<const ASTFunction *>(ast_node);
+        if (ast_function && ast_function->name == "arrayJoin" && ast_function->arguments
+            && ast_function->arguments->children.size() == 1)
+            return RPNBuilderTreeNode(ast_function->arguments->children[0].get(), tree_context);
+        return {};
+    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    if (node_without_alias->type == ActionsDAG::ActionType::ARRAY_JOIN && node_without_alias->children.size() == 1)
+        return RPNBuilderTreeNode(node_without_alias->children[0], tree_context);
+
+    return {};
+}
+
 std::string RPNBuilderFunctionTreeNode::getFunctionName() const
 {
     if (ast_node)

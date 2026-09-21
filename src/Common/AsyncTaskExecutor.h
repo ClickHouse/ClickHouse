@@ -6,7 +6,6 @@
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
 #include <Common/FiberStack.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Poco/Timespan.h>
 
 #if defined(OS_LINUX)
@@ -50,8 +49,7 @@ public:
 class AsyncTaskExecutor
 {
 public:
-    /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task
-    AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_);
+    explicit AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_);
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
@@ -129,11 +127,6 @@ private:
     std::atomic_bool is_cancelled = false;
 
     std::unique_ptr<AsyncTask> task;
-
-    const String operation_name;
-
-    /// Spans created inside the task belong to the query trace.
-    const OpenTelemetry::TracingContextOnThread parent_trace_context;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

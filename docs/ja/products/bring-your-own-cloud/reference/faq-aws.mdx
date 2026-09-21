@@ -1,0 +1,66 @@
+---
+title: 'AWS での BYOC に関するよくある質問'
+slug: /cloud/reference/byoc/faq/aws
+sidebarTitle: 'よくある質問 (AWS)'
+keywords: ['BYOC', 'クラウド', '自社クラウドの利用', 'AWS']
+description: '自社のクラウドインフラストラクチャに ClickHouse をデプロイ'
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## よくある質問
+</div>
+
+<div id="compute">
+  ### コンピュート
+</div>
+
+<AccordionGroup>
+  <Accordion title="この1つのEKSクラスター内に複数のサービスを作成できますか？">
+    はい。インフラストラクチャのプロビジョニングは、AWSアカウントとリージョンの組み合わせごとに1回だけで済みます。
+  </Accordion>
+
+  <Accordion title="BYOCではどのリージョンがサポートされていますか？">
+    BYOCでは、ClickHouse Cloudと同じ[リージョン](/ja/products/cloud/reference/supported-regions#aws-regions)をサポートしています。
+  </Accordion>
+
+  <Accordion title="リソースのオーバーヘッドはありますか？ ClickHouseインスタンス以外のサービスを実行するには、どの程度のリソースが必要ですか？">
+    ClickHouseインスタンス (ClickHouse server および ClickHouse Keeper) に加えて、`clickhouse-operator`、`aws-cluster-autoscaler`、Istio などのサービスと、監視スタックを実行します。
+
+    現在、これらのワークロードを実行するために、専用ノードグループで m5.xlarge ノードを3台 (各AZに1台) 使用しています。
+  </Accordion>
+</AccordionGroup>
+
+<div id="network-and-security">
+  ### ネットワークとセキュリティ
+</div>
+
+<AccordionGroup>
+  <Accordion title="セットアップ完了後、インストール時に設定した権限を取り消すことはできますか？">
+    現時点ではできません。
+  </Accordion>
+
+  <Accordion title="トラブルシューティングのために ClickHouse のエンジニアが顧客インフラにアクセスする場合、今後のセキュリティ対策は検討されていますか？">
+    はい。顧客がエンジニアによるクラスターへのアクセスを承認できる、顧客側で制御可能な仕組みをロードマップに含めています。現時点では、エンジニアが必要時のみクラスターへアクセスするには、社内のエスカレーションプロセスを経る必要があります。これはセキュリティチームによって記録・監査されています。
+  </Accordion>
+
+  <Accordion title="作成される VPC の IP 範囲はどのくらいですか？">
+    デフォルトでは、BYOC VPC に `10.0.0.0/16` を使用します。将来的なスケーリングの可能性を考慮し、少なくとも /22 を確保することを推奨しますが、
+    サイズを抑えたい場合は、サーバーポッド数が 30 に制限される見込みであれば、
+    /23 を使用することも可能です。
+  </Accordion>
+
+  <Accordion title="メンテナンスの頻度は決められますか？">
+    メンテナンスウィンドウの調整については、サポートにお問い合わせください。更新は少なくとも週 1 回の頻度となることを想定してください。
+  </Accordion>
+</AccordionGroup>
+
+<div id="uptime-slas">
+  ### 可用性 SLA
+</div>
+
+<AccordionGroup>
+  <Accordion title="ClickHouse は BYOC 向けの可用性 SLA を提供していますか？">
+    いいえ。データプレーンはお客様のクラウド環境でホストされるため、サービスの可用性は ClickHouse の管理外にあるリソースに依存します。そのため、ClickHouse は BYOC デプロイメントに対して正式な可用性 SLA を提供していません。ご不明な点がありましたら、support@clickhouse.com までお問い合わせください。
+  </Accordion>
+</AccordionGroup>

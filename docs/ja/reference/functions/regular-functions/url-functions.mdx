@@ -585,8 +585,7 @@ SELECT
 
 導入バージョン: v1.1.0
 
-URL から、指定された各パラメータについて最初に出現する `name=value` を削除します。
-`name=` と表記されたパラメータのみが一致するため、値を持たないフラグパラメータはそのまま残ります。たとえば、`cutURLParameter('http://bigmir.net/?a&c=d', 'a')` は URL を変更せずに返します。
+URL に `name` パラメータが含まれている場合は、それを削除します。
 この関数は、パラメータ名の文字をエンコードまたはデコードしません。たとえば、`Client ID` と `Client%20ID` は別のパラメータ名として扱われます。
 
 **構文**
@@ -602,7 +601,7 @@ cutURLParameter(url, name)
 
 **戻り値**
 
-リクエストされた各パラメータについて、最初に出現する `name=value` を削除した URL。 [`String`](/ja/reference/data-types/string)
+`name` で指定した URL パラメータを削除した URL。 [`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -1099,6 +1098,9 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
+```response title=Response
+```
+
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1218,7 +1220,7 @@ fragment(url)
 **使用例**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1290,7 +1292,7 @@ path(url)
 **使用例**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
+SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
 ```
 
 ```response title=Response
@@ -1326,7 +1328,7 @@ pathFull(url)
 **使用例**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
 ```
 
 ```response title=Response

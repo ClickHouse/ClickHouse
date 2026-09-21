@@ -72,9 +72,9 @@ public:
         String database;
         TableNameOrQuery table_or_query;
 
-        /// TLS/SSL credentials. The file paths in it may only come from the server configuration
-        /// file, see `validateSSLParams`.
-        mysqlxx::SSLParams ssl_params;
+        String ssl_ca;
+        String ssl_cert;
+        String ssl_key;
 
         bool replace_query = false;
         String on_duplicate_clause;
@@ -88,21 +88,6 @@ public:
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
         ContextPtr context_, bool require_table_or_query = true);
-
-    /// Reads the TLS/SSL credentials from a named collection.
-    /// The paths `ssl_ca`, `ssl_cert` and `ssl_key` are only accepted from a collection defined in the
-    /// server configuration file, and only if the query did not override them. Everywhere else the
-    /// credentials have to be given as contents, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`.
-    /// The contents are the SQL-safe form of the same credential, so passing them in a query replaces
-    /// the path inherited from the collection, unless the operator marked that path as not overridable.
-    static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
-
-    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`
-    /// arguments off a positional argument list (the form without a named collection) and removes them
-    /// from `arguments`, so that the caller sees only the positional arguments it knows about.
-    /// A path (`ssl_ca`, `ssl_cert`, `ssl_key`) is rejected here: it is only accepted from a named
-    /// collection defined in the server configuration file, see `getSSLParams`.
-    static mysqlxx::SSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
 
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,
@@ -133,7 +118,7 @@ public:
         const Block & sample_block_,
         mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
-        const MySQLStreamSettings & mysql_input_stream_settings_
+        const StreamSettings & mysql_input_stream_settings_
     );
 
     ReadFromMySQLStep(const ReadFromMySQLStep &) = default;
@@ -151,7 +136,7 @@ public:
 private:
     mysqlxx::PoolWithFailoverPtr pool;
     String query_str;
-    const MySQLStreamSettings mysql_input_stream_settings;
+    const StreamSettings mysql_input_stream_settings;
 };
 
 }

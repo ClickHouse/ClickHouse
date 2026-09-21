@@ -34,8 +34,7 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        LoadingStrictnessLevel mode,
-        bool authentication_determined_by_table_);
+        LoadingStrictnessLevel mode);
 
     ~StorageNATS() override;
 
@@ -138,9 +137,9 @@ private:
 
     void createConsumersConnection();
     void createConsumers();
+    void dropConsumers();
 
     bool subscribeConsumers();
-    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
 
     void stopEventLoop();

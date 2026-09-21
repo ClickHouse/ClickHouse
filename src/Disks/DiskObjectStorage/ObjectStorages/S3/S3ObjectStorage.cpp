@@ -146,6 +146,7 @@ public:
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
+        , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -163,6 +164,9 @@ public:
     }
 
 private:
+    /// Not read off `request`: the listing worker mutates and sometimes replaces it while this runs.
+    std::string describeListing() const override { return description; }
+
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
@@ -220,6 +224,7 @@ private:
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
     bool start_after_set;
+    const std::string description;
 };
 
 }
@@ -374,9 +379,10 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
 
-        if (objects.empty())
-            break;
-
+        /// A page can carry no objects while objects still remain: the scan may stop early
+        /// inside a partition and report `IsTruncated` together with a continuation token.
+        /// `IsTruncated` is the only thing that ends the listing - stopping on an empty page
+        /// would silently drop every object after it.
         for (const auto & object : objects)
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 object.GetKey(),
@@ -387,6 +393,12 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                     .tags = {},
                     .attributes = {},
                 }));
+
+        if (objects.empty() && outcome.GetResult().GetIsTruncated())
+            LOG_INFO(
+                LogFrequencyLimiter(log, 30),
+                "Listing returned an empty page while reporting more to come. Bucket: {}, Prefix: {}, Disk: {}",
+                uri.bucket, path, disk_name);
 
         if (max_keys)
         {
@@ -600,6 +612,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*src_s3_client=*/current_client,
                 /*src_bucket=*/uri.bucket,
                 /*src_key=*/object_from.remote_path,
+                /*src_offset=*/0,
                 /*src_size=*/size,
                 /*dest_s3_client=*/current_client,
                 /*dest_bucket=*/dest_s3->uri.bucket,
@@ -658,6 +671,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*src_s3_client=*/current_client,
         /*src_bucket=*/uri.bucket,
         /*src_key=*/object_from.remote_path,
+        /*src_offset=*/0,
         /*src_size=*/size,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/uri.bucket,
@@ -698,18 +712,21 @@ void S3ObjectStorage::applyNewSettings(
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
+    /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+            if (options.allow_client_change)
+                modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
     };
 
     auto apply_config_settings = [&]
     {
-        modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+        if (options.allow_client_change)
+            modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
 

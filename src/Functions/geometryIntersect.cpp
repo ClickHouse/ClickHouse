@@ -23,10 +23,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// `callOnGeometryDataType` distinguishes `MultiPoint` and `LineString` from `Ring`, and
-/// `MultiLineString` from `Polygon`, only by the custom type name: each group shares the same
-/// structural type (`Array(Tuple(Float64, Float64))` and `Array(Array(Tuple(Float64, Float64)))`
-/// respectively).
+/// `callOnGeometryDataType` distinguishes `LineString` from `Ring`, and `MultiLineString` from
+/// `Polygon`, only by the custom type name: each pair shares the same structural type
+/// (`Array(Tuple(Float64, Float64))` and `Array(Array(Tuple(Float64, Float64)))` respectively).
 /// When the custom name is lost during expression analysis (see `getGeometryColumnTypeFromDataType`),
 /// the dispatch falls back to the areal interpretation (`Ring` / `Polygon`), so a linear geometry
 /// would be silently reinterpreted as areal and the result would change. Since these functions
@@ -40,7 +39,7 @@ void checkGeometryIntersectArgument(const DataTypePtr & type, const String & fun
     if (const auto * custom_name = type->getCustomName())
     {
         const auto & name = custom_name->getName();
-        if (name == "Point" || name == "MultiPoint" || name == "Ring" || name == "LineString"
+        if (name == "Point" || name == "Ring" || name == "LineString"
             || name == "MultiLineString" || name == "Polygon" || name == "MultiPolygon")
             return;
     }
@@ -52,8 +51,8 @@ void checkGeometryIntersectArgument(const DataTypePtr & type, const String & fun
 
     if (factory.get("Ring")->equals(*type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Argument of function {} has type {} which is ambiguous between Ring, LineString and MultiPoint. "
-            "Cast it to an explicit geometry type, for example `x::Ring`, `x::LineString` or `x::MultiPoint`.",
+            "Argument of function {} has type {} which is ambiguous between Ring and LineString. "
+            "Cast it to an explicit geometry type, for example `x::Ring` or `x::LineString`.",
             function_name, type->getName());
 
     if (factory.get("Polygon")->equals(*type))
@@ -68,7 +67,7 @@ void checkGeometryIntersectArgument(const DataTypePtr & type, const String & fun
 }
 
 /// Similar to polygonsIntersect{Cartesian,Spherical}, but works for any geometry data type
-/// (Point, MultiPoint, LineString, MultiLineString, Ring, Polygon, MultiPolygon), not only polygons.
+/// (Point, LineString, MultiLineString, Ring, Polygon, MultiPolygon), not only polygons.
 /// The Geometry data type (a Variant of the geometry types above) is supported automatically
 /// via useDefaultImplementationForVariant(): the Variant adaptor decomposes it into its concrete
 /// alternatives and calls this function on each of them.
@@ -150,17 +149,17 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectCartesian`](#polygonsIntersectCartesian), it accepts any geometry data type
-        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
-        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
-        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/sql-reference/data-types/geo#point), [`LineString`](/sql-reference/data-types/geo#linestring),
+        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
+        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted in the Cartesian plane.
     )",
         .syntax = "geometryIntersectCartesian(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
@@ -178,17 +177,17 @@ REGISTER_FUNCTION(geometryIntersect)
         .description = R"(
         Returns true if two geometries intersect (share any common point, line or area).
         Unlike [`polygonsIntersectSpherical`](#polygonsIntersectSpherical), it accepts any geometry data type
-        ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring),
-        [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Ring`](/reference/data-types/geo#ring),
-        [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)),
-        including the common [`Geometry`](/reference/data-types/geo#geometry) type, and the two arguments may be of different types.
+        ([`Point`](/sql-reference/data-types/geo#point), [`LineString`](/sql-reference/data-types/geo#linestring),
+        [`MultiLineString`](/sql-reference/data-types/geo#multilinestring), [`Ring`](/sql-reference/data-types/geo#ring),
+        [`Polygon`](/sql-reference/data-types/geo#polygon), [`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)),
+        including the common [`Geometry`](/sql-reference/data-types/geo#geometry) type, and the two arguments may be of different types.
         Coordinates are interpreted as being on an ideal sphere.
     )",
         .syntax = "geometryIntersectSpherical(geometry1, geometry2)",
         .arguments
-        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."},
-           {"geometry2", "A value of any geometry data type or [`Geometry`](/reference/data-types/geo#geometry)."}},
-        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/reference/data-types/boolean)."},
+        = {{"geometry1", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."},
+           {"geometry2", "A value of any geometry data type or [`Geometry`](/sql-reference/data-types/geo#geometry)."}},
+        .returned_value = {"Returns true (1) if the two geometries intersect. [`Bool`](/sql-reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(

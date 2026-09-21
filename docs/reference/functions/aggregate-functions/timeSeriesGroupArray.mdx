@@ -12,8 +12,6 @@ Introduced in: v25.8.0
 
 Sorts time series data by timestamp in ascending order.
 
-If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
-
 <Note>
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
 </Note>
@@ -32,7 +30,7 @@ timeSeriesGroupArray(timestamp, value)
 
 **Returned value**
 
-Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order. [`Array(Tuple(T1, T2))`](/reference/data-types/array)
+Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order. If there are multiple values for the same timestamp then the function chooses the greatest of these values. [`Array(Tuple(T1, T2))`](/reference/data-types/array)
 
 **Examples**
 

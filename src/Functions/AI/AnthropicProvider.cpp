@@ -17,6 +17,36 @@ namespace ErrorCodes
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
+namespace
+{
+String extractProviderError(const std::string & response_body, int status_code)
+{
+    try
+    {
+        Poco::JSON::Parser err_parser;
+        auto err_json = err_parser.parse(response_body);
+        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
+        if (err_obj && err_obj->has("error"))
+        {
+            auto err = err_obj->getObject("error");
+            if (err)
+            {
+                String msg = err->optValue<String>("message", "");
+                String type = err->optValue<String>("type", "");
+                if (!msg.empty())
+                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
+            }
+        }
+    }
+    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: we throw error with full response body below
+
+    size_t max_len = 256;
+    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
+        response_body.substr(0, std::min(response_body.size(), max_len)));
+}
+}
+
+
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
 AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_)
@@ -103,7 +133,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("Anthropic provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;
@@ -112,30 +142,13 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     AIResponse ai_response;
 
-    /** Map Anthropic's `stop_reason` onto the canonical `FinishReason`.
-      *
-      * `end_turn` and `stop_sequence` are complete answers, an absent field defaults to `end_turn`.
-      *
-      * `tool_use` is complete only when we explicitly require a `structured_output` JSON response,
-      * otherwise it is mapped to `RequiresAction` and is rejected because it means the response is
-      * incomplete and the model is requesting a tool use.
-      *
-      * Only a token/context limit counts as truncation.
-      */
-    ai_response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
-    const bool forced_structured_output = !ai_request.response_format.isNull();
-    if (ai_response.raw_finish_reason == "end_turn" || ai_response.raw_finish_reason == "stop_sequence")
-        ai_response.finish_reason = FinishReason::Complete;
-    else if (ai_response.raw_finish_reason == "tool_use")
-        ai_response.finish_reason = forced_structured_output ? FinishReason::Complete : FinishReason::RequiresAction;
-    else if (ai_response.raw_finish_reason == "max_tokens" || ai_response.raw_finish_reason == "model_context_window_exceeded")
-        ai_response.finish_reason = FinishReason::Truncated;
-    else if (ai_response.raw_finish_reason == "refusal")
-        ai_response.finish_reason = FinishReason::ContentFilter;
-    else if (ai_response.raw_finish_reason == "pause_turn")
-        ai_response.finish_reason = FinishReason::RequiresAction;
+    String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+    if (anthropic_stop_reason == "max_tokens")
+        ai_response.finish_reason = "length";
+    else if (anthropic_stop_reason == "end_turn")
+        ai_response.finish_reason = "stop";
     else
-        ai_response.finish_reason = FinishReason::Unknown;
+        ai_response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
     if (!content)

@@ -65,7 +65,7 @@ Nesse caso, ele converte o valor do lado direito para o tipo do lado esquerdo, c
 se a função [accurateCastOrNull](/pt-BR/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) fosse aplicada ao lado direito.
 
 Isso significa que o tipo de dado se torna [Nullable](/pt-BR/reference/data-types/nullable) e, se a conversão
-não puder ser realizada, retorna [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default).
+não puder ser realizada, retorna [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default).
 
 **Exemplo**
 
@@ -129,7 +129,7 @@ Uma subconsulta na cláusula `IN` é sempre executada apenas uma vez, em um úni
   ## Processamento de NULL
 </div>
 
-Durante o processamento da requisição, o operador `IN` considera que o resultado de uma operação com [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default) é sempre igual a `0`, independentemente de `NULL` estar à direita ou à esquerda do operador. Os valores `NULL` não são incluídos em nenhum conjunto de dados, não correspondem entre si e não podem ser comparados se [transform&#95;null&#95;in = 0](/pt-BR/reference/settings/session-settings/other#transform_null_in).
+Durante o processamento da requisição, o operador `IN` considera que o resultado de uma operação com [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default) é sempre igual a `0`, independentemente de `NULL` estar à direita ou à esquerda do operador. Os valores `NULL` não são incluídos em nenhum conjunto de dados, não correspondem entre si e não podem ser comparados se [transform&#95;null&#95;in = 0](/pt-BR/reference/settings/session-settings#transform_null_in).
 
 Aqui está um exemplo com a tabela `t_null`:
 
@@ -272,7 +272,7 @@ Também faz sentido especificar uma tabela local na cláusula `GLOBAL IN`, caso 
   ### Subconsultas distribuídas e max_rows_in_set
 </div>
 
-Você pode usar [`max_rows_in_set`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_set) e [`max_bytes_in_set`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_set) para controlar o volume de dados transferidos durante consultas distribuídas.
+Você pode usar [`max_rows_in_set`](/pt-BR/reference/settings/session-settings#max_rows_in_set) e [`max_bytes_in_set`](/pt-BR/reference/settings/session-settings#max_bytes_in_set) para controlar o volume de dados transferidos durante consultas distribuídas.
 
 Isso é especialmente importante se a consulta `GLOBAL IN` retornar uma grande quantidade de dados. Considere o SQL a seguir:
 
@@ -280,7 +280,7 @@ Isso é especialmente importante se a consulta `GLOBAL IN` retornar uma grande q
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-Se `some_predicate` não for seletivo o suficiente, ele retornará uma grande quantidade de dados e causará problemas de desempenho. Nesses casos, é recomendável limitar a transferência de dados pela rede. Observe também que [`set_overflow_mode`](/pt-BR/reference/settings/session-settings/other#set_overflow_mode) está definido como `throw` (por padrão), o que significa que uma exceção será gerada quando esses limites forem atingidos.
+Se `some_predicate` não for seletivo o suficiente, ele retornará uma grande quantidade de dados e causará problemas de desempenho. Nesses casos, é recomendável limitar a transferência de dados pela rede. Observe também que [`set_overflow_mode`](/pt-BR/reference/settings/session-settings#set_overflow_mode) está definido como `throw` (por padrão), o que significa que uma exceção será gerada quando esses limites forem atingidos.
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### Subconsultas distribuídas e max_parallel_replicas
@@ -310,4 +310,4 @@ Portanto, adicionar a configuração [max&#95;parallel&#95;replicas](#distribute
 
 Uma alternativa, caso `local_table_2` não atenda aos requisitos, é usar `GLOBAL IN` ou `GLOBAL JOIN`.
 
-Se uma tabela não tiver uma chave de amostragem, podem ser usadas opções mais flexíveis para [parallel&#95;replicas&#95;custom&#95;key](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key), que podem resultar em um comportamento diferente e mais otimizado.
+Se uma tabela não tiver uma chave de amostragem, podem ser usadas opções mais flexíveis para [parallel&#95;replicas&#95;custom&#95;key](/pt-BR/reference/settings/session-settings#parallel_replicas_custom_key), que podem resultar em um comportamento diferente e mais otimizado.

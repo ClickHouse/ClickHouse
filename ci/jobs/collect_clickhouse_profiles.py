@@ -95,7 +95,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "21"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -426,12 +426,7 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
             f"{repo_path}/tests/performance/scripts/perf.py "
             f"--host localhost localhost "
             f"--port {port} {port} "
-            # Exactly `runs` runs: profile collection wants quick coverage,
-            # not measurement precision, so pin the minimum and both caps
-            # instead of the legacy --runs ("at least N"), which would widen
-            # the adaptive policy to its default minimum of 5.
-            f"--min-runs {runs} --cap {runs} --cap-fast {runs} "
-            f"--max-queries {max_queries} "
+            f"--runs {runs} --max-queries {max_queries} "
             f"--max-query-seconds 15 --prewarm-max-query-seconds 15 "
             f"--profile-seconds 0 "
             f"{repo_path}/tests/performance/{test_file}",

@@ -12,7 +12,7 @@ La clause `GROUP BY` fait passer la requête `SELECT` en mode agrégation, qui f
 * Toutes les expressions des clauses [SELECT](/fr/reference/statements/select/index), [HAVING](/fr/reference/statements/select/having) et [ORDER BY](/fr/reference/statements/select/order-by) **doivent** être calculées à partir d’expressions de clé **ou** de [fonctions d’agrégation](/fr/reference/functions/aggregate-functions/index) appliquées à des expressions qui ne font pas partie de la clé (y compris de simples colonnes). En d’autres termes, chaque colonne sélectionnée dans la table doit être utilisée soit dans une expression de clé, soit dans une fonction d’agrégation, mais pas les deux.
 * Le résultat de l’agrégation d’une requête `SELECT` contiendra autant de lignes qu’il y a de valeurs uniques de « clé de regroupement » dans la table source. En général, cela réduit considérablement le nombre de lignes, souvent de plusieurs ordres de grandeur, mais pas systématiquement : le nombre de lignes reste identique si toutes les valeurs de la « clé de regroupement » sont distinctes.
 
-Si vous souhaitez regrouper les données de la table par numéros de colonnes plutôt que par noms de colonnes, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
+Si vous souhaitez regrouper les données de la table par numéros de colonnes plutôt que par noms de colonnes, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings#enable_positional_arguments).
 
 <Note>
   Il existe une autre manière d’effectuer une agrégation sur une table. Si une requête contient des colonnes de table uniquement à l’intérieur de fonctions d’agrégation, la clause `GROUP BY` peut être omise, et une agrégation sur un ensemble vide de clés est alors supposée. De telles requêtes renvoient toujours exactement une ligne.
@@ -123,7 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 **Voir aussi**
 
-* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
+* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
 <div id="cube-modifier">
   ## Modificateur CUBE
@@ -220,7 +220,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 **Voir aussi**
 
-* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
+* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
 <div id="with-totals-modifier">
   ## Modificateur WITH TOTALS
@@ -346,7 +346,7 @@ Pour chaque valeur de clé distincte rencontrée, `GROUP BY` calcule un ensemble
 </div>
 
 Il s’agit du modificateur le plus générique.
-Ce modificateur permet de spécifier manuellement plusieurs ensembles de clés d’agrégation (ensembles de regroupement).
+Ce modificateur permet de spécifier manuellement plusieurs ensembles de clés d’agrégation (grouping sets).
 L’agrégation est effectuée séparément pour chaque ensemble de regroupement, puis tous les résultats sont combinés.
 Si une colonne n’est pas incluse dans un ensemble de regroupement, elle est remplacée par une valeur par défaut.
 
@@ -378,7 +378,7 @@ GROUPING SETS
 
 **Voir aussi**
 
-* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
+* Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
 <div id="implementation-details">
   ## Détails d’implémentation
@@ -390,19 +390,19 @@ L’agrégation est l’une des fonctionnalités les plus importantes d’un SGB
   ### Optimisation de GROUP BY en fonction de la clé de tri de la table
 </div>
 
-L’agrégation peut être effectuée plus efficacement si une table est triée selon une certaine clé et que l’expression `GROUP BY` contient au moins le préfixe de la clé de tri ou des fonctions injectives. Dans ce cas, lorsqu’une nouvelle clé est lue dans la table, le résultat intermédiaire de l’agrégation peut être finalisé et envoyé au client. Ce comportement est activé par le paramètre [optimize&#95;aggregation&#95;in&#95;order](/fr/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Cette optimisation réduit l’utilisation de la mémoire pendant l’agrégation, mais peut, dans certains cas, ralentir l’exécution de la requête.
+L’agrégation peut être effectuée plus efficacement si une table est triée selon une certaine clé et que l’expression `GROUP BY` contient au moins le préfixe de la clé de tri ou des fonctions injectives. Dans ce cas, lorsqu’une nouvelle clé est lue dans la table, le résultat intermédiaire de l’agrégation peut être finalisé et envoyé au client. Ce comportement est activé par le paramètre [optimize&#95;aggregation&#95;in&#95;order](/fr/reference/settings/session-settings#optimize_aggregation_in_order). Cette optimisation réduit l’utilisation de la mémoire pendant l’agrégation, mais peut, dans certains cas, ralentir l’exécution de la requête.
 
 <div id="group-by-in-external-memory">
   ### GROUP BY en mémoire externe
 </div>
 
 Vous pouvez activer l’écriture des données temporaires sur le disque afin de limiter l’utilisation de la mémoire pendant `GROUP BY`.
-Le paramètre [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) détermine le seuil de consommation de RAM à partir duquel les données temporaires de `GROUP BY` sont écrites dans le système de fichiers. S’il est défini sur 0 (valeur par défaut), il est désactivé.
-Vous pouvez également définir [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), ce qui permet d’utiliser `GROUP BY` en mémoire externe uniquement lorsque la requête atteint un certain seuil de mémoire utilisée.
+Le paramètre [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/fr/reference/settings/session-settings#max_bytes_before_external_group_by) détermine le seuil de consommation de RAM à partir duquel les données temporaires de `GROUP BY` sont écrites dans le système de fichiers. S’il est défini sur 0 (valeur par défaut), il est désactivé.
+Vous pouvez également définir [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/fr/reference/settings/session-settings#max_bytes_ratio_before_external_group_by), ce qui permet d’utiliser `GROUP BY` en mémoire externe uniquement lorsque la requête atteint un certain seuil de mémoire utilisée.
 
 Lorsque vous utilisez `max_bytes_before_external_group_by`, nous recommandons de définir `max_memory_usage` à une valeur environ deux fois plus élevée (ou `max_bytes_ratio_before_external_group_by=0.5`). Cela est nécessaire, car l’agrégation comporte deux étapes : la lecture des données et la formation des données intermédiaires (1), puis la fusion des données intermédiaires (2). L’écriture des données dans le système de fichiers ne peut se produire que durant l’étape 1. Si les données temporaires n’ont pas été écrites sur disque, l’étape 2 peut alors nécessiter jusqu’à la même quantité de mémoire que l’étape 1.
 
-Par exemple, si [max&#95;memory&#95;usage](/fr/reference/settings/session-settings/max-memory-usage#max_memory_usage) est défini sur 10000000000 et que vous souhaitez utiliser l’agrégation externe, il est logique de définir `max_bytes_before_external_group_by` sur 10000000000 et `max_memory_usage` sur 20000000000. Lorsque l’agrégation externe est déclenchée (s’il y a eu au moins une écriture de données temporaires sur disque), la consommation maximale de RAM n’est que légèrement supérieure à `max_bytes_before_external_group_by`.
+Par exemple, si [max&#95;memory&#95;usage](/fr/reference/settings/session-settings#max_memory_usage) est défini sur 10000000000 et que vous souhaitez utiliser l’agrégation externe, il est logique de définir `max_bytes_before_external_group_by` sur 10000000000 et `max_memory_usage` sur 20000000000. Lorsque l’agrégation externe est déclenchée (s’il y a eu au moins une écriture de données temporaires sur disque), la consommation maximale de RAM n’est que légèrement supérieure à `max_bytes_before_external_group_by`.
 
 Avec le traitement distribué des requêtes, l’agrégation externe est effectuée sur des serveurs distants. Pour que le serveur demandeur n’utilise qu’une faible quantité de RAM, définissez `distributed_aggregation_memory_efficient` sur 1.
 

@@ -1,0 +1,190 @@
+---
+noindex: true
+title: "ClickHouse Private의 PKI 및 mTLS"
+sidebarTitle: "PKI 및 mTLS"
+description: "이 문서는 ClickHouse Private에서 공개 키 인프라(PKI)와 상호 TLS(mTLS)가 어떻게 작동하는지, 어떤 인증서가 왜 존재하는지, 구성이 어떤 표준을 적용하는지"
+---
+
+이 문서는 ClickHouse Private에서 공개 키 인프라(PKI)와 상호 TLS(mTLS)가 어떻게 작동하는지 설명합니다. 어떤 인증서가 왜 존재하는지, 구성이 어떤 표준을 적용하는지, 인증서가 어떻게 검증되는지, 그리고 인증서 교체가 어떻게 처리되는지를 다룹니다. 이 문서는 [Cert Manager 구성](/ko/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates) 및 [FIPS 준수 인증서 생성](/ko/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) How-To 가이드를 보완하는 개념 설명 문서입니다.
+
+<div id="why-pki-matters-here">
+  ## 여기서 PKI가 중요한 이유
+</div>
+
+ClickHouse Private 클러스터는 분산 시스템입니다. ClickHouse 서버 레플리카는 서로 통신하고 ClickHouse Keeper와도 통신하며, Keeper 노드들은 서로 Raft 쿼럼을 형성합니다. 또한 서버는 외부로 연결을 수행합니다(예: Keeper 또는 HTTPS 기반 리소스). 규제가 적용되거나 에어갭된 환경에서는 이러한 각 통신 구간이 모두 암호화되어야 하며, 이상적으로는 신뢰할 수 있는 구성 요소만 클러스터에 참여할 수 있도록 상호 인증도 이루어져야 합니다.
+
+TLS는 서로 다른 두 가지 보장을 제공하므로, 이를 구분해서 이해하는 것이 중요합니다.
+
+* **전송 중 암호화** — 경로상의 관찰자는 트래픽을 읽을 수 없습니다. 이를 위해서는 *서버* 측에서만 인증서를 제시하면 됩니다.
+* **인증(authentication)** — 각 측은 신뢰할 수 있는 CA가 서명한 인증서로 자신의 아이덴티티를 증명합니다. *양쪽*이 모두 인증서를 제시하고 검증하면 **상호 TLS (mTLS)**가 됩니다.
+
+ClickHouse Private는 두 방식 모두 지원합니다. `verificationMode`와 클라이언트 인증서 구성 여부에 따라 암호화 전용 TLS로 실행할 수도 있고, 완전한 mTLS로 실행할 수도 있습니다. 아래 섹션에서는 이러한 선택 사항이 어떻게 표현되는지 설명합니다.
+
+<div id="the-certificates-and-their-purpose">
+  ## 인증서와 그 용도
+</div>
+
+ClickHouse Private는 공통 인증 기관(CA) 1개와 각 구성 요소별 리프 인증서 1개를 사용합니다:
+
+| Certificate | Used by             | Purpose                                                                                                                                                   |
+| ----------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA**      | 모든 구성 요소            | 신뢰의 루트입니다. 모든 구성 요소는 이 CA가 서명한 인증서를 신뢰합니다. `ca.crt`로 배포됩니다.                                                                                               |
+| **Server**  | `clickhouse-server` | 보안 포트에서 인바운드 클라이언트(다른 서버, 애플리케이션, 관리 API)에 대해 서버 레플리카의 아이덴티티를 증명합니다. 동일한 인증서는 서버가 *아웃바운드* 연결(예: Keeper 연결)에서 제시되기도 하므로, mTLS에서 서버의 클라이언트 아이덴티티 역할도 수행합니다. |
+| **Keeper**  | `clickhouse-keeper` | 보안 클라이언트 포트에 연결하는 클라이언트에 대해 Keeper 노드의 아이덴티티를 증명하고, Keeper 노드 간의 Raft 채널을 보호합니다.                                                                          |
+
+서버의 아웃바운드(클라이언트) 역할은 특히 중요합니다. TLS는 &quot;server&quot;와 &quot;client&quot;를 별도의 컨텍스트로 취급하기 때문입니다. Helm 차트는 `clickhouse-server`가 다른 구성 요소에 *외부로* 연결할 때 사용하는 OpenSSL `<client>` Context가 인바운드 `<server>` Context(`server.openSSL.secret.certKey` / `keyKey`, 기본값은 `server.crt` / `server.key`)와 **동일한** 인증서와 키를 제시하도록 구성합니다. 즉, 표준 Kubernetes 배포에는 별도의 &quot;client&quot; 인증서가 없으며, 서버 인증서가 두 역할을 모두 수행합니다.
+
+> FIPS 인증서 생성 워크플로에서는 추가로 전용 `client.crt` / `client.key`를 생성하고 이를 서버 시크릿에 함께 포함합니다. 이는 해당 워크플로(및 bare-metal 배포 경로)에만 해당하며, Helm 차트의 OpenSSL 구성은 기본적으로 클라이언트 Context가 서버 인증서를 가리키도록 설정됩니다. 자세한 내용은 [FIPS 인증서 구성](/ko/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse)을 참조하십시오.
+
+몇 가지 중요한 속성은 다음과 같습니다:
+
+* **CA 1개, 리프 인증서 2개.** 단일 CA가 서버 인증서와 Keeper 인증서에 서명합니다. 따라서 모든 구성 요소는 CA만 신뢰하면 다른 모든 구성 요소의 인증서를 검증할 수 있습니다.
+* **클러스터별 고유한 리프 인증서.** CA는 여러 클러스터에서 공유할 수 있지만, 서버 및 Keeper 인증서는 ClickHouse 클러스터마다 생성해야 합니다. Subject Alternative Name(SAN)에 해당 클러스터의 Kubernetes 서비스 이름이 인코딩되기 때문입니다.
+
+<div id="subject-alternative-names-sans">
+  ### Subject Alternative Names (SANs)
+</div>
+
+리프 인증서에는 해당 서비스의 클러스터 내부 DNS 이름이 포함되어야 합니다. 그렇지 않으면 클러스터 내부 트래픽에서 TLS 호스트명 검증이 실패합니다. SAN 패턴은 다음과 같습니다.
+
+* **Server:** `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` 및 `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* **Keeper:** `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+Kubernetes 클러스터가 `.cluster.local` 이외의 도메인을 사용하는 경우 SAN의 해당 부분을 그 도메인으로 바꾸십시오.
+
+<div id="how-certificates-are-delivered-to-clickhouse">
+  ## 인증서가 ClickHouse에 전달되는 방식
+</div>
+
+인증서는 Kubernetes 시크릿으로 제공되며, ClickHouse Operator는 이를 projected volume으로 파드에 마운트합니다:
+
+* ClickHouse 서버용 `/etc/clickhouse-server/certs/`
+* ClickHouse Keeper용 `/etc/clickhouse-keeper/certs/`
+
+각 파일은 해당 시크릿 키와 동일한 이름으로 마운트됩니다(즉, 시크릿 키 `server.crt`는 파일 `/etc/clickhouse-server/certs/server.crt`로 마운트됩니다). `onprem-clickhouse-cluster` Helm 차트는 기본적으로 다음 시크릿을 사용하도록 되어 있습니다:
+
+| 시크릿(기본 이름)                          | 키                                    |
+| ----------------------------------- | ------------------------------------ |
+| `<cluster-name>-server-cert-secret` | `ca.crt`, `server.crt`, `server.key` |
+| `<cluster-name>-keeper-cert-secret` | `ca.crt`, `keeper.crt`, `keeper.key` |
+
+시크릿 이름과 개별 키 이름은 모두 Helm values(`server.openSSL.secret.*` 및 `keeper.openSSL.secret.*`)를 통해 구성할 수 있습니다. 따라서 이 차트는 서로 다른 키 이름을 사용하는 인증서 관리 도구와도 호환됩니다. 대표적으로 Cert Manager는 `server.crt` / `server.key` 대신 `tls.crt` / `tls.key`를 생성합니다.
+
+<div id="what-the-configuration-enforces">
+  ## 이 구성이 적용하는 보안 제약
+</div>
+
+TLS가 활성화되면 Helm 차트는 각 컴포넌트에 대해 의도적으로 강화된 기본값이 적용된 `openSSL` 블록을 렌더링합니다. 관련 설정과 각 설정이 적용하는 제약은 다음과 같습니다.
+
+| 설정                          | 값                                           | 적용되는 제약                                                              |
+| --------------------------- | ------------------------------------------- | -------------------------------------------------------------------- |
+| `disableProtocols`          | `sslv2,sslv3,tlsv1,tlsv1.1`                 | 모든 레거시 프로토콜을 비활성화하여 **TLS 1.2 이상**만 허용합니다.                           |
+| `preferServerCiphers`       | `true`                                      | 서버의 암호군 우선순위가 적용되므로, 클라이언트가 서버에서 허용 가능한 더 약한 암호군으로 협상 수준을 낮출 수 없습니다. |
+| `cacheSessions`             | `true`                                      | 전체 핸드셰이크 오버헤드를 줄이기 위해 TLS 세션 캐싱을 활성화합니다.                             |
+| `caConfig`                  | `ca.crt` 경로                                 | 피어 인증서 체인을 검증할 때 사용하는 신뢰 앵커입니다.                                      |
+| `loadDefaultCAFile`         | `true` (server context)                     | `caConfig`와 함께 시스템 기본 CA 번들도 신뢰합니다.                                  |
+| `invalidCertificateHandler` | `RejectCertificateHandler` (client context) | 서버가 클라이언트 역할을 할 때 유효하지 않은 피어 인증서는 허용하지 않고 거부합니다.                     |
+
+이 설정은 OpenSSL 구성의 `<server>`와 `<client>` 양쪽 모두에 적용됩니다. `clickhouse-server`는 동시에 TLS 서버(클라이언트에 대해)이면서 TLS 클라이언트(Keeper 및 다른 서버에 대해)이기 때문입니다. FIPS 환경에서는 인증서 자체도 FIPS 활성화 모듈에서 FIPS 검증 알고리즘(예: RSA ≥ 3072-bit)으로 생성해야 합니다. 자세한 내용은 [FIPS 140-2 Compliance](/ko/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private)를 참조하십시오.
+
+<div id="enabled-vs-required">
+  ### `enabled` 대 `required`
+</div>
+
+각 구성 요소는 비슷해 보이지만 의미는 다른 두 가지 플래그를 제공합니다.
+
+* **`openSSL.enabled`**는 TLS 구성을 *활성화*하고 보안 포트를 바인딩하지만, 비보안 포트는 그대로 유지합니다. 마이그레이션 중에는 이 설정이 적합합니다. 클라이언트는 각자 필요한 속도에 맞춰 TLS로 전환할 수 있습니다.
+* **`openSSL.required`**는 한 단계 더 나아갑니다. TLS를 활성화하는 데 더해 **비보안 포트를 제거합니다** (`http_port`와 `tcp_port`가 `0`으로 설정됨). 따라서 *암호화된 연결만* 허용됩니다. 이는 운영 환경 배포를 위한 강화된 최종 상태입니다.
+
+어느 플래그를 활성화하더라도 오퍼레이터는 보안 readiness 포트를 바인딩하므로 클러스터의 상태 확인이 TLS를 통해 수행됩니다. `required`를 설정하면 비보안 readiness 리스너도 추가로 제거되어 TLS 리스너만 남습니다.
+
+<div id="how-certificates-are-verified-verificationmode">
+  ## 인증서 검증 방식: `verificationMode`
+</div>
+
+`verificationMode`는 TLS의 *인증* 측면에서 가장 중요한 단일 설정입니다. 피어의 인증서를 검증할지, 그리고 얼마나 엄격하게 검증할지를 제어합니다. 이 설정은 서버와 클라이언트 OpenSSL 컨텍스트 모두에 적용되며, 기본값은 `none`입니다.
+
+| Mode      | Behaviour                                                              | Resulting posture         |
+| --------- | ---------------------------------------------------------------------- | ------------------------- |
+| `none`    | 인증서를 검증하지 않습니다. 트래픽은 암호화되지만 피어의 신원은 확인하지 않습니다.                         | 암호화만 수행합니다(기본값).          |
+| `relaxed` | 클라이언트가 인증서를 제시할 *수 있습니다*; 제시하면 CA를 기준으로 검증합니다. 인증서 없이 맺는 연결도 계속 허용됩니다. | 기회적 mTLS — 마이그레이션에 적합합니다. |
+| `once`    | 클라이언트 인증서는 초기 handshake 중에만 검증되며, 재협상 시에는 다시 요청하지 않습니다.                | 대부분 엄격한 mTLS입니다.          |
+| `strict`  | 유효한 CA 서명 인증서를 제시하지 않는 클라이언트는 거부됩니다.                                   | mTLS를 강제합니다.              |
+
+특히 다음과 같은 점을 이해해 두는 것이 중요합니다.
+
+* **`none`은 암호화일 뿐, 인증은 아닙니다.** `none`을 사용하면 포트에 접근할 수 있는 공격자가 트래픽 내용을 읽지는 못하지만, ClickHouse는 *누가* 연결하는지는 확인하지 않습니다. &quot;신뢰할 수 있는 구성 요소만 연결할 수 있음&quot;이라는 특성을 얻으려면 `relaxed`(기회적) 또는 `strict`(강제)를 사용해야 합니다.
+* **mTLS를 사용하려면 연결하는 쪽에도 인증서가 있어야 합니다.** 검증은 연결하는 쪽이 실제로 인증서를 제시할 때만 의미가 있습니다. 서버는 아웃바운드 연결에서 자체 인증서(자신의 OpenSSL `<client>` 컨텍스트)를 제시하며, 이 덕분에 server-to-Keeper 및 server-to-server 트래픽이 인증서를 검증하는 피어의 요구 사항을 충족할 수 있습니다.
+* **현재 권장되는 적용 모드는 `relaxed`입니다.** `strict` 모드는 현재 권장되지 않으며 operator와 잘 맞지 않게 동작할 수 있습니다. 프로덕션 배포에서는 `relaxed`를 사용해야 하며, 이 모드에서도 제시된 모든 인증서는 계속 검증됩니다.
+
+이 값들은 변경 없이 그대로 ClickHouse의 TLS 구성으로 전달되므로, ClickHouse의 `openSSL` 설정에 문서화된 내용과 정확히 동일하게 동작합니다.
+
+<div id="certificate-rotation">
+  ## 인증서 교체
+</div>
+
+인증서는 만료되므로 교체는 예외적인 상황이 아니라 운영 과정에서 일상적으로 필요한 작업입니다. ClickHouse Private가 대부분의 과정을 투명하게 처리하지만, 한 가지 중요한 예외가 있습니다.
+
+두 경우 모두 ClickHouse Operator가 인증서 시크릿을 모니터링하고 변경에 따라 동작하므로 인증서를 수동으로 교체할 필요는 없습니다. 차이는 각 구성 요소가 새 인증서를 *어떻게* 반영하느냐에 있습니다. server는 재시작 없이 이를 처리하지만, Keeper는 재시작이 필요합니다.
+
+<div id="clickhouse-server-rotation-without-a-restart">
+  ### ClickHouse 서버: 재시작 없이 교체
+</div>
+
+ClickHouse 서버는 디스크에서 인증서와 키를 읽고, 파일이 변경되면 이를 **핫 리로드합니다** — 파드를 재시작할 필요가 없습니다. 전체 흐름은 다음과 같습니다.
+
+1. 인증 기관(CA)(사용자의 PKI 또는 Cert Manager)가 새 인증서를 발급하고 Kubernetes 시크릿을 업데이트합니다.
+2. Kubernetes가 새 시크릿 내용을 파드 내부에 마운트된 볼륨으로 전파합니다.
+3. operator가 시크릿의 새 인증서를 감지해 cluster의 status에 기록하면, ClickHouse 서버는 디스크에서 새 인증서를 자동으로 감지해 사용합니다.
+
+이 때문에 Cert Manager를 자동 갱신과 함께 사용하면 서버 인증서 교체가 사람의 개입 없이, 그리고 다운타임 없이 이루어집니다.
+
+<div id="clickhouse-keeper-operator-triggered-rolling-restart">
+  ### ClickHouse Keeper: 오퍼레이터가 트리거하는 롤링 재시작
+</div>
+
+Keeper는 서버와 달리 인증서를 핫 리로드하지 않습니다. Keeper 노드가 quorum을 유지하기 위해 사용하는 보안된 Raft(서버 간) 채널을 포함한 TLS 구성은 프로세스 시작 시 설정됩니다. 새 인증서를 적용하려면 Keeper 파드를 재시작해야 합니다.
+
+이 재시작 역시 자동화되어 있습니다. Keeper 시크릿의 인증서가 변경되면 오퍼레이터가 Keeper StatefulSet의 파드 템플릿에 새 만료일(`clickhouse.com/certificate-expire-date` 애너테이션)을 기록하며, 이로 인해 **Keeper 파드의 롤링 재시작**이 트리거됩니다. 따라서 Keeper 인증서 교체도 서버 인증서 교체와 마찬가지로 수동 작업이 필요하지 않습니다. 다만 서버와는 달리 Keeper 파드가 순차적으로 재시작되므로 잠시 중단이 발생할 수 있으며, 인증서 교체 중에는 이를 예상해야 합니다.
+
+실무상 영향:
+
+* Keeper 인증서가 갱신될 때마다 Keeper StatefulSet의 롤링 재시작이 발생합니다. 이는 자동으로 수행되지만 서버 인증서 교체처럼 부담이 없는 작업은 아니므로, 이를 고려해 갱신 일정을 계획하십시오.
+* CA 유효 기간은 길게 유지하고 교체 빈도는 낮게 가져가십시오. *모든* 구성 요소가 CA를 신뢰하므로 CA 자체를 교체하는 작업은 가장 중단 영향이 큰 작업이며, 만료 훨씬 전에 충분히 계획해야 합니다. 예시 도구는 სწორედ 이 이유로 CA의 기본 유효 기간을 10년(3650일)으로 설정하고, 리프 인증서는 365일로 설정합니다.
+* 리프 인증서와 CA의 만료 시점을 모니터링하고, 인증서가 실제로 만료되기 전에 갱신(및 그로 인해 트리거되는 Keeper 재시작)이 이루어지도록 충분한 여유를 두고 알림을 설정하십시오.
+
+<div id="integrating-with-cert-manager">
+  ## Cert Manager와 통합하기
+</div>
+
+[Cert Manager](https://cert-manager.io/)는 이 PKI를 운영 환경에서 실행하는 권장 방식입니다. 발급과 갱신을 자동화하고, 앞서 설명한 순환 모델에도 자연스럽게 들어맞기 때문입니다. 개념적으로는 다음과 같습니다.
+
+* Cert Manager의 `Issuer` 또는 `ClusterIssuer`는 CA 역할을 합니다. 테스트용 자체 서명 발급자일 수도 있고, 사내 루트를 기반으로 하는 중간 CA일 수도 있으며, ACME 또는 Vault를 통한 외부 CA일 수도 있습니다.
+* 각 구성 요소별 `Certificate` 리소스는 SAN과 대상 시크릿 이름을 선언합니다. Cert Manager는 키 쌍을 생성하고 `ca.crt`, `tls.crt`, `tls.key`를 해당 시크릿에 기록합니다.
+* Helm 차트는 해당 키 이름(`caKey: ca.crt`, `certKey: tls.crt`, `keyKey: tls.key`)을 가리키도록 설정되며, 오퍼레이터는 앞서 설명한 대로 이를 마운트하고 다시 로드합니다.
+* Cert Manager는 인증서가 만료되기 전에 자동으로 갱신합니다. 그러면 server certificate는 무중단으로 순환되며, **Keeper 인증서를 갱신하면 앞선 순환 섹션에서 설명한 대로 Keeper 파드가 자동으로 롤링 재시작됩니다**.
+
+한 가지 주의할 점은 `ca.crt`가 발급자가 이를 제공할 수 있을 때만 시크릿에 채워진다는 것입니다. 예를 들어 ACME 발급자는 `ca.crt`를 포함하지 않습니다. 이 경우 공개 루트를 직접 `ca.crt` 키에 추가하거나, [trust-manager](https://cert-manager.io/docs/trust/trust-manager/)를 사용해 CA 번들을 만들고 해당 시크릿을 대상으로 지정하십시오.
+
+단계별 지침은 [ClickHouse 인증서를 위한 Cert Manager 구성](/ko/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates)을 참조하십시오.
+
+<div id="choosing-a-posture">
+  ## 적용 방식 선택
+</div>
+
+전체를 종합하면, 일반적인 진행 순서는 다음과 같습니다:
+
+1. **먼저 암호화를 적용합니다.** `verificationMode: none`과 함께 `openSSL.enabled: true`를 설정합니다. 트래픽은 암호화되며, 원활한 마이그레이션을 위해 비보안 포트는 그대로 유지됩니다.
+2. **기회주의적 mTLS.** 모든 구성 요소가 클라이언트 인증서를 제시하게 되면 `verificationMode: relaxed`로 전환합니다. 이제 인증서는 있는 경우 검증되지만, 아직 마이그레이션되지 않은 구성 요소에는 영향을 주지 않습니다.
+3. **강제 TLS.** `openSSL.required: true`를 설정해 비보안 포트를 완전히 제거하고, 암호화된 연결만 허용합니다. `verificationMode: relaxed`는 계속 유지하십시오. 이 모드는 여전히 권장되는 모드입니다(`strict`에 대한 위의 참고 사항 참조).
+
+모든 단계에서 인증서, SAN, 시크릿 레이아웃, 로테이션 동작은 동일하며, 바뀌는 것은 강제 적용 플래그뿐입니다.
+
+<div id="further-reading">
+  ## 추가 자료
+</div>
+
+* [ClickHouse 인증서용 Cert Manager 구성](/ko/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates) — How-To
+* [FIPS 준수 인증서 생성](/ko/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) — How-To
+* [FIPS 140-2 컴플라이언스](/ko/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private) — 설명
+* [아키텍처](/ko/products/clickhouse-private/explanation/clickhouse-operator-architecture) — operator가 server와 Keeper를 관리하는 방식

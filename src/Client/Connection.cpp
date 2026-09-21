@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <cstddef>
-#include <iterator>
 #include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
@@ -9,7 +7,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SocketPeerClosed.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
@@ -70,6 +67,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -146,150 +145,6 @@ Connection::Connection(const String & host_, UInt16 port_,
 }
 
 
-void Connection::adoptSocket(Poco::Net::StreamSocket connected_socket)
-{
-    LOG_TRACE(log_wrapper.get(), "Reusing the connection to {}:{} (address {}) that has already been established",
-        host, port, adopted_address ? adopted_address->toString() : "unknown");
-
-    if (static_cast<bool>(secure))
-    {
-#if USE_SSL
-        /// `SecureStreamSocket::attach` starts the TLS handshake right away, unless the socket it attaches
-        /// to is non-blocking. Keep it non-blocking, so that the handshake is postponed until the first
-        /// read or write operation, exactly as for a socket this class connects itself: the errors of the
-        /// negotiation are then reported by the same code, and under the handshake timeout `connect` sets.
-        connected_socket.setBlocking(false);
-
-        /// The IP is already resolved, so the host name has to be passed separately for Server Name
-        /// Indication (SNI) to work, the same way as for a connection this class establishes itself.
-        socket = std::make_unique<Poco::Net::SecureStreamSocket>(
-            Poco::Net::SecureStreamSocket::attach(connected_socket, tls_sni_override.empty() ? host : tls_sni_override));
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
-#endif
-    }
-    else
-    {
-        socket = std::make_unique<Poco::Net::StreamSocket>(connected_socket);
-    }
-
-    socket->setBlocking(true);
-    current_resolved_address = adopted_address;
-    have_more_addresses_to_connect = false;
-}
-
-
-void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
-{
-    auto addresses = DNSResolver::instance().resolveAddressList(host, port);
-    const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-
-    /// An address that is already known to accept connections goes first: the addresses are tried
-    /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
-    if (preferred_address)
-    {
-        auto it = std::find(addresses.begin(), addresses.end(), *preferred_address);
-        if (it != addresses.end())
-            std::rotate(addresses.begin(), it, std::next(it));
-    }
-
-    for (auto it = addresses.begin(); it != addresses.end();)
-    {
-        have_more_addresses_to_connect = it != std::prev(addresses.end());
-
-        LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
-
-        if (isConnected())
-            disconnect();
-
-        if (static_cast<bool>(secure))
-        {
-#if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
-            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
-            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
-            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
-                ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
-            /// we want to postpone SSL handshake until first read or write operation
-            /// so any errors during negotiation would be properly processed
-            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
-
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-            }
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
-#endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
-            }
-        }
-
-        try
-        {
-            if (async_callback)
-            {
-                address_connect_timeout_expired = false;
-                socket->connectNB(*it);
-                while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
-                {
-                    async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
-                    if (address_connect_timeout_expired)
-                        throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
-                }
-
-                if (auto err = socket->impl()->socketError())
-                    socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
-
-                socket->setBlocking(true);
-            }
-            else
-            {
-                socket->connect(*it, connection_timeout);
-            }
-
-            current_resolved_address = *it;
-            have_more_addresses_to_connect = false;
-            break;
-        }
-        catch (DB::NetException & e)
-        {
-            LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
-            if (++it == addresses.end())
-                throw;
-            continue;
-        }
-        catch (Poco::Net::NetException & e)
-        {
-            LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
-            if (++it == addresses.end())
-                throw;
-            continue;
-        }
-        catch (Poco::TimeoutException & e)
-        {
-            LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
-            if (++it == addresses.end())
-                throw;
-            continue;
-        }
-    }
-}
-
-
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     /// if connection was broken it is necessary to cancel it before reconnecting
@@ -305,13 +160,103 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             static_cast<bool>(compression) ? "" : ". Uncompressed",
             bind_host.empty() ? "(not specified)" : bind_host);
 
-        /// A connection that has already been established elsewhere is used only once, by the first
-        /// connect: a reconnect has to establish a connection of its own.
-        auto socket_to_adopt = std::exchange(adopted_socket, std::nullopt);
-        if (socket_to_adopt)
-            adoptSocket(*socket_to_adopt);
-        else
-            connectToAnyAddress(timeouts);
+        auto addresses = DNSResolver::instance().resolveAddressList(host, port);
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+
+        for (auto it = addresses.begin(); it != addresses.end();)
+        {
+            have_more_addresses_to_connect = it != std::prev(addresses.end());
+
+            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
+
+            if (isConnected())
+                disconnect();
+
+            if (static_cast<bool>(secure))
+            {
+#if USE_SSL
+                socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+                /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+                /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+                /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
+                    ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
+                /// we want to postpone SSL handshake until first read or write operation
+                /// so any errors during negotiation would be properly processed
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+                }
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
+#endif
+            }
+            else
+            {
+                socket = std::make_unique<Poco::Net::StreamSocket>();
+
+                if (!bind_host.empty())
+                {
+                    Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                    static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
+                }
+            }
+
+            try
+            {
+                if (async_callback)
+                {
+                    address_connect_timeout_expired = false;
+                    socket->connectNB(*it);
+                    while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                    {
+                        async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                        if (address_connect_timeout_expired)
+                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
+                    }
+
+                    if (auto err = socket->impl()->socketError())
+                        socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
+
+                    socket->setBlocking(true);
+                }
+                else
+                {
+                    socket->connect(*it, connection_timeout);
+                }
+
+                current_resolved_address = *it;
+                have_more_addresses_to_connect = false;
+                break;
+            }
+            catch (DB::NetException & e)
+            {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+            catch (Poco::Net::NetException & e)
+            {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+            catch (Poco::TimeoutException & e)
+            {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+        }
 
         /// Use handshake timeout as send and receive timeout. Note that in the case of secure sockets,
         /// these timeouts also apply to the TLS handshake. The TLS handshake is deferred until the
@@ -806,45 +751,30 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
         return;
     }
 
-    /// A pooled connection must be idle: a stale one cannot serve the next request. A server that
-    /// went away without closing the connection is not detected here - such a failure is detected
+    /// A pooled connection must be idle: nothing must be pending to read on it. Anything readable
+    /// means the connection cannot serve the next request - the server has closed it while it was
+    /// idle in the pool (EOF), the socket is in an error state, or the connection is out of sync
+    /// with the protocol (leftovers of a previous request). This check is a single non-blocking
+    /// system call: unlike the ping it does not add a round trip, and unlike the ping it cannot
+    /// detect a server that went away without closing the connection - such a failure is detected
     /// when the connection is first used (see ConnectionEstablisher::run, which reconnects and
-    /// retries once).
-    if (isStale())
+    /// retries once). The `Ping` protocol command remains available as a convenience
+    /// (see Connection::ping / checkConnected).
+    bool is_stale = true;
+    try
+    {
+        is_stale = hasReadPendingData() || in->poll(0);
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_TRACE(log_wrapper.get(), "Cannot check the pooled connection: {}", e.displayText());
+    }
+
+    if (is_stale)
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed by the server or is out of sync, will reconnect.");
         connect(timeouts);
-    }
-}
-
-bool Connection::isStale()
-{
-    /// Anything readable on an otherwise idle connection means it cannot serve the next request:
-    /// the server has closed it (EOF), the socket is in an error state, or the connection is out of
-    /// sync with the protocol (leftovers of a previous request). This is a single non-blocking
-    /// system call: unlike a `Ping`-`Pong` exchange it does not add a round trip, and it cannot
-    /// mistake a slow answer for a closed connection. The `Ping` protocol command remains available
-    /// as a convenience (see Connection::ping).
-    ///
-    /// The check is TLS-aware (see `getSocketState`): a plain readability probe would report a live
-    /// secure session as unusable when a post-handshake record - a session ticket or a `KeyUpdate` -
-    /// is waiting to be read.
-    ///
-    /// It only sees a close that has already arrived: a connection closed by the server microseconds
-    /// ago still looks usable, and that failure is reported by the request that runs into it. There is
-    /// no way around it without a round trip - the answer to a ping is equally out of date the moment
-    /// it arrives. Recovering from a protocol desynchronization is different: there the client knows
-    /// that the server is about to close the connection and has to wait for it, so `checkConnected`
-    /// (which does ping) is used instead.
-    try
-    {
-        return hasReadPendingData() || getSocketState(*socket) != SocketState::Idle;
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_TRACE(log_wrapper.get(), "Cannot check the connection: {}", e.displayText());
-        return true;
     }
 }
 
@@ -1040,7 +970,11 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !(*settings)[Setting::allow_suspicious_codecs],
+            (*settings)[Setting::allow_experimental_codecs]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1160,12 +1094,6 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        /// Query parameters are written as custom (string-valued) fields, so a parameter whose
-        /// name collides with a built-in setting (e.g. `page`, now a `Double` setting) is not
-        /// parsed as that setting's type — which would throw for a non-numeric value
-        /// (`--param_page=foo`) or normalize a numeric-looking string. The server reads them back
-        /// with `readQueryParameters`, which SQL-unquotes the value so the original string
-        /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
     maybe_compressed_in.reset();
@@ -1825,7 +1753,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
 {
-    auto connection = std::make_unique<Connection>(
+    return std::make_unique<Connection>(
         parameters.host,
         parameters.port,
         parameters.default_database,
@@ -1847,17 +1775,6 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         , parameters.jwt_provider
 #endif
         );
-
-    if (parameters.preferred_address)
-        connection->setPreferredAddress(*parameters.preferred_address);
-
-    if (parameters.adopted_socket)
-    {
-        chassert(parameters.preferred_address.has_value());
-        connection->setAdoptedSocket(*parameters.preferred_address, *parameters.adopted_socket);
-    }
-
-    return connection;
 }
 
 }

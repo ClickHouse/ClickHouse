@@ -38,8 +38,6 @@ public:
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
 
-    bool transformNullIn() const { return transform_null_in; }
-
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 

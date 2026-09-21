@@ -1,0 +1,85 @@
+---
+noindex: true
+title: "توسيع عنقود ClickHouse عموديًا"
+sidebarTitle: "توسيع عنقود"
+description: "عدّل موارد CPU والذاكرة لعنقود ClickHouse باستخدام Private API."
+---
+
+عدّل موارد CPU والذاكرة لعنقود ClickHouse باستخدام Private API."
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* أن تكون ClickHouse Private API مثبّتة ومتاحة للوصول (على سبيل المثال، عبر إعادة توجيه المنفذ إلى `http://localhost:8080/`)
+* نشر عنقود ClickHouse واحد على الأقل (يستخدم هذا الدليل `default-xx-01`)
+
+<Steps>
+  <Step>
+    ## 1. أنشئ طلب التحجيم
+
+    أنشئ ملف JSON بتخصيص الموارد المطلوب:
+
+    ```json
+    {
+      "vertical": {
+        "resources": {
+          "cpu": "4",
+          "memory": "16Gi"
+        }
+      }
+    }
+    ```
+
+    احفظ الملف باسم `scale.json`.
+  </Step>
+
+  <Step>
+    ## 2. أرسل الطلب
+
+    ```bash
+    curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
+        -H "Content-Type: application/json" \
+        --data-binary "@scale.json"
+    ```
+  </Step>
+
+  <Step>
+    ## 3. فرض نسبة CPU إلى الذاكرة
+
+    تفرض واجهة API **نسبة 1:4 بين CPU والذاكرة** (نواة CPU واحدة لكل 4 GiB من الذاكرة) مع هامش 5%.
+
+    إذا حدّدت نوع مورد واحد فقط، فستشتق واجهة API المورد الآخر تلقائيًا. على سبيل المثال، إذا حدّدت `"memory": "16Gi"` فقط، فسيُضبط CPU على 4 أنوية.
+
+    **تنسيقات كميات الموارد المقبولة:**
+
+    | النوع   | أمثلة                                               |
+    | ------- | --------------------------------------------------- |
+    | CPU     | `"4"` (أنوية), `"2.5"` (عشري), `"500m"` (ملّي نواة) |
+    | الذاكرة | `"16Gi"` (جيبيبايت), `"4096Mi"` (ميبيبايت)          |
+
+    يوصى باستخدام الوحدات الثنائية (Ki وMi وGi) للذاكرة.
+  </Step>
+
+  <Step>
+    ## 4. راقب تقدّم التحجيم
+
+    تحقّق من حالة العنقود لتتبّع عملية التحجيم:
+
+    ```bash
+    curl "http://localhost:8080/api/v1/instances/default-xx-01/status"
+    ```
+
+    تتضمن الاستجابة: - `state`: حالة العنقود الحالية - `previousState`: الحالة قبل الانتقال - `message`: تفاصيل انتقال الحالة
+
+    يكتمل التحجيم عندما يعود العنقود إلى حالة التشغيل.
+  </Step>
+</Steps>
+
+<div id="rolling-restart-behavior">
+  ## سلوك إعادة التشغيل المتدرّجة
+</div>
+
+تُحدِّث واجهة برمجة التطبيقات `ServerPodPolicy` الخاصة بالمورد المخصص `ClickhouseCluster`. ثم يُجري المُشغِّل إعادة تشغيل متدرّجة لـ StatefulSets باستخدام تخصيص الموارد الجديد.
+
+> **مهم:** بخلاف ClickHouse Cloud، لا يستخدم ClickHouse Private [التحجيم بأسلوب Make Before Break ‏(MBB)](https://clickhouse.com/docs/manage/scaling#how-scaling-works-in-clickhouse-cloud). قد يتسبب التحجيم الرأسي في انقطاعات قصيرة في الخدمة أثناء إعادة التشغيل المتدرّجة."

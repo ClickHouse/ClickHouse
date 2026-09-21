@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -162,14 +162,6 @@ public:
         size_t max_block_size,
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
-
-    /// Join two independent pipelines with a two-input joining transform created by the caller.
-    /// Each pipeline must have a single output stream (the transform may rely on its order).
-    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
-        std::unique_ptr<QueryPipelineBuilder> left,
-        std::unique_ptr<QueryPipelineBuilder> right,
-        ProcessorPtr joining,
-        Processors * collected_processors);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,

@@ -33,21 +33,6 @@ FROM table
 SELECT *
 ```
 
-في استعلام يبدأ بـ `FROM`، تكون عبارة `SELECT` اختيارية. عند حذفها، يعمل الاستعلام كما لو كُتبت `SELECT *`:
-
-```sql
-FROM table
-WHERE x > 1
-```
-
-يُستخدم هذا الشكل غالبًا في الاستعلامات التي تستخدم [عوامل pipe](/ar/reference/statements/select/pipe-operators):
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-```
-
 <div id="final-modifier">
   ## مُعدِّل FINAL
 </div>
@@ -62,7 +47,7 @@ FROM table
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-تُنفَّذ استعلامات `SELECT` التي تتضمن `FINAL` بالتوازي. ويحدّد الإعداد [max&#95;final&#95;threads](/ar/reference/settings/session-settings/max#max_final_threads) عدد سلاسل التنفيذ المستخدمة.
+تُنفَّذ استعلامات `SELECT` التي تتضمن `FINAL` بالتوازي. ويحدّد الإعداد [max&#95;final&#95;threads](/ar/reference/settings/session-settings#max_final_threads) عدد سلاسل التنفيذ المستخدمة.
 
 <div id="drawbacks">
   ### السلبيات
@@ -77,7 +62,7 @@ FROM table
 
 وكبديل لاستخدام `FINAL`، يمكن أحيانًا استخدام استعلامات مختلفة تفترض أن العمليات الخلفية لمحرك `MergeTree` لم تكتمل بعد، وتتعامل مع ذلك عبر تطبيق التجميع (على سبيل المثال، للتخلص من التكرارات). وإذا كنت بحاجة إلى استخدام `FINAL` في استعلاماتك للحصول على النتائج المطلوبة، فلا بأس بذلك، ولكن ينبغي الانتباه إلى المعالجة الإضافية التي يتطلبها.
 
-يمكن تطبيق `FINAL` تلقائيًا باستخدام إعداد [FINAL](/ar/reference/settings/session-settings/other#final) على جميع الجداول في الاستعلام باستخدام جلسة أو ملف تعريف مستخدم.
+يمكن تطبيق `FINAL` تلقائيًا باستخدام إعداد [FINAL](/ar/reference/settings/session-settings#final) على جميع الجداول في الاستعلام باستخدام جلسة أو ملف تعريف مستخدم.
 
 <div id="example-usage">
   ### مثال على الاستخدام

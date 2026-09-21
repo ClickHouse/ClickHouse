@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -281,15 +280,6 @@ private:
     /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
     UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
 
-    /// Marks leading non-transactional mutations that have no parts left to process as done and
-    /// returns their count. Mutations with version >= `first_just_completed_version` were completed
-    /// by the calling event itself, so the current time is stamped as their `finish_time`; with the
-    /// default argument nothing is stamped — the caller observed the mutations as done without
-    /// knowing their actual completion moment, and `finish_time` stays zero (unknown).
-    /// Must be called under `currently_processing_in_background_mutex` (except in the constructor,
-    /// where locking is unnecessary — see `loadMutations`).
-    size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
-
     size_t clearOldMutations(bool truncate = false);
 
     /// Delete irrelevant parts from memory and disk.
@@ -400,7 +390,7 @@ private:
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power(max_postpone_time_ms_ ? static_cast<size_t>(std::log2(max_postpone_time_ms_)) : 0ull)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
 

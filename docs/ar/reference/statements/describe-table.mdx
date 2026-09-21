@@ -21,13 +21,13 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 * `default_type` — عبارة تُستخدم في [التعبير الافتراضي](/ar/reference/statements/create/table) للعمود: `DEFAULT` أو `MATERIALIZED` أو `ALIAS`. وإذا لم يكن هناك تعبير افتراضي، فستُعاد سلسلة فارغة.
 * `default_expression` — تعبير مُحدَّد بعد العبارة `DEFAULT`.
 * `comment` — [تعليق العمود](/ar/reference/statements/alter/column#comment-column).
-* `codec_expression` — [codec](/ar/reference/statements/create/table/codec) مُطبَّق على العمود.
+* `codec_expression` — [codec](/ar/reference/statements/create/table#column_compression_codec) مُطبَّق على العمود.
 * `ttl_expression` — تعبير [TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-* `is_subcolumn` — علامة تساوي `1` للأعمدة الفرعية الداخلية. ولا يُضمَّن هذا الحقل في النتيجة إلا إذا كان وصف الأعمدة الفرعية مُمكّنًا بواسطة الإعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+* `is_subcolumn` — علامة تساوي `1` للأعمدة الفرعية الداخلية. ولا يُضمَّن هذا الحقل في النتيجة إلا إذا كان وصف الأعمدة الفرعية مُمكّنًا بواسطة الإعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings#describe_include_subcolumns).
 
 تُوصَف جميع الأعمدة في هياكل البيانات [Nested](/ar/reference/data-types/nested-data-structures/index) كلٌّ على حدة. ويُسبَق اسم كل عمود باسم العمود الأب متبوعًا بنقطة.
 
-لعرض الأعمدة الفرعية الداخلية لأنواع البيانات الأخرى، استخدم الإعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+لعرض الأعمدة الفرعية الداخلية لأنواع البيانات الأخرى، استخدم الإعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings#describe_include_subcolumns).
 
 **مثال**
 
@@ -81,4 +81,4 @@ DESCRIBE (SELECT 1) FORMAT TSV;
 
 **انظر أيضًا**
 
-* إعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings/describe-include#describe_include_subcolumns).
+* إعداد [describe&#95;include&#95;subcolumns](/ar/reference/settings/session-settings#describe_include_subcolumns).

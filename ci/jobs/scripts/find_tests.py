@@ -48,56 +48,6 @@ class Targeting:
     INTEGRATION_JOB_TYPE = "Integration"
     STATELESS_JOB_TYPE = "Stateless"
 
-    # The selected-test sanitizer jobs replace their full-suite counterparts,
-    # so a change to the harness itself must not leave every one of those jobs
-    # with an empty selection. Keep one inexpensive test for each of the
-    # parallel and sequential flavors.
-    STATELESS_HARNESS_SMOKE_TESTS = (
-        "00001_select_1.",
-        "01109_exchange_tables.",
-    )
-
-    # Feature-specific jobs also need to exercise the option that differentiates
-    # them from the ordinary parallel or sequential lanes. Each pair contains a
-    # parallel-safe test followed by a `no-parallel` test; flavor filtering below
-    # retains the one suitable for the current lane.
-    STATELESS_HARNESS_FEATURE_SMOKE_TESTS = {
-        "s3 storage": (
-            "03741_s3_glob_table_path_pushdown.",
-            "02302_s3_file_pruning.",
-        ),
-        "distributed plan": (
-            "04367_distributed_plan_merge_scatter_multishard.",
-            "04648_distributed_plan_task_error_propagation.",
-        ),
-    }
-
-    # Keep this in sync with the functional-test runner inputs in
-    # `common_ft_job_config` and with the selected-test orchestration. A
-    # change here means test selection or the runner configuration changed,
-    # rather than a query test that can be discovered from its path.
-    _STATELESS_HARNESS_PATHS = (
-        ".github/workflows/pull_request.yml",
-        "ci/defs/job_configs.py",
-        "ci/jobs/functional_tests.py",
-        "ci/jobs/scripts/clickhouse_proc.py",
-        "ci/jobs/scripts/find_tests.py",
-        "ci/jobs/scripts/functional_tests_results.py",
-        "ci/jobs/scripts/workflow_hooks/filter_job.py",
-        "ci/jobs/scripts/workflow_hooks/store_data.py",
-        "ci/jobs/scripts/server_cleanup.py",
-        "ci/praktika/info.py",
-        "ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-        "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-        "ci/praktika/cidb.py",
-        "ci/workflows/pull_request.py",
-        "tests/clickhouse-test",
-    )
-    _STATELESS_HARNESS_PATH_PREFIXES = (
-        "ci/docker/stateless-test/",
-        "tests/config/",
-    )
-
     def __init__(self, info: Info):
         self.info = info
         self._cidb = None
@@ -276,41 +226,6 @@ class Targeting:
                 return f"{base_name}{ext}"
         return None
 
-    @classmethod
-    def functional_test_source_file(cls, test_name: str):
-        """Return the stateless test source file name (e.g. `00001_x.sql`) for a
-        test name as used by `clickhouse-test` (`00001_x` or `00001_x.`), or
-        `None` when no such file exists in `tests/queries/0_stateless` - a
-        stateful test, or a test that has since been removed or renamed.
-
-        `clickhouse-test` reports rendered `.sql.j2` tests as `<name>.gen` in
-        failures and as `<name>.gen.sql` in coverage. Normalize those report
-        names to the template base before looking up the source file.
-        """
-        base_name = cls.normalize_stateless_test_name(test_name).rstrip(".")
-        test_dir = Path("tests/queries/0_stateless")
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if (test_dir / f"{base_name}{ext}").is_file():
-                return f"{base_name}{ext}"
-        return None
-
-    @staticmethod
-    def normalize_stateless_test_name(test_name: str) -> str:
-        """Map a rendered `.sql.j2` test name reported by CI to its source name.
-
-        Rendered template tests are recorded as `<name>.gen` by test failures
-        and `<name>.gen.sql` by per-test coverage, whereas `clickhouse-test`
-        selectors match source test names. Keep a trailing dot, used for exact
-        matching of changed tests, intact.
-        """
-        exact = test_name.endswith(".")
-        base_name = test_name.rstrip(".")
-        if base_name.endswith(".gen.sql"):
-            base_name = base_name.removesuffix(".gen.sql")
-        elif base_name.endswith(".gen"):
-            base_name = base_name.removesuffix(".gen")
-        return f"{base_name}." if exact else base_name
-
     @staticmethod
     def is_sequential_functional_test(test_source_file: str) -> bool:
         """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
@@ -345,18 +260,7 @@ class Targeting:
             return False
         return False
 
-    @classmethod
-    def _is_stateless_harness_file(cls, fpath: str) -> bool:
-        return (
-            fpath in cls._STATELESS_HARNESS_PATHS
-            or fpath.startswith(cls._STATELESS_HARNESS_PATH_PREFIXES)
-            or (
-                Path(fpath).parent == Path("tests")
-                and Path(fpath).suffix == ".txt"
-            )
-        )
-
-    def get_changed_tests(self, strict=False, include_harness_smoke=False):
+    def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
         if hasattr(self, '_diff_text') and self._diff_text:
@@ -372,26 +276,8 @@ class Targeting:
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
-        if strict and changed_files is None:
-            raise RuntimeError(
-                "Failed to get changed files required for test selection"
-            )
         if not changed_files:
             return result
-
-        if include_harness_smoke and any(
-            self._is_stateless_harness_file(fpath) for fpath in changed_files
-        ):
-            smoke_tests = list(self.STATELESS_HARNESS_SMOKE_TESTS)
-            job_name = getattr(self.info, "job_name", "").lower()
-            for option, feature_smoke_tests in self.STATELESS_HARNESS_FEATURE_SMOKE_TESTS.items():
-                if option in job_name:
-                    smoke_tests.extend(feature_smoke_tests)
-            print(
-                "Functional-test harness changed; adding deterministic smoke tests: "
-                f"{smoke_tests}"
-            )
-            result.update(smoke_tests)
 
         for fpath in changed_files:
             if not fpath.startswith("tests/queries/0_stateless/"):
@@ -470,40 +356,8 @@ class Targeting:
                     test_name = parts[0]
                     tests.append(test_name)
         print(f"Parsed {len(tests)} test names: {tests}")
-        tests = sorted(set(tests))
-        # A test that failed within the CIDB window (30 days) may have been
-        # deleted or renamed on master since — e.g. a flaky test that was
-        # removed instead of deflaked. Passing its name to clickhouse-test (or
-        # to the integration runner) selects nothing; with no other targeted
-        # tests the run ends with "No tests were run." and exit code 1 (the
-        # same failure mode `PR #104097` fixed for orphan data files). Rerun
-        # only tests that still exist in this checkout.
-        missing = [t for t in tests if not self._test_exists(t)]
-        if missing:
-            print(
-                f"Skipping {len(missing)} previously failed tests that no longer "
-                f"exist in the checkout: {missing}"
-            )
-            tests = [t for t in tests if t not in set(missing)]
-        return tests
-
-    def _test_exists(self, test_name: str) -> bool:
-        """Whether a test name reported by CIDB still resolves to a test in
-        this checkout."""
-        if self.job_type == self.INTEGRATION_JOB_TYPE:
-            # Integration test names look like
-            # `test_storage_kafka/test.py::test_case[param]`; the first path
-            # component is the test directory under `tests/integration/`.
-            test_dir = test_name.split("/", 1)[0].split("::", 1)[0]
-            return (Path("tests/integration") / test_dir).is_dir()
-        # Stateless test names are the base name of a file under
-        # `tests/queries/0_stateless/` with one of the known extensions.
-        test_dir = Path("tests/queries/0_stateless")
-        test_name = self.normalize_stateless_test_name(test_name)
-        return any(
-            (test_dir / f"{test_name}{ext}").is_file()
-            for ext in self._TEST_FILE_EXTENSIONS
-        )
+        tests = list(set(tests))
+        return sorted(tests)
 
     @staticmethod
     def _escape_sql_string(s: str) -> str:
@@ -1913,14 +1767,8 @@ class Targeting:
             for tname, (kw_hits, _kw) in sorted_tests
         ]
 
-    def get_changed_or_new_tests_with_info(
-        self, strict=False, include_harness_smoke=False
-    ):
-        tests = sorted(
-            self.get_changed_tests(
-                strict=strict, include_harness_smoke=include_harness_smoke
-            )
-        )
+    def get_changed_or_new_tests_with_info(self):
+        tests = sorted(self.get_changed_tests())
         info = f"Found {len(tests)} changed or new tests:\n"
         for test in tests[:200]:
             info += f" - {test}\n"
@@ -1930,14 +1778,10 @@ class Targeting:
             info=info,
         )
 
-    def get_previously_failed_tests_with_info(self, strict=False):
+    def get_previously_failed_tests_with_info(self):
         try:
             tests = self.get_previously_failed_tests()
         except Exception as e:
-            if strict:
-                raise RuntimeError(
-                    "Failed to get previously failed tests required for test selection"
-                ) from e
             print(
                 f"WARNING: Failed to get previously failed tests (best effort): {e}",
                 file=sys.stderr,
@@ -2315,7 +2159,7 @@ class Targeting:
             name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
-    def get_all_relevant_tests_with_info(self, include_changed_tests=False):
+    def get_all_relevant_tests_with_info(self):
         # Use a list to preserve insertion order and a seen set to deduplicate.
         # Priority: changed/new tests first, then previously failed, then
         # coverage-ranked tests (most changed lines covered first).
@@ -2325,27 +2169,18 @@ class Targeting:
 
         def add_tests(new_tests):
             for t in new_tests:
-                if self.job_type == self.STATELESS_JOB_TYPE:
-                    t = self.normalize_stateless_test_name(t)
                 if t not in seen:
                     seen.add(t)
                     ranked.append(t)
 
-        # For the targeted check, changed/new tests are left out: they are
-        # already covered by the flaky check, which reruns them many times.
-        # A `selected tests` run (`include_changed_tests`) replaces the full
-        # suite in its job flavor, so there the changed tests must be included -
-        # no other job runs them in that flavor.
-        if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
-            changed_tests, result = self.get_changed_or_new_tests_with_info(
-                strict=True, include_harness_smoke=True
-            )
-            add_tests(changed_tests)
-            results.append(result)
+        # Changed/new tests are already covered by the flaky check — skip them
+        # in the targeted check to avoid duplication.
+        # if self.job_type == self.STATELESS_JOB_TYPE:
+        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
+        #     add_tests(changed_tests)
+        #     results.append(result)
 
-        previously_failed_tests, result = self.get_previously_failed_tests_with_info(
-            strict=include_changed_tests
-        )
+        previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
         results.append(result)
 

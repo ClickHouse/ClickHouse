@@ -54,7 +54,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_database_unity_catalog", 1);
     context->setSetting("allow_database_glue_catalog", 1);
     context->setSetting("allow_database_iceberg", 1);
-    context->setSetting("allow_delta_kernel_rs", 1);
+    context->setSetting("allow_experimental_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
     context->setSetting("allow_experimental_eval_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
@@ -62,8 +62,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_insert_into_iceberg", 1);
-    context->setSetting("allow_experimental_iceberg_compaction", 1);
-    context->setSetting("allow_experimental_cleanup_old_data_files_compaction", 1);
     context->setSetting("allow_iceberg_remove_orphan_files", 1);
     context->setSetting("allow_experimental_expire_snapshots", 1);
     context->setSetting("allow_experimental_delta_lake_writes", 1);

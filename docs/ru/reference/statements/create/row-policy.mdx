@@ -6,90 +6,21 @@ title: 'CREATE ROW POLICY'
 doc_type: 'reference'
 ---
 
-Создаёт [ROW POLICY](/ru/concepts/features/security/access-rights#row-policy-management), то есть фильтр, который определяет, какие строки пользователь может читать из таблицы.
+Создаёт [политику строк](/ru/concepts/features/security/access-rights#row-policy-management), то есть фильтр, который определяет, какие строки пользователь может читать из таблицы.
 
 <Tip>
-  ROW POLICY имеют смысл только для пользователей с доступом только на чтение. Если пользователь может изменять таблицу или копировать партиции между таблицами, это сводит на нет ограничения, задаваемые ROW POLICY.
+  Политики строк имеют смысл только для пользователей с доступом только на чтение. Если пользователь может изменять таблицу или копировать партиции между таблицами, это сводит на нет ограничения, задаваемые политиками строк.
 </Tip>
 
 Синтаксис:
 
 ```sql
--- Multiple names on one table target
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
-    [ON CLUSTER cluster_name]
-    ON { [db.]table | db.* }
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
     [IN access_storage_type]
     [FOR SELECT] USING condition
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-
--- One name on multiple table targets
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
-    [ON CLUSTER cluster_name]
-    ON { [db.]table | db.* } [, ...]
-    [IN access_storage_type]
-    [FOR SELECT] USING condition
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-
--- Mixed packing: each name paired with its own table target
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
-    policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
-    [ON CLUSTER cluster_name]
-    [IN access_storage_type]
-    [FOR SELECT] USING condition
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
-```
-
-`ParserRowPolicyNames` поддерживает **три** формы группировки (не полный декартов продукт):
-
-1. **Несколько имён, одна цель** — `pol1, pol2 ON table1` создаёт каждую указанную политику для одной таблицы (или `db.*`).
-2. **Одно имя, несколько целей** — `pol1 ON table1, table2` создаёт одну и ту же политику с кратким именем для каждой указанной цели.
-3. **Смешанные пары** — `p1 ON t1, p2 ON t2` создаёт каждую политику только для соответствующей ей цели.
-
-Список из нескольких имён **нельзя** объединить со списком из нескольких таблиц после `ON` в одной группе: `p1, p2 ON t1, t2` не принимается. После группы с несколькими именами также нельзя добавить другую разделённую запятыми группу `name ON target` в том же операторе.
-
-Необязательное предложение `ON CLUSTER` применяется ко всему оператору (одно имя кластера). ClickHouse **не** поддерживает отдельное `ON CLUSTER` для каждого имени политики, сгруппированного в одном операторе создания — если политики необходимо создать в разных кластерах, выполните отдельные операторы `CREATE ROW POLICY`.
-
-<div id="multiple-names-and-tables">
-  ## Несколько имён и таблиц
-</div>
-
-Допустимо:
-
-```sql
--- Several policy names, one table
-CREATE ROW POLICY pol1, pol2, pol3 ON table1
-    FOR SELECT USING id = 1
-    TO accountant;
-
--- One policy name, several tables
-CREATE ROW POLICY IF NOT EXISTS pol1 ON table1, table2, table3
-    FOR SELECT USING id = 1
-    TO accountant;
-
--- Mixed packing: different name per table
-CREATE ROW POLICY p4 ON db.table, p5 ON db2.table2
-    USING a = b;
-
--- Same policy on several tables, on a cluster
-CREATE ROW POLICY IF NOT EXISTS pol1 ON CLUSTER replicated_cluster ON table1, table2
-    FOR SELECT USING id = 1
-    TO accountant;
-```
-
-Недопустимо:
-
-```sql
--- Multi-name × multi-table in one ON-group (not a Cartesian product)
-CREATE ROW POLICY p1, p2 ON t1, t2
-    FOR SELECT USING id = 1
-    TO accountant;
-
--- Different clusters per name in one statement
-CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
 <div id="using-clause">
@@ -153,28 +84,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 разрешить пользователю `peter` видеть строки таблицы table1 только при одновременном выполнении условий `b=1` И `c=2`, хотя
 для любой другой таблицы в mydb к пользователю применялась бы только политика `b=1`.
 
-<div id="distributed-and-remote-backed-tables">
-  ## Распределённые таблицы и таблицы с удалённым доступом к данным
-</div>
-
-ROW POLICY фильтрует строки там, где фактически читаются данные таблицы. Таблица, делегирующая чтение удалённым серверам, например таблица [Distributed](/ru/reference/engines/table-engines/special/distributed) или обёртка над ней (например, materialized view с целью `Distributed`), отправляет удалённым серверам только текст запроса и не может применить фильтр политики при удалённом чтении. Чтобы фильтр не был незаметно отброшен, запросы к такой таблице от пользователей, к которым применяется политика, отклоняются с ошибкой `ILLEGAL_PREWHERE`.
-
-Вместо этого определите политику для базовых локальных таблиц на каждом удалённом сервере: она будет применяться там, когда переданный запрос читает эти таблицы:
-
-```sql
--- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
-CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
-```
-
-<Warning>
-  Это работает, пока запрос передаётся в виде текста, что используется по умолчанию. При [`serialize_query_plan = 1`](/ru/reference/settings/session-settings/serialize#serialize_query_plan) инициатор вместо этого передаёт уже сформированный план чтения, а удалённый сервер, выполняющий такой план, не применяет собственные ROW POLICY. Поэтому чтение таблицы `Distributed` через `local_table` возвращает неотфильтрованные строки. Для пользователей, к которым должны применяться ROW POLICY, сохраняйте значение `serialize_query_plan = 0`. См. [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
-</Warning>
-
 <div id="on-cluster-clause">
   ## Предложение ON CLUSTER
 </div>
 
-Позволяет создавать политики строк в кластере, см. [Distributed DDL](/ru/reference/statements/distributed-ddl). Это также удобный способ создать политику для локальных таблиц каждого сервера кластера.
+Позволяет создавать политики строк в кластере, см. [Distributed DDL](/ru/reference/statements/distributed-ddl).
 
 <div id="examples">
   ## Примеры

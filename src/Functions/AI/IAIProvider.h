@@ -7,7 +7,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
-#include <string_view>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ public:
     AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
 
     AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -67,17 +66,6 @@ struct AIRequest
     String function_name;
 };
 
-/// Canonical, provider-independent reason the model stopped generating. Each provider maps its
-/// native vocabulary onto these values.
-enum class FinishReason : UInt8
-{
-    Complete, /// Full answer produced: natural end, a stop sequence, or Anthropic structured-output `tool_use`.
-    Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
-    ContentFilter, /// The provider withheld or filtered the content.
-    RequiresAction, /// Model stopped expecting the caller to act (run a tool / resume the turn), not a final answer
-    Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
-};
-
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
 struct AIResponse
 {
@@ -90,11 +78,9 @@ struct AIResponse
     /// Number of tokens in the generated output, as reported by the provider. Used for quota tracking.
     UInt64 output_tokens = 0;
 
-    /// Canonical reason the model stopped generating, normalized from the provider's native value.
-    FinishReason finish_reason = FinishReason::Complete;
-
-    /// The provider's raw native reason string, kept verbatim for diagnostics in error messages.
-    String raw_finish_reason;
+    /// Why the model stopped generating. Common values: "stop" (natural end),
+    /// "length" (hit max_tokens limit), "end_turn" (Anthropic equivalent of stop).
+    String finish_reason;
 };
 
 /** Parameters for a single AI embedding request.
@@ -153,12 +139,5 @@ public:
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
-
-/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
-String formatProviderError(int status_code, const String & response_body);
-
-/// Replace control characters (including `\t \n \r`) with spaces so provider-controlled text cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception.
-String sanitizeForLog(std::string_view input);
 
 }

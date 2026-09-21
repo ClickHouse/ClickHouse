@@ -4,9 +4,6 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -15,7 +12,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
-#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -226,7 +222,7 @@ void PrettyBlockOutputFormat::writingThread()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     while (!finish)
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
+        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, std::chrono::milliseconds(format_settings.pretty.squash_consecutive_ms))
             || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
         {
             writeMonoChunkIfNeeded();
@@ -890,32 +886,6 @@ void registerOutputFormatPretty(FormatFactory & factory)
                         && (format_settings.pretty.glue_chunks == 1 || (format_settings.pretty.glue_chunks == 2 && format_settings.is_writing_to_terminal));
                     return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
-
-                /// The header (and, for many rows, the footer) column names are written verbatim, so a
-                /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The values are
-                /// written through the plain `serializeText` kind, which writes the `Bool`
-                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). With
-                /// `output_format_pretty_named_tuples_as_json` (on by default), that kind renders a
-                /// named `Tuple` through `SerializationTuple::serializeTextJSONPretty` (the format sets
-                /// `FormatSettings::pretty_format`), which synthesizes JSON object keys from the element
-                /// names - verbatim, and `Pretty` installs no UTF-8 validating buffer at all (see
-                /// `tupleElementNamesMayProduceRawBytesInJSON`). The check mirrors the constructor's
-                /// reset of the JSON sub-settings to their defaults: the user's JSON settings (such as
-                /// `output_format_json_named_tuples_as_objects = 0`) do not turn the element names off
-                /// here, only `output_format_pretty_named_tuples_as_json` does.
-                /// The text framings reject or base64-encode the output in these cases (see
-                /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
-                factory.registerOutputFormatMayProduceRawBytesChecker(
-                    name,
-                    [](const FormatSettings & settings, const Block & header)
-                    {
-                        FormatSettings tuple_settings = settings;
-                        tuple_settings.json = FormatSettings::JSON{};
-                        return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
-                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None)
-                            || (settings.pretty.named_tuples_as_json
-                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false));
-                    });
             }
         }
     }

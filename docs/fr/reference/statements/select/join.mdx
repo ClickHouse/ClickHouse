@@ -51,25 +51,25 @@ D&#39;autres types de jointure disponibles dans ClickHouse sont :
 | `PASTE JOIN`                                        | Effectue une concaténation horizontale de deux tables.                                                                                                              |
 
 <Note>
-  Lorsque [join&#95;algorithm](/fr/reference/settings/session-settings/join#join_algorithm) est défini sur `partial_merge`, `RIGHT JOIN` et `FULL JOIN` sont pris en charge uniquement avec la strictness `ALL` (`SEMI`, `ANTI`, `ANY` et `ASOF` ne sont pas pris en charge).
+  Lorsque [join&#95;algorithm](/fr/reference/settings/session-settings#join_algorithm) est défini sur `partial_merge`, `RIGHT JOIN` et `FULL JOIN` sont pris en charge uniquement avec la strictness `ALL` (`SEMI`, `ANTI`, `ANY` et `ASOF` ne sont pas pris en charge).
 </Note>
 
 <div id="settings">
   ## Paramètres
 </div>
 
-Le type de jointure par défaut peut être remplacé à l’aide du paramètre [`join_default_strictness`](/fr/reference/settings/session-settings/join#join_default_strictness).
+Le type de jointure par défaut peut être remplacé à l’aide du paramètre [`join_default_strictness`](/fr/reference/settings/session-settings#join_default_strictness).
 
-Le comportement du serveur ClickHouse pour les opérations `ANY JOIN` dépend du paramètre [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings/other#any_join_distinct_right_table_keys).
+Le comportement du serveur ClickHouse pour les opérations `ANY JOIN` dépend du paramètre [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings#any_join_distinct_right_table_keys).
 
 **Voir aussi**
 
-* [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm)
-* [`join_any_take_last_row`](/fr/reference/settings/session-settings/join#join_any_take_last_row)
-* [`join_use_nulls`](/fr/reference/settings/session-settings/join#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/fr/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/fr/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/fr/reference/settings/session-settings#join_algorithm)
+* [`join_any_take_last_row`](/fr/reference/settings/session-settings#join_any_take_last_row)
+* [`join_use_nulls`](/fr/reference/settings/session-settings#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/fr/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/fr/reference/settings/session-settings#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/fr/reference/settings/session-settings#any_join_distinct_right_table_keys)
 
 Utilisez le paramètre `cross_to_inner_join_rewrite` pour définir le comportement lorsque ClickHouse ne parvient pas à réécrire un `CROSS JOIN` en `INNER JOIN`. La valeur par défaut est `1`, ce qui permet à la jointure de se poursuivre, mais plus lentement. Définissez `cross_to_inner_join_rewrite` sur `0` si vous voulez qu’une erreur soit générée, et sur `2` pour ne pas exécuter les jointures `CROSS`, mais forcer à la place la réécriture de toutes les jointures par virgule/`CROSS`. Si la réécriture échoue lorsque la valeur est `2`, vous recevrez un message d’erreur indiquant &quot;Please, try to simplify `WHERE` section&quot;.
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## JOIN avec des conditions d’inégalité sur des colonnes de tables différentes
 </div>
 
-ClickHouse prend actuellement en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité. Les conditions d’inégalité sont prises en charge uniquement par les algorithmes de jointure `hash`, `parallel_hash` et `grace_hash`. Une condition de non-équijointure évaluée lors de la jointure ne peut pas contenir `arrayJoin`, car une telle condition doit préserver le nombre de lignes ; une condition qui ne s’applique qu’à un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont extraites avant la jointure et ne sont pas affectées ; une condition `ALL INNER JOIN` non disjonctive n’est pas non plus affectée, car la condition est alors appliquée après la jointure. Lorsque l’expansion ne dépend que d’un seul côté, placez-la dans un `ARRAY JOIN` d’une sous-requête avant la jointure ; une condition dont l’argument `arrayJoin` lit des colonnes des deux côtés doit être restructurée.
+ClickHouse prend actuellement en charge `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` avec des conditions d’inégalité, en plus des conditions d’égalité. Les conditions d’inégalité sont prises en charge uniquement par les algorithmes de jointure `hash` et `grace_hash`. Elles ne sont pas prises en charge avec `join_use_nulls`.
 
 **Exemple**
 
@@ -231,7 +231,7 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## Valeurs NULL et NaN dans les clés de jointure
+  ## Valeurs NULL dans les clés de jointure
 </div>
 
 `NULL` n’est égal à aucune valeur, pas même à lui-même. Cela signifie que si une clé de `JOIN` contient une valeur `NULL` dans une table, elle ne correspondra pas à une valeur `NULL` dans l’autre table.
@@ -285,13 +285,6 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
-
-Les valeurs `NaN` dans les clés de `JOIN` de type flottant ne suivent pas la règle relative à `NULL` ci-dessus.
-La comparaison scalaire de deux valeurs `NaN` (`NaN = NaN`) renvoie `0` ; toutefois, les clés de `JOIN` ne sont pas comparées selon une sémantique scalaire : des clés `NaN` peuvent correspondre.
-Le fait qu’elles correspondent réellement est un détail d’implémentation qui dépend de l’algorithme de jointure, du type de clé et des paramètres de session.
-Ne vous fiez pas à un comportement particulier.
-Si vous voulez vous assurer que les lignes contenant `NaN` ne correspondent pas, mappez-les à des valeurs `NULL` : `ON if(isNaN(A.id), NULL, A.id) = B.id`.
-Dans un `ASOF JOIN`, la colonne de correspondance la plus proche est comparée selon l’ordre, ce que `NaN` ne permet pas ; filtrez ces lignes des deux côtés.
 
 <div id="asof-join-usage">
   ## Utilisation de ASOF JOIN
@@ -472,7 +465,7 @@ renvoie l’ensemble suivant :
   ### Traitement des cellules vides ou NULL
 </div>
 
-Lors d’une jointure entre tables, des cellules vides peuvent apparaître. Le paramètre [join&#95;use&#95;nulls](/fr/reference/settings/session-settings/join#join_use_nulls) définit comment ClickHouse remplit ces cellules.
+Lors d’une jointure entre tables, des cellules vides peuvent apparaître. Le paramètre [join&#95;use&#95;nulls](/fr/reference/settings/session-settings#join_use_nulls) définit comment ClickHouse remplit ces cellules.
 
 Si les clés de `JOIN` sont des champs [Nullable](/fr/reference/data-types/nullable), les lignes pour lesquelles au moins une des clés a la valeur [NULL](/fr/reference/syntax#null) ne sont pas prises en compte dans la jointure.
 
@@ -514,14 +507,14 @@ Si vous avez besoin d’un `JOIN` avec des tables de dimension (des tables relat
   ### Limitations de mémoire
 </div>
 
-Par défaut, ClickHouse utilise l’algorithme de [jointure par hachage](https://en.wikipedia.org/wiki/Hash_join). ClickHouse prend la table de droite et crée une table de hachage en RAM pour celle-ci. Si `join_algorithm = 'auto'` est activé, alors au-delà d’un certain seuil de consommation de mémoire, ClickHouse bascule vers l’algorithme de [jointure par fusion](https://en.wikipedia.org/wiki/Sort-merge_join). Pour une description des algorithmes de jointure, consultez le paramètre [join&#95;algorithm](/fr/reference/settings/session-settings/join#join_algorithm).
+Par défaut, ClickHouse utilise l’algorithme de [jointure par hachage](https://en.wikipedia.org/wiki/Hash_join). ClickHouse prend la table de droite et crée une table de hachage en RAM pour celle-ci. Si `join_algorithm = 'auto'` est activé, alors au-delà d’un certain seuil de consommation de mémoire, ClickHouse bascule vers l’algorithme de [jointure par fusion](https://en.wikipedia.org/wiki/Sort-merge_join). Pour une description des algorithmes de jointure, consultez le paramètre [join&#95;algorithm](/fr/reference/settings/session-settings#join_algorithm).
 
 Si vous devez limiter la consommation de mémoire de l’opération `JOIN`, utilisez les paramètres suivants :
 
-* [max&#95;rows&#95;in&#95;join](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) — Limite le nombre de lignes dans la table de hachage.
-* [max&#95;bytes&#95;in&#95;join](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limite la taille de la table de hachage.
+* [max&#95;rows&#95;in&#95;join](/fr/reference/settings/session-settings#max_rows_in_join) — Limite le nombre de lignes dans la table de hachage.
+* [max&#95;bytes&#95;in&#95;join](/fr/reference/settings/session-settings#max_bytes_in_join) — Limite la taille de la table de hachage.
 
-Lorsque l’une de ces limites est atteinte, ClickHouse se comporte conformément aux instructions du paramètre [join&#95;overflow&#95;mode](/fr/reference/settings/session-settings/join#join_overflow_mode).
+Lorsque l’une de ces limites est atteinte, ClickHouse se comporte conformément aux instructions du paramètre [join&#95;overflow&#95;mode](/fr/reference/settings/session-settings#join_overflow_mode).
 
 <div id="examples">
   ## Exemples

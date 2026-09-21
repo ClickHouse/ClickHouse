@@ -26,7 +26,7 @@ A read-only first pass over a CI failure: turn a single URL into a per-test verd
   comment on the PR. This skill diagnoses; the human decides what to do. Surface findings, do not
   act on them. To read source at the report's commit, use `git show <sha>:<path>` rather than
   checking it out; only fetch/switch after asking the user (see step 4).
-- Use `tmp/investigate/<sha>/` for all working files, never `/tmp` (per CLAUDE.md). The `<sha>` is the first 7 characters of the report commit SHA — one subdirectory per investigation so artifacts from different PRs or branches never collide and you can return to an earlier investigation without re-downloading.
+- Use `tmp/investigate/` for all working files, never `/tmp` (per CLAUDE.md).
 - **Run every `gh` read through `.claude/tools/gh-ro.sh` (same args as `gh`).** It drops a poisoned
   `GH_CONFIG_DIR` — some agent/CI runners set it to a config dir with no working auth, which makes
   raw `gh` fail — and refuses any non-read-only subcommand, so it can never create/close/edit/merge/
@@ -47,10 +47,10 @@ issue links. If `$0` is `.../issues/NNNNN`, read the issue body and extract the 
 ```
 
 Read the issue from the command output — do **not** redirect to a file. A
-`.claude/tools/gh-ro.sh issue view … > tmp/investigate/$SHA/issue.json` redirect is a file write that
+`.claude/tools/gh-ro.sh issue view … > tmp/investigate/issue.json` redirect is a file write that
 rides the wildcard `Bash(.claude/tools/gh-ro.sh:*)` allow (not the hook), so a symlinked
 `tmp`/`tmp/investigate` could land it outside the scratch dir without a prompt. (Step 1 creates
-`tmp/investigate/$SHA`.)
+`tmp/investigate`.)
 
 Bot-generated `flaky test` issues use this body format:
 
@@ -79,7 +79,7 @@ expired, so do not block on them.
 `fetch_ci_report.js` needs `node` on `PATH`. Run these as **separate** commands (not one compound
 block) so each matches an allowed shape under the investigate profile — a combined
 `mkdir … ; if … node …` string matches neither the exact `mkdir` allow nor the node-fetch hook and
-would prompt. Primary inputs (PR/S3) skip step 0, so create the parent working dir first:
+would prompt. Primary inputs (PR/S3) skip step 0, so create the working dir here first:
 
 ```bash
 mkdir -p tmp/investigate
@@ -98,21 +98,9 @@ If `node` is present, fetch the failed tests and their output:
 node .claude/tools/fetch_ci_report.js "$0" --failed --cidb 2>&1
 ```
 
-For a **single HTML report URL** (including `sha=latest`, which resolves to the actual build
-commit) the tool prints a `SHA: <40-hex-sha>` line — read it and set `$SHA` to the first 7
-characters. For a **PR URL** the tool prints a multi-report summary without a `SHA:` line;
-extract `$SHA` from the `?sha=<hex>` query-string parameter in any `🔗 Report:` URL printed in
-the summary, or re-run with `--report N` on the relevant job to get single-report output that
-does print `SHA:`. For a **direct `result_*.json` S3 URL** (e.g. `https://s3.amazonaws.com/clickhouse-test-reports/PRs/111528/<sha>/result_fast_test_arm_darwin.json`) the tool also prints a `SHA:` line extracted from the URL path. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
-working directory:
-
-```bash
-mkdir -p tmp/investigate/$SHA
-```
-
 This prints the failed tests **and their output** straight from the praktika `result_*.json` (no
 copy-paste), with a CIDB link per failed test. Read it from the command output — do **not** add a
-`> tmp/investigate/$SHA/…` redirect (a redirect is a file write the hook won't auto-approve, since it
+`> tmp/investigate/…` redirect (a redirect is a file write the hook won't auto-approve, since it
 can't be made symlink-safe, so it would prompt); the harness persists large output to a file you
 can re-read or `grep`. **If `node` is absent, the fallback depends on the input type:**
 
@@ -125,24 +113,17 @@ can re-read or `grep`. **If `node` is absent, the fallback depends on the input 
   install `node` (or re-run where `node` is on `PATH`).
 
 Per failure the tool prints a `🏷️ labels:` line (CI's non-CIDB labels — the `issue` match link and
-flags like `retry_ok`; see step 2a), the CIDB link, and the **failure reason section** extracted
-from `result.info` as follows: the bash debug-trace section (`.debuglog:` path header or
-`+ [timestamp]` xtrace lines) is stripped entirely as pure noise; then from what remains, up to 40
-lines are shown as **head + tail** (first 20, `--- (N lines omitted) ---`, last 20), so the
-`Reason: ...` at the top of stateless-test output and the `ninja: build stopped` / compiler
-errors at the bottom of build logs are both visible. If the meaningful section is ≤ 40 lines,
-it appears in full. CI's matchers test `Failure reason` against the **whole** `result.info`;
-when the full output matters (e.g. an issue with a `Failure reason:` field deep in the trace),
-drill via the CIDB link or the full artifact (step 4).
+flags like `retry_ok`; see step 2a), the CIDB link, and the **log *tail*** — the last ~30 non-empty
+lines of `result.info`, **not** the full output. CI's matchers test `Failure reason` against the
+**whole** `result.info`, so a `Failure reason` located earlier than the tail will match in CI yet be
+**invisible** here — when mirroring CI's attribution (step 2a) or judging whether a reason string is
+present, do not read a "not in the visible output" as a definitive non-match; drill via the CIDB
+link or the full artifact (step 4) if it matters.
 
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).
 - Record the PR number and the exact failed **test names** as they appear — the names must
   match `checks.test_name` for step 3 (and feed the issue search in step 2).
-- **Job-level failures** are printed as `⚙️ JOB: <job name>` (instead of `❌ FAIL:`). These are
-  synthetic entries — the job name is **not** a real `checks.test_name` value. Skip the
-  `checks.test_name` history lookup in step 3 for them; go directly to step 4 (artifact download)
-  to find the root cause from logs and harness output.
 - Record the **count** of failed tests. The cheap steps (2–3) always run over all of them, but
   a large count changes how step 3 scopes the expensive deep-dive — see "Scope the deep-dive".
 
@@ -606,7 +587,7 @@ first (list reports by running the tool with no `--failed`). This writes a file,
 expected write, and it's the rare artifact-needed path):
 
 ```bash
-node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs "tmp/investigate/$SHA/logs.tar.gz"
+node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs tmp/investigate/ci_logs.tar.gz
 ```
 
 The tool prints the saved path and lists the archive's pytest logs. The compression may be zstd
@@ -616,40 +597,18 @@ absent) is itself a finding; surface it instead of letting the later `grep | jq`
 nothing and look "inconclusive":
 
 ```bash
-tar -xf "tmp/investigate/$SHA/logs.tar.gz" -C "tmp/investigate/$SHA/" ci/tmp/pytest_parallel.jsonl
-test -f "tmp/investigate/$SHA/ci/tmp/pytest_parallel.jsonl" \
+tar -xf tmp/investigate/ci_logs.tar.gz -C tmp/investigate/ ci/tmp/pytest_parallel.jsonl
+test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
-`--binary` prints binary and package URLs (one per line: `clickhouse` executable, `.deb`, `.rpm`).
-**It only works with a concrete `Build (...)` report URL** (`name_1=Build%20(amd_binary)` etc.).
-Test-job report URLs (`name_1=Stateless tests (...)`, `name_1=Fast%20test`, etc.) carry no binary
-artifacts and will exit 1. PR URLs and top-level index URLs also fail fast. To get the binary,
-construct the Build report URL by replacing `name_1=<test-job>` with the build variant you need:
-
-```bash
-# From a test-job report URL, swap name_1 to the build you want:
-BUILD_URL="...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)"
-node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null
-# grab just the executable (basename has no dots):
-node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null | grep -E '/clickhouse(-stripped)?$'
-```
-
-For other artifacts, list available URLs with `--links` and try to find the logs and artifacts
-helping to narrow the issue down. The files alongside this skill describe the layout and
-signal-bearing members for each job family:
-
-- `artifacts-integration.md` — integration tests (`logs.tar.gz` archive structure,
-  `pytest_parallel.jsonl` schema, per-node server logs)
-- `artifacts-stateless.md` — stateless and fast tests (individual log files, `.zst` fetching)
-- `artifacts-stress.md` — stress tests (`clickhouse-server.initial.log`, `fatal.log`,
-  `hung_check.log`, compressed logs)
-- `artifacts-build.md` — build failures (full build log, truncation, tidy vs compiler errors)
+For other artifacts (server logs, core dumps, query masks), list them with `--links` and pull
+the specific URLs you need — `--download-logs` only fetches the one logs bundle.
 
 For an integration-test failure, pull the relevant longrepr:
 
 ```bash
-grep -F -- "<test_name>" "tmp/investigate/$SHA/ci/tmp/pytest_parallel.jsonl" \
+grep -F -- "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   | jq -r 'select((.longrepr // "") != "") | .longrepr'
 ```
 

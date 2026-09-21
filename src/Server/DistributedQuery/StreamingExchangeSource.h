@@ -1,9 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/Epoll.h>
 #include <Common/Logger.h>
-#include <Common/WakeupFd.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Processors/ISource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -25,9 +23,6 @@ public:
         , stream_name(std::move(stream_name_))
         , jwt_token(std::move(jwt_token_))
     {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        wait_events_epoll.add(output_update_wakeup.fd());
-#endif
     }
 
     ~StreamingExchangeSource() override;
@@ -36,10 +31,6 @@ public:
 
     Status prepare() override;
     int schedule() override;
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
-#endif
-    void onUpdatePorts() override;
 
 private:
     void onStart();
@@ -89,17 +80,6 @@ private:
     std::unique_ptr<WriteBufferFromPocoSocket> out;
     size_t rows_read = 0;
     size_t bytes_read = 0;
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    /// Combines the socket and the output-update wakeup into one fd that the executor polls
-    /// while the source waits in `Async`.
-    Epoll wait_events_epoll;
-#endif
-    /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting source
-    /// when its output port is updated - in particular closed by a satisfied `LIMIT`
-    /// downstream; drained in `tryGenerate`.
-    WakeupFd output_update_wakeup;
-
     LoggerPtr log = getLogger("StreamingExchangeSource");
 };
 

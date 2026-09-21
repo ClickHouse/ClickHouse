@@ -205,16 +205,12 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 La planification (`EVERY` ou `AFTER`) est obligatoire : l’instruction remplace *tous* les paramètres d’actualisation d’un seul coup. Toute clause non spécifiée — `RANDOMIZE FOR`, `DEPENDS ON` ou `SETTINGS` — est supprimée ou réinitialisée à sa valeur par défaut. Pour modifier uniquement les paramètres d’actualisation, répétez la planification actuelle.
 
-La commande met à jour sur place la configuration de rafraîchissement de la vue existante, sans recréer la vue matérialisée ni sa table cible, sans effacer les données cibles existantes ni annuler un rafraîchissement déjà en cours. Les lectures continuent de s’effectuer sur la table cible existante pendant la modification de la configuration.
-
-Vous pouvez répéter sans risque la commande avec la même spécification `REFRESH` complète. Veillez à répéter chaque clause qui doit rester configurée, car chaque exécution remplace tous les paramètres de rafraîchissement comme décrit ci-dessus.
-
 ```sql
 -- Change the schedule.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
 -- Change retry settings (schedule must be repeated).
-ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
+ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;

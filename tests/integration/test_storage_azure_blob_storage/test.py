@@ -237,7 +237,7 @@ def test_partition_by(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_write VALUES {values}")
@@ -258,7 +258,7 @@ def test_partition_by_string_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_string_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_string_write VALUES {values}")
@@ -280,7 +280,7 @@ def test_partition_by_const_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')"
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard')"
         f" PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
@@ -825,7 +825,7 @@ def test_partition_by_tf(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', "
-        f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'CSV', 'auto', 'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -845,7 +845,7 @@ def test_filter_using_file(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', 'cont', '{filename}', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
-        f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -1121,12 +1121,6 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
-    node.query("system drop schema cache for hdfs")
-    # The HDFS-scoped drop must not clear the Azure schema cache entries.
-    result = node.query(
-        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_union_schema_inference%'"
-    )
-    assert int(result) == 2
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1484,13 +1478,6 @@ def test_format_detection(cluster):
 
     assert result == expected_result
 
-    node.query("system drop schema cache for hdfs")
-    # The HDFS-scoped drop must not clear the Azure schema cache entries.
-    result = node.query(
-        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_format_detection%'"
-    )
-    assert int(result) > 0
-
     result = azure_query(
         node,
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
@@ -1602,7 +1589,7 @@ def test_write_to_globbed_partitioned_path(cluster):
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
         expect_error="true",
     )
 
@@ -1651,7 +1638,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 42 settings azure_truncate_on_insert=0",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 42 settings azure_truncate_on_insert=0",
         expect_error="true",
     )
 
@@ -1659,7 +1646,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 43 settings azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 43 settings azure_truncate_on_insert=1",
     )
 
     result = azure_query(
@@ -1671,7 +1658,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
     )
 
     result = azure_query(
@@ -1933,131 +1920,3 @@ def test_blob_storage_log_multipart(cluster):
     assert int(r[3]) >= 1, blob_storage_log  # At least one log entry
 
     azure_query(node, "DROP TABLE test_blob_storage_log_multipart")
-
-
-def test_reject_zero_max_blocks_in_multipart_upload(cluster):
-    node = cluster.instances["node"]
-
-    error = node.query_and_get_error(
-        "SELECT 1",
-        settings={"azure_max_blocks_in_multipart_upload": 0},
-    )
-    assert "BAD_ARGUMENTS" in error, error
-    assert "A setting's value has to be greater than 0" in error, error
-
-
-def test_reject_zero_min_upload_part_size(cluster):
-    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/81282:
-    # azure_min_upload_part_size = 0 used to reach BufferAllocationPolicy and trigger
-    # the internal `second_size > 0` assertion on write.
-    node = cluster.instances["node"]
-    azure_query(
-        node,
-        f"CREATE TABLE test_reject_zero_min_upload (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', 'test_reject_zero_min_upload.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
-    )
-
-    error = node.query_and_get_error(
-        "INSERT INTO test_reject_zero_min_upload VALUES (1, 'a')",
-        settings={
-            "azure_min_upload_part_size": 0,
-            "azure_max_upload_part_size": 100,
-            "azure_strict_upload_part_size": 100,
-        },
-    )
-    assert "INVALID_SETTING_VALUE" in error, error
-    assert "azure_min_upload_part_size" in error, error
-
-    azure_query(node, "DROP TABLE test_reject_zero_min_upload")
-
-
-def test_reject_strict_upload_part_size_above_max(cluster):
-    node = cluster.instances["node"]
-    azure_query(
-        node,
-        f"CREATE TABLE test_reject_strict_upload_part_size (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', 'test_reject_strict_upload_part_size.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
-    )
-
-    error = node.query_and_get_error(
-        "INSERT INTO test_reject_strict_upload_part_size VALUES (1, 'a')",
-        settings={
-            "azure_max_upload_part_size": 100,
-            "azure_strict_upload_part_size": 101,
-        },
-    )
-    assert "INVALID_SETTING_VALUE" in error, error
-    assert "azure_strict_upload_part_size" in error, error
-
-    azure_query(node, "DROP TABLE test_reject_strict_upload_part_size")
-
-
-def test_max_blocks_in_multipart_upload_is_enforced(cluster):
-    # azure_max_blocks_in_multipart_upload must be honored by the blob multipart writer:
-    # a write that needs more blocks than allowed fails instead of silently exceeding the limit.
-    node = cluster.instances["node"]
-    azure_query(
-        node,
-        f"CREATE TABLE test_max_blocks_enforced (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', 'test_max_blocks_enforced.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
-    )
-
-    error = node.query_and_get_error(
-        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
-        settings={
-            "azure_max_blocks_in_multipart_upload": 2,
-            "azure_strict_upload_part_size": 100,
-            "azure_max_single_part_upload_size": 100,
-        },
-    )
-    assert "INVALID_CONFIG_PARAMETER" in error, error
-    assert "max_blocks_in_multipart_upload" in error, error
-
-    # The same write succeeds when the limit accommodates the number of blocks.
-    azure_query(
-        node,
-        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
-        settings={
-            "azure_strict_upload_part_size": 100,
-            "azure_max_single_part_upload_size": 100,
-        },
-    )
-    assert (
-        azure_query(node, "SELECT count() FROM test_max_blocks_enforced").strip()
-        == "100"
-    )
-
-    azure_query(node, "DROP TABLE test_max_blocks_enforced")
-
-
-def test_invalid_upload_settings_do_not_affect_reads(cluster):
-    # The multipart upload settings are consumed by the blob multipart writer
-    # (`WriteBufferFromAzureBlobStorage`) only, so they must be validated there and not where
-    # the settings are resolved (`getRequestSettings`). The latter runs before the backend is
-    # chosen and is shared with the ADLS Gen2 / OneLake (`*.fabric.microsoft.com`) endpoints,
-    # whose writes route to `WriteBufferFromAzureDataLakeStorage` and never consult multipart
-    # sizing - and with read-only queries, which never upload anything at all.
-    node = cluster.instances["node"]
-    azure_query(
-        node,
-        f"CREATE TABLE test_reads_with_invalid_upload_settings (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', 'test_reads_with_invalid_upload_settings.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
-    )
-    azure_query(
-        node, "INSERT INTO test_reads_with_invalid_upload_settings VALUES (1, 'a')"
-    )
-
-    invalid_upload_settings = {
-        "azure_min_upload_part_size": 0,
-        "azure_upload_part_size_multiply_factor": 0,
-    }
-    assert (
-        azure_query(
-            node,
-            "SELECT count() FROM test_reads_with_invalid_upload_settings",
-            settings=invalid_upload_settings,
-        ).strip()
-        == "1"
-    )
-
-    azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")

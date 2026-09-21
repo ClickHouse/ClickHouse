@@ -63,7 +63,7 @@ ClickHouse 允许 `IN` 子查询左右两侧的类型不同。
 在这种情况下，它会将右侧的值转换为左侧的类型，
 如同对右侧应用了 [accurateCastOrNull](/zh/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) 函数。
 
-这意味着数据类型将变为 [Nullable](/zh/reference/data-types/nullable)，若转换无法执行，则返回 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default)。
+这意味着数据类型将变为 [Nullable](/zh/reference/data-types/nullable)，若转换无法执行，则返回 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。
 
 **示例**
 
@@ -127,7 +127,7 @@ ORDER BY EventDate ASC
   ## NULL 处理
 </div>
 
-在请求处理过程中，`IN` 运算符认为，与 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default) 进行运算的结果始终为 `0`，无论 `NULL` 位于运算符左侧还是右侧。如果 [transform&#95;null&#95;in = 0](/zh/reference/settings/session-settings/other#transform_null_in)，则任何数据集中都不会包含 `NULL` 值；它们彼此不对应，也无法比较。
+在请求处理过程中，`IN` 运算符认为，与 [NULL](/zh/reference/settings/formats#input_format_null_as_default) 进行运算的结果始终为 `0`，无论 `NULL` 位于运算符左侧还是右侧。如果 [transform&#95;null&#95;in = 0](/zh/reference/settings/session-settings#transform_null_in)，则任何数据集中都不会包含 `NULL` 值；它们彼此不对应，也无法比较。
 
 下面是一个使用 `t_null` 表的示例：
 
@@ -270,7 +270,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
   ### 分布式子查询与 max_rows_in_set
 </div>
 
-你可以使用 [`max_rows_in_set`](/zh/reference/settings/session-settings/max-rows#max_rows_in_set) 和 [`max_bytes_in_set`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_set) 来控制分布式查询期间传输的数据量。
+你可以使用 [`max_rows_in_set`](/zh/reference/settings/session-settings#max_rows_in_set) 和 [`max_bytes_in_set`](/zh/reference/settings/session-settings#max_bytes_in_set) 来控制分布式查询期间传输的数据量。
 
 如果 `GLOBAL IN` 查询返回大量数据，这一点尤为重要。请看下面的 SQL：
 
@@ -278,7 +278,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-如果 `some_predicate` 的选择性不够高，就会返回大量数据并引发性能问题。在这种情况下，最好限制通过网络传输的数据量。另外请注意，[`set_overflow_mode`](/zh/reference/settings/session-settings/other#set_overflow_mode) 默认设置为 `throw`，这意味着当达到这些阈值时会抛出异常。
+如果 `some_predicate` 的选择性不够高，就会返回大量数据并引发性能问题。在这种情况下，最好限制通过网络传输的数据量。另外请注意，[`set_overflow_mode`](/zh/reference/settings/session-settings#set_overflow_mode) 默认设置为 `throw`，这意味着当达到这些阈值时会抛出异常。
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### 分布式子查询与 max_parallel_replicas
@@ -308,4 +308,4 @@ SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 
 如果 `local_table_2` 不满足这些要求，一种变通办法是使用 `GLOBAL IN` 或 `GLOBAL JOIN`。
 
-如果表没有采样键，则可以使用更灵活的 [parallel&#95;replicas&#95;custom&#95;key](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) 选项，从而实现不同且更优的行为。
+如果表没有采样键，则可以使用更灵活的 [parallel&#95;replicas&#95;custom&#95;key](/zh/reference/settings/session-settings#parallel_replicas_custom_key) 选项，从而实现不同且更优的行为。

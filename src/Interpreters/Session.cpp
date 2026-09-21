@@ -13,10 +13,8 @@
 #include <Common/SipHash.h>
 #include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -409,8 +407,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     chassert(!auth_result.user_name.empty());
     prepared_client_info->current_user = auth_result.user_name;
     prepared_client_info->authenticated_user = auth_result.user_name;
-    prepared_client_info->current_address = Poco::Net::SocketAddress(address);
-    prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
+    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
+    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -431,7 +429,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = Poco::Net::SocketAddress(address_);
+        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
 }
@@ -679,11 +677,6 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
     return makeQueryContextImpl(nullptr, &query_client_info);
 }
 
-ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
-{
-    return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
-}
-
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
     // take it from global context, since it outlives the Session and always available.
@@ -691,13 +684,13 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
     return global_context->getSessionLog();
 }
 
-ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached) const
+ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
-    const bool from_session_context = static_cast<bool>(session_context) && !detached;
+    const bool from_session_context = static_cast<bool>(session_context);
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
@@ -717,8 +710,6 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setClientInfo(*client_info_to_move);
     else if (client_info_to_copy && (client_info_to_copy != &getClientInfo()))
         query_context->setClientInfo(*client_info_to_copy);
-    else if (detached && session_context)
-        query_context->setClientInfo(getClientInfo());
 
     /// Copy current user's name and address if it was authenticated after query_client_info was initialized.
     if (prepared_client_info && !prepared_client_info->current_user.empty())
@@ -729,22 +720,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
-    {
         query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-
-        /// A query initiated at this server through an interface that does not report a client
-        /// version (e.g. a raw HTTP request via `curl`, or a MySQL/PostgreSQL client) leaves the
-        /// version at 0.0.0. This server is the real initiator of the query and of any distributed
-        /// sub-query it spawns, so fill the version with this server's version; otherwise remote
-        /// shards treat the initiator as a pre-23.3 server and apply legacy compatibility
-        /// downgrades - in particular disabling the analyzer (see `TCPHandler`) - diverging from the
-        /// initiator, and `RemoteQueryExecutor` now rejects such a zero version outright.
-        const auto & new_client_info = query_context->getClientInfo();
-        if (new_client_info.client_version_major == 0
-            && new_client_info.client_version_minor == 0
-            && new_client_info.client_version_patch == 0)
-            query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-    }
 
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -774,16 +750,6 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
-
-    if (detached && session_context)
-    {
-        query_context->setCurrentRoles(session_context->getCurrentRoles());
-        query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
-        query_context->setSettings(session_context->getSettingsRef());
-        if (const String database = session_context->getCurrentDatabase(); !database.empty())
-            query_context->setCurrentDatabase(database);
-        query_context->addQueryParameters(session_context->getQueryParameters());
-    }
 
     /// Query context is ready.
     query_context_created = true;
