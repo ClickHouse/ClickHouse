@@ -56,6 +56,10 @@ void addExpressionColumnsSelectAccess(
 /// engine: the data it reads is named by its arguments rather than by an object to grant on, and
 /// the instance that would check the access is otherwise built only by the background mutation,
 /// under full access.
+/// A query among its arguments (`view(SELECT ...)`) is analyzed like a subquery. A table function
+/// whose reads depend on the grants of the current user (`ITableFunction::dependsOnCurrentUserGrants`,
+/// e.g. `viewIfPermitted`) is refused with `BAD_ARGUMENTS` at any depth: the background mutation
+/// executes it for no user, so no requirement would preserve the meaning it was checked with.
 ///
 /// An unqualified table is required in `mutated_database` - the database the mutation expression is
 /// qualified with before it is stored, and so the one it is read from - rather than in the session's

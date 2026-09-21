@@ -93,6 +93,17 @@ function check_access()
     fi
 }
 
+# Prints the error a query is refused with (`OK` when it is not), for the cases refused for a reason
+# other than access. Runs as the test's own user when the second argument is `admin`.
+function check_refusal()
+{
+    local client="$CLICKHOUSE_CLIENT"
+    [ "${2:-}" = "admin" ] || client="$client --user $user_name --password password"
+    local output
+    output=$($client -q "$1" 2>&1) && { echo "OK"; return; }
+    echo "$output" | grep -oE "\([A-Z_]+\)$" | head -1
+}
+
 # Prints whether access control rejected the query, for the cases whose mutation cannot run to
 # completion for a reason of its own, where only the access decision is the point.
 function check_not_denied()
@@ -163,10 +174,35 @@ check_access "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) SETTINGS validate_mutation_query = 0"
 echo "-- A read-only table function with no source of its own needs no grant, as in a plain SELECT"
 check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN numbers(2) AND 0 SETTINGS validate_mutation_query = 0"
+# `view(SELECT ...)` carries its query as a bare argument rather than as a parenthesised subquery,
+# and the tables that query reads are read all the same when the mutation runs.
+echo "-- A table function that takes a query reads the tables of that query"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) SETTINGS validate_mutation_query = 0"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM view(SELECT secret FROM secret_tab))) SETTINGS validate_mutation_query = 0"
+check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) SETTINGS validate_mutation_query = 0"
+# What `viewIfPermitted` or `mergeTreeTextIndex` reads is decided by the grants of the user it runs
+# for, and a mutation runs it later, in the background, for no user at all - so there is no grant to
+# require at submission that would keep the meaning it was checked with, and the function is refused
+# in a mutation for every user, as it is in a persisted `CREATE TABLE ... AS`.
+echo "-- A table function whose reads depend on the current user's grants cannot be stored in a mutation, for any user"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32'))) SETTINGS validate_mutation_query = 0"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM view(SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32')))) SETTINGS validate_mutation_query = 0"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tf_tab', 'idx')) SETTINGS validate_mutation_query = 0"
+check_refusal "DELETE FROM tf_tab WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32'))) SETTINGS validate_mutation_query = 0"
+echo "-- Also with validation on, and for a user with every grant"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32')))" admin
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tf_tab', 'idx')) SETTINGS validate_mutation_query = 0" admin
+echo "-- The same query as a plain view is not refused for that user"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM view(SELECT id FROM tf_tab WHERE 0)) SETTINGS validate_mutation_query = 0" admin
 echo "-- With the source grant the same mutations are accepted"
 $CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO $user_name"
 check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv', 'TSV', 'id UInt32') AND 0 SETTINGS validate_mutation_query = 0"
 check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) AND 0 SETTINGS validate_mutation_query = 0"
+echo "-- With SELECT on the table the query of the table function reads, the same mutations are accepted"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_tab TO $user_name"
+check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS validate_mutation_query = 0"
+check_not_denied "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS validate_mutation_query = 0"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $CLICKHOUSE_DATABASE.secret_tab FROM $user_name"
 $CLICKHOUSE_CLIENT -q "DROP TABLE tf_tab SYNC"
 
 # The mutation expression is qualified with the database of the mutated table before it is stored,

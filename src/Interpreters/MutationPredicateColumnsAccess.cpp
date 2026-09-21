@@ -1,6 +1,7 @@
 #include <Interpreters/MutationPredicateColumnsAccess.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/Exception.h>
 #include <Core/Names.h>
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/Context.h>
@@ -37,6 +38,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -200,9 +206,12 @@ public:
         if (!ast)
             return;
 
-        if (const auto * subquery = ast->as<ASTSubquery>())
+        /// A `SELECT` stands bare among the arguments of a table function that takes a query
+        /// (`view(SELECT ...)`) rather than in a parenthesised `ASTSubquery`, and reads its tables all
+        /// the same.
+        if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
         {
-            visitSelectOrUnion(*subquery);
+            visitSelectOrUnion(*ast);
             return;
         }
 
@@ -299,6 +308,19 @@ private:
     {
         if (auto table_function = TableFunctionFactory::instance().tryGet(function.name, context))
         {
+            /// What `viewIfPermitted` or `mergeTreeTextIndex` reads is decided by the grants of the user
+            /// it is executed for, and a mutation executes it later, in the background, for no user at
+            /// all: there is no set of grants to require here under which the stored expression would
+            /// keep the meaning the submitting user was checked with. So it is refused, as it is in a
+            /// persisted `CREATE TABLE ... AS`, at any depth - the veto is reached through the arguments
+            /// of an enclosing table function and through the subqueries of the expression alike.
+            if (table_function->dependsOnCurrentUserGrants())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' cannot be used in a mutation, neither directly nor nested in another table function "
+                    "or in a subquery",
+                    function.name);
+
             for (auto & element : table_function->getRequiredAccessForRead())
                 required_access.emplace_back(std::move(element));
         }
