@@ -247,9 +247,10 @@ SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) cons
 
 SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
 {
-    /// What a table created now would take for each setting its definition leaves out: the server's settings, which
-    /// the creator reads from the global context, and the engine's own defaults for `disk` and `persistent`.
-    const auto & server = context->getGlobalContext()->getSettingsRef();
+    /// What a table created now would take for each setting its definition leaves out: the settings of the context
+    /// that would create it - `registerStorageJoin` reads them from there, so a session that changed one of them
+    /// creates tables with the changed value - and the engine's own defaults for `disk` and `persistent`.
+    const auto & server = context->getSettingsRef();
     auto settings = enumerateServerBackedJoinSettings(
         server,
         {

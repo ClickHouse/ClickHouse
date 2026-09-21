@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/Context.h>
@@ -14,6 +15,14 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool distributed_background_insert_batch;
+    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
+    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
+    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
+}
 
 namespace ErrorCodes
 {
@@ -105,6 +114,20 @@ void DistributedSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void DistributedSettings::applyBackgroundInsertDefaults(const Settings & query_settings)
+{
+    if (!(*impl)[DistributedSetting::background_insert_batch].changed)
+        (*impl)[DistributedSetting::background_insert_batch] = query_settings[Setting::distributed_background_insert_batch];
+    if (!(*impl)[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        (*impl)[DistributedSetting::background_insert_split_batch_on_failure]
+            = query_settings[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!(*impl)[DistributedSetting::background_insert_sleep_time_ms].changed)
+        (*impl)[DistributedSetting::background_insert_sleep_time_ms] = query_settings[Setting::distributed_background_insert_sleep_time_ms];
+    if (!(*impl)[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        (*impl)[DistributedSetting::background_insert_max_sleep_time_ms]
+            = query_settings[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
@@ -114,7 +137,18 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
 {
     /// The `distributed` config section is applied to these, so they can differ from the compiled
     /// defaults, and this is the instance a new table starts from.
-    return context->getDistributedSettings().enumerateSettings();
+    auto settings = context->getDistributedSettings();
+    settings.applyBackgroundInsertDefaults(context->getSettingsRef());
+
+    auto described = settings.enumerateSettings();
+    /// Filling a setting marks it changed even where it assigned the value it already had, and nothing records
+    /// an origin for it - a core setting is not one of the sources the column names. So for those the changed
+    /// bit says nothing and the value decides: whatever set a value other than the default, it was not the
+    /// default. A setting the `distributed` config section assigned keeps the source it recorded.
+    for (auto & one : described)
+        if (one.origin == SettingOrigin::Other && one.value == one.default_value)
+            one.origin = SettingOrigin::Default;
+    return described;
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)

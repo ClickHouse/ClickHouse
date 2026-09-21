@@ -2000,16 +2000,7 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
     }
 
     /// Set default values from the distributed_background_insert_* global context settings.
-    if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
-        distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-    if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
-        distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
-            = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-    if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-    if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
-            = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+    distributed_settings.applyBackgroundInsertDefaults(context->getSettingsRef());
 }
 
 void registerStorageDistributed(StorageFactory & factory);

@@ -1,0 +1,4 @@
+join_use_nulls	0
+join_use_nulls	1
+background_insert_batch	0	0
+background_insert_batch	1	1	other
