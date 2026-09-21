@@ -231,7 +231,7 @@ bool collectPivotSourceColumns(
     if (node->as<ASTAsterisk>() || node->as<ASTQualifiedAsterisk>())
         return true;
 
-    if (const auto * function = node->as<ASTFunction>())
+    if (auto * function = node->as<ASTFunction>())
     {
         if (function->isLambdaFunction() || equalsCaseInsensitive(function->name, "lambda"))
             return false;
