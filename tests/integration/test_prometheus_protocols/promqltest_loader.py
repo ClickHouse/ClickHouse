@@ -86,6 +86,7 @@ class EvalCase:
     end_s: float = 0.0
     step_s: float = 0.0
     expect_fail: bool = False
+    expect_fail_diagnostic: bool = False
     expect_ordered: bool = False
     expect_string: Optional[str] = None
     expect_range_vector: bool = False
@@ -108,6 +109,8 @@ class EvalCase:
             return "string_literal"
         if self.expect_range_vector:
             return "range_vector_instant"
+        if self.expect_fail_diagnostic:
+            return "expect_fail_diagnostic"
         if self.annotation_asserts:
             return "annotation_assertion"
         query_names = set(_METRIC_NAME_RE.findall(self.expr))
@@ -499,6 +502,8 @@ def parse_test_file(path: Path) -> list[Scenario]:
             body = stripped[len("expect ") :].strip()
             if body.startswith("fail"):
                 pending_eval.expect_fail = True
+                if body[len("fail") :].strip():
+                    pending_eval.expect_fail_diagnostic = True
             elif body.startswith("ordered"):
                 pending_eval.expect_ordered = True
             elif body.startswith("string "):
@@ -847,6 +852,7 @@ def classify_eval(case: EvalCase) -> Optional[str]:
     if reason in {
         "string_literal",
         "range_vector_instant",
+        "expect_fail_diagnostic",
         "annotation_assertion",
         "start_timestamp",
     }:

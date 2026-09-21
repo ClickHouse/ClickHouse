@@ -62,6 +62,9 @@ def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
         eval instant at 0 label_replace(http_requests, "~invalid", "", "src", "(.*)")
             expect fail
 
+        eval instant at 0 dup_metric + on() dup_metric
+            expect fail msg: vector cannot contain metrics with the same labelset
+
         eval instant at 50m resets(http_requests_histogram[6m])
             {path="/foo"} 0
 
@@ -83,7 +86,13 @@ def test_parse_sort_ordered_and_trig_and_fail(tmp_path: Path):
     assert any("present_over_time" in expr for expr in by_expr)
     assert by_expr["http_requests"].exclusion_reason() == "annotation_assertion"
     assert loader.classify_eval(by_expr["http_requests"]) == "excluded_assertion"
-    assert by_expr['label_replace(http_requests, "~invalid", "", "src", "(.*)")'].expect_fail
+    bare_fail = by_expr['label_replace(http_requests, "~invalid", "", "src", "(.*)")']
+    assert bare_fail.expect_fail
+    assert bare_fail.exclusion_reason() is None
+    msg_fail = by_expr["dup_metric + on() dup_metric"]
+    assert msg_fail.expect_fail
+    assert msg_fail.exclusion_reason() == "expect_fail_diagnostic"
+    assert loader.classify_eval(msg_fail) == "excluded_assertion"
     hist = [ev for ev in evals if ev.expr.startswith("resets(http_requests_histogram")]
     assert hist[-1].exclusion_reason() is not None
     assert loader.classify_eval(hist[-1]) == "excluded_native_histogram"
