@@ -36,18 +36,18 @@ INSERT INTO t_autopr_stats_key SELECT number, number % 7, repeat('x', 200) FROM 
 
 -- Empty cache: collects.
 SELECT k, narrow FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05227_query_0_narrow_first';
+    SETTINGS log_comment='05234_query_0_narrow_first';
 
 -- The same query again: reuses what query 0 left behind, so it collects nothing. This is the half
 -- that must keep working - the point is not to key every query separately.
 SELECT k, narrow FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05227_query_1_narrow_again';
+    SETTINGS log_comment='05234_query_1_narrow_again';
 
 -- Same table, same ranges, same shape, one different column - and `wide` is a two-hundred-byte
 -- string where `narrow` is one byte. Reusing query 0's entry here would price this query at a
 -- fraction of what it really reads, so it has to collect its own.
 SELECT k, wide FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05227_query_2_wide';
+    SETTINGS log_comment='05234_query_2_wide';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
@@ -56,7 +56,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment AS query, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS collected_own_statistics
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
-  AND (current_database = currentDatabase()) AND (log_comment LIKE '05227_query_%') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND (log_comment LIKE '05234_query_%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 
