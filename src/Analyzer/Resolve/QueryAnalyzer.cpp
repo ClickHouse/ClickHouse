@@ -6817,7 +6817,28 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    if (query_node_typed.isPivotRewrite())
+    bool is_pivot_rewrite = query_node_typed.isPivotRewrite();
+    if (!is_pivot_rewrite)
+    {
+        /// A generated PIVOT query can reach the analyzer through a nested table expression
+        /// before its query-tree marker is propagated. Keep the AST marker as a fallback for
+        /// that path; the query-tree flag remains the normal path.
+        const IAST * original_ast = query_node_typed.getOriginalAST().get();
+        if (const auto * subquery = original_ast ? original_ast->as<ASTSubquery>() : nullptr)
+        {
+            if (!subquery->children.empty())
+                original_ast = subquery->children[0].get();
+        }
+        if (const auto * union_query = original_ast ? original_ast->as<ASTSelectWithUnionQuery>() : nullptr)
+        {
+            if (union_query->list_of_selects && union_query->list_of_selects->children.size() == 1)
+                original_ast = union_query->list_of_selects->children[0].get();
+        }
+        is_pivot_rewrite = original_ast && original_ast->as<ASTSelectQuery>()
+            && original_ast->as<ASTSelectQuery>()->is_pivot_rewrite;
+    }
+
+    if (is_pivot_rewrite)
     {
         std::unordered_set<String> output_names;
         output_names.reserve(projection_columns.size());
@@ -6829,6 +6850,43 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     ErrorCodes::AMBIGUOUS_COLUMN_NAME,
                     "PIVOT produces duplicate output column '{}'. Choose a different PIVOT value or aggregate alias",
                     column.name);
+        }
+
+        if (query_node_typed.getProjection().getNodes().size() == projection_columns.size())
+        {
+            std::unordered_set<String> unaliased_output_names;
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                const auto & projection_node = query_node_typed.getProjection().getNodes()[i];
+                LOG_WARNING(getLogger("QueryAnalyzer"),
+                    "PIVOT collision debug: node={}, alias={}, projection_name={}, column_name={}",
+                    projection_node->formatASTForErrorMessage(),
+                    projection_node->getAlias(),
+                    projection_columns[i].name,
+                    projection_node->as<ColumnNode>() ? projection_node->as<ColumnNode>()->getColumnName() : "");
+
+                if (projection_node->getAlias().empty())
+                {
+                    if (const auto * column = projection_node->as<ColumnNode>())
+                        unaliased_output_names.emplace(column->getColumnName());
+                    else
+                        unaliased_output_names.emplace(projection_columns[i].name);
+                }
+            }
+
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                const auto & alias = query_node_typed.getProjection().getNodes()[i]->getAlias();
+                LOG_WARNING(getLogger("QueryAnalyzer"),
+                    "PIVOT collision debug: checking alias={}, unaliased_match={}",
+                    alias,
+                    unaliased_output_names.contains(alias));
+                if (!alias.empty() && unaliased_output_names.contains(alias))
+                    throw Exception(
+                        ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                        "PIVOT produces duplicate output column '{}'. Choose a different PIVOT value or aggregate alias",
+                        alias);
+            }
         }
     }
 
