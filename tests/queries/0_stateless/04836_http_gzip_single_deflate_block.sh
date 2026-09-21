@@ -76,7 +76,8 @@ for _ in {1..60}; do
     landed=$(${CLICKHOUSE_CLIENT} --query "
         SELECT countIf(query_id = '${qid_multi}') = 1 AND countIf(query_id = '${qid_single}') = 1
         FROM system.query_log
-        WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")
+        WHERE query_id IN ('${qid_multi}', '${qid_single}')
+            AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")
     [ "$landed" = "1" ] && break
     sleep 0.5
 done
@@ -87,7 +88,8 @@ read -r MULTI_US SINGLE_US <<< "$(${CLICKHOUSE_CLIENT} --query "
         sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_multi}'),
         sumIf(ProfileEvents['UserTimeMicroseconds'], query_id = '${qid_single}')
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")"
+    WHERE query_id IN ('${qid_multi}', '${qid_single}')
+        AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()")"
 
 # Both counters must be nonzero, so that a measurement that went missing cannot read as success.
 if (( MULTI_US == 0 || SINGLE_US == 0 || SINGLE_US > MULTI_US * 10 )); then
