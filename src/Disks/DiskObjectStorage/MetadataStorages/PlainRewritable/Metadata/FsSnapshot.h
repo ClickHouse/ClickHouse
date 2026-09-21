@@ -20,6 +20,8 @@ struct FileRemoteInfo
 {
     size_t bytes_size;
     time_t last_modified;
+
+    bool operator==(const FileRemoteInfo &) const = default;
 };
 
 struct DirectoryRemoteInfo
@@ -28,6 +30,8 @@ struct DirectoryRemoteInfo
     std::string etag;
     time_t last_modified = 0;
     std::unordered_map<std::string, FileRemoteInfo> files;
+
+    bool operator==(const DirectoryRemoteInfo &) const = default;
 };
 
 struct FsNode : public std::enable_shared_from_this<FsNode>
@@ -46,6 +50,8 @@ public:
     /// Directory Write Methods
 
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
+    /// Records the new ETag and modification time of `prefix.path` after it was rewritten by a move.
+    void updateDirectoryObjectMetadata(const std::string & path, const std::string & etag, time_t last_modified);
     void moveDirectory(const std::string & from, const std::string & to);
     void removeDirectory(const std::string & path);
 

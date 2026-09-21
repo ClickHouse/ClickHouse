@@ -213,7 +213,11 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
 
-        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix);
+        PlainRewritableSnapshotSettings snapshot_settings;
+        snapshot_settings.enabled = config.getBool(config_prefix + ".metadata_snapshot_enabled", snapshot_settings.enabled);
+        snapshot_settings.write_delay_ms = config.getUInt64(config_prefix + ".metadata_snapshot_write_delay_ms", snapshot_settings.write_delay_ms);
+
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix, snapshot_settings);
     });
 }
 

@@ -13,6 +13,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/scope_guard.h>
 
@@ -36,6 +37,8 @@ public:
         {
             ServerUUID::setRandomForUnitTests();
             getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+            /// The metadata storage writes snapshots of its state in a task of the schedule pool of the global context.
+            getContext();
             initialized = true;
         }
     }
@@ -146,6 +149,8 @@ static std::vector<std::string> sorted(std::vector<std::string> array)
     return array;
 }
 
+/// All objects of the disk except the snapshot of the metadata (`__meta/snapshot.bin`): it is a derived copy of
+/// the state, rewritten after every commit, and the tests check the layout of the data and the `prefix.path` objects.
 static std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
@@ -154,6 +159,7 @@ static std::vector<std::string> listAllBlobs(std::string test)
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
+                    | std::views::filter([](const std::string & path) { return !path.ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
                     | std::ranges::to<std::vector<std::string>>());
 }
 

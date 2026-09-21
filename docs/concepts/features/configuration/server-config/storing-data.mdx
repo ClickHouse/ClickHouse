@@ -447,6 +447,43 @@ is equal to
 Starting from `24.5` it is possible to configure any object storage disk 
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
 
+#### Metadata snapshot {#plain-rewritable-metadata-snapshot}
+
+The metadata of a `plain_rewritable` disk is stored in the object storage as a
+`prefix.path` object per directory. Building the in-memory state from these
+objects requires listing the metadata directory, reading every `prefix.path`
+and listing every directory, which is tens of thousands of requests even for a
+disk with a single table.
+
+To speed this up, the disk that writes the data also writes a compact
+snapshot of the whole state to `__meta/snapshot.bin` (a versioned binary
+format compressed with `ZSTD`). On startup, the writer reads the snapshot and
+reconciles it with a listing of the metadata directory, so only the
+directories changed after the snapshot are loaded from the object storage. A
+read-only disk pointing to the same location (`readonly` set to `true`) reads
+the snapshot on startup and on every periodic refresh (see the `MergeTree`
+setting `refresh_parts_interval`), and skips the refresh when the ETag of the
+snapshot did not change. The snapshot describes the state at the moment it was
+written, so a read-only disk can lag behind the writer by the write delay.
+
+| Setting                             | Description                                                                                                                                                                                                                  | Default |
+|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable) and prefer it over listing the object storage when loading the state.                                                                              | `true`  |
+| `metadata_snapshot_write_delay_ms`  | `0` rewrites the snapshot right after every modification. A larger value rewrites it in the background, not more often than the given number of milliseconds, as long as there were modifications. The snapshot is also written on server shutdown. | `0`     |
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+The events `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotUnchanged`,
+`DiskPlainRewritableSnapshotWritten` and `DiskPlainRewritableSnapshotWriteFailed` in
+[system.events](/reference/system-tables/events) show how the snapshot is used.
+
 ### Using Azure Blob Storage {#azure-blob-storage}
 
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) 

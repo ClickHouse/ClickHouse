@@ -842,6 +842,10 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotRead, "Number of times the state of a 'plain_rewritable' disk was loaded from the snapshot file instead of listing the object storage.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotUnchanged, "Number of times a refresh of a 'plain_rewritable' disk was skipped because the ETag of the snapshot file did not change.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotWritten, "Number of snapshot files written by 'plain_rewritable' disks.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotWriteFailed, "Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).", ValueType::Number) \
     M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
     \
     M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \

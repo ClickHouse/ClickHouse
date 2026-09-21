@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_snapshot_readonly>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://minio1:9001/root/data/snapshot/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <readonly>true</readonly>
+            </disk_snapshot_readonly>
+        </disks>
+        <policies>
+            <snapshot_readonly>
+                <volumes>
+                    <main>
+                        <disk>disk_snapshot_readonly</disk>
+                    </main>
+                </volumes>
+            </snapshot_readonly>
+        </policies>
+    </storage_configuration>
+</clickhouse>
