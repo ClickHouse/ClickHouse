@@ -31,7 +31,17 @@ static std::pair<Array, bool> parseTimeseriesExtrapolatedParameters(
     else
         exact_rate = settings && (*settings)[Setting::promql_exact_rate];
 
-    return {parameters, exact_rate};
+    /// The mode changes both the result and the serialized state, so it has to belong to the
+    /// function's identity rather than to the session. `getStateType()` is built from these
+    /// parameters and is what `haveSameStateRepresentation` compares before merging two states, so
+    /// resolving the setting here is what stops a state built under `promql_exact_rate = 1` from
+    /// being merged by a function built under the default. Appending only when the mode is on
+    /// leaves the default spelling, and every state already written, unchanged.
+    Array resolved_parameters = parameters;
+    if (exact_rate && resolved_parameters.size() == 4)
+        resolved_parameters.push_back(Field(UInt64(1)));
+
+    return {resolved_parameters, exact_rate};
 }
 
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory);

@@ -63,3 +63,30 @@ SELECT timeSeriesRateToGridMerge(120, 120, 1, 40, 1)(rate_state) FROM t_promql_e
 
 DROP TABLE t_promql_exact_rate_state;
 
+SELECT '--- the mode belongs to the state type, not to the session ---';
+-- The coverage above always spells `exact_rate` as the fifth parameter. When it comes from the
+-- setting instead, the mode has to end up in the parameter list all the same: `getStateType()` is
+-- built from those parameters and is what `haveSameStateRepresentation` compares. Otherwise a state
+-- built under `promql_exact_rate = 1` and a function built under the default share one type name,
+-- the merge accepts the state, and it finalizes with extrapolating semantics.
+SELECT
+    (SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64))) SETTINGS promql_exact_rate = 1)
+    != (SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64))) SETTINGS promql_exact_rate = 0)
+    AS mode_is_part_of_the_state_type;
+
+-- The default spelling keeps the type it has always had, so states already written stay readable.
+SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64))) SETTINGS promql_exact_rate = 0;
+
+DROP TABLE IF EXISTS t_exact_rate_setting_state;
+SET promql_exact_rate = 1;
+CREATE TABLE t_exact_rate_setting_state ENGINE = Memory AS
+    SELECT timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) AS rate_state;
+
+SET promql_exact_rate = 0;
+-- The state keeps its own mode when finalized directly, and a default-mode merge has to refuse it
+-- rather than answer [0.5].
+SELECT finalizeAggregation(rate_state) FROM t_exact_rate_setting_state;
+SELECT timeSeriesRateToGridMerge(120, 120, 1, 40)(rate_state) FROM t_exact_rate_setting_state; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+DROP TABLE t_exact_rate_setting_state;
+

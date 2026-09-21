@@ -34,3 +34,7 @@
 [0.25]
 [10]
 [0.25]
+--- the mode belongs to the state type, not to the session ---
+1
+AggregateFunction(timeSeriesRateToGrid(120, 120, 1, 40), Array(UInt32), Array(Float64))
+[0.25]
