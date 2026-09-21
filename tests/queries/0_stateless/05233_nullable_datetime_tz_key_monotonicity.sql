@@ -1,6 +1,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/121179
--- Date-part predicates on a Nullable(DateTime('tz')) ORDER BY key used to prune granules with the
--- session time zone instead of the time zone attached to the key type, silently dropping rows.
+-- Date-part predicates on a `DateTime`/`DateTime64` ORDER BY key that carries a time zone used to
+-- prune granules with the session time zone instead of the key type's own, silently dropping rows.
+-- `toHour` and `toDayOfMonth` go through `IFunctionDateOrDateTime`, which cast the OUTER type, so only
+-- the `Nullable`/`LowCardinality(Nullable)` carriers were affected. `toDayOfWeek` goes through
+-- `IFunctionCustomWeek`, which performed no time zone lookup at all, so even a plain non-nullable
+-- `DateTime('tz')` key was affected -- which is why the plain control passes above and fails below.
 
 SET session_timezone = 'UTC';
 SET allow_suspicious_low_cardinality_types = 1;
