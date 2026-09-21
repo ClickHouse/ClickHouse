@@ -128,3 +128,18 @@ SELECT a < b, a <= b, a > b, a >= b, a = b, a != b;
 SELECT
     exponentialTimeDecaying(10)(1, toFloat64(0))
     < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+
+-- The UInt64 ordering key intentionally merges neighboring Float64 unit timestamps
+-- that differ only in the discarded low-order bit. Comparison and hashing must
+-- use the same key.
+WITH
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 1) AS t1,
+    reinterpretAsFloat64(reinterpretAsUInt64(toFloat64(1)) + 2) AS t2,
+    exponentialTimeDecaying(1)(1., t1) AS a,
+    exponentialTimeDecaying(1)(1., t2) AS b
+SELECT
+    a = b,
+    a < b,
+    a > b,
+    cityHash64(a) = cityHash64(b);
+
