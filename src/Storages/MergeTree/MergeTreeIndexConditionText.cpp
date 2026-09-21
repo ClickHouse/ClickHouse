@@ -2081,7 +2081,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         {
             auto map_values_name = fmt::format("mapValues({})", node.isFunction()
                 ? node.toFunctionNode().getArgumentAt(0).getColumnName()
-                : tryParseMapSubcolumnName(node.getColumnName())->first);
+                : tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns)->first);
             if (header.has(map_values_name))
                 indexed_type = header.getByName(map_values_name).type;
             indexed_map_element = true;
