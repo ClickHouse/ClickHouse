@@ -47,6 +47,20 @@ INSERT INTO t_roaring_tz SELECT toDateTime('2026-01-01 00:00:00', 'America/New_Y
 SELECT count() FROM t_roaring_tz WHERE toDayOfMonth(dt) IN (1, 3);
 DROP TABLE t_roaring_tz;
 
+SELECT '--- UInt64 ids on both sides of the 32-bit bucket boundary ---';
+-- `Roaring64Map` keeps one 32-bit bitmap per high word, so everything above only exercises bucket 0.
+-- These ids sit in three different buckets and the ranges below cross the 2^32 seam.
+DROP TABLE IF EXISTS t_roaring_wide;
+CREATE TABLE t_roaring_wide (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2;
+INSERT INTO t_roaring_wide VALUES (5), (4294967290), (4294967296), (4294967300), (8589934592), (8589934596);
+
+-- one member per bucket
+SELECT id FROM t_roaring_wide WHERE id IN (5, 4294967296, 8589934592) ORDER BY id;
+-- a set that straddles the seam
+SELECT id FROM t_roaring_wide WHERE id IN (4294967290, 4294967300) ORDER BY id;
+-- a member that is absent, on the far side of the seam
+SELECT count() FROM t_roaring_wide WHERE id IN (4294967295, 8589934595);
+
 SELECT '--- Compound key: set column is not the leading key column ---';
 -- The sparse primary-key decomposition can hand the set index an inverted range for a
 -- non-leading key column. An inverted range is empty, so the fast path has to prune the

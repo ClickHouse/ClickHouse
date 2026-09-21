@@ -47,6 +47,13 @@
 20
 --- Transformed key: toDayOfMonth with timezone and Nullable ---
 4
+--- UInt64 ids on both sides of the 32-bit bucket boundary ---
+5
+4294967296
+8589934592
+4294967290
+4294967300
+0
 --- Compound key: set column is not the leading key column ---
 Granules: 11/24
 80000
