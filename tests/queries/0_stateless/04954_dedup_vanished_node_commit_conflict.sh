@@ -43,8 +43,8 @@ locked()
 
 # The drop has to remove the node after the commit was rejected and before the resolution reads it.
 # Both bounds come from the server clock: the rejection proves the node was still there, and the
-# removal is confirmed less than DELAY_MS later. An attempt that misses either proves nothing rather
-# than failing, so it is retried on a fresh table; a dropped row is reported at once.
+# removal is confirmed less than DELAY_MS later. Only both bounds together tell a dropped row from an
+# insert Keeper deduplicated legitimately, so an attempt that misses either is retried, not failed.
 for attempt in {1..5}; do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS t_04954 SYNC;

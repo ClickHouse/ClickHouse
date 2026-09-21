@@ -34,8 +34,8 @@ conflicted()
 
 # The drop has to remove the node after the insert conflicted on it and before the resolution reads
 # it. The first bound is the log entry above; the second holds because the node is confirmed gone
-# less than DELAY_MS after the insert started. An attempt that misses either proves nothing rather
-# than failing, so it is retried on a fresh table; a dropped row is reported at once.
+# less than DELAY_MS after the insert started. Only both bounds together tell a dropped row from an
+# insert Keeper deduplicated legitimately, so an attempt that misses either is retried, not failed.
 for attempt in {1..5}; do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS t_04953 SYNC;
