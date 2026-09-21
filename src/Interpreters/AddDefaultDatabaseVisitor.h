@@ -166,6 +166,13 @@ private:
     /// `Scope::settings_context` of the full traversal. Null outside `visitTableExpressions`.
     mutable ContextPtr table_expressions_settings_context;
     mutable std::unordered_set<String> expression_aliases;
+    /// The expression aliases declared by the `WITH` clauses of the enclosing `SELECT`s - `WITH [7] AS a`
+    /// rather than `WITH a AS (SELECT ...)`. Unlike the other aliases of a `SELECT`, which
+    /// `expression_aliases` holds and which the analyzer does not let out of their own `SELECT`, these
+    /// stay visible in the nested `SELECT`s, so a name that refers to one there is not a table name
+    /// either. A nested `SELECT` that turns `enable_global_with_statement` off stops inheriting them,
+    /// exactly as it stops inheriting the common table expressions. Both passes maintain this.
+    mutable std::unordered_set<String> with_expression_aliases;
 
     /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
     struct Scope
@@ -343,6 +350,29 @@ private:
         return it != with_aliases.end() && it->second > 0;
     }
 
+    /// Whether `name` is an alias of an expression rather than a table name: one declared by the
+    /// current `SELECT` anywhere, or one declared by the `WITH` clause of a `SELECT` this one inherits from.
+    bool isExpressionAliasVisible(const String & name) const
+    {
+        return expression_aliases.contains(name) || with_expression_aliases.contains(name);
+    }
+
+    /// The expression aliases declared by the `WITH` clause of `select`, added to the visible ones.
+    void registerWithExpressionAliases(const ASTSelectQuery & select) const
+    {
+        const ASTPtr with = select.with();
+        if (!with)
+            return;
+
+        for (const auto & child : with->children)
+        {
+            if (child->as<ASTWithElement>())
+                continue;
+            if (String alias = child->tryGetAlias(); !alias.empty())
+                with_expression_aliases.insert(std::move(alias));
+        }
+    }
+
     /// Hides the innermost declaration of `name` for as long as it lives.
     struct MaskedWithAlias
     {
@@ -414,8 +444,13 @@ private:
             auto enclosing_settings_context = std::exchange(table_expressions_settings_context, settings_context);
 
             auto enclosing_with_aliases = with_aliases;
+            auto enclosing_with_expression_aliases = with_expression_aliases;
             if (!inherit_from_outer)
+            {
                 with_aliases.clear();
+                with_expression_aliases.clear();
+            }
+            registerWithExpressionAliases(*select);
             /// Every name of the list is bound before any body is walked, as `QueryAnalyzer` does,
             /// so an element may reference a later one.
             const ASTPtr with = select->with();
@@ -457,6 +492,7 @@ private:
 
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
+            with_expression_aliases = std::move(enclosing_with_expression_aliases);
             table_expressions_settings_context = std::move(enclosing_settings_context);
             return;
         }
@@ -513,7 +549,7 @@ private:
                 /// when the view is called, a temporary table has no database, and an alias of an
                 /// expression is not a table name at all.
                 if (!identifier->compound() && !identifier->isParam()
-                    && !external_tables.contains(identifier->name()) && !expression_aliases.contains(identifier->name()))
+                    && !external_tables.contains(identifier->name()) && !isExpressionAliasVisible(identifier->name()))
                 {
                     arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
                 }
@@ -567,7 +603,7 @@ private:
                 /// Unless it is an alias of an expression defined elsewhere in the query -
                 /// then it is not a table name and must not be qualified with the database,
                 /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
-                if (expression_aliases.contains(identifier->name()))
+                if (isExpressionAliasVisible(identifier->name()))
                     return;
 
                 if (auto maybe_table_identifier = identifier->createTable())
@@ -605,6 +641,13 @@ private:
         expression_aliases.clear();
         for (const auto & child : select.children)
             collectAliases(child);
+
+        /// An expression alias of a `WITH` clause outlives its own `SELECT`, so it is kept apart and
+        /// inherited by the nested ones under the same condition as a common table expression's name.
+        auto enclosing_with_expression_aliases = with_expression_aliases;
+        if (!scope.inherit_from_outer)
+            with_expression_aliases.clear();
+        registerWithExpressionAliases(select);
 
         const ASTPtr with = select.with();
         if (with)
@@ -647,6 +690,7 @@ private:
         }
 
         expression_aliases = std::move(enclosing_query_aliases);
+        with_expression_aliases = std::move(enclosing_with_expression_aliases);
     }
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:
@@ -839,7 +883,7 @@ private:
                             /// e.g. `SELECT 'foo' AS object WHERE (object IN (('foo', 'bar') AS objects)) AND object IN objects`.
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
-                            if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
+                            if (!identifier->as<ASTTableIdentifier>() && isExpressionAliasVisible(identifier->name()))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
