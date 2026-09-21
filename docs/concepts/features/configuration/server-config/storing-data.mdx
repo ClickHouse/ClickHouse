@@ -470,12 +470,14 @@ with the keys of the objects storing them, so that a file can refer to an object
 stored under the prefix of another directory. Consider the following before
 enabling it:
 
-- Servers older than `26.9` cannot read a directory in this form. A disk that has
-  such directories is not readable after a downgrade, and cannot be shared with
-  older servers. Directories that never had hard links keep the previous layout,
-  so a disk stays readable by older servers until the first operation that
-  creates a hard link - a mutation, an `ALTER`, a `FREEZE` or a backup. Turning
-  the setting off again does not convert the existing directories back.
+- A server that does not have the `enable_hard_links` setting cannot read a
+  directory in this form - it reads the whole metadata of the directory as its
+  logical path. A disk that has such directories is therefore not readable after
+  a downgrade to such a version, and cannot be shared with it. Directories that
+  never had hard links keep the previous layout, so a disk stays readable by
+  older servers until the first operation that creates a hard link - a mutation,
+  an `ALTER`, a `FREEZE` or a backup. Turning the setting off again does not
+  convert the existing directories back.
 - An object whose last link is removed is deleted in two steps: the metadata of
   the directory is rewritten first, and the object is deleted after that. If the
   server is killed in between, the object is left in the bucket and is not
