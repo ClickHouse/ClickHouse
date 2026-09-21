@@ -53,11 +53,15 @@ Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: semi
 Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Distinct (Preliminary DISTINCT of a set operation input)
+Distinct (Preliminary DISTINCT of a set operation input)
 Distinct (DISTINCT)
 Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: anti
 Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Distinct (Preliminary DISTINCT of a set operation input)
+Distinct (Preliminary DISTINCT of a set operation input)
 Distinct
 IntersectOrExcept
 IntersectOrExcept
@@ -66,6 +70,10 @@ Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: semi
 Join conditions: a <=> a
+Distinct (Preliminary DISTINCT of a set operation input)
 Join (JOIN FillRightFirst)
 Strictness: semi
 Join conditions: a <=> a
+Distinct (Preliminary DISTINCT of a set operation input)
+Distinct (Preliminary DISTINCT of a set operation input)
+Distinct (Preliminary DISTINCT of a set operation input)

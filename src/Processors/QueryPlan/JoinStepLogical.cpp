@@ -1679,6 +1679,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
+    table_join->setReadsLeftWhileFillingRight(logical_join_info.is_set_operation);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)
@@ -2246,7 +2247,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .is_set_operation = join_step->isSetOperation()
     };
 
     auto new_node = buildPhysicalJoinImpl(

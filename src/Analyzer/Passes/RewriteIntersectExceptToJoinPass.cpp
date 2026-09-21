@@ -143,6 +143,7 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
 
         auto join_node = std::make_shared<JoinNode>(
             left.node, right.node, std::move(join_expression), JoinLocality::Unspecified, strictness, JoinKind::Left, /*is_using_join_expression_=*/ false);
+        join_node->setIsSetOperation(true);
 
         QueryTreeNodes projection;
         projection.reserve(result_columns.size());

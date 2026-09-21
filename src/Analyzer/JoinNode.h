@@ -145,6 +145,19 @@ public:
         is_using_join_expression = true;
     }
 
+    /// Whether this is the semi or anti join that an `INTERSECT DISTINCT` or `EXCEPT DISTINCT` is executed as.
+    /// Only the distinct rows of its inputs matter then: duplicate right rows never change whether a left row
+    /// matches, and the `DISTINCT` above the join drops duplicate left rows anyway.
+    bool isSetOperation() const
+    {
+        return is_set_operation;
+    }
+
+    void setIsSetOperation(bool value)
+    {
+        is_set_operation = value;
+    }
+
     /// Get join locality
     JoinLocality getLocality() const
     {
@@ -207,6 +220,7 @@ private:
     JoinKind kind = JoinKind::Inner;
     bool is_using_join_expression;
     bool is_natural = false;
+    bool is_set_operation = false;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;
