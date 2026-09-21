@@ -1081,6 +1081,8 @@ A zero curve is canonically stored as `(0, 0)`. Non-zero values and anchor times
 
 The server may derive an additional sortable ordering prefix in memory for `ORDER BY`, primary-key comparison, and related operations. That prefix is acceleration metadata only: it is reconstructed from the two direct streams and is **not present in the Native payload or MergeTree column data**.
 
+For a direct `ExponentialTimeDecaying` primary-key column, the sparse MergeTree `primary.idx` stores only the 8-byte `UInt64` ordering prefix for each mark. Prefix collisions are treated as equal index buckets, which may read extra granules but must not exclude matching rows. The authoritative table column remains the two-`Float64` direct payload above.
+
 The type has no state/version prefix of its own. Its two Float64 streams participate in the normal composite prefix/data traversal, so when the type is nested in `Array`, `Tuple`, `Nullable`, or another container there are still only the container's ordinary structural streams plus these two Float64 streams.
 
 When binary type encoding is enabled, the type is encoded through the existing `Custom type` tag (`0x2C`) followed by its complete type name, for example `ExponentialTimeDecaying(60)`.
