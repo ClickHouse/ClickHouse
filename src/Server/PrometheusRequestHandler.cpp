@@ -650,6 +650,7 @@ private:
         /// currently implemented PromQL capability using Prometheus' canonical feature names.
         writeString(
             R"({"status":"success","data":{)"
+            R"("api":{"label_values_match":true,"query_warnings":true,"time_range_labels":true,"time_range_series":true},)"
             R"("promql":{"at_modifier":true,"bool":true,"by":true,"group_left":true,"group_right":true,"ignoring":true,)"
             R"("negative_offset":true,"offset":true,"on":true,"per_query_lookback_delta":true,"subqueries":true,"without":true},)"
             R"("promql_functions":{"abs":true,"absent":true,"absent_over_time":true,"acos":true,"acosh":true,"asin":true,"asinh":true,"atan":true,)"
