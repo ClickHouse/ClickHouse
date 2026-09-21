@@ -62,18 +62,18 @@ namespace QueryPlanOptimizations
 
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
-String findDictionaryFunction(const IQueryPlanStep & step);
+std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
 
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
 /// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
 /// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
 /// The check goes away once the workers receive the dictionaries a distributed plan reads.
-String findDictionaryFunction(const IQueryPlanStep & step)
+std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
 {
-    auto find_in_dag = [](const ActionsDAG & dag) -> String
+    auto find_in_dag = [](const ActionsDAG & dag) -> std::optional<String>
     {
-        String found;
+        std::optional<String> found;
         auto is_dictionary_function = [&](const IFunctionBase & function)
         {
             if (!functionIsDictGet(function.getName()))
@@ -89,7 +89,7 @@ String findDictionaryFunction(const IQueryPlanStep & step)
             if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_dictionary_function))
                 return found;
         }
-        return {};
+        return std::nullopt;
     };
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
@@ -101,25 +101,25 @@ String findDictionaryFunction(const IQueryPlanStep & step)
     if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
     {
         if (const auto & prewhere = source->getPrewhereInfo())
-            if (auto name = find_in_dag(prewhere->prewhere_actions); !name.empty())
+            if (auto name = find_in_dag(prewhere->prewhere_actions))
                 return name;
         if (const auto & row_level_filter = source->getRowLevelFilter())
-            if (auto name = find_in_dag(row_level_filter->actions); !name.empty())
+            if (auto name = find_in_dag(row_level_filter->actions))
                 return name;
         if (const auto & filter_dag = source->getFilterActionsDAG())
-            if (auto name = find_in_dag(*filter_dag); !name.empty())
+            if (auto name = find_in_dag(*filter_dag))
                 return name;
         if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
         {
             if (const auto & prewhere = read->getDeferredPrewhereInfo())
-                if (auto name = find_in_dag(prewhere->prewhere_actions); !name.empty())
+                if (auto name = find_in_dag(prewhere->prewhere_actions))
                     return name;
             if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
-                if (auto name = find_in_dag(row_level_filter->actions); !name.empty())
+                if (auto name = find_in_dag(row_level_filter->actions))
                     return name;
         }
     }
-    return {};
+    return std::nullopt;
 }
 
 /// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
@@ -132,9 +132,9 @@ String findDictionaryFunction(const IQueryPlanStep & step)
 /// to those two.
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    if (auto dictionary_function = findDictionaryFunction(step); !dictionary_function.empty())
+    if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
         return PreformattedMessage::create(
-            "make_distributed_plan does not support the dictionary function {}", dictionary_function);
+            "make_distributed_plan does not support the dictionary function {}", *dictionary_function);
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return std::nullopt;
