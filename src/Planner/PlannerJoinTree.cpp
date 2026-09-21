@@ -149,8 +149,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -158,6 +156,8 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool optimize_trivial_count_with_sparsity_filter;
@@ -2676,11 +2676,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
 
                             /// This analysis only sizes the replica count and the executed read analyzes again,
-                            /// so throwing row limits must not be enforced on it.
+                            /// so throwing row limits must not be enforced on it. Range analysis takes those
+                            /// limits from the analyzed step's own context.
+                            const auto & reading_step_settings = reading_step->getContext()->getSettingsRef();
                             const bool has_throwing_row_limit
-                                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-                                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
-                                    && settings[Setting::max_rows_to_read_leaf]);
+                                = (reading_step_settings[Setting::read_overflow_mode] == OverflowMode::THROW
+                                   && reading_step_settings[Setting::max_rows_to_read])
+                                || (reading_step_settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+                                    && reading_step_settings[Setting::max_rows_to_read_leaf]);
                             const bool skip_query_condition_cache
                                 = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings);
 
