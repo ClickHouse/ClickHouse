@@ -9,9 +9,11 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -163,37 +165,39 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
     return left.node;
 }
 
-bool hasFloatType(const DataTypePtr & type)
+/// A merge join compares its keys with `compareAt`, while both the set operation and the hash join compare the
+/// bytes of the key. The two disagree for the types of `keyTypeBreaksHashSharding` (`compareAt` equates `-0.0`
+/// with `0.0` and every `NaN` with every other, and compares a `JSON` by its logical value rather than by its
+/// layout) and for the states of aggregate functions, all of which `compareAt` reports as equal.
+bool keyBreaksMergeJoinEquivalence(const DataTypePtr & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested) { result |= isFloat(nested); };
-    check(*type);
-    type->forEachChild(check);
-    return result;
+    return QueryPlanOptimizations::keyTypeBreaksHashSharding(*type) || hasAggregateFunctionType(type);
 }
 
-/// Whether one of the enabled join algorithms can execute a left join of two subqueries with this strictness.
+/// Whether the enabled join algorithms execute a left join of two subqueries with this strictness the way the
+/// set operation compares its rows.
 ///
-/// A merge join compares its keys with `compareAt`, which equates `-0.0` with `0.0` and every `NaN` with every
-/// other, while both the set operation and the hash join compare them bitwise. So the rewrite is only equivalent
-/// for a float key when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE` and
-/// `PREFER_PARTIAL_MERGE` run one directly, and `AUTO` switches to one once the right side outgrows the limits.
-bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness, bool has_float_key)
+/// The algorithms are tried in the order they are listed in, so a hash algorithm that is enabled does not keep
+/// a merge join from being chosen. For a key that a merge join compares differently, the rewrite is therefore
+/// only equivalent when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE`,
+/// `PREFER_PARTIAL_MERGE` and `FULL_SORTING_MERGE` run one directly, and `AUTO` switches to one once the right
+/// side outgrows the limits.
+bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key)
 {
     const auto & algorithms = settings[Setting::join_algorithm].value;
-    for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::GRACE_HASH})
-        if (TableJoin::isEnabledAlgorithm(algorithms, algorithm))
-            return true;
+    auto enabled = [&](JoinAlgorithm algorithm) { return TableJoin::isEnabledAlgorithm(algorithms, algorithm); };
 
-    if (has_float_key)
+    const bool can_reach_merge_join = enabled(JoinAlgorithm::AUTO) || enabled(JoinAlgorithm::PREFER_PARTIAL_MERGE)
+        || enabled(JoinAlgorithm::PARTIAL_MERGE) || enabled(JoinAlgorithm::FULL_SORTING_MERGE);
+    if (has_merge_unsafe_key && can_reach_merge_join)
         return false;
 
-    if (TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::AUTO)
-        || TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::PREFER_PARTIAL_MERGE))
+    if (enabled(JoinAlgorithm::HASH) || enabled(JoinAlgorithm::PARALLEL_HASH) || enabled(JoinAlgorithm::GRACE_HASH)
+        || enabled(JoinAlgorithm::AUTO) || enabled(JoinAlgorithm::PREFER_PARTIAL_MERGE))
         return true;
 
     /// The partial merge join executes semi joins but not anti joins.
-    return strictness == JoinStrictness::Semi && TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::PARTIAL_MERGE);
+    return strictness == JoinStrictness::Semi && enabled(JoinAlgorithm::PARTIAL_MERGE);
 }
 
 /// Keyed by the replaced node, which the key itself keeps alive so that the columns of the outer queries
@@ -224,8 +228,9 @@ public:
             return;
 
         const auto result_columns = union_node->computeProjectionColumns();
-        const bool has_float_key = std::ranges::any_of(result_columns, [](const auto & column) { return hasFloatType(column.type); });
-        if (!joinAlgorithmSupports(getSettings(), strictness, has_float_key))
+        const bool has_merge_unsafe_key
+            = std::ranges::any_of(result_columns, [](const auto & column) { return keyBreaksMergeJoinEquivalence(column.type); });
+        if (!joinAlgorithmSupports(getSettings(), strictness, has_merge_unsafe_key))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());
