@@ -13,18 +13,17 @@ private:
     friend class COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
 
     WrappedPtr storage;
-    WrappedPtr ordering_prefix;
+    WrappedPtr ordering_key;
     Float64 decay_length;
 
     ColumnExponentialTimeDecaying(MutableColumnPtr && storage_, Float64 decay_length_);
     ColumnExponentialTimeDecaying(
         MutableColumnPtr && storage_,
-        MutableColumnPtr && ordering_prefix_,
+        MutableColumnPtr && ordering_key_,
         Float64 decay_length_);
 
-    void appendOrderingPrefix(size_t row);
-    void rebuildOrderingPrefix();
-    int compareDirect(size_t n, size_t m, const ColumnExponentialTimeDecaying & rhs) const;
+    void appendOrderingKey(size_t row);
+    void rebuildOrderingKey();
 
 public:
     using Base = COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
@@ -36,12 +35,12 @@ public:
 
     static MutablePtr createWithPrefix(
         MutableColumnPtr && storage_,
-        MutableColumnPtr && ordering_prefix_,
+        MutableColumnPtr && ordering_key_,
         Float64 decay_length_)
     {
         return Base::create(
             std::move(storage_),
-            std::move(ordering_prefix_),
+            std::move(ordering_key_),
             decay_length_);
     }
 
@@ -88,7 +87,7 @@ public:
     std::optional<size_t> getSerializedValueSize(
         size_t, const IColumn::SerializationSettings *) const override
     {
-        return sizeof(UInt128);
+        return sizeof(UInt64);
     }
 
     void collectSerializedValueSizes(
@@ -130,7 +129,7 @@ public:
     void reserve(size_t n) override
     {
         storage->reserve(n);
-        ordering_prefix->reserve(n);
+        ordering_key->reserve(n);
     }
 
     void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
@@ -138,25 +137,25 @@ public:
     void shrinkToFit() override
     {
         storage->shrinkToFit();
-        ordering_prefix->shrinkToFit();
+        ordering_key->shrinkToFit();
     }
 
     void ensureOwnership() override
     {
         storage->ensureOwnership();
-        ordering_prefix->ensureOwnership();
+        ordering_key->ensureOwnership();
     }
 
     void protect() override
     {
         storage->protect();
-        ordering_prefix->protect();
+        ordering_key->protect();
     }
 
     size_t capacity() const override { return storage->capacity(); }
-    size_t byteSize() const override { return storage->byteSize() + ordering_prefix->byteSize(); }
-    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n) + ordering_prefix->byteSizeAt(n); }
-    size_t allocatedBytes() const override { return storage->allocatedBytes() + ordering_prefix->allocatedBytes(); }
+    size_t byteSize() const override { return storage->byteSize() + ordering_key->byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n) + ordering_key->byteSizeAt(n); }
+    size_t allocatedBytes() const override { return storage->allocatedBytes() + ordering_key->allocatedBytes(); }
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override { storage->updateCheckpoint(checkpoint); }
     void rollback(const ColumnCheckpoint & checkpoint) override;
     ColumnCheckpointPtr getCheckpoint() const override { return storage->getCheckpoint(); }
@@ -169,10 +168,10 @@ public:
     void finalize() override
     {
         storage->finalize();
-        ordering_prefix->finalize();
+        ordering_key->finalize();
     }
 
-    bool isFinalized() const override { return storage->isFinalized() && ordering_prefix->isFinalized(); }
+    bool isFinalized() const override { return storage->isFinalized() && ordering_key->isFinalized(); }
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -182,11 +181,11 @@ public:
     const ColumnTuple & getStorageTuple() const { return assert_cast<const ColumnTuple &>(*storage); }
     ColumnTuple & getStorageTuple() { return assert_cast<ColumnTuple &>(*storage); }
     const ColumnPtr & getStoragePtr() const { return storage; }
-    const IColumn & getOrderingPrefixColumn() const { return *ordering_prefix; }
+    const IColumn & getOrderingKeyColumn() const { return *ordering_key; }
 
     /// The serialized/direct payload can be appended independently of the derived
-    /// ordering prefix. Synchronize the cache after such a deserialization.
-    void syncOrderingPrefixFrom(size_t previous_size);
+    /// ordering key. Synchronize the cache after such a deserialization.
+    void syncOrderingKeyFrom(size_t previous_size);
 };
 
 }
