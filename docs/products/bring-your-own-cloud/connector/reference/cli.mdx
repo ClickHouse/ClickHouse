@@ -364,7 +364,7 @@ Prints the commands the executor has recorded, as JSON, newest first. A failed c
 
 ## clicklink clctl platform approve {#platform-approve}
 
-Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. When a chart in the bundle lives in Amazon ECR, it needs AWS credentials that can read it. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
 
 | Flag | Description |
 |------|-------------|
