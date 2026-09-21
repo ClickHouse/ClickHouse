@@ -40,24 +40,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
-    extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
 }
 
 namespace
 {
 
-/// The endpoint chooses which range it answers a ranged request with: it is allowed to ignore the
-/// requested range and answer with the whole blob as `200 OK`, and a misbehaving one can answer
-/// with a different range altogether. The body of such a response would be handed to the caller as
-/// if it were the bytes at the requested offset, which is a wrong slice of the blob, so a response
-/// that does not start where it was asked to is rejected instead.
-void checkResponseStartsAtRequestedOffset(int64_t response_range_start, off_t requested_offset, const String & path)
+/// A successful `Download` is not enough to trust the body: the endpoint may have ignored the
+/// requested range and answered `200 OK` with the whole object from byte 0, or `206 Partial
+/// Content` for a different range. Consuming such a body as if it started at `requested_offset`
+/// would hand the caller the wrong bytes under the right offsets - silent data corruption - so
+/// the start of the returned range is checked against the requested one before the body is read.
+/// The SDK reports a `200 OK` response as the range starting at 0, so a full-object response is
+/// accepted exactly when the request started at 0, where it is a correct answer, the same as in
+/// `ReadWriteBufferFromHTTP`.
+void checkReturnedRange(const Azure::Storage::Blobs::Models::DownloadBlobResult & result, size_t requested_offset, const String & path)
 {
-    if (response_range_start != static_cast<int64_t>(requested_offset))
-        throw Exception(
-            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-            "Blob Storage answered a request for the range of the file {} starting at offset {} with a range starting at offset {}",
-            path, requested_offset, response_range_start);
+    if (result.ContentRange.Offset != static_cast<int64_t>(requested_offset))
+        throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+            "Azure Blob Storage returned a range starting at offset {} instead of the requested offset {} for file {}",
+            result.ContentRange.Offset, requested_offset, path);
 }
 
 }
@@ -302,8 +304,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
-
-            checkResponseStartsAtRequestedOffset(download_response.Value.ContentRange.Offset, offset, path);
+            checkReturnedRange(download_response.Value, offset, path);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
@@ -386,7 +387,7 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
     /// is a trustworthy bound.
     ///
     /// That the body starts at `offset_` rather than somewhere else is not assumed either: it is
-    /// checked against the range of the response by `checkResponseStartsAtRequestedOffset`.
+    /// checked against the range of the response by `checkReturnedRange`.
     size_t total = reported_length >= 0
         ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
         : std::numeric_limits<size_t>::max();
@@ -448,8 +449,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
-
-            checkResponseStartsAtRequestedOffset(download_response.Value.ContentRange.Offset, static_cast<off_t>(range_begin), path);
+            checkReturnedRange(download_response.Value, range_begin, path);
 
             if (blob_storage_log)
             {
