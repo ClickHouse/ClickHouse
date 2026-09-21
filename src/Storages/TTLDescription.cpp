@@ -1425,8 +1425,9 @@ void TTLDescription::checkSetPartsAreExecutable() const
         if (set_part.requires_sets_from_subqueries)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "TTL GROUP BY SET expression for column {} contains a subquery or a table in the 'IN' "
-                "operator, which cannot be evaluated during a TTL merge. Use ALTER TABLE ... MODIFY TTL "
-                "to replace it", backQuote(set_part.column_name));
+                "operator, which cannot be evaluated during a TTL merge. Rewrite the expression without "
+                "that 'IN'; for a table that already stores this TTL, use ALTER TABLE ... MODIFY TTL to "
+                "replace it", backQuote(set_part.column_name));
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
