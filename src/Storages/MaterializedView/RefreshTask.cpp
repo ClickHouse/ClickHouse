@@ -437,9 +437,11 @@ void RefreshTask::drop(ContextPtr context, bool is_shared_db)
         LOG_ERROR(getLogger(), "Unexpected 'running' znode when dropping refreshable materialized view.");
         ops.emplace_back(zkutil::makeRemoveRequest(running_path, -1));
     }
-    String requested_path = coordination.path + "/requested";
-    if (zookeeper->exists(requested_path))
-        ops.emplace_back(zkutil::makeRemoveRequest(requested_path, -1));
+    Strings children;
+    zookeeper->tryGetChildren(coordination.path, children);
+    for (const String & child : children)
+        if (child.starts_with(request_znode_prefix))
+            ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/" + child, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(coordination.path, -1));
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
@@ -627,10 +629,10 @@ void RefreshTask::run()
     }
     if (context)
     {
-        /// Recorded in Keeper before being accepted, so that `SYSTEM WAIT VIEW` on any replica sees it. Persistent: the
-        /// refresh stays owed if this replica loses its Keeper session or restarts. Any replica may run it, see `doScheduling`.
+        /// Recorded in Keeper before being accepted, so that `SYSTEM WAIT VIEW` on any replica sees it. Persistent: the refresh
+        /// stays owed across a Keeper session loss or restart. One per replica, like the local flag; any replica may run it.
         auto component_guard = Coordination::setCurrentComponent("RefreshTask::run");
-        String path = coordination.path + "/requested";
+        String path = coordination.path + "/" + requestZnodeName();
         auto code = context->getZooKeeper()->tryCreate(path, coordination.replica_name, zkutil::CreateMode::Persistent);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             throw Coordination::Exception::fromPath(code, path);
@@ -697,11 +699,11 @@ void RefreshTask::wait(const ContextPtr & context)
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failed to read the refresh coordination state from Keeper, see the server log");
     }
 
-    /// If an out-of-schedule refresh was requested, wait for that requested refresh to *start*
+    /// If out-of-schedule refreshes were requested, on any replica, wait for the last of them to *start*
     /// (or for the view to be shut down, or stopped where that means the request won't start).
     wait_until([&]
         {
-            if (!scheduling.out_of_schedule_refresh_requested || !view)
+            if (!view || (!scheduling.out_of_schedule_refresh_requested && coordination.other_replicas_requests.empty()))
                 return true;
             /// A coordinated view's request is run by any replica, so being Disabled here doesn't rule it out.
             return state == RefreshState::Disabled
@@ -1189,18 +1191,30 @@ void RefreshTask::doScheduling(bool is_shutdown)
         auto [when, waiting_for_dependencies, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
         next_refresh_time = when;
         bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
+        String request_znode = out_of_schedule && coordination.coordinated ? requestZnodeName() : String();
         auto takeover_deadline = std::chrono::system_clock::time_point::max();
-        if (out_of_schedule && coordination.coordinated && coordination.requesting_replica != coordination.replica_name)
+        if (!out_of_schedule)
         {
-            /// The requesting replica starts its refresh itself, unless a Keeper session timeout passes while the request is
-            /// pending with nothing running (e.g. it's stopped or gone): then any replica does. Wake up to check at that point.
-            if (!coordination.request_pending_since)
-                coordination.request_pending_since = start_time;
-            takeover_deadline = *coordination.request_pending_since + std::chrono::milliseconds(zookeeper->getSessionTimeoutMS());
+            for (auto & [znode, pending_since] : coordination.other_replicas_requests)
+            {
+                /// The requesting replica starts its refresh itself, unless a Keeper session timeout has passed since this replica
+                /// first saw the request pending with nothing running (e.g. it's stopped or gone): then any replica does. Wake up then.
+                if (!pending_since)
+                    pending_since = start_time;
+                auto deadline = *pending_since + std::chrono::milliseconds(zookeeper->getSessionTimeoutMS());
+                if (deadline < takeover_deadline)
+                {
+                    takeover_deadline = deadline;
+                    request_znode = znode;
+                }
+            }
             out_of_schedule = start_time >= takeover_deadline;
-            if (!out_of_schedule)
+            if (!out_of_schedule && !request_znode.empty())
+            {
                 scheduling_task->scheduleAfter(
                     std::chrono::duration_cast<std::chrono::milliseconds>(takeover_deadline - start_time).count());
+                request_znode.clear();
+            }
         }
         if (out_of_schedule)
         {
@@ -1236,7 +1250,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
         /// The time to start next refresh is now!
 
         /// Write to keeper.
-        if (!updateCoordinationState(start_znode, /*running=*/ true, zookeeper, lock))
+        if (!updateCoordinationState(start_znode, /*running=*/ true, zookeeper, lock, /*only_running_znode=*/ false, request_znode))
             return;
         chassert(lock.owns_lock());
 
@@ -1822,8 +1836,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Reads are served by the Keeper server we're connected to, which may lag behind the leader. The read that `wait`
-    /// asks for catches up first, so that it sees a request just recorded through another replica (`run`).
+    /// The read that `wait` asked for syncs with the Keeper leader first, to see a request just made through another replica.
     if (syncs_requested)
         zookeeper->sync(coordination.path);
 
@@ -1833,31 +1846,43 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
     zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
-    /// Do an atomic multi-read. "requested" is a pending `SYSTEM REFRESH VIEW` made on any replica, see `run`.
-    Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused", coordination.path + "/requested"};
-    auto responses = zookeeper->tryGet(paths.begin(), paths.end());
+    /// Do an atomic multi-read, including the children: the "requested-*" znodes, see `run`.
+    Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
+    Coordination::Requests ops;
+    for (const String & path : paths)
+        ops.emplace_back(zkutil::makeGetRequest(path));
+    ops.emplace_back(zkutil::makeSimpleListRequest(coordination.path));
+    Coordination::Responses responses;
+    zookeeper->tryMulti(ops, responses);
 
-    if (responses[0].error != Coordination::Error::ZOK)
-        throw Coordination::Exception::fromPath(responses[0].error, paths[0]);
-    for (size_t i = 1; i < paths.size(); ++i)
-        if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
-            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
+    if (responses[0]->error != Coordination::Error::ZOK)
+        throw Coordination::Exception::fromPath(responses[0]->error, paths[0]);
+    for (size_t i = 1; i < ops.size(); ++i)
+        if (responses[i]->error != Coordination::Error::ZOK && responses[i]->error != Coordination::Error::ZNONODE)
+            throw Coordination::Exception::fromPath(responses[i]->error, ops[i]->getPath());
 
-    bool running_znode_exists = responses[1].error == Coordination::Error::ZOK;
+    bool running_znode_exists = responses[1]->error == Coordination::Error::ZOK;
+    const auto & root_response = dynamic_cast<const Coordination::GetResponse &>(*responses[0]);
     CoordinationZnode znode;
-    znode.parse(responses[0].data, running_znode_exists, getLogger());
+    znode.parse(root_response.data, running_znode_exists, getLogger());
+    const Strings & children = dynamic_cast<const Coordination::ListResponse &>(*responses[3]).names;
 
     lock.lock();
 
     coordination.root_znode = znode;
-    coordination.root_znode.version = responses[0].stat.version;
+    coordination.root_znode.version = root_response.stat.version;
     coordination.running_znode_exists = running_znode_exists;
-    coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
-    scheduling.out_of_schedule_refresh_requested = responses[3].error == Coordination::Error::ZOK;
-    coordination.requesting_replica = responses[3].data;
-    if (responses[3].stat.czxid != coordination.request_czxid)
-        coordination.request_pending_since.reset();
-    coordination.request_czxid = responses[3].stat.czxid;
+    coordination.paused_znode_exists = responses[2]->error == Coordination::Error::ZOK;
+    scheduling.out_of_schedule_refresh_requested = false;
+    decltype(coordination.other_replicas_requests) other_replicas_requests;
+    for (const String & child : children)
+    {
+        if (child == requestZnodeName())
+            scheduling.out_of_schedule_refresh_requested = true;
+        else if (child.starts_with(request_znode_prefix))
+            other_replicas_requests.emplace(child, coordination.other_replicas_requests[child]);
+    }
+    coordination.other_replicas_requests = std::move(other_replicas_requests);
     coordination.znode_reads_finished = coordination.znode_reads_started;
     coordination.syncs_requested -= syncs_requested;
 
@@ -1865,7 +1890,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     wait_cv.notify_all();
 }
 
-bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode)
+bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode, const String & request_znode)
 {
     chassert(lock.owns_lock());
     int32_t version = -1;
@@ -1880,10 +1905,9 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         {
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral, /*ignore_if_exists=*/ true));
-            /// Consume the pending request in the same multi, so that nobody sees it gone with no refresh running.
-            /// Only when starting a refresh, not when re-creating the ephemeral znode of a running one.
-            if (scheduling.out_of_schedule_refresh_requested && !only_running_znode)
-                ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/requested", -1));
+            /// Consume the request in the same multi, so that nobody sees it gone with no refresh running.
+            if (!request_znode.empty())
+                ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/" + request_znode, -1));
         }
         else
         {
@@ -1922,6 +1946,7 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     coordination.root_znode = root;
     coordination.root_znode.version = version;
     coordination.running_znode_exists = running;
+    coordination.other_replicas_requests.erase(request_znode);
 
     notifyDependentsIfNeeded(lock);
     wait_cv.notify_all();

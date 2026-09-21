@@ -10,6 +10,7 @@
 #include <Core/UUID.h>
 #include <IO/Progress.h>
 
+#include <map>
 #include <random>
 
 
@@ -240,7 +241,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested"] (data: the replica whose `SYSTEM REFRESH VIEW` is pending, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; a pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -251,12 +252,9 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Data and creation zxid of the "requested" znode (the latter only to tell a new request from the last one seen).
-        /// Whether it exists is mirrored into `scheduling.out_of_schedule_refresh_requested`, see `readZnodesIfNeeded`.
-        String requesting_replica;
-        Int64 request_czxid = 0;
-        /// When this replica first saw that request pending with no refresh running; the takeover grace counts from there.
-        std::optional<std::chrono::system_clock::time_point> request_pending_since {};
+        /// Other replicas' "requested-*" znodes, with when this replica first saw each pending with nothing running:
+        /// a Keeper session timeout later it runs it itself (`doScheduling`). Ours: `scheduling.out_of_schedule_refresh_requested`.
+        std::map<String, std::optional<std::chrono::system_clock::time_point>> other_replicas_requests;
         /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
         /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
         UInt64 znode_reads_started = 0;
@@ -337,7 +335,7 @@ private:
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
-        /// For a coordinated view, whether the "requested" znode exists, i.e. a request made on any replica.
+        /// For a coordinated view, whether this replica's "requested-<replica>" znode exists, see `readZnodesIfNeeded`.
         bool out_of_schedule_refresh_requested = false;
 
         /// Solves this unusual case:
@@ -453,12 +451,17 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
+    /// If `request_znode` is given, that "requested-*" znode is removed in the same multi: the started refresh consumes it.
+    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
+
+    /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
+    static constexpr std::string_view request_znode_prefix = "requested-";
+    String requestZnodeName() const { return String(request_znode_prefix) + coordination.replica_name; }
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);
