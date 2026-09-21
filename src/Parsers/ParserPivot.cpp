@@ -480,6 +480,7 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
     auto select = make_intrusive<ASTSelectQuery>();
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select->is_pivot_rewrite = true;
     select->group_by_all = true;
 
     auto list_of_selects = make_intrusive<ASTExpressionList>();
@@ -571,7 +572,7 @@ bool parsePivotTableExpression(
 
     auto parse_pivot = [&]() -> bool
     {
-        if (!ParserKeyword::createDeprecated("PIVOT").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::PIVOT).ignore(pos, expected))
             return false;
 
         PivotSpec spec;
