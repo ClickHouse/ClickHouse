@@ -42,7 +42,8 @@ struct Inserter
     }
 
     /// A count map holds the number of right rows of the key. The build phase has the map to itself, so the
-    /// count is a plain increment here; only the probe phase touches it atomically.
+    /// count is a plain increment here; only the probe phase touches it atomically. `emplaceKey` value-initializes
+    /// the mapped part of a new cell, so the count of a new key starts at zero.
     static ALWAYS_INLINE void insertCount(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
     {
         ++key_getter.emplaceKey(map, i, pool).getMapped().remaining;
