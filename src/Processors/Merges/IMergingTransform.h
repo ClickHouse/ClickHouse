@@ -39,6 +39,9 @@ public:
     void addInput(const Block & input_header);
     /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
+    /// Stop asking an input for its next chunk as soon as one is taken: a transform upstream
+    /// keeps the next chunk ready instead, and every request then reflects the algorithm's demand.
+    void disableInputReadAhead() { input_read_ahead = false; }
 
     Status prepare() override;
 
@@ -76,6 +79,7 @@ private:
     bool is_initialized = false;
     UInt64 limit_hint = 0;
     bool always_read_till_end = false;
+    bool input_read_ahead = true;
 
     IProcessor::Status prepareInitializeInputs();
 };

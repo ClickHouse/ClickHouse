@@ -111,10 +111,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// If virtual row exists, let it pass through, so don't read more chunks.
         auto chunk = input.pull(true);
         bool virtual_row = isVirtualRow(chunk);
-        if (limit_hint == 0 && !virtual_row)
-            input.setNeeded();
-
-        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
+        if (input_read_ahead && !virtual_row && (limit_hint == 0 || chunk.getNumRows() < limit_hint || always_read_till_end))
             input.setNeeded();
 
         if (!virtual_row && !chunk.hasRows())
@@ -218,7 +215,7 @@ IProcessor::Status IMergingTransformBase::prepare()
             const auto & input_chunk = state.input_chunk.chunk;
 
             bool virtual_row = isVirtualRow(input_chunk);
-            if (!virtual_row && (!limit_hint || input_chunk.getNumRows() < limit_hint || always_read_till_end))
+            if (input_read_ahead && !virtual_row && (!limit_hint || input_chunk.getNumRows() < limit_hint || always_read_till_end))
             {
                 input.setNeeded();
             }

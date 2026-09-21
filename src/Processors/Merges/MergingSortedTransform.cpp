@@ -26,7 +26,8 @@ MergingSortedTransform::MergingSortedTransform(
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions,
-    bool have_all_inputs_)
+    bool have_all_inputs_,
+    bool input_read_ahead_)
     : IMergingTransform(
         num_inputs,
         header,
@@ -47,6 +48,8 @@ MergingSortedTransform::MergingSortedTransform(
         use_average_block_sizes,
         apply_virtual_row_conversions)
 {
+    if (!input_read_ahead_)
+        disableInputReadAhead();
 }
 
 void MergingSortedTransform::onNewInput()

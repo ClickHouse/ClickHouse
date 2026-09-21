@@ -423,9 +423,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             ? pipeline.getNumThreads() - std::min<size_t>(1, pipeline.getNumThreads())
             : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
 
-        /// Deferral needs only a one-chunk buffer per lane; deeper buffering is the
-        /// same optimization `BufferChunksTransform` provides and follows its setting.
-        bool deep_buffering = use_buffering && sort_settings.read_in_order_use_buffering;
+        /// Buffering in the transform is the same optimization `BufferChunksTransform`
+        /// provides and follows its setting; without it a lane keeps just its next chunk
+        /// ready, the one the merge used to request ahead into its input port.
+        bool buffering = use_buffering && sort_settings.read_in_order_use_buffering;
 
         /// The transform ranks lane boundaries with collation-unaware comparisons. Virtual
         /// rows follow the binary order of the primary key, which a collated ORDER BY does
@@ -434,12 +435,11 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         for (const auto & desc : result_sort_desc)
             has_collation |= desc.collator != nullptr;
 
-        /// With the read-ahead disabled and no buffering the transform would only hold one
-        /// chunk per active lane, which is not worth an extra processor: the merge alone
-        /// already consumes the streams strictly on demand (a port is left NotNeeded after
-        /// a virtual row). A zero window still allows buffering of active streams when
-        /// buffering is enabled. Skip the extra hop otherwise.
-        if (apply_virtual_row_conversions && !has_collation && (read_ahead_window > 0 || deep_buffering))
+        /// With the read-ahead disabled and no buffering the transform would be a plain
+        /// pass-through: the merge alone already consumes the streams strictly on demand (a
+        /// port is left NotNeeded after a virtual row). Skip the extra hop then.
+        bool read_ahead_transform = apply_virtual_row_conversions && !has_collation && (read_ahead_window > 0 || buffering);
+        if (read_ahead_transform)
         {
             /// The streams announce their positions with virtual rows; this transform owns the
             /// buffering and the read-ahead policy for the sources deferred behind them, so the
@@ -450,8 +450,8 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
                 result_sort_desc,
                 apply_virtual_row_conversions,
                 limit_,
-                deep_buffering ? sort_settings.max_block_size : 1,
-                deep_buffering ? sort_settings.max_block_bytes : 1,
+                buffering ? sort_settings.max_block_size : 0,
+                buffering ? sort_settings.max_block_bytes : 0,
                 read_ahead_window));
         }
         /// Without virtual rows (the setting is disabled, or the query uses FINAL) the
@@ -477,7 +477,11 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*out_row_sources_buf=*/ nullptr,
             /*filter_column_name=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
-            apply_virtual_row_conversions);
+            apply_virtual_row_conversions,
+            /*have_all_inputs_=*/ true,
+            /// The transform keeps the next chunk of every lane ready, and the window is
+            /// refilled on the merge's requests, so those must be its actual demand.
+            /*input_read_ahead_=*/ !read_ahead_transform);
 
         pipeline.addTransform(std::move(transform));
     }
