@@ -25,12 +25,15 @@
 #     part metadata and bypasses the cache entirely, making every assertion vacuous.
 #   * `optimize_move_to_prewhere = 0`         - keeps the predicate a residual `WHERE`, i.e. on the
 #     writer under test rather than on the PREWHERE one.
+#   * `max_rows_to_read = 0`                  - the CI test profile sets it to 20000000, and
+#     `supportsSkipIndexesOnDataRead` bails out on a row limit with `read_overflow_mode = throw`,
+#     which would make `use_skip_indexes_on_data_read = 1` below a silent no-op.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PINS="use_query_condition_cache = 1, optimize_use_implicit_projections = 0, optimize_move_to_prewhere = 0"
+PINS="use_query_condition_cache = 1, optimize_use_implicit_projections = 0, optimize_move_to_prewhere = 0, max_rows_to_read = 0"
 
 # User and policy names are server-global, suffix them with the (unique) test database.
 user_hide="u_hide_${CLICKHOUSE_DATABASE}"
@@ -77,7 +80,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['QueryConditionCacheHits'])
 FROM system.query_log
-WHERE current_database = '${CLICKHOUSE_DATABASE}' AND type = 'QueryFinish' AND user = '${user_show}';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND user = '${user_show}';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
@@ -131,7 +134,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryConditionCacheHits'] > 0
 FROM system.query_log
-WHERE current_database = '${CLICKHOUSE_DATABASE}' AND type = 'QueryFinish' AND log_comment = '05233_reuse'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05233_reuse'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_qcc_where_idx;
