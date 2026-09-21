@@ -8,7 +8,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
@@ -90,7 +89,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -306,8 +304,7 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
-    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
-    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
+    if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -542,27 +539,16 @@ void StorageBuffer::read(
         auto buffers_select_query_options = SelectQueryOptions(processed_stage);
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
-        if (enable_analyzer)
-        {
-            auto storage = std::make_shared<StorageValues>(
-                    getStorageID(),
-                    storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers),
-                    storage_snapshot->metadata->virtuals);
+        auto storage = std::make_shared<StorageValues>(
+                getStorageID(),
+                storage_snapshot->getAllColumnsDescription(),
+                std::move(pipe_from_buffers),
+                storage_snapshot->metadata->virtuals);
 
-            auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            buffers_plan = std::move(interpreter).extractQueryPlan();
-        }
-        else
-        {
-            auto interpreter = InterpreterSelectQuery(
-                    query_info.query, local_context, std::move(pipe_from_buffers),
-                    buffers_select_query_options);
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(buffers_plan);
-        }
+        auto interpreter
+            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        buffers_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
