@@ -52,6 +52,11 @@ struct RemoteFSReadSettings
 
     /// Log every blob storage read operation to system.blob_storage_log.
     bool enable_blob_storage_log = false;
+
+    /// Abort a read of a killed query before its next buffer fill. Opt-in: a throw here
+    /// is reported as a corrupt part on reads that validate or load parts, so only readers
+    /// whose caller tolerates a cancellation exception may set it.
+    bool interruptible_reads = false;
 };
 
 /// Settings controlling reads from the local filesystem.
