@@ -12,7 +12,7 @@ SELECT toDateTime(0, '../zoneinfo/UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT toDateTime(0, 'Etc/../Etc/UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT toTimeZone(toDateTime(0), 'file:UTC'); -- { serverError BAD_ARGUMENTS }
 SELECT CAST(0 AS DateTime('file:UTC')); -- { serverError BAD_ARGUMENTS }
-SELECT toDateTime(0, 'UTC') SETTINGS session_timezone = 'file:UTC'; -- { serverError BAD_ARGUMENTS }
+SELECT toDateTime(0, 'UTC') SETTINGS session_timezone = 'file:UTC'; -- { clientError BAD_ARGUMENTS }
 
 -- A regular name still works.
 SELECT toDateTime(0, 'UTC');
