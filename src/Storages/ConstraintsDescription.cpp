@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int ILLEGAL_COLUMN;
 }
 
 String ConstraintsDescription::toString() const
@@ -194,6 +195,18 @@ void ConstraintsDescription::checkExpressionsPreserveRowCount() const
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
                 backQuote(declaration.name));
+    }
+}
+
+void ConstraintsDescription::checkNamesAreUnique() const
+{
+    NameSet names;
+    for (const auto & constraint : constraints)
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (!names.insert(declaration.name).second)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Constraint {} is declared more than once", backQuote(declaration.name));
     }
 }
 

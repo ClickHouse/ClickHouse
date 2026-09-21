@@ -2069,15 +2069,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
-    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
-    /// - `apply()` runs the commands one after another - so that a command is screened below only when
-    /// it will really install a declaration. A name can be declared more than once, and a `DROP`
-    /// removes one declaration of it.
-    Names constraint_names;
-    for (const auto & constraint : metadata->constraints.getConstraints())
-        constraint_names.push_back(constraint->as<const ASTConstraintDeclaration &>().name);
-    auto constraint_name_is_taken = [&constraint_names](const String & name)
-    { return std::find(constraint_names.begin(), constraint_names.end(), name) != constraint_names.end(); };
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2089,33 +2080,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
         /// it would check a row against another row's value, or read past the end of a shorter column.
         /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
-        /// just like `ADD CONSTRAINT` does.
-        ///
-        /// Only a declaration that `apply()` will really install is screened. An
-        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
-        /// that is not there, install nothing, so they keep meaning what they meant before this check
-        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
-        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
-        if (command.type == AlterCommand::ADD_CONSTRAINT)
-        {
-            /// A taken name gets no second declaration: `apply()` keeps the one it has, or refuses.
-            const bool name_is_taken = constraint_name_is_taken(command.constraint_name);
-            if (command.constraint_decl && !(command.if_not_exists && name_is_taken))
-                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
-            if (!name_is_taken)
-                constraint_names.push_back(command.constraint_name);
-        }
-        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
-        {
-            if (command.constraint_decl && constraint_name_is_taken(command.constraint_name))
-                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
-        }
-        else if (command.type == AlterCommand::DROP_CONSTRAINT)
-        {
-            if (auto it = std::find(constraint_names.begin(), constraint_names.end(), command.constraint_name);
-                it != constraint_names.end())
-                constraint_names.erase(it);
-        }
+        /// just like `ADD CONSTRAINT` does. Screened wherever the expression is stated, whether or not
+        /// `apply()` goes on to install it, so that the answer does not depend on the name being taken.
+        if ((command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            && command.constraint_decl)
+            ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
