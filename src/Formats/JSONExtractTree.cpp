@@ -1570,6 +1570,56 @@ private:
 };
 
 template <typename JSONParser>
+class ExponentialTimeDecayingNode : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    ExponentialTimeDecayingNode(
+        DataTypePtr logical_type_,
+        std::unique_ptr<JSONExtractTreeNode<JSONParser>> logical_node_,
+        Float64 decay_length_)
+        : logical_type(std::move(logical_type_))
+        , logical_node(std::move(logical_node_))
+        , decay_length(decay_length_)
+    {
+    }
+
+    bool insertResultToColumn(
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        auto logical_column = logical_type->createColumn();
+        if (!logical_node->insertResultToColumn(
+                *logical_column, element, insert_settings, format_settings, error))
+            return false;
+
+        if (logical_column->size() != 1)
+        {
+            error = "cannot read ExponentialTimeDecaying value from JSON element";
+            return false;
+        }
+
+        auto storage_column = materializeExponentialTimeDecayingFloat64StorageColumn(
+            *logical_column, decay_length, "JSON extraction");
+        column.insertRangeFrom(*storage_column, 0, storage_column->size());
+        return true;
+    }
+
+private:
+    DataTypePtr logical_type;
+    std::unique_ptr<JSONExtractTreeNode<JSONParser>> logical_node;
+    Float64 decay_length;
+};
+
+template <typename JSONParser>
 class MapNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
@@ -2717,7 +2767,11 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::ExponentialTimeDecayingFloat64:
         {
             const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*type);
-            return buildJSONExtractTree<JSONParser>(decaying_type.getNestedType(), source_for_exception_message);
+            const auto & logical_type = decaying_type.getLogicalTupleType();
+            return std::make_unique<ExponentialTimeDecayingNode<JSONParser>>(
+                logical_type,
+                buildJSONExtractTree<JSONParser>(logical_type, source_for_exception_message),
+                decaying_type.getDecayLength());
         }
         case TypeIndex::Variant:
         {
