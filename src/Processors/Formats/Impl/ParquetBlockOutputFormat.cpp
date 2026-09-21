@@ -60,6 +60,13 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.write_geometadata = format_settings.parquet.write_geometadata;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
+    /// The encoder allocates the unfolded bloom filter outside of `ColumnChunkWriteState`, so it
+    /// reports it here; otherwise several columns encoded in parallel could hold big filters that
+    /// `bytes_in_flight` doesn't see, and `consume` would keep feeding more row groups.
+    options.memory_usage_callback = [this](Int64 delta_bytes)
+    {
+        bytes_in_flight += static_cast<size_t>(delta_bytes); // overflow is fine
+    };
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
     {

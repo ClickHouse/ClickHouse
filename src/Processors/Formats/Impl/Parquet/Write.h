@@ -7,6 +7,8 @@
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
+#include <functional>
+
 namespace DB
 {
 class Block;
@@ -72,6 +74,13 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+
+    /// Called by the encoder when it allocates or releases a big temporary buffer that does not live
+    /// in `ColumnChunkWriteState` (currently only the unfolded bloom filter, which is up to the
+    /// 128 MiB that readers accept). It lets the caller's in-flight memory accounting see that memory
+    /// while it is alive, so that parallel encoding of several columns doesn't exceed its budget.
+    /// May be called from multiple encoder threads at the same time.
+    std::function<void(Int64 delta_bytes)> memory_usage_callback;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
@@ -89,6 +98,12 @@ struct IcebergOptionality
     bool isOptional(const String & path) const;
 };
 
+/// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
+/// in random order, so it is allocated through the zero-initializing allocator: `calloc` of a big
+/// buffer is served by fresh pages that the kernel already zeroed, instead of committing and
+/// `memset`-ing the whole region upfront.
+using BloomFilterData = PODArray<UInt32, 4096, Allocator<true>>;
+
 struct ColumnChunkIndexes
 {
     parq::ColumnIndex column_index; // if write_page_index
@@ -97,7 +112,7 @@ struct ColumnChunkIndexes
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
-    PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
+    BloomFilterData bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
 /// Information about a primitive column (leaf of the schema tree) to write to Parquet file.

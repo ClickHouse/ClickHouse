@@ -856,9 +856,35 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
+/// Reports a big temporary allocation to `WriteOptions::memory_usage_callback` for as long as it is
+/// alive, so that the caller can account memory that never reaches `ColumnChunkWriteState`.
+class ScopedMemoryReport
+{
+public:
+    ScopedMemoryReport(const WriteOptions & options_, size_t bytes_)
+        : callback(options_.memory_usage_callback), bytes(static_cast<Int64>(bytes_))
+    {
+        if (callback)
+            callback(bytes);
+    }
+
+    ~ScopedMemoryReport()
+    {
+        if (callback)
+            callback(-bytes);
+    }
+
+    ScopedMemoryReport(const ScopedMemoryReport &) = delete;
+    ScopedMemoryReport & operator=(const ScopedMemoryReport &) = delete;
+
+private:
+    const std::function<void(Int64)> & callback;
+    Int64 bytes;
+};
+
 /// `clamped` says that the unfolded filter was capped at the 128 MiB readers accept instead of being sized for all
 /// hashed values, so it may hold more distinct values than it has room for at the requested `bits_per_value`.
-void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolded_data, bool clamped, const WriteOptions & options)
+void finishBloomFilter(ColumnChunkIndexes & indexes, BloomFilterData && unfolded_data, bool clamped, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
     const size_t num_blocks = unfolded_data.size() / 8;
@@ -891,7 +917,7 @@ void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolde
         return;
 
     indexes.bloom_filter_data = std::move(unfolded_data);
-    PODArray<UInt32> & data = indexes.bloom_filter_data;
+    BloomFilterData & data = indexes.bloom_filter_data;
     const int max_folds = std::countr_zero(num_blocks);
     double one_minus_fill_rate = 1.0 - fill_rate;
     UInt32 folds = 0;
@@ -1020,7 +1046,8 @@ void writeColumnImpl(
     /// later on if possible.
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
-    std::optional<PODArray<UInt32>> bloom_data;
+    std::optional<BloomFilterData> bloom_data;
+    std::optional<ScopedMemoryReport> bloom_data_memory_report;
     bool bloom_data_clamped = false;
     if (options.write_bloom_filter)
     {
@@ -1051,7 +1078,10 @@ void writeColumnImpl(
         }
         bloom_data.emplace();
         bloom_data->reserve_exact(num_blocks * 8);
-        bloom_data->resize_fill(num_blocks * 8);
+        /// `BloomFilterData` zeroes freshly allocated memory in the allocator, so plain `resize` is
+        /// enough here; `resize_fill` would `memset` the whole buffer on top of that.
+        bloom_data->resize(num_blocks * 8);
+        bloom_data_memory_report.emplace(options, bloom_data->allocated_bytes());
     }
 
     /// Start of current page.
@@ -1763,6 +1793,9 @@ size_t ColumnChunkWriteState::allocatedBytes() const
     size_t r = def.allocated_bytes() + rep.allocated_bytes();
     if (primitive_column)
         r += primitive_column->allocatedBytes();
+    /// The folded bloom filter is held here until the row group is written out, so it is part of the
+    /// memory a completed column chunk keeps alive.
+    r += indexes.bloom_filter_data.allocated_bytes();
     return r;
 }
 
