@@ -1,0 +1,5 @@
+dummy_failpoint	1
+dummy_pausable_failpoint	1
+dummy_failpoint	0
+dummy_pausable_failpoint	0
+SYSTEM DISABLE ALL FAILPOINTS

@@ -31,7 +31,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
@@ -226,7 +225,6 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
         {"TableOverride", [] { return make_intrusive<ASTTableOverride>(); }},
         {"TableOverrideList", [] { return make_intrusive<ASTTableOverrideList>(); }},
-        {"ForeignKeyDeclaration", [] { return make_intrusive<ASTForeignKeyDeclaration>(); }},
         {"IdentifierTypePair", [] { return make_intrusive<ASTIdentifierTypePair>(); }},
     };
 
