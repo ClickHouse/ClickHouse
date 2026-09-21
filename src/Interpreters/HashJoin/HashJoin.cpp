@@ -640,7 +640,9 @@ JoinMapsKind HashJoin::getMapsKind() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return isInnerOrRight(getKind()) && data->rows_to_join == 0;
+    /// A left semi join keeps only the left rows with a match, so it is empty for an empty right side too.
+    const bool empty_for_empty_right = isInnerOrRight(getKind()) || (isLeft(getKind()) && getStrictness() == JoinStrictness::Semi);
+    return empty_for_empty_right && data->rows_to_join == 0;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -748,7 +750,7 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return table_join.enableAnalyzer() && !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm() const
@@ -1460,8 +1462,8 @@ HashJoin::~HashJoin()
                         {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
-            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
-                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, stats_collecting_params.match);
+            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
+                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, stats_collecting_params.match);
         }
     }
     catch (...)
