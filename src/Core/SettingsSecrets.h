@@ -42,30 +42,6 @@ inline bool maskURLCredentials(String & value)
     return masked;
 }
 
-/// Under `abfs`/`abfss` the part in front of the `@` is the container and not a credential (the
-/// Hadoop grammar `abfss://<container>@<account>.dfs.core.windows.net/<path>`), and the credential
-/// is the SAS in the query string. `az`/`azure` have no `@` in their grammar and need no exception.
-/// Keep the two names in sync with `parseAzureURL` in `src/Storages/StorageURL.cpp`, which compares
-/// them after lowercasing; `Core` cannot depend on `Storages` to share the list.
-inline bool maskURLBaseCredentials(String & value)
-{
-    static constexpr std::string_view azure_container_schemes[] = {"abfs", "abfss"};
-
-    if (size_t authority = findURIAuthority(value); authority != String::npos)
-    {
-        String scheme = value.substr(0, authority - 3);
-        for (auto & c : scheme)
-            if ('A' <= c && c <= 'Z')
-                c += 'a' - 'A';
-
-        for (auto azure_scheme : azure_container_schemes)
-            if (scheme == azure_scheme)
-                return maskPresignedURLParameters(value);
-    }
-
-    return maskURLCredentials(value);
-}
-
 /// The settings of the query-level `Settings` collection whose value can carry a credential, and how
 /// each one is masked. `system.query_log.query` shows
 /// `format_avro_schema_registry_url = 'http://[HIDDEN]@registry:8080'`, so every other place that
@@ -76,7 +52,7 @@ inline bool maskURLBaseCredentials(String & value)
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"format_avro_schema_registry_url", maskURLCredentials},
-    {"url_base", maskURLBaseCredentials},
+    {"url_base", maskURLCredentials},
     {"s3_base", maskURLCredentials},
 };
 
