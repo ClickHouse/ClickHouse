@@ -103,6 +103,11 @@ run
 bless
 bless
 disguis
+- Lengthening stemmers.
+-- Turkish stems a 3-byte word to a 5-byte word, so the output is longer than the input.
+756167C4B1
+-- Over a multi-block scan the output must stay correct even when it overflows the input-sized estimate.
+0
 - Negative tests.
 -- Whitespace in a String input raises BAD_ARGUMENTS.
 -- Whitespace in an Array element raises BAD_ARGUMENTS.
