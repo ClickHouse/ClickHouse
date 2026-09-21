@@ -5,8 +5,6 @@ ENGINE = MergeTree
 ORDER BY id
 AS select *, '2023-12-25' from numbers(100);
 
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
-
 -- when the query plan is serialized for distributed query, parallel replicas are not enabled because
 -- (with prefer_localhost_replica) because all reading steps are ReadFromTable instead of ReadFromMergeTree
 SET serialize_query_plan = 0;
