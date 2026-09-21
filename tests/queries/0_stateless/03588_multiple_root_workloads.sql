@@ -15,11 +15,15 @@ create workload 03588_b1 in 03588_b settings weight = 1;
 -- Two independent trees; each root has an empty parent (is_root = 1).
 select name, empty(parent) as is_root from system.workloads where startsWith(name, '03588_') order by name;
 
--- Changing whether a workload is a root via CREATE OR REPLACE is not allowed in either direction:
--- promoting a child to a root (dropping its `IN` clause) ...
-create or replace workload 03588_a1 settings weight = 2; -- {serverError BAD_ARGUMENTS}
--- ... or demoting a root to a child (adding an `IN` clause).
-create or replace workload 03588_a in 03588_b; -- {serverError BAD_ARGUMENTS}
+-- A workload's parent can be changed with CREATE OR REPLACE, in either direction.
+-- Promote a child to a root (drop its `IN` clause):
+create or replace workload 03588_a1 settings weight = 2;
+-- Demote a root to a child (add an `IN` clause):
+create or replace workload 03588_a in 03588_b;
+-- 03588_a1 is a root now; 03588_a is a child of 03588_b.
+select name, empty(parent) as is_root from system.workloads where startsWith(name, '03588_') order by name;
+-- A cycle (a workload made a child of its own descendant) is rejected.
+create or replace workload 03588_b in 03588_a; -- {serverError BAD_ARGUMENTS}
 
 -- A third parentless workload is allowed too.
 create workload 03588_c;

@@ -164,10 +164,6 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updating a name of workload '{}' to '{}' is not allowed in resource '{}'",
             old_info.name, new_info.name, resource_name);
 
-    if (old_info.parent != new_info.parent && (old_info.parent.empty() || new_info.parent.empty()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload '{}' invalid update of parent from '{}' to '{}' in resource '{}'",
-            old_info.name, old_info.parent, new_info.parent, resource_name);
-
     if (!node_for_workload.contains(old_info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for updating workload '{}' does not exist in resource '{}'",
             old_info.name, resource_name);

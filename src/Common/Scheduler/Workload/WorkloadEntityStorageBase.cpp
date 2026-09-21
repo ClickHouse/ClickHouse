@@ -442,12 +442,6 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
-            // Reject a CREATE OR REPLACE that adds or removes the workload's parent (its `IN` clause):
-            // a root stays a root and a child stays a child.
-            if (workload && old_workload->hasParent() != workload->hasParent())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "It is not allowed to add or remove the parent of workload '{}' with CREATE OR REPLACE "
-                    "(a root workload cannot become a child, nor a child become a root)", entity_name);
             if (other_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
