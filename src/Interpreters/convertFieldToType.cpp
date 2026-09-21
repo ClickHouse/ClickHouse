@@ -589,6 +589,74 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// rejects values that do not survive a scale reduction.
         return convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
     }
+    if (!strict && which_type.isTime64() && (which_from_type.isDateTime() || which_from_type.isDateTime64())
+        && isDateTime64TicksSourceFieldType(src.getType()))
+    {
+        /// A `DateTime` / `DateTime64` source is *not* a raw tick source for `Time64` when the constant is
+        /// materialized as a `Time64` value: the column path (`ToTime64Transform::execute(UInt32)` and the
+        /// `DateTime64` -> `Time64` loop in `ConvertImpl`) projects the timestamp to the local seconds-of-day
+        /// of the source timezone first. Without this branch the tick helper below would reinterpret the epoch
+        /// value itself as a time-of-day whenever it happens to land inside the clock window, so
+        /// `INSERT ... VALUES` would materialize a different `Time64` than `INSERT ... SELECT` / `CAST` for
+        /// the very same constant - e.g. `toDateTime('1970-01-02 12:34:56', 'UTC')` is 131696 raw seconds,
+        /// inside the clock window, and would become `36:34:56` instead of `12:34:56`.
+        ///
+        /// `strict` is deliberately excluded: there the caller is deciding exact set membership or key ranges,
+        /// and the comparison itself happens in `getLeastSupertype(Time64, DateTime64)` = `DateTime64`, where a
+        /// `Time64` is exactly its raw ticks. Reinterpreting the epoch value as ticks - what the helper below
+        /// does - is therefore the answer that agrees with `=`, while projecting would make `IN` disagree with
+        /// it in both directions. Both halves are pinned by `05218_datetime64_time64_in_constant_window`.
+
+        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+        const Int64 to_scale_multiplier = time64_type.getScaleMultiplier();
+
+        Int64 utc_seconds = 0;
+        Int64 fraction_to = 0;
+        const DateLUTImpl * time_zone = nullptr;
+
+        if (which_from_type.isDateTime())
+        {
+            time_zone = &static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
+            const auto from_ticks = dateTime64TicksFromField(src, /*scale_multiplier_to=*/1, /*strict=*/false);
+            if (!from_ticks)
+                return {};
+            utc_seconds = *from_ticks;
+        }
+        else
+        {
+            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*from_type_hint);
+            time_zone = &from_type.getTimeZone();
+
+            /// Split and localize at the source scale, where the sub-second fraction is intact, exactly
+            /// like the column path: rescaling first can truncate a negative fraction across the second
+            /// boundary and pick the timezone offset of the next second.
+            const Int64 from_scale_multiplier = from_type.getScaleMultiplier();
+            const auto from_ticks = dateTime64TicksFromField(src, from_scale_multiplier, /*strict=*/false);
+            if (!from_ticks)
+                return {};
+
+            utc_seconds = *from_ticks / from_scale_multiplier;
+            Int64 fraction = *from_ticks % from_scale_multiplier;
+            if (fraction < 0)
+            {
+                utc_seconds -= 1;
+                fraction += from_scale_multiplier;
+            }
+
+            fraction_to = to_scale_multiplier >= from_scale_multiplier
+                ? fraction * (to_scale_multiplier / from_scale_multiplier)
+                : fraction / (from_scale_multiplier / to_scale_multiplier);
+        }
+
+        const Int64 offset = time_zone->timezoneOffset(utc_seconds);
+        /// Reduce modulo 86400 before adding the offset: the sum overflows `Int64` for extreme inputs,
+        /// and reducing first leaves the seconds-of-day unchanged.
+        Int64 local_seconds = (utc_seconds % 86400 + offset) % 86400;
+        if (local_seconds < 0)
+            local_seconds += 86400;
+
+        return DecimalField<Time64>(Time64(local_seconds * to_scale_multiplier + fraction_to), time64_type.getScale());
+    }
     if (which_type.isTime() && which_from_type.isDate())
     {
         return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt64>())));

@@ -151,8 +151,9 @@ drop table t_05218;
 select 'A typed DateTime / DateTime64 constant against a Time64 column: IN must agree with =';
 -- `getLeastSupertype(Time64, DateTime64)` is `DateTime64`, so a `DateTime` / `DateTime64` constant compared
 -- with a `Time64` column is NOT projected to the local seconds-of-day the way `CAST(... AS Time64)` is: the
--- column is widened to `DateTime64` instead. The `Time64` tick window above returns "cannot convert" for an
--- epoch value outside the clock window, which excludes it from the set - the same answer `=` gives.
+-- comparison happens in `DateTime64`, where a `Time64` is exactly its raw ticks. An exact set constant is
+-- therefore the raw epoch value reinterpreted as ticks, and an epoch value outside the clock window is
+-- "cannot convert" and excluded from the set - in both cases the same answer `=` gives.
 drop table if exists t_05218_time64_typed;
 create table t_05218_time64_typed (t Time64(3)) engine = MergeTree order by t;
 insert into t_05218_time64_typed values ('12:34:56.789'), ('12:34:56.000'), ('00:00:00.000');
@@ -169,8 +170,8 @@ select count() from t_05218_time64_typed where t in (cast(toDateTime64('2020-01-
 drop table t_05218_time64_typed;
 
 select 'A DateTime64 constant inserted into a Time64 column: VALUES must agree with SELECT';
--- The `Time64` branch of `convertFieldToType` returns "cannot convert" here, so the `VALUES` expression
--- fallback re-runs the constant through `CAST`, which projects to the local seconds-of-day.
+-- The typed `DateTime` / `DateTime64` -> `Time64` branch of `convertFieldToType` projects the constant to the
+-- local seconds-of-day of the source timezone, the same thing `CAST` and `INSERT ... SELECT` do.
 drop table if exists t_05218_time64_insert;
 create table t_05218_time64_insert (t Time64(3)) engine = Memory;
 insert into t_05218_time64_insert values (toDateTime64('2020-01-01 12:34:56.789', 3, 'Europe/Moscow'));
@@ -178,3 +179,22 @@ insert into t_05218_time64_insert select toDateTime64('2020-01-01 12:34:56.789',
 select distinct t from t_05218_time64_insert;
 select count() from t_05218_time64_insert;
 drop table t_05218_time64_insert;
+
+select 'An in-window DateTime / DateTime64 constant inserted into a Time64 column';
+-- The raw epoch value of `1970-01-02 12:34:56` is 131696 seconds, which lies INSIDE the `Time64` clock window.
+-- Without the typed projection branch the `VALUES` constant would be reinterpreted as those raw seconds and
+-- materialize `36:34:56`, while `INSERT ... SELECT` / `CAST` produce the local seconds-of-day `12:34:56`.
+drop table if exists t_05218_time64_in_window;
+create table t_05218_time64_in_window (k String, t Time64(3)) engine = Memory;
+insert into t_05218_time64_in_window values ('1 values dt', toDateTime('1970-01-02 12:34:56', 'UTC')), ('2 values dt64', toDateTime64('1970-01-02 12:34:56.789', 3, 'UTC'));
+insert into t_05218_time64_in_window select '3 select dt', toDateTime('1970-01-02 12:34:56', 'UTC');
+insert into t_05218_time64_in_window select '4 select dt64', toDateTime64('1970-01-02 12:34:56.789', 3, 'UTC');
+insert into t_05218_time64_in_window values ('5 values cast', cast(toDateTime64('1970-01-02 12:34:56.789', 3, 'UTC') as Time64(3)));
+-- A source timezone with a non-zero offset is projected with that offset, exactly like the column path.
+insert into t_05218_time64_in_window values ('6 values tz', toDateTime64('1970-01-02 12:34:56.789', 3, 'Europe/Moscow'));
+insert into t_05218_time64_in_window select '7 select tz', toDateTime64('1970-01-02 12:34:56.789', 3, 'Europe/Moscow');
+-- A scale reduction truncates the fraction on both paths.
+insert into t_05218_time64_in_window values ('8 values scale', toDateTime64('1970-01-02 12:34:56.789789', 6, 'UTC'));
+insert into t_05218_time64_in_window select '9 select scale', toDateTime64('1970-01-02 12:34:56.789789', 6, 'UTC');
+select k, t from t_05218_time64_in_window order by k;
+drop table t_05218_time64_in_window;

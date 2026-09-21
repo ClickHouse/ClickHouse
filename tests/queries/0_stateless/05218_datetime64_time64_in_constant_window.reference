@@ -117,3 +117,13 @@ A typed DateTime / DateTime64 constant against a Time64 column: IN must agree wi
 A DateTime64 constant inserted into a Time64 column: VALUES must agree with SELECT
 12:34:56.789
 2
+An in-window DateTime / DateTime64 constant inserted into a Time64 column
+1 values dt	12:34:56.000
+2 values dt64	12:34:56.789
+3 select dt	12:34:56.000
+4 select dt64	12:34:56.789
+5 values cast	12:34:56.789
+6 values tz	12:34:56.789
+7 select tz	12:34:56.789
+8 values scale	12:34:56.789
+9 select scale	12:34:56.789
