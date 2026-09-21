@@ -178,7 +178,7 @@ O byte `kind_stack` enumera uma serialização não padrão por coluna:
 | ------ | ---------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `0x00` | DEFAULT                      | Serialização padrão                                                              | Idêntico a `has_custom = 0`                                                         |
 | `0x01` | SPARSE                       | Serialização esparsa (v54465+)                                                   | Fluxo de offsets + valores não padrão; veja abaixo                                  |
-| `0x02` | DETACHED                     | Coluna encapsulada em um `ColumnBLOB` por marshaling paralelo de block (v54478+) | Blob pré-marshaling: `VarUInt size` + essa quantidade de bytes; veja abaixo         |
+| `0x02` | DETACHED                     | Coluna encapsulada em um `ColumnBLOB` por marshalling paralelo de bloco (v54478+) | Blob pré-marshaling: `VarUInt size` + essa quantidade de bytes; veja abaixo         |
 | `0x03` | DETACHED&#95;OVER&#95;SPARSE | Uma coluna esparsa encapsulada em um `ColumnBLOB`                                | Mesmo payload de blob que `DETACHED`; veja abaixo                                   |
 | `0x04` | REPLICATED                   | Forma de dicionário para valores repetidos (v54482+)                             | Fluxo de índices + valores densos dos elementos; veja abaixo                        |
 | `0x05` | COMBINATION                  | Pilha de múltiplos tipos                                                         | Seguido por `VarUInt` `count` e por mais `count` bytes de tipo — veja a nota abaixo |
@@ -196,14 +196,21 @@ Os valores de byte diferem dos códigos compactos: `REPLICATED` é `0x03` neste 
 
 O `count` é o comprimento total da pilha **incluindo a entrada `DEFAULT` inicial** que começa toda pilha. Os códigos compactos já cobrem toda pilha com uma ou duas entradas, portanto `COMBINATION` sempre tem `count` de pelo menos três.
 
-**`kind_stack` recursivo para colunas `Tuple`.** O payload de `kind_stack` acima é o byte (ou a sequência `COMBINATION`) das informações de serialização da própria coluna. Um `Tuple` carrega um `SerializationInfoTuple`, que primeiro grava o payload da pilha de tipos do *próprio* tuple e depois grava um payload completo de pilha de tipos para *cada* elemento, em ordem; um decodificador lê de volta a mesma estrutura recursiva. Assim, para `Tuple(A, B, C)`, os bytes do campo 4 são `[tuple_kind][A_kind][B_kind][C_kind]`, e o payload de cada elemento é ele próprio recursivo se esse elemento também for composto. O byte `has_custom_serialization` (campo 3) é definido sempre que as informações do próprio tuple *ou de qualquer elemento* forem não padrão, de modo que um `Tuple` cujo único elemento especial seja esparso, replicado ou detached ainda aciona o payload de pilha de tipos. Um decodificador que ler apenas o único byte inicial do enum para um `Tuple` vai parar cedo demais e interpretar incorretamente os bytes restantes de tipo dos elementos como dados da coluna.
+**Validade da pilha de tipos.** Um decodificador rejeita uma pilha malformada com `INCORRECT_DATA` em vez de construir a serialização que ela descreve:
+
+* a pilha começa com `DEFAULT`;
+* a pilha é uma subsequência de `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED` — a ordem em que os tipos encapsulam uns aos outros. `SPARSE` pode ficar dentro de `REPLICATED`, mas não o contrário, e `DETACHED` é sempre o último porque um `ColumnBLOB` guarda a forma serializada de tudo que está abaixo dele. Isso também significa que nenhum tipo ocorre duas vezes, o que limita `count` ao número de tipos.
+
+Observe que essa ordem não é a ordem dos valores de byte de tipo acima. Qualquer outra pilha descreve um layout de coluna que nenhum writer constrói e que nenhuma etapa de materialização desencapsula de volta para uma full column do tipo declarado — um `ColumnSparse` cuja coluna de valores é ela própria esparsa ou replicada, por exemplo, permanece encapsulada.
+
+**`kind_stack` recursivo para colunas `Tuple`.** O payload de `kind_stack` acima é o byte (ou a sequência `COMBINATION`) das informações de serialização da própria coluna. Um `Tuple` carrega um `SerializationInfoTuple`, que primeiro grava o payload da pilha de tipos do *próprio* tuple e depois grava um payload completo de pilha de tipos para *cada* elemento, em ordem; um decodificador lê de volta a mesma estrutura recursiva. Assim, para `Tuple(A, B, C)`, os bytes do campo 4 são `[tuple_kind][A_kind][B_kind][C_kind]`, e o payload de cada elemento é ele próprio recursivo se esse elemento também for composto. O byte `has_custom_serialization` (campo 3) é definido sempre que as informações do próprio tuple *ou de qualquer elemento* forem não padrão, de modo que um `Tuple` cujo único elemento especial seja esparso ou replicado ainda aciona o payload de pilha de tipos. Um decodificador que ler apenas o único byte inicial do enum para um `Tuple` vai parar cedo demais e interpretar incorretamente os bytes restantes de tipo dos elementos como dados da coluna.
 
 **Formato wire esparso.** Quando `kind_stack = 0x01`, o `data` da coluna é composto por dois fluxos gravados em sequência no único fluxo TCP compartilhado:
 
-1. **Fluxo de offsets** — uma sequência de `VarUInt`s. Cada valor `v` é:
-   * `v` com o bit mais alto na posição 62 desativado: `(v & 0x3FFFFFFFFFFFFFFF)` = o número de posições padrão antes do próximo valor explícito não padrão. Essa posição não padrão é `cursor + group_size`, em que `cursor` é a posição corrente; depois disso, `cursor` avança em `group_size + 1`.
-   * `v` com o bit 62 ativado (`END_OF_GRANULE_FLAG`): o valor com a flag limpa = o número de posições padrão finais após o último valor não padrão. Isso marca o fim do fluxo de offsets para o block.
-2. **Fluxo de valores** — `count` valores não padrão codificados densamente no tipo interno, em que `count` é o número de `VarUInt`s não EOG lidos acima.
+1. **Fluxo de offset** — uma sequência de `VarUInt`s. Cada valor `v` é:
+   * `v` com o bit alto na posição 62 zerado: `(v & 0x3FFFFFFFFFFFFFFF)` = o número de posições padrão antes do próximo valor não padrão explícito. Essa posição não padrão é `cursor + group_size`, onde `cursor` é a posição corrente; depois disso, `cursor` avança em `group_size + 1`.
+   * `v` com o bit 62 definido (`END_OF_GRANULE_FLAG`): o valor com o flag zerado = o número de posições padrão finais após o último valor não padrão. Isso marca o fim do fluxo de offset para o bloco.
+2. **Fluxo de valores** — `count` valores não padrão codificados de forma densa no tipo interno, onde `count` é o número de VarUInts sem EOG lidos acima.
 
 Um decodificador reconstrói uma coluna densa com `num_rows` entradas, preenchendo cada posição não explícita com o valor padrão do tipo interno (`0` para inteiros e números de ponto flutuante, `""` para `String`, `0` dias para `Date` e assim por diante).
 
@@ -229,6 +236,8 @@ Um decodificador reconstrói uma coluna densa selecionando `elements[indexes[i]]
 3. O `data` da coluna é escrito como um tamanho de blob `VarUInt`, seguido por exatamente essa quantidade de bytes do blob.
 
 Se a coluna encapsulada era esparsa, sua pilha é `{DEFAULT, SPARSE, DETACHED}`, que é serializada como `DETACHED_OVER_SPARSE`. Um cliente que decodifica essa coluna lê o comprimento e os bytes do blob e, em seguida, descomprime o blob para recuperar o payload da coluna interna (veja a [nota sobre `ColumnBLOB`](#compression-negotiation) na seção sobre compressão).
+
+`DETACHED` é direcional: pode aparecer apenas em blocos de resultado enviados por um servidor, e somente para uma coluna de nível superior inteira — nunca como um dos kinds de elemento de uma `Tuple`. Diferentemente dos outros kinds, ele faz com que a coluna em runtime seja uma `ColumnBLOB` em vez da coluna do tipo declarado, de modo que um receiver só a aceita quando seu próprio pipeline reconverte o blob. Por isso, um servidor rejeita `DETACHED` em qualquer bloco enviado por um cliente — sejam dados de external table, escalares ou dados de insert — com `INCORRECT_DATA`.
 
 ### Variantes de Block {#block-variants}
 

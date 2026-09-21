@@ -172,18 +172,18 @@ Un décodeur s’appuie sur la chaîne `type`. Les chaînes de type contiennent 
 
 #### kind_stack et encodage sparse {#kind-stack-and-sparse-encoding}
 
-L’octet `kind_stack` énumère une sérialisation non standard par colonne :
+L’octet `kind_stack` énumère une sérialisation non standard par colonne :
 
 | Byte   | Name                         | Meaning                                                                                 | Wire impact on `data`                                                                              |
 | ------ | ---------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `0x00` | DEFAULT                      | Sérialisation par défaut                                                                | Identique à `has_custom = 0`                                                                       |
-| `0x01` | SPARSE                       | Sérialisation sparse (v54465+)                                                          | Flux d’offsets + valeurs non standard ; voir ci-dessous                                            |
-| `0x02` | DETACHED                     | Colonne encapsulée dans un `ColumnBLOB` par le marshalling parallèle de block (v54478+) | Blob prémarshallé : `VarUInt size` + ce nombre d’octets ; voir ci-dessous                          |
-| `0x03` | DETACHED&#95;OVER&#95;SPARSE | Colonne sparse encapsulée dans un `ColumnBLOB`                                          | Même charge utile de blob que `DETACHED` ; voir ci-dessous                                         |
-| `0x04` | REPLICATED                   | Représentation dictionnaire pour les valeurs répétées (v54482+)                         | Flux d’index + valeurs d’éléments encodées densément ; voir ci-dessous                             |
+| `0x01` | SPARSE                       | Sérialisation sparse (v54465+)                                                          | Flux d’offsets + valeurs non standard ; voir ci-dessous                                            |
+| `0x02` | DETACHED                     | Colonne encapsulée dans un `ColumnBLOB` par le marshalling parallèle des blocs (v54478+) | Blob prémarshallé : `VarUInt size` + ce nombre d’octets ; voir ci-dessous                          |
+| `0x03` | DETACHED&#95;OVER&#95;SPARSE | Colonne sparse encapsulée dans un `ColumnBLOB`                                          | Même charge utile de blob que `DETACHED` ; voir ci-dessous                                         |
+| `0x04` | REPLICATED                   | Représentation dictionnaire pour les valeurs répétées (v54482+)                         | Flux d’index + valeurs d’éléments encodées densément ; voir ci-dessous                             |
 | `0x05` | COMBINATION                  | Pile multi-kind                                                                         | Suivi d’un `VarUInt` `count` puis de `count` octets kind supplémentaires — voir la note ci-dessous |
 
-**La charge utile de `COMBINATION` utilise une énumération différente.** Les cinq lignes ci-dessus sont des codes compacts sur un octet. `COMBINATION` (`0x05`) est l’échappement générique pour toute pile non couverte par ces codes : il est suivi d’un `VarUInt` `count`, puis de `count` entrées sur un octet. Ces entrées ne sont **pas** les codes compacts du tableau — ce sont les valeurs brutes de `ISerialization::Kind` :
+**La charge utile de `COMBINATION` utilise une énumération différente.** Les cinq lignes ci-dessus sont des codes *compacts* sur un octet. `COMBINATION` (`0x05`) est l’échappement générique pour toute pile non couverte par ces codes : il est suivi d’un `VarUInt` `count`, puis de `count` entrées sur un octet. Ces entrées ne sont **pas** les codes compacts du tableau — ce sont les valeurs brutes de `ISerialization::Kind` :
 
 | Byte   | Nested `Kind` |
 | ------ | ------------- |
@@ -192,24 +192,31 @@ L’octet `kind_stack` énumère une sérialisation non standard par colonne :
 | `0x02` | DETACHED      |
 | `0x03` | REPLICATED    |
 
-Les valeurs d’octet diffèrent des codes compacts : `REPLICATED` vaut `0x03` dans cette énumération imbriquée, mais `0x04` comme code compact, et il n’existe pas d’entrée `DETACHED_OVER_SPARSE` — cette combinaison apparaît comme deux entrées consécutives, `SPARSE` puis `DETACHED`. Un décodeur qui continue d’utiliser le tableau compact pour les octets imbriqués fera une correspondance incorrecte de `0x03`/`0x04` et se désynchronisera.
+Les valeurs d’octet diffèrent des codes compacts : `REPLICATED` vaut `0x03` dans cette énumération imbriquée, mais `0x04` comme code compact, et il n’existe pas d’entrée `DETACHED_OVER_SPARSE` — cette combinaison apparaît comme deux entrées consécutives, `SPARSE` puis `DETACHED`. Un décodeur qui continue d’utiliser le tableau compact pour les octets imbriqués fera une correspondance incorrecte de `0x03`/`0x04` et se désynchronisera.
 
 Le `count` est la longueur complète de la pile, **y compris l’entrée initiale `DEFAULT`** qui commence chaque pile. Les codes compacts couvrent déjà toutes les piles à une et deux entrées, donc un `COMBINATION` a toujours un `count` d’au moins trois.
 
-**`kind_stack` récursif pour les colonnes `Tuple`.** La charge utile `kind_stack` ci-dessus correspond à l’octet (ou à la séquence `COMBINATION`) des informations de sérialisation propres à une colonne. Un `Tuple` transporte un `SerializationInfoTuple`, qui écrit d’abord la charge utile kind-stack propre au tuple, puis une charge utile kind-stack complète pour *chaque* élément, dans l’ordre ; un décodeur relit ensuite cette même structure récursive. Ainsi, pour `Tuple(A, B, C)`, les octets du champ 4 sont `[tuple_kind][A_kind][B_kind][C_kind]`, et la charge utile de chaque élément est elle-même récursive si cet élément est à nouveau composite. L’octet `has_custom_serialization` (champ 3) est défini dès que les informations propres au tuple *ou celles de l’un de ses éléments* sont non standard ; ainsi, un `Tuple` dont le seul élément spécial est sparse, replicated ou detached déclenche quand même la charge utile kind-stack. Un décodeur qui ne lit que le seul octet d’énumération initial d’un `Tuple` s’arrêtera trop tôt et interprétera à tort les octets kind des éléments restants comme des données de colonne.
+**Validité de la pile de kinds.** Un décodeur rejette une pile mal formée avec `INCORRECT_DATA` au lieu de construire la sérialisation qu’elle décrit :
 
-**Format sparse sur le wire.** Quand `kind_stack = 0x01`, les `data` de la colonne sont constituées de deux flux écrits l’un à la suite de l’autre dans l’unique flux TCP partagé :
+* la pile commence par `DEFAULT` ;
+* la pile est une sous-séquence de `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED` — l’ordre dans lequel les kinds s’encapsulent les uns les autres. `SPARSE` peut se trouver à l’intérieur de `REPLICATED`, mais pas l’inverse, et `DETACHED` est toujours en dernier, car un `ColumnBLOB` contient la forme sérialisée de tout ce qui se situe en dessous. Cela signifie également qu’aucun kind n’apparaît deux fois, ce qui borne `count` par le nombre de kinds.
 
-1. **Flux d’offsets** — une séquence de `VarUInt`. Chaque valeur `v` est soit :
-   * `v` avec le bit de poids fort à la position 62 non défini : `(v & 0x3FFFFFFFFFFFFFFF)` = le nombre de positions par défaut avant la prochaine valeur explicite non standard. Cette position non standard est `cursor + group_size`, où `cursor` est la position courante ; ensuite, `cursor` avance de `group_size + 1`.
-   * `v` avec le bit 62 défini (`END_OF_GRANULE_FLAG`) : la valeur avec le flag effacé = le nombre de positions par défaut de fin après la dernière valeur non standard. Cela marque la fin du flux d’offsets pour le block.
-2. **Flux de valeurs** — `count` valeurs non standard encodées densément dans le type interne, où `count` est le nombre de `VarUInt` non EOG lus ci-dessus.
+Notez que cet ordre n’est pas celui des valeurs d’octet des kinds ci-dessus. Toute autre pile décrit une disposition de colonne qu’aucun writer ne produit et qu’aucune étape de materialization ne déballe pour revenir à une full column du type déclaré — un `ColumnSparse` dont la colonne de valeurs est elle-même sparse ou replicated, par exemple, reste encapsulé.
+
+**`kind_stack` récursif pour les colonnes `Tuple`.** La charge utile `kind_stack` ci-dessus correspond à l’octet (ou à la séquence `COMBINATION`) des informations de sérialisation propres à une colonne. Un `Tuple` transporte un `SerializationInfoTuple`, qui écrit d’abord la charge utile kind-stack propre au tuple, puis une charge utile kind-stack complète pour *chaque* élément, dans l’ordre ; un décodeur relit ensuite cette même structure récursive. Ainsi, pour `Tuple(A, B, C)`, les octets du champ 4 sont `[tuple_kind][A_kind][B_kind][C_kind]`, et la charge utile de chaque élément est elle-même récursive si cet élément est à nouveau composite. L’octet `has_custom_serialization` (champ 3) est défini dès que les informations propres au tuple *ou celles de l’un de ses éléments* sont non standard ; ainsi, un `Tuple` dont le seul élément spécial est sparse ou replicated déclenche quand même la charge utile kind-stack. Un décodeur qui ne lit que le seul octet d’énumération initial d’un `Tuple` s’arrêtera trop tôt et interprétera à tort les octets kind des éléments restants comme des données de colonne.
+
+**Format sparse sur le wire.** Quand `kind_stack = 0x01`, les `data` de la colonne sont constituées de deux flux écrits l’un à la suite de l’autre dans l’unique flux TCP partagé :
+
+1. **Flux d’offsets** — une séquence de `VarUInt`. Chaque valeur `v` est soit :
+   * `v` avec le bit de poids fort en position 62 à zéro : `(v & 0x3FFFFFFFFFFFFFFF)` = le nombre de positions par défaut avant la prochaine valeur non par défaut explicite. Cette position non par défaut est `cursor + group_size`, où `cursor` est la position courante ; ensuite `cursor` avance de `group_size + 1`.
+   * `v` avec le bit 62 défini (`END_OF_GRANULE_FLAG`) : la valeur, drapeau retiré, = le nombre de positions par défaut finales après la dernière valeur non par défaut. Cela marque la fin du flux d’offsets pour le bloc.
+2. **Flux de valeurs** — `count` valeurs non par défaut encodées de manière dense dans le type interne, où `count` est le nombre de VarUInt non-EOG lus ci-dessus.
 
 Un décodeur reconstruit une colonne dense de `num_rows` entrées en remplissant chaque position non explicite avec la valeur par défaut du type interne (`0` pour les entiers et les nombres à virgule flottante, `""` pour `String`, `0` jour pour `Date`, etc.).
 
-Une colonne `Nullable(T)` sparse est un cas particulier, car la valeur par défaut de `Nullable(T)` est **NULL**. L’encodage sparse supprime entièrement le flux de null map habituel de `Nullable` : le flux d’offsets identifie les positions non par défaut — c’est-à-dire non NULL —, le flux de valeurs ne contient que ces valeurs non NULL, stockées de manière dense dans `T`, et chaque position non explicite est reconstruite comme NULL. Un décodeur ne doit donc *pas* chercher de null map dans le flux de valeurs, et ne doit *pas* combler les lacunes avec un `0` présent ; il les remplit avec NULL.
+Une colonne `Nullable(T)` sparse est un cas particulier, car la valeur par défaut de `Nullable(T)` est **NULL**. L’encodage sparse supprime entièrement le flux de null map habituel de `Nullable` : le flux d’offsets identifie les positions non par défaut — c’est-à-dire non NULL —, le flux de valeurs ne contient que ces valeurs non NULL, stockées de manière dense dans `T`, et chaque position non explicite est reconstruite comme NULL. Un décodeur ne doit donc *pas* chercher de null map dans le flux de valeurs, et ne doit *pas* combler les lacunes avec un `0` présent ; il les remplit avec NULL.
 
-**Wire format répliqué.** Quand `kind_stack = 0x04`, la colonne `data` est un dictionnaire : une liste de valeurs d’élément distinctes, plus un index par ligne dans cette liste (le même schéma de lookup que `LowCardinality`). Quand le type interne est lui-même versionné — par exemple `LowCardinality(T)` —, son state prefix est écrit **en premier**, avant le flux d’index : la sérialisation répliquée délègue la prefix phase au type interne avant d’écrire `num_rows`. Les types internes dont le préfixe est vide (les types feuille et les composites simples) n’ajoutent ici aucun octet.
+**Wire format répliqué.** Quand `kind_stack = 0x04`, la colonne `data` est un dictionnaire : une liste de valeurs d’élément distinctes, plus un index par ligne dans cette liste (le même schéma de lookup que `LowCardinality`). Quand le type interne est lui-même versionné — par exemple `LowCardinality(T)` —, son state prefix est écrit **en premier**, avant le flux d’index : la sérialisation répliquée délègue la prefix phase au type interne avant d’écrire `num_rows`. Les types internes dont le préfixe est vide (les types feuille et les composites simples) n’ajoutent ici aucun octet.
 
 ```text
 [inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
@@ -220,15 +227,17 @@ Une colonne `Nullable(T)` sparse est un cas particulier, car la valeur par défa
 [elements: num_elements dense inner-type values]
 ```
 
-Un décodeur reconstruit une colonne dense en sélectionnant `elements[indexes[i]]` pour chaque ligne de sortie `i`. Les types internes composites sont traités récursivement : la liste des éléments est matérialisée dans le type interne, puis indexée. Les types internes pris en charge incluent les types feuille, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (chaque champ étant développé comme un `Array`) et `LowCardinality(T)` (le dictionnaire partagé est conservé ; seules les clés par élément sont indexées).
+Un décodeur reconstruit une colonne dense en sélectionnant `elements[indexes[i]]` pour chaque ligne de sortie `i`. Les types internes composites sont traités récursivement : la liste des éléments est matérialisée dans le type interne, puis indexée. Les types internes pris en charge incluent les types feuille, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (chaque champ étant développé comme un `Array`) et `LowCardinality(T)` (le dictionnaire partagé est conservé ; seules les clés par élément sont indexées).
 
-**Wire format detached.** `DETACHED` (`0x02`) et `DETACHED_OVER_SPARSE` (`0x03`) apparaissent *bien* sur le wire — ils ne sont pas purement internes. Sur le chemin TCP, lorsque la compression est activée et que la révision négociée est au moins `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), la colonne passe par trois étapes :
+**Wire format detached.** `DETACHED` (`0x02`) et `DETACHED_OVER_SPARSE` (`0x03`) apparaissent *bien* sur le wire — ils ne sont pas purement internes. Sur le chemin TCP, lorsque la compression est activée et que la révision négociée est au moins `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), la colonne passe par trois étapes :
 
 1. Chaque colonne éligible (non-`const`, non-`Tuple`, dans un bloc contenant plus d’une ligne) est encapsulée dans un `ColumnBLOB` qui contient la colonne déjà sérialisée et compressée hors du thread principal.
 2. `DETACHED` est ajouté à la pile des kinds de la colonne encapsulée.
 3. Le `data` de la colonne est écrit sous la forme d’une taille de blob `VarUInt`, suivie d’exactement ce nombre d’octets du blob.
 
 Si la colonne encapsulée était sparse, sa pile est `{DEFAULT, SPARSE, DETACHED}`, ce qui se sérialise en `DETACHED_OVER_SPARSE`. Un client qui décode une telle colonne lit la longueur du blob et ses octets, puis décompresse le blob pour récupérer la charge utile de la colonne interne (voir la [note `ColumnBLOB`](#compression-negotiation) dans la section sur la compression).
+
+`DETACHED` est directionnel : il ne peut apparaître que dans les blocs de résultat envoyés par un serveur, et uniquement pour une colonne de premier niveau entière — jamais comme l&#39;un des kinds d&#39;élément d&#39;un `Tuple`. Contrairement aux autres kinds, il transforme la colonne à l&#39;exécution en `ColumnBLOB` au lieu d&#39;une colonne du type déclaré ; un receiver ne l&#39;accepte donc que si son propre pipeline reconvertit le blob. Un serveur rejette par conséquent `DETACHED` dans tout bloc envoyé par un client — qu&#39;il s&#39;agisse de données d&#39;external table, de scalars ou de données d&#39;insert — avec `INCORRECT_DATA`.
 
 ### Variantes de bloc {#block-variants}
 

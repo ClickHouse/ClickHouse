@@ -178,9 +178,9 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
 | ------ | ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
 | `0x00` | DEFAULT                      | 기본 직렬화                                         | `has_custom = 0`과 동일                                         |
 | `0x01` | SPARSE                       | 희소 직렬화(v54465+)                                | 오프셋 스트림 + 비기본값, 아래 참조                                        |
-| `0x02` | DETACHED                     | 병렬 block 마샬링(v54478+)에 의해 `ColumnBLOB`로 감싸진 컬럼 | 사전 마샬링된 blob: `VarUInt size` + 해당 길이의 바이트, 아래 참조             |
+| `0x02` | DETACHED                     | 병렬 블록 마샬링(v54478+)에 의해 `ColumnBLOB`로 감싸진 컬럼 | 사전 마샬링된 blob: `VarUInt size` + 해당 길이의 바이트, 아래 참조             |
 | `0x03` | DETACHED&#95;OVER&#95;SPARSE | `ColumnBLOB`로 감싸진 희소 컬럼                        | `DETACHED`와 동일한 blob payload, 아래 참조                          |
-| `0x04` | REPLICATED                   | 반복되는 값에 대한 딕셔너리 형태(v54482+)                    | 인덱스 스트림 + 조밀하게 인코딩된 요소 값, 아래 참조                              |
+| `0x04` | REPLICATED                   | 반복되는 값에 대한 딕셔너리 형태(v54482+)                    | 인덱스 스트림 + 조밀하게 인코딩된 원소 값, 아래 참조                              |
 | `0x05` | COMBINATION                  | 다중 kind 스택                                     | 뒤에 VarUInt `count`와 `count`개의 추가 kind 바이트가 이어짐 — 아래 참고 사항 참조 |
 
 **`COMBINATION` payload는 다른 enum을 사용합니다.** 위의 5개 행은 *compact* 1바이트 코드입니다. `COMBINATION` (`0x05`)은 여기에 해당하지 않는 모든 스택을 표현하는 일반 escape이며, 뒤에 `VarUInt` `count`와 이어서 `count`개의 1바이트 항목이 옵니다. 이 항목들은 표의 compact 코드가 **아니라** 원시 `ISerialization::Kind` 값입니다.
@@ -196,20 +196,27 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
 
 `count`는 모든 스택의 시작에 있는 선행 `DEFAULT` 항목을 **포함한 전체 스택 길이**입니다. compact 코드는 이미 모든 1항목 및 2항목 스택을 포괄하므로, `COMBINATION`의 `count`는 항상 최소 3입니다.
 
-**`Tuple` 컬럼의 재귀적 `kind_stack`.** 위의 `kind_stack` payload는 한 컬럼 자체의 직렬화 정보에 해당하는 바이트(또는 `COMBINATION` 시퀀스)입니다. `Tuple`은 `SerializationInfoTuple`을 가지며, 먼저 tuple 자체의 *고유한* kind-stack payload를 기록한 뒤 각 요소에 대해 순서대로 전체 kind-stack payload를 하나씩 기록합니다. 디코더도 동일한 재귀 구조로 이를 다시 읽습니다. 따라서 `Tuple(A, B, C)`에서 field-4 바이트는 `[tuple_kind][A_kind][B_kind][C_kind]`이며, 어떤 요소가 다시 복합 타입이면 해당 요소 payload 자체도 재귀적입니다. tuple 자체의 정보 *또는 어느 요소의* 정보라도 비기본이면 `has_custom_serialization` 바이트(field 3)가 설정되므로, 특별한 요소가 희소, 복제된 또는 분리된 것뿐인 `Tuple`도 kind-stack payload를 트리거합니다. `Tuple`에 대해 맨 앞의 enum 바이트 하나만 읽는 디코더는 너무 일찍 멈추게 되며, 남아 있는 요소 kind 바이트를 컬럼 데이터로 잘못 읽게 됩니다.
+**Kind 스택 유효성.** 디코더는 잘못된 형식의 스택에 대해 해당 스택이 기술하는 직렬화를 구성하지 않고 `INCORRECT_DATA`로 거부합니다.
+
+* 스택은 `DEFAULT`로 시작합니다.
+* 스택은 `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED`의 subsequence입니다 — 이는 각 kind가 서로를 감싸는 순서입니다. `SPARSE`는 `REPLICATED` 안에 위치할 수 있지만 그 반대는 불가능하며, `ColumnBLOB`는 그 아래에 있는 모든 것의 직렬화된 형태를 담고 있으므로 `DETACHED`는 항상 마지막입니다. 또한 이는 어떤 kind도 두 번 나타나지 않음을 의미하며, 따라서 `count`는 kind의 개수로 제한됩니다.
+
+이 순서는 위의 kind 바이트 값 순서와는 다르다는 점에 유의하십시오. 그 밖의 스택은 어떤 writer도 만들지 않는 컬럼 레이아웃을 기술하며, 어떤 머티리얼라이즈 단계에서도 선언된 타입의 full 컬럼으로 다시 풀리지 않습니다 — 예를 들어 값 컬럼 자체가 희소이거나 복제된 `ColumnSparse`는 감싸진 상태로 남습니다.
+
+**`Tuple` 컬럼의 재귀적 `kind_stack`.** 위의 `kind_stack` payload는 한 컬럼 자체의 직렬화 정보에 해당하는 바이트(또는 `COMBINATION` 시퀀스)입니다. `Tuple`은 `SerializationInfoTuple`을 가지며, 먼저 tuple 자체의 *고유한* kind-stack payload를 기록한 뒤 각 원소에 대해 순서대로 전체 kind-stack payload를 하나씩 기록합니다. 디코더도 동일한 재귀 구조로 이를 다시 읽습니다. 따라서 `Tuple(A, B, C)`에서 field-4 바이트는 `[tuple_kind][A_kind][B_kind][C_kind]`이며, 어떤 원소가 다시 복합 타입이면 해당 원소 payload 자체도 재귀적입니다. tuple 자체의 정보 *또는 어느 원소의* 정보라도 비기본이면 `has_custom_serialization` 바이트(field 3)가 설정되므로, 특별한 원소가 희소 또는 복제된 것뿐인 `Tuple`도 kind-stack payload를 트리거합니다. `Tuple`에 대해 맨 앞의 enum 바이트 하나만 읽는 디코더는 너무 일찍 멈추게 되며, 남아 있는 원소 kind 바이트를 컬럼 데이터로 잘못 읽게 됩니다.
 
 **희소 wire 형식.** `kind_stack = 0x01`이면 컬럼 `data`는 하나의 공유 TCP 스트림에 연속해서 기록되는 두 개의 스트림으로 구성됩니다.
 
-1. **오프셋 스트림** — `VarUInt` 시퀀스입니다. 각 값 `v`는 다음 중 하나입니다.
-   * 위치 62의 상위 비트가 꺼져 있는 `v`: `(v & 0x3FFFFFFFFFFFFFFF)` = 다음 명시적 비기본값 앞에 있는 기본 위치의 수입니다. 해당 비기본 위치는 `cursor + group_size`이며, 여기서 `cursor`는 현재 누적 위치입니다. 이후 `cursor`는 `group_size + 1`만큼 증가합니다.
-   * 비트 62가 설정된 `v` (`END_OF_GRANULE_FLAG`): 플래그를 제거한 값 = 마지막 비기본값 뒤에 있는 후행 기본 위치의 수입니다. 이는 block에 대한 오프셋 스트림의 끝을 표시합니다.
-2. **값 스트림** — 내부 유형으로 조밀하게 인코딩된 `count`개의 비기본값이며, 여기서 `count`는 위에서 읽은 EOG가 아닌 `VarUInt`의 개수입니다.
+1. **오프셋 스트림** — `VarUInt`의 시퀀스입니다. 각 값 `v`는 다음 중 하나입니다.
+   * 62번 위치의 상위 비트가 해제된 `v`: `(v & 0x3FFFFFFFFFFFFFFF)` = 다음 명시적 비기본값 앞에 있는 기본값 위치의 개수입니다. 해당 비기본값 위치는 `cursor + group_size`이며, 여기서 `cursor`는 현재 진행 중인 위치입니다. 이후 `cursor`는 `group_size + 1`만큼 전진합니다.
+   * 62번 비트가 설정된 `v`(`END_OF_GRANULE_FLAG`): 플래그를 제거한 값 = 마지막 비기본값 이후에 오는 후행 기본값 위치의 개수입니다. 이는 해당 블록의 오프셋 스트림이 끝났음을 나타냅니다.
+2. **Values 스트림** — 내부 타입으로 조밀하게 인코딩된 `count`개의 비기본값입니다. 여기서 `count`는 위에서 읽은 EOG가 아닌 VarUInt의 개수입니다.
 
 디코더는 명시되지 않은 모든 위치를 내부 타입의 기본값(정수와 부동소수점은 `0`, `String`은 `""`, `Date`는 `0`일 등)으로 채워, `num_rows`개 항목으로 이루어진 조밀한 컬럼을 재구성합니다.
 
 희소 `Nullable(T)` 컬럼은 `Nullable(T)`의 기본값이 **NULL**이므로 특수한 경우입니다. 희소 인코딩에서는 일반적인 `Nullable` null-map 스트림을 완전히 생략합니다. 오프셋 스트림은 기본값이 아닌 위치, 즉 NULL이 아닌 위치를 식별하고, values 스트림은 그 NULL이 아닌 값만 `T` 타입으로 조밀하게 저장하며, 명시되지 않은 모든 위치는 NULL로 재구성됩니다. 따라서 디코더는 values 스트림에서 null map을 *찾아서는 안 되며*, 빈 구간을 값이 존재하는 `0`으로 *채워서도 안 됩니다*. 대신 NULL로 채웁니다.
 
-**복제된 wire 형식.** `kind_stack = 0x04`일 때 컬럼 `data`는 딕셔너리입니다. 즉, 서로 다른 요소 값의 목록과 각 행에서 그 목록을 가리키는 인덱스로 구성됩니다(`LowCardinality`와 동일한 lookup 형태). 내부 타입 자체에 버전 정보가 있는 경우(예: `LowCardinality(T)`)에는 상태 접두사가 인덱스 스트림보다 **먼저** 기록됩니다. 즉, 복제된 직렬화는 `num_rows`를 기록하기 전에 접두사 단계를 내부 타입에 먼저 위임합니다. 접두사가 비어 있는 내부 타입(리프 타입과 일반 복합 타입)은 여기에서 바이트를 추가하지 않습니다.
+**복제된 wire 형식.** `kind_stack = 0x04`일 때 컬럼 `data`는 딕셔너리입니다. 즉, 서로 다른 원소 값의 목록과 각 행에서 그 목록을 가리키는 인덱스로 구성됩니다(`LowCardinality`와 동일한 lookup 형태). 내부 타입 자체에 버전 정보가 있는 경우(예: `LowCardinality(T)`)에는 상태 접두사가 인덱스 스트림보다 **먼저** 기록됩니다. 즉, 복제된 직렬화는 `num_rows`를 기록하기 전에 접두사 단계를 내부 타입에 먼저 위임합니다. 접두사가 비어 있는 내부 타입(리프 타입과 일반 복합 타입)은 여기에서 바이트를 추가하지 않습니다.
 
 ```text
 [inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
@@ -220,15 +227,17 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
 [elements: num_elements dense inner-type values]
 ```
 
-디코더는 각 출력 행 `i`에 대해 `elements[indexes[i]]`를 선택해 밀집 컬럼을 재구성합니다. 복합 내부 타입은 재귀적으로 처리됩니다. 요소 목록은 먼저 내부 타입에서 구체화된 후 인덱싱됩니다. 지원되는 내부 타입에는 리프 타입, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`(각 필드는 `Array`처럼 확장됨), `LowCardinality(T)`(공유 딕셔너리는 유지되고 각 요소별 키만 인덱싱됨)가 포함됩니다.
+디코더는 각 출력 행 `i`에 대해 `elements[indexes[i]]`를 선택해 밀집 컬럼을 재구성합니다. 복합 내부 타입은 재귀적으로 처리됩니다. 원소 목록은 먼저 내부 타입에서 구체화된 후 인덱싱됩니다. 지원되는 내부 타입에는 리프 타입, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`(각 필드는 `Array`처럼 확장됨), `LowCardinality(T)`(공유 딕셔너리는 유지되고 각 원소별 키만 인덱싱됨)가 포함됩니다.
 
-**분리된 wire 형식.** `DETACHED` (`0x02`)와 `DETACHED_OVER_SPARSE` (`0x03`)는 실제로 wire를 통해 전송됩니다. 즉, 순전히 내부 전용은 아닙니다. TCP 경로에서는 압축이 활성화되어 있고 협상된 리비전이 `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`(v54478) 이상이면, 컬럼은 다음 3단계를 거칩니다.
+**분리된 wire 형식.** `DETACHED` (`0x02`)와 `DETACHED_OVER_SPARSE` (`0x03`)는 실제로 wire를 통해 전송됩니다. 즉, 순전히 내부 전용은 아닙니다. TCP 경로에서는 압축이 활성화되어 있고 협상된 revision이 `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`(v54478) 이상이면, 컬럼은 다음 3단계를 거칩니다.
 
 1. 적격한 각 컬럼(`const`가 아니고, `Tuple`이 아니며, 블록에 2개 이상의 행이 있는 경우)은 메인 스레드 밖에서 이미 마샬링되고 압축된 컬럼을 담는 `ColumnBLOB`로 래핑됩니다.
 2. `DETACHED`가 래핑된 컬럼의 kind stack에 추가됩니다.
 3. 컬럼 `data`는 `VarUInt` blob 크기를 기록한 뒤, 바로 이어서 정확히 그 크기만큼의 blob 바이트를 기록합니다.
 
 래핑된 컬럼이 희소 컬럼이었다면 해당 stack은 `{DEFAULT, SPARSE, DETACHED}`가 되며, 이는 `DETACHED_OVER_SPARSE`로 직렬화됩니다. 이러한 컬럼을 디코딩하는 클라이언트는 blob 길이와 바이트를 읽은 다음, blob의 압축을 해제해 내부 컬럼 payload를 복원합니다(압축에 대해서는 [`ColumnBLOB` 참고](#compression-negotiation)를 참조하십시오).
+
+`DETACHED`는 방향성을 가집니다. 즉, 서버가 전송하는 결과 블록에만 나타날 수 있고, 그것도 최상위 컬럼 전체에 대해서만 나타나며, `Tuple`의 원소 kind로는 결코 사용되지 않습니다. 다른 kind와 달리 런타임 컬럼을 선언된 유형의 컬럼이 아닌 `ColumnBLOB`으로 만들기 때문에, 수신기는 자체 pipeline이 해당 blob을 원래대로 되돌리는 경우에만 이를 허용합니다. 따라서 서버는 클라이언트가 전송하는 모든 블록, 즉 external table 데이터, 스칼라, 삽입 데이터 모두에 대해 `DETACHED`가 포함되면 `INCORRECT_DATA` 오류로 거부합니다.
 
 ### 블록 변형 {#block-variants}
 

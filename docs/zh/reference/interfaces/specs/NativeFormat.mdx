@@ -196,18 +196,25 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
 
 `count` 是完整的栈长度，**包括每个栈开头的 `DEFAULT` 前导条目**。紧凑编码已经覆盖了所有一项和两项的栈，因此 `COMBINATION` 的 `count` 始终至少为三。
 
-**`Tuple` 列的递归 `kind_stack`。** 上述 `kind_stack` 载荷是某一列自身序列化信息对应的字节 (或 `COMBINATION` 序列) 。`Tuple` 携带一个 `SerializationInfoTuple`，它会先写入 tuple *自身* 的 kind-stack 载荷，然后按顺序为*每个*元素写入一个完整的 kind-stack 载荷；解码器也会按相同的递归结构读回。因此，对于 `Tuple(A, B, C)`，field-4 的字节为 `[tuple_kind][A_kind][B_kind][C_kind]`；如果某个元素本身还是复合类型，则该元素载荷本身也会递归。只要 tuple 自身的信息*或任一元素*的信息为非默认，`has_custom_serialization` 字节 (field 3) 就会被设置，因此即使一个 `Tuple` 唯一的特殊元素只是 sparse、replicated 或 detached，也仍会触发 kind-stack 载荷。如果解码器对 `Tuple` 只读取单个前导枚举字节，就会过早停止，并把剩余的元素 kind 字节误读为列数据。
+**kind 栈的有效性。** 对于格式错误的栈，解码器会返回 `INCORRECT_DATA`，而不是构建它所描述的序列化：
+
+* 栈以 `DEFAULT` 开头；
+* 栈是 `DEFAULT`、`SPARSE`、`REPLICATED`、`DETACHED` 的一个子序列——这正是各个 kind 相互封装的顺序。`SPARSE` 可以位于 `REPLICATED` 之内，但反过来不行；而 `DETACHED` 始终排在最后，因为 `ColumnBLOB` 保存的是其下方所有内容的序列化形式。这也意味着任何 kind 都不会出现两次，从而将 `count` 限制在 kind 的数量之内。
+
+请注意，这个顺序与上面 kind 字节值的顺序并不相同。任何其他形式的栈所描述的列布局都不会被任何写入器构建出来，也没有任何物化步骤能将其还原为所声明类型的普通列——例如，一个值列本身又是稀疏或 replicated 的 `ColumnSparse`，将始终保持封装状态。
+
+**`Tuple` 列的递归 `kind_stack`。** 上述 `kind_stack` 载荷是某一列自身序列化信息对应的字节 (或 `COMBINATION` 序列) 。`Tuple` 携带一个 `SerializationInfoTuple`，它会先写入 tuple *自身* 的 kind-stack 载荷，然后按顺序为*每个*元素写入一个完整的 kind-stack 载荷；解码器也会按相同的递归结构读回。因此，对于 `Tuple(A, B, C)`，field-4 的字节为 `[tuple_kind][A_kind][B_kind][C_kind]`；如果某个元素本身还是复合类型，则该元素载荷本身也会递归。只要 tuple 自身的信息*或任一元素*的信息为非默认，`has_custom_serialization` 字节 (field 3) 就会被设置，因此即使一个 `Tuple` 唯一的特殊元素只是稀疏或 replicated，也仍会触发 kind-stack 载荷。如果解码器对 `Tuple` 只读取单个前导枚举字节，就会过早停止，并把剩余的元素 kind 字节误读为列数据。
 
 **稀疏传输格式。** 当 `kind_stack = 0x01` 时，列 `data` 由两个流组成，它们在同一个共享 TCP 流中背靠背写入：
 
-1. **偏移流** —— 一串 `VarUInt`。每个值 `v` 都属于以下两种情况之一：
-   * 如果 `v` 在位置 62 的高位未置位：`(v & 0x3FFFFFFFFFFFFFFF)` = 下一个显式非默认值之前的默认位置数。该非默认位置为 `cursor + group_size`，其中 `cursor` 是当前游标位置；之后 `cursor` 前进 `group_size + 1`。
-   * 如果 `v` 的第 62 位被置位 (`END_OF_GRANULE_FLAG`) ：清除该标志后的值 = 最后一个非默认值之后尾随的默认位置数。这标志着该块的偏移流结束。
-2. **值流** —— 使用内部类型对 `count` 个非默认值进行稠密编码，其中 `count` 是上面读取到的非 EOG `VarUInt` 数量。
+1. **偏移流** —— 一串 `VarUInt`。每个值 `v` 要么是：
+   * `v` 的第 62 位未置位：`(v & 0x3FFFFFFFFFFFFFFF)` = 下一个显式非默认值之前的默认位置个数。该非默认位置为 `cursor + group_size`，其中 `cursor` 是当前运行位置；之后 `cursor` 前进 `group_size + 1`。
+   * `v` 的第 62 位已置位 (`END_OF_GRANULE_FLAG`)：清除该标志后的值 = 最后一个非默认值之后的尾随默认位置个数。这标志着该块的偏移流结束。
+2. **Values stream** —— `count` 个以内部类型稠密编码的非默认值，其中 `count` 为上面读取到的非 EOG VarUInt 的数量。
 
 解码器通过将每个未显式指定的位置填充为内部类型的默认值，来重建一个包含 `num_rows` 个条目的稠密列 (整数和浮点数为 `0`，`String` 为 `""`，`Date` 为 `0` 天，等等) 。
 
-稀疏 `Nullable(T)` 列是一个特殊情况，因为 `Nullable(T)` 的默认值是 **NULL**。稀疏编码会完全省略常规的 `Nullable` null-map stream：offset stream 用于标识非默认值——也就是非 NULL——的位置，values stream 仅以稠密形式保存这些非 NULL 值 (类型为 `T`) ，而每个未显式指定的位置都会重建为 NULL。因此，解码器*不应*在 values stream 中查找 null map，也*不应*用有效的 `0` 来填充空缺；而应将其填充为 NULL。
+稀疏 `Nullable(T)` 列是一个特殊情况，因为 `Nullable(T)` 的默认值是 **NULL**。稀疏编码会完全省略常规的 `Nullable` null-map stream：偏移流用于标识非默认值——也就是非 NULL——的位置，values stream 仅以稠密形式保存这些非 NULL 值 (类型为 `T`) ，而每个未显式指定的位置都会重建为 NULL。因此，解码器*不应*在 values stream 中查找 null map，也*不应*用有效的 `0` 来填充空缺；而应将其填充为 NULL。
 
 **Replicated 传输格式。** 当 `kind_stack = 0x04` 时，列 `data` 是一个字典：由一组不同元素值的列表，以及每一行指向该列表的索引组成 (其 lookup 形态与 `LowCardinality` 相同) 。当内部类型本身也带有版本信息——例如 `LowCardinality(T)`——其状态前缀会**先**写入，即先于索引 stream：Replicated 序列化会先将前缀阶段委托给内部类型，再写入 `num_rows`。前缀为空的内部类型 (叶子类型和普通复合类型) 在这里不会写入任何字节。
 
@@ -229,6 +236,8 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
 3. 列 `data` 会被写为一个 `VarUInt` blob 大小，后面紧跟恰好这么多的 blob 字节。
 
 如果被包装的列是稀疏的，那么它的栈就是 `{DEFAULT, SPARSE, DETACHED}`，序列化后即为 `DETACHED_OVER_SPARSE`。客户端在解码这类列时，会先读取 blob 的长度和字节，然后对 blob 解压，以恢复内部列的载荷 (参见压缩部分下的 [`ColumnBLOB` 说明](#compression-negotiation)) 。
+
+`DETACHED` 具有方向性：它只能出现在服务器发送的结果块中，且只能作用于整个顶层列——绝不能作为 `Tuple` 的元素 kind 之一。与其他 kind 不同，它使运行时列变为 `ColumnBLOB`，而非所声明类型的列，因此只有当接收方自身的管道能将该 blob 还原时，才会接受它。因此，对于客户端发送的任何块——无论是外部表数据、标量还是插入数据——服务器都会以 `INCORRECT_DATA` 拒绝其中的 `DETACHED`。
 
 ### 块变体 {#block-variants}
 
