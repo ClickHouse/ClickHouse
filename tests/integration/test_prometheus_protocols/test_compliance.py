@@ -685,7 +685,9 @@ def test_promql_extended_support():
                 )
                 _, err = _run_promql_sql(sql)
                 if err:
-                    print(f"INSERT failed {scenario.file_name}:{scenario.line}: {err}")
+                    raise AssertionError(
+                        f"INSERT failed {scenario.file_name}:{scenario.line}: {err}"
+                    )
             for case in scenario.evals:
                 seen.append(case.eval_id)
                 excluded = promqltest.classify_eval(case)
