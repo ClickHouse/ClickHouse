@@ -196,7 +196,8 @@ void MergeTreePointReadSource::readVectorColumn(size_t base, size_t batch, IColu
 void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Columns & dst_columns)
 {
     const auto & index_granularity = *part.data_part->index_granularity;
-    dst_columns.assign(other_columns.size(), nullptr); /// nullptr -> reader creates the column; then it appends.
+    /// nullptr -> reader creates the column; then it appends.
+    MutableColumns read_columns(other_columns.size());
 
     for (size_t i = 0; i < batch; ++i)
     {
@@ -206,21 +207,36 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
         /// `MergeTreeReaderWide::readRows` seeks back to the mark and drops its substream caches on every call, so asking
         /// for one row at a time would decompress the whole granule once per survivor - for a granule holding several
         /// shortlisted rows that is worse than the plain granule read this source replaces. The offsets are ascending,
-        /// so survivors of the same granule arrive consecutively: keep the streams where the previous call left them and
-        /// skip the rows in between (`continue_reading` suppresses the seek, `rows_offset` does the skipping). Each
-        /// granule is then decompressed at most once, regardless of how many of its rows survive.
-        const bool continue_reading = from_mark == last_read_mark && row >= next_unread_row;
-        const size_t rows_offset = continue_reading
+        /// so survivors of the same granule arrive consecutively: keep the streams where the previous call left them
+        /// (`continue_reading` suppresses the seek) and skip the rows in between. Each granule is then decompressed at
+        /// most once, regardless of how many of its rows survive.
+        bool continue_reading = from_mark == last_read_mark && row >= next_unread_row;
+        const size_t rows_to_skip = continue_reading
             ? row - next_unread_row
             : row - index_granularity.getMarkStartingRow(from_mark);
 
-        other_reader->readRows(
-            from_mark, /*current_task_last_mark=*/ from_mark + 1, continue_reading,
-            /*max_rows_to_read=*/ 1, rows_offset, dst_columns);
+        /// `readRows` has no way to skip leading rows, so the rows in between are dropped the same way
+        /// `MergeTreeRangeReader::DelayedStream::finalize` drops them: read them into throwaway columns. They are
+        /// decompressed either way - only the copy into the columns is wasted, and it is bounded by the granule.
+        if (rows_to_skip)
+        {
+            MutableColumns skipped_columns(other_columns.size());
+            other_reader->readRows(from_mark, continue_reading, rows_to_skip, skipped_columns);
+            continue_reading = true;
+        }
+
+        other_reader->readRows(from_mark, continue_reading, /*max_rows_to_read=*/ 1, read_columns);
 
         last_read_mark = from_mark;
         next_unread_row = row + 1;
     }
+
+    /// The normalization below operates on immutable columns; the entries left null by the reader (columns absent from
+    /// the part) stay null and are filled in by `fillMissingColumns`.
+    dst_columns.clear();
+    dst_columns.reserve(read_columns.size());
+    for (auto & read_column : read_columns)
+        dst_columns.push_back(std::move(read_column));
 
     /// Normalize exactly like the standard read path: synthesize columns and defaults that are absent from older parts
     /// and fix partially read Array/Nested offsets, then apply any required type conversions. Without this a lazy column
