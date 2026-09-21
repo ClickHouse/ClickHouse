@@ -409,17 +409,22 @@ class Result(MetaClasses.Serializable):
         Such a step can carry its marker anywhere, including inside the span
         that would otherwise be dropped, so the kept tail is anchored on the
         first ``: error:`` or ``: warning:``, the two markers
-        ``from_commands_run`` centers its own excerpt on.
+        ``from_commands_run`` centers its own excerpt on. The anchor search
+        starts ``MARKER_CONTEXT`` characters before the head boundary rather
+        than at it, because a marker that close to the boundary is cut in two
+        by it, or introduces a message that is.
         """
         MAX_STEP_INFO_LEN = 32768
+        MARKER_CONTEXT = 200
         if len(line) <= MAX_STEP_INFO_LEN:
             return line
         half = MAX_STEP_INFO_LEN // 2
         head, tail = line[:half], line[-half:]
-        found = [line.find(m, half) for m in (": error:", ": warning:")]
+        found = [line.find(m, half - MARKER_CONTEXT) for m in (": error:", ": warning:")]
         marker = min((p for p in found if p != -1), default=-1)
         if marker != -1 and marker < len(line) - half:
-            tail = line[marker - min(marker - half, 200) : marker + half]
+            start = max(min(marker, half), marker - MARKER_CONTEXT)
+            head, tail = line[: min(half, start)], line[start : marker + half]
         dropped = len(line) - len(head) - len(tail)
         return head + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + tail
 
