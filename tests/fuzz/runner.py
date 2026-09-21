@@ -20,6 +20,10 @@ TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
+# Extra time a merge gets after SIGUSR1, on top of the input timeout. libFuzzer only stops
+# between inputs, and it then still has to parse the merge control file and write out the
+# whole minimized corpus - work proportional to the corpus size, not to a single input.
+MERGE_FINALIZATION_TIMEOUT = 600
 SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
 MINIMIZE_ONLY = int(os.getenv("MINIMIZE_ONLY", "0"))
 
@@ -55,6 +59,14 @@ def parse_libfuzzer_output(output_log: Path):
     #   INFO: 4436 files found in corpus/clickhouse_fuzzer
     inputs_found = re.compile(r"^INFO:\s+(\d+) files found in (\S+)")
 
+    # A progress line starts at the very beginning of the line and its event is a word. Both
+    # anchors matter: a sanitizer stack trace is a series of lines like
+    #   "    #140 0xaada2314ee40 in DB::ParserCollectionOfLiterals<DB::Tuple>::parseImpl(...)"
+    # and taking those for progress lines made the report describe a five-hour run that had
+    # executed 34930 inputs as one that "executed 140 inputs" - the depth of the stack that
+    # libFuzzer printed last - with every other statistic missing.
+    progress = re.compile(r"^#(\d+)\s+([A-Za-z_]+)\b")
+
     with open(output_log, "r", encoding="utf-8", errors="replace") as file:
         for line in file:
             match = inputs_found.match(line)
@@ -62,12 +74,12 @@ def parse_libfuzzer_output(output_log: Path):
                 stats.setdefault("input_files", {})[match.group(2)] = int(match.group(1))
                 continue
 
-            fields = line.split()
-            if len(fields) < 2 or not fields[0].startswith("#") or not fields[0][1:].isdigit():
+            match = progress.match(line)
+            if not match:
                 continue
-            executed = int(fields[0][1:])
-            event = fields[1]
-            values = parse_fields(fields[2:])
+            executed = int(match.group(1))
+            event = match.group(2)
+            values = parse_fields(line.split()[2:])
             values["executed"] = executed
 
             if event == "NEW":
@@ -110,8 +122,9 @@ def truncate_output(output_log: Path):
 # If process does not exit, SIGKILL is issued after additional kill_timeout time.
 # If process exits on SIGUSR1 signal it is treated as a normal exit.
 # If process termination is a result of the SIGKILL signal then subprocess.TimeoutExpired is raised.
-# Fuzzer merge starts a child process, so to gracefully terminate fuzzer we need to send SIGUSR1 signal
-# to this child instead of parent (seems to be some kind of bug in libFuzzer)
+# A merge runs the inputs in a child process while the parent only waits for it, so SIGUSR1
+# has to go to that child: the parent checks for a graceful exit between child processes and
+# would not look at the flag until the child had finished the whole corpus anyway.
 def run_merge_fuzzer(*popenargs,
         input=None, capture_output=False, timeout=None, check=False, kill_timeout=10, **kwargs):
     if input is not None:
@@ -332,7 +345,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     shell=False,
                     errors="replace",
                     timeout=timeout,
-                    kill_timeout= input_timeout * 2 if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT,
+                    kill_timeout= (input_timeout if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT)
+                        + MERGE_FINALIZATION_TIMEOUT,
                     env= os.environ | env_common | env_fuzzer,
                 )
         except subprocess.CalledProcessError as e:

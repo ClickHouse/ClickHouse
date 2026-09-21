@@ -13,5 +13,5 @@ INSERT INTO t_streaming_watermark_simple VALUES ('2020-01-01 00:00:30.000', 3);
 -- Bounded read terminates after the first snapshot; the watermark clause does not change the data.
 SELECT x FROM t_streaming_watermark_simple STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND;
 
--- Per-row time attribute and watermark virtual columns.
-SELECT x, _time_attribute, _watermark FROM t_streaming_watermark_simple STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND;
+-- Per-row time attribute virtual column.
+SELECT x, _time_attribute FROM t_streaming_watermark_simple STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND;

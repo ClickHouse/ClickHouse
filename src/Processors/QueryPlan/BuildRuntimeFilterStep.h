@@ -26,7 +26,8 @@ public:
         Float64 max_ratio_of_set_bits_in_bloom_filter,
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
+        std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
+        bool distinct_keys_hint_matches_filter_key_ = false);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -74,6 +75,8 @@ private:
 
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     std::optional<UInt64> distinct_keys_hint;
+    /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
+    bool distinct_keys_hint_matches_filter_key;
 };
 
 }
