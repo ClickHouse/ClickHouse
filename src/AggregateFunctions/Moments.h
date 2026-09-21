@@ -106,6 +106,13 @@ struct VarMoments
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyImpl_x86_64_v3(ptr, row_begin, row_end);
+            return;
+        }
+#endif
 
         addManyImpl(ptr, row_begin, row_end);
     }
@@ -147,6 +154,13 @@ struct VarMoments
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyConditionalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
             return;
         }
 #endif
@@ -312,6 +326,13 @@ struct CovarMoments
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyImpl_x86_64_v3(x_ptr, y_ptr, row_begin, row_end);
+            return;
+        }
+#endif
 
         addManyImpl(x_ptr, y_ptr, row_begin, row_end);
     }
@@ -360,6 +381,13 @@ struct CovarMoments
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyConditionalImpl_x86_64_v3<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
             return;
         }
 #endif
@@ -484,6 +512,13 @@ struct CorrMoments
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyImpl_x86_64_v3(x_ptr, y_ptr, row_begin, row_end);
+            return;
+        }
+#endif
 
         addManyImpl(x_ptr, y_ptr, row_begin, row_end);
     }
@@ -538,6 +573,13 @@ struct CorrMoments
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyConditionalImpl_x86_64_v3<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
             return;
         }
 #endif

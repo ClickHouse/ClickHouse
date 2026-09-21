@@ -303,6 +303,11 @@ private:
         if (isArchSupported(TargetArch::x86_64_v4))
             normBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+            normBatchImpl_x86_64_v3<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+#endif
 #endif
             normBatchImpl<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         return result_col;
@@ -486,6 +491,11 @@ private:
         if (isArchSupported(TargetArch::x86_64_v4))
             normalizeBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+            normalizeBatchImpl_x86_64_v3<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+#endif
 #endif
             normalizeBatchImpl<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
 

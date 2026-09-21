@@ -24,7 +24,9 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#if defined(__AVX2__)
+/// The intrinsics are needed for the `__AVX2__` fast paths below and for the AVX-512 variants selected at
+/// runtime through `TargetSpecific`, which are compiled in builds below x86-64-v3 as well.
+#if defined(__AVX2__) || USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 

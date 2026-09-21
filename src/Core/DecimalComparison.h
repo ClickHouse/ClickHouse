@@ -529,6 +529,13 @@ private:
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorConstantImpl_x86_64_v3<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+#endif
 
         vectorConstantImpl<check_overflow, scale_left, scale_right>(a, b, c, scale);
     }

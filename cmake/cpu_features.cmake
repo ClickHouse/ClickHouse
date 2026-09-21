@@ -89,6 +89,13 @@ elseif (ARCH_AMD64)
     #   2 - SSE4.2, SSSE3, POPCNT (ClickHouse's historical baseline)
     #   3 - AVX2, BMI1/2, FMA, F16C, LZCNT, MOVBE etc. (default)
     #   4 - AVX-512F/BW/CD/DQ/VL
+    #
+    # The level is the baseline the binary requires to start. On top of it, levels 1-3 keep the runtime dispatch
+    # to AVX2 (`x86_64_v3`) and AVX-512 (`x86_64_v4`) kernels for the hot paths marked in the source with the
+    # macros from `src/Common/TargetSpecific.h`, so a level-2 build still runs those kernels on a modern CPU.
+    # Code paths gated at compile time on `__SSE4_2__`, `__AVX2__` etc. (e.g. CRC32-based hashing, vectorscan,
+    # `zlib-ng`'s PCLMUL CRC) are only available when the level itself provides the instruction set.
+    # See `ENABLE_MULTITARGET_CODE` in `src/CMakeLists.txt`.
     set (X86_ARCH_LEVEL "3" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
     set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
