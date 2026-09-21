@@ -36,7 +36,8 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_);
+        WrittenOffsetSubstreams * written_offset_substreams_,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys = {});
 
     void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
@@ -127,10 +128,22 @@ private:
         const WrittenOffsetSubstreams & offset_substreams) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
+    void addStreamForPath(
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path);
+
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
     SerializationStates serialization_states;
+
+    /// The part-level key set of each `with_key_columns` Map column, precomputed
+    /// over the complete part block by `MergeTreeDataWriter::writeTempPartImpl`.
+    /// It takes precedence over discovering keys from the first written block;
+    /// an entry absent from the map means per-block discovery (direct writer use,
+    /// e.g. gtests). Merges leave this empty: the union serialization seeds the
+    /// planned key union in the state prefix itself.
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;

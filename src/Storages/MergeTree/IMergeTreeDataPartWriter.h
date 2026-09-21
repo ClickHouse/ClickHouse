@@ -23,6 +23,15 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
 
+/// The part-level key set of a `with_key_columns` Map column (raw keys; the
+/// serialization sorts them byte-wise when registering). Computed once by
+/// `MergeTreeDataWriter::writeTempPartImpl` over the complete part block, where
+/// the part's content is defined, and handed to the wide writer so the column's
+/// key set does not depend on insert chunking. Empty for merges (the union
+/// serialization seeds the planned key union itself) and for tables without
+/// `with_key_columns` Maps.
+using PlannedMapKeyColumnsKeys = std::map<String, std::vector<String>>;
+
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
 Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
@@ -114,6 +123,25 @@ using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 /// data part's shared metadata bundle, which outlives the writer.
 using ColumnPositions = std::unordered_map<std::string_view, size_t>;
 
+/// Wide-part writer factory; implemented in MergeTreeDataPartWide.cpp and used by
+/// `createMergeTreeDataPartWriter`.
+MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const String & marks_file_extension_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        MergeTreeIndexGranularityPtr computed_index_granularity,
+        WrittenOffsetSubstreams * written_offset_substreams,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys);
+
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
         const String & data_part_name_,
@@ -130,6 +158,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys = {});
 
 }

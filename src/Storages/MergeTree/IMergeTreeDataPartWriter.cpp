@@ -204,22 +204,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity);
 
-MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const String & marks_file_extension_,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams);
-
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
         const String & data_part_name_,
@@ -236,7 +220,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity,
-        WrittenOffsetSubstreams * written_offset_substreams)
+        WrittenOffsetSubstreams * written_offset_substreams,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys)
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(
@@ -269,7 +254,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             default_codec_,
             writer_settings,
             std::move(computed_index_granularity),
-            written_offset_substreams);
+            written_offset_substreams,
+            map_key_columns_keys);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 

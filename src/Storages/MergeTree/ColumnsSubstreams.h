@@ -44,6 +44,9 @@ public:
     /// Add new stream for last added column.
     void addSubstreamToLastColumn(const String & substream);
     void addSubstreamsToLastColumn(const std::vector<String> & substreams);
+    /// Add a stream discovered after the column's substreams were recorded (e.g. the
+    /// per-key streams of a `with_key_columns` Map, opened while writing the first block).
+    void addSubstreamToColumn(const String & column, const String & substream);
 
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
     std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;

@@ -1,4 +1,5 @@
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -8,6 +9,7 @@
 #include <IO/NullWriteBuffer.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace FailPoints
@@ -239,6 +242,19 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// already-permuted block). So the cache would only ever be written to, never
     /// read from — pure overhead.
     Block result_block = block;
+
+    /// The per-key layout needs one stream pair per key, which the single-file
+    /// Compact layout cannot express; `choosePartFormat` never picks Compact for
+    /// such tables, so this only guards direct writer use.
+    for (const auto & column : columns_list)
+    {
+        if (typeid_cast<const SerializationMapKeyColumns *>(getSerialization(column.name).get()))
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "map_serialization_version = 'with_key_columns' is not supported for Compact parts");
+        }
+    }
 
     /// For some columns the set of streams may depend on the actual column data.
     /// For example: dynamic structure and statistics for JSON, Dynamic and Map (with adaptive number of buckets).
