@@ -235,7 +235,8 @@ kill_unfinished_mutations \
 # reports only what an attached replica holds - so either state would drive the count below to zero
 # and report success for a mutation the upgraded server then resumes. A restart that does not report
 # success, that changes the number of replicas it found, or that leaves its replica still read-only,
-# is therefore a failure of this step on its own, whatever the count says.
+# is therefore a failure of this step on its own, whatever the count says. A run that restarts nothing
+# has none of those to answer for, and leaves its survivors to the count below.
 if mutations_left=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.mutations WHERE NOT is_done") \
     && [ "$mutations_left" != 0 ] \
     && replicas_before=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.replicas") \
@@ -247,10 +248,12 @@ if mutations_left=$(timeout 1m clickhouse-client --query "SELECT count() FROM sy
         FORMAT TSV")
 then
     restart_failed=0
+    restarted_replicas=0
 
     while IFS=$'\t' read -r encoded_database encoded_table
     do
         [ -n "$encoded_database" ] || continue
+        restarted_replicas=$((restarted_replicas + 1))
         restart_database=$(base64 -d <<< "$encoded_database")
         restart_table=$(base64 -d <<< "$encoded_table")
         timeout 1m clickhouse-client \
@@ -274,10 +277,13 @@ then
         fi
     done <<< "$readonly_replicas"
 
-    replicas_after=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.replicas") || replicas_after=unknown
-    if [ "$replicas_after" != "$replicas_before" ]
+    if [ "$restarted_replicas" != 0 ]
     then
-        restart_failed=1
+        replicas_after=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.replicas") || replicas_after=unknown
+        if [ "$replicas_after" != "$replicas_before" ]
+        then
+            restart_failed=1
+        fi
     fi
 
     if [ "$restart_failed" != 0 ]
