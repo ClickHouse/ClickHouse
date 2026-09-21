@@ -1,3 +1,4 @@
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
@@ -66,8 +67,8 @@ void assertTimeType(const DataTypePtr & type, const String & function_name)
 
 struct DecayingColumnView
 {
-    const ColumnFloat64 & sign;
-    const ColumnFloat64 & signed_unit_time;
+    const ColumnFloat64 & value_at_anchor;
+    const ColumnFloat64 & anchor_time;
     Float64 decay_length;
 };
 
@@ -76,31 +77,29 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(type);
     chassert(decay_length);
 
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
+    const auto & tuple = decaying.getStorageTuple();
     return {
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(3)),
         *decay_length,
     };
 }
 
 bool isEmptyRow(const DecayingColumnView & input, size_t row)
 {
-    return input.sign.getData()[row] == 0;
+    return input.value_at_anchor.getData()[row] == 0;
 }
 
 void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const Float64 sign = input.sign.getData()[row];
-    const Float64 signed_unit_time = input.signed_unit_time.getData()[row];
-    if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
+    const Float64 value = input.value_at_anchor.getData()[row];
+    const Float64 time = input.anchor_time.getData()[row];
+    if (!std::isfinite(value) || !std::isfinite(time))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Argument of function {} is not a canonical ExponentialTimeDecayingFloat64 value",
+            "Argument of function {} is not a canonical ExponentialTimeDecaying value",
             function_name);
-
-    if (sign == 0)
-        return;
 }
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
@@ -108,43 +107,63 @@ Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_tim
     if (isEmptyRow(input, row))
         return 0;
 
-    const Float64 sign = input.sign.getData()[row];
-    const Float64 unit_time = getExponentialTimeDecayingUnitTime(
-        sign, input.signed_unit_time.getData()[row]);
+    const Float64 value = input.value_at_anchor.getData()[row];
+    const Float64 anchor_time = input.anchor_time.getData()[row];
+    if (target_time == anchor_time)
+        return value;
 
-    if (target_time == unit_time)
-        return sign;
-
-    return sign * std::exp((unit_time - target_time) / input.decay_length);
+    return value * std::exp((anchor_time - target_time) / input.decay_length);
 }
 
 struct DecayingColumnBuilder
 {
-    void append(Float64 value, Float64 time, Float64 decay_length_value)
+    explicit DecayingColumnBuilder(Float64 decay_length_)
+        : decay_length(decay_length_)
     {
-        const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length_value);
+    }
+
+    void append(Float64 value, Float64 time)
+    {
+        const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
         if (!std::isfinite(normalized.signed_unit_time))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "ExponentialTimeDecayingFloat64 value cannot be represented with a finite signed unit time");
+                "ExponentialTimeDecaying value cannot be represented with a finite ordering index");
 
         sign->insertValue(normalized.sign);
         signed_unit_time->insertValue(normalized.signed_unit_time);
+        value_at_anchor->insertValue(normalized.value_at_anchor);
+        anchor_time->insertValue(normalized.anchor_time);
     }
 
-    void appendCanonical(Float64 sign_value, Float64 signed_unit_time_value)
+    void appendPhysical(
+        Float64 sign_value,
+        Float64 signed_unit_time_value,
+        Float64 value,
+        Float64 time)
     {
         sign->insertValue(sign_value);
         signed_unit_time->insertValue(signed_unit_time_value);
+        value_at_anchor->insertValue(value);
+        anchor_time->insertValue(time);
     }
 
     ColumnPtr build()
     {
-        return ColumnTuple::create(Columns{std::move(sign), std::move(signed_unit_time)});
+        auto tuple = ColumnTuple::create(
+            Columns{
+                std::move(sign),
+                std::move(signed_unit_time),
+                std::move(value_at_anchor),
+                std::move(anchor_time)});
+        return ColumnExponentialTimeDecaying::create(tuple->assumeMutable(), decay_length);
     }
 
+    const Float64 decay_length;
     ColumnFloat64::MutablePtr sign = ColumnFloat64::create();
     ColumnFloat64::MutablePtr signed_unit_time = ColumnFloat64::create();
+    ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
+    ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
 };
 
 class FunctionExponentialTimeDecayingAdd final : public IFunction
@@ -177,7 +196,7 @@ public:
                 left_decay_length,
                 right_decay_length);
 
-        return createDataTypeExponentialTimeDecayingFloat64(left_decay_length);
+        return arguments[0].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -186,7 +205,7 @@ public:
         auto right_column = arguments[1].column->convertToFullColumnIfConst();
         const auto left = getDecayingColumnView(left_column, arguments[0].type);
         const auto right = getDecayingColumnView(right_column, arguments[1].type);
-        DecayingColumnBuilder result;
+        DecayingColumnBuilder result(left.decay_length);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -195,28 +214,25 @@ public:
 
             if (isEmptyRow(left, row))
             {
-                result.appendCanonical(
-                    right.sign.getData()[row],
-                    right.signed_unit_time.getData()[row]);
+                result.append(
+                    right.value_at_anchor.getData()[row],
+                    right.anchor_time.getData()[row]);
                 continue;
             }
             if (isEmptyRow(right, row))
             {
-                result.appendCanonical(
-                    left.sign.getData()[row],
-                    left.signed_unit_time.getData()[row]);
+                result.append(
+                    left.value_at_anchor.getData()[row],
+                    left.anchor_time.getData()[row]);
                 continue;
             }
 
             const Float64 latest_time = std::max(
-                getExponentialTimeDecayingUnitTime(
-                    left.sign.getData()[row], left.signed_unit_time.getData()[row]),
-                getExponentialTimeDecayingUnitTime(
-                    right.sign.getData()[row], right.signed_unit_time.getData()[row]));
+                left.anchor_time.getData()[row],
+                right.anchor_time.getData()[row]);
             result.append(
                 valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
-                latest_time,
-                left.decay_length);
+                latest_time);
         }
 
         return result.build();
@@ -298,18 +314,18 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
 {
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
-Adds two exponentially time-decaying values using their canonical unit-magnitude times.
-Both inputs must have identical decay lengths encoded in their types. The function rebases them to
-`ct = greatest(A.unit_time, B.unit_time)` and canonicalizes `A.value_at(ct) + B.value_at(ct)`.
+Adds two exponentially time-decaying values using their direct value/anchor payloads.
+Both inputs must have identical decay lengths encoded in their types. The function rebases the older direct payload to
+`ct = greatest(A.anchor_time, B.anchor_time)` and stores `A.value_at(ct) + B.value_at(ct)` at that anchor.
 Because values are stored as `Float64`, large signed values that nearly cancel can be sensitive to
 addition order and grouping. Normalize magnitudes or use a numerically stable method to pre-aggregate
 sensitive inputs when stronger numerical reproducibility is required.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {
-            {"a", "First value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}},
+            {"a", "First value of type `ExponentialTimeDecaying(decay_length)`.", {}},
             {"b", "Second value with the same parameterized type.", {}}},
-        .returned_value = {"Returns the combined `ExponentialTimeDecayingFloat64(decay_length)` value.", {}},
+        .returned_value = {"Returns the combined `ExponentialTimeDecaying(decay_length)` value.", {}},
         .examples = {{
             "Add values with the same decay length",
             "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingAdd("
@@ -322,12 +338,12 @@ sensitive inputs when stronger numerical reproducibility is required.
 
     factory.registerFunction<FunctionExponentialTimeDecayingValueAt>(FunctionDocumentation{
         .description = R"(
-Evaluates an exponentially time-decaying value at any target time by extrapolating the exponential curve from its canonical unit-magnitude time.
+Evaluates an exponentially time-decaying value at any target time from its stored direct value and anchor.
 Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` and `now64()` can be used.
 )",
         .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
         .arguments = {
-            {"value", "Value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}},
+            {"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}},
             {"target_time", "Evaluation time; it may be before, at, or after the normalization time.",
                 {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
@@ -342,7 +358,7 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
     factory.registerFunction<FunctionExponentialTimeDecayingDecayLength>(FunctionDocumentation{
         .description = "Returns the decay length encoded in an `ExponentialTimeDecayingFloat64` type.",
         .syntax = "exponentialTimeDecayingDecayLength(value)",
-        .arguments = {{"value", "Value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}}},
+        .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
         .returned_value = {"Returns the decay length.", {"Float64"}},
         .examples = {{
             "Read the decay length",
