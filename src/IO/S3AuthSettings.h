@@ -87,6 +87,12 @@ struct S3AuthSettings
     static S3AuthSettings deserialize(ReadBuffer & in, ContextPtr context);
 
 private:
+    /// Obsolete settings (such as `max_connections`) are still accepted so that an existing configuration keeps
+    /// working, but they must not look like a change to anyone: `hasUpdates` is what decides whether a live S3
+    /// client is torn down and rebuilt on a config reload. Reset them to default right after every path that
+    /// can populate them, so an obsolete key never marks the settings object as changed.
+    void resetObsoleteSettings();
+
     std::unique_ptr<S3AuthSettingsImpl> impl;
 };
 
