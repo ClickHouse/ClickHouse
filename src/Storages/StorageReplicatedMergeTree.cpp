@@ -9470,8 +9470,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
     }
 
-    /// This destination does not support transactions, so the query never runs in one and the source
-    /// parts are always read outside MVCC.
+    /// A replicated destination does not support transactions, so the source parts are read outside MVCC.
     src_data.checkPartsCanBeRepublishedNonTransactionally(src_all_parts);
 
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
