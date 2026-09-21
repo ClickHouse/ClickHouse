@@ -39,9 +39,10 @@ struct KeyMatcherGeneric
 
     bool match(size_t keys_row) const
     {
-        /// The direction hint must not be zero. `compareAt` reports a `NaN` as equal to every other
-        /// value when the hint is zero, because it answers with the hint itself, so a row holding a
-        /// `NaN` key would match any requested key and a requested `NaN` would match any key.
+        /// The direction hint must not be zero. When exactly one side is a `NaN`, or a NULL of a
+        /// `Nullable` nested in the key, `compareAt` answers with the hint itself, so a zero hint
+        /// reports them as equal to every other value: a row holding such a key would match any
+        /// requested key, and requesting such a key would match any key.
         return keys_column.compareAt(keys_row, 0, key, 1) == 0;
     }
 };
