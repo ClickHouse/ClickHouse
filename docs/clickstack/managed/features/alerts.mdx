@@ -7,6 +7,32 @@ keywords: ['ClickHouse Observability', 'observability', 'alerts', 'search-alerts
 slug: /clickstack/managed/features/alerts
 ---
 
-import Content from "/snippets/clickstack/shared/features/alerts.mdx";
+import Creation from "/snippets/clickstack/shared/features/alerts-creation.mdx";
+import WebhookDetails from "/snippets/clickstack/shared/features/alerts-webhook-details.mdx";
+import Management from "/snippets/clickstack/shared/features/alerts-management.mdx";
 
-<Content />
+<Info>
+Before configuring alerts, complete the [ClickHouse Observability alert-permission prerequisites](/clickstack/deployment/managed#configure-access).
+</Info>
+
+<Creation />
+
+### Service type integrations {#integrations}
+
+- **Slack**: send notifications directly to a channel via either a webhook or API.
+- **PagerDuty**: route incidents for on-call teams via the PagerDuty API.
+- **Webhook**: connect alerts to any custom system or workflow via a generic webhook.
+
+Depending on the service type, provide the following details:
+
+<WebhookDetails />
+
+**Slack (API)**
+
+- Slack bot token. See the [Slack documentation](https://docs.slack.dev/authentication/tokens/#bot/) for further details.
+
+**PagerDuty API**
+
+- PagerDuty integration key. See the [PagerDuty documentation](https://support.pagerduty.com/main/docs/api-access-keys) for further details.
+
+<Management />

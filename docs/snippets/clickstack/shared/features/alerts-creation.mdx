@@ -1,0 +1,133 @@
+
+Built-in alerting enables teams to detect and respond to issues in real time across logs, metrics, and traces.
+
+Alerts can be created directly in the HyperDX interface and delivered through the supported [notification integrations](#integrations).
+
+Alerting works seamlessly across your data, helping you track system health, catch performance regressions, and monitor key business events.
+
+## Types of alerts {#types-of-alerts}
+
+There are two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
+
+### 1. Search alerts {#search-alerts}
+
+Search alerts allow you to trigger notifications based on the results of a saved search. They help you detect when specific events or patterns occur more (or less) frequently than expected.
+
+An alert is triggered when the count of matching results within a defined time window either exceeds or falls below a specified threshold.
+
+To create a search alert:
+
+For an alert to be created for a search, the search must be saved. You can either create the alert for an existing saved search or save the search during the alert creation process. In the example below, we assume the search isn't saved.
+
+<Steps>
+<Step title="Open alert creation dialog" id="open-dialog">
+
+Start by entering a [search](./search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/alerts_search_view.webp" alt="Alerts search view" />
+</Frame>
+</div>
+</Step>
+<Step title="Create the alert" id="create-the-alert">
+
+From the alert creation panel, you can:
+
+- Assign a name to the saved search associated with the alert.
+- Set a threshold and specify how many times it must be reached within a given period. Thresholds can also be used as upper or lower bounds. The period here will also dictate how often the alert is triggered.
+- Specify a `grouped by` value. This allows the search to be subject to an aggregation, e.g., `ServiceName`, thus allowing multiple alerts to be triggered off the same search.
+- Choose a webhook destination for notifications. You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
+
+Before saving, the alert creation panel visualizes the threshold condition so you can confirm it will behave as expected.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/search_alert.webp" alt="Search alerts" />
+</Frame>
+</div>
+</Step>
+</Steps>
+
+Note that multiple alerts can be added to a search. If the above process is repeated, you will see the current alerts as tabs at the top of the edit alert dialog, with each alert assigned a number.
+
+<div className="ch-image-md">
+<Frame>
+  <img src="/images/use-cases/observability/multiple_search_alerts.webp" alt="Multiple alerts" />
+</Frame>
+</div>
+
+### 2. Dashboard chart alerts {#dashboard-alerts}
+
+Dashboard alerts extend alerting to charts.
+
+You can create a chart-based alert directly from a saved dashboard, powered by full SQL aggregations and ClickHouse functions for advanced calculations.
+
+When a metric crosses a defined threshold, an alert triggers automatically, allowing you to monitor KPIs, latencies, or other key metrics over time.
+
+<Note>
+For an alert to be created for a visualization on a dashboard, the dashboard must be saved.
+</Note>
+
+To add a dashboard alert:
+
+Alerts can be created during the chart creation process, when adding a chart to a dashboard, or added to existing charts. In the example below, we assume the chart already exists on the dashboard.
+
+<Steps>
+<Step title="Open the chart edit dialog" id="open-chart-dialog">
+
+Open the chart's configuration menu and select the alert button. This will show the chart edit dialog.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/edit_chart_alert.webp" alt="Edit chart alert" />
+</Frame>
+</div>
+</Step>
+<Step title="Add the alert" id="add-chart-alert">
+
+Select **Add Alert**.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/add_chart_alert.webp" alt="Add alert to chart" />
+</Frame>
+</div>
+</Step>
+<Step title="Define the alert conditions" id="define-alert-conditions">
+
+Define the condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), threshold, duration, and webhook. The duration here will also dictate how often the alert is triggered.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/create_chart_alert.webp" alt="Create alert for chart" />
+</Frame>
+</div>
+
+You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
+</Step>
+</Steps>
+
+## Adding a webhook {#add-webhook}
+
+During alert creation, you can either use an existing webhook or create one. Once created, the webhook will be available for reuse across other alerts.
+
+A webhook can be created for the supported [service types](#integrations).
+
+For example, consider the alert creation for a chart below. Before specifying the webhook, the user can select `Add New Webhook`.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/add_new_webhook.webp" alt="Add new webhook" />
+</Frame>
+</div>
+
+This opens the webhook creation dialog, where you can create a new webhook:
+
+<div className="ch-image-md">
+<Frame>
+  <img src="/images/use-cases/observability/add_webhook_dialog.webp" alt="Webhook creation" />
+</Frame>
+</div>
+
+A webhook name is required, while descriptions are optional. Other settings that must be completed depend on the service type.

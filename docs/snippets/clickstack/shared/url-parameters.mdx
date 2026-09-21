@@ -1,22 +1,6 @@
-ClickStack pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
-
-The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with your ClickStack URL — for example `http://localhost:8080` for a local Open Source deployment, or `https://hyperdx.clickhouse.cloud` for ClickHouse Observability in ClickHouse Cloud.
-
 <Note>
 The examples show query parameters without URL encoding for readability. When constructing links programmatically, URL-encode each query parameter value.
 </Note>
-
-<Info>
-**ClickHouse Observability Service ID Parameter**
-
-When using ClickHouse Observability in ClickHouse Cloud, links should include a `?chcServiceId=` parameter to identify which ClickHouse Cloud service should be loaded if the authenticated user following the link is authorized to use more than one ClickHouse Cloud service.
-
-Example: Open Search against a specific Cloud service
-
-```text
-https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
-```
-</Info>
 
 ## Search — `/search` {#search}
 
@@ -40,13 +24,13 @@ A saved search can also be opened directly at `/search/<savedSearchId>`.
 ### Example: Search the `Logs` source for errors in the `checkout` service in a time range {#example-search-errors}
 
 ```text
-<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+<YOUR_APP_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
 ```
 
 ### Example: Jump straight to a trace's waterfall view {#example-search-trace}
 
 ```text
-<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+<YOUR_APP_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
 ```
 
 ## Saved Searches — `/search/list` {#saved-searches}
@@ -60,7 +44,7 @@ The list of saved searches.
 ### Example: List saved searches tagged `production` {#example-saved-searches-tag}
 
 ```text
-<YOUR_CLICKSTACK_URL>/search/list?tag=production
+<YOUR_APP_URL>/search/list?tag=production
 ```
 
 ## Dashboards — `/dashboards/<dashboardId>` {#dashboards}
@@ -81,7 +65,7 @@ A saved dashboard. Omit `<dashboardId>` (`/dashboards`) to open a temporary, uns
 Useful when linking from an alert notification straight to the tile that fired it.
 
 ```text
-<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+<YOUR_APP_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
 ```
 
 ## Dashboards List — `/dashboards/list` {#dashboards-list}
@@ -93,7 +77,7 @@ Useful when linking from an alert notification straight to the tile that fired i
 ### Example: List dashboards tagged `infra` {#example-dashboards-list-tag}
 
 ```text
-<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+<YOUR_APP_URL>/dashboards/list?tag=infra
 ```
 
 ## Chart Explorer — `/chart` {#chart-explorer}
@@ -108,7 +92,7 @@ An ad-hoc, shareable chart builder.
 ### Example: Open a p99 Latency chart configuration for a time range {#example-chart-config}
 
 ```text
-<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+<YOUR_APP_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
 ```
 
 ## Alerts — `/alerts` {#alerts}
@@ -124,7 +108,7 @@ See [Alerts](./features/alerts) for details on creating and managing alerts.
 ### Example: List alerts tagged `on-call` {#example-alerts-filter}
 
 ```text
-<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+<YOUR_APP_URL>/alerts?tag=on-call
 ```
 
 ## Session Replay — `/sessions` {#session-replay}
@@ -143,13 +127,13 @@ Session replay browsing and playback. See [Session replay](./features/session-re
 ### Example: Browse session replays within a time range {#example-sessions-time-range}
 
 ```text
-<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+<YOUR_APP_URL>/sessions?from=1735689600000&to=1735693200000
 ```
 
 ### Example: Open a specific session replay at its recorded time window {#example-sessions-open}
 
 ```text
-<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+<YOUR_APP_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
 ```
 
 ## Service Map — `/service-map` {#service-map}
@@ -165,7 +149,7 @@ See [Service map](./service-maps) for feature details.
 ### Example: View the service map over a time range {#example-service-map}
 
 ```text
-<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+<YOUR_APP_URL>/service-map?from=1735689600000&to=1735693200000
 ```
 
 ## Services — `/services` {#services}
@@ -185,13 +169,13 @@ Per-service HTTP, database, and error dashboards.
 ### Example: View the database dashboard for a service over a time range {#example-services-database}
 
 ```text
-<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+<YOUR_APP_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
 ```
 
 ### Example: View the error dashboard for a service {#example-services-errors}
 
 ```text
-<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+<YOUR_APP_URL>/services?tab=errors&service=payments
 ```
 
 ## Kubernetes — `/kubernetes` {#kubernetes}
@@ -207,19 +191,5 @@ Per-service HTTP, database, and error dashboards.
 ### Example: Open the detail panel for a specific pod {#example-kubernetes-pod}
 
 ```text
-<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-**ClickHouse Observability only**
-
-Notebooks are only available in ClickHouse Observability deployments. See [AI Notebooks](/clickstack/notebooks) for feature details.
-</Info>
-
-### Example: Open a specific notebook in a given Cloud service {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+<YOUR_APP_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
 ```

@@ -3,10 +3,23 @@ title: 'Alerts with ClickStack'
 sidebarTitle: 'Alerts'
 description: 'Alerts with ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'error-monitoring', 'performance-monitoring', 'user-events']
 slug: /clickstack/features/alerts
 ---
 
-import Content from "/snippets/clickstack/shared/features/alerts.mdx";
+import Creation from "/snippets/clickstack/shared/features/alerts-creation.mdx";
+import WebhookDetails from "/snippets/clickstack/shared/features/alerts-webhook-details.mdx";
+import Management from "/snippets/clickstack/shared/features/alerts-management.mdx";
 
-<Content />
+<Creation />
+
+### Service type integrations {#integrations}
+
+- **Slack**: send notifications directly to a channel via a webhook.
+- **Webhook**: connect alerts to any custom system or workflow via a generic webhook.
+
+Depending on the service type, provide the following details:
+
+<WebhookDetails />
+
+<Management />

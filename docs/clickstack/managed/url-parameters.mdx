@@ -9,4 +9,26 @@ slug: /clickstack/managed/url-parameters
 
 import Content from "/snippets/clickstack/shared/url-parameters.mdx";
 
+Pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
+
+The examples on this page use `<YOUR_APP_URL>`. Replace this with `https://hyperdx.clickhouse.cloud`.
+
+<Info>
+Links should include `chcServiceId` to identify which ClickHouse Cloud service to load when the authenticated user can access more than one service. Use `?chcServiceId=...` for the first query parameter, or append `&chcServiceId=...` to examples that already contain query parameters.
+
+```text
+https://hyperdx.clickhouse.cloud/search?source=Logs&chcServiceId=abc123
+```
+</Info>
+
 <Content />
+
+## Notebooks — `/notebook/<notebookId>` {#notebooks}
+
+See [AI Notebooks](/clickstack/notebooks) for feature details.
+
+### Example: Open a specific notebook in a given Cloud service {#example-notebook-open}
+
+```text
+<YOUR_APP_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

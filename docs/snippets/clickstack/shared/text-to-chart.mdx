@@ -1,5 +1,5 @@
 
-ClickStack's Text-to-Chart feature allows you to create visualizations by describing what you want to see in plain text. Rather than manually selecting metrics, filters, and group-by fields, you can type a prompt such as "error rates by service over the last 24 hours" and ClickStack will generate the corresponding chart automatically.
+Text-to-Chart allows you to create visualizations by describing what you want to see in plain text. Rather than manually selecting metrics, filters, and group-by fields, you can type a prompt such as "error rates by service over the last 24 hours" and the corresponding chart will be generated automatically.
 
 This feature uses a large language model (LLM) to convert your text prompt into a query, then builds the visualization in the [Chart Explorer](./features/dashboards/overview#navigate-chart-explorer). It works with any configured data source.
 
@@ -74,7 +74,7 @@ At the top of the Chart Explorer, locate the **AI Assistant** input. Type a natu
 - `Latency breakdown by endpoint`
 - `Count of events over time grouped by severity`
 
-ClickStack converts the prompt into a query and renders the visualization automatically.
+Text-to-Chart converts the prompt into a query and renders the visualization automatically.
 
 <div className="ch-image-lg">
 <Frame>
@@ -133,4 +133,4 @@ Prompts can reference any column or attribute available in your configured data 
 - [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — blog post introducing the feature
 - [Dashboards and visualizations](./features/dashboards/overview) — manual chart creation using Chart Explorer
 - [Search](./features/search) — full-text and property search syntax
-- [Configuration](./managing/config) — all ClickStack environment variables
+- [Configuration](./managing/config) — environment variable reference
