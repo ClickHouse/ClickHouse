@@ -400,7 +400,7 @@ struct KeyGetterForType
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 
     static constexpr bool use_consecutive_probe_cache
-        = type == HashJoin::Type::key32
+        = (type == HashJoin::Type::key32
         || type == HashJoin::Type::key64
         || type == HashJoin::Type::keys32
         || type == HashJoin::Type::keys64
