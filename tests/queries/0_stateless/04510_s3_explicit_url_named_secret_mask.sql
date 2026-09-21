@@ -170,6 +170,29 @@ SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x/o''clock?X-Amz-Signat
 SELECT * FROM s3(concat('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=', 'SEKRIT_SIG'),
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A url the userinfo scan cannot read is hidden whole rather than echoed: the scan reads a scheme at
+-- the start of the value only, so anything in front of the scheme (a space here) leaves an '@' that
+-- can still be userinfo, in a statement that is formatted for logging before the URI is parsed.
+SELECT * FROM s3(' https://user:SEKRIT_LEADSPACE@localhost:11111/x', 'TSV', 'x UInt8'); -- { serverError POCO_EXCEPTION }
+
+-- No scheme at all, not merely one preceded by something: a network-path reference, which `s3_base`
+-- resolves into an authority, so its '@' is userinfo exactly like the row above.
+SELECT * FROM s3('//user:SEKRIT_SCHEMEREL@localhost:11111/x', 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- The Backup database locator rebuilds the S3 locator text, in both its positional and its named form.
+CREATE DATABASE db_04510_leadspace ENGINE = Backup('', S3(' https://user:SEKRIT_BKPSPACE@localhost:11111/x',
+                 'ak', 'SEKRIT_SAK')); -- { serverError BAD_ARGUMENTS }
+CREATE DATABASE db_04510_ncleadspace ENGINE = Backup('', S3(nc_04510_ncspace_missing,
+                 url = ' https://user:SEKRIT_NCBKPSPACE@localhost:11111/x')); -- { serverError BAD_ARGUMENTS }
+
+-- Controls for the same rule, one per way it could fire wrongly: a value with no '@' has nothing to
+-- hide; an '@' in the query string of a url the scan CAN read is not userinfo; and an '@' in an
+-- argument that is not a url at all (the locator's non-secret filename) is not a credential either.
+SELECT * FROM s3(' https://localhost:11111/x', 'TSV', 'x UInt8'); -- { serverError POCO_EXCEPTION }
+SELECT * FROM s3('https://localhost:11111/x?email=a@b.com', 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+CREATE DATABASE db_04510_atpath ENGINE = Backup('', S3(nc_04510_atpath_missing,
+                 'backups/user@host/data')); -- { serverError BAD_ARGUMENTS }
+
 -- Same for BACKUP and the Backup database reconstructor.
 BACKUP TABLE nonexistent_04510 TO S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
                  'ak', 'SEKRIT_SAK'); -- { serverError BAD_ARGUMENTS }
@@ -318,6 +341,7 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/
 -- A named url override is an `equals` node in the tree; its credential-bearing value must be hidden.
 -- Without passes the collection need not exist.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc_04510_missing, url = 'https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', structure = 'x UInt8');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc_04510_missing, url = ' https://user:SEKRIT_NCLEADSPACE@localhost:11111/test/04510qt', structure = 'x UInt8');
 
 -- A table function can sit under a UNION (or any other carrier); the dump masking visitor must descend
 -- into every node, not only query/join carriers, or the secret leaks in the tree dump.
