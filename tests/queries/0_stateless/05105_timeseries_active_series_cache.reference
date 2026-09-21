@@ -7,6 +7,9 @@ after second insert (skipped tags):
 after mixed insert (one cached, one new):
 2
 4
+after intra-batch duplicate insert (only one tag row written):
+3
+6
 the skipped series is still selectable:
 3
 cache disabled: both inserts write tags:

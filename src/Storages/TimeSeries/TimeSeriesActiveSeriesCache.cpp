@@ -4,11 +4,12 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
-#include <Core/UUID.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 
@@ -106,17 +107,12 @@ UInt128 TimeSeriesActiveSeriesCache::extractId(const IColumn & id_column, size_t
     return sip_hash.get128();
 }
 
-void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
-    const ColumnPtr & id_column,
-    UInt32 current_time,
-    IColumn::Filter & out_filter,
-    size_t & out_written_count,
-    std::vector<UInt128> & out_touched_ids) const
+void TimeSeriesActiveSeriesCache::checkBulk(
+    const ColumnPtr & id_column, UInt32 current_time, IColumn::Filter & out_filter, size_t & out_written_count) const
 {
     size_t num_rows = id_column->size();
     out_filter.resize_fill(num_rows, 0);
     out_written_count = 0;
-    out_touched_ids.clear();
 
     if (num_rows == 0)
         return;
@@ -152,29 +148,84 @@ void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
             if (!it)
             {
                 needs_write = true;
-                if (shard.unlimited || shard.max_shard_entries > 0)
-                {
-                    if (!shard.unlimited && shard.map.size() >= shard.max_shard_entries)
-                    {
-                        auto first = shard.map.begin();
-                        if (first != shard.map.end())
-                            shard.map.erase(first->getKey());
-                    }
-                    shard.map[id] = current_time;
-                    out_touched_ids.push_back(id);
-                }
             }
             else if (ttl > 0 && current_time > it->getMapped() && (current_time - it->getMapped() >= ttl))
             {
                 needs_write = true;
-                it->getMapped() = current_time;
-                out_touched_ids.push_back(id);
             }
 
             if (needs_write)
             {
                 out_filter[row_idx] = 1;
                 ++out_written_count;
+            }
+        }
+    }
+}
+
+void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
+    const ColumnPtr & id_column,
+    UInt32 current_time,
+    IColumn::Filter & out_filter,
+    size_t & out_written_count,
+    std::vector<UInt128> & out_needed_ids) const
+{
+    checkBulk(id_column, current_time, out_filter, out_written_count);
+    out_needed_ids.clear();
+    out_needed_ids.reserve(out_written_count);
+    for (size_t i = 0; i < out_filter.size(); ++i)
+    {
+        if (out_filter[i])
+            out_needed_ids.push_back(extractId(*id_column, i));
+    }
+}
+
+void TimeSeriesActiveSeriesCache::commit(const std::vector<UInt128> & ids, UInt32 commit_time) const
+{
+    if (ids.empty())
+        return;
+
+    if (commit_time == 0)
+    {
+        commit_time = static_cast<UInt32>(
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    }
+
+    std::vector<std::vector<UInt128>> shard_ids(NUM_SHARDS);
+    for (const auto & id : ids)
+    {
+        size_t shard_idx = getShardIndex(id);
+        shard_ids[shard_idx].push_back(id);
+    }
+
+    for (size_t shard_idx = 0; shard_idx < NUM_SHARDS; ++shard_idx)
+    {
+        const auto & ids_in_shard = shard_ids[shard_idx];
+        if (ids_in_shard.empty())
+            continue;
+
+        auto & shard = shards[shard_idx];
+        std::lock_guard lock(shard.mutex);
+
+        if (!shard.unlimited && shard.max_shard_entries == 0)
+            continue;
+
+        for (const auto & id : ids_in_shard)
+        {
+            auto * it = shard.map.find(id);
+            if (it)
+            {
+                it->getMapped() = commit_time;
+            }
+            else
+            {
+                if (!shard.unlimited && shard.map.size() >= shard.max_shard_entries)
+                {
+                    auto first = shard.map.begin();
+                    if (first != shard.map.end())
+                        shard.map.erase(first->getKey());
+                }
+                shard.map[id] = commit_time;
             }
         }
     }

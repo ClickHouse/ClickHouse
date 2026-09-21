@@ -36,6 +36,15 @@ SELECT 'after mixed insert (one cached, one new):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
+-- Fourth insert with intra-batch duplicate series (one new series repeated twice in batch):
+INSERT INTO ts_cache (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host3:8080'}, [(toDateTime64(1040, 3), 1.0)]),
+    ('http_requests', {'job': 'api', 'instance': 'host3:8080'}, [(toDateTime64(1045, 3), 2.0)]);
+
+SELECT 'after intra-batch duplicate insert (only one tag row written):';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+
 -- A skipped series must still be found by a query: the samples are never filtered, and the tags row
 -- the first insert wrote is what the selector matches on.
 SELECT 'the skipped series is still selectable:';

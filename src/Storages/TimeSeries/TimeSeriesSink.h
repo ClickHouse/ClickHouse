@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Common/Logger_fwd.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/Logger_fwd.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -24,8 +25,7 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
+/// Transforms outer columns into blocks for the target tables.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -47,9 +47,8 @@ public:
     /// and throws if the `__name__` tag is missing or appears with conflicting values.
     static void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags);
 
-    /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Every tag goes to `out_tags_names`/`out_tags_values`; tags matching a key in `columns_by_tag_name`
-    /// are also copied to the corresponding column.
+    /// Dispatches one row of already-sorted tags into the output columns.
+    /// Tags matching dedicated columns are also copied to the corresponding column.
     static void insertSortedTagsToColumns(
         const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
         IColumn & out_tags_names,
@@ -105,6 +104,10 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
+
+    /// Accumulates series IDs written by this sink, committed to the active series cache on finish.
+    std::vector<UInt128> pending_cached_ids;
+    HashSet<UInt128, HashCRC32<UInt128>> pending_cached_set;
 };
 
 }
