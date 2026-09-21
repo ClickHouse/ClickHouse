@@ -15,7 +15,7 @@ SET session_timezone = 'UTC'; -- the reference contains rendered DateTime64 valu
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES
+INSERT INTO ts (metric_name, tags, samples) VALUES
     ('m', map('l', 'a'), [(toDateTime64(1000000, 3), 1.0), (toDateTime64(1000060, 3), 2.0), (toDateTime64(1000120, 3), 3.0)]);
 
 -- The failing case: offset in a range selector, instant query (default timestamps are DateTime64(3)).
@@ -28,11 +28,11 @@ SELECT (SELECT groupArray(value) FROM prometheusQuery(ts, 'rate(m[2m] offset 5m)
      = (SELECT groupArray(value) FROM prometheusQuery(ts, 'rate(m[2m])', 1000120));
 
 SELECT 'increase with offset, range:';
-SELECT tags, time_series FROM prometheusQueryRange(ts, 'increase(m[2m] offset 1m)', 1000180, 1000300, 60) ORDER BY ALL;
+SELECT tags, samples FROM prometheusQueryRange(ts, 'increase(m[2m] offset 1m)', 1000180, 1000300, 60) ORDER BY ALL;
 
 -- Instant-vector offset took a different code path and worked before; keep it covered.
 SELECT 'plain vector offset, range:';
-SELECT tags, time_series FROM prometheusQueryRange(ts, 'm offset 5m', 1000300, 1000400, 100) ORDER BY ALL;
+SELECT tags, samples FROM prometheusQueryRange(ts, 'm offset 5m', 1000300, 1000400, 100) ORDER BY ALL;
 
 DROP TABLE ts;
 
@@ -64,7 +64,7 @@ ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
 CREATE TABLE ts_ns ENGINE = TimeSeries
 DATA ts_data TAGS ts_tags METRICS ts_metrics;
 
-INSERT INTO ts_ns (metric_name, tags, time_series) VALUES
+INSERT INTO ts_ns (metric_name, tags, samples) VALUES
     ('n', map(), [(toDateTime64('1970-01-12 13:46:40.000000001', 9, 'UTC'), 10.0), (toDateTime64('1970-01-12 13:47:40.000000001', 9, 'UTC'), 20.0)]);
 
 SELECT 'nanosecond timestamps, sub-second offset:';
