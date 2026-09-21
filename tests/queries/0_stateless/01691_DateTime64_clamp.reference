@@ -22,6 +22,6 @@ SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');
 SELECT CAST(-1 * bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
 1900-01-01 01:56:56.000
 SELECT CAST(bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
-2299-12-31 23:59:59.000
+2299-12-31 23:59:59.999
 SELECT toDateTime64(bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');
-2299-12-31 23:59:59.00
+2299-12-31 23:59:59.99
