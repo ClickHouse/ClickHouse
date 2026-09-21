@@ -14,6 +14,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
@@ -3381,7 +3382,12 @@ static BlockIO executeQueryImpl(
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
 
                 if (query_pipeline.initialized())
+                {
+                    /// The query may have failed because of the memory limit, and the pipeline still holds its memory.
+                    /// A second `MEMORY_LIMIT_EXCEEDED` here would replace the original exception and skip the pipeline reset.
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
                     logProcessorProfile(context, query_pipeline.getProcessors());
+                }
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
