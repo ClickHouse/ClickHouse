@@ -27,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-MutableColumnPtr buildOrderingPrefix(const IColumn & storage, Float64 decay_length)
+MutableColumnPtr buildOrderingKey(const IColumn & storage, Float64 decay_length)
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(storage);
     chassert(tuple.tupleSize() == 2);
@@ -40,7 +40,7 @@ MutableColumnPtr buildOrderingPrefix(const IColumn & storage, Float64 decay_leng
 
     for (size_t row = 0; row < tuple.size(); ++row)
         prefix->insertValue(
-            getExponentialTimeDecayingOrderingPrefix(values[row], times[row], decay_length));
+            getExponentialTimeDecayingOrderingKey(values[row], times[row], decay_length));
 
     return prefix;
 }
@@ -62,7 +62,7 @@ using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<Comparator
 using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
 using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
-UInt128 getCanonicalOrderingKey(
+UInt64 getOrderingKey(
     const ColumnExponentialTimeDecaying & column, size_t row)
 {
     const auto & tuple = column.getStorageTuple();
@@ -74,16 +74,16 @@ UInt128 getCanonicalOrderingKey(
         value, time, column.getDecayLength());
 }
 
-void updateCanonicalHash(
+void updateOrderingKeyHash(
     const ColumnExponentialTimeDecaying & column, size_t row, SipHash & hash)
 {
-    hash.update(getCanonicalOrderingKey(column, row));
+    hash.update(getOrderingKey(column, row));
 }
 
-UInt32 canonicalWeakHash(
+UInt32 orderingKeyWeakHash(
     const ColumnExponentialTimeDecaying & column, size_t row)
 {
-    const UInt128 key = getCanonicalOrderingKey(column, row);
+    const UInt64 key = getOrderingKey(column, row);
     return static_cast<UInt32>(
         intHashCRC32(key, WEAK_HASH32_INITIAL_VALUE));
 }
@@ -97,20 +97,20 @@ ColumnExponentialTimeDecaying::ColumnExponentialTimeDecaying(
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(*storage);
     chassert(tuple.tupleSize() == 2);
-    rebuildOrderingPrefix();
+    rebuildOrderingKey();
 }
 
 ColumnExponentialTimeDecaying::ColumnExponentialTimeDecaying(
     MutableColumnPtr && storage_,
-    MutableColumnPtr && ordering_prefix_,
+    MutableColumnPtr && ordering_key_,
     Float64 decay_length_)
     : storage(std::move(storage_))
-    , ordering_prefix(std::move(ordering_prefix_))
+    , ordering_key(std::move(ordering_key_))
     , decay_length(decay_length_)
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(*storage);
     chassert(tuple.tupleSize() == 2);
-    chassert(ordering_prefix->size() == storage->size());
+    chassert(ordering_key->size() == storage->size());
 }
 
 std::string ColumnExponentialTimeDecaying::getName() const
@@ -134,33 +134,33 @@ void ColumnExponentialTimeDecaying::getValueNameImpl(
     storage->getValueNameImpl(name_buf, n, options);
 }
 
-void ColumnExponentialTimeDecaying::appendOrderingPrefix(size_t row)
+void ColumnExponentialTimeDecaying::appendOrderingKey(size_t row)
 {
     const auto & tuple = getStorageTuple();
     const Float64 value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row];
     const Float64 time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row];
-    assert_cast<ColumnUInt64 &>(*ordering_prefix).insertValue(
-        getExponentialTimeDecayingOrderingPrefix(value, time, decay_length));
+    assert_cast<ColumnUInt64 &>(*ordering_key).insertValue(
+        getExponentialTimeDecayingOrderingKey(value, time, decay_length));
 }
 
-void ColumnExponentialTimeDecaying::rebuildOrderingPrefix()
+void ColumnExponentialTimeDecaying::rebuildOrderingKey()
 {
-    ordering_prefix = buildOrderingPrefix(*storage, decay_length);
+    ordering_key = buildOrderingKey(*storage, decay_length);
 }
 
-void ColumnExponentialTimeDecaying::syncOrderingPrefixFrom(size_t previous_size)
+void ColumnExponentialTimeDecaying::syncOrderingKeyFrom(size_t previous_size)
 {
-    if (ordering_prefix->size() > previous_size)
-        ordering_prefix->popBack(ordering_prefix->size() - previous_size);
+    if (ordering_key->size() > previous_size)
+        ordering_key->popBack(ordering_key->size() - previous_size);
 
-    if (ordering_prefix->size() != previous_size)
+    if (ordering_key->size() != previous_size)
     {
-        rebuildOrderingPrefix();
+        rebuildOrderingKey();
         return;
     }
 
     for (size_t row = previous_size; row < storage->size(); ++row)
-        appendOrderingPrefix(row);
+        appendOrderingKey(row);
 }
 
 MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) const
@@ -168,7 +168,7 @@ MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) co
     if (new_size <= size())
         return ColumnExponentialTimeDecaying::createWithPrefix(
             storage->cloneResized(new_size),
-            ordering_prefix->cloneResized(new_size),
+            ordering_key->cloneResized(new_size),
             decay_length);
 
     return ColumnExponentialTimeDecaying::create(storage->cloneResized(new_size), decay_length);
@@ -176,14 +176,14 @@ MutableColumnPtr ColumnExponentialTimeDecaying::cloneResized(size_t new_size) co
 
 void ColumnExponentialTimeDecaying::insertData(const char * pos, size_t length)
 {
-    if (length != sizeof(UInt128))
+    if (length != sizeof(UInt64))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Serialized ExponentialTimeDecaying key must contain {} bytes, got {}",
-            sizeof(UInt128),
+            sizeof(UInt64),
             length);
 
-    UInt128 ordering_key;
+    UInt64 ordering_key;
     std::memcpy(&ordering_key, pos, sizeof(ordering_key));
     transformEndianness<std::endian::native, std::endian::little>(ordering_key);
 
@@ -199,13 +199,13 @@ void ColumnExponentialTimeDecaying::insertData(const char * pos, size_t length)
 
     storage->insert(
         Tuple{direct.value_at_anchor, direct.anchor_time});
-    appendOrderingPrefix(size() - 1);
+    appendOrderingKey(size() - 1);
 }
 
 void ColumnExponentialTimeDecaying::insert(const Field & x)
 {
     storage->insert(x);
-    appendOrderingPrefix(size() - 1);
+    appendOrderingKey(size() - 1);
 }
 
 bool ColumnExponentialTimeDecaying::tryInsert(const Field & x)
@@ -213,7 +213,7 @@ bool ColumnExponentialTimeDecaying::tryInsert(const Field & x)
     if (!storage->tryInsert(x))
         return false;
 
-    appendOrderingPrefix(size() - 1);
+    appendOrderingKey(size() - 1);
     return true;
 }
 
@@ -222,55 +222,55 @@ void ColumnExponentialTimeDecaying::insertFrom(const IColumn & src_, size_t n)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertFrom(src.getStorageColumn(), n);
-    ordering_prefix->insertFrom(src.getOrderingPrefixColumn(), n);
+    ordering_key->insertFrom(src.getOrderingKeyColumn(), n);
 }
 
 void ColumnExponentialTimeDecaying::insertManyFrom(const IColumn & src_, size_t position, size_t length)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertManyFrom(src.getStorageColumn(), position, length);
-    ordering_prefix->insertManyFrom(src.getOrderingPrefixColumn(), position, length);
+    ordering_key->insertManyFrom(src.getOrderingKeyColumn(), position, length);
 }
 
 void ColumnExponentialTimeDecaying::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertRangeFrom(src.getStorageColumn(), start, length);
-    ordering_prefix->insertRangeFrom(src.getOrderingPrefixColumn(), start, length);
+    ordering_key->insertRangeFrom(src.getOrderingKeyColumn(), start, length);
 }
 #else
 void ColumnExponentialTimeDecaying::doInsertFrom(const IColumn & src_, size_t n)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertFrom(src.getStorageColumn(), n);
-    ordering_prefix->insertFrom(src.getOrderingPrefixColumn(), n);
+    ordering_key->insertFrom(src.getOrderingKeyColumn(), n);
 }
 
 void ColumnExponentialTimeDecaying::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertManyFrom(src.getStorageColumn(), position, length);
-    ordering_prefix->insertManyFrom(src.getOrderingPrefixColumn(), position, length);
+    ordering_key->insertManyFrom(src.getOrderingKeyColumn(), position, length);
 }
 
 void ColumnExponentialTimeDecaying::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 {
     const auto & src = assert_cast<const ColumnExponentialTimeDecaying &>(src_);
     storage->insertRangeFrom(src.getStorageColumn(), start, length);
-    ordering_prefix->insertRangeFrom(src.getOrderingPrefixColumn(), start, length);
+    ordering_key->insertRangeFrom(src.getOrderingKeyColumn(), start, length);
 }
 #endif
 
 void ColumnExponentialTimeDecaying::insertDefault()
 {
     storage->insertDefault();
-    appendOrderingPrefix(size() - 1);
+    appendOrderingKey(size() - 1);
 }
 
 void ColumnExponentialTimeDecaying::popBack(size_t n)
 {
     storage->popBack(n);
-    ordering_prefix->popBack(n);
+    ordering_key->popBack(n);
 }
 
 std::string_view ColumnExponentialTimeDecaying::serializeValueIntoArena(
@@ -279,7 +279,7 @@ std::string_view ColumnExponentialTimeDecaying::serializeValueIntoArena(
     char const *& begin,
     const IColumn::SerializationSettings *) const
 {
-    UInt128 ordering_key = getCanonicalOrderingKey(*this, n);
+    UInt64 ordering_key = getOrderingKey(*this, n);
     transformEndianness<std::endian::little>(ordering_key);
 
     char * memory = arena.allocContinue(sizeof(ordering_key), begin);
@@ -292,7 +292,7 @@ char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
     char * memory,
     const IColumn::SerializationSettings *) const
 {
-    UInt128 ordering_key = getCanonicalOrderingKey(*this, n);
+    UInt64 ordering_key = getOrderingKey(*this, n);
     transformEndianness<std::endian::little>(ordering_key);
     std::memcpy(memory, &ordering_key, sizeof(ordering_key));
     return memory + sizeof(ordering_key);
@@ -316,12 +316,12 @@ void ColumnExponentialTimeDecaying::collectSerializedValueSizes(
     if (is_null)
     {
         for (size_t row = 0; row < rows; ++row)
-            sizes[row] += 1 + (is_null[row] ? 0 : sizeof(UInt128));
+            sizes[row] += 1 + (is_null[row] ? 0 : sizeof(UInt64));
     }
     else
     {
         for (size_t row = 0; row < rows; ++row)
-            sizes[row] += sizeof(UInt128);
+            sizes[row] += sizeof(UInt64);
     }
 }
 
@@ -329,7 +329,7 @@ void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
     ReadBuffer & in,
     const IColumn::SerializationSettings *)
 {
-    UInt128 ordering_key;
+    UInt64 ordering_key;
     readBinaryLittleEndian(ordering_key, in);
 
     const auto direct
@@ -344,20 +344,7 @@ void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
 
     storage->insert(
         Tuple{direct.value_at_anchor, direct.anchor_time});
-    appendOrderingPrefix(size() - 1);
-}
-
-int ColumnExponentialTimeDecaying::compareDirect(
-    size_t n, size_t m, const ColumnExponentialTimeDecaying & rhs) const
-{
-    const UInt128 left_key = getCanonicalOrderingKey(*this, n);
-    const UInt128 right_key = getCanonicalOrderingKey(rhs, m);
-
-    if (left_key < right_key)
-        return -1;
-    if (left_key > right_key)
-        return 1;
-    return 0;
+    appendOrderingKey(size() - 1);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -371,23 +358,18 @@ int ColumnExponentialTimeDecaying::doCompareAt(
     const auto & rhs = assert_cast<const ColumnExponentialTimeDecaying &>(rhs_);
     chassert(decay_length == rhs.decay_length);
 
-    const int prefix_compare
-        = ordering_prefix->compareAt(n, m, rhs.getOrderingPrefixColumn(), nan_direction_hint);
-    if (prefix_compare != 0)
-        return prefix_compare;
-
-    return compareDirect(n, m, rhs);
+    return ordering_key->compareAt(n, m, rhs.getOrderingKeyColumn(), nan_direction_hint);
 }
 
 void ColumnExponentialTimeDecaying::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    updateCanonicalHash(*this, n, hash);
+    updateOrderingKeyHash(*this, n, hash);
 }
 
 void ColumnExponentialTimeDecaying::updateHashFast(SipHash & hash) const
 {
     for (size_t row = 0; row < size(); ++row)
-        updateCanonicalHash(*this, row, hash);
+        updateOrderingKeyHash(*this, row, hash);
 }
 
 void ColumnExponentialTimeDecaying::computeHashInto(
@@ -395,7 +377,7 @@ void ColumnExponentialTimeDecaying::computeHashInto(
 {
     for (size_t row = row_begin; row < row_end; ++row)
     {
-        const UInt32 value = canonicalWeakHash(*this, row);
+        const UInt32 value = orderingKeyWeakHash(*this, row);
         UInt32 & out = hash_out[row - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }
@@ -468,27 +450,27 @@ ColumnPtr ColumnExponentialTimeDecaying::filter(const Filter & filt, ssize_t res
 {
     return ColumnExponentialTimeDecaying::createWithPrefix(
         storage->filter(filt, result_size_hint)->assumeMutable(),
-        ordering_prefix->filter(filt, result_size_hint)->assumeMutable(),
+        ordering_key->filter(filt, result_size_hint)->assumeMutable(),
         decay_length);
 }
 
 void ColumnExponentialTimeDecaying::filter(const Filter & filt)
 {
     storage->filter(filt);
-    ordering_prefix->filter(filt);
+    ordering_key->filter(filt);
 }
 
 void ColumnExponentialTimeDecaying::expand(const Filter & mask, bool inverted)
 {
     storage->expand(mask, inverted);
-    ordering_prefix->expand(mask, inverted);
+    ordering_key->expand(mask, inverted);
 }
 
 ColumnPtr ColumnExponentialTimeDecaying::permute(const Permutation & perm, size_t limit) const
 {
     return ColumnExponentialTimeDecaying::createWithPrefix(
         storage->permute(perm, limit)->assumeMutable(),
-        ordering_prefix->permute(perm, limit)->assumeMutable(),
+        ordering_key->permute(perm, limit)->assumeMutable(),
         decay_length);
 }
 
@@ -496,7 +478,7 @@ ColumnPtr ColumnExponentialTimeDecaying::index(const IColumn & indexes, size_t l
 {
     return ColumnExponentialTimeDecaying::createWithPrefix(
         storage->index(indexes, limit)->assumeMutable(),
-        ordering_prefix->index(indexes, limit)->assumeMutable(),
+        ordering_key->index(indexes, limit)->assumeMutable(),
         decay_length);
 }
 
@@ -504,7 +486,7 @@ ColumnPtr ColumnExponentialTimeDecaying::replicate(const Offsets & offsets) cons
 {
     return ColumnExponentialTimeDecaying::createWithPrefix(
         storage->replicate(offsets)->assumeMutable(),
-        ordering_prefix->replicate(offsets)->assumeMutable(),
+        ordering_key->replicate(offsets)->assumeMutable(),
         decay_length);
 }
 
@@ -535,17 +517,17 @@ void ColumnExponentialTimeDecaying::prepareForSquashing(
     {
         const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*source);
         source_storage.push_back(decaying.getStoragePtr());
-        source_prefix.push_back(decaying.ordering_prefix);
+        source_prefix.push_back(decaying.ordering_key);
     }
 
     storage->prepareForSquashing(source_storage, factor);
-    ordering_prefix->prepareForSquashing(source_prefix, factor);
+    ordering_key->prepareForSquashing(source_prefix, factor);
 }
 
 void ColumnExponentialTimeDecaying::rollback(const ColumnCheckpoint & checkpoint)
 {
     storage->rollback(checkpoint);
-    rebuildOrderingPrefix();
+    rebuildOrderingKey();
 }
 
 void ColumnExponentialTimeDecaying::forEachMutableSubcolumn(MutableColumnCallback callback)
