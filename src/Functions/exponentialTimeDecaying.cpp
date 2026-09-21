@@ -49,7 +49,7 @@ void assertDecayingType(const DataTypePtr & type, const String & function_name, 
     if (!isExponentialTimeDecayingFloat64(type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Argument {} of function {} must be ExponentialTimeDecayingFloat64, got {}",
+            "Argument {} of function {} must be ExponentialTimeDecaying, got {}",
             argument,
             function_name,
             type->getName());
@@ -304,8 +304,8 @@ sensitive inputs when stronger numerical reproducibility is required.
         .examples = {{
             "Add values with the same decay length",
             "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingAdd("
-            "exponentialTimeDecayingFloat64(10)(2.718281828459045, toFloat64(0)), "
-            "exponentialTimeDecayingFloat64(10)(4, toFloat64(10))), toFloat64(10)), 6) "
+            "exponentialTimeDecaying(10)(2.718281828459045, toFloat64(0)), "
+            "exponentialTimeDecaying(10)(4, toFloat64(10))), toFloat64(10)), 6) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "5"}},
         .introduced_in = {26, 8},
@@ -324,20 +324,20 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
             "Evaluate one decay length later",
-            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(10)(8, toFloat64(0)), toFloat64(10)), 6) "
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecaying(10)(8, toFloat64(0)), toFloat64(10)), 6) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "2.943036"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
     factory.registerFunction<FunctionExponentialTimeDecayingDecayLength>(FunctionDocumentation{
-        .description = "Returns the decay length encoded in an `ExponentialTimeDecayingFloat64` type.",
+        .description = "Returns the decay length encoded in an `ExponentialTimeDecaying` type.",
         .syntax = "exponentialTimeDecayingDecayLength(value)",
         .arguments = {{"value", "Value of type `ExponentialTimeDecaying(decay_length)`.", {}}},
         .returned_value = {"Returns the decay length.", {"Float64"}},
         .examples = {{
             "Read the decay length",
-            "SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecayingFloat64(10)(1, toFloat64(0))) "
+            "SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecaying(10)(1, toFloat64(0))) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "10"}},
         .introduced_in = {26, 8},
