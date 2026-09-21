@@ -44,6 +44,11 @@ SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 GATE_SETTING = "allow_database_unity_catalog"
 V2_SETTING = "use_unity_catalog_v2"
 
+DELTA_WRITE_SETTINGS = {
+    "allow_experimental_delta_lake_writes": 1,
+    "allow_delta_lake_create_table": 1,
+}
+
 
 UC_HOME = "/tmp/unitycatalog"
 UC_LOG = UC_HOME + "/uc.log"
@@ -437,6 +442,65 @@ def test_mixed_formats_in_one_database(started_cluster):
 
     assert "DeltaLake" in delta_storages
     assert "Iceberg" in iceberg_storages
+
+
+def test_create_and_insert_delta_table(started_cluster):
+    """A table created through the database is registered in Unity, and rows
+    written through the database read back."""
+    node = started_cluster.instances["node1"]
+    schema_name = unique_name("v2_write")
+    table_name = "created"
+    db_name = unique_name("v2_write_db")
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    # Unity rejects a table create into a missing schema.
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+    create_database(node, db_name)
+
+    node.query(
+        f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` (id Int32, name String)"
+        f" ENGINE = DeltaLakeLocal('{location}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    node.query(
+        f"INSERT INTO {db_name}.`{schema_name}.{table_name}` VALUES (1, 'a'), (2, 'b')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+
+    assert f"{schema_name}.{table_name}" in show_tables(node, db_name, f"{schema_name}%")
+    assert (
+        node.query(f"SELECT * FROM {db_name}.`{schema_name}.{table_name}` ORDER BY id")
+        == "1\ta\n2\tb\n"
+    )
+
+    # Commit 0 from CREATE, commit 1 from INSERT.
+    commits = node.exec_in_container(
+        ["bash", "-c", f"ls {location}/_delta_log/*.json"]
+    ).split()
+    assert len(commits) == 2, commits
+
+
+def test_iceberg_create_is_not_supported(started_cluster):
+    """Iceberg writes through the catalog are not implemented yet. `CREATE`
+    must fail with a clean error and write nothing."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_iceberg_create_db")
+    table_name = unique_name("v2_iceberg_create")
+    location = f"/var/lib/clickhouse/user_files/tmp/{table_name}"
+
+    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {db_name}.`default.{table_name}` (id Int32)"
+        f" ENGINE = IcebergLocal('{location}')"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "LOGICAL_ERROR" not in error
+
+    exists = node.exec_in_container(
+        ["bash", "-c", f"test -e {location} && echo yes || echo no"]
+    ).strip()
+    assert exists == "no"
 
 
 def test_pat_token_authentication(started_cluster):
