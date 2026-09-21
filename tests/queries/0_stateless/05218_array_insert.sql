@@ -43,6 +43,18 @@ SELECT arrayInsert([[1, 2], [3]], 2, [9, 10]);
 SELECT toTypeName(arrayInsert([toUInt8(1)], 1, toUInt16(2)));
 SELECT arrayInsert([1, 2, 3], toUInt64(4), 0);
 
+SET allow_suspicious_low_cardinality_types = 1;
+
+SELECT inserted[2], length(inserted)
+FROM
+(
+    SELECT arrayInsert(
+        range(number, number + 300)::Array(LowCardinality(UInt64)),
+        2,
+        toLowCardinality(number + 1000)) AS inserted
+    FROM numbers(1)
+);
+
 SELECT arrayInsert([1, 2, 3], 0, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT arrayInsert([1, 2, 3], 5, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT arrayInsert([1, 2, 3], -5, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }

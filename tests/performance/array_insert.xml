@@ -38,8 +38,8 @@
     </fill_query>
 
     <!-- Constant middle position. -->
-    <query>SELECT arrayInsert(a, {array_size} / 2 + 1, value) FROM array_insert_perf_{array_size} FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(a, 1, {array_size} / 2), [value], arraySlice(a, {array_size} / 2 + 1)) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayInsert(a, intDiv({array_size}, 2) + 1, value) FROM array_insert_perf_{array_size} FORMAT Null</query>
+    <query>SELECT arrayConcat(arraySlice(a, 1, intDiv({array_size}, 2)), [value], arraySlice(a, intDiv({array_size}, 2) + 1)) FROM array_insert_perf_{array_size} FORMAT Null</query>
 
     <!-- Dynamic positions, compared with the equivalent arraySlice/arrayConcat expression. -->
     <query>SELECT arrayInsert(a, pos_signed, value) FROM array_insert_perf_{array_size} FORMAT Null</query>

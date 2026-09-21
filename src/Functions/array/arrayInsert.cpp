@@ -20,6 +20,19 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+ColumnPtr convertToStructure(const ColumnPtr & column, const IColumn & structure)
+{
+    if (column->structureEquals(structure))
+        return column;
+
+    auto result = structure.cloneEmpty();
+    result->insertRangeFrom(*column, 0, column->size());
+    return result;
+}
+}
+
 class FunctionArrayInsert final : public IFunction
 {
 public:
@@ -97,6 +110,9 @@ public:
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "First argument for function {} must be an array.", getName());
 
+        auto result_column = array_column->cloneEmpty();
+        auto & result_array = typeid_cast<ColumnArray &>(*result_column);
+
         bool is_inserted_const = false;
         if (const auto * const_inserted_column = typeid_cast<const ColumnConst *>(inserted_column.get()))
         {
@@ -104,10 +120,11 @@ public:
             inserted_column = const_inserted_column->getDataColumnPtr();
         }
 
+        /// GatherUtils requires the source, value, and sink nested columns to have identical structures.
+        /// LowCardinality dictionary index widths can differ even when the logical data types are equal.
+        inserted_column = convertToStructure(inserted_column, result_array.getData());
         value_source = GatherUtils::createValueSource(*inserted_column, is_inserted_const, size);
 
-        auto result_column = return_type->createColumn();
-        auto & result_array = typeid_cast<ColumnArray &>(*result_column);
         auto sink = GatherUtils::createArraySink(result_array, size);
 
         const bool position_is_unsigned = WhichDataType(arguments[1].type).isNativeUInt();
