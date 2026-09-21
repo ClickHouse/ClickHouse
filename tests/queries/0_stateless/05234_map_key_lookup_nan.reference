@@ -13,6 +13,9 @@ LowCardinality(Float64)	3		plain
 Tuple(Float64, UInt8)	1	nan-hit	one-five	
 Tuple(Float64, UInt8)	2			other
 Tuple(Float64, UInt8)	3		plain	
+Tuple(Nullable(UInt8), UInt8)	1	null-hit	five	
+Tuple(Nullable(UInt8), UInt8)	2			other
+Tuple(Nullable(UInt8), UInt8)	3		plain	
 NaN value	1	1	1.5
 NaN value	2	0	2.5
 NaN value	1	1	1.5

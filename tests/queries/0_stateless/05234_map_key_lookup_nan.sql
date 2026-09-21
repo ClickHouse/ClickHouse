@@ -42,6 +42,15 @@ INSERT INTO t_map_nan_key VALUES (1, map((nan, 1), 'nan-hit', (1.5, 1), 'one-fiv
 SELECT 'Tuple(Float64, UInt8)', id, `m.key_(nan,1)`, `m.key_(1.5,1)`, `m.key_(2.5,1)` FROM t_map_nan_key ORDER BY id;
 DROP TABLE t_map_nan_key;
 
+-- The same hint decides where a NULL goes, so a NULL inside a composite key used to be equal to
+-- every other value as well.
+
+CREATE TABLE t_map_nan_key (id UInt64, m Map(Tuple(Nullable(UInt8), UInt8), String))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_map_nan_key VALUES (1, map((NULL, 1), 'null-hit', (5, 1), 'five')), (2, map((7, 1), 'other')), (3, map((5, 1), 'plain'));
+SELECT 'Tuple(Nullable(UInt8), UInt8)', id, `m.key_(NULL,1)`, `m.key_(5,1)`, `m.key_(7,1)` FROM t_map_nan_key ORDER BY id;
+DROP TABLE t_map_nan_key;
+
 -- A `NaN` in the value is copied as it is, whichever key it is reached by.
 
 CREATE TABLE t_map_nan_key (id UInt64, m Map(String, Float64))
