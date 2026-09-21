@@ -158,6 +158,11 @@ private:
     bool all_outputs_active = false;
     bool is_reading_started = false;
 
+    /// Whether the steady state (after all outputs have been activated) can route input `i` to
+    /// output `i`, which preserves `GROUP BY` key locality the same way the strict resize does.
+    /// It requires a one-to-one correspondence between the ports.
+    const bool strict_routing_possible;
+
     size_t num_active_outputs = 1;
     size_t total_rows_pushed = 0;
     size_t total_bytes_pushed = 0;
@@ -202,8 +207,17 @@ private:
     std::unordered_map<const InputPort *, UInt64> input_port_index;
     std::unordered_map<const OutputPort *, UInt64> output_port_index;
 
+    /// In the steady state the processor is a pass-through: every chunk of input `i` goes to
+    /// output `i`. During the ramp-up it is a many-to-many resize towards the active outputs.
+    bool strictRouting() const { return all_outputs_active && strict_routing_possible; }
+    bool anyOutputNeedsData() const;
+
     void maybeActivateMoreOutputs();
     void promoteInactiveWaitingOutputs();
+    void routeData();
+    void routeDataManyToMany();
+    void routeDataStrict();
+    void transferData(InputPortWithStatus & input_with_data, OutputPortWithStatus & output);
 };
 
 }
