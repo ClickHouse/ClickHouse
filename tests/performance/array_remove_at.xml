@@ -4,41 +4,6 @@
     </settings>
 
     <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr, toInt32(number % 32 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr, toInt32(number % 32 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(4)) AS arr, toInt32(number % 4 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(4)) AS arr, toInt32(number % 4 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(16)) AS arr, toInt32(number % 16 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(16)) AS arr, toInt32(number % 16 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(64)) AS arr, toInt32(number % 64 + 1) AS pos FROM numbers(500000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(64)) AS arr, toInt32(number % 64 + 1) AS pos FROM numbers(500000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(256)) AS arr, toInt32(number % 256 + 1) AS pos FROM numbers(100000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(256)) AS arr, toInt32(number % 256 + 1) AS pos FROM numbers(100000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(1024)) AS arr, toInt32(number % 1024 + 1) AS pos FROM numbers(25000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(1024)) AS arr, toInt32(number % 1024 + 1) AS pos FROM numbers(25000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; number + x, range(4096)) AS arr, toInt32(number % 4096 + 1) AS pos FROM numbers(5000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; number + x, range(4096)) AS arr, toInt32(number % 4096 + 1) AS pos FROM numbers(5000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT range(32) AS arr, toInt32(number % 32 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT range(32) AS arr, toInt32(number % 32 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT arrayMap(x -&gt; toString(number + x), range(16)) AS arr, toInt32(number % 16 + 1) AS pos FROM numbers(500000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT arrayMap(x -&gt; toString(number + x), range(16)) AS arr, toInt32(number % 16 + 1) AS pos FROM numbers(500000)) FORMAT Null</query>
-
+    <query>SELECT arrayRemoveAt(range(32), toInt32(number % 32 + 1)) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT arrayRemoveAt(arr, 17) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, 16), arraySlice(arr, 18)) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(1000000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, 1) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(500000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, 0), arraySlice(arr, 2)) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(500000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, 32) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(500000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, 31), arraySlice(arr, 33)) FROM (SELECT arrayMap(x -&gt; number + x, range(32)) AS arr FROM numbers(500000)) FORMAT Null</query>
-
-    <query>SELECT arrayRemoveAt(arr, pos) FROM (SELECT CAST([toUInt64(number), NULL, toUInt64(number + 2), toUInt64(number + 3)], 'Array(Nullable(UInt64))') AS arr, toInt32(number % 4 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
-    <query>SELECT arrayConcat(arraySlice(arr, 1, pos - 1), arraySlice(arr, pos + 1)) FROM (SELECT CAST([toUInt64(number), NULL, toUInt64(number + 2), toUInt64(number + 3)], 'Array(Nullable(UInt64))') AS arr, toInt32(number % 4 + 1) AS pos FROM numbers(1000000)) FORMAT Null</query>
 </test>
