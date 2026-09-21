@@ -22,6 +22,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/ValidationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -3176,8 +3177,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// and the name survives a later projection re-resolution.
                 auto alias_node = node->clone();
                 alias_node->setAlias(*rename_target);
+
+                /// RENAME aliases are collected by an early resolution pass so they are visible to
+                /// sibling projection expressions and clauses. Do not store already-resolved
+                /// scalar subqueries in the alias table: group_by_use_nulls may later make their
+                /// correlated columns Nullable, and QueryNode::isResolved() would otherwise keep
+                /// the pre-GROUP BY types when the alias is used from ORDER BY/HAVING.
+                auto alias_node_for_registration = alias_node->clone();
+                traverseQueryTree(alias_node_for_registration, Everything{}, [](const QueryTreeNodePtr & current)
+                {
+                    if (auto * query_node = current->as<QueryNode>())
+                        query_node->clearProjectionColumns();
+                });
+
                 QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(alias_node);
+                visitor.visit(alias_node_for_registration);
                 node = std::move(alias_node);
             }
 
@@ -7186,10 +7200,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
 
-    /// Keep a genuinely unresolved projection for the GROUP BY ALL restore path. RENAME alias
-    /// collection below resolves matcher subtrees early, including subqueries inside APPLY/REPLACE.
+    /// Keep a genuinely unresolved projection when nullable grouping keys can require a later
+    /// re-resolution. RENAME alias collection below resolves matcher subtrees early, including
+    /// correlated subqueries inside APPLY/REPLACE, and an already resolved subquery cannot be
+    /// rebound after GROUP BY registers its nullable keys.
     QueryTreeNodePtr unresolved_projection;
-    if (scope.group_by_use_nulls && query_node_typed.isGroupByAll())
+    if (scope.group_by_use_nulls && (query_node_typed.hasGroupBy() || query_node_typed.isGroupByAll()))
         unresolved_projection = query_node_typed.getProjectionNode()->clone();
 
     /// RENAME aliases must be visible to clauses resolved before the delayed projection when
@@ -7333,6 +7349,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
+        /// For explicit GROUP BY, keep the early resolved projection available until all clauses
+        /// that may use positional projection references have been resolved, then restore the
+        /// untouched tree so correlated expressions see the nullable grouping keys.
+        if (unresolved_projection)
+            query_node_typed.getProjectionNode() = std::move(unresolved_projection);
+
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,

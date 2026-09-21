@@ -23,12 +23,34 @@ LEFT JOIN (SELECT number AS id FROM numbers(1)) AS r ON r.id = l.UserID
 LEFT JOIN (SELECT number AS id FROM numbers(1)) AS s ON s.id = l.UserID
 FORMAT TSVWithNames;
 
+-- The legacy analyzer must expose RENAME aliases to sibling projection items and clauses.
+SELECT x + 1 AS y, * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME a AS x FROM t_columns_rename ORDER BY x FORMAT TSVWithNames;
+
 -- The modern analyzer must produce the same headers and values.
 SET enable_analyzer = 1;
 
 SELECT * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x FROM t_columns_rename ORDER BY x FORMAT TSVWithNames;
 SELECT * RENAME a AS x, count() FROM t_columns_rename GROUP BY a, b, metric_cpu, metric_mem WITH ROLLUP ORDER BY x LIMIT 1 BY x SETTINGS group_by_use_nulls = 1 FORMAT TSVWithNames;
+
+-- Early RENAME alias collection must not freeze a correlated REPLACE subquery before nullable grouping keys are registered.
+SELECT DISTINCT toTypeName(x)
+FROM
+(
+    SELECT COLUMNS('^a$') REPLACE((SELECT a) AS a) RENAME a AS x, count()
+    FROM t_columns_rename
+    GROUP BY a WITH ROLLUP
+    SETTINGS group_by_use_nulls = 1
+);
+
+-- Clause lookup must re-resolve the same correlated RENAME alias after GROUP BY.
+SELECT COLUMNS('^a$') REPLACE((SELECT a) AS a) RENAME a AS x, count()
+FROM t_columns_rename
+GROUP BY a WITH ROLLUP
+ORDER BY x ASC NULLS FIRST
+SETTINGS group_by_use_nulls = 1
+FORMAT TSV;
 SELECT * RENAME (a AS x, b AS y) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT t_columns_rename.* RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT COLUMNS('^metric_') RENAME (metric_cpu AS cpu, metric_mem AS mem) FROM t_columns_rename FORMAT TSVWithNames;

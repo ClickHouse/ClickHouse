@@ -1,5 +1,9 @@
 user_id
 0
+y	x	b	metric_cpu	metric_mem
+2	1	2	3	4
+x	b	metric_cpu	metric_mem
+1	2	3	4
 x	b	metric_cpu	metric_mem
 1	2	3	4
 x	b	metric_cpu	metric_mem
@@ -7,6 +11,9 @@ x	b	metric_cpu	metric_mem
 x	b	metric_cpu	metric_mem	count()
 1	2	3	4	1
 \N	\N	\N	\N	1
+Nullable(UInt8)
+\N	1
+1	1
 x	y	metric_cpu	metric_mem
 1	2	3	4
 x	b	metric_cpu	metric_mem
