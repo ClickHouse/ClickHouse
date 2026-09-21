@@ -5,6 +5,7 @@
 -- The oracle is row equality against the enable_lazy_columns_replication = 0 arm rather than the absence
 -- of an error, because reading the nested null map at the logical row index raises nothing, it silently
 -- keeps or drops the wrong rows.
+-- join_use_nulls is pinned because the stress workers set it to 1, which returns NULL instead of the type default for the unmatched rows.
 
 DROP TABLE IF EXISTS t05233_left;
 DROP TABLE IF EXISTS t05233_right;
@@ -25,7 +26,7 @@ FROM t05233_left AS l
 ASOF LEFT JOIN (SELECT k, ts, tag, arrayJoin([0, 0]) AS dup FROM t05233_right) AS r
 ON l.k = r.k AND l.ts >= r.ts
 ORDER BY l.k, l.ts, r.ts, r.tag, r.dup
-SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0;
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0, join_use_nulls = 0;
 {% endfor %}
 
 SELECT '-- parallel_hash';
@@ -35,7 +36,7 @@ FROM t05233_left AS l
 ASOF LEFT JOIN (SELECT k, ts, tag, arrayJoin([0, 0]) AS dup FROM t05233_right) AS r
 ON l.k = r.k AND l.ts >= r.ts
 ORDER BY l.k, l.ts, r.ts, r.tag, r.dup
-SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0;
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0, join_use_nulls = 0;
 {% endfor %}
 
 DROP TABLE t05233_left;
