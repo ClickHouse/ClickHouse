@@ -122,7 +122,10 @@ bool getDecayPrefixExtremes(
     }
 
     min_value = Field(min_key);
-    max_value = saw_null ? FieldRef(Null{}) : FieldRef(Field(max_key));
+    if (saw_null)
+        max_value = Null{};
+    else
+        max_value = Field(max_key);
     return true;
 }
 

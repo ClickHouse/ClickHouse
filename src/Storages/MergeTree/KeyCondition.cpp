@@ -5827,9 +5827,23 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
     const Field & field,
     const DataTypePtr & type)
 {
-    auto nested_type = removeNullable(type);
-    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
-        nested_type = low_cardinality->getDictionaryType();
+    DataTypePtr nested_type = type;
+    while (nested_type)
+    {
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+        {
+            nested_type = low_cardinality->getDictionaryType();
+            continue;
+        }
+
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+        {
+            nested_type = nullable->getNestedType();
+            continue;
+        }
+
+        break;
+    }
 
     const auto * decay_type
         = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(nested_type.get());
@@ -5905,9 +5919,23 @@ void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key
         if (key_column >= key_types.size())
             continue;
 
-        auto nested_type = removeNullable(key_types[key_column]);
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
-            nested_type = low_cardinality->getDictionaryType();
+        DataTypePtr nested_type = key_types[key_column];
+        while (nested_type)
+        {
+            if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            {
+                nested_type = low_cardinality->getDictionaryType();
+                continue;
+            }
+
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+            {
+                nested_type = nullable->getNestedType();
+                continue;
+            }
+
+            break;
+        }
 
         if (!isExponentialTimeDecayingFloat64(nested_type))
             continue;
