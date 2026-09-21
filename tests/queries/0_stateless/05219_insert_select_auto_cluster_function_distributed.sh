@@ -51,8 +51,11 @@ SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, ma
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_cluster_engines = 1, parallel_distributed_insert_select = 2, log_queries = 1"
 
-QUERY_ID_URL="05219_${CLICKHOUSE_DATABASE}_url"
-QUERY_ID_S3="05219_${CLICKHOUSE_DATABASE}_s3"
+# The query ids and the query log lookups below must isolate this run: a re-run on the same server must
+# not pick up the secondary queries of a previous run.
+QUERY_ID_SUFFIX="${CLICKHOUSE_DATABASE}_$(date +%s%N)_${RANDOM}"
+QUERY_ID_URL="05219_url_${QUERY_ID_SUFFIX}"
+QUERY_ID_S3="05219_s3_${QUERY_ID_SUFFIX}"
 
 echo "--- url ---"
 $CLICKHOUSE_CLIENT --query_id "${QUERY_ID_URL}" -q "
@@ -70,9 +73,10 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219"
 # every file exactly once. The secondary INSERTs run as the `default` user, so their `current_database` is
 # not the test database - match them by `initial_query_id` instead.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-for query_id in "${QUERY_ID_URL}" "${QUERY_ID_S3}"
+for pair in "${QUERY_ID_URL} url" "${QUERY_ID_S3} s3"
 do
-    echo "--- forwarded queries of ${query_id##*_} ---"
+    query_id="${pair%% *}"
+    echo "--- forwarded queries of ${pair##* } ---"
     $CLICKHOUSE_CLIENT -q "
         WITH initial AS
         (
@@ -83,6 +87,7 @@ do
                 AND is_initial_query = 1
                 AND type = 'QueryFinish'
                 AND event_date >= yesterday()
+                AND event_time >= now() - INTERVAL 10 MINUTE
         )
         SELECT
             count() AS shards,
@@ -93,7 +98,8 @@ do
             AND is_initial_query = 0
             AND query_kind = 'Insert'
             AND type = 'QueryFinish'
-            AND event_date >= yesterday()"
+            AND event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
 # A deterministic sharding key states where every row must live, and a cluster table function hands out
@@ -106,8 +112,8 @@ SHARDED_SETTINGS="enable_parallel_replicas = 1, automatic_parallel_replicas_mode
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_cluster_engines = 1, distributed_foreground_insert = 1, log_queries = 1"
 
-QUERY_ID_SHARDED_2="05219_${CLICKHOUSE_DATABASE}_sharded2"
-QUERY_ID_SHARDED_1="05219_${CLICKHOUSE_DATABASE}_sharded1"
+QUERY_ID_SHARDED_2="05219_sharded2_${QUERY_ID_SUFFIX}"
+QUERY_ID_SHARDED_1="05219_sharded1_${QUERY_ID_SUFFIX}"
 
 echo "--- deterministic sharding key, parallel_distributed_insert_select = 2 ---"
 $CLICKHOUSE_CLIENT --query_id "${QUERY_ID_SHARDED_2}" -q "
@@ -125,9 +131,10 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219_sharded"
 # Only the number of forwarded queries that name the `*Cluster` function is asserted here: whether the
 # `Distributed` sink's own per-shard inserts reach the query log is not what these cases are about.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-for query_id in "${QUERY_ID_SHARDED_2}" "${QUERY_ID_SHARDED_1}"
+for pair in "${QUERY_ID_SHARDED_2} 2" "${QUERY_ID_SHARDED_1} 1"
 do
-    echo "--- forwarded cluster-function queries with parallel_distributed_insert_select = ${query_id: -1} ---"
+    query_id="${pair%% *}"
+    echo "--- forwarded cluster-function queries with parallel_distributed_insert_select = ${pair##* } ---"
     $CLICKHOUSE_CLIENT -q "
         WITH initial AS
         (
@@ -138,6 +145,7 @@ do
                 AND is_initial_query = 1
                 AND type = 'QueryFinish'
                 AND event_date >= yesterday()
+                AND event_time >= now() - INTERVAL 10 MINUTE
         )
         SELECT countIf(query LIKE '%Cluster(''test_cluster_two_shards_localhost''%') AS cluster_function_queries
         FROM system.query_log
@@ -145,7 +153,8 @@ do
             AND is_initial_query = 0
             AND query_kind = 'Insert'
             AND type = 'QueryFinish'
-            AND event_date >= yesterday()"
+            AND event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
 # A `dictGet` sharding key is not deterministic across queries - the dictionary can be reloaded - but it is
@@ -165,7 +174,7 @@ $CLICKHOUSE_CLIENT -q "
                              dictGetUInt64('${CLICKHOUSE_DATABASE}.dict_05219', 'shard', x));
 "
 
-QUERY_ID_DICT="05219_${CLICKHOUSE_DATABASE}_dict"
+QUERY_ID_DICT="05219_dict_${QUERY_ID_SUFFIX}"
 
 echo "--- dictGet sharding key, parallel_distributed_insert_select = 2 ---"
 $CLICKHOUSE_CLIENT --query_id "${QUERY_ID_DICT}" -q "
@@ -176,7 +185,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219_dict"
 # An explicitly written `*Cluster` source names a cluster of its own. The shards that run the forwarded
 # query are those of the `Distributed` table, and they reject a cluster name their own `remote_servers` does
 # not define, so the forwarded query must name the destination's cluster and not the source's.
-QUERY_ID_EXPLICIT="05219_${CLICKHOUSE_DATABASE}_explicit"
+QUERY_ID_EXPLICIT="05219_explicit_${QUERY_ID_SUFFIX}"
 
 echo "--- explicitly written s3Cluster with a different cluster ---"
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE local_05219"
@@ -187,9 +196,10 @@ $CLICKHOUSE_CLIENT --query_id "${QUERY_ID_EXPLICIT}" -q "
 $CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(x) FROM local_05219"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-for query_id in "${QUERY_ID_DICT}" "${QUERY_ID_EXPLICIT}"
+for pair in "${QUERY_ID_DICT} dict" "${QUERY_ID_EXPLICIT} explicit"
 do
-    echo "--- forwarded cluster-function queries of ${query_id##*_} ---"
+    query_id="${pair%% *}"
+    echo "--- forwarded cluster-function queries of ${pair##* } ---"
     $CLICKHOUSE_CLIENT -q "
         WITH initial AS
         (
@@ -200,6 +210,7 @@ do
                 AND is_initial_query = 1
                 AND type = 'QueryFinish'
                 AND event_date >= yesterday()
+                AND event_time >= now() - INTERVAL 10 MINUTE
         )
         SELECT
             countIf(query LIKE '%Cluster(''test_cluster_two_shards_localhost''%') AS to_destination_cluster,
@@ -209,7 +220,8 @@ do
             AND is_initial_query = 0
             AND query_kind = 'Insert'
             AND type = 'QueryFinish'
-            AND event_date >= yesterday()"
+            AND event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE"
 done
 
 $CLICKHOUSE_CLIENT -q "
