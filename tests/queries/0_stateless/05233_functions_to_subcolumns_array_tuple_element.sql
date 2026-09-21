@@ -71,7 +71,7 @@ CREATE TABLE t_array_tuple_collision
     a Array(Tuple(code UInt32, payload String)),
     `a.code` Array(UInt64)
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = Memory;
 
 CREATE TABLE t_array_tuple_case_collision
 (
@@ -84,7 +84,7 @@ CREATE TABLE t_array_tuple_dotted
 (
     a Array(Tuple(nested Tuple(code UInt32), `nested.code` UInt32, payload String))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = Memory;
 
 SELECT '-- physical dotted columns and case collisions are not rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'code') FROM t_array_tuple_collision)
