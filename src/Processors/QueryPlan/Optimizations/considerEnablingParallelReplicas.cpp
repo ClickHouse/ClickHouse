@@ -45,7 +45,7 @@ extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
-extern const Event AutoParallelReplicasRejectedBytesPerReplica;
+extern const Event AutoParallelReplicasBytesPerReplica;
 }
 
 namespace DB
@@ -448,12 +448,15 @@ void considerEnablingParallelReplicas(
 
         if (!found_read_worth_parallelizing)
         {
-            /// Same reason as at the late check below: the threshold is a number someone has to
-            /// choose, and this is the gate that turns most queries away, so this is where most of
-            /// the distribution to choose it from lives.
+            /// These queries never reach the cost model, so this is their only chance to contribute
+            /// to the distribution, and this gate is the one that turns most queries away. Only the
+            /// rejected side can be recorded here: when a read does qualify the loop above stops
+            /// early, deliberately, because measuring one runs index analysis - so on that path
+            /// `max_bytes_to_read` is not the largest read and the cost model records the better
+            /// number anyway.
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedEarly);
             ProfileEvents::increment(
-                ProfileEvents::AutoParallelReplicasRejectedBytesPerReplica, max_bytes_to_read / num_replicas);
+                ProfileEvents::AutoParallelReplicasBytesPerReplica, max_bytes_to_read / num_replicas);
             LOG_TRACE(
                 getLogger("optimizeTree"),
                 "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
@@ -590,6 +593,12 @@ void considerEnablingParallelReplicas(
             const auto replicas_plan_cost_estimation
                 = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+            /// Unconditionally, before the decision. Recording it only when the threshold turns a
+            /// query away would show only which queries a lower threshold would let through, never
+            /// what a higher one would cost - and the queries it would start turning away are exactly
+            /// the ones being applied here.
+            ProfileEvents::increment(
+                ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / num_replicas);
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
@@ -606,12 +615,9 @@ void considerEnablingParallelReplicas(
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
                 {
-                    /// Record the size as well as the fact. The threshold is a number someone has to
-                    /// choose, and the only way to choose it is to see what the queries it turns away
-                    /// would have read - which the log line below says but cannot be aggregated over.
+                    /// The size is already recorded above, for every query that reaches the cost
+                    /// model rather than only the ones turned away here.
                     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
-                    ProfileEvents::increment(
-                        ProfileEvents::AutoParallelReplicasRejectedBytesPerReplica, stats->input_bytes / num_replicas);
                     LOG_DEBUG(
                         getLogger("optimizeTree"),
                         "Not enabling parallel replicas reading because the read of {} bytes gives {} per replica, "
