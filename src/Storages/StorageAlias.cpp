@@ -515,9 +515,11 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
+/// The delegation below re-enters this method on an Alias target, so each hop asks for its own declared
+/// target and the conjunction of those answers is the whole chain.
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();
@@ -526,7 +528,7 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();
