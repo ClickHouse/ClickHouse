@@ -124,6 +124,9 @@ bool overridesResourceLimits(const std::string & sql_original)
         "max_temporary_columns", "max_temporary_non_const_columns", "max_query_size", "max_parser_depth", "max_parser_backtracks",
         "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements", "max_network_bandwidth", "max_network_bytes",
         "priority", "max_threads", "max_insert_threads", "max_final_threads", "max_concurrent_queries_for_user",
+        /// Any timeout setting: the harness runs with one-second network timeouts, a fuzzed
+        /// `SETTINGS connect_timeout = 100` on an external table function waits for minutes.
+        "timeout", "retries", "retry",
     };
     for (const char * setting : limit_settings)
         if (sql.find(setting) != std::string::npos)
