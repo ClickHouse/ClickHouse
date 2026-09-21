@@ -158,11 +158,23 @@ public:
         std::string write_if_match;
     };
 
-    /// With `hint_created_concurrently` the hint is absent when the commit looks for it, and the
-    /// exclusive write that would create it loses the race to another writer - which is exactly how
-    /// a hint appearing in the middle of this commit looks from here.
-    explicit ExistingVersionHintObjectStorage(std::string hint_etag_, bool hint_created_concurrently = false)
-        : hint_etag(std::move(hint_etag_)), hint_present(!hint_created_concurrently)
+    /// How another writer's `version-hint.text` interleaves with this commit. With `None` the hint is
+    /// there from the start, with `Absent` it never is. With `CreatedBeforeTheExclusiveCreate` it is absent when the commit
+    /// looks for it, and the exclusive write that would create it loses the race to another writer -
+    /// which is exactly how a hint appearing in the middle of this commit looks from here. With
+    /// `AppearsAfterTheMetadataFileIsWritten` it is absent when the commit looks for it and is there
+    /// from the moment the metadata file is published: the commit never asks for it to be created,
+    /// so nothing fails - only a re-read can notice it.
+    enum class Race
+    {
+        None,
+        Absent,
+        CreatedBeforeTheExclusiveCreate,
+        AppearsAfterTheMetadataFileIsWritten,
+    };
+
+    explicit ExistingVersionHintObjectStorage(std::string hint_etag_, Race race_ = Race::None)
+        : hint_etag(std::move(hint_etag_)), race(race_), hint_present(race == Race::None)
     {
     }
 
@@ -188,6 +200,9 @@ public:
             hint_present = true;
             throw Exception(ErrorCodes::NETWORK_ERROR, "Another writer created {} first", object.remote_path);
         }
+
+        if (object.remote_path.ends_with(metadata_file_name) && race == Race::AppearsAfterTheMetadataFileIsWritten)
+            hint_present = true;
 
         return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
     }
@@ -255,8 +270,10 @@ private:
     }
 
     static constexpr std::string_view version_hint_name = "version-hint.text";
+    static constexpr std::string_view metadata_file_name = ".metadata.json";
 
     std::string hint_etag;
+    Race race;
     bool hint_present;
 };
 
@@ -265,12 +282,14 @@ private:
 /// the writes recorded up to that point are what the test is about.
 struct CommitOverExistingVersionHint
 {
-    explicit CommitOverExistingVersionHint(const std::string & hint_etag, bool hint_created_concurrently = false)
-        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, hint_created_concurrently))
+    using Race = ExistingVersionHintObjectStorage::Race;
+
+    explicit CommitOverExistingVersionHint(const std::string & hint_etag, Race race = Race::None)
+        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, race))
     {
     }
 
-    bool run() const
+    bool run(bool try_write_version_hint = true) const
     {
         Iceberg::IcebergPathResolver resolver(
             "/table",
@@ -289,7 +308,7 @@ struct CommitOverExistingVersionHint
             Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
             object_storage,
             getContext().context,
-            /*try_write_version_hint=*/ true);
+            try_write_version_hint);
     }
 
     const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
@@ -348,7 +367,7 @@ TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitTakesTheMetadataFile
     /// no tag. The metadata file is published by then, so the commit removes it again before
     /// refusing - otherwise a snapshot no command committed would stay visible to listing-based
     /// readers.
-    CommitOverExistingVersionHint commit("", /*hint_created_concurrently=*/ true);
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedBeforeTheExclusiveCreate);
 
     try
     {
@@ -371,6 +390,40 @@ TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitTakesTheMetadataFile
     const auto & removed = commit.removed();
     ASSERT_EQ(removed.size(), 1u);
     EXPECT_EQ(removed[0], writes[0].path);
+}
+
+TEST(IcebergCommitPropagation, HintCreatedAfterThePreCheckIsStillAdvancedByAWriterThatDoesNotCreateHints)
+{
+    /// `try_write_version_hint = false`: this writer does not create the hint, but once any writer
+    /// has, every commit must keep it in sync. Here the hint is absent when the commit checks it
+    /// before publishing the metadata file, and another writer creates it - pointing at the previous
+    /// version - while the file is being written. The pre-check saw nothing, so its result must not
+    /// stand in for the read after the publish: the commit has to look again and advance the hint
+    /// under the tag it reads, exactly as it did before the pre-check existed. Otherwise it returns
+    /// success while readers with `iceberg_use_version_hint = 1` stay on the previous snapshot.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::AppearsAfterTheMetadataFileIsWritten);
+    EXPECT_TRUE(commit.run(/*try_write_version_hint=*/ false));
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_match, "\"abc\"");
+    EXPECT_TRUE(writes[1].write_if_none_match.empty());
+    EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, WriterThatDoesNotCreateHintsLeavesAnAbsentHintAlone)
+{
+    /// The control for the test above: when no hint appears, a writer with
+    /// `try_write_version_hint = false` publishes the metadata file and nothing else. Without this
+    /// the test above would also pass against a commit that creates the hint regardless of the flag.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::Absent);
+    EXPECT_TRUE(commit.run(/*try_write_version_hint=*/ false));
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 1u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)

@@ -428,11 +428,20 @@ bool writeMetadataFileAndVersionHint(
     /// published. `expireSnapshots` and the schema-alter path in `Mutations.cpp` do not remove that
     /// file when the commit throws, so failing after writing it would leave the new snapshot visible
     /// to listing-based readers while readers with `iceberg_use_version_hint = 1` stay on the old
-    /// one. The state that was read here is reused by the first attempt of the loop below, so this
-    /// costs no extra request.
+    /// one.
     std::optional<VersionHintState> version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
     if (version_hint->exists && version_hint->etag.empty() && version_hint->version < metadata_file_info.version)
         throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+
+    /// Only an existing hint is carried into the first attempt of the loop below (saving its
+    /// re-read): its rewrite is a compare-and-swap on the tag read here, so a hint another writer
+    /// replaced in the meantime fails that write and is read again. An absent hint is validated by
+    /// nothing - with `try_write_version_hint = false` the loop leaves without touching the storage,
+    /// and a hint created concurrently after this read would stay behind the metadata file that is
+    /// about to be published, pinning readers with `iceberg_use_version_hint = 1` to the previous
+    /// snapshot. It has to be read again once the metadata file is out.
+    if (!version_hint->exists)
+        version_hint.reset();
 
     try
     {
