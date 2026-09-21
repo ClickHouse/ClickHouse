@@ -3193,8 +3193,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    /// Each stream drops its own duplicates before the join hashes them. Such a step gives up by itself on a
-    /// stream of mostly unique rows, and the duplicates of different streams are left to the join.
+    /// Each stream drops its own duplicates before the join hashes them, and the duplicates of different streams
+    /// are left to the join. Hashing a row here costs more than the join spares on it, so the step gives up on a
+    /// stream as soon as its first chunk turns out to be mostly unique.
     if (join_node.isSetOperation() && preliminaryDistinctIsUseful(settings[Setting::max_threads]))
     {
         for (auto * query_plan : {&left_join_tree_query_plan.query_plan, &right_join_tree_query_plan.query_plan})
@@ -3206,6 +3207,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
                 query_plan->getCurrentHeader()->getNames(),
                 true /*pre_distinct*/);
             distinct_step->setStepDescription("Preliminary DISTINCT of a set operation input");
+            distinct_step->abandonAfterFirstChunk();
             query_plan->addStep(std::move(distinct_step));
         }
     }
