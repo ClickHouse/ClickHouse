@@ -54,6 +54,12 @@ ACCESS_DENIED
 -- An object named through a query alias is read as well
 ACCESS_DENIED
 ACCESS_DENIED
+-- An object named by a column a subquery below projects is not one name here
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- A column of the mutated table does not name one object either
+ACCESS_DENIED
 -- joinGet reads the key columns of the Join table too
 ACCESS_DENIED
 OK
@@ -84,5 +90,11 @@ OK
 OK
 OK
 OK
+-- A carrier that names no one object stays denied under the grants on the object it is named after
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
 -- The value of an unreadable table never reached a readable column
 0

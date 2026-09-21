@@ -24,9 +24,11 @@ DROP USER IF EXISTS $user_name;
 DROP DATABASE IF EXISTS $other_db;
 CREATE DATABASE $other_db;
 
-CREATE TABLE tab (id UInt32, name String, hidden UInt32) ENGINE = MergeTree ORDER BY id
+-- The column 'dict' is named after the dictionary below on purpose: a carrier of that name must be
+-- denied even under the grant on the dictionary, or the grant on it is a way to read any other one.
+CREATE TABLE tab (id UInt32, name String, hidden UInt32, dict String) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO tab VALUES (1, 'a', 7), (42, 'b', 8);
+INSERT INTO tab VALUES (1, 'a', 7, ''), (42, 'b', 8, '');
 
 -- A table of its own for the cases whose mutation cannot execute, so that a mutation left behind
 -- does not merge into the predicates of the other cases.
@@ -211,6 +213,19 @@ echo "-- An object named through a query alias is read as well"
 check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(d, 'payload', toUInt64(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.dict' AS d) != '') WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(j, 'payload', toUInt32(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.join_tab' AS j) != '') WHERE 0 SETTINGS $off"
 
+# `resolveFunction.cpp` resolves the first argument through the expression scope of the query, not
+# only through the aliases of the level it is written at, so a column a subquery below projects, and
+# a column of the mutated table, carry the name just as well. Their value is not on the AST here, so
+# such a carrier names every object and not an object of its own name. Each carrier below is named
+# after an object the user is granted on further down, so taking it for that object - which is what
+# reading the name off the AST does - would let it read any other object instead.
+echo "-- An object named by a column a subquery below projects is not one name here"
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) s) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet($CLICKHOUSE_DATABASE.dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) AS $CLICKHOUSE_DATABASE) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(join_tab, 'payload', toUInt32(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.join_tab' AS join_tab) s) WHERE 0 SETTINGS $off"
+echo "-- A column of the mutated table does not name one object either"
+check_access "ALTER TABLE tab UPDATE name = dictGet(dict, 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
+
 # `joinGet` probes the key columns of the `Join` table, not only the attribute it names, and
 # `FunctionJoinGet::prepare` requires `SELECT` on both.
 echo "-- joinGet reads the key columns of the Join table too"
@@ -260,6 +275,16 @@ check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(pay
 check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
+
+# A carrier that names no one object requires the access on every object, which the grants above -
+# `dictGet` on the dictionary and `SELECT` on the `Join` table each carrier is named after - do not
+# give. Reading the name off the AST instead would let every one of these read another object.
+echo "-- A carrier that names no one object stays denied under the grants on the object it is named after"
+check_access "ALTER TABLE tab UPDATE name = dictGet(concat('$CLICKHOUSE_DATABASE', '.dict'), 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) s) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet($CLICKHOUSE_DATABASE.dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) AS $CLICKHOUSE_DATABASE) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(join_tab, 'payload', toUInt32(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.join_tab' AS join_tab) s) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = dictGet(dict, 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
 
 echo "-- The value of an unreadable table never reached a readable column"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
