@@ -70,6 +70,12 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
+IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
+    {{"",  JoinOrderConflictDetector::NONE},
+     {"a", JoinOrderConflictDetector::CD_A},
+     {"c", JoinOrderConflictDetector::CD_C}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},
@@ -279,6 +285,11 @@ IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ArrowCompression::NONE},
      {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
      {"zstd", FormatSettings::ArrowCompression::ZSTD}})
+
+IMPLEMENT_SETTING_ENUM(ArrowUnsupportedTypes, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::ArrowUnsupportedTypes::THROW},
+     {"text", FormatSettings::ArrowUnsupportedTypes::TEXT},
+     {"binary", FormatSettings::ArrowUnsupportedTypes::BINARY}})
 
 IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ORCCompression::NONE},
@@ -493,7 +504,8 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexPostingListCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
-     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking},
+     {"pfor", TextIndexPostingListCodec::PFor}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
