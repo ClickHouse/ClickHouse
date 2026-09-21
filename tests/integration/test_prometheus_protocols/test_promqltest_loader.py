@@ -207,16 +207,20 @@ def test_compare_range_timestamps():
         )
 
     tsv = (
-        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:00.000\t1\n"
-        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:30.000\t2\n"
-        "[('__name__','m'),('g','a')]\t1970-01-01 00:01:00.000\t3\n"
+        "[('__name__','m'),('g','a')]\t"
+        "[('1970-01-01 00:00:00.000',1),('1970-01-01 00:00:30.000',2),"
+        "('1970-01-01 00:01:00.000',3)]\n"
     )
     status, _ = loader.compare_eval(make_case("1 2 3"), tsv, None)
     assert status == "passed"
-    extra = tsv + "[('__name__','m'),('g','a')]\t1970-01-01 00:01:30.000\t4\n"
+    extra = tsv.replace(
+        ")]\n", "),('1970-01-01 00:01:30.000',4)]\n"
+    )
     status, _ = loader.compare_eval(make_case("1 2 3"), extra, None)
     assert status == "failed"
-    duplicate = tsv + "[('__name__','m'),('g','a')]\t1970-01-01 00:01:00.000\t3\n"
+    duplicate = tsv.replace(
+        ")]\n", "),('1970-01-01 00:01:00.000',3)]\n"
+    )
     status, _ = loader.compare_eval(make_case("1 2 3"), duplicate, None)
     assert status == "failed"
     status, _ = loader.compare_eval(make_case("1 _ 3"), tsv, None)
