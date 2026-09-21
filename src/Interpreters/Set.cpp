@@ -20,6 +20,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <Functions/CastOverloadResolver.h>
+
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -434,6 +436,49 @@ void Set::processDateTime64Column(
     }
 }
 
+/// Whether `castColumnAccurateOrNull` can report every tuple element it cannot represent, instead of
+/// silently substituting a converted value. It reports one as a NULL for the whole tuple, and only a
+/// leaf conversion asked for a `Nullable` result selects a converter that produces that NULL: the
+/// request is dropped for composite targets, and honoured only for a `String` or numeric source.
+static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(from_type).get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
+    if (!from_tuple || !to_tuple)
+        return false;
+
+    /// The cast matches elements by name as soon as both tuples are named and share one name, dropping
+    /// and default-filling the rest, so pairing by position is what it will do only when at most one
+    /// side is named, or the names already agree.
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+        && from_tuple->getElementNames() != to_tuple->getElementNames())
+        return false;
+
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    if (from_elements.size() != to_elements.size())
+        return false;
+
+    for (size_t i = 0; i < to_elements.size(); ++i)
+    {
+        if (from_elements[i]->equals(*to_elements[i]))
+            continue;
+
+        if (!to_elements[i]->isNullable())
+            return false;
+
+        const WhichDataType to_which(removeNullable(to_elements[i]));
+        if (!to_which.isInt() && !to_which.isUInt() && !to_which.isFloat())
+            return false;
+
+        const WhichDataType from_which(removeNullable(removeLowCardinality(from_elements[i])));
+        if (!from_which.isString() && !from_which.isInt() && !from_which.isUInt() && !from_which.isFloat())
+            return false;
+    }
+
+    return true;
+}
+
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -482,14 +527,14 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
-        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
-        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
-        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
-        auto target_type_without_nullable = removeNullable(data_types[i]);
-        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
+        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable();
 
-        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+        /// A Tuple target also needs the OrNull cast to be able to report a failed element; the
+        /// tuple-level Nullable it reports one with is stripped by `extractNestedColumnsAndNullMap`
+        /// below, leaving the key columns Set matches on unchanged.
+        if (use_cast_accurate_or_null && isTuple(removeNullable(data_types[i])))
+            use_cast_accurate_or_null = canBeAccurateCastOrNullTarget(data_types[i])
+                && tupleElementsCanReportInexactConversion(column_to_cast.type, data_types[i]);
 
         if (use_cast_accurate_or_null)
         {

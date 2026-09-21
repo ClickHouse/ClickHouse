@@ -1,0 +1,11 @@
+tuple key, unparsable text	1
+tuple key, NOT IN	1
+tuple key, value out of the element range	1
+tuple key, set holds only NULL	0
+tuple key, source NULL matches set NULL	1
+tuple key, every value representable	1
+tuple key, literal set	1
+tuple key over a primary key	1
+single column key	1
+tuple of array key	1
+date source element	1
