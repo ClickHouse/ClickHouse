@@ -676,19 +676,6 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
 }
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 void ASTSelectQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SelectQuery");
