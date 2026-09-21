@@ -13,10 +13,17 @@ private:
     friend class COWHelper<IColumnHelper<ColumnExponentialTimeDecaying>, ColumnExponentialTimeDecaying>;
 
     WrappedPtr storage;
+    WrappedPtr ordering_prefix;
     Float64 decay_length;
 
     ColumnExponentialTimeDecaying(MutableColumnPtr && storage_, Float64 decay_length_);
+    ColumnExponentialTimeDecaying(
+        MutableColumnPtr && storage_,
+        MutableColumnPtr && ordering_prefix_,
+        Float64 decay_length_);
 
+    void appendOrderingPrefix(size_t row);
+    void rebuildOrderingPrefix();
     int compareDirect(size_t n, size_t m, const ColumnExponentialTimeDecaying & rhs) const;
 
 public:
@@ -25,6 +32,17 @@ public:
     static MutablePtr create(MutableColumnPtr && storage_, Float64 decay_length_)
     {
         return Base::create(std::move(storage_), decay_length_);
+    }
+
+    static MutablePtr createWithPrefix(
+        MutableColumnPtr && storage_,
+        MutableColumnPtr && ordering_prefix_,
+        Float64 decay_length_)
+    {
+        return Base::create(
+            std::move(storage_),
+            std::move(ordering_prefix_),
+            decay_length_);
     }
 
     const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
@@ -40,9 +58,9 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
     std::string_view getDataAt(size_t n) const override { return storage->getDataAt(n); }
 
-    void insertData(const char * pos, size_t length) override { storage->insertData(pos, length); }
-    void insert(const Field & x) override { storage->insert(x); }
-    bool tryInsert(const Field & x) override { return storage->tryInsert(x); }
+    void insertData(const char * pos, size_t length) override;
+    void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
     bool isDefaultAt(size_t n) const override { return storage->isDefaultAt(n); }
     bool hasOnlyTypeDefaults() const override { return storage->hasOnlyTypeDefaults(); }
 
@@ -58,8 +76,8 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
 #endif
 
-    void insertDefault() override { storage->insertDefault(); }
-    void popBack(size_t n) override { storage->popBack(n); }
+    void insertDefault() override;
+    void popBack(size_t n) override;
 
     std::string_view serializeValueIntoArena(
         size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
@@ -73,10 +91,21 @@ public:
         return storage->serializeValueIntoMemory(n, memory, settings);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    std::optional<size_t> getSerializedValueSize(
+        size_t n, const IColumn::SerializationSettings * settings) const override
     {
-        storage->deserializeAndInsertFromArena(in, settings);
+        return storage->getSerializedValueSize(n, settings);
     }
+
+    void collectSerializedValueSizes(
+        PaddedPODArray<UInt64> & sizes,
+        const UInt8 * is_null,
+        const IColumn::SerializationSettings * settings) const override
+    {
+        storage->collectSerializedValueSizes(sizes, is_null, settings);
+    }
+
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashFast(SipHash & hash) const override;
@@ -106,26 +135,52 @@ public:
         Permutation & res,
         EqualRanges & equal_ranges) const override;
 
-    void reserve(size_t n) override { storage->reserve(n); }
+    void reserve(size_t n) override
+    {
+        storage->reserve(n);
+        ordering_prefix->reserve(n);
+    }
+
     void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
-    void shrinkToFit() override { storage->shrinkToFit(); }
-    void ensureOwnership() override { storage->ensureOwnership(); }
-    void protect() override { storage->protect(); }
+
+    void shrinkToFit() override
+    {
+        storage->shrinkToFit();
+        ordering_prefix->shrinkToFit();
+    }
+
+    void ensureOwnership() override
+    {
+        storage->ensureOwnership();
+        ordering_prefix->ensureOwnership();
+    }
+
+    void protect() override
+    {
+        storage->protect();
+        ordering_prefix->protect();
+    }
 
     size_t capacity() const override { return storage->capacity(); }
-    size_t byteSize() const override { return storage->byteSize(); }
-    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n); }
-    size_t allocatedBytes() const override { return storage->allocatedBytes(); }
+    size_t byteSize() const override { return storage->byteSize() + ordering_prefix->byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return storage->byteSizeAt(n) + ordering_prefix->byteSizeAt(n); }
+    size_t allocatedBytes() const override { return storage->allocatedBytes() + ordering_prefix->allocatedBytes(); }
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override { storage->updateCheckpoint(checkpoint); }
-    void rollback(const ColumnCheckpoint & checkpoint) override { storage->rollback(checkpoint); }
+    void rollback(const ColumnCheckpoint & checkpoint) override;
     ColumnCheckpointPtr getCheckpoint() const override { return storage->getCheckpoint(); }
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
-    void finalize() override { storage->finalize(); }
-    bool isFinalized() const override { return storage->isFinalized(); }
+
+    void finalize() override
+    {
+        storage->finalize();
+        ordering_prefix->finalize();
+    }
+
+    bool isFinalized() const override { return storage->isFinalized() && ordering_prefix->isFinalized(); }
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -135,6 +190,11 @@ public:
     const ColumnTuple & getStorageTuple() const { return assert_cast<const ColumnTuple &>(*storage); }
     ColumnTuple & getStorageTuple() { return assert_cast<ColumnTuple &>(*storage); }
     const ColumnPtr & getStoragePtr() const { return storage; }
+    const IColumn & getOrderingPrefixColumn() const { return *ordering_prefix; }
+
+    /// The serialized/direct payload can be appended independently of the derived
+    /// ordering prefix. Synchronize the cache after such a deserialization.
+    void syncOrderingPrefixFrom(size_t previous_size);
 };
 
 }

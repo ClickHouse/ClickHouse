@@ -80,8 +80,8 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*column);
     const auto & tuple = decaying.getStorageTuple();
     return {
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
-        assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
         *decay_length,
     };
 }
@@ -125,7 +125,6 @@ struct DecayingColumnBuilder
     void append(Float64 value, Float64 time)
     {
         const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
-        ordering_prefix->insertValue(normalized.ordering_prefix);
         value_at_anchor->insertValue(normalized.value_at_anchor);
         anchor_time->insertValue(normalized.anchor_time);
     }
@@ -133,15 +132,11 @@ struct DecayingColumnBuilder
     ColumnPtr build()
     {
         auto tuple = ColumnTuple::create(
-            Columns{
-                std::move(ordering_prefix),
-                std::move(value_at_anchor),
-                std::move(anchor_time)});
+            Columns{std::move(value_at_anchor), std::move(anchor_time)});
         return ColumnExponentialTimeDecaying::create(tuple->assumeMutable(), decay_length);
     }
 
     const Float64 decay_length;
-    ColumnUInt64::MutablePtr ordering_prefix = ColumnUInt64::create();
     ColumnFloat64::MutablePtr value_at_anchor = ColumnFloat64::create();
     ColumnFloat64::MutablePtr anchor_time = ColumnFloat64::create();
 };

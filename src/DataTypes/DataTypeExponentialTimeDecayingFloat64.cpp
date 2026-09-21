@@ -131,9 +131,9 @@ public:
         const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(column);
         const auto & tuple = decaying.getStorageTuple();
         const Float64 value
-            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
         const Float64 time
-            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
+            = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
 
         const auto score = getExponentialTimeDecayingOrderingScore(value, time, decay_length);
         const UInt64 prefix = shiftOneBitAndSign(score.high, value);
@@ -171,6 +171,7 @@ public:
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinaryBulk(
             decaying.getStorageColumn(), istr, limit, avg_value_size_hint);
+        decaying.syncOrderingPrefixFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -185,6 +186,7 @@ public:
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(
             decaying.getStorageColumn(), limit, settings, state, cache);
+        decaying.syncOrderingPrefixFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -193,6 +195,7 @@ public:
         const size_t previous_size = column.size();
         auto & decaying = assert_cast<ColumnExponentialTimeDecaying &>(column);
         nested_serialization->deserializeBinary(decaying.getStorageColumn(), istr, settings);
+        decaying.syncOrderingPrefixFrom(previous_size);
         validateNewRows(column, previous_size);
     }
 
@@ -335,10 +338,9 @@ DataTypeExponentialTimeDecayingFloat64::DataTypeExponentialTimeDecayingFloat64(
     , legacy_name(legacy_name_)
     , storage_type(std::make_shared<DataTypeTuple>(
           DataTypes{
-              std::make_shared<DataTypeUInt64>(),
               std::make_shared<DataTypeFloat64>(),
               std::make_shared<DataTypeFloat64>()},
-          Names{"ordering_prefix", "value_at_anchor", "anchor_time"}))
+          Names{"value_at_anchor", "anchor_time"}))
     , logical_type(std::make_shared<DataTypeTuple>(
           DataTypes{
               std::make_shared<DataTypeFloat64>(),
@@ -362,7 +364,7 @@ MutableColumnPtr DataTypeExponentialTimeDecayingFloat64::createColumn() const
 
 Field DataTypeExponentialTimeDecayingFloat64::getDefault() const
 {
-    return Tuple{UInt64(1) << 63, Float64(0), Float64(0)};
+    return Tuple{Float64(0), Float64(0)};
 }
 
 void DataTypeExponentialTimeDecayingFloat64::insertDefaultInto(IColumn & column) const
@@ -383,12 +385,12 @@ bool DataTypeExponentialTimeDecayingFloat64::haveMaximumSizeOfValue() const
 
 size_t DataTypeExponentialTimeDecayingFloat64::getMaximumSizeOfValueInMemory() const
 {
-    return storage_type->getMaximumSizeOfValueInMemory();
+    return storage_type->getMaximumSizeOfValueInMemory() + sizeof(UInt64);
 }
 
 size_t DataTypeExponentialTimeDecayingFloat64::getSizeOfValueInMemory() const
 {
-    return storage_type->getSizeOfValueInMemory();
+    return storage_type->getSizeOfValueInMemory() + sizeof(UInt64);
 }
 
 void DataTypeExponentialTimeDecayingFloat64::updateHashImpl(SipHash & hash) const
@@ -634,8 +636,8 @@ ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
     ColumnPtr full = storage_column.convertToFullColumnIfConst();
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*full);
     const auto & tuple = decaying.getStorageTuple();
-    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
 
     auto signs = ColumnFloat64::create();
     auto signed_unit_times = ColumnFloat64::create();
@@ -678,10 +680,8 @@ ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
     const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
     const auto & decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
 
-    auto ordering_prefix = ColumnUInt64::create();
     auto values = ColumnFloat64::create();
     auto times = ColumnFloat64::create();
-    ordering_prefix->reserve(tuple.size());
     values->reserve(tuple.size());
     times->reserve(tuple.size());
 
@@ -704,7 +704,6 @@ ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Malformed ExponentialTimeDecaying value in {}: zero must have zero unit timestamp",
                     operation);
-            ordering_prefix->insertValue(shiftOneBitAndSign(0, 0));
             values->insertValue(0);
             times->insertValue(0);
             continue;
@@ -716,16 +715,11 @@ ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
                 "Malformed ExponentialTimeDecaying value in {}: expected canonical sign and signed unit timestamp",
                 operation);
 
-        const Float64 value = sign;
-        const Float64 time = sign * signed_unit_time;
-        const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
-        ordering_prefix->insertValue(normalized.ordering_prefix);
-        values->insertValue(normalized.value_at_anchor);
-        times->insertValue(normalized.anchor_time);
+        values->insertValue(sign);
+        times->insertValue(sign * signed_unit_time);
     }
 
-    auto physical = ColumnTuple::create(
-        Columns{std::move(ordering_prefix), std::move(values), std::move(times)});
+    auto physical = ColumnTuple::create(Columns{std::move(values), std::move(times)});
     return ColumnExponentialTimeDecaying::create(physical->assumeMutable(), decay_length);
 }
 
@@ -745,26 +739,32 @@ void validateExponentialTimeDecayingFloat64Column(
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*nested_column);
     const auto & tuple = decaying.getStorageTuple();
-    if (tuple.tupleSize() != 3)
+    if (tuple.tupleSize() != 2)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Malformed ExponentialTimeDecaying value in {}: expected compact prefix and direct payload",
+            "Malformed ExponentialTimeDecaying value in {}: expected direct value and anchor payload",
             operation);
 
-    const auto & ordering_prefix = assert_cast<const ColumnUInt64 &>(tuple.getColumn(0)).getData();
-    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+    const auto & values = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & ordering_prefix
+        = assert_cast<const ColumnUInt64 &>(decaying.getOrderingPrefixColumn()).getData();
 
     for (size_t row = 0; row < tuple.size(); ++row)
     {
         if (nullable && nullable->isNullAt(row))
             continue;
 
-        if (!isCanonicalExponentialTimeDecayingFloat64Value(
-                ordering_prefix[row], values[row], times[row], decaying.getDecayLength()))
+        const auto normalized
+            = normalizeExponentialTimeDecayingFloat64(values[row], times[row], decaying.getDecayLength());
+        if (!std::isfinite(values[row])
+            || !std::isfinite(times[row])
+            || normalized.value_at_anchor != values[row]
+            || normalized.anchor_time != times[row]
+            || normalized.ordering_prefix != ordering_prefix[row])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecaying value in {}: ordering prefix does not match direct payload",
+                "Malformed ExponentialTimeDecaying value in {}: direct payload or derived ordering prefix is invalid",
                 operation);
     }
 }
@@ -851,10 +851,11 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 Represents a finite exponentially time-decaying value.
 
 The decay length is part of the logical type: `ExponentialTimeDecaying(decay_length)` and is not
-stored per row. The default physical representation is ordered: it stores the 8-byte
-`shiftOneBitAndSign(unit_timestamp)` prefix together with the authoritative 16-byte
-`(value_at_anchor, anchor_time)` payload. Arithmetic uses only the direct payload. The prefix is
-used for ordering and indexing, with direct comparison available for prefix ties.
+stored per row. The persisted payload contains only the authoritative
+`(value_at_anchor, anchor_time)` pair. The default in-memory representation is ordered: it derives
+an 8-byte `shiftOneBitAndSign(unit_timestamp)` prefix for fast comparison without persisting that
+redundant prefix for every row. Arithmetic uses only the direct payload and prefix ties fall back
+to the compensated direct comparator.
 
 For a nonzero curve, `unit_time = anchor_time + decay_length * ln(abs(value_at_anchor))` is the
 time at which its magnitude is one. SQL/text compatibility with the earlier experimental spelling

@@ -228,9 +228,9 @@ public:
             else
             {
                 const auto & values
-                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(1)).getData();
+                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(0)).getData();
                 const auto & times
-                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(2)).getData();
+                    = assert_cast<const ColumnFloat64 &>(storage_tuple.getColumn(1)).getData();
                 auto result = ColumnFloat64::create();
                 result->reserve(decaying_column.size());
                 for (size_t row = 0; row < decaying_column.size(); ++row)
