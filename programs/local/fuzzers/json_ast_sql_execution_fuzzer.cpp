@@ -319,6 +319,9 @@ bool isDeterministicForOracle(const std::string & sql_original)
         "revision", "blocknumber", "blocksize", "rownumberinblock", "rownumberinallblocks", "transactionid",
         "randcanonical", "generateuuidv4", "generateuuidv7", "currentschemas", "currentroles", "currentprofiles",
         "enabledroles", "enabledprofiles", "defaultroles", "defaultprofiles", "initialqueryid", "initialquerystarttime",
+        "initial_query_id", "initial_query_start_time", "query_id", "current_schemas", "current_user", "current_database",
+        "current_timestamp", "current_date", "current_role", "localtime", "localtimestamp", "curdate", "current_time",
+        "sysdate", "utc_timestamp", "utctimestamp", "nowinblock", "now64",
         "getservermacro", "getclienthttpheader", "hasthreadfuzzer", "runningconcurrency", "zookeepersessionuptime",
     };
     const auto is_word_char = [](char c) { return isAlphaNumericASCII(c) || c == '_'; };
