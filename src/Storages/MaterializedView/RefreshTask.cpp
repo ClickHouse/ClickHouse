@@ -1351,7 +1351,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             if (root_znode_version != -1)
                 refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
             /// A non-append refresh re-creates the target table from the view's own stored definition.
-            refresh_context->setRecoveryFromStoredMetadata(true);
+            refresh_context->setStorageSettingsFromStoredMetadata(true);
         }
 
         {

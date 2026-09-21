@@ -12,6 +12,8 @@
 #      cannot describe the local target cannot create the engine over it.
 #   3. A `Remote(named_collection, ...)` table registers a dependency on the named collection, so
 #      `DROP NAMED COLLECTION` is rejected while the table exists.
+#   4. A refreshable view re-creating such a table as its target is not exempt from check 1, even
+#      though the definition it replays is the one this server stored.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,6 +22,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db=${CLICKHOUSE_DATABASE}
 user="user_04318_${CLICKHOUSE_DATABASE}"
 collection="collection_04318_${CLICKHOUSE_DATABASE}"
+protected_db="${CLICKHOUSE_DATABASE}_protected_04318"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user;
@@ -80,6 +83,42 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection" 2>&1 | grep -c -m1 "NAMED_COLLECTION_IS_USED\|is used by"
 ${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_any_query = 0; DROP TABLE $db.t_remote_nc"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection"
+
+echo "-- 4. a non-append refresh re-creates the target, and the local-shard check still runs"
+# A refresh replays the target's own stored definition, so a name in its `SETTINGS` clause is not
+# re-judged; the access check is separate and still applies, because the replay runs under the view's
+# definer at an arbitrary later time and the engine credentials reach the local target directly when
+# `prefer_localhost_replica = 0` routes the write over a connection.
+#
+# The target of the `Remote` engine must live outside $db: `prepareRefresh` pre-checks
+# SELECT/INSERT/CREATE TABLE/DROP TABLE on the database of the table it re-creates, and a partial
+# revoke inside $db would deny the refresh there instead, before the check under test is reached.
+#
+# ast_fuzzer_runs = 0 on every statement below: the stress profile fuzzes DDL, and this arm's state
+# spans several client invocations, so a fuzzed detach or clone would decide the grant oracle instead.
+${CLICKHOUSE_CLIENT} <<EOF
+SET ast_fuzzer_runs = 0;
+CREATE DATABASE $protected_db;
+CREATE TABLE $protected_db.protected_target (x UInt64) ENGINE = MergeTree ORDER BY x;
+GRANT SELECT, INSERT ON $protected_db.protected_target TO $user;
+GRANT CREATE VIEW, DROP TABLE ON $db.* TO $user;
+CREATE TABLE $db.mv_target (x UInt64) ENGINE = Remote('127.0.0.1', $protected_db, protected_target, 'default');
+CREATE TABLE $db.mv_src (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO $db.mv_src VALUES (1);
+CREATE MATERIALIZED VIEW $db.mv REFRESH EVERY 10 YEAR TO $db.mv_target
+    DEFINER = $user SQL SECURITY DEFINER
+    EMPTY AS SELECT x FROM $db.mv_src
+    SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 1;
+EOF
+# While the definer still holds the grants the refresh succeeds, so the deny below is the check firing
+# rather than the refresh being broken for some other reason.
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_runs = 0; SYSTEM REFRESH VIEW $db.mv; SYSTEM WAIT VIEW $db.mv" > /dev/null \
+    && echo "refresh runs while the definer is granted"
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_runs = 0; REVOKE SELECT, INSERT ON $protected_db.protected_target FROM $user"
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_runs = 0; SYSTEM REFRESH VIEW $db.mv; SYSTEM WAIT VIEW $db.mv" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_runs = 0; DROP VIEW $db.mv"
+${CLICKHOUSE_CLIENT} --query "SET ast_fuzzer_runs = 0; DROP DATABASE $protected_db"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.local_target"

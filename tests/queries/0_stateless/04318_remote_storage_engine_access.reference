@@ -11,3 +11,6 @@ x	UInt64
 42
 -- 3. a Remote table built from a named collection blocks DROP NAMED COLLECTION
 1
+-- 4. a non-append refresh re-creates the target, and the local-shard check still runs
+refresh runs while the definer is granted
+1

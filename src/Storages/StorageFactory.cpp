@@ -63,7 +63,8 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     const bool is_shared_catalog_replay = false;
 #endif
     if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+        || local_context->isRecoveryFromStoredMetadata() || local_context->isStorageSettingsFromStoredMetadata()
+        || is_shared_catalog_replay)
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
