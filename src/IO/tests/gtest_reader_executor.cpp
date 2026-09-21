@@ -113,6 +113,8 @@ struct MockCacheState
     /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
     /// must fall back to a source read.
     bool wait_returns_empty = false;
+    /// Highest `range.end()` any `resolve` has asked for - how far ahead the plan probed.
+    size_t max_resolved_end = 0;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
 
     void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
@@ -139,6 +141,7 @@ public:
     {
         VectorWithMemoryTracking<CacheResolution> out;
         const size_t file_size = state->declared_size;
+        state->max_resolved_end = std::max(state->max_resolved_end, range.end());
         if (range.offset >= file_size)
             return out;
         const size_t ask_end = std::min(range.end(), file_size);
@@ -553,6 +556,43 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
     EXPECT_EQ(firstWindow(80), base_window / 4);    /// Elevated: window / 4
     EXPECT_EQ(firstWindow(92), base_window / 16);   /// High: window / 16
     EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
+}
+
+TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
+{
+    /// The plan resolves a shorter span under pressure, so it pins fewer cache cells; the mock records
+    /// how far `resolve` looked. See `WindowShrinksUnderMemoryPressure` for how the level is driven.
+    constexpr size_t file_size = 8 * 1024 * 1024;
+    constexpr size_t base_look_ahead = 4 * 1024 * 1024;
+    constexpr size_t block = 256 * 1024;
+    StoredObjects objects{makeFile("a.bin", file_size)};
+
+    auto resolvedReach = [&](UInt64 pct) -> size_t
+    {
+        auto state = std::make_shared<MockCacheState>(file_size);
+        CacheChain chain;
+        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{
+                .block_size = block, .plan_look_ahead = base_look_ahead, .cache_chain = std::move(chain)});
+        ex.readNextWindow();
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return state->max_resolved_end;
+    };
+
+    EXPECT_EQ(resolvedReach(50), base_look_ahead);        /// Normal
+    EXPECT_EQ(resolvedReach(80), base_look_ahead / 2);    /// Elevated
+    EXPECT_EQ(resolvedReach(92), base_look_ahead / 8);    /// High
+    EXPECT_EQ(resolvedReach(99), base_look_ahead / 32);   /// Critical, at the 128 KiB floor
 }
 
 TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)

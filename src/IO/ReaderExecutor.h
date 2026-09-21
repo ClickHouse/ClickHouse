@@ -53,12 +53,14 @@ public:
     };
 
     /// The sizes one window is read with. Sampled once per window from the memory-pressure level, so
-    /// they are at or below `window_size` / `block_size`, and travel together: every rule stated in
-    /// terms of "the current window" must use `window_bytes`, not the base `window_size`.
+    /// they are at or below `window_size` / `block_size` / `plan_look_ahead`, and travel together:
+    /// every rule stated in terms of "the current window" must use `window_bytes`, not the base
+    /// `window_size`.
     struct BlockAndWindowSizes
     {
         size_t window_bytes;
         size_t block_bytes;
+        size_t plan_bytes;
     };
 
     ReaderExecutor(
@@ -205,9 +207,9 @@ private:
     /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
     /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
     ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, BlockAndWindowSizes sizes);
-    /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end);
-    /// rebuilds from `pos` on a seek or gap.
-    void ensureResolved(size_t pos);
+    /// Grow `read_plan` to cover `[pos, pos + look_ahead)` (clamped to the file end) and drop whatever
+    /// lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
+    void ensureResolved(size_t pos, size_t look_ahead);
     /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
     /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
     ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes);

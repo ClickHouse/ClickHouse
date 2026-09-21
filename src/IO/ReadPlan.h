@@ -69,6 +69,10 @@ public:
     /// Drop cells that end at or before `offset` (release their pins) and advance `spanStart` to it.
     void retireBefore(size_t offset);
 
+    /// `retireBefore` from the right, for when the look-ahead shrinks: drop cells starting at or after
+    /// `offset` and pull `resolvedEnd` back. A cell straddling `offset` is kept, overhanging the span.
+    void dropAfter(size_t offset);
+
     /// Discard everything and re-anchor the (empty) span at `start_offset` - a seek, a backward jump,
     /// or the first build. The next `extend` grows forward from here.
     void reset(size_t start_offset);

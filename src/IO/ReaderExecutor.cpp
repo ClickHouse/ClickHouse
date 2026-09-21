@@ -53,9 +53,10 @@ namespace
 using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureLevel::Count)>;
 
 /// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
-/// `ChainedBuffers` node.
+/// `ChainedBuffers` node; the look-ahead is the span the `ReadPlan` resolves, and so pins.
 constexpr auto WINDOW_REDUCTION = std::to_array<size_t>({1, 4, 16, 64});
 constexpr auto BLOCK_REDUCTION = std::to_array<size_t>({1, 2, 2, 8});
+constexpr auto PLAN_LOOK_AHEAD_REDUCTION = std::to_array<size_t>({1, 2, 8, 32});
 
 size_t sizeAtPressure(MemoryPressureLevel pressure, size_t base, const PressureReduction & reduction)
 {
@@ -406,7 +407,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Block
     return chain;
 }
 
-void ReaderExecutor::ensureResolved(size_t pos)
+void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
 {
     /// Re-anchor on a discontinuity (first read, seek, backward jump, or past the resolved end),
     /// else drop the consumed prefix. A forward seek inside the span keeps the resolved cells.
@@ -415,12 +416,15 @@ void ReaderExecutor::ensureResolved(size_t pos)
     else
         read_plan.retireBefore(pos);
 
+    /// Give the pins back now - the window shrinks too, so draining a `Normal` span takes many reads.
+    read_plan.dropAfter(pos + look_ahead);
+
     /// Refill lazily: grow only once less than half the look-ahead remains ahead of the cursor, and
     /// then resolve up to the full length. Batches the per-window top-ups into fewer, larger resolves.
-    if (read_plan.resolvedEnd() - pos > plan_look_ahead / 2)
+    if (read_plan.resolvedEnd() - pos > look_ahead / 2)
         return;
 
-    size_t target = pos + plan_look_ahead;
+    size_t target = pos + look_ahead;
     if (!offset_map.hasUnknownSize())
         target = std::min(target, offset_map.totalSize());
 
@@ -449,7 +453,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, B
     auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
 
     /// Catch the plan up to `pos` and grow the look-ahead; then it decides the run.
-    ensureResolved(pos);
+    ensureResolved(pos, sizes.plan_bytes);
 
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
     ChainedBuffers out;
@@ -567,7 +571,9 @@ ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
     const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
     const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
-    return {.window_bytes = window, .block_bytes = block};
+    /// The floor holds `getReadSettings`' `plan_look_ahead >= block_size` at every level.
+    const size_t plan = std::max(sizeAtPressure(pressure, plan_look_ahead, PLAN_LOOK_AHEAD_REDUCTION), block);
+    return {.window_bytes = window, .block_bytes = block, .plan_bytes = plan};
 }
 
 void ReaderExecutor::dropLongConnection(BlockAndWindowSizes sizes)

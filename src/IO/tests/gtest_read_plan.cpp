@@ -194,6 +194,46 @@ TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
+TEST(ReadPlan, DropAfterReleasesTheUnreachedTail)
+{
+    std::vector<CacheResolution> c;
+    c.push_back(hit({0, 1}));
+    c.push_back(hit({1, 1}));
+    c.push_back(hit({2, 1}));
+
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
+
+    plan.dropAfter(1);
+    EXPECT_EQ(plan.resolvedEnd(), 1u);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(0)), nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(1)));
+
+    std::vector<CacheResolution> again;
+    again.push_back(hit({1, 1}));
+    again.push_back(hit({2, 1}));
+    plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(again))));
+    EXPECT_EQ(plan.resolvedEnd(), 3u);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+}
+
+TEST(ReadPlan, DropAfterKeepsTheCellStraddlingTheCut)
+{
+    std::vector<CacheResolution> c;
+    c.push_back(hit({0, 2}));
+    c.push_back(hit({2, 2}));
+
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(c))));
+
+    plan.dropAfter(3);
+    EXPECT_EQ(plan.resolvedEnd(), 3u);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(3)));
+}
+
 TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
 {
     ReadPlan plan;

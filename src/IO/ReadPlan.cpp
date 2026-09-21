@@ -186,6 +186,27 @@ void ReadPlan::retireBefore(size_t offset)
     span_start = std::min(offset, span_end);
 }
 
+void ReadPlan::dropAfter(size_t offset)
+{
+    if (offset >= span_end)
+        return;
+    const size_t new_end = std::max(offset, span_start);
+    for (auto & tier : tiers)
+    {
+        auto & cells = tier.cells;
+        auto first_dead = std::find_if(cells.begin(), cells.end(),
+            [&](const CacheResolution & c) { return c.range.offset >= new_end; });
+        cells.erase(first_dead, cells.end());
+    }
+    /// `runAt` stops at `span_end`, so held bytes past it are unreachable.
+    if (!memory.empty())
+    {
+        const size_t mstart = memory.range().offset;
+        memory = new_end > mstart ? memory.slice(ByteRange{mstart, new_end - mstart}) : ChainedBuffers{};
+    }
+    span_end = new_end;
+}
+
 void ReadPlan::reset(size_t start_offset)
 {
     tiers.clear();
