@@ -551,8 +551,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
         // The new definition is classified with `enable_global_with_statement` on, so only the clauses written inside
-        // it hide an enclosing CTE name.
-        auto definition_context = Context::createCopy(getContext());
+        // it hide an enclosing CTE name. The copy is of the global context, so the classification does not depend on
+        // the altering user's settings constraints (a clamped clause would store a different name for the same text).
+        auto definition_context = Context::createCopy(getContext()->getGlobalContext());
         definition_context->setSetting("enable_global_with_statement", Field{true});
         kept_cte_references = ApplyWithSubqueryVisitor::visit(*modify_query, definition_context);
     }

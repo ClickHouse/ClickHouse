@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
+
 namespace DB
 {
-
-class IAST;
 
 /// True when any `WITH` element of the query (at any depth) is declared `MATERIALIZED`.
 bool hasMaterializedCTE(const IAST & ast);

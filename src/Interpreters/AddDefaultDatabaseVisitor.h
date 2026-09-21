@@ -17,6 +17,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -121,7 +122,7 @@ public:
     }
 
     /// Identifiers `ApplyWithSubqueryVisitor::visit` left as references to `MATERIALIZED` CTEs.
-    void setKeptCTEReferences(std::unordered_set<const IAST *> references) { kept_cte_references = std::move(references); }
+    void setKeptCTEReferences(ApplyWithSubqueryVisitor::KeptCTEReferences references) { kept_cte_references = std::move(references); }
 
 private:
 
@@ -129,7 +130,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    std::unordered_set<const IAST *> kept_cte_references;
+    ApplyWithSubqueryVisitor::KeptCTEReferences kept_cte_references;
     mutable std::unordered_set<String> with_aliases;
     mutable std::unordered_set<String> expression_aliases;
 

@@ -46,6 +46,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
@@ -2340,8 +2341,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
     if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
         create.attach = true;
 
+    /// Plain CTEs are expanded, `MATERIALIZED` references stay for the analyzer; warn where that changes an
+    /// existing definition's meaning.
     if (create.select && create.isView())
+    {
+        SelectQueryDescription::warnIfLegacyGlobalWithDefinition(create, getLogger("DatabaseReplicated"));
         ApplyWithSubqueryVisitor::visit(*create.select);
+    }
 
     return ast;
 }

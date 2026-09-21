@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -110,8 +111,13 @@ std::pair<String, StoragePtr> createTableFromAST(
     }
     ast_create_query.setDatabase(database_name);
 
+    /// Plain CTEs are expanded, `MATERIALIZED` references stay for the analyzer; warn where that changes an
+    /// existing definition's meaning.
     if (ast_create_query.select && ast_create_query.isView())
+    {
+        SelectQueryDescription::warnIfLegacyGlobalWithDefinition(ast_create_query, getLogger("createTableFromAST"));
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+    }
 
     if (ast_create_query.as_table_function)
     {

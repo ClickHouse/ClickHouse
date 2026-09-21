@@ -2057,13 +2057,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.is_materialized_view && is_fresh_definition)
             SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
 
+        /// A short `ATTACH TABLE` is rewritten from stored metadata here instead of in `createTableFromAST`.
+        if (!is_fresh_definition)
+            SelectQueryDescription::warnIfLegacyGlobalWithDefinition(create, getLogger("InterpreterCreateQuery"));
+
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
         // A fresh definition is classified with `enable_global_with_statement` on, so only the clauses written inside
         // it hide an enclosing CTE name; a loaded or replayed definition is already qualified and gets no context.
+        // The copy is of the global context, so the classification does not depend on the creating user's settings
+        // constraints (a clamped clause would store a different name for the same definition text).
         ContextPtr definition_context;
         if (is_fresh_definition)
         {
-            auto context_copy = Context::createCopy(getContext());
+            auto context_copy = Context::createCopy(getContext()->getGlobalContext());
             context_copy->setSetting("enable_global_with_statement", Field{true});
             definition_context = context_copy;
         }
@@ -3751,6 +3757,10 @@ BlockIO InterpreterCreateQuery::execute()
 
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
+
+            /// This branch never reaches `createTable`, so the initiator checks the definition here instead.
+            if (create.is_materialized_view && create.select)
+                SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
 
             return executeQueryOnCluster(create);
         }

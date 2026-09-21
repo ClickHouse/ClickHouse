@@ -1,5 +1,6 @@
 #include <Storages/SelectQueryDescription.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -9,12 +10,21 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/MaterializedCTEUtils.h>
+#include <Common/SettingSource.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 #include <unordered_map>
 #include <vector>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_global_with_statement;
+}
 
 namespace ErrorCodes
 {
@@ -148,6 +158,30 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select, const VisibleCT
     }
 }
 
+/// True when applying this `SETTINGS` clause to a context where the setting is on turns it off, directly or
+/// through `compatibility` or `profile`. The setting is reset rather than set on the scratch copy: applying a
+/// `compatibility` value skips every setting that was changed by hand, which is exactly the clause looked for.
+bool turnsGlobalWithOff(const ASTSetQuery & set_query, const ContextPtr & context)
+{
+    auto scratch = Context::createCopy(context);
+    scratch->resetSettingsToDefaultValue({"enable_global_with_statement"});
+    const bool on_before = scratch->getSettingsRef()[Setting::enable_global_with_statement];
+    scratch->checkSettingsConstraints(set_query.changes, SettingSource::QUERY);
+    scratch->applySettingsChanges(set_query.changes);
+    return on_before && !scratch->getSettingsRef()[Setting::enable_global_with_statement];
+}
+
+/// The recursion of `fixesGlobalWithSetting`, on the effective value instead of the setting name.
+bool turnsGlobalWithOffAnywhere(const IAST & select, const ContextPtr & context)
+{
+    if (const auto * set_query = select.as<ASTSetQuery>(); set_query && turnsGlobalWithOff(*set_query, context))
+        return true;
+    for (const auto & child : select.children)
+        if (child && turnsGlobalWithOffAnywhere(*child, context))
+            return true;
+    return false;
+}
+
 }
 
 bool SelectQueryDescription::fixesGlobalWithSetting(const IAST & select)
@@ -171,10 +205,28 @@ void SelectQueryDescription::checkSettingsAllowedInMatView(const IAST & select, 
 {
     auto txn = context->getZooKeeperMetadataTransaction();
     const bool is_initial_query = !txn || txn->isInitialQuery();
-    if (is_initial_query && fixesGlobalWithSetting(select))
+    if (!is_initial_query)
+        return;
+
+    /// The name is rejected on its own, so a definition that only resets the setting is rejected as well.
+    if (fixesGlobalWithSetting(select) || turnsGlobalWithOffAnywhere(select, context))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Setting `enable_global_with_statement` is not supported in a materialized view definition: "
-            "the query of a materialized view is always analyzed and executed with it enabled.");
+            "Setting `enable_global_with_statement` is not supported in a materialized view definition, "
+            "directly or through `compatibility` or `profile`: the query of a materialized view is always "
+            "analyzed and executed with it enabled.");
+}
+
+void SelectQueryDescription::warnIfLegacyGlobalWithDefinition(const ASTCreateQuery & create, const LoggerPtr & log)
+{
+    /// The literal predicate only: applying the clauses of a stored definition here could throw (unknown profile).
+    if (create.is_materialized_view && create.select && fixesGlobalWithSetting(*create.select)
+        && hasMaterializedCTE(*create.select))
+    {
+        LOG_WARNING(log,
+            "Materialized view {} turns off enable_global_with_statement in its definition and declares a "
+            "MATERIALIZED CTE: nested references to the CTE are resolved as table names, as in a plain query",
+            StorageID(create.getDatabase(), create.getTable()).getNameForLogs());
+    }
 }
 
 SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, bool refreshable, ContextPtr context)
