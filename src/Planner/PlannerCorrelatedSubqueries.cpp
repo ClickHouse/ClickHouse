@@ -26,6 +26,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -38,6 +39,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -597,16 +599,15 @@ QueryPlan decorrelateQueryPlan(
         const auto & input_header = context.query_plan.getCurrentHeader();
         for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
         {
-            /// A nested correlated subquery may reference a column from a scope beyond its immediate
-            /// outer query (it skips an intermediate scope). Such a column is not present in the outer
-            /// query plan yet at this point, because decorrelation runs inside-out while the correlated
-            /// inputs of the intermediate scope are injected later. Reject this shape with a clear error
-            /// instead of failing deep inside with NOT_FOUND_COLUMN_IN_BLOCK.
+            /// Decorrelation runs inside-out, and the correlated inputs of an intermediate scope are
+            /// injected later, so for some shapes of nested correlated subqueries the correlated column
+            /// is not in the outer query plan yet at this point. Reject those with a clear error instead
+            /// of failing deep inside with `NOT_FOUND_COLUMN_IN_BLOCK`.
             if (!input_header->has(column))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
-                    "Correlated subquery is not supported yet, because it references column '{}' from a "
-                    "scope beyond the immediate outer query. Current outer query header: {}",
+                    "Correlated subquery is not supported yet, because the correlated column '{}' is not "
+                    "available in the outer query plan at this point. Available columns: {}",
                     column,
                     input_header->dumpNames());
             buffer_header->insert(input_header->getByName(column));
@@ -618,17 +619,15 @@ QueryPlan decorrelateQueryPlan(
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
-        /// Needed to simulate the Duplicate Eliminating Join. Runs with internal unbounded limits so
-        /// that a user's max_rows_in_distinct / distinct_overflow_mode can never truncate the domain.
-        {
-            SizeLimits distinct_limits(/*max_rows_=*/0, /*max_bytes_=*/0, OverflowMode::THROW);
-            rhs_plan.addStep(std::make_unique<DistinctStep>(
-                rhs_plan.getCurrentHeader(),
-                distinct_limits,
-                /*limit_hint_=*/0,
-                context.correlated_subquery.correlated_column_identifiers,
-                /*pre_distinct_=*/false));
-        }
+        /// Needed to simulate the Duplicate Eliminating Join. Runs with the default-constructed step
+        /// settings: internal unbounded limits, so that a user's `max_rows_in_distinct` /
+        /// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
+        rhs_plan.addStep(std::make_unique<DistinctStep>(
+            rhs_plan.getCurrentHeader(),
+            DistinctStep::Settings{},
+            /*limit_hint_=*/0,
+            context.correlated_subquery.correlated_column_identifiers,
+            /*pre_distinct_=*/false));
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);
@@ -949,6 +948,66 @@ QueryPlan decorrelateQueryPlan(
 
         return decorrelated_query_plan;
     }
+    if (auto * delayed_creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        /** The sets this step builds are subqueries of their own: they cannot reference a correlated column,
+          * which is only in scope inside the subquery body, so decorrelating the body below and rebuilding the
+          * step over the result is all that is needed. The step does not change the header, and the rebuilt
+          * one is turned into a `CreatingSets` step by `addPlansForSets` wherever it sits in the plan, exactly
+          * as the copy `filterPushDown` makes of it is.
+          *
+          * A predicate like `dictGet('d', 'attr', key) >= 42` inside a correlated subquery gets one: the
+          * `optimize_inverse_dictionary_lookup` rewrite turns it into a membership test against a set the pass
+          * builds, and the subquery plan then carries the step that builds it.
+          *
+          * The analyzer rejects a correlated `IN` argument outright (`Correlated subqueries are not supported
+          * as IN function arguments yet`), so a set source reaching here is not expected to be correlated.
+          * Still check it - and the sets nested inside it - rather than rely on that gate: we only rebuild the
+          * step over the decorrelated body, so a correlated set source would stay correlated and later be
+          * optimized and executed standalone by `addPlansForSets`, hitting a `PLACEHOLDER` logical error
+          * instead of this clean message.
+          */
+        auto reject_if_correlated = [](const QueryPlan & set_plan)
+        {
+            if (planHasCorrelatedExpressions(set_plan))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot decorrelate query, because a set built by the 'DelayedCreatingSets' step is correlated");
+        };
+
+        for (const auto & future_set : delayed_creating_sets_step->getSets())
+        {
+            if (!future_set)
+                continue;
+
+            const auto * set_source = future_set->getQueryPlan();
+            if (!set_source)
+                continue;
+
+            reject_if_correlated(*set_source);
+            forEachSubquerySet(
+                set_source,
+                [&](FutureSetFromSubquery & nested_set)
+                {
+                    if (const auto * nested_source = nested_set.getQueryPlan())
+                        reject_if_correlated(*nested_source);
+                    return true;
+                });
+        }
+
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+
+        auto result_step = std::make_unique<DelayedCreatingSetsStep>(
+            decorrelated_query_plan.getCurrentHeader(),
+            delayed_creating_sets_step->detachSets(),
+            delayed_creating_sets_step->getNetworkTransferLimits(),
+            delayed_creating_sets_step->getPreparedSetsCache());
+        result_step->setStepDescription(*delayed_creating_sets_step);
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+
+        return decorrelated_query_plan;
+    }
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Cannot decorrelate query, because '{}' step is not supported",
@@ -1022,6 +1081,24 @@ QueryPlan buildLogicalJoin(
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
     auto rhs_plan_header = input_stream_plan.getCurrentHeader();
+
+    /// The same situation as in `decorrelateQueryPlan`, which rejects it on the path where it buffers
+    /// the outer stream: for some shapes of nested correlated subqueries the correlated column is not
+    /// in the plans being joined here, because decorrelation runs inside-out while the correlated
+    /// inputs of an intermediate scope are injected later. Without a buffer the plan lands here
+    /// instead, so reject it the same way rather than failing deep inside the join's actions DAG with
+    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        if (!rhs_plan_header->has(column_name)
+            || !lhs_plan_header->has(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subquery is not supported yet, because the correlated column '{}' is not "
+                "available in the outer query plan at this point. Available columns: {}",
+                column_name,
+                rhs_plan_header->dumpNames());
+    }
 
     using ColumnNameGetter = std::function<String(const String &)>;
     ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
