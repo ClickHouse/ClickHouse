@@ -25,7 +25,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
-# pin the pre-26.10 default: this test pins lazy FINAL plans, not the PREWHERE move
 settings="--enable_analyzer=1 --optimize_move_to_prewhere_if_final=0"
 
 $CLICKHOUSE_CLIENT $settings -q "
