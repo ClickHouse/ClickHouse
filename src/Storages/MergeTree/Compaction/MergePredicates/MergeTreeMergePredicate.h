@@ -12,7 +12,10 @@ class MergeTreeMergePredicate final : public IMergePredicate
 {
 public:
     explicit MergeTreeMergePredicate(
-        const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_);
+        const StorageMergeTree & storage_,
+        const MergeTreeTransactionPtr & tx_,
+        std::unique_lock<std::mutex> & merge_mutate_lock_,
+        bool respect_failure_backoff_);
     ~MergeTreeMergePredicate() override = default;
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
@@ -28,6 +31,7 @@ private:
     DataVersionsByPartition data_versions_by_partition;
     CommittingBlocksSet committing_blocks;
     std::optional<Int64> min_update_block;
+    bool respect_failure_backoff;
 };
 
 using MergeTreeMergePredicatePtr = std::shared_ptr<const MergeTreeMergePredicate>;

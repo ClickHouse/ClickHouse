@@ -285,6 +285,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
+    {"max_postpone_time_for_failed_merges_ms", highRangeSetting},
     {"max_postpone_time_for_failed_mutations_ms", highRangeSetting},
     {"max_postpone_time_for_failed_replicated_fetches_ms", highRangeSetting},
     {"max_postpone_time_for_failed_replicated_merges_ms", highRangeSetting},

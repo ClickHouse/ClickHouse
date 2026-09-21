@@ -1849,6 +1849,9 @@ sets skip flags in row sources.
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
 )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_failed_merges_ms, 1ULL * 60 * 1000, R"(
+The maximum postpone time for failed merges of a non-replicated table. Set to 0 to retry a failed merge without any delay.
+)", 0) \
     \
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_fetches_ms, 1ULL * 60 * 1000, R"(
 The maximum postpone time for failed replicated fetches.

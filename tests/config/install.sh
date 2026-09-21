@@ -217,6 +217,9 @@ ln -sf $SRC_PATH/config.d/backoff_policy.xml $DEST_SERVER_PATH/config.d/
 if check_clickhouse_version 25.4; then
     ln -sf $SRC_PATH/config.d/backoff_policy_25_4.xml $DEST_SERVER_PATH/config.d/
 fi
+if check_clickhouse_version 26.10; then
+    ln -sf $SRC_PATH/config.d/backoff_policy_26_10.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 

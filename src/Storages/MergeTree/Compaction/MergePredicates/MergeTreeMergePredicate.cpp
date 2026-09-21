@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <base/defines.h>
+#include <Common/logger_useful.h>
 
 #include <algorithm>
 
@@ -80,11 +81,15 @@ static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree &
 }
 
 MergeTreeMergePredicate::MergeTreeMergePredicate(
-    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_)
+    const StorageMergeTree & storage_,
+    const MergeTreeTransactionPtr & tx_,
+    std::unique_lock<std::mutex> & merge_mutate_lock_,
+    bool respect_failure_backoff_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
     , committing_blocks(storage.getCommittingBlocks())
     , min_update_block(getMinUpdateBlockNumber(committing_blocks))
+    , respect_failure_backoff(respect_failure_backoff_)
 {
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
@@ -186,6 +191,16 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
 
     if (storage.currently_merging_mutating_parts.contains(part->info))
         return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
+
+    if (respect_failure_backoff && !storage.merge_backoff_policy.partCanBeProcessed(part->name))
+    {
+        auto reason = PreformattedMessage::create(
+            "According to exponential backoff policy, do not perform merges for the part {} yet. Put it aside.",
+            part->name);
+
+        LOG_DEBUG(storage.log, reason);
+        return std::unexpected(std::move(reason));
+    }
 
     if (min_update_block && part->info.getDataVersion() >= *min_update_block)
     {
