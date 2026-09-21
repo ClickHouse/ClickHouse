@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/LowCardinalityValueIndex.h>
+#include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 
@@ -38,7 +39,10 @@ struct KeyMatcherGeneric
 
     bool match(size_t keys_row) const
     {
-        return keys_column.compareAt(keys_row, 0, key, 0) == 0;
+        /// The direction hint must not be zero. `compareAt` reports a `NaN` as equal to every other
+        /// value when the hint is zero, because it answers with the hint itself, so a row holding a
+        /// `NaN` key would match any requested key and a requested `NaN` would match any key.
+        return keys_column.compareAt(keys_row, 0, key, 1) == 0;
     }
 };
 
@@ -54,7 +58,10 @@ struct KeyMatcherVector
 
     bool match(size_t keys_row) const
     {
-        return data[keys_row] == key_value;
+        /// `CompareHelper` is a plain `==` for every type but the floating point ones, where it
+        /// keeps the matcher in agreement with `KeyMatcherGeneric`: a `NaN` key is found by a
+        /// requested `NaN` and by nothing else.
+        return CompareHelper<T>::equals(data[keys_row], key_value, 1);
     }
 };
 
