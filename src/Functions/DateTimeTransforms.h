@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Core/DecimalFunctions.h>
@@ -59,6 +61,33 @@ constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
 constexpr time_t MAX_TIME_TIMESTAMP = 3599999;              // 999:59:59
 constexpr time_t MAX_DATETIME_DAY_NUM =  49709;         // 2106-02-06 America/Hermosillo
+
+/// Largest representable value in ticks: the last whole second plus as much fraction as the Int64 holds
+inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
+{
+    /// At scale 9 even the whole seconds of 2299-12-31 do not fit, so the Int64 itself is the bound
+    if (MAX_DATETIME64_TIMESTAMP > std::numeric_limits<Int64>::max() / scale_multiplier)
+        return std::numeric_limits<Int64>::max();
+    const Int64 whole = MAX_DATETIME64_TIMESTAMP * scale_multiplier;
+    return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
+}
+
+/// The minimum starts exactly at a second and fits at every scale: 1900-01-01 in nanoseconds is about -2.2e18
+inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
+{
+    return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+}
+
+/// Time64 caps the scale at 9, so this cannot overflow Int64
+inline Int64 maxTicksForTime64(Int64 scale_multiplier)
+{
+    return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+}
+
+inline Int64 minTicksForTime64(Int64 scale_multiplier)
+{
+    return -maxTicksForTime64(scale_multiplier);
+}
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);

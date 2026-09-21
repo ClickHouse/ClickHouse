@@ -537,7 +537,14 @@ struct ToDateTime64TransformUnsigned
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+        {
+            /// At scale 9 even the whole seconds of the range overflow the ticks, so the usable bound is below
+            /// MAX_DATETIME64_TIMESTAMP. Compare in the unsigned domain: a UInt64 above INT64_MAX would turn negative as time_t
+            const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+            if (accurate::greaterOp(from, max_ticks / scale_multiplier))
+                return max_ticks;
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
+        }
     }
 };
 
@@ -559,10 +566,13 @@ struct ToDateTime64TransformSigned
             if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        from = static_cast<FromType>(std::max<time_t>(from, MIN_DATETIME64_TIMESTAMP));
-        from = static_cast<FromType>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP));
-
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+        /// At scale 9 even the whole seconds of the range overflow the ticks, so the usable bound is below MAX_DATETIME64_TIMESTAMP
+        const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+        if (from > max_ticks / scale_multiplier)
+            return max_ticks;
+        if (from < MIN_DATETIME64_TIMESTAMP)
+            return minTicksForDateTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -585,8 +595,18 @@ struct ToDateTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        /// The fraction is kept, so compare in ticks: clamping the whole seconds first would saturate the entire
+        /// last second. `NaN` has no sign and still reports through convertToDecimal
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+        const Int64 min_ticks = minTicksForDateTime64(scale_multiplier);
+        const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+        DateTime64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeDateTime64>(from, scale, result) && result.value >= min_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return min_ticks;
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -651,8 +671,9 @@ struct ToTime64TransformUnsigned
         }
 
         /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-        auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        if (accurate::greaterOp(from, MAX_TIME_TIMESTAMP))
+            return maxTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -675,7 +696,13 @@ struct ToTime64TransformSigned
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
+        /// Without a clamp the raw ticks are stored and only the display is capped, so two values can
+        /// print as `999:59:59` yet compare as different
+        if (from > MAX_TIME_TIMESTAMP)
+            return maxTicksForTime64(scale_multiplier);
+        if (from < -MAX_TIME_TIMESTAMP)
+            return minTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<Int64>(from), 0, scale_multiplier);
     }
 };
 
@@ -694,12 +721,20 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < -static_cast<Int64>(MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        } // need to reconsider this
+        }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        /// Time64 is much narrower than DateTime64, so it needs its own range, compared in ticks so that the
+        /// fraction survives. `NaN` has no sign and still reports through convertToDecimal
+        const Int64 max_ticks = maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
+        Time64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeTime64>(from, scale, result) && result.value >= -max_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return -max_ticks;
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -2061,6 +2096,13 @@ struct ConvertImpl
             else
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
+        }
+        /// Without this UInt32 skips the saturating transform and stores an out-of-range value raw. UInt8 and
+        /// UInt16 cannot exceed MAX_TIME_TIMESTAMP, so they have nothing to saturate and keep the generic path
+        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt32> && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
