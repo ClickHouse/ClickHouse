@@ -439,7 +439,7 @@ void Set::processDateTime64Column(
 /// Which elements of a `Tuple` key `castColumnAccurateOrNull` converts exactly as `castColumnAccurate`
 /// would, or reports as a NULL of the whole tuple rather than substituting a value of its own: one
 /// needing no conversion and keeping its NULLs in a `Nullable`, or a `String` or numeric source to a
-/// `Nullable` numeric target. Other pairings are excluded conservatively, not for want of a report.
+/// `Nullable` numeric target. A `FixedString`, `Date` or `DateTime` source substitutes a value instead.
 static bool tupleElementsCanReportInexactConversion(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(from_type).get());
