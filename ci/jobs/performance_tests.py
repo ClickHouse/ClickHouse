@@ -1959,8 +1959,7 @@ def _perf_client(port):
     return (
         f"clickhouse-client --port {port} "
         "--max_memory_usage 30G --max_memory_usage_for_user 30G "
-        "--max_estimated_execution_time 0 --max_execution_time 1800 --receive_timeout 1800 "
-        "--lock_acquire_timeout 1800"
+        "--max_estimated_execution_time 0 --max_execution_time 1800 --receive_timeout 1800"
     )
 
 
@@ -1992,7 +1991,7 @@ def rebuild_table(port, source, destination):
     Shell.check(f'{client} --query "CREATE TABLE {target} AS {source}"', strict=True, verbose=True)
     # OPTIMIZE FINAL's wait for in-flight merges is bounded by this table setting, not by the
     # client timeouts above, and its 120s default is shorter than one full merge of these datasets.
-    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 1800"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
     # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
     # the swap below can run on a table whose parts are still being merged.
