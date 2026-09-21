@@ -196,7 +196,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::Dynamic:
             return BinaryTypeIndex::Dynamic;
         case TypeIndex::ExponentialTimeDecayingFloat64:
-            /// Preserve the pre-refactor wire representation: custom type code plus the full type name.
+            /// Encode the parameterized logical type through the existing custom-type tag.
             return BinaryTypeIndex::Custom;
         /// JSONPaths is used only during schema inference and cannot be used anywhere else.
         case TypeIndex::JSONPaths:
