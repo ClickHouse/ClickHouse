@@ -11,6 +11,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MaterializedCTEUtils.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAssignment.h>
@@ -182,6 +183,17 @@ BlockIO InterpreterUpdateQuery::execute()
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+    }
+
+    /// The old `MutationsInterpreter` has no CTE resolution of its own, so a kept reference would reach
+    /// it as an unknown table: inline such a CTE as before. Reachable only through the server config
+    /// `use_analyzer_for_mutations = 0`, and therefore deliberately untested.
+    if (!shouldUseAnalyzerForMutations(getContext()))
+    {
+        if (update_query.predicate)
+            treatMaterializedCTEsAsPlain(*update_query.predicate);
+        if (update_query.assignments)
+            treatMaterializedCTEsAsPlain(*update_query.assignments);
     }
 
     /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it

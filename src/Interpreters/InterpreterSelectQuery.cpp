@@ -48,6 +48,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/MaterializedCTEUtils.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -645,6 +646,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
+        /// This interpreter cannot materialize a CTE; inline it as before.
+        treatMaterializedCTEsAsPlain(*query_ptr);
         ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 

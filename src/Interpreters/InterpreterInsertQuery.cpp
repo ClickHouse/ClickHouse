@@ -16,6 +16,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/MaterializedCTEUtils.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryNormalizer.h>
@@ -1327,7 +1328,9 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
     if (query.select)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        /// The fast paths below probe the source table by expanding the `SELECT` in place, which a kept
+        /// `MATERIALIZED` CTE reference cannot survive: it is not a table name.
+        if (settings[Setting::parallel_distributed_insert_select] && !hasMaterializedCTE(*query.select))
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();
@@ -1350,6 +1353,10 @@ BlockIO InterpreterInsertQuery::execute()
             }
 
             query.select = std::move(saved_select);
+        }
+        else if (settings[Setting::parallel_distributed_insert_select])
+        {
+            LOG_DEBUG(logger, "The query declares a MATERIALIZED CTE: the distributed INSERT SELECT fast paths are skipped");
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);
