@@ -156,9 +156,13 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             auto reset_command = alter_command->extractSettingsResets();
             auto & alter_commands = segments_holder.take<AlterCommands>();
-            alter_commands.push_back(std::move(alter_command.value()));
+            /// The reset goes first, as it does inside one command, where the resets are applied
+            /// before the changes: an engine which maps a compatibility name of a setting onto its
+            /// canonical one can have both halves end up on the same setting, and then the change
+            /// is what the command asked for.
             if (reset_command)
                 alter_commands.push_back(std::move(reset_command.value()));
+            alter_commands.push_back(std::move(alter_command.value()));
         }
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {

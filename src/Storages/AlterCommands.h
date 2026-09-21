@@ -187,7 +187,8 @@ struct AlterCommand
     /// `MODIFY SETTING name = DEFAULT` means a reset, but `parse` leaves it in a MODIFY_SETTING command.
     /// Engines key their checks on the command type, so the resets are moved out: the command itself
     /// becomes RESET_SETTING, or, when it changes other settings too, the resets are returned as a
-    /// separate RESET_SETTING command which has to be executed together with this one.
+    /// separate RESET_SETTING command which has to be executed before this one, in the order the
+    /// resets and the changes of one command are applied in.
     std::optional<AlterCommand> extractSettingsResets();
 
     /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
