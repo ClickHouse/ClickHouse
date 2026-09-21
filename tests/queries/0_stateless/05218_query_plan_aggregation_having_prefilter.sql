@@ -334,15 +334,23 @@ SELECT '--- a throwing conjunct evaluated before the bound stops being reached -
 -- which a throwing conjunct can observe. ClickHouse already accepts and pins this class for plan
 -- optimizations: `01655_plan_optimizations.sh:208-210` asserts that
 -- `select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1` returns `0`
--- even though row 5 exists. The behaviour is pinned here in both directions rather than left
--- undefined; with the throwing conjunct written after the bound the conjunction is already lazy and
--- the two arms agree.
+-- even though row 5 exists.
+--
+-- Only the two deterministic halves are pinned as values: with the setting off the exception is
+-- raised, and with the throwing conjunct written after the bound the conjunction is already lazy so
+-- both arms agree. The remaining half - with the setting on and the throwing conjunct written before
+-- the bound - is whether the annotated conversion elides the exception, and that is best effort: the
+-- retained `FilterStep` is authoritative and the pass is only allowed to drop groups, never required
+-- to, so a configuration that does not reach the annotated conversion raises again. It does happen:
+-- 3 of 100 runs of the `s3 storage, meta in keeper` flaky check raised
+-- `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` here while every other cell in this file matched. What is
+-- deterministic is the plan, so that half is pinned as the annotation on the exact shape instead.
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT count() FROM (
+SELECT 'throwing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING throwIf(cnt = 3, 'boom') = 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 1;
+) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND throwIf(cnt = 3, 'boom') = 0
 ) SETTINGS query_plan_aggregation_having_prefilter = 0;
@@ -355,9 +363,9 @@ SELECT count() FROM (
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError ILLEGAL_DIVISION }
-SELECT count() FROM (
+SELECT 'dividing conjunct before the bound', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 1;
+) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND intDiv(1, cnt - 3) > 0
 ) SETTINGS query_plan_aggregation_having_prefilter = 0;
@@ -371,8 +379,9 @@ SELECT '--- a sibling aggregate that throws on a rejected group stops being reac
 -- `insertResultInto` on that group - `kolmogorovSmirnovTest` with one empty sample, here - stops
 -- raising. This is the same elision the bucket Top-K conversion already performs by default on
 -- master (`query_plan_aggregation_bucket_top_k`), which likewise destroys a rejected group's states
--- without finalizing them; the last cell pins that precedent next to this one. Pinned in both
--- directions rather than left undefined.
+-- without finalizing them; the last cell pins that precedent next to this one. As above, the raising
+-- arm is pinned as a value and the eliding arm as the annotation on the shape, because whether the
+-- annotated conversion runs is not something this test can fix a configuration for.
 DROP TABLE IF EXISTS having_prefilter_sibling;
 CREATE TABLE having_prefilter_sibling (a UInt32, b Int64, s UInt8) ENGINE = MergeTree ORDER BY tuple();
 -- Groups 0..1999 have four rows, one of them in the second sample; groups 2000..2999 have three rows,
@@ -382,9 +391,9 @@ INSERT INTO having_prefilter_sibling SELECT number % 3000, number, number >= 900
 SELECT count(t.1) FROM (
     SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a HAVING cnt > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError BAD_ARGUMENTS }
-SELECT count(t.1) FROM (
+SELECT 'sibling aggregate', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a HAVING cnt > 3
-) SETTINGS query_plan_aggregation_having_prefilter = 1;
+) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 
 SELECT count() FROM (
     SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a ORDER BY cnt DESC LIMIT 5

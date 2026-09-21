@@ -68,14 +68,14 @@ serialized plan	0
 2000	6	340	332452
 --- the group-by row limit still counts every group ---
 --- a throwing conjunct evaluated before the bound stops being reached ---
+throwing conjunct before the bound	1
 2000
 2000
-2000
-2000
+dividing conjunct before the bound	1
 2000
 2000
 --- a sibling aggregate that throws on a rejected group stops being reached ---
-2000
+sibling aggregate	1
 5
 --- independent per-partition aggregation is refused ---
 skip merging is set	1
