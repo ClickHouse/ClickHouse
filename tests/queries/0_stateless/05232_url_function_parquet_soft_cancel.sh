@@ -24,11 +24,13 @@ $CLICKHOUSE_LOCAL --query "SELECT number AS x, toString(number) AS s FROM number
 
 # A server which reports the file as seekable and serves the positional reads of the reader. The
 # reads of the footer and of the metadata land in the last bytes of the file and are answered in
-# full; every read of the data itself - anything that begins before that tail - is accepted and
+# full; every read of the data itself - a range that begins before that tail - is accepted and
 # then left hanging, so that a background task of the reader is inside a read of a column chunk
 # when the cancellation arrives. Keying the decision on the offset rather than on the number of
 # requests already served is what makes it deterministic: how many requests the metadata takes,
-# and how the reader splits the data reads, both depend on the build and on the settings. It binds
+# and how the reader splits the data reads, both depend on the build and on the settings. A
+# request without a `Range` header is not a positional read of the reader at all - it is the
+# sequential read of the whole file - so it is always answered in full. It binds
 # to the port 0 and reports the port the kernel gave it, so that it cannot collide with anything
 # else running in parallel, and serves requests in parallel: the test asks it for the number of
 # reads it has held while the query is running.
@@ -90,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 begin, end = header.split('=')[1].split('-')
                 begin, end = int(begin), min(int(end), FILE_SIZE - 1)
-            hold = begin < FILE_SIZE - METADATA_TAIL
+            hold = header is not None and begin < FILE_SIZE - METADATA_TAIL
             with lock:
                 requests += 1
                 if hold:
@@ -144,6 +146,9 @@ STDERR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.stderr")
 # limit is therefore above the time the metadata phase needs even on a loaded sanitizer runner, and
 # the budget of the retries of the held read - `http_max_tries` attempts of `http_receive_timeout`
 # each - is far above the limit, so that the read is still being retried when the limit fires.
+# The structure is given explicitly: schema inference reads the whole file sequentially, in a
+# request without a `Range` header which the server has to answer in full, and the cancellation
+# has to land in a positional read of a column chunk instead.
 # `parallel_replicas_for_cluster_engines` would rewrite url to urlCluster and read it in remote
 # queries with their own query ids, leaving the log the test looks for under a different query id.
 $CLICKHOUSE_CLIENT \
@@ -153,7 +158,7 @@ $CLICKHOUSE_CLIENT \
     --http_max_tries 20 \
     --parallel_replicas_for_cluster_engines 0 \
     --query_id "$QUERY_ID" \
-    --query "SELECT sum(x) FROM url('http://127.0.0.1:$HTTP_PORT/data', 'Parquet')" \
+    --query "SELECT sum(x) FROM url('http://127.0.0.1:$HTTP_PORT/data', 'Parquet', 'x UInt64, s String')" \
     >/dev/null 2>"$STDERR_FILE"
 CLIENT_STATUS=$?
 
