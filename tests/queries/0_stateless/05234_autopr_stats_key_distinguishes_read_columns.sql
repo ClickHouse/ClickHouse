@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS t_autopr_stats_key;
 DROP TABLE IF EXISTS t_autopr_stats_key_sampled;
 DROP TABLE IF EXISTS t_autopr_stats_key_split;
 DROP TABLE IF EXISTS t_autopr_stats_key_policy;
+DROP TABLE IF EXISTS t_autopr_stats_key_projection;
 
 CREATE TABLE t_autopr_stats_key (k UInt64, narrow UInt8, wide String) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_autopr_stats_key_sampled (k UInt64, v UInt32) ENGINE = MergeTree ORDER BY k SAMPLE BY k;
@@ -29,6 +30,8 @@ CREATE TABLE t_autopr_stats_key_split (a UInt8, aU Int8) ENGINE = MergeTree ORDE
 -- `narrow` is deliberately outside the primary key: a policy over it cannot narrow index analysis,
 -- so `total_rows_to_read` stays put and the drift check has nothing to catch.
 CREATE TABLE t_autopr_stats_key_policy (k UInt64, narrow UInt8) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_autopr_stats_key_projection (k UInt64, v UInt32, PROJECTION p (SELECT k, v ORDER BY v))
+    ENGINE = MergeTree ORDER BY k;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3,
@@ -47,32 +50,33 @@ INSERT INTO t_autopr_stats_key SELECT number, number % 7, repeat('x', 200) FROM 
 INSERT INTO t_autopr_stats_key_sampled SELECT number, number FROM numbers(20000);
 INSERT INTO t_autopr_stats_key_split SELECT number % 256, number % 128 FROM numbers(20000);
 INSERT INTO t_autopr_stats_key_policy SELECT number, number % 7 FROM numbers(20000);
+INSERT INTO t_autopr_stats_key_projection SELECT number, number % 1000 FROM numbers(20000);
 
 -- A different set of columns. `wide` is a two-hundred-byte string where `narrow` is one byte, so
 -- reusing query 0's entry would price query 2 at a fraction of what it reads.
 SELECT k, narrow FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_0_narrow_first';
+    SETTINGS log_comment='05234_query_00_narrow_first';
 -- The same query again. This is the half that must keep working: the point is not to key every
 -- query separately.
 SELECT k, narrow FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_1_narrow_again';
+    SETTINGS log_comment='05234_query_01_narrow_again';
 SELECT k, wide FROM t_autopr_stats_key ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_2_wide';
+    SETTINGS log_comment='05234_query_02_wide';
 
 -- A `SAMPLE` ratio. Same storage, same header, same PREWHERE, a tenth of the table.
 SELECT k, v FROM t_autopr_stats_key_sampled ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_3_unsampled_first';
+    SETTINGS log_comment='05234_query_03_unsampled_first';
 SELECT k, v FROM t_autopr_stats_key_sampled ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_4_unsampled_again';
+    SETTINGS log_comment='05234_query_04_unsampled_again';
 SELECT k, v FROM t_autopr_stats_key_sampled SAMPLE 1/10 ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_5_sampled';
+    SETTINGS log_comment='05234_query_05_sampled';
 
 -- Two headers that are the same bytes under a different split. Hashing the name and the type one
 -- after another without their lengths gives both the sequence `aUInt8`.
 SELECT a FROM t_autopr_stats_key_split ORDER BY a FORMAT Null
-    SETTINGS log_comment='05234_query_6_a_uint8';
+    SETTINGS log_comment='05234_query_06_a_uint8';
 SELECT aU FROM t_autopr_stats_key_split ORDER BY aU FORMAT Null
-    SETTINGS log_comment='05234_query_7_au_int8';
+    SETTINGS log_comment='05234_query_07_au_int8';
 
 -- A row policy. It is pushed into the read rather than becoming a step above it, so nothing else in
 -- the plan distinguishes two policies: both leave the header identical, and a policy over a column
@@ -80,13 +84,23 @@ SELECT aU FROM t_autopr_stats_key_split ORDER BY aU FORMAT Null
 -- pass a different number of rows into the sort.
 CREATE ROW POLICY r_05234_a ON t_autopr_stats_key_policy USING narrow < 3 TO ALL;
 SELECT k, narrow FROM t_autopr_stats_key_policy ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_8_policy_a';
+    SETTINGS log_comment='05234_query_08_policy_a';
 DROP ROW POLICY r_05234_a ON t_autopr_stats_key_policy;
 
 CREATE ROW POLICY r_05234_b ON t_autopr_stats_key_policy USING narrow < 5 TO ALL;
 SELECT k, narrow FROM t_autopr_stats_key_policy ORDER BY k FORMAT Null
-    SETTINGS log_comment='05234_query_9_policy_b';
+    SETTINGS log_comment='05234_query_09_policy_b';
 DROP ROW POLICY r_05234_b ON t_autopr_stats_key_policy;
+
+-- A read served from a projection. The projection part belongs to the same storage and produces the
+-- same header, so the key cannot tell it from a base-table read - and the replicas plan is not
+-- guaranteed to use the projection, so matching the two would price one with the other's
+-- measurements. Nothing may be recorded for it at all: unlike every other row here, 0 is the pass.
+SELECT k, v FROM t_autopr_stats_key_projection ORDER BY v FORMAT Null
+-- `optimize_read_in_order` is what makes an `ORDER BY` projection selectable at all, and the settings
+-- randomizer turns it off; without it pinned the read falls back to the base table, which is
+-- instrumented normally and the row legitimately reads 1.
+    SETTINGS log_comment='05234_query_10_projection', optimize_use_projections=1, optimize_read_in_order=1;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
@@ -109,3 +123,4 @@ DROP TABLE t_autopr_stats_key;
 DROP TABLE t_autopr_stats_key_sampled;
 DROP TABLE t_autopr_stats_key_split;
 DROP TABLE t_autopr_stats_key_policy;
+DROP TABLE t_autopr_stats_key_projection;
