@@ -9,7 +9,6 @@
 namespace DB
 {
 
-/// Commit-order key range of the chunk rows within the partition it originated from.
 struct PartitionCursorInfo : public ChunkInfoCloneable<PartitionCursorInfo>
 {
     String partition_id;
@@ -17,7 +16,6 @@ struct PartitionCursorInfo : public ChunkInfoCloneable<PartitionCursorInfo>
     PartitionCursor last;
 };
 
-/// This step will calculate and set PartitionCursorInfo for each chunk.
 class StampPartitionCursorsStep : public ITransformingStep
 {
     void updateOutputHeader() override;

@@ -134,11 +134,11 @@ Pipe buildPartitionReadingPipeline(
     if (const auto & filter = reading_context.prewhere_filter)
         plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
+    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
-        plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
-
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);
@@ -156,10 +156,6 @@ Pipe buildPartitionReadingPipeline(
 
         plan = std::make_unique<QueryPlan>();
         plan->unitePlans(std::move(align_step), std::move(plans));
-    }
-    else
-    {
-        plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
     }
 
     /// Add projection to required header.
