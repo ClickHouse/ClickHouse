@@ -103,6 +103,7 @@ struct PartFileCopyOptions
     bool fail_on_temporary_projection_directories = false;
     bool fail_on_projection_subdirectories = false;
     bool checkpoint_after_projection = false;
+    bool sync_copied_files = false;
     std::function<void()> cancellation_callback;
 };
 

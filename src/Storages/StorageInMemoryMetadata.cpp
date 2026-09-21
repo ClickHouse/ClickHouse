@@ -294,6 +294,12 @@ void StorageInMemoryMetadata::validateTTLIndexClearTargets() const
                 backQuote(ttl.index_name),
                 hints_string);
         }
+
+        if (it->isImplicitlyCreated())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "TTL CLEAR INDEX cannot target implicitly created index {}",
+                backQuote(ttl.index_name));
     }
 }
 

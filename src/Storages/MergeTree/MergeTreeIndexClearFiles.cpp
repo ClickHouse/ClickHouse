@@ -318,6 +318,7 @@ void copyPartFile(
     const String & name,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    bool sync,
     const std::function<void()> & cancellation_callback)
 {
     auto source = source_storage.readFile(name, read_settings, std::nullopt);
@@ -329,6 +330,8 @@ void copyPartFile(
         else
             copyData(*source, *destination);
         destination->finalize();
+        if (sync)
+            destination->sync();
     }
     catch (...)
     {
@@ -388,7 +391,14 @@ std::optional<NameSet> copyPartFilesWithSkip(
             const bool copy_file = options.copy_instead_of_hardlinks
                 || source_storage.getDiskName() != destination_storage.getDiskName();
             if (copy_file)
-                copyPartFile(source_storage, destination_storage, name, read_settings, write_settings, options.cancellation_callback);
+                copyPartFile(
+                    source_storage,
+                    destination_storage,
+                    name,
+                    read_settings,
+                    write_settings,
+                    options.sync_copied_files,
+                    options.cancellation_callback);
             else
             {
                 destination_storage.createHardLinkFrom(source_storage, name, name);
@@ -413,7 +423,14 @@ std::optional<NameSet> copyPartFilesWithSkip(
 
             const auto projection_file = projection_it->name();
             if (copy_projection_file)
-                copyPartFile(*projection_src, *projection_dst, projection_file, read_settings, write_settings, options.cancellation_callback);
+                copyPartFile(
+                    *projection_src,
+                    *projection_dst,
+                    projection_file,
+                    read_settings,
+                    write_settings,
+                    options.sync_copied_files,
+                    options.cancellation_callback);
             else
             {
                 projection_dst->createHardLinkFrom(*projection_src, projection_file, projection_file);

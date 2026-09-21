@@ -597,6 +597,9 @@ static void pruneExpiredIndexFilesFromPart(
     {
         if (clear_index_files.packed_archive_dirty)
         {
+            /// Packed virtual files are read back from the archive produced by the merge. Object-storage
+            /// transactions do not expose that archive through the part storage until it is checkpointed.
+            storage.checkpointTransaction();
             disk_storage->filterPackedSkipIndicesArchiveTo(
                 files_to_clear,
                 storage,
@@ -674,12 +677,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
         || dst_storage.isStoredOnRemoteDisk()
         || src_storage.supportZeroCopyReplication()
         || dst_storage.supportZeroCopyReplication();
+    const bool need_sync = global_ctx->data_settings->needSyncPart(source_part->rows_count, source_part->getBytesOnDisk());
     const PartFileCopyOptions copy_options
     {
         .files_to_skip = &files_to_skip,
         .copy_instead_of_hardlinks = must_copy_files,
         .fail_on_temporary_projection_directories = true,
         .fail_on_projection_subdirectories = true,
+        .checkpoint_after_projection = true,
+        .sync_copied_files = need_sync,
         .cancellation_callback = [runtime_context = global_ctx]
         {
             runtime_context->checkOperationIsNotCanceled();
@@ -705,8 +711,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Source directory changed during `TTLClearIndex` merge of part {}", source_part->name);
 
     global_ctx->new_data_part->checksums = source_part->checksums;
-
-    const bool need_sync = global_ctx->data_settings->needSyncPart(source_part->rows_count, source_part->getBytesOnDisk());
 
     if (disk_storage)
     {
@@ -763,6 +767,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
     global_ctx->new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
     global_ctx->new_data_part->modification_time = time(nullptr);
     global_ctx->new_data_part->default_codec = source_part->default_codec;
+    global_ctx->new_data_part->default_codec_is_approximate = source_part->default_codec_is_approximate;
+    global_ctx->new_data_part->default_codec_is_explicit_recompression = source_part->default_codec_is_explicit_recompression;
 
     if (!global_ctx->new_data_part->storage.getPrimaryIndexCache())
         global_ctx->new_data_part->setIndex(*source_part->getIndex());
@@ -2226,6 +2232,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
     ctx->build_statistics_transforms.clear();
+
+    if (ctx->need_remove_expired_values)
+    {
+        global_ctx->clear_expired_indexes = global_ctx->clear_expired_indexes
+            || !getIndexesExpiredByClearTTL(
+                global_ctx->metadata_snapshot,
+                *global_ctx->data_settings,
+                global_ctx->new_data_part->ttl_infos,
+                global_ctx->time_of_merge,
+                true).empty();
+    }
 
     global_ctx->checkOperationIsNotCanceled();
 

@@ -674,6 +674,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.projections = std::move(recalculated_projections);
     }
 
+    new_metadata.validateTTLIndexClearTargets();
     return new_metadata;
 }
 

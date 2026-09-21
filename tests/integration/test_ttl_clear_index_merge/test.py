@@ -176,6 +176,140 @@ def test_alter_ttl_uses_explicit_materialization_for_missing_metadata(
     node1.query("DROP TABLE ttl_clear_index_stale SYNC")
 
 
+def test_post_delete_clear_rewrites_remote_packed_archive(started_cluster):
+    table = "ttl_clear_index_remote_packed"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            delete_at Date,
+            clear_at Date,
+            should_delete UInt8,
+            k UInt64,
+            v UInt64,
+            INDEX idx_expired v TYPE minmax GRANULARITY 1,
+            INDEX idx_keep v TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL delete_at + INTERVAL 1 DAY DELETE WHERE should_delete = 1,
+            clear_at + INTERVAL 1 DAY CLEAR INDEX idx_expired,
+            delete_at + INTERVAL 1 DAY CLEAR INDEX idx_keep
+        SETTINGS
+            add_minmax_index_for_numeric_columns = 0,
+            add_minmax_index_for_string_columns = 0,
+            columns_and_secondary_indices_sizes_lazy_calculation = 0,
+            index_granularity = 2,
+            merge_with_ttl_timeout = 86400,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            packed_skip_index_max_bytes = 1048576,
+            storage_policy = 's3_only',
+            vertical_merge_algorithm_min_rows_to_activate = 100000000
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} VALUES "
+        "('2100-01-01', '2000-01-01', 0, 1, 1), "
+        "('2000-01-01', '2100-01-01', 1, 2, 2)"
+    )
+
+    assert (
+        node1.query(
+            "SELECT name, data_compressed_bytes > 0 "
+            "FROM system.data_skipping_indices "
+            f"WHERE database = currentDatabase() AND table = '{table}' "
+            "ORDER BY name"
+        )
+        == "idx_expired\t1\nidx_keep\t1\n"
+    )
+
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    node1.query(
+        f"OPTIMIZE TABLE {table} FINAL SETTINGS "
+        "enable_ttl_clear_index_merge_type_generation = 0, "
+        "optimize_skip_merged_partitions = 0"
+    )
+
+    assert node1.query(f"SELECT groupArray(k) FROM {table}") == "[1]\n"
+    assert (
+        node1.query(
+            "SELECT name, data_compressed_bytes > 0 "
+            "FROM system.data_skipping_indices "
+            f"WHERE database = currentDatabase() AND table = '{table}' "
+            "ORDER BY name"
+        )
+        == "idx_expired\t0\nidx_keep\t1\n"
+    )
+    assert (
+        node1.query(
+            f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_metadata_only_clear_preserves_remote_projection(started_cluster):
+    table = "ttl_clear_index_remote_projection"
+    node1.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            d Date,
+            k UInt64,
+            v UInt64,
+            INDEX idx v TYPE minmax GRANULARITY 1,
+            PROJECTION by_v (SELECT k, v ORDER BY v)
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            add_minmax_index_for_numeric_columns = 0,
+            add_minmax_index_for_string_columns = 0,
+            index_granularity = 2,
+            merge_with_ttl_timeout = 86400,
+            min_rows_to_fsync_after_merge = 1,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            storage_policy = 's3_only'
+        """
+    )
+    node1.query(f"SYSTEM STOP TTL MERGES {table}")
+    node1.query(
+        f"INSERT INTO {table} VALUES "
+        "('2000-01-01', 1, 2), ('2000-01-01', 2, 1)"
+    )
+    projection_query = (
+        f"SELECT k FROM {table} ORDER BY v "
+        "SETTINGS force_optimize_projection = 1, optimize_use_projections = 1"
+    )
+    assert node1.query(projection_query) == "2\n1\n"
+
+    merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    node1.query(f"SYSTEM START TTL MERGES {table}")
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(merges_before),
+        "1",
+        retry_count=60,
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(secondary_indices_compressed_bytes) = 0 "
+        "FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active",
+        "1",
+        retry_count=60,
+    )
+
+    assert node1.query(projection_query) == "2\n1\n"
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
 def test_ttl_clear_index_leaves_patches_pending(started_cluster):
     node1.query(
         """

@@ -22,6 +22,16 @@ ENGINE = MergeTree
 ORDER BY k
 TTL d + INTERVAL 1 DAY CLEAR INDEX missing_idx; -- { serverError BAD_ARGUMENTS }
 
+CREATE TABLE ttl_clear_index_implicit
+(
+    d Date,
+    k UInt64
+)
+ENGINE = MergeTree
+ORDER BY k
+TTL d + INTERVAL 1 DAY CLEAR INDEX auto_minmax_index_k
+SETTINGS add_minmax_index_for_numeric_columns = 1; -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE ttl_clear_index
 (
     d Date,
