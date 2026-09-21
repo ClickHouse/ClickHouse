@@ -48,6 +48,13 @@ SETTINGS max_parallel_replicas = 1, log_comment = 'autopr_gate_ineligible_one_re
 SELECT b, count() FROM t_autopr_gate GROUP BY b FORMAT Null
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, log_comment = 'autopr_gate_ineligible_plain_merge_tree';
 
+-- Never considered: the query's own `SETTINGS enable_parallel_replicas = 0` is applied to the query
+-- context before the interpreter runs (`InterpreterSetQuery::applySettingsFromQuery`), so
+-- `buildContext` switches `automatic_parallel_replicas_mode` off and the candidate plan is never
+-- requested. The per-query opt-out is honored above the eligibility check, not by it.
+SELECT b, count() FROM t_autopr_gate GROUP BY b FORMAT Null
+SETTINGS enable_parallel_replicas = 0, log_comment = 'autopr_gate_ineligible_query_optout';
+
 -- Never considered: FINAL is rejected before the eligibility check, by the plan itself.
 SELECT b, count() FROM t_autopr_gate FINAL GROUP BY b FORMAT Null
 SETTINGS log_comment = 'autopr_gate_ineligible_final';
