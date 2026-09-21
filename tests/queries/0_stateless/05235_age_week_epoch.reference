@@ -14,3 +14,7 @@ the same, entirely before the epoch (was -1)
 1
 control: on the same weekday an earlier time of day still rounds down
 0
+later weekday, earlier time of day, nowhere near the epoch (was 0)
+1
+control: same weekday, nowhere near the epoch
+0

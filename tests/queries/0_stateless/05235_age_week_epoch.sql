@@ -34,3 +34,12 @@ SELECT age('week', toDateTime64('1969-12-23 01:30:00.000', 3, 'UTC'), toDateTime
 
 SELECT 'control: on the same weekday an earlier time of day still rounds down';
 SELECT age('week', toDateTime64('1969-12-30 01:30:00.000', 3, 'UTC'), toDateTime64('1970-01-06 01:15:00.000', 3, 'UTC'));
+
+-- The weekday-guard defect is not epoch-related at all: the same shape is wrong far from 1970.
+-- This is what proves it is a second, independent bug rather than fallout of the
+-- `toRelativeWeekNum` floor-division fix that the rest of this file covers.
+SELECT 'later weekday, earlier time of day, nowhere near the epoch (was 0)';
+SELECT age('week', toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'), toDateTime64('2000-01-12 01:15:00.000', 3, 'UTC'));
+
+SELECT 'control: same weekday, nowhere near the epoch';
+SELECT age('week', toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'), toDateTime64('2000-01-11 01:15:00.000', 3, 'UTC'));
