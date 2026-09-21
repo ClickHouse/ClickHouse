@@ -557,7 +557,8 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
 /// regular alias, such a name is visible in WHERE (ClickHouse makes SELECT
 /// aliases visible there), so NoREC's `countIf` rewrite — which drops the
 /// SELECT list and thus the REPLACE — would bind the WHERE reference to the
-/// original column instead, a false mismatch.
+/// original column instead, a false mismatch. RENAME target names have the
+/// same alias visibility and must be tracked for the same reason.
 void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
 {
     if (!ast)
@@ -567,6 +568,8 @@ void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
         out.insert(alias);
     if (const auto * replacement = ast->as<ASTColumnsReplaceTransformer::Replacement>())
         out.insert(replacement->name);
+    if (const auto * rename = ast->as<ASTColumnsRenameTransformer::Rename>())
+        out.insert(rename->target_name);
     for (const auto & child : ast->children)
         collectAliases(child, out);
 }

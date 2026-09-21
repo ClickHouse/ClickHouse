@@ -2974,6 +2974,34 @@ SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
     });
 
+    factory.registerStatement("RENAME modifier",
+    {
+        .description = R"DOCS_MD(
+> Changes the output names of columns selected by a column matcher. Values, types, expressions, and order stay unchanged.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> RENAME old_name AS new_name FROM [db.]table_name
+SELECT <expr> RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
+```
+
+The source names refer to the original names of the selected columns. Each source name must match exactly one selected column. `RENAME` must be the last column transformer. Target names must be unique within one `RENAME` modifier.
+
+## Example {#example}
+
+```sql
+SELECT * RENAME (i AS value_i, j AS value_j) FROM columns_transformers;
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> RENAME old_name AS new_name FROM [db.]table_name
+SELECT <expr> RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
 }
 
 }
