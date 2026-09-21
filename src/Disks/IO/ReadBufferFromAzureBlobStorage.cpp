@@ -421,7 +421,7 @@ void ReadBufferFromAzureBlobStorage::checkReturnedGeneration(const Azure::Storag
     if (details.ETag.ToString() != expected_etag)
         throw Exception(
             ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
-            "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query",
+            "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query, or set azure_validate_etag_on_read=0 to disable this check for table reads",
             path, expected_etag, details.ETag.ToString());
 }
 
@@ -430,7 +430,7 @@ void ReadBufferFromAzureBlobStorage::rethrowIfGenerationChanged(const Azure::Cor
     if (!expected_etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
         throw Exception(
             ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
-            "Azure blob {} was replaced during read (If-Match on ETag {} failed); retry the query",
+            "Azure blob {} was replaced during read (If-Match on ETag {} failed); retry the query, or set azure_validate_etag_on_read=0 to disable this check for table reads",
             path, expected_etag);
 }
 
