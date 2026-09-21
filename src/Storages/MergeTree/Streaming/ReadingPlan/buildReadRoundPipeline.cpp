@@ -49,8 +49,8 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
 {
     Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
 
-    if (!std::ranges::contains(columns, stream_settings.watermark->column))
-        columns.push_back(stream_settings.watermark->column);
+    if (!std::ranges::contains(columns, stream_settings.watermark->time_attribute_column))
+        columns.push_back(stream_settings.watermark->time_attribute_column);
 
     const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
     for (const auto & source_column : source_columns)
