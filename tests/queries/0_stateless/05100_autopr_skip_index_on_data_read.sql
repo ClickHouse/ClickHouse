@@ -54,7 +54,7 @@ FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1000, lo
 
 SELECT sum(key) FROM t_autopr_skip_index WHERE np < 20000
 FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1000,
-    log_comment = '05100_with_replicas';
+    log_comment = '05100_with_replicas_min_rows';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -64,17 +64,24 @@ SYSTEM FLUSH LOGS query_log;
 -- The initiating query's `SelectedRows` already covers what the replicas read, so it is read on its
 -- own: adding the replicas' own rows to it counts the same reads twice, which is only invisible when
 -- the local replica happens to do all the work.
+--
+-- Reported per run. Pooling them would let the run that used replicas vouch for one that quietly
+-- stayed single-node, and that run's branch would then go untested while the test still passed.
 WITH
     (SELECT ProfileEvents['SelectedRows']
      FROM system.query_log
      WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
        AND event_date >= yesterday() AND log_comment = '05100_single_node') AS single_node_rows
 SELECT
+    log_comment AS run,
     max(ProfileEvents['ParallelReplicasUsedCount']) > 0 AS replicas_were_used,
     max(ProfileEvents['SelectedRows']) <= single_node_rows AS reads_no_more_than_a_single_node
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-  AND event_date >= yesterday() AND log_comment = '05100_with_replicas'
+  AND event_date >= yesterday()
+  AND log_comment IN ('05100_with_replicas', '05100_with_replicas_min_rows')
+GROUP BY run
+ORDER BY run
 FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_skip_index;
