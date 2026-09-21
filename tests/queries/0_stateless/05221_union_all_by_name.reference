@@ -65,3 +65,35 @@ EXCEPT with UNION BY NAME
 UNION BY NAME with reordered INTERSECT operands
 1	x
 2	y
+view result aliases
+1	2
+4	3
+1
+4
+view result aliases matching operand names
+1	2
+4	3
+view result aliases with missing columns
+1	2	\N
+\N	3	4
+view result aliases with mixed unions
+1	2
+4	3
+5	6
+view result alias count
+positional view aliases are unchanged
+1	2
+3	4
+CREATE TABLE result columns
+1	2
+4	3
+recursive CTE with BY NAME seed
+1
+2
+2
+3
+3
+recursive CTE with BY NAME recursive term
+1	10
+2	20
+3	30

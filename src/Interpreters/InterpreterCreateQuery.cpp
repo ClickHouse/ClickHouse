@@ -37,13 +37,17 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -1070,6 +1074,36 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         if (create.isParameterizedView())
             return properties;
+
+        if (create.aliases_list && create.select->hasByNameSetOperation())
+        {
+            /// Apply aliases to the final result, after UNION ALL BY NAME has matched its columns.
+            /// Keep this as a derived table so the aliases are preserved in the stored view definition.
+            auto subquery = make_intrusive<ASTSubquery>(create.select->ptr());
+            subquery->setAlias("__union_by_name_result");
+
+            auto table_expression = make_intrusive<ASTTableExpression>();
+            table_expression->set(table_expression->subquery, subquery);
+            table_expression->set(table_expression->column_aliases, create.aliases_list->clone());
+
+            auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+            table_element->set(table_element->table_expression, table_expression);
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(table_element);
+
+            auto expressions = make_intrusive<ASTExpressionList>();
+            expressions->children.push_back(make_intrusive<ASTAsterisk>());
+            auto select = make_intrusive<ASTSelectQuery>();
+            select->setExpression(ASTSelectQuery::Expression::SELECT, expressions);
+            select->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+
+            auto selects = make_intrusive<ASTExpressionList>();
+            selects->children.push_back(select);
+            auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+            select_with_union->set(select_with_union->list_of_selects, selects);
+            create.replace(create.select, select_with_union);
+            create.reset(create.aliases_list);
+        }
 
         if (create.aliases_list)
         {

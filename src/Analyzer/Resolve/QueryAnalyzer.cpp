@@ -7241,7 +7241,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
     if (union_node_typed.isCTE() && union_node_typed.isRecursiveCTE())
     {
-        if (union_node_typed.hasNameMatchedUnion())
+        if (union_node_typed.getColumnMatchMode() == SetOperationColumnMatchMode::Name)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "UNION ALL BY NAME is unsupported in recursive CTE '{}'",
                 union_node_typed.getCTEName());

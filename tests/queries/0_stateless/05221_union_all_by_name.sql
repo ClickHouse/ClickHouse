@@ -258,3 +258,68 @@ FROM
     SELECT 'y' AS b, 2 AS a
 )
 ORDER BY a;
+
+SELECT 'view result aliases';
+DROP TABLE IF EXISTS union_by_name_aliases;
+CREATE VIEW union_by_name_aliases(x, y) AS
+SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a;
+SELECT * FROM union_by_name_aliases ORDER BY x;
+SELECT x FROM union_by_name_aliases ORDER BY x;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'view result aliases matching operand names';
+CREATE VIEW union_by_name_aliases(b, a) AS
+SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a;
+SELECT * FROM union_by_name_aliases ORDER BY b;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'view result aliases with missing columns';
+CREATE VIEW union_by_name_aliases(x, y, z) AS
+SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS c;
+SELECT * FROM union_by_name_aliases ORDER BY isNull(x), x;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'view result aliases with mixed unions';
+CREATE VIEW union_by_name_aliases(x, y) AS
+(SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a)
+UNION ALL SELECT 5 AS c, 6 AS d;
+SELECT * FROM union_by_name_aliases ORDER BY x;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'view result alias count';
+CREATE VIEW union_by_name_aliases(x) AS SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a; -- { serverError BAD_ARGUMENTS }
+CREATE VIEW union_by_name_aliases(x, y, z) AS SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'positional view aliases are unchanged';
+CREATE VIEW union_by_name_aliases(x, y) AS
+SELECT 1 AS a, 2 AS b UNION ALL SELECT 3 AS b, 4 AS a;
+SELECT * FROM union_by_name_aliases ORDER BY x;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'CREATE TABLE result columns';
+CREATE TABLE union_by_name_aliases(x UInt8, y UInt8) ENGINE = Memory AS
+SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a;
+SELECT * FROM union_by_name_aliases ORDER BY x;
+DROP TABLE union_by_name_aliases;
+
+SELECT 'recursive CTE with BY NAME seed';
+WITH RECURSIVE r AS
+(
+    (SELECT toUInt64(1) AS a UNION ALL BY NAME SELECT toUInt64(2) AS a)
+    UNION ALL
+    SELECT a + 1 AS a FROM r WHERE a < 3
+)
+SELECT a FROM r ORDER BY a;
+
+SELECT 'recursive CTE with BY NAME recursive term';
+WITH RECURSIVE r AS
+(
+    SELECT toUInt64(1) AS a, toUInt64(10) AS b
+    UNION ALL
+    (
+        SELECT a + 1 AS a, b + 10 AS b FROM r WHERE a < 2
+        UNION ALL BY NAME
+        SELECT b + 20 AS b, a + 2 AS a FROM r WHERE a < 2
+    )
+)
+SELECT a, b FROM r ORDER BY a, b;
