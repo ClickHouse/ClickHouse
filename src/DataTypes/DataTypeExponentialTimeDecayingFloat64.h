@@ -100,7 +100,12 @@ bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type);
 void assertExponentialTimeDecayingFloat64TypesCompatible(
     const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation);
 
-/// Also permits an `IN` probe whose exact type is an alternative of the set's `Variant`.
+/// Permits a source whose exact semantic type is an alternative of a target Variant,
+/// while otherwise requiring decaying values to keep their type identity.
+void assertExponentialTimeDecayingFloat64ConversionTypesCompatible(
+    const DataTypePtr & source_type, const DataTypePtr & target_type, const String & operation);
+
+/// Set-key compatibility uses the same conversion rule.
 void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 

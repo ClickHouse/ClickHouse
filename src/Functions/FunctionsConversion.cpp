@@ -3082,6 +3082,13 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
+    /// Accurate conversions are used for implicit key coercion (for example by IN).
+    /// A finalized decaying value must not become a layout-compatible plain Tuple, or
+    /// silently change its decay length. Container conversions recurse through this path.
+    if (cast_type != CastType::nonAccurate
+        && (isExponentialTimeDecayingFloat64(from_type) || isExponentialTimeDecayingFloat64(to_type)))
+        assertExponentialTimeDecayingFloat64TypesCompatible(from_type, to_type, "accurate CAST");
+
     if (isUInt8(from_type) && isBool(to_type))
         return createUInt8ToBoolWrapper(from_type, to_type);
 

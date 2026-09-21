@@ -455,28 +455,33 @@ void assertExponentialTimeDecayingFloat64TypesCompatible(
     assertExponentialTimeDecayingFloat64TypesCompatibleImpl(left_type, right_type, operation);
 }
 
-void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
-    const DataTypePtr & probe_type, const DataTypePtr & set_type)
+void assertExponentialTimeDecayingFloat64ConversionTypesCompatible(
+    const DataTypePtr & source_type, const DataTypePtr & target_type, const String & operation)
 {
-    if (!containsExponentialTimeDecayingFloat64(probe_type) && !containsExponentialTimeDecayingFloat64(set_type))
+    if (!containsExponentialTimeDecayingFloat64(source_type) && !containsExponentialTimeDecayingFloat64(target_type))
         return;
 
-    const auto nested_probe_type = removeExponentialTimeDecayingTransparentWrappers(probe_type);
-    const auto nested_set_type = removeExponentialTimeDecayingTransparentWrappers(set_type);
+    const auto nested_source_type = removeExponentialTimeDecayingTransparentWrappers(source_type);
+    const auto nested_target_type = removeExponentialTimeDecayingTransparentWrappers(target_type);
 
-    /// The default `Variant` adaptor probes each alternative separately, while the set
-    /// retains its `Variant` type. Permit wrapping an exact alternative, including its
-    /// custom type name: tuple layout equality alone would also admit a wrong decay length.
-    if (const auto * variant = typeid_cast<const DataTypeVariant *>(nested_set_type.get()))
+    /// Variant conversion examines each active alternative separately. Preserve an exact
+    /// semantic alternative, but do not accept a layout-compatible plain Tuple instead.
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(nested_target_type.get()))
     {
         for (const auto & alternative : variant->getVariants())
         {
-            if (nested_probe_type->getName() == alternative->getName())
+            if (nested_source_type->equals(*alternative))
                 return;
         }
     }
 
-    assertExponentialTimeDecayingFloat64TypesCompatible(probe_type, set_type, "IN");
+    assertExponentialTimeDecayingFloat64TypesCompatible(source_type, target_type, operation);
+}
+
+void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
+    const DataTypePtr & probe_type, const DataTypePtr & set_type)
+{
+    assertExponentialTimeDecayingFloat64ConversionTypesCompatible(probe_type, set_type, "IN");
 }
 
 void validateExponentialTimeDecayingFloat64Column(

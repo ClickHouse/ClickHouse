@@ -188,6 +188,8 @@ ColumnPtr convertColumnToTypeOrNull(
     /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
     /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
     const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
+    if (strict)
+        assertExponentialTimeDecayingFloat64ConversionTypesCompatible(source, to, "strict conversion");
     retagBoolInField(field, source);
 
     const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);

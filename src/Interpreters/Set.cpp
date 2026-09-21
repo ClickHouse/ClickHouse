@@ -13,7 +13,6 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -482,8 +481,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         const auto & column_before_cast = columns.at(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
-
-        assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(column_before_cast.type, data_types[i]);
 
         /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
