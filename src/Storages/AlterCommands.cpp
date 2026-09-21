@@ -25,7 +25,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
@@ -64,7 +63,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
@@ -1208,21 +1206,7 @@ void AlterCommand::apply(
             return;
 #endif
 
-        SharedHeader as_select_sample;
-
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
-        }
-        else
-        {
-            /// For refreshable materialized views, allow parameterized views in the query.
-            /// This prevents the old analyzer from trying to execute table functions during analysis.
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
-                context,
-                false /* is_subquery */,
-                metadata.refresh != nullptr /* is_create_parameterized_view */);
-        }
+        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
@@ -2340,7 +2324,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
-                    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
                     {
                         auto execution_context = Context::createCopy(context);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
@@ -2363,24 +2346,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                         if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (const ColumnDescription & column : all_columns)
-                        {
-                            if (const auto & default_expression = column.default_desc.expression)
-                            {
-                                ASTPtr query = default_expression->clone();
-                                auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                                for (const auto & required_column : actions->getRequiredColumns())
-                                {
-                                    auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                                    if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
-                                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }
                             }
                         }
