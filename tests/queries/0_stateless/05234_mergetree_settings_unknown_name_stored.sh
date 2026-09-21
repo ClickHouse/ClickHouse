@@ -52,6 +52,32 @@ SELECT extract(create_table_query, 'merge_with_ttl_timeout = 100') FROM system.t
 SELECT extract(create_table_query, 'not_a_setting_at_all') FROM system.tables WHERE database = 'db' AND name = 't';
 "
 
+echo '--- a refreshable view re-creates its target from a stored definition, so it keeps refreshing ---'
+# A non-append refresh re-issues the inner table's stored definition as a plain `CREATE`, which is the
+# one load-time route that would otherwise be judged as fresh input - and it would fail as a recorded
+# refresh failure rather than as a query error.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+CREATE TABLE db.src (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO db.src VALUES (7);
+CREATE MATERIALIZED VIEW db.mv REFRESH EVERY 1 YEAR (x UInt8) ENGINE = MergeTree ORDER BY x
+SETTINGS min_bytes_for_wide_part = DEFAULT AS SELECT x FROM db.src;
+SYSTEM WAIT VIEW db.mv;
+"
+
+inner_metadata_file=$(grep -rl 'min_bytes_for_wide_part' "${WORKING_DIR}/store" --include='*inner_id*.sql')
+sed -i 's/min_bytes_for_wide_part/not_a_setting_at_all/' "${inner_metadata_file}"
+# Without this the arm would pass on an unmodified definition, i.e. assert nothing.
+grep -c -m 1 -F 'not_a_setting_at_all' "${inner_metadata_file}"
+
+# The new row is what proves the refresh ran: `SYSTEM WAIT VIEW` alone also returns for a refresh that
+# never started, and it raises REFRESH_FAILED when one fails.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+INSERT INTO db.src VALUES (8);
+SYSTEM REFRESH VIEW db.mv;
+SYSTEM WAIT VIEW db.mv;
+SELECT count() FROM db.mv;
+"
+
 echo '--- a stored non-setting is inherited by CREATE TABLE AS, which is fresh input ---'
 # The stored clause is copied wholesale into the new definition, so it is stated rather than loaded.
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" --send_logs_level fatal -q "
