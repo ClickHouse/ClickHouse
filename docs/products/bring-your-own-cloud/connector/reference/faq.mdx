@@ -46,7 +46,7 @@ The complete outbound connection list is on the [privilege model](/products/brin
 
 ### How do I stop ClickHouse from changing my clusters? {#stop-managed-mode}
 
-Run without managed mode. At install time, pass `--no-managed` to `clicklink clctl init`, or answer no when it asks. Only the scraper and the troubleshooter are deployed, and the connector changes nothing in your environment.
+Run without managed mode. At install time, pass `--no-managed` to `clicklink clctl init`, or answer no when it asks. Only the scraper and the troubleshooter are deployed, so ClickHouse cannot create, change, or delete services. The connector still provisions read-only ClickHouse users and ServiceAccounts; see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 On an existing install, stop the executor and remove its grant as cluster admin. To stop it, set `executor.enabled: false` in your Helm values and run `helm upgrade`, or run `systemctl disable --now clicklink-executor` on a VM. Then remove the grant. The last command removes the ServiceAccount itself; its namespace is `clicklink-system` for a VM install and the connector namespace for a Kubernetes install:
 

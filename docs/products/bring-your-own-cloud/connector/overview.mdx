@@ -49,7 +49,7 @@ The scraper reads the allowlisted system tables on a fixed interval and ships me
 
 ## Run without managed mode {#run-without-managed-mode}
 
-Pass `--no-managed` to `clicklink clctl init`, or answer no when it asks, to install only the scraper and the troubleshooter. The connector then observes and supports ClickHouse clusters you operate yourself and changes nothing in your environment. This is also the shape for targets managed mode does not cover. Managed mode runs on Amazon EKS with S3 storage; observability and support run on any conformant Kubernetes cluster or Linux host.
+Pass `--no-managed` to `clicklink clctl init`, or answer no when it asks, to install only the scraper and the troubleshooter. The connector then observes and supports ClickHouse clusters you operate yourself. ClickHouse cannot create, change, or delete services. The connector still deploys itself and provisions read-only ClickHouse users and ServiceAccounts; see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model). This is also the shape for targets managed mode does not cover. Managed mode runs on Amazon EKS with S3 storage; observability and support run on any conformant Kubernetes cluster or Linux host.
 
 ## Requirements at a glance {#requirements-at-a-glance}
 
