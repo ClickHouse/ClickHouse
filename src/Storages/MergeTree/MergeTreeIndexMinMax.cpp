@@ -80,7 +80,7 @@ bool getDecayPrefixExtremes(
         nested_column = &nullable_column->getNestedColumn();
 
     const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*nested_column);
-    const auto & prefix = assert_cast<const ColumnUInt64 &>(decaying.getOrderingPrefixColumn()).getData();
+    const auto & ordering_key = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
 
     bool found = false;
     bool saw_null = false;
@@ -95,7 +95,7 @@ bool getDecayPrefixExtremes(
             continue;
         }
 
-        const UInt64 key = prefix[row];
+        const UInt64 key = ordering_key[row];
         if (!found)
         {
             min_key = key;
@@ -388,12 +388,12 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
-    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_ordering_key) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_ordering_key, ".idx2", &storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
 
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_ordering_key, ".idx", &storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /* unknown */, {}};
@@ -401,15 +401,15 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
 
 MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
     const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
+    const std::string & relative_path_ordering_key,
     const IDataPartStorage * storage) const
 {
     /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
     /// extension present, not just the preferred one, so cleanup does not miss the stale file.
     MergeTreeIndexSubstreams substreams;
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_ordering_key, ".idx2", storage))
         substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_ordering_key, ".idx", storage))
         substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
     return substreams;
 }
