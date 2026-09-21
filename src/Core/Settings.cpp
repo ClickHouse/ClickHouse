@@ -9024,22 +9024,22 @@ and the scalar functions for `ExponentialTimeDecaying` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL) \
     DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
-Maximum distance, measured in decay lengths, between calculation-index timestamps when
-aggregating inputs of type `ExponentialTimeDecaying`. A finalized decaying value
-already carries the timestamp at which its magnitude reaches one. When two such values are
-farther apart than this distance, the weaker contribution is discarded before evaluating
-the decay factor.
+Maximum distance, measured in decay lengths, between ordering-index timestamps when adding
+finalized `ExponentialTimeDecaying` values. The input value's cached `UInt64` ordering
+key is used to obtain its indexed unit-magnitude timestamp. When the indexed timestamps are
+farther apart than this distance, the weaker input row is discarded before evaluating the
+decay factor.
 
 The default value `0` disables the cutoff. A positive value enables approximate
-query-local aggregation of finalized decaying values; values sorted by their
-calculation-index timestamp make the rejection path especially efficient. Raw
-`(value, time)` aggregation does not use this cutoff. Aggregate functions reconstructed
-from persisted `AggregateFunction` or `SimpleAggregateFunction` types are created
-without the query cutoff, so storage-engine merges remain exact.
+query-local aggregation of finalized decaying values. Raw `(value, time)` aggregation
+does not use this cutoff.
 
-Results close to the cutoff can depend on input order or merge grouping. Signed sums that
-nearly cancel can have a larger relative error even when every discarded contribution is
-individually small.
+The cutoff is never applied while merging aggregate states. `-Merge`,
+`AggregateFunction`, `SimpleAggregateFunction`, and storage-engine state merges therefore
+use the normal merge calculation regardless of this setting.
+
+Results close to the cutoff can depend on input order. Signed sums that nearly cancel can
+have a larger relative error even when every discarded contribution is individually small.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
