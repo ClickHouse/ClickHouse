@@ -42,7 +42,7 @@ public:
 
     off_t seek(off_t offset, int whence) override;
 
-    off_t getPosition() override { return file_offset_of_buffer_end - available(); }
+    off_t getPosition() override { return static_cast<off_t>(file_offset_of_buffer_end) - static_cast<off_t>(available()); }
 
     bool isSeekCheap() override;
 

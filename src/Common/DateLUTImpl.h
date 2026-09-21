@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <base/arithmeticOverflow.h>
 
 namespace cctz
 {
@@ -903,7 +904,7 @@ public:
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         unsigned res = static_cast<unsigned>(time / 3600);
 
@@ -951,7 +952,7 @@ public:
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         return time % 60;
     }
@@ -982,7 +983,7 @@ public:
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         return time / 60 % 60;
     }

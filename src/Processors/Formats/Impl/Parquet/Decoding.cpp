@@ -1676,7 +1676,7 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
 
     /// Sign-extend.
     if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
-        val |= 0 - (1ul << (input_size * 8));
+        val |= common::negateIgnoreOverflow(1ul << (input_size * 8));
 
     /// Check for overflow in signed <-> unsigned conversion.
     if (input_signed && !field_signed && Int64(val) < 0)

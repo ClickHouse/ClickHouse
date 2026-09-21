@@ -5,6 +5,7 @@
 
 #include <Core/Field.h>
 #include <Common/TargetSpecific.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -152,7 +153,7 @@ public:
 /// Generic kernel that untransposes one bit plane. Defined in the header s.t. it inlines into hot loops.
 DECLARE_DEFAULT_CODE(
     template <typename T>
-    ALWAYS_INLINE void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = static_cast<ssize_t>(stride_len) - 1;

@@ -1450,7 +1450,9 @@ static NameToNameVector collectFilesForRenames(
                     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
 
                     /// Delete files if they are no longer shared with another column.
-                    if (stream_name && --stream_counts[*stream_name] == 0)
+                    /// `operator[]` would insert a 0 for an absent stream and wrap it to SIZE_MAX.
+                    auto stream_it = stream_name ? stream_counts.find(*stream_name) : stream_counts.end();
+                    if (stream_it != stream_counts.end() && --stream_it->second == 0)
                     {
                         add_rename(*stream_name + ".bin", "");
                         add_rename(*stream_name + mrk_extension, "");

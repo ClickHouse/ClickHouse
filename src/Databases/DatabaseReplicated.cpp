@@ -66,6 +66,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -1052,7 +1053,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{mutex};
                 for (const auto & table : tables)
-                    digest += getMetadataHash(table.first);
+                    digest = common::addIgnoreOverflow(digest, getMetadataHash(table.first));
                 LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
             }
 
@@ -1796,7 +1797,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
 
             DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
 
@@ -2739,8 +2740,8 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_id.table_name);
-    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_id.table_name));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_id.table_name, statement));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 

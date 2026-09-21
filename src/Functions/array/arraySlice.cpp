@@ -259,7 +259,7 @@ private:
             else
             {
                 /// Compute |offset| in the unsigned domain: -INT64_MIN does not fit in Int64. Offset 0 falls here too.
-                const UInt64 abs_offset = UInt64(0) - static_cast<UInt64>(*offset);
+                const UInt64 abs_offset = common::negateIgnoreOverflow(static_cast<UInt64>(*offset));
                 if (abs_offset == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Offset {} of function {} is out of range for a QBit of dimension {}: "
@@ -281,7 +281,7 @@ private:
             if (*length >= 0)
             {
                 const size_t requested_length = static_cast<size_t>(*length);
-                const UInt64 abs_offset = offset && *offset < 0 ? UInt64(0) - static_cast<UInt64>(*offset) : 0;
+                const UInt64 abs_offset = offset && *offset < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(*offset)) : 0;
                 if (abs_offset > dimension)
                 {
                     /// `getSliceFromRight` clamps an oversized negative offset to the left edge, but preserves the
@@ -295,7 +295,7 @@ private:
             else
             {
                 /// A negative length leaves the last |length| elements of the vector unselected, as for Arrays.
-                const UInt64 abs_length = UInt64(0) - static_cast<UInt64>(*length);
+                const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(*length));
                 result_length = abs_length < result_length ? result_length - static_cast<size_t>(abs_length) : 0;
             }
         }

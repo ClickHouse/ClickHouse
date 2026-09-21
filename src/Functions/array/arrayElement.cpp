@@ -2749,7 +2749,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
                         element = static_cast<size_t>(indices[pos] - 1);
                     else if (indices[pos] < 0)
                     {
-                        const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(indices[pos]);
+                        const UInt64 abs_index = common::negateIgnoreOverflow(static_cast<UInt64>(indices[pos]));
                         if (abs_index <= dimension)
                             element = dimension - static_cast<size_t>(abs_index);
                     }
@@ -2862,7 +2862,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
         if (index < 0)
         {
             /// Compute |index| in the unsigned domain: -INT64_MIN does not fit in Int64.
-            const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(index);
+            const UInt64 abs_index = common::negateIgnoreOverflow(static_cast<UInt64>(index));
             if (abs_index <= dimension)
                 return dimension - static_cast<size_t>(abs_index);
         }
