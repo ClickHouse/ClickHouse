@@ -1,26 +1,14 @@
-<test run_all_queries="1">
+<!-- `isAllASCII` scans a block's whole `ColumnString::Chars` before a UTF-8 string function picks its
+     ASCII fast path. `max_block_size` is set so that the scanned buffer stays in L2: with the default
+     block size the scan runs at memory bandwidth and measures the cache hierarchy rather than the
+     function. `materialize` keeps the argument out of constant folding. -->
+<test>
     <settings>
         <max_threads>1</max_threads>
     </settings>
 
-    <!-- ColumnString::Chars stores string bytes without per-row terminators. The digit keeps the input non-constant. -->
-    <!-- Cover representative sub-threshold buffers and the AVX-512 crossover through several UTF-8 functions. -->
-    <query>SELECT substringUTF8(concat(repeat('a', 1023), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 4095), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 8191), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 12287), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 16382), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 16383), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 16384), toString(number % 10)), 2, 5) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT reverseUTF8(concat(repeat('a', 16383), toString(number % 10))) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringIndexUTF8(concat('.', repeat('a', 16382), toString(number % 10)), '.', 1) FROM numbers(10000) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT leftPadUTF8(concat(repeat('a', 1023), toString(number % 10)), 1025, 'x') FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
-    <query>SELECT rightPadUTF8(concat(repeat('a', 1023), toString(number % 10)), 1025, 'x') FROM numbers(160000) FORMAT Null SETTINGS max_block_size = 16</query>
-
-    <!-- A large all-ASCII buffer measures sustained throughput. -->
-    <query>SELECT substringUTF8(concat(repeat('a', 1048575), toString(number % 10)), 2, 5) FROM numbers(100) FORMAT Null SETTINGS max_block_size = 1</query>
-
-    <!-- Large non-ASCII inputs exercise high-bit detection near the beginning and end. -->
-    <query>SELECT substringUTF8(concat('\xC3\xA9', repeat('a', 1048573), toString(number % 10)), 2, 5) FROM numbers(100) FORMAT Null SETTINGS max_block_size = 1</query>
-    <query>SELECT substringUTF8(concat(repeat('a', 1048573), '\xC3\xA9', toString(number % 10)), 2, 5) FROM numbers(100) FORMAT Null SETTINGS max_block_size = 1</query>
+    <query>SELECT substringUTF8(materialize(repeat('a', 1024)), 2, 5) FROM numbers(1000000) SETTINGS max_block_size = 1024 FORMAT Null</query>
+    <query>SELECT reverseUTF8(materialize(repeat('a', 1024))) FROM numbers(1000000) SETTINGS max_block_size = 1024 FORMAT Null</query>
+    <!-- A leading non-ASCII byte: the scan still runs to the end and the function takes its UTF-8 path. -->
+    <query>SELECT substringUTF8(materialize('\xD0\xB0' || repeat('a', 1022)), 2, 5) FROM numbers(1000000) SETTINGS max_block_size = 1024 FORMAT Null</query>
 </test>
