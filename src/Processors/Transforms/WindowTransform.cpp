@@ -3910,7 +3910,7 @@ LIMIT 9
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 The aggregate-function form returns the sum of values weighted by exponential decay relative to the greatest time argument.
-It can also aggregate `ExponentialTimeDecayingFloat64(decay_length)` values directly, with the decay length inferred from the type.
+It can also aggregate `ExponentialTimeDecaying(decay_length)` values directly, with the decay length inferred from the type.
 Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
 The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
 Aggregation uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
@@ -3929,7 +3929,7 @@ The window-function form is not affected by this setting.
         {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
-        "The aggregate form returns `ExponentialTimeDecayingFloat64(decay_length)`. "
+        "The aggregate form returns `ExponentialTimeDecaying(decay_length)`. "
         "The window form returns `Float64`.",
         {}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
@@ -4023,26 +4023,26 @@ FROM
         assertExperimentalTimeDecayAggregateFunctionEnabled,
         false});
 
-    factory.registerFunction("exponentialTimeDecayingFloat64", {
-        createAggregateFunctionExponentialTimeDecayingFloat64,
+    factory.registerFunction("exponentialTimeDecaying", {
+        createAggregateFunctionExponentialTimeDecaying,
         FunctionDocumentation{
             .description = R"(
-Constructs an `ExponentialTimeDecayingFloat64(decay_length)` value from one or more `(value, time)` rows.
-The result is normalized to its unit-magnitude time, producing a compact representation whose
-native comparison and sorting order matches the numeric order of curves with the same decay length.
+Constructs an `ExponentialTimeDecaying(decay_length)` value from one or more `(value, time)` rows.
+The result keeps its direct value and anchor for arithmetic and derives one UInt64 ordering key.
+Comparison, equality, hashing, primary-key marks, and minmax indexes use that same key.
 It can be combined again by `exponentialTimeDecayedSum`, including as a
 `SimpleAggregateFunction` column in an `AggregatingMergeTree`.
 )",
-            .syntax = "exponentialTimeDecayingFloat64(decay_length)(value, time)",
+            .syntax = "exponentialTimeDecaying(decay_length)(value, time)",
             .arguments = {
                 {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
                 {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
             .parameters = {
                 {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
-            .returned_value = {"Returns an `ExponentialTimeDecayingFloat64(decay_length)` value.", {}},
+            .returned_value = {"Returns an `ExponentialTimeDecaying(decay_length)` value.", {}},
             .examples = {{
                 "Construct a decaying value",
-                "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0)) "
+                "SELECT exponentialTimeDecaying(10)(8, toFloat64(0)) "
                 "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
                 "(1,20.79441541679836,10)"}},
             .introduced_in = {26, 8},
@@ -4164,7 +4164,7 @@ The window-function form is not affected by this setting.
         {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
-        "The aggregate form returns `ExponentialTimeDecayingFloat64(decay_length)`. "
+        "The aggregate form returns `ExponentialTimeDecaying(decay_length)`. "
         "The window form returns `Float64`.",
         {}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
