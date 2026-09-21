@@ -30,10 +30,10 @@ $CLICKHOUSE_LOCAL --query "SELECT number AS x, toString(number) AS s FROM number
 # requests already served is what makes it deterministic: how many requests the metadata takes,
 # and how the reader splits the data reads, both depend on the build and on the settings. A
 # request without a `Range` header is not a positional read of the reader at all - it is the
-# sequential read of the whole file - so it is always answered in full. It binds
-# to the port 0 and reports the port the kernel gave it, so that it cannot collide with anything
-# else running in parallel, and serves requests in parallel: the test asks it for the number of
-# reads it has held while the query is running.
+# sequential read of the whole file - so it is always answered in full. The server binds to the
+# port 0 and reports the port the kernel gave it, so that it cannot collide with anything else
+# running in parallel, and serves requests in parallel: the test asks it for the number of reads
+# it has held while the query is running.
 python3 -u -c "
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
