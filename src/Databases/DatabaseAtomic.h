@@ -95,6 +95,8 @@ protected:
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
 
+    virtual void onDatabaseRenamed() TSA_REQUIRES(mutex) {}
+
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
