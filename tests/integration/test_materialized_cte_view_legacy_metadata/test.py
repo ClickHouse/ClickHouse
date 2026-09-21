@@ -38,6 +38,9 @@ DEFINITION = (
 )
 CLAUSE = " SETTINGS enable_global_with_statement = 0"
 WARNING = "declares a MATERIALIZED CTE"
+# The feature is experimental and off by default: an insert that fires the view has to enable it, and it
+# cannot go into `DEFINITION`'s own `SETTINGS` clause, which the `sed` of the first test appends to.
+MATERIALIZED_CTE_ON = {"enable_materialized_cte": 1}
 
 
 def warning_lines(instance):
@@ -82,14 +85,14 @@ def test_legacy_metadata_loads_and_materializes(started_cluster):
     assert "enable_global_with_statement = 0" in node.query("SHOW CREATE TABLE default.mv_legacy")
     warnings_after_attach = warning_lines(node)
     assert warnings_after_attach >= 1
-    node.query("INSERT INTO default.src VALUES (81), (82)")
+    node.query("INSERT INTO default.src VALUES (81), (82)", settings=MATERIALIZED_CTE_ON)
     # The references are kept, so both read one materialization (same = 1), and only the inserted block is read.
     assert node.query("SELECT * FROM default.dst ORDER BY id") == "81\t1\n82\t1\n"
 
     # Server start loads the same metadata through createTableFromAST.
     node.restart_clickhouse()
     assert warning_lines(node) > warnings_after_attach
-    node.query("INSERT INTO default.src VALUES (83)")
+    node.query("INSERT INTO default.src VALUES (83)", settings=MATERIALIZED_CTE_ON)
     assert node.query("SELECT * FROM default.dst ORDER BY id") == "81\t1\n82\t1\n83\t1\n"
 
     node.query("DROP TABLE default.mv_legacy SYNC")
@@ -113,7 +116,7 @@ def test_replicated_replay_from_older_initiator(started_cluster):
     old.query("CREATE MATERIALIZED VIEW rdb.mv_old TO rdb.dst AS " + DEFINITION.format(db="rdb") + CLAUSE)
     node.query("SYSTEM SYNC DATABASE REPLICA rdb")
     assert "enable_global_with_statement = 0" in node.query("SHOW CREATE TABLE rdb.mv_old")
-    node.query("INSERT INTO rdb.src VALUES (81), (82)")
+    node.query("INSERT INTO rdb.src VALUES (81), (82)", settings=MATERIALIZED_CTE_ON)
     assert node.query("SELECT * FROM rdb.dst ORDER BY id") == "81\t1\n82\t1\n"
 
     # The same for MODIFY QUERY committed by the older initiator on a view created without the clause.
@@ -122,7 +125,7 @@ def test_replicated_replay_from_older_initiator(started_cluster):
     old.query("ALTER TABLE rdb.mv_modified MODIFY QUERY " + DEFINITION.format(db="rdb") + CLAUSE)
     node.query("SYSTEM SYNC DATABASE REPLICA rdb")
     assert "enable_global_with_statement = 0" in node.query("SHOW CREATE TABLE rdb.mv_modified")
-    node.query("INSERT INTO rdb.src VALUES (91), (92)")
+    node.query("INSERT INTO rdb.src VALUES (91), (92)", settings=MATERIALIZED_CTE_ON)
     # Both views fire now (mv_old and mv_modified), both keeping their references.
     assert node.query("SELECT id, same, count() FROM rdb.dst WHERE id > 90 GROUP BY id, same ORDER BY id") == "91\t1\t2\n92\t1\t2\n"
 

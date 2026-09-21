@@ -1,7 +1,8 @@
 -- The distributed `INSERT SELECT` fast paths probe the source table of the `SELECT` by name. A
--- reference to a `MATERIALIZED` CTE is not a table name, so those paths must not be taken: the rows
--- of the CTE must reach the target exactly once, whatever table carries the CTE's name.
+-- reference to a `MATERIALIZED` CTE is not a table name, so those paths must not be taken.
 -- https://github.com/ClickHouse/ClickHouse/issues/113711
+-- The cluster has one shard, so what the counts below detect is the probe binding a same-named table
+-- or failing on a missing one, not duplication across nodes (that shape needs a cluster storage).
 
 SET enable_materialized_cte = 1;
 SET parallel_distributed_insert_select = 2;
