@@ -14,10 +14,10 @@ SELECT finalizeAggregation(CAST(unhex('01FFFFFFFF0F'), 'AggregateFunction(quanti
 SETTINGS max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- Reject serialized states with an unsortable NaN bucket bound.
-SELECT finalizeAggregation(CAST(unhex('01010101000000000000F87F0100000000000000F03F'), 'AggregateFunction(quantilePrometheusHistogramArray(0.5), Float64, Array(Float64))')) -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('01010101000000000000F87F0100000000000000F03F'), 'AggregateFunction(quantilePrometheusHistogramArray(0.5), Float64, Array(Float64))')); -- { serverError INCORRECT_DATA }
 
 -- Reject serialized sparse entries that are not marked as present in the grid.
-SELECT finalizeAggregation(CAST(unhex('0102010001000000000000F07F0100000000000000F03F'), 'AggregateFunction(quantilePrometheusHistogramArray(0.5), Float64, Array(Float64))')) -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('0102010001000000000000F07F0100000000000000F03F'), 'AggregateFunction(quantilePrometheusHistogramArray(0.5), Float64, Array(Float64))')); -- { serverError INCORRECT_DATA }
 
 SELECT quantilePrometheusHistogram(0.9)(toFloat32(args.1), args.2 + number) -- Float32 upper bound values
 FROM (
