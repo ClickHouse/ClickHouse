@@ -147,6 +147,10 @@ namespace Setting
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -2670,10 +2674,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr
-                                = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings)
-                                ? reading_step->estimateRangesToReadWithoutQueryConditionCache()
-                                : reading_step->selectRangesToRead();
+
+                            /// This analysis only sizes the replica count and the executed read analyzes again,
+                            /// so throwing row limits must not be enforced on it.
+                            const bool has_throwing_row_limit
+                                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+                                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+                                    && settings[Setting::max_rows_to_read_leaf]);
+                            const bool skip_query_condition_cache
+                                = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings);
+
+                            ReadFromMergeTree::AnalysisResultPtr result_ptr;
+                            if (skip_query_condition_cache)
+                                result_ptr = reading_step->estimateRangesToReadWithoutQueryConditionCache(
+                                    /*check_row_limits=*/!has_throwing_row_limit);
+                            else if (has_throwing_row_limit)
+                                result_ptr = reading_step->selectRangesToReadForEstimation();
+                            else
+                                result_ptr = reading_step->selectRangesToRead();
+
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
