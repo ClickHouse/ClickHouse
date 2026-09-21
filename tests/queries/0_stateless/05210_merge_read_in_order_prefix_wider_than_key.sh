@@ -68,7 +68,7 @@ $CLICKHOUSE_CLIENT --query_id="${QID}" --query "
     SELECT a, b FROM m ORDER BY a, b LIMIT 5
     SETTINGS optimize_read_in_order = 1, max_threads = 4, max_block_size = 8,
              read_in_order_two_level_merge_threshold = 0, read_in_order_use_virtual_row_per_block = 0,
-             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
+             enable_parallel_replicas = 0
 " > "${CLICKHOUSE_TMP}/05210_result.txt" 2> "${CLICKHOUSE_TMP}/05210_error.txt" &
 SELECT_PID=$!
 
