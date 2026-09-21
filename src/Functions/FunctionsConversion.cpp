@@ -3280,6 +3280,13 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
         case TypeIndex::QBit:
             return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
+        case TypeIndex::ExponentialTimeDecayingFloat64:
+        {
+            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*to_type);
+            return createTupleWrapper(
+                from_type,
+                assert_cast<const DataTypeTuple *>(decaying_type.getNestedType().get()));
+        }
         case TypeIndex::Map:
             return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
         case TypeIndex::Object:

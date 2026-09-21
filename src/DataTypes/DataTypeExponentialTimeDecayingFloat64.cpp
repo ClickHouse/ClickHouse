@@ -10,6 +10,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -197,65 +198,85 @@ private:
     const Float64 decay_length;
 };
 
-std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
+DataTypePtr createFromParameters(const ASTPtr & parameters)
 {
-    auto storage_type = std::make_shared<DataTypeTuple>(
-        DataTypes{
-            std::make_shared<DataTypeFloat64>(),
-            std::make_shared<DataTypeFloat64>(),
-            std::make_shared<DataTypeFloat64>()},
-        Names{"sign", "signed_unit_time", "decay_length"});
-
-    auto serialization = std::make_shared<SerializationExponentialTimeDecayingFloat64>(
-        storage_type->getDefaultSerialization(), decay_length);
-
-    return {
-        storage_type,
-        std::make_unique<DataTypeCustomDesc>(
-            std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length),
-            std::move(serialization))};
+    return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(getDecayLength(parameters));
 }
 
-std::pair<DataTypePtr, DataTypeCustomDescPtr> createFromParameters(const ASTPtr & parameters)
+}
+
+DataTypeExponentialTimeDecayingFloat64::DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_)
+    : decay_length(decay_length_)
+    , nested_type(std::make_shared<DataTypeTuple>(
+          DataTypes{
+              std::make_shared<DataTypeFloat64>(),
+              std::make_shared<DataTypeFloat64>(),
+              std::make_shared<DataTypeFloat64>()},
+          Names{"sign", "signed_unit_time", "decay_length"}))
 {
-    return create(getDecayLength(parameters));
 }
 
-}
-
-String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
+String DataTypeExponentialTimeDecayingFloat64::doGetName() const
 {
     return fmt::format("ExponentialTimeDecayingFloat64({})", decay_length);
 }
 
-std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() const
+MutableColumnPtr DataTypeExponentialTimeDecayingFloat64::createColumn() const
+{
+    return nested_type->createColumn();
+}
+
+Field DataTypeExponentialTimeDecayingFloat64::getDefault() const
 {
     return Tuple{Float64(0), Float64(0), decay_length};
 }
 
+void DataTypeExponentialTimeDecayingFloat64::insertDefaultInto(IColumn & column) const
+{
+    column.insert(getDefault());
+}
+
+bool DataTypeExponentialTimeDecayingFloat64::equals(const IDataType & rhs) const
+{
+    const auto * other = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(&rhs);
+    return other && decay_length == other->decay_length && getName() == other->getName();
+}
+
+bool DataTypeExponentialTimeDecayingFloat64::haveMaximumSizeOfValue() const
+{
+    return nested_type->haveMaximumSizeOfValue();
+}
+
+size_t DataTypeExponentialTimeDecayingFloat64::getMaximumSizeOfValueInMemory() const
+{
+    return nested_type->getMaximumSizeOfValueInMemory();
+}
+
+size_t DataTypeExponentialTimeDecayingFloat64::getSizeOfValueInMemory() const
+{
+    return nested_type->getSizeOfValueInMemory();
+}
+
+void DataTypeExponentialTimeDecayingFloat64::updateHashImpl(SipHash & hash) const
+{
+    hash.update(decay_length);
+}
+
+SerializationPtr DataTypeExponentialTimeDecayingFloat64::doGetSerialization(const SerializationInfoSettings &) const
+{
+    return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
+        nested_type->getDefaultSerialization(), decay_length);
+}
+
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
-    auto [storage_type, customization] = create(decay_length);
-    return DataTypeFactory::instance().getCustom(
-        storage_type->getName(), std::move(customization));
+    return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(decay_length);
 }
 
 std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type)
 {
-    if (!type.getCustomName())
-        return std::nullopt;
-
-    if (const auto * decaying_type
-        = dynamic_cast<const DataTypeCustomExponentialTimeDecayingFloat64 *>(type.getCustomName()))
+    if (const auto * decaying_type = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(&type))
         return decaying_type->getDecayLength();
-
-    if (const auto * simple_aggregate
-        = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName()))
-    {
-        const auto & argument_types = simple_aggregate->getArgumentsDataTypes();
-        if (argument_types.size() == 1)
-            return tryGetExponentialTimeDecayingFloat64DecayLength(*argument_types[0]);
-    }
 
     return std::nullopt;
 }
@@ -561,7 +582,7 @@ void validateExponentialTimeDecayingFloat64Column(
 
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 {
-    factory.registerDataTypeCustom(
+    factory.registerDataType(
         "ExponentialTimeDecayingFloat64",
         createFromParameters,
         DataTypeFactory::Case::Sensitive,

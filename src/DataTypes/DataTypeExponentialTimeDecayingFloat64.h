@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/IDataType.h>
 
 #include <cmath>
@@ -46,21 +45,42 @@ inline Float64 getExponentialTimeDecayingUnitTime(Float64 sign, Float64 signed_u
     return sign * signed_unit_time;
 }
 
-class DataTypeCustomExponentialTimeDecayingFloat64 final : public IDataTypeCustomName
+class DataTypeExponentialTimeDecayingFloat64 final : public IDataType
 {
 public:
-    explicit DataTypeCustomExponentialTimeDecayingFloat64(Float64 decay_length_)
-        : decay_length(decay_length_)
-    {
-    }
+    explicit DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_);
 
-    String getName() const override;
-    std::optional<Field> getDefault() const override;
-    bool useCustomNameForTypeIdentity() const override { return true; }
+    TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
+    TypeIndex getColumnType() const override { return TypeIndex::Tuple; }
+    String doGetName() const override;
+    const char * getFamilyName() const override { return "ExponentialTimeDecayingFloat64"; }
+
+    MutableColumnPtr createColumn() const override;
+    Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override { return false; }
+
+    bool equals(const IDataType & rhs) const override;
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
+    bool supportsSparseSerialization() const override { return true; }
+    bool canBeInsideSparseColumns() const override { return false; }
+    bool isComparable() const override { return true; }
+    bool textCanContainOnlyValidUTF8() const override { return true; }
+    bool haveMaximumSizeOfValue() const override;
+    size_t getMaximumSizeOfValueInMemory() const override;
+    size_t getSizeOfValueInMemory() const override;
+    void updateHashImpl(SipHash & hash) const override;
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+
     Float64 getDecayLength() const { return decay_length; }
+    const DataTypePtr & getNestedType() const { return nested_type; }
 
 private:
     const Float64 decay_length;
+    const DataTypePtr nested_type;
 };
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length);
@@ -81,7 +101,6 @@ void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 
 /// Rejects rows whose redundant marker or canonical ordering fields do not match the type.
-/// Used before generic tuple comparison and sorting, which cannot see the custom type name.
 void validateExponentialTimeDecayingFloat64Column(
     const IColumn & column, Float64 decay_length, const String & operation);
 
