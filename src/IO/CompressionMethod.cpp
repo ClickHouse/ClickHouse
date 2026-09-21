@@ -223,6 +223,12 @@ std::span<const std::string_view> getFileSuffixesForCompressionMethod(Compressio
     }
 }
 
+[[noreturn]] void throwUnknownCompressionMethod(const std::string & hint)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
+        "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
+}
+
 }
 
 Strings getFileSuffixesForCompressionMethodHint(const std::string & hint)
@@ -248,6 +254,14 @@ Strings getFileSuffixesForCompressionMethodHint(const std::string & hint)
         if (!autodetect)
             break;
     }
+
+    /// `none` is the only hint that legitimately names no suffix at all. Anything else that matched
+    /// nothing is a misspelled codec, and it must not degrade into an empty suffix list: the `hive`
+    /// partition strategy builds its read glob from this list before a single file is opened, and
+    /// table reads set `throw_on_zero_files_match = false`, so a silently compression-less glob would
+    /// turn an invalid codec into an empty table instead of an error.
+    if (!autodetect && result.empty() && hint_lower != "none")
+        throwUnknownCompressionMethod(hint);
 
     return result;
 }
@@ -283,8 +297,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
     if (hint_lower.empty() || hint_lower == "auto" || hint_lower == "none")
         return CompressionMethod::None;
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown compression method '{}'. "
-        "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
+    throwUnknownCompressionMethod(hint);
 }
 
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)

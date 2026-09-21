@@ -136,3 +136,13 @@ DROP TABLE 05233_tsvwithnames_lake;
 DROP TABLE 05233_gz;
 DROP TABLE 05233_gz_explicit;
 "
+
+# A misspelled compression method must be reported, not silently turned into a glob without any
+# compression suffix: table reads do not throw on zero matching files, so the table would just be
+# empty.
+echo 'invalid compression method:'
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE 05233_bad_codec (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'not_a_codec', partition_strategy = 'hive')
+PARTITION BY key;
+" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
