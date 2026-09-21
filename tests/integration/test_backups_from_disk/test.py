@@ -69,6 +69,18 @@ def remove_from_backups_disk(relative_path_pattern):
     )
 
 
+def get_error_counts():
+    """Returns {error name: value} for all errors counted in `system.errors` so far."""
+    rows = node.query("SELECT name, sum(value) FROM system.errors GROUP BY name FORMAT TSV")
+    return {name: int(value) for name, value in (row.split("\t") for row in rows.splitlines() if row)}
+
+
+def get_error_counts_delta(before):
+    """Returns {error name: increment} for the errors counted since the `before` snapshot."""
+    after = get_error_counts()
+    return {name: value - before.get(name, 0) for name, value in after.items() if value != before.get(name, 0)}
+
+
 def test_restore_table_with_broken_part(started_cluster):
     # Converted from stateless test 02864_restore_table_with_broken_part.sh.
     # In this test we restore from "backups/with_broken_part.zip".
@@ -76,10 +88,22 @@ def test_restore_table_with_broken_part(started_cluster):
 
     node.query("DROP TABLE IF EXISTS tbl")
 
+    errors_before = get_error_counts()
+
     # First try to restore with the setting `restore_broken_parts_as_detached` set to false.
     err = node.query_and_get_error(f"RESTORE TABLE default.tbl AS tbl FROM Disk('backups', '{backup_name}')")
     assert "data.bin doesn't exist" in err
     assert "while restoring part all_2_2_0" in err
+
+    # A broken part in a backup means the backup is damaged, not that the data this server owns is
+    # corrupted, so the client must see `BACKUP_DAMAGED` (601) ...
+    assert "Code: 601" in err
+    assert "BACKUP_DAMAGED" in err
+
+    # ... and the failure must be accounted in `system.errors` under that code only. In particular it
+    # must not increment the counter of the low-level error, nor `CORRUPTED_DATA` - those counters are
+    # exported as `ClickHouseErrorMetric_<ERROR_NAME>` and alerted on as corruption of live data.
+    assert get_error_counts_delta(errors_before) == {"BACKUP_DAMAGED": 1}
 
     node.query("DROP TABLE IF EXISTS tbl")
 

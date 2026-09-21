@@ -413,6 +413,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int BACKUP_DAMAGED;
+    extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
@@ -9632,6 +9635,41 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         restored_parts_holder->increaseNumBrokenParts();
 }
 
+namespace
+{
+
+/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
+/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
+/// has been recorded for it yet).
+///
+/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// Everything else means the backup cannot be read: either it was written by a newer server whose format
+/// this one does not understand (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed
+/// (`BACKUP_DAMAGED`).
+void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable)
+{
+    try
+    {
+        std::rethrow_exception(error);
+    }
+    catch (...)
+    {
+        Exception * e = current_exception_cast<Exception *>();
+        if (!e)
+            return;
+
+        if (!retryable)
+        {
+            e->resetCode(
+                e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
+        }
+
+        e->recordToSystemErrors();
+    }
+}
+
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
     MutableDataPartPtr part;
@@ -9689,6 +9727,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         bool retryable = false;
         try
         {
+            /// A failure to load a restored part is a property of the backup, not of this server, so it is
+            /// reported below with a backup-level error code. Suppress the recording of error codes while the
+            /// part is being loaded so that the failure is accounted in `system.errors` exactly once, under
+            /// that final code - otherwise a damaged backup keeps incrementing `CORRUPTED_DATA`, which is
+            /// reserved for corruption of the data this server owns and is alerted on as such.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             load_part();
         }
         catch (const Poco::Net::NetException &)
@@ -9709,6 +9753,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
 
         if (!error)
             return part;
+
+        classifyAndRecordRestoreError(error, retryable);
 
         if (!retryable && detach_if_broken)
         {
