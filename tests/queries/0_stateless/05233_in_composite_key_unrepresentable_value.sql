@@ -50,6 +50,12 @@ SELECT 'tuple key, value out of the element range' AS arm, count()
 FROM t_05233_left_int16 WHERE (n, g) IN (SELECT (CAST(v, 'Nullable(Int8)'), g) FROM t_05233_right)
 SETTINGS transform_null_in = 0;
 
+-- The same fixture with the wrap-around artifact 44 in the set instead of 42: a value the element type
+-- cannot represent is a non-member, not a match on the value a truncating conversion would produce.
+SELECT 'tuple key, out of range does not match the wrap artifact' AS arm, count()
+FROM t_05233_left_int16 WHERE (n, g) IN (SELECT (CAST(44, 'Nullable(Int8)'), g) FROM t_05233_right)
+SETTINGS transform_null_in = 0;
+
 -- An unrepresentable value must not be coerced to a NULL that then matches a genuine NULL in the set.
 SELECT 'tuple key, set holds only NULL' AS arm, count()
 FROM t_05233_left WHERE (s, g) IN (SELECT (CAST(NULL, 'Nullable(Int32)'), g) FROM t_05233_right)
