@@ -352,17 +352,18 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             ++active_replicas_with_lock;
     }
 
-    /// Our own `is_active` is created by `StorageKafka2::activate` before the reader tasks are started and is
-    /// only removed after they are stopped, so by the time we get here this replica must be among the active
-    /// ones. If it is not, our registration in Keeper is gone (e.g. the node was removed from outside the
-    /// server) and every peer already leaves us out of its quota. Taking part in the distribution anyway would
+    /// Our own registration is completed by `StorageKafka2::activate` before the reader tasks are started and
+    /// is only torn down after they are stopped, so by the time we get here this replica must be among the
+    /// active ones. If it is not, our registration in Keeper is broken: the persistent replica znode is gone,
+    /// its shard num does not match ours anymore, or the ephemeral `is_active` node was removed (e.g. from
+    /// outside the server). In all of these cases every peer already leaves us out of its quota. Taking part in the distribution anyway would
     /// let this replica claim locks nobody accounts for, so the caller stops the cycle and asks the storage to
     /// go through the normal deactivate/reactivate path instead.
     if (!self_is_active)
         LOG_WARNING(
             log,
             "Replica {} is not among the active replicas of {}: {} of the {} candidate replicas (out of {} total, "
-            "shard_count={}) have an `is_active` node, but this replica does not",
+            "shard_count={}) are registered as active, but this replica is not",
             replica_name,
             keeper_path.string(),
             active_replica_count,

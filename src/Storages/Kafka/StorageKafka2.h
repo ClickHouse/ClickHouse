@@ -251,6 +251,12 @@ private:
     bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to_use, const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
     // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
     void createReplica();
+    /// The data stored in the persistent `replicas/<replica_name>` znode: the shard num in affinity mode, empty otherwise.
+    String getReplicaRegistrationData() const;
+    /// True when the persistent `replicas/<replica_name>` znode is there with the expected data and carries our `is_active` node.
+    bool isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keeper_to_use) const;
+    /// Re-creates the persistent `replicas/<replica_name>` znode or restores its data when it drifted.
+    void restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use);
     void dropReplica();
 
     std::optional<BlocksAndGuard>

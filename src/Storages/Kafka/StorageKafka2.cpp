@@ -257,13 +257,12 @@ bool StorageKafka2::activate()
     LOG_TEST(log, "Activate task");
 
     const bool session_expired = is_active && getZooKeeper()->expired();
-    /// The ephemeral `is_active` node can also disappear while the session is alive, e.g. when it is removed
-    /// from outside the server. Nothing re-creates it on its own, and since the consumers count only active
-    /// replicas when they distribute the partition locks, this replica would be silently left out of every
-    /// peer's quota while still holding on to its own locks. Detect it here so the same deactivate/reactivate
-    /// path as for a lost session recovers the registration.
-    const bool registration_lost
-        = is_active && !session_expired && !getZooKeeper()->exists(fs::path(replica_path) / "is_active");
+    /// The registration in Keeper can also fall apart while the session is alive, e.g. when the nodes are
+    /// removed or edited from outside the server. Nothing repairs it on its own, and since the consumers count
+    /// only active replicas when they distribute the partition locks, this replica would be silently left out
+    /// of every peer's quota while still holding on to its own locks. Detect it here so the same
+    /// deactivate/reactivate path as for a lost session recovers the whole registration.
+    const bool registration_lost = is_active && !session_expired && !isReplicaRegistrationValid(getZooKeeper());
 
     if (is_active && !session_expired && !registration_lost)
     {
@@ -282,7 +281,7 @@ bool StorageKafka2::activate()
     }
     else if (registration_lost)
     {
-        LOG_WARNING(log, "Node {}/is_active is gone, the replica is not registered as active anymore. Will re-register it", replica_path);
+        LOG_WARNING(log, "Registration of replica {} in Keeper is not valid anymore. Will re-register it", replica_path);
         partialShutdown();
     }
     else
@@ -310,6 +309,11 @@ bool StorageKafka2::activate()
         try
         {
             auto zookeeper = getZooKeeper();
+
+            /// The ephemeral `is_active` node is a child of the persistent replica znode, so it can only be
+            /// created once the whole registration is in place. Repair it first, otherwise a replica whose
+            /// persistent znode is gone would retry `create` forever and never come back.
+            restoreReplicaRegistration(zookeeper);
 
             String is_active_path = fs::path(replica_path) / "is_active";
             zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
@@ -909,12 +913,63 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     return completely_removed;
 }
 
+String StorageKafka2::getReplicaRegistrationData() const
+{
+    return shard_count > 0 ? std::to_string(partition_shard_num) : "";
+}
+
+bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keeper_to_use) const
+{
+    String stored_data;
+    /// The persistent replica znode is what makes this replica visible to its peers: they list
+    /// `replicas` and, in affinity mode, keep only the ones whose data holds their own shard num.
+    if (!keeper_to_use->tryGet(replica_path, stored_data))
+        return false;
+
+    if (stored_data != getReplicaRegistrationData())
+        return false;
+
+    return keeper_to_use->exists(fs::path(replica_path) / "is_active");
+}
+
+void StorageKafka2::restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use)
+{
+    const String replica_data = getReplicaRegistrationData();
+
+    Coordination::Stat stat;
+    String stored_data;
+    if (keeper_to_use->tryGet(replica_path, stored_data, &stat))
+    {
+        if (stored_data == replica_data)
+            return;
+
+        /// The table definition is the source of truth for this replica's own shard num: it was already
+        /// validated against the stored value when the replica was created, so a difference here means the
+        /// znode was edited from outside the server.
+        LOG_WARNING(
+            log,
+            "Replica znode {} holds the shard num '{}' instead of '{}'. Restoring it",
+            replica_path,
+            stored_data,
+            replica_data);
+        keeper_to_use->set(replica_path, replica_data, stat.version);
+        return;
+    }
+
+    LOG_WARNING(log, "Replica znode {} is gone. Re-creating it", replica_path);
+    const auto code = keeper_to_use->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZNONODE)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} was suddenly removed", keeper_path);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        throw Coordination::Exception::fromPath(code, replica_path);
+}
+
 void StorageKafka2::createReplica()
 {
     LOG_INFO(log, "Creating replica {}", replica_path);
     // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
     // metadata about the table to be able to identify that the same table is created, not a new one.
-    const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
+    const String replica_data = getReplicaRegistrationData();
     const auto code = keeper->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
 
     switch (code)
