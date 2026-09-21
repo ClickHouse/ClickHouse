@@ -68,3 +68,19 @@ ALTER TABLE uk_clear_mixed_alias CLEAR COLUMN IF EXISTS n IN PARTITION ID 'all';
 SELECT 'state_intact_mixed', id, `n.x`, `n.y` FROM uk_clear_mixed_alias ORDER BY id;
 
 DROP TABLE uk_clear_mixed_alias;
+
+-- Same-statement `RENAME COLUMN a TO b, CLEAR COLUMN b` still rewrites stored `a`.
+DROP TABLE IF EXISTS uk_clear_after_rename;
+CREATE TABLE uk_clear_after_rename (id UInt32, a UInt32)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
+
+INSERT INTO uk_clear_after_rename VALUES (1, 10), (2, 20);
+
+SELECT 'clear_after_rename_rejected' AS step;
+ALTER TABLE uk_clear_after_rename
+    RENAME COLUMN a TO b,
+    CLEAR COLUMN b IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT 'state_intact_rename', * FROM uk_clear_after_rename ORDER BY id;
+
+DROP TABLE uk_clear_after_rename;

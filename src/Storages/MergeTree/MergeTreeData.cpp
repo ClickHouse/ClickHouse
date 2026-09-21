@@ -5277,6 +5277,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
+        /// Same-statement `RENAME COLUMN` is replayed into the mutation stream, so
+        /// `CLEAR COLUMN` of the new name still rewrites the stored source column.
+        ColumnsDescription working_columns = old_metadata.columns;
+        const bool share_nested_offsets_for_uk = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
         auto uk_list_str = [&uk_columns]()
         {
@@ -5313,12 +5317,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
             /// CLEAR COLUMN rewrites the part and drops `unique_key_index.sst`. Reject a stored
-            /// target (`hasColumnOrNested` when offsets are shared, else exact `hasPhysical`).
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear
+            /// target (`hasColumnOrNested` when offsets are shared, else exact `hasPhysical`),
+            /// including a name that only exists after an earlier `RENAME COLUMN` in this ALTER.
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
                 && !uk_set.contains(command.column_name)
-                && ((*settings_from_storage)[MergeTreeSetting::share_nested_offsets]
-                    ? old_metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
-                    : old_metadata.columns.hasPhysical(command.column_name)))
+                && (share_nested_offsets_for_uk
+                    ? working_columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
+                    : working_columns.hasPhysical(command.column_name)))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
                     "the whole part is rewritten regardless of which column is targeted, so the "
@@ -5330,23 +5335,24 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 || command.type == AlterCommand::RENAME_COLUMN
                 || command.type == AlterCommand::MODIFY_COLUMN;
 
-            if (!affects_column)
-                continue;
+            if (affects_column && uk_set.contains(command.column_name))
+            {
+                const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? "DROP"
+                    : (command.type == AlterCommand::RENAME_COLUMN) ? "RENAME"
+                    : "MODIFY";
 
-            if (!uk_set.contains(command.column_name))
-                continue;
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
+                    "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
+                    "current phase) or pick a different column.",
+                    action_str,
+                    backQuoteIfNeed(command.column_name),
+                    uk_list_str());
+            }
 
-            const char * action_str = (command.type == AlterCommand::DROP_COLUMN) ? "DROP"
-                : (command.type == AlterCommand::RENAME_COLUMN) ? "RENAME"
-                : "MODIFY";
-
-            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
-                "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
-                "current phase) or pick a different column.",
-                action_str,
-                backQuoteIfNeed(command.column_name),
-                uk_list_str());
+            if (!command.ignore && command.type == AlterCommand::RENAME_COLUMN
+                && working_columns.has(command.column_name))
+                working_columns.rename(command.column_name, command.rename_to);
         }
     }
 
