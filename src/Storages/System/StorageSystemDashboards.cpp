@@ -27,6 +27,9 @@ static String trim(const char * text)
     return String(view);
 }
 
+/// Defined in StorageSystemDashboardsFilesystemCache.cpp.
+const std::vector<std::map<String, String>> & getFilesystemCacheDashboards();
+
 #if ENABLE_DISTRIBUTED_CACHE
 /// Defined in StorageSystemDashboardsDistributedCache.cpp, which exists only in the private repo.
 const std::vector<std::map<String, String>> & getDistributedCacheDashboards();
@@ -2288,6 +2291,7 @@ SETTINGS skip_unavailable_shards = 1
     else
     {
         add_dashboards(default_dashboards);
+        add_dashboards(getFilesystemCacheDashboards());
 #if ENABLE_DISTRIBUTED_CACHE
         add_dashboards(getDistributedCacheDashboards());
 #endif

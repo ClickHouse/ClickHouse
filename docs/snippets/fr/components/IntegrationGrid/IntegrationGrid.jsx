@@ -170,17 +170,17 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipes is an integration engine that makes ingesting massive volumes of data from a diverse set of sources as simple as clicking a few buttons.",
-      "Data ingestion": "Streamline your data pipelines with ClickHouse! Seamless integrations ensure efficient ingestion, optimizing real-time analytics.",
-      "Data visualization": "Illuminate your data stories! ClickHouse integrations enhance visualization, making insights more vivid & actionable.",
-      "SQL client": "Access and query ClickHouse databases using familiar SQL client tools and interfaces.",
-      "Language client": "Code in your comfort zone! ClickHouse's language client integrations make data access fluent across multiple programming languages.",
-      "AI/ML": "Leverage ClickHouse for machine learning and AI workloads with integrated ML tools and frameworks.",
-      "Data management": "Manage, monitor, and optimize your ClickHouse data with specialized management tools.",
-      "Data integration": "Integrate ClickHouse with your existing data infrastructure and workflows.",
-      "Security governance": "Implement security and governance frameworks for your ClickHouse environment."
+      ClickPipes: "ClickPipes est un moteur d'intégration qui simplifie l'ingestion de volumes massifs de données provenant de sources variées en quelques clics.",
+      "Data ingestion": "Rationalisez vos pipelines de données avec ClickHouse ! Des intégrations transparentes garantissent une ingestion efficace et optimisent l'analytique en temps réel.",
+      "Data visualization": "Donnez vie à vos données ! Les intégrations ClickHouse enrichissent la visualisation pour des insights plus parlants et exploitables.",
+      "SQL client": "Accédez aux bases de données ClickHouse et interrogez-les à l'aide d'outils et d'interfaces SQL client familiers.",
+      "Language client": "Codez dans votre environnement habituel ! Les intégrations de clients de langage ClickHouse facilitent l'accès aux données dans de nombreux langages de programmation.",
+      "AI/ML": "Exploitez ClickHouse pour vos charges de travail de machine learning et d'IA grâce à des outils et frameworks ML intégrés.",
+      "Data management": "Gérez, surveillez et optimisez vos données ClickHouse avec des outils de gestion spécialisés.",
+      "Data integration": "Intégrez ClickHouse à votre infrastructure de données et à vos flux de travail existants.",
+      "Security governance": "Mettez en œuvre des cadres de sécurité et de gouvernance pour votre environnement ClickHouse."
     }
-    return descriptions[type] || "Integrate ClickHouse with specialized tools and services."
+    return descriptions[type] || "Intégrez ClickHouse avec des outils et services spécialisés."
   }
 
   // Plain render function (not a component) so cards reconcile by key instead of
@@ -233,7 +233,7 @@ export const IntegrationGrid = () => {
           {integration.integration_tier && integration.integration_tier !== "community" && <div className="absolute top-3 right-3 opacity-70">{getTierIcon(integration.integration_tier)}</div>}
           <div className="w-full flex flex-col items-center justify-center gap-2">
             <div className="w-full flex items-center justify-center">
-              <img src={getLogoSrc()} alt={`logo ${integration.integration_title || integration.slug}`} className="object-contain" style={{ width: "64px", height: "64px", pointerEvents: "none" }} />
+              <img src={getLogoSrc()} alt={`${integration.integration_title || integration.slug} logo`} className="object-contain" style={{ width: "64px", height: "64px", pointerEvents: "none" }} />
             </div>
             <div className="w-full text-center text-sm font-semibold" style={{ color: "#000" }}>
               {integration.integration_title}
@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -617,7 +617,7 @@ export const IntegrationGrid = () => {
             </svg>
             <input
               type="text"
-              placeholder="Search by integration"
+              placeholder="Rechercher par intégration"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full text-sm border rounded-xl focus:outline-none bg-[#F6F7FA] dark:bg-[#282828] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-[#FAFF69]"
@@ -642,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              All
+              Tout
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              All tiers
+              Tous les niveaux
             </button>
             {integrationTiers.map((tier) => (
               <button

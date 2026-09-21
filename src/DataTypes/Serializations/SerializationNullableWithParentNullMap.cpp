@@ -72,8 +72,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -94,30 +93,28 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     else if (auto * stream = settings.getter(settings.path))
     {
         auto mutable_parent_null_map = ColumnUInt8::create();
-        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, rows_offset, limit, 0);
+        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, limit, 0);
         parent_null_map = std::move(mutable_parent_null_map);
         parent_num_read_rows = parent_null_map->size();
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, parent_null_map, parent_num_read_rows);
     }
     settings.path.pop_back();
 
-    /// Deserialize into a fresh per-range column instead of the accumulated result: the nested
-    /// serialization publishes this column's substreams into the shared substreams cache, and the null map
-    /// applied below physically removes the parent-NULL rows from them. A column that is published must
-    /// never be mutated afterwards, otherwise a reader of the whole parent column adopts the shortened
-    /// substream from the cache while computing its own offsets from the unfiltered row count.
+    /// Deserialize the nested element into a temporary per-range column instead of into the accumulated
+    /// result. The nested serialization publishes this column's substreams into the shared substreams cache,
+    /// where a reader of the whole parent column reuses them, so they must stay exactly as read from disk.
+    /// The parent null map applied below is destructive (for Variant/Dynamic it physically drops the
+    /// parent-NULL rows, for a non-nullable LowCardinality it promotes the dictionary), so it is applied to a
+    /// private copy, never to `range_column` (nor to the result column whose newly appended range would
+    /// otherwise be the published one).
     /// For a promoted non-nullable `LowCardinality(T)` the result column is `LowCardinality(Nullable(T))`,
-    /// which is not the on-disk representation: build the buffer from the on-disk type instead, so that the
-    /// published substreams are the ones a reader of the whole parent column expects. The promotion of this
-    /// private buffer happens below, in `applyParentNullMapToExtractedSubcolumn`.
-    ColumnPtr range_column = on_disk_type ? on_disk_type->createColumn(*nested_serialization) : column->cloneEmpty();
+    /// which is not the on-disk representation: build the temporary from the on-disk type so the published
+    /// substreams are the ones a whole-column reader expects; the promotion happens on the private copy below.
+    MutableColumnPtr range_column = on_disk_type ? on_disk_type->createColumn(*nested_serialization) : column.cloneEmpty();
 
-    /// A cached column can contain rows from multiple ranges, so copy only the rows of the current range
-    /// from it, keeping `range_column` exactly the size of the current range.
-    auto nested_settings = settings;
-    nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
-    nested_settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(range_column, rows_offset, limit, nested_settings, state, cache);
+    settings.path.push_back(Substream::NullableElements);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(*range_column, limit, settings, state, cache);
+    settings.path.pop_back();
 
     size_t new_rows = range_column->size();
     if (new_rows == 0)
@@ -134,12 +131,14 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
-    auto mutable_range_column = IColumn::mutate(std::move(range_column));
-    applyParentNullMapToExtractedSubcolumn(mutable_range_column, parent_null_map_data, /*column_offset=*/ 0, parent_offset);
-
-    auto mutable_column = IColumn::mutate(std::move(column));
-    mutable_column->insertRangeFrom(*mutable_range_column, 0, mutable_range_column->size());
-    column = std::move(mutable_column);
+    /// Copy the range into an independent column whose substreams are freshly built by `insertRangeFrom` and
+    /// therefore not shared with the substreams cache. Apply the destructive parent null map to that private
+    /// copy (for a promoted non-nullable LowCardinality this also promotes it to `LowCardinality(Nullable(T))`),
+    /// then append the result, leaving the published `range_column` untouched.
+    auto extracted = range_column->cloneEmpty();
+    extracted->insertRangeFrom(*range_column, 0, new_rows);
+    applyParentNullMapToExtractedSubcolumn(*extracted, parent_null_map_data, /*column_offset=*/ 0, parent_offset);
+    column.insertRangeFrom(*extracted, 0, extracted->size());
 }
 
 }

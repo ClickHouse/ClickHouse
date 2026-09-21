@@ -62,9 +62,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr) override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsPinnedSnapshot() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -84,7 +87,7 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;

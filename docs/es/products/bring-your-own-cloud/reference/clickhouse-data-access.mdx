@@ -13,13 +13,13 @@ Los empleados de ClickHouse no tienen acceso a sus datos de forma predeterminada
   ## Operaciones habituales
 </div>
 
-El plano de control de ClickHouse Cloud ejecuta su implementación BYOC sin leer datos de clientes. Los componentes que envían datos fuera de su VPC solo transportan metadatos operativos:
+El plano de control de ClickHouse Cloud ejecuta su Implementación BYOC sin leer datos de clientes. Los componentes que envían datos fuera de su VPC solo transportan metadatos operativos:
 
-| Componente             | Qué sale de su VPC                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| Exportador de estado   | Estado del servicio (salud y estado) a una cola `SQS` propiedad de ClickHouse Cloud. |
-| Scraper de facturación | Métricas de CPU y memoria a un bucket de S3 propiedad de ClickHouse Cloud.           |
-| AlertManager           | Alertas sobre la salud del clúster a ClickHouse Cloud.                               |
+| Componente             | Qué sale de su VPC                                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exportador de estado   | Estado del servicio y de las copias de seguridad (salud, estado — eventos operativos, no el contenido de las copias de seguridad) a una cola `SQS` propiedad de ClickHouse Cloud. |
+| Scraper de facturación | Métricas de CPU y memoria a un bucket de almacenamiento de objetos propiedad de ClickHouse Cloud.                                                                                 |
+| AlertManager           | Alertas sobre la salud del clúster a ClickHouse Cloud.                                                                                                                            |
 
 El tráfico de consultas, el contenido de las tablas y los esquemas nunca pasan por estos canales. Los logs y las métricas permanecen dentro de su VPC de BYOC.
 

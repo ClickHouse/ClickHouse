@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 이 예시에서는 현재 주에 발생한 이벤트 유형별로 파티셔닝을 설정합니다.
 
-기본적으로 부동소수점 파티션 키는 지원되지 않습니다. 이를 사용하려면 [allow&#95;floating&#95;point&#95;partition&#95;key](/ko/reference/settings/merge-tree-settings#allow_floating_point_partition_key) 설정을 활성화하십시오.
+기본적으로 부동소수점 파티션 키는 지원되지 않습니다. 이를 사용하려면 [allow&#95;floating&#95;point&#95;partition&#95;key](/ko/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key) 설정을 활성화하십시오.
 
 테이블에 새 데이터를 삽입하면 해당 데이터는 기본 키(primary key)로 정렬된 별도의 파트(청크)로 저장됩니다. 삽입 후 10~15분이 지나면 동일한 파티션에 속한 파트들이 하나의 파트로 머지됩니다.
 

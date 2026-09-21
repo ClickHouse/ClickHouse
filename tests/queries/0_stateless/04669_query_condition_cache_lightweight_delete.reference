@@ -1,0 +1,27 @@
+--- the delete is materialized, nothing pending
+0
+0
+0
+--- prime reads everything, reuse prunes
+04669_lwd_prime	0	0
+04669_lwd_reuse	1	1
+--- apply_deleted_mask = 0 must not consume entries written by a normal read
+0
+1
+--- and the reverse direction is also unaffected
+1
+0
+--- apply_deleted_mask = 0 neither writes nor consumes the cache
+0
+0
+04669_lwd_mask0_prime	0	0
+04669_lwd_mask0_reuse	0	0
+--- results stay correct with the cache warm
+999999
+9
+--- a pending mutation on an unread column must not disable the cache
+0
+0
+--- pending-mutation prime reads everything, reuse prunes
+04669_lwd_pending_prime	0	0
+04669_lwd_pending_reuse	1	1

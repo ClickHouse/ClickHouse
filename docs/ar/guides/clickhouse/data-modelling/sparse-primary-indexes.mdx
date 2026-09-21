@@ -355,7 +355,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 
     لذلك، فإن جميع الحبيبات (باستثناء الأخيرة) في جدول المثال لدينا لها الحجم نفسه.
 
-  * بالنسبة إلى الجداول ذات درجة تحبّب الفهرس التكيفية (تكون درجة تحبّب الفهرس تكيفية بشكل [افتراضي](/ar/reference/settings/merge-tree-settings#index_granularity_bytes))، قد يكون حجم بعض الحبيبات أقل من 8192 صفًا بحسب أحجام بيانات الصفوف.
+  * بالنسبة إلى الجداول ذات درجة تحبّب الفهرس التكيفية (تكون درجة تحبّب الفهرس تكيفية بشكل [افتراضي](/ar/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes))، قد يكون حجم بعض الحبيبات أقل من 8192 صفًا بحسب أحجام بيانات الصفوف.
 
   * وضعنا علامة برتقالية على بعض قيم الأعمدة من أعمدة المفتاح الأساسي لدينا (`UserID`, `URL`).
     وتمثل قيم الأعمدة المعلَّمة بالبرتقالي هذه قيم أعمدة المفتاح الأساسي لأول صف في كل حبيبة.
@@ -392,7 +392,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 <Accordion title="فحص محتوى الفهرس الأساسي">
   على عنقود ClickHouse مُدار ذاتيًا، يمكننا استخدام [table function ‏file](/ar/reference/functions/table-functions/file) لفحص محتوى الفهرس الأساسي لجدول المثال لدينا.
 
-  ولتحقيق ذلك، نحتاج أولًا إلى نسخ ملف الفهرس الأساسي إلى [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path) الخاصة بإحدى العقد في العنقود قيد التشغيل:
+  ولتحقيق ذلك، نحتاج أولًا إلى نسخ ملف الفهرس الأساسي إلى [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings/user#user_files_path) الخاصة بإحدى العقد في العنقود قيد التشغيل:
 
   **الخطوة 1: الحصول على مسار الجزء الذي يحتوي على ملف الفهرس الأساسي**
 
@@ -400,7 +400,7 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  يعيد `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
+  يعيد `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` على جهاز الاختبار.
 
   **الخطوة 2: الحصول على user&#95;files&#95;path**
 
@@ -408,12 +408,12 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 
   وعلى Linux يمكنك التحقق مما إذا كانت قد تغيّرت: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  على جهاز الاختبار، المسار هو `/Users/tomschreiber/Clickhouse/user_files/`
+  على جهاز الاختبار، المسار هو `/Users/tomschreiber/ClickHouse/user_files/`
 
   **الخطوة 3: نسخ ملف الفهرس الأساسي إلى user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   يمكننا الآن فحص محتوى الفهرس الأساسي عبر SQL:
@@ -515,7 +515,7 @@ Processed 8.19 thousand rows,
 
 يُظهر خرج عميل ClickHouse الآن أنه بدلًا من إجراء فحص كامل للجدول، لم يتم تمرير سوى 8.19 ألف صف إلى ClickHouse.
 
-إذا كان <a href="/ar/reference/settings/server-settings/settings#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
+إذا كان <a href="/ar/reference/settings/server-settings/settings/other#logger" target="_blank">تسجيل التتبّع</a> مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse كان يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر 1083 من علامات فهرس UserID، لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة العمود UserID هي `749927693`. ويتطلّب ذلك 19 خطوة بمتوسط تعقيد زمني قدره `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -527,6 +527,10 @@ Processed 8.19 thousand rows,
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
+
+:::note
+في الإصدارات الحديثة من ClickHouse، تُسجَّل رسائل `Running binary search on index range` و`Found (LEFT) boundary mark` و`Found (RIGHT) boundary mark` عند مستوى `test` (أعلى مستوى من الإسهاب) بدلًا من `trace`. لرؤيتها، ارفع مستوى إسهاب السجل إلى `test` (على سبيل المثال، `SET send_logs_level = 'test'` في العميل، أو `<logger><level>test</level></logger>` في تهيئة الخادم). لا تزال الأسطر المتبقية المعروضة أعلاه تُسجَّل عند مستوى `trace`. ينطبق هذا على كل مثال لسجل البحث الثنائي في هذا الدليل.
+:::
 
 يمكننا أن نرى في سجل التتبّع أعلاه أن علامة واحدة فقط من بين 1083 علامة موجودة طابقت الاستعلام.
 
@@ -597,7 +601,7 @@ LIMIT 10;
 
 يوضح المخطط التالي جزءًا من ملف الفهرس الأساسي لجدولنا.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="الفهارس الأساسية المتفرقة 04" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="الفهارس الأساسية المتناثرة 04" />
 
 كما ناقشنا أعلاه، ومن خلال بحث ثنائي عبر علامات UserID البالغ عددها 1083 في الفهرس، جرى تحديد العلامة 176. لذلك، قد تحتوي الحبيبة 176 المقابلة على صفوف تكون قيمة عمود UserID فيها 749.927.693.
 
@@ -615,7 +619,7 @@ LIMIT 10;
 
 يوضح المخطط التالي ملفات العلامات الثلاثة `UserID.mrk` و`URL.mrk` و`EventTime.mrk` التي تخزّن المواقع الفعلية للحبيبات الخاصة بأعمدة الجدول `UserID` و`URL` و`EventTime`.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="الفهارس الأساسية المتفرقة 05" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="الفهارس الأساسية المتناثرة 05" />
 
 لقد ناقشنا أن الفهرس الأساسي عبارة عن ملف مصفوفة مسطّح غير مضغوط (primary.idx) يحتوي على علامات فهرس يبدأ ترقيمها من 0.
 
@@ -632,13 +636,13 @@ LIMIT 10;
 بعد ذلك، تُمرَّر الصفوف كلها، وعددها 8192 صفًا، التابعة للحبيبة غير المضغوطة المحددة إلى ClickHouse لمزيد من المعالجة.
 
 <Note>
-  * بالنسبة إلى الجداول ذات [التنسيق الواسع](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) ومن دون [درجة تحبّب الفهرس التكيفية](/ar/resources/changelogs/oss/2019#experimental-features-1)، يستخدم ClickHouse ملفات العلامات `.mrk` كما هو موضح أعلاه، والتي تحتوي على إدخالات تضم عنوانين، طول كل منهما 8 بايت، لكل إدخال. وتمثل هذه الإدخالات المواقع الفعلية لحبيبات لها جميعًا الحجم نفسه.
+  * بالنسبة إلى الجداول ذات [التنسيق الواسع](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) والتي لا تستخدم [درجة تحبّب الفهرس التكيفية](/ar/resources/changelogs/oss/2019#experimental-features-1)، يستخدم ClickHouse ملفات العلامات `.mrk` كما هو موضح أعلاه، وهي تحتوي على إدخالات يتضمن كلٌّ منها عنوانين بطول 8 بايت. وتمثل هذه الإدخالات المواقع الفعلية للحبيبات التي يكون حجمها جميعًا متماثلًا.
 
-  Index granularity is adaptive by [default](/ar/reference/settings/merge-tree-settings#index_granularity_bytes)، لكننا عطّلنا درجة تحبّب الفهرس التكيفية في جدول المثال الخاص بنا (لتبسيط المناقشات في هذا الدليل، وكذلك لجعل المخططات والنتائج قابلة لإعادة الإنتاج). ويستخدم جدولنا التنسيق الواسع لأن حجم البيانات أكبر من [min&#95;bytes&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (والتي تبلغ 10 MB افتراضيًا في العناقيد المُدارة ذاتيًا).
+  تكون دقة الفهرسة تكيفية [default](/ar/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)، لكننا عطّلنا درجة تحبّب الفهرس التكيفية في جدول المثال لدينا (لتبسيط الشرح في هذا الدليل، وكذلك لجعل المخططات والنتائج قابلة لإعادة الإنتاج). ويستخدم جدولنا التنسيق الواسع لأن حجم البيانات أكبر من [min&#95;bytes&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (الذي يبلغ افتراضيًا 10 ميغابايت في العناقيد ذاتية الإدارة).
 
-  * بالنسبة إلى الجداول ذات التنسيق الواسع ومع درجة تحبّب الفهرس التكيفية، يستخدم ClickHouse ملفات العلامات `.mrk2`، التي تحتوي على إدخالات مشابهة لملفات العلامات `.mrk` ولكن مع قيمة ثالثة إضافية لكل إدخال: عدد الصفوف في الحبيبة المرتبطة بالإدخال الحالي.
+  * بالنسبة إلى الجداول ذات التنسيق الواسع والتي تستخدم درجة تحبّب الفهرس التكيفية، يستخدم ClickHouse ملفات العلامات `.mrk2`، التي تحتوي على إدخالات مشابهة لتلك الموجودة في ملفات العلامات `.mrk`، ولكن مع قيمة ثالثة إضافية في كل إدخال: عدد صفوف الحبيبة المرتبط بها الإدخال الحالي.
 
-  * بالنسبة إلى الجداول ذات [التنسيق المدمج](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)، يستخدم ClickHouse ملفات العلامات `.mrk3`.
+  * بالنسبة إلى الجداول ذات [compact format](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)، يستخدم ClickHouse ملفات العلامات `.mrk3`.
 </Note>
 
 <Info>
@@ -663,7 +667,7 @@ LIMIT 10;
 
 يوضح المخطط التالي والنص أدناه كيف يحدد ClickHouse، في استعلامنا المثال، موقع الحبيبة 176 في ملف البيانات UserID.bin.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="الفهارس الأساسية المتفرقة 06" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="الفهارس الأساسية المتناثرة 06" />
 
 ناقشنا سابقًا في هذا الدليل أن ClickHouse اختار علامة الفهرس الأساسي 176، وبالتالي الحبيبة 176، على أنها قد تحتوي على صفوف مطابقة لاستعلامنا.
 
@@ -689,14 +693,14 @@ LIMIT 10;
   ### قد تكون أعمدة المفتاح الثانوية غير فعّالة (أو لا)
 </div>
 
-عندما يطبّق الاستعلام عامل تصفية على عمودٍ يشكّل جزءًا من مفتاح مركّب ويكون عمود المفتاح الأول، [فإن ClickHouse يشغّل خوارزمية البحث الثنائي على علامات فهرس عمود المفتاح](#the-primary-index-is-used-for-selecting-granules).
+عندما يطبّق الاستعلام عامل تصفية على عمودٍ يشكّل جزءًا من مفتاح مركّب ويكون عمود المفتاح الأول، [فإن ClickHouse يشغّل خوارزمية البحث الثنائي على علامات الفهرس لعمود المفتاح](#the-primary-index-is-used-for-selecting-granules).
 
 لكن ماذا يحدث عندما يطبّق الاستعلام عامل تصفية على عمودٍ يشكّل جزءًا من مفتاح مركّب، لكنه ليس عمود المفتاح الأول؟
 
 <Note>
   نناقش سيناريو لا يطبّق فيه الاستعلام عامل تصفية صراحةً على عمود المفتاح الأول، بل على عمود مفتاح ثانوي.
 
-  عندما يطبّق الاستعلام عامل تصفية على كلٍّ من عمود المفتاح الأول وأي أعمدة مفتاح بعده، فإن ClickHouse يشغّل البحث الثنائي على علامات فهرس عمود المفتاح الأول.
+  عندما يطبّق الاستعلام عامل تصفية على كلٍّ من عمود المفتاح الأول وأي أعمدة مفتاح بعده، فإن ClickHouse يشغّل البحث الثنائي على علامات الفهرس لعمود المفتاح الأول.
 </Note>
 
 <br />
@@ -739,7 +743,7 @@ Processed 8.81 million rows,
 
 تشير مخرجات العميل إلى أن ClickHouse كاد أن يُجري فحصًا كاملًا للجدول رغم أن [عمود URL جزء من المفتاح الأساسي المركب](#a-table-with-a-primary-key)! يقرأ ClickHouse‏ 8.81 مليون صف من أصل 8.87 مليون صف في الجدول.
 
-إذا كان [trace&#95;logging](/ar/reference/settings/server-settings/settings#logger) مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse استخدم <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">بحث الاستبعاد العام</a> عبر 1083 من علامات فهرس URL لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة عمود URL مساويةً لـ &quot;http://public&#95;search&quot;:
+إذا كان [trace&#95;logging](/ar/reference/settings/server-settings/settings/other#logger) مُمكّنًا، فإن ملف سجل خادم ClickHouse يُظهر أن ClickHouse استخدم <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">خوارزمية البحث بالاستبعاد العامة</a> عبر 1083 من علامات الفهرس لعمود URL لتحديد الحبيبات التي قد تحتوي على صفوف تكون فيها قيمة عمود URL مساويةً لـ &quot;http://public&#95;search&quot;:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -751,15 +755,15 @@ Processed 8.81 million rows,
 ...Executor): Reading approx. 8814592 rows with 10 streams
 ```
 
-يمكننا أن نرى في سجل التتبّع النموذجي أعلاه أن 1076 حبيبة بيانات (عبر علامات الفهرس) من أصل 1083 قد اختيرت على أنها قد تحتوي على صفوف ذات قيمة URL مطابقة.
+يمكننا أن نرى في سجل التتبّع النموذجي أعلاه أن 1076 حبيبة (عبر علامات الفهرس) من أصل 1083 قد اختيرت على أنها قد تحتوي على صفوف ذات قيمة URL مطابقة.
 
 ويؤدي ذلك إلى تمرير 8.81 مليون صف إلى محرك ClickHouse (بالتوازي باستخدام 10 تدفقات)، من أجل تحديد الصفوف التي تحتوي فعليًا على قيمة URL &quot;http://public&#95;search&quot;.
 
-ومع ذلك، كما سنرى لاحقًا، فإن 39 حبيبة بيانات فقط من بين 1076 حبيبة البيانات المحددة هذه تحتوي فعليًا على صفوف مطابقة.
+ومع ذلك، كما سنرى لاحقًا، فإن 39 حبيبة فقط من بين هذه الحبيبات الـ1076 المحددة تحتوي فعليًا على صفوف مطابقة.
 
 ومع أن الفهرس الأساسي المعتمد على المفتاح الأساسي المركب (UserID, URL) كان مفيدًا جدًا في تسريع الاستعلامات التي تُصفّي الصفوف بحسب قيمة UserID محددة، فإن هذا الفهرس لا يقدّم فائدة تُذكر في تسريع الاستعلام الذي يُصفّي الصفوف بحسب قيمة URL محددة.
 
-ويرجع ذلك إلى أن عمود URL ليس عمود المفتاح الأول، ولذلك يستخدم ClickHouse خوارزمية البحث بالاستبعاد العامة (بدلًا من البحث الثنائي) على علامات فهرس عمود URL، و**تعتمد فعالية هذه الخوارزمية على الفرق في الكاردينالية** بين عمود URL وعمود المفتاح السابق له UserID.
+ويرجع ذلك إلى أن عمود URL ليس عمود المفتاح الأول، ولذلك يستخدم ClickHouse خوارزمية البحث بالاستبعاد العامة (بدلًا من البحث الثنائي) على علامات الفهرس لعمود URL، و**تعتمد فعالية هذه الخوارزمية على الفرق في الكاردينالية** بين عمود URL وعمود المفتاح السابق له UserID.
 
 ولتوضيح ذلك، سنعرض بعض التفاصيل حول كيفية عمل خوارزمية البحث بالاستبعاد العامة.
 
@@ -974,10 +978,10 @@ Processed 319.49 thousand rows,
 
 الآن، وبدلاً من [إجراء فحص كامل للجدول تقريبًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns)، نفّذ ClickHouse ذلك الاستعلام بكفاءة أعلى بكثير.
 
-باستخدام الفهرس الأساسي من [الجدول الأصلي](#a-table-with-a-primary-key)، حيث كان UserID عمود المفتاح الأول وURL عمود المفتاح الثاني، استخدم ClickHouse [خوارزمية البحث بالاستبعاد العامة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) عبر علامات الفهرسة لتنفيذ ذلك الاستعلام، ولم يكن ذلك فعّالًا جدًا بسبب التقارب في الارتفاع الكبير للكاردينالية لكلٍّ من UserID وURL.
+باستخدام الفهرس الأساسي من [الجدول الأصلي](#a-table-with-a-primary-key)، حيث كان UserID عمود المفتاح الأول وURL عمود المفتاح الثاني، استخدم ClickHouse [خوارزمية البحث بالاستبعاد العامة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) عبر علامات الفهرس لتنفيذ ذلك الاستعلام، ولم يكن ذلك فعّالًا جدًا بسبب التقارب في الارتفاع الكبير للكاردينالية لكلٍّ من UserID وURL.
 
-ومع جعل URL العمود الأول في الفهرس الأساسي، أصبح ClickHouse الآن يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر علامات الفهرسة.
-ويؤكد سجل التتبّع المقابل في ملف سجل خادم ClickHouse ذلك:
+ومع جعل URL العمود الأول في الفهرس الأساسي، أصبح ClickHouse الآن يُجري <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">بحثًا ثنائيًا</a> عبر علامات الفهرس.
+ويؤكد سجل الخادم المقابل ذلك (في الإصدارات الحديثة، تُسجَّل رسائل البحث الثنائي على مستوى `test` — راجع [الملاحظة أعلاه](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1118,7 +1122,7 @@ Processed 335.87 thousand rows,
 
 نظرًا لأن الجدول الذي أُنشئ ضمنيًا (وفهرسه الأساسي) الذي يستند إليه العرض المادي مطابق فعليًا لـ [الجدول الثانوي الذي أنشأناه صراحةً](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)، يُنفَّذ الاستعلام بالطريقة نفسها فعليًا كما في حالة الجدول المُنشأ صراحةً.
 
-ويؤكد trace log المقابل في ملف سجل ClickHouse server أن ClickHouse يُجري البحث الثنائي على index marks:
+ويؤكد سجل الخادم المقابل أن ClickHouse يُجري البحث الثنائي على علامات الفهرس (في الإصدارات الحديثة، تُسجَّل رسائل البحث الثنائي عند المستوى `test` — انظر [الملاحظة أعلاه](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1202,7 +1206,7 @@ Processed 319.49 thousand rows, 1
 
 لأن الجدول المخفي (وفهرسه الأساسي) الذي ينشئه الإسقاط مطابق عمليًا لـ[الجدول الثانوي الذي أنشأناه صراحةً](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)، يُنفَّذ الاستعلام عمليًا بالطريقة نفسها كما في الجدول المُنشأ صراحةً.
 
-ويؤكد سجل التتبّع المقابل في ملف سجل ClickHouse server أن ClickHouse يُجري بحثًا ثنائيًا عبر علامات الفهرس:
+ويؤكد سجل الخادم المقابل أن ClickHouse يُجري بحثًا ثنائيًا عبر علامات الفهرس (في الإصدارات الحديثة، تُسجَّل رسائل البحث الثنائي عند المستوى `test` — راجع [الملاحظة أعلاه](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

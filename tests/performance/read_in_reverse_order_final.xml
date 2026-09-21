@@ -1,0 +1,15 @@
+<test>
+    <create_query>
+        CREATE TABLE read_in_reverse_order_final (x UInt64, y UInt64)
+        ENGINE = ReplacingMergeTree()
+        ORDER BY x
+    </create_query>
+
+    <fill_query>INSERT INTO read_in_reverse_order_final SELECT number, number FROM numbers_mt(50000000)</fill_query>
+    <fill_query>INSERT INTO read_in_reverse_order_final SELECT number * 2, number FROM numbers_mt(10000000)</fill_query>
+
+    <query>SELECT x, y FROM read_in_reverse_order_final FINAL ORDER BY x DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT x, y FROM read_in_reverse_order_final FINAL ORDER BY x DESC LIMIT 100000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_reverse_order_final</drop_query>
+</test>

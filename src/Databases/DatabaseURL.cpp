@@ -1,6 +1,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseURL.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -67,6 +69,19 @@ struct URLTableDelegate
     TableFunctionPtr table_function;
     StoragePtr storage;
 };
+
+/// Whether the user is allowed to read local files, i.e. whether the resolution of a `file://`
+/// table would pass the read source access check of its `file` delegate. The decision is derived
+/// directly from the grants, without constructing the delegate: already the parsing of the
+/// arguments of the `file` table function observes the filesystem (`StorageFile::FileSource::parse`
+/// enumerates the matching paths), which must not happen before the grant is confirmed. The `file`
+/// delegate reports an empty URI for source-access filtering (see
+/// `TableFunctionURL::parseArgumentsImpl`), so a filtered grant applies iff its regexp matches the
+/// empty string — replicated here by filtering against the empty string as well.
+bool isFileReadGranted(ContextPtr context)
+{
+    return context->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+}
 
 /// Resolve a table of a `URL` database into the delegate storage of the `url` table function.
 ///
@@ -249,9 +264,10 @@ private:
 DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), base_url(base_url_)
 {
+    /// Not echoed back: password masking anchors on the `://` this value lacks, so it would log the password.
     if (!base_url.empty() && !hasURLScheme(base_url))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The base URL of a URL database must contain a scheme (e.g. https://), got: {}", base_url);
+                        "The base URL of a URL database must contain a scheme (e.g. https://)");
 }
 
 String DatabaseURL::getTableURL(const String & name) const
@@ -284,6 +300,15 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
+    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
+    /// answers what it answers for a remote URL, which is not probed either.
+    if (!isFileReadGranted(context_))
+        return true;
+
     if (!fs::exists(path))
     {
         if (throw_on_error)
@@ -314,6 +339,14 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
 
     if (!checkFileURLExists(url, context_, throw_on_error))
         return {};
+
+    /// The delegate of a `file://` table must not be constructed without the read source grant
+    /// either: already the parsing of the arguments of the `file` table function observes the
+    /// filesystem (see `isFileReadGranted`), and the errors of that parsing (e.g. that the path is
+    /// outside of `user_files`) are reported before the source access check of the delegate runs.
+    /// Fail here with the same access error that check would have produced after the parsing.
+    if (classifyURLScheme(url) == URLSchemeTarget::File)
+        context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
 
     auto delegate = makeURLTableDelegate(url, name, context_, /* is_insert_query */ false);
     if (!delegate.storage)
@@ -411,24 +444,63 @@ void registerDatabaseURL(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,
     }, Documentation{
-        .description = "A database that treats table names as URLs and exposes the data they point to as tables. "
-                       "Relative names are resolved against the optional base URL. The URL scheme selects the backend: "
-                       "`file://` reads local files, `s3://` (and `gs://`, `gcs://`, `oss://`) reads object storage, "
-                       "`az://`/`azure://`/`abfss://` reads Azure Blob Storage, `hdfs://` reads HDFS, and `http://`/`https://` "
-                       "and other schemes are read by the URL engine, so files, web and object storage URLs are handled uniformly. "
-                       "The database stores no tables of its own; resolving a table requires read access to the corresponding "
-                       "source (e.g. `GRANT READ ON URL`), because the structure of the table is inferred from the data, "
-                       "and `INSERT` writes to the underlying source and additionally requires the "
-                       "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
-                       "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
-                       "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL.",
+        .description = R"DOCS_MD(
+The `URL` database engine treats table names as URLs and exposes the data at those URLs as tables. It uses the [`url`](/reference/functions/table-functions/url) table function, which dispatches each URL to the appropriate backend, such as `file`, `s3`, HDFS, Azure Blob Storage, or HTTP.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL([base_url]);
+```
+
+When `base_url` is specified, relative table names are resolved against it. Without a base URL, every table name must be a complete URL.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL('https://example.com/data/');
+
+SELECT * FROM web_data.`daily.csv`;
+```
+
+The database owns no table definitions. Each table is resolved from its URL when it is used, so its schema is inferred from the current data. Table names can also use a full URL, for example `web_data.`s3://bucket/data/events.parquet``.
+
+## Access control {#access-control}
+
+Creating this database requires `READ` and `WRITE` source grants on `URL`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Reading a table also requires a `READ` source grant for the resolved backend; writing requires the matching `WRITE` grant. For example:
+
+```sql
+GRANT READ, WRITE ON URL TO user_name;
+GRANT READ, WRITE ON S3 TO user_name;
+```
+
+For a database with a `file://` base URL, a user needs `READ ON FILE`. On ClickHouse server, local files are additionally restricted to [`user_files_path`](/reference/settings/server-settings/settings#user_files_path).
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`url` table function](/reference/functions/table-functions/url)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)
+)DOCS_MD",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
-            "Usage",
-            "CREATE DATABASE web ENGINE = URL('https://example.com/data/');\n"
-            "SELECT * FROM web.`daily.csv`; -- reads https://example.com/data/daily.csv",
-            ""
+            "Reading files of the user_files directory through a database with a `file://` base URL",
+            R"(
+INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('2024-01-01', 100), ('2024-01-02', 150);
+CREATE DATABASE web ENGINE = URL('file://web/');
+SELECT * FROM web.`daily.csv`;
+DROP DATABASE web;
+            )",
+            R"(
+┌────────day─┬─visits─┐
+│ 2024-01-01 │    100 │
+│ 2024-01-02 │    150 │
+└────────────┴────────┘
+            )"
         }},
         .introduced_in = {26, 8},
         .related = {"Filesystem", "S3", "HDFS"}});

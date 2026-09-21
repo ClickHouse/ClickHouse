@@ -1,11 +1,13 @@
 {
   "groups": [
     {
-      "group": "Guias do ClickHouse",
+      "group": "ClickHouse guides",
       "pages": [
+        "pt-BR/guides/clickhouse/index",
         {
-          "group": "Formatos de dados",
+          "group": "Data formats",
           "pages": [
+            "pt-BR/guides/clickhouse/data-formats/intro",
             "pt-BR/guides/clickhouse/data-formats/csv-tsv",
             "pt-BR/guides/clickhouse/data-formats/parquet",
             "pt-BR/guides/clickhouse/data-formats/arrow-avro-orc",
@@ -15,21 +17,21 @@
             {
               "group": "JSON",
               "pages": [
+                "pt-BR/guides/clickhouse/data-formats/json/intro",
                 "pt-BR/guides/clickhouse/data-formats/json/loading",
                 "pt-BR/guides/clickhouse/data-formats/json/inference",
                 "pt-BR/guides/clickhouse/data-formats/json/schema",
                 "pt-BR/guides/clickhouse/data-formats/json/formats",
                 "pt-BR/guides/clickhouse/data-formats/json/exporting",
                 "pt-BR/guides/clickhouse/data-formats/json/other"
-              ],
-              "root": "pt-BR/guides/clickhouse/data-formats/json/intro"
+              ]
             }
-          ],
-          "root": "pt-BR/guides/clickhouse/data-formats/intro"
+          ]
         },
         {
-          "group": "Modelagem de dados",
+          "group": "Data modelling",
           "pages": [
+            "pt-BR/guides/clickhouse/data-modelling/index",
             "pt-BR/guides/clickhouse/data-modelling/schema-design",
             "pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes",
             "pt-BR/guides/clickhouse/data-modelling/denormalization",
@@ -39,7 +41,7 @@
             "pt-BR/guides/clickhouse/data-modelling/generating-test-data",
             {
               "expanded": false,
-              "group": "Compressão",
+              "group": "Compression",
               "pages": [
                 "pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
                 "pt-BR/guides/clickhouse/data-modelling/compression/compression-modes"
@@ -47,13 +49,21 @@
             },
             "pt-BR/guides/clickhouse/working-with-arrays",
             "pt-BR/guides/clickhouse/working-with-joins"
-          ],
-          "root": "pt-BR/guides/clickhouse/data-modelling/index"
+          ]
         },
         {
-          "group": "Desempenho e monitoramento",
+          "group": "Performance & monitoring",
           "pages": [
-            "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "pt-BR/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "pt-BR/guides/clickhouse/performance-and-monitoring/analyzer",
             "pt-BR/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "pt-BR/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -61,7 +71,7 @@
         },
         {
           "expanded": false,
-          "group": "Exemplos de combinadores de agregação",
+          "group": "Aggregate combinator examples",
           "pages": [
             "pt-BR/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "pt-BR/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -93,7 +103,7 @@
         },
         "pt-BR/guides/oss/update",
         {
-          "group": "Boas práticas para OSS",
+          "group": "OSS best practices",
           "pages": [
             "pt-BR/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "pt-BR/guides/oss/best-practices/tips"
@@ -101,7 +111,7 @@
         },
         {
           "expanded": false,
-          "group": "Implantação e escalonamento",
+          "group": "Deployment and scaling",
           "pages": [
             "pt-BR/guides/oss/deployment-and-scaling/terminology",
             "pt-BR/guides/oss/deployment-and-scaling/shards",
@@ -112,13 +122,13 @@
               "expanded": false,
               "group": "Keeper",
               "pages": [
+                "pt-BR/guides/oss/deployment-and-scaling/keeper/index",
                 "pt-BR/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
-              ],
-              "root": "pt-BR/guides/oss/deployment-and-scaling/keeper/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "Monitoramento",
+              "group": "Monitoring",
               "pages": [
                 "pt-BR/guides/oss/deployment-and-scaling/monitoring/monitoring",
                 "pt-BR/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
@@ -126,30 +136,30 @@
             },
             {
               "expanded": false,
-              "group": "Exemplos",
+              "group": "Examples",
               "pages": [
                 "pt-BR/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
                 "pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
                 "pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
               ]
             }
-          ],
-          "root": "pt-BR/guides/oss/deployment-and-scaling/index"
+          ]
         }
-      ],
-      "root": "pt-BR/guides/clickhouse/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Guias de casos de uso",
+      "group": "Use case guides",
       "pages": [
+        "pt-BR/guides/use-cases/index",
         {
-          "group": "Analytics em tempo real",
+          "group": "Real-time analytics",
           "pages": [
             {
               "expanded": false,
-              "group": "Séries temporais",
+              "group": "Time series",
               "pages": [
+                "pt-BR/guides/use-cases/real-time-analytics/time-series/index",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/basic-operations",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/analysis-functions",
@@ -157,70 +167,72 @@
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/query-performance",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
                 "pt-BR/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
-              ],
-              "root": "pt-BR/guides/use-cases/real-time-analytics/time-series/index"
+              ]
             }
           ]
         },
         {
-          "group": "Observabilidade",
+          "group": "Observability",
           "pages": [
+            "pt-BR/guides/use-cases/observability/index",
             "pt-BR/guides/use-cases/observability/cloud-monitoring",
             "pt-BR/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "Crie a sua própria solução",
+              "group": "Build your own",
               "pages": [
+                "pt-BR/guides/use-cases/observability/build-your-own/index",
                 "pt-BR/guides/use-cases/observability/build-your-own/introduction",
                 "pt-BR/guides/use-cases/observability/build-your-own/schema-design",
                 "pt-BR/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
                 "pt-BR/guides/use-cases/observability/build-your-own/managing-data",
                 "pt-BR/guides/use-cases/observability/build-your-own/grafana",
                 "pt-BR/guides/use-cases/observability/build-your-own/demo-application"
-              ],
-              "root": "pt-BR/guides/use-cases/observability/build-your-own/index"
+              ]
             }
-          ],
-          "root": "pt-BR/guides/use-cases/observability/index"
+          ]
         },
         {
-          "group": "Armazenamento de dados",
+          "group": "Data warehousing",
           "pages": [
+            "pt-BR/guides/use-cases/data-warehousing/index",
             {
-              "group": "Primeiros passos",
+              "group": "Getting started",
               "pages": [
+                "pt-BR/guides/use-cases/data-warehousing/getting-started/overview",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data",
                 "pt-BR/guides/use-cases/data-warehousing/getting-started/best-practices"
-              ],
-              "root": "pt-BR/guides/use-cases/data-warehousing/getting-started/overview"
+              ]
             },
             {
-              "group": "Catálogos",
+              "group": "Catalogs",
               "pages": [
+                "pt-BR/guides/use-cases/data-warehousing/reference/index",
                 "pt-BR/guides/use-cases/data-warehousing/glue-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/lakekeeper-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/nessie-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/onelake-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/polaris-catalog",
+                "pt-BR/guides/use-cases/data-warehousing/horizon-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/rest-catalog",
+                "pt-BR/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/unity-catalog",
                 "pt-BR/guides/use-cases/data-warehousing/biglake-catalog"
-              ],
-              "root": "pt-BR/guides/use-cases/data-warehousing/reference/index"
+              ]
             },
             "pt-BR/guides/use-cases/data-warehousing/support-matrix"
-          ],
-          "root": "pt-BR/guides/use-cases/data-warehousing/index"
+          ]
         },
         {
-          "group": "IA/ML",
+          "group": "AI/ML",
           "pages": [
+            "pt-BR/guides/use-cases/ai-ml/index",
             "pt-BR/guides/use-cases/ai-ml/vector-search",
             "pt-BR/guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
-              "group": "Exploração de dados",
+              "group": "Data exploration",
               "pages": [
                 "pt-BR/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
                 "pt-BR/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
@@ -229,6 +241,7 @@
             {
               "group": "MCP",
               "pages": [
+                "pt-BR/guides/use-cases/ai-ml/MCP/index",
                 "pt-BR/guides/use-cases/ai-ml/MCP/claude-desktop",
                 "pt-BR/guides/use-cases/ai-ml/MCP/librechat",
                 "pt-BR/guides/use-cases/ai-ml/MCP/anythingllm",
@@ -236,36 +249,33 @@
                 "pt-BR/guides/use-cases/ai-ml/MCP/ollama",
                 "pt-BR/guides/use-cases/ai-ml/MCP/janai",
                 {
-                  "group": "Bibliotecas para agentes de IA",
+                  "group": "AI agent libraries",
                   "pages": [
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
-                  ],
-                  "root": "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
+                  ]
                 }
-              ],
-              "root": "pt-BR/guides/use-cases/ai-ml/MCP/index"
+              ]
             }
-          ],
-          "root": "pt-BR/guides/use-cases/ai-ml/index"
+          ]
         }
-      ],
-      "root": "pt-BR/guides/use-cases/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-guides.svg",
-  "item": "Guias"
+  "item": "Guides"
 }

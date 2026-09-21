@@ -67,7 +67,7 @@ StoragePtr TableFunctionYTsaurus::executeImpl(
     bool is_insert_query) const
 {
     if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_function])
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function ytsaurus is experimental."
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function ytsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_function` setting to enable it");
 
     auto columns = getActualTableStructure(context, is_insert_query);
@@ -132,7 +132,7 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge/>
 

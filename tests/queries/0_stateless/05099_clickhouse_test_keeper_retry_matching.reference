@@ -1,0 +1,7 @@
+socket-layer session expired in stdout: retry OK
+socket-layer connection loss in stderr: retry OK
+generic session expired in stdout: retry OK
+generic connection loss in stderr: retry OK
+generic session expired amid other output: retry OK
+unrelated Keeper error: no retry OK
+clean output: no retry OK

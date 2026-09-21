@@ -87,23 +87,14 @@ namespace
         return makeASTFunction("accurateCast", std::move(floored), make_intrusive<ASTLiteral>("UInt64"));
     }
 
-    /// Result of `getK`. If `is_array` is false, `ast` is a UInt64 scalar expression that evaluates
-    /// to the same k value at every time step. If `is_array` is true, `ast` is an identifier of a
-    /// scalar subquery returning an Array(UInt64) aligned to the time grid.
-    struct KArgument
-    {
-        ASTPtr ast;
-        bool is_array;
-    };
-
-    /// Converts the k parameter to an AST expression usable in SQL.
-    KArgument getK(SQLQueryPiece && k_arg, ConverterContext & context)
+    /// Converts the k parameter to an AST usable as the `k` argument of timeSeries*Masks: a UInt64 scalar expression or a scalar subquery returning Array(UInt64) aligned to the time grid.
+    ASTPtr getK(SQLQueryPiece && k_arg, ConverterContext & context)
     {
         switch (k_arg.store_method)
         {
             case StoreMethod::CONST_SCALAR:
             {
-                return {make_intrusive<ASTLiteral>(convertScalarToK(k_arg.scalar_value)), /* is_array = */ false};
+                return make_intrusive<ASTLiteral>(convertScalarToK(k_arg.scalar_value));
             }
             case StoreMethod::SINGLE_SCALAR:
             {
@@ -112,7 +103,7 @@ namespace
                 /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
                 /// but StoreMethod::SINGLE_SCALAR always means one row.
                 auto assumed = makeASTFunction("assumeNotNull", std::move(subquery_id));
-                return {convertScalarToK(std::move(assumed)), /* is_array = */ false};
+                return convertScalarToK(std::move(assumed));
             }
             case StoreMethod::SCALAR_GRID:
             {
@@ -128,7 +119,7 @@ namespace
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::SCALAR});
-                return {make_intrusive<ASTIdentifier>(context.subqueries.back().name), /* is_array = */ true};
+                return make_intrusive<ASTIdentifier>(context.subqueries.back().name);
             }
             default:
             {
@@ -137,84 +128,21 @@ namespace
         }
     }
 
-    /// Returns all indices: `arrayEnumerate(values)`
-    ASTPtr makeASTForIndices(ASTPtr && values)
-    {
-        return makeASTFunction("arrayEnumerate", std::move(values));
-    }
-
-    /// Returns non-null indices:
-    /// `arrayFilter((i, x) -> x IS NOT NULL, arrayEnumerate(values), values)`
-    ASTPtr makeASTForNonNullIndices(ASTPtr && values)
-    {
-        return makeASTFunction("arrayFilter",
-            makeASTLambda({"i", "x"}, makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
-            makeASTFunction("arrayEnumerate", values->clone()),
-            std::move(values));
-    }
-
-    /// Returns sort key lambda: `i -> sort_key_arr[i]`
-    ASTPtr makeASTForSortKeyLambda(ASTPtr && sort_key_arr)
-    {
-        return makeASTLambda({"i"},
-            makeASTFunction("arrayElement", std::move(sort_key_arr), make_intrusive<ASTIdentifier>("i")));
-    }
-
-    /// Builds an AST returning the K chosen indices (in unspecified order):
-    ///
-    ///   <arrayTopK|arrayBottomK>(i -> sort_key_arr[i], k, <indices>)
-    ///
-    /// `values` is an array of values of different time series at a specific time.
-    /// `sampling_keys` is a matching array of sampling keys calculated for each time series,
-    /// `sampling_keys` is non-null only for `limitk` (and null for `topk` and `bottomk`).
-    using MakeASTForKIndices = ASTPtr (*)(ASTPtr k, ASTPtr values, ASTPtr sampling_keys);
-
     struct ImplInfo
     {
-        /// Builds the AST to choose K indices (see `MakeASTForKIndices`).
-        MakeASTForKIndices make_ast_for_k_indices;
+        /// The aggregate function selecting which series to keep at each time step (see Step 1 below).
+        const char * aggregate_function_name;
 
-        /// Whether `timeSeriesGroupToSamplingKey(group)` should be used as `sampling_keys`
-        /// to provide deterministic "pseudo-random" sampling for `limitk`.
+        /// Whether `timeSeriesGroupToSamplingKey(group)` should be passed to the aggregate function to provide deterministic "pseudo-random" sampling for `limitk`.
         bool use_sampling_keys = false;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"topk",
-             {[](ASTPtr k, ASTPtr values, ASTPtr /* sampling_keys */) -> ASTPtr
-              {
-                  /// `arrayTopK(i -> values[i], k, arrayEnumerate(values))`
-                  return makeASTFunction("arrayTopK",
-                      makeASTForSortKeyLambda(values->clone()),
-                      std::move(k),
-                      makeASTForIndices(values->clone()));
-              },
-              /*use_sampling_keys=*/ false}},
-
-            {"bottomk",
-             {[](ASTPtr k, ASTPtr values, ASTPtr /* sampling_keys */) -> ASTPtr
-              {
-                  /// `arrayBottomK(i -> values[i], k, arrayEnumerate(values))`
-                  return makeASTFunction("arrayBottomK",
-                      makeASTForSortKeyLambda(values->clone()),
-                      std::move(k),
-                      makeASTForIndices(values->clone()));
-              },
-              /* use_sampling_keys= */ false}},
-
-            {"limitk",
-             {[](ASTPtr k, ASTPtr values, ASTPtr sampling_keys) -> ASTPtr
-              {
-                  /// `arrayBottomK(i -> sampling_keys[i], k,
-                  ///     arrayFilter((i, x) -> x IS NOT NULL, arrayEnumerate(values), values))`
-                  return makeASTFunction("arrayBottomK",
-                      makeASTForSortKeyLambda(std::move(sampling_keys)),
-                      std::move(k),
-                      makeASTForNonNullIndices(std::move(values)));
-              },
-              /* use_sampling_keys= */ true}},
+            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ false}},
+            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ false}},
+            {"limitk", {"timeSeriesLimitKMasks", /* use_sampling_keys = */ true}},
         };
 
         auto it = impl_map.find(operator_name);
@@ -250,45 +178,44 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 
-    KArgument prepared_k = getK(std::move(k_arg), context);
-    ASTPtr k = std::move(prepared_k.ast);
-    bool k_is_array = prepared_k.is_array;
+    ASTPtr k = getK(std::move(k_arg), context);
 
     auto res = vector_arg;
     res.node = operator_node;
 
-    /// Step 1: collect all series within each aggregation group.
+    /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
+    /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series
+    /// to build the result rows.
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
+    String vector_grid = context.subqueries.back().name;
+
+    /// Step 1: choose up to k series to keep at each time step within each aggregation group.
     ///
-    ///   SELECT groupArray(group) AS groups,
-    ///          arrayTranspose(groupArray(values)) AS values
-    ///          [, groupArray(timeSeriesGroupToSamplingKey(group)) AS sampling_keys]  -- for limitk
-    ///   FROM vector_grid
-    ///   GROUP BY <by_tags_expr>
+    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, group[, timeSeriesGroupToSamplingKey(group)], values) AS selected_groups
+    ///   FROM <vector_grid>
+    ///   [GROUP BY <by_tags_expr>]
     ///
-    /// `groups` is an array of original series group IDs (length N).
-    /// `values` is a TxN matrix: for each time step t, an array of N series values.
-    /// `sampling_keys` (added for limitk) is an N-length array aligned with `groups`/`values`,
-    /// used by Step 2 to pick k series deterministically regardless of row read order.
+    /// `selected_groups` is Array(Tuple(key UInt64, steps_mask Array(UInt8))); the sampling key (added for limitk) ranks series by a hash of their tags regardless of row read order.
     ASTPtr step1_query;
     {
         SelectQueryBuilder builder;
+        builder.from_table = vector_grid;
 
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::TABLE});
-        builder.from_table = context.subqueries.back().name;
-
-        builder.select_list.push_back(makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Group)));
-        builder.select_list.back()->setAlias(ColumnNames::Groups);
-
-        builder.select_list.push_back(makeASTFunction("arrayTranspose",
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
-        builder.select_list.back()->setAlias(ColumnNames::Values);
-
+        ASTPtr aggregate_function;
         if (impl_info->use_sampling_keys)
-        {
-            builder.select_list.push_back(makeASTFunction("groupArray",
-                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))));
-            builder.select_list.back()->setAlias(ColumnNames::SamplingKeys);
-        }
+            aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
+                std::move(k),
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        else
+            aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
+                std::move(k),
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+        builder.select_list.push_back(std::move(aggregate_function));
+        builder.select_list.back()->setAlias(ColumnNames::SelectedGroups);
 
         if (operator_node->by || operator_node->without)
         {
@@ -301,16 +228,13 @@ SQLQueryPiece applyLimitAggregationOperator(
         step1_query = builder.getSelectQuery();
     }
 
-    /// Step 2: for each time step, compute the selected indices.
+    /// Step 2: unfold `selected_groups` into one row per kept series.
     ///
-    /// When k is a single scalar:
-    ///   SELECT groups, values, arrayMap(v -> <indices_expr>, values) AS indices
+    ///   SELECT (arrayJoin(selected_groups) AS p).1 AS join_group,
+    ///          p.2 AS steps_mask
     ///   FROM step1
     ///
-    /// When k is a scalar grid:
-    ///   SELECT groups, values,
-    ///       arrayMap((v, j) -> <indices_expr>, values, arrayEnumerate(values)) AS indices
-    ///   FROM step1
+    /// A series belongs to exactly one aggregation group, so each kept series produces exactly one row here.
     ASTPtr step2_query;
     {
         SelectQueryBuilder builder;
@@ -318,111 +242,54 @@ SQLQueryPiece applyLimitAggregationOperator(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Groups));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        auto array_join_expr = makeASTFunction("arrayJoin", make_intrusive<ASTIdentifier>(ColumnNames::SelectedGroups));
+        array_join_expr->setAlias("p");
 
-        ASTPtr sampling_keys;
-        if (impl_info->use_sampling_keys)
-            sampling_keys = make_intrusive<ASTIdentifier>(ColumnNames::SamplingKeys);
+        builder.select_list.push_back(makeASTFunction("tupleElement", array_join_expr, make_intrusive<ASTLiteral>(1u)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-        if (k_is_array)
-        {
-            ASTPtr k_per_step = makeASTFunction("arrayElement", std::move(k), make_intrusive<ASTIdentifier>("j"));
-            /// `arraySort` re-sorts the k indices numerically so Step 3 can use `indexOfAssumeSorted`.
-            ASTPtr indices_expr = makeASTFunction("arraySort", impl_info->make_ast_for_k_indices(
-                std::move(k_per_step), make_intrusive<ASTIdentifier>("v"), std::move(sampling_keys)));
-            builder.select_list.push_back(makeASTFunction("arrayMap",
-                makeASTLambda({"v", "j"}, std::move(indices_expr)),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
-        }
-        else
-        {
-            /// `arraySort` re-sorts the k indices numerically so Step 3 can use `indexOfAssumeSorted`.
-            ASTPtr indices_expr = makeASTFunction("arraySort", impl_info->make_ast_for_k_indices(
-                std::move(k), make_intrusive<ASTIdentifier>("v"), std::move(sampling_keys)));
-            builder.select_list.push_back(makeASTFunction("arrayMap",
-                makeASTLambda({"v"}, std::move(indices_expr)),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        }
-
-        builder.select_list.back()->setAlias(ColumnNames::Indices);
+        builder.select_list.push_back(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
+        builder.select_list.back()->setAlias(ColumnNames::StepsMask);
 
         step2_query = builder.getSelectQuery();
     }
 
-    /// Step 3: apply the per-time-step mask using `indices`, producing `masked_values` (TxN).
+    /// Step 3: keep only the chosen series and mask their values at non-chosen time steps with NULLs.
     ///
-    ///   SELECT groups,
-    ///       arrayMap((v, idx) -> arrayMap((x, i) -> if(indexOfAssumeSorted(idx, i) > 0, x, NULL),
-    ///           v, arrayEnumerate(v)),
-    ///           values, indices) AS masked_values
-    ///   FROM step2
-    ASTPtr step3_query;
+    ///   SELECT group,
+    ///          arrayMap((x, m) -> if(m, x, NULL), values, steps_mask) AS values
+    ///   FROM <vector_grid>
+    ///   ANY INNER JOIN step2 ON group = join_group
+    ///
+    /// `steps_mask` is passed to `arrayMap` as a second array rather than captured by the lambda, because captured columns are replicated per array element.
     {
         SelectQueryBuilder builder;
 
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_query), SQLSubqueryType::TABLE});
-        builder.from_table = context.subqueries.back().name;
-
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Groups));
-
-        auto inner_lambda = makeASTLambda({"x", "i"},
-            makeASTFunction("if",
-                makeASTFunction("greater",
-                    makeASTFunction("indexOfAssumeSorted",
-                        make_intrusive<ASTIdentifier>("idx"),
-                        make_intrusive<ASTIdentifier>("i")),
-                    make_intrusive<ASTLiteral>(0u)),
-                make_intrusive<ASTIdentifier>("x"),
-                make_intrusive<ASTLiteral>(Field{} /* NULL */)));
-
-        auto mask_body = makeASTFunction("arrayMap",
-            std::move(inner_lambda),
-            make_intrusive<ASTIdentifier>("v"),
-            makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>("v")));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
         builder.select_list.push_back(makeASTFunction("arrayMap",
-            makeASTLambda({"v", "idx"}, std::move(mask_body)),
+            makeASTLambda({"x", "m"},
+                makeASTFunction("if",
+                    make_intrusive<ASTIdentifier>("m"),
+                    make_intrusive<ASTIdentifier>("x"),
+                    make_intrusive<ASTLiteral>(Field{} /* NULL */))),
             make_intrusive<ASTIdentifier>(ColumnNames::Values),
-            make_intrusive<ASTIdentifier>(ColumnNames::Indices)));
-        builder.select_list.back()->setAlias(ColumnNames::MaskedValues);
-
-        step3_query = builder.getSelectQuery();
-    }
-
-    /// Step 4: transpose `masked_values` from TxN to NxT, then unzip `groups` and `masked_values`
-    /// into individual series rows, discarding series that have no selected values at any time step.
-    ///
-    /// After step 3, `masked_values` is an array of T inner arrays, each of length N.
-    /// `arrayTranspose` converts it to NxT so that `arrayZip` can pair each series group ID
-    /// with its T-length values array.
-    ///
-    ///   SELECT (arrayJoin(arrayZip(groups, arrayTranspose(masked_values))) AS p).1 AS group,
-    ///          p.2 AS values
-    ///   FROM step3
-    ///   WHERE arrayExists(x -> isNotNull(x), p.2)
-    {
-        SelectQueryBuilder builder;
-
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step3_query), SQLSubqueryType::TABLE});
-        builder.from_table = context.subqueries.back().name;
-
-        auto array_join_expr = makeASTFunction("arrayJoin",
-            makeASTFunction("arrayZip",
-                make_intrusive<ASTIdentifier>(ColumnNames::Groups),
-                makeASTFunction("arrayTranspose", make_intrusive<ASTIdentifier>(ColumnNames::MaskedValues))));
-        array_join_expr->setAlias("p");
-
-        builder.select_list.push_back(makeASTFunction("tupleElement", array_join_expr, make_intrusive<ASTLiteral>(1u)));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-
-        builder.select_list.push_back(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
+            make_intrusive<ASTIdentifier>(ColumnNames::StepsMask)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        builder.where = makeASTFunction("arrayExists",
-            makeASTLambda({"x"}, makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
-            makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
+        /// If the grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
+        /// here a second time, which is still correct because group ids are the same within one query,
+        /// and so are the sampling keys used by `limitk`.
+        builder.from_table = vector_grid;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_query), SQLSubqueryType::TABLE});
+        builder.join_table = context.subqueries.back().name;
+        builder.join_kind = JoinKind::Inner;
+        /// `join_group` values are unique (each series is selected by exactly one aggregation group), so ANY INNER JOIN cannot duplicate series rows.
+        builder.join_strictness = JoinStrictness::Any;
+        builder.join_on = makeASTFunction("equals",
+            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
         res.select_query = builder.getSelectQuery();
     }

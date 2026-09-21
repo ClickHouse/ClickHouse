@@ -1,0 +1,5 @@
+case: sync insert then async insert of the same data	1	one line
+case: async insert then sync insert of the same data	2	other line
+case: sync then async with the same insert_deduplication_token	3	sync value
+case: sync then async, deduplicate_insert=\'disable\'	5	one line
+case: sync then async, deduplicate_insert=\'disable\'	5	one line
