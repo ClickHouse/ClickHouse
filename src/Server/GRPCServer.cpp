@@ -662,7 +662,7 @@ namespace
     class ReadBufferFromCallback : public ReadBuffer
     {
     public:
-        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>()> & callback_)
             : ReadBuffer(nullptr, 0), callback(callback_) {}
 
     private:
@@ -677,7 +677,7 @@ namespace
             return true;
         }
 
-        std::function<std::pair<const void *, size_t>(void)> callback;
+        std::function<std::pair<const void *, size_t>()> callback;
     };
 
 
@@ -722,7 +722,7 @@ namespace
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
-        void start(const std::function<void(void)> & on_finish_call_callback);
+        void start(const std::function<void()> & on_finish_call_callback);
 
     private:
         void run();
@@ -833,7 +833,7 @@ namespace
             call_thread.join();
     }
 
-    void Call::start(const std::function<void(void)> & on_finish_call_callback)
+    void Call::start(const std::function<void()> & on_finish_call_callback)
     {
         auto runner_function = [this, on_finish_call_callback]
         {
