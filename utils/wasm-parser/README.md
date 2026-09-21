@@ -143,10 +143,10 @@ with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2052426 | 632776 | 467840 | 496186 |
-| `-DENABLE_DCL=OFF` | 1850746 | 565398 | 418495 | 443946 |
-| `-DENABLE_FORMATTING=OFF` | 985486 | 318608 | 244854 | 261874 |
-| both off | 809522 | 259966 | 201885 | 216148 |
+| everything | 2298142 | 664982 | 483554 | 513548 |
+| `-DENABLE_DCL=OFF` | 1977138 | 585925 | 429078 | 456267 |
+| `-DENABLE_FORMATTING=OFF` | 1000638 | 324690 | 248498 | 266117 |
+| both off | 823307 | 266043 | 205427 | 219896 |
 
 Formatting builds carry the AST JSON machinery, which is most of their weight: `writeJSON` and
 `readJSON` for every node, `Poco::JSON` and `Poco::Dynamic::Var` cost about 715 KB raw and
@@ -176,15 +176,15 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 809522 | 259966 | 201885 | 216148 |
+| **this, both off** | 823307 | 266043 | 205427 | 219896 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
-| **this, everything** | 2052426 | 632776 | 467840 | 496186 |
+| **this, everything** | 2298142 | 664982 | 483554 | 513548 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 201885 — the same ballpark, for a grammar of comparable size. The full build is not that
+build's 205427 — the same ballpark, for a grammar of comparable size. The full build is not that
 comparison: none of the others ship an AST-as-JSON interface in both directions, which is what
 separates its row from the minimal one.
 

@@ -18,6 +18,14 @@ public:
 
     ASTPtr clone() const override;
 
+    /// `getID` returns a constant string that does not distinguish the dropped object, and
+    /// `resource_name` / `if_exists` / the `ON CLUSTER` name are plain members, not part of
+    /// `children` (this AST has none). Without folding them into the hash, `DROP RESOURCE a` and
+    /// `DROP RESOURCE b` would share one tree hash. The rewrite-rule matcher treats an equal tree
+    /// hash as semantic equality, so a rule template for one `DROP RESOURCE` would over-match an
+    /// unrelated one.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropResourceQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }

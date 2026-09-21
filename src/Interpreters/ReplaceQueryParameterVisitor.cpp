@@ -9,6 +9,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -16,8 +17,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -53,17 +53,17 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitSetQuery(*set_query);
     else
     {
+        /// Some AST classes keep semantic subtrees outside `children` — e.g. `SHOW TABLES LIMIT
+        /// {n:UInt64}` keeps the limit in `ASTShowTablesQuery::limit_length`, and `CREATE USER
+        /// {u:Identifier}` keeps the names in `ASTCreateUserQuery::names`. Substitute there too:
+        /// a placeholder left in such a member would be invisible to the interpreters and to the
+        /// query rewrite rules, which match the substituted query (a literal `REJECT` rule must
+        /// not be bypassable by parameterizing the matched value). The walk shares the carrier
+        /// list with the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
+        forEachMutableNonChildSemanticAST(*ast, [&](ASTPtr & member) { visit(member); });
+
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
-        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
-        {
-            if (create_user_query->names)
-            {
-                ASTPtr names = create_user_query->names;
-                visitChildren(names);
-            }
-            visitChildren(ast);
-        }
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
             /// The handler's query (the AS clause) is the parameterizable interface of the handler;
@@ -161,7 +161,11 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
-    return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    auto cast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    /// Mark the wrapper as parameter substitution so consumers that need to see through it
+    /// (the rewrite-rule matcher) can distinguish it from a user-written `_CAST(...)` call.
+    cast->as<ASTFunction &>().setIsQueryParameterSubstitution(true);
+    return cast;
 }
 
 }
