@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/SymbolsHelper.h>
 #include <Common/ErrorCodes.h>
+#include <Common/StackTrace.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -29,7 +30,7 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_time",          std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
         { "last_error_message",       std::make_shared<DataTypeString>(), "Message for the last error."},
         { "last_error_format_string", std::make_shared<DataTypeString>(), "Format string for the last error."},
-        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
+        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
         { "remote",                   std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
         { "query_id",                 std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
         { "last_error_symbols", symbolized_type, "Demangled symbol names corresponding to last_error_trace." },
@@ -63,7 +64,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
                 Array trace_array;
                 trace_array.reserve(error.trace.size());
                 for (size_t i = 0; i < error.trace.size(); ++i)
-                    trace_array.emplace_back(reinterpret_cast<intptr_t>(error.trace[i]));
+                    trace_array.emplace_back(StackTrace::resolveAddressForStorage(error.trace[i]));
 
                 res_columns[res_index++]->insert(trace_array);
             }
