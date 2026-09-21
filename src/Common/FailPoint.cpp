@@ -118,6 +118,7 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
+    PAUSEABLE(remote_fs_gather_pause_in_read) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -401,7 +402,8 @@ static struct InitFiu
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
-    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    REGULAR(marks_loader_hold_task_until_canceled)
 
 namespace FailPoints
 {
