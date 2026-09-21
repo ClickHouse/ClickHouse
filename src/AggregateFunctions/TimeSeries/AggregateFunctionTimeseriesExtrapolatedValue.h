@@ -335,6 +335,18 @@ public:
     {
     }
 
+    /// The mode is resolved from a setting, so it cannot be folded into the parameters: the factory
+    /// requires `getParameters()` to equal what it was handed, or an attached table would reconstruct
+    /// a different type than its metadata records. Compare it here instead, so a state built in one
+    /// mode is never accepted by a function built in the other and finalized with the wrong meaning.
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        const auto * other = typeid_cast<const AggregateFunctionTimeseriesExtrapolatedValue *>(&rhs);
+        if (!other || other->exact_rate != exact_rate)
+            return false;
+        return Base::haveSameStateRepresentationImpl(rhs);
+    }
+
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
