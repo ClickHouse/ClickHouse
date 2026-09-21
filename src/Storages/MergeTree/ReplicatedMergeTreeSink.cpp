@@ -74,6 +74,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
     extern const char rmt_delay_dedup_conflict_resolution[];
+    extern const char rmt_dedup_conflict_node_missing[];
     extern const char rmt_dedup_conflict_part_name_missing[];
 }
 
@@ -759,7 +760,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             auto & deduplication_hash = retry_context.conflict_deduplication_hashes[i];
             const auto & resp = response[i];
 
-            if (resp.error == Coordination::Error::ZNONODE)
+            bool simulate_missing_node = false;
+            fiu_do_on(FailPoints::rmt_dedup_conflict_node_missing, { simulate_missing_node = true; });
+
+            if (resp.error == Coordination::Error::ZNONODE || simulate_missing_node)
                 continue;
 
             /// tryGet does not check per-item errors on the MULTI_READ transport.

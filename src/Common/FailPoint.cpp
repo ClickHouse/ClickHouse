@@ -37,6 +37,7 @@ static struct InitFiu
     REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(rmt_dedup_conflict_node_missing) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(rmt_delay_dedup_conflict_resolution) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
