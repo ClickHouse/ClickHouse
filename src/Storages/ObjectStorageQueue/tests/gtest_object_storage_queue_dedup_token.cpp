@@ -38,70 +38,27 @@ TEST(ObjectStorageQueueDeduplicationToken, ETagAndOffsetIdentifyTheChunk)
 
     /// Two different files never collide, at any offset.
     EXPECT_NE(token("\"abc\"", "data/one.csv", 100), token("\"def\"", "data/two.csv", 100));
+
+    /// The very same file read twice keeps the very same token, which is what makes a retried
+    /// chunk deduplicate. The size and the modification time play no part in it.
+    EXPECT_EQ(
+        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 0),
+        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 2048, 1700000009000000), "data/one.csv", 0));
 }
 
-/// `ETag` is an optional response header. A token built without it would be `:<row offset>` for
-/// every file, and an empty token would send the chunk down the data-hash path of
-/// `DeduplicationInfo` - either way two distinct files would deduplicate against each other and one
-/// file's rows would disappear from the dependent materialized views. The path of the object and
-/// the generation of the blob behind it take the place of the tag instead.
-TEST(ObjectStorageQueueDeduplicationToken, NoETagFallsBackToThePathAndTheGeneration)
+/// `ETag` is an optional response header, and without it nothing identifies a chunk exactly. Every
+/// surrogate is a wrong-results path: a token of the row offset alone is `:0` for the first chunk
+/// of every file, an empty token sends the chunk down the data-hash path of `DeduplicationInfo` so
+/// two files holding an identical chunk collapse into one, and the path alone does not survive the
+/// re-import that `tracked_file_ttl_sec` and `tracked_files_limit` allow. The read fails instead.
+TEST(ObjectStorageQueueDeduplicationToken, NoETagFailsClosed)
 {
-    EXPECT_EQ(token("", "data/one.csv", 0), "data/one.csv:1024:1700000000000000:0");
-    EXPECT_EQ(token("", "data/one.csv", 100), "data/one.csv:1024:1700000000000000:100");
+    /// The size and the modification time are known here - they are still not a token.
+    EXPECT_ANY_THROW(token("", "data/one.csv", 0));
+    EXPECT_ANY_THROW(token("", "data/one.csv", 100));
 
     /// A tag that is nothing but the quotes is just as absent.
-    EXPECT_EQ(token("\"\"", "data/one.csv", 0), token("", "data/one.csv", 0));
-
-    /// The token is never empty, because an empty user token means "deduplicate by the data".
-    EXPECT_FALSE(token("", "data/one.csv", 0).empty());
-}
-
-/// Two different files whose chunks hold exactly the same data. Without a per-file identifier they
-/// would produce the same block hash and one of them would be dropped.
-TEST(ObjectStorageQueueDeduplicationToken, EqualChunksOfDifferentFilesDoNotCollideWithoutETag)
-{
-    EXPECT_NE(token("", "data/one.csv", 0), token("", "data/two.csv", 0));
-    EXPECT_NE(token("", "data/one.csv", 100), token("", "data/two.csv", 100));
-
-    /// The same file at two offsets stays distinct as well.
-    EXPECT_NE(token("", "data/one.csv", 0), token("", "data/one.csv", 100));
-}
-
-/// `tracked_file_ttl_sec` and `tracked_files_limit` let the queue re-import a path it has already
-/// processed, and by then the path can hold a different blob. Keyed on the path alone the rows of
-/// the second generation would be deduplicated away against the first.
-TEST(ObjectStorageQueueDeduplicationToken, GenerationsOfTheSamePathDoNotCollideWithoutETag)
-{
-    const std::string path = "data/one.csv";
-
-    const auto first = ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), path, 0);
-
-    /// A rewrite with different contents of the same length is told apart by the modification time.
-    const auto rewritten = ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000001000000), path, 0);
-    EXPECT_NE(first, rewritten);
-
-    /// A rewrite within the same timestamp is told apart by the size.
-    const auto grown = ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 2048, 1700000000000000), path, 0);
-    EXPECT_NE(first, grown);
-
-    /// The very same generation read twice keeps the very same token, which is what makes a
-    /// retried chunk deduplicate.
-    const auto again = ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), path, 0);
-    EXPECT_EQ(first, again);
-}
-
-/// When the storage reports neither a tag nor a generation there is no way to build a token that
-/// tells two files apart, so the read fails instead of silently dropping rows.
-TEST(ObjectStorageQueueDeduplicationToken, NoETagAndNoGenerationFailsClosed)
-{
-    auto no_size = makeMetadata("", 1024, 1700000000000000);
-    no_size.is_size_known = false;
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(no_size, "data/one.csv", 0));
-
-    auto no_time = makeMetadata("", 1024, 1700000000000000);
-    no_time.is_last_modified_known = false;
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(no_time, "data/one.csv", 0));
+    EXPECT_ANY_THROW(token("\"\"", "data/one.csv", 0));
 
     /// The placeholder that `skip_object_metadata` leaves behind carries no real values at all.
     auto not_fetched = makeMetadata("", 0, 0);
@@ -109,9 +66,26 @@ TEST(ObjectStorageQueueDeduplicationToken, NoETagAndNoGenerationFailsClosed)
     EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(not_fetched, "data/one.csv", 0));
 
     EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(std::nullopt, "data/one.csv", 0));
+}
 
-    /// A tag makes all of that irrelevant.
-    auto tagged = makeMetadata("\"abc\"", 0, 0);
-    tagged.is_fetched = false;
-    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(tagged, "data/one.csv", 0), "abc:0");
+/// A `(size, modification time)` pair is not a substitute for the tag either. Listings report the
+/// modification time with a one-second resolution - `AzureObjectStorage::iterate` truncates it and
+/// `StorageObjectStorageSource` keeps the listing metadata instead of re-fetching it - so two
+/// generations of one path that have the same length and are written within one second look
+/// identical, and the rows of the newer one would be deduplicated away against the older one.
+/// A storage that only derives such a weak tag itself (HDFS) is refused for the same reason.
+TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
+{
+    /// Two generations of the same path, same size, same second. Neither may yield a token.
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0));
+
+    /// The weak `(mtime, size)` token that HDFS reports as an `ETag` is refused as well.
+    auto weak = makeMetadata("1700000000_1024", 1024, 1700000000000000);
+    weak.etag_is_strong = false;
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(weak, "data/one.csv", 0));
+
+    /// The same tag, reported as strong, is accepted - it is the strength that decides.
+    auto strong = makeMetadata("1700000000_1024", 1024, 1700000000000000);
+    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "1700000000_1024:0");
 }

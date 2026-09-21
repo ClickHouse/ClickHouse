@@ -33,10 +33,10 @@ public:
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     /// The per-chunk deduplication token: the `ETag` of the file (unquoted) and the offset of the
-    /// chunk in it. `ETag` is an optional response header, and when the endpoint omits it the path
-    /// of the object plus its size and modification time take its place, because the token has to
-    /// stay distinct per file and per generation of that file. Throws when the object storage
-    /// reports none of them.
+    /// chunk in it. `ETag` is an optional response header and is not always a strong content
+    /// identifier; without a strong one nothing left identifies a chunk exactly, and a surrogate
+    /// built from the path, the size and the (second-precision) modification time would deduplicate
+    /// away the rows of a file it cannot tell apart, so this throws instead.
     static std::string makeDeduplicationToken(
         const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset);
 

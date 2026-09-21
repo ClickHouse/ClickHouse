@@ -102,33 +102,29 @@ std::string ObjectStorageQueueSource::makeDeduplicationToken(
         etag = etag.substr(1, etag.size() - 2);
 
     /// Create unique token per chunk: etag + row offset
-    if (!etag.empty())
+    if (!etag.empty() && object_metadata->etag_is_strong)
         return fmt::format("{}:{}", etag, row_offset);
 
-    /// `ETag` is an optional response header. Against an endpoint that omits it, a token built all
-    /// the same would give the first chunk of every file `:0`, the second `:<rows in the first
-    /// chunk>`, and so on, and `DeduplicationInfo::getBlockUnifiedHash` uses a non-empty user token
-    /// verbatim - distinct files would deduplicate against each other and their rows would disappear
-    /// from the dependent materialized views. An empty token is no better: it makes the unified hash
-    /// come from the data, so two different files holding an identical chunk would deduplicate
-    /// against each other just the same.
-    ///
-    /// The path alone does not identify a file either: `tracked_file_ttl_sec` and
-    /// `tracked_files_limit` let the queue re-import the same path later, and by then it can point
-    /// at a different blob, whose rows the token would then deduplicate away. Take the generation of
-    /// the object into the token as well - its size and its modification time, the only identifiers
-    /// left once the tag is gone.
-    if (!object_metadata || !object_metadata->is_fetched || !object_metadata->is_size_known
-        || !object_metadata->is_last_modified_known)
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "The object storage reported neither an ETag nor both the size and the modification time of {}, "
-            "so a deduplication token that tells one generation of this path from another cannot be built. "
-            "Disable deduplication for this table to read it all the same.",
-            path);
-
-    return fmt::format(
-        "{}:{}:{}:{}", path, object_metadata->size_bytes, object_metadata->last_modified.epochMicroseconds(), row_offset);
+    /// `ETag` is an optional response header, and not every tag that is reported is a strong
+    /// content identifier (see `ObjectMetadata::etag_is_strong`). Without a strong one there is
+    /// nothing left that identifies a chunk exactly, and every surrogate is a wrong-results path:
+    /// a token built from the row offset alone would give the first chunk of every file `:0`, an
+    /// empty token would send the chunk down the data-hash path of `DeduplicationInfo` so that two
+    /// files holding an identical chunk collapse into one, the path alone does not survive the
+    /// re-import that `tracked_file_ttl_sec` and `tracked_files_limit` allow, and a
+    /// `(path, size, modification time)` surrogate is not enough either, because listings report
+    /// the modification time with a one-second resolution - `AzureObjectStorage::iterate`
+    /// truncates it and `StorageObjectStorageSource` keeps the listing metadata instead of
+    /// re-fetching it - so a same-size rewrite within one second would still collide.
+    /// `DeduplicationInfo::getBlockUnifiedHash` takes a non-empty user token as exact identity, so
+    /// any such collision makes the rows of one of the two files disappear from the dependent
+    /// materialized views. Fail instead of dropping rows.
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage reported no strong ETag for {}, so a deduplication token that tells one file - and one "
+        "generation of the same file - from another cannot be built. Set `deduplication_v2 = 0` for this table to "
+        "read it all the same.",
+        path);
 }
 
 
