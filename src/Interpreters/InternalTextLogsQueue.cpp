@@ -14,29 +14,21 @@
 namespace DB
 {
 
-InternalTextLogsQueue::InternalTextLogsQueue()
-        : ConcurrentBoundedQueue<MutableColumns>(std::numeric_limits<int>::max()),
-          max_priority(Poco::Message::Priority::PRIO_INFORMATION),
-          is_bounded(false) {}
-
-InternalTextLogsQueue::InternalTextLogsQueue(size_t max_entries)
-        : ConcurrentBoundedQueue<MutableColumns>(max_entries),
-          max_priority(Poco::Message::Priority::PRIO_INFORMATION),
-          is_bounded(true) {}
+InternalTextLogsQueue::InternalTextLogsQueue(size_t max_entries_)
+        : ConcurrentBoundedQueue<MutableColumns>(max_entries_),
+          max_priority(Poco::Message::Priority::PRIO_INFORMATION) {}
 
 void InternalTextLogsQueue::pushOrDrop(MutableColumns && columns)
 {
-    /// Most log pushes go through the default unbounded queue; a bounded one exists only for the
-    /// worker's best-effort log forwarding.
-    if (!is_bounded) [[likely]]
+    /// The unbounded queue never fills, so take the plain push with a zero-timeout
+    if (maxFill() == UNBOUNDED) [[likely]]
     {
         [[maybe_unused]] bool pushed = emplace(std::move(columns));
+        return;
     }
-    else
-    {
-        if (!tryEmplace(/*milliseconds=*/ 0, std::move(columns)))
-            dropped_logs.fetch_add(1, std::memory_order_relaxed);
-    }
+
+    if (!tryEmplace(/*milliseconds=*/ 0, std::move(columns)))
+        dropped_logs.fetch_add(1, std::memory_order_relaxed);
 }
 
 

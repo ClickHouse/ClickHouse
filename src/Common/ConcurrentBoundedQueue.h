@@ -198,6 +198,12 @@ public:
         return queue.size();
     }
 
+    /// Returns the capacity the queue was constructed with. Fixed for the queue's lifetime, so no lock.
+    size_t maxFill() const
+    {
+        return max_fill;
+    }
+
     /// Returns if queue is empty
     bool empty() const
     {
