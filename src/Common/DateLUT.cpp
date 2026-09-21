@@ -219,7 +219,8 @@ DateLUT::DateLUT()
         throw Poco::Exception(
             "The local time zone is '" + default_time_zone
             + "', which ClickHouse does not know. Set the TZ environment variable, or the `timezone` "
-              "server setting, to a name from `system.time_zones`.");
+              "server setting, to a name from `system.time_zones`, or to a fixed offset spelled "
+              "`Fixed/UTC±HH:MM:SS`.");
 
     default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
 }

@@ -1701,7 +1701,7 @@ For example:
 ## timezone {#timezone}
 The server's time zone.
 
-Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
+Specified as a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, for example `Africa/Abidjan` - or as a fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, for example `Fixed/UTC+05:30:00`. A name that only the operating system's time zone database has is rejected, because ClickHouse ships its own copy of the database so that results do not depend on the host.
 
 The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
