@@ -192,6 +192,23 @@ def test_assign_centroid_dictionary_form_falls_back(started_cluster):
     assert _fallback_reasons(query_id) == ""
 
 
+def test_dict_in_limit_range_and_interpolate_falls_back(started_cluster):
+    """Steps other than expression and filter carry a DAG too: the `LIMIT AFTER` / `UNTIL` boundaries sit in the
+    `LimitRange` step above the gather, and `INTERPOLATE` in the `Filling` step."""
+    for query, function in [
+        ("SELECT k FROM t ORDER BY k LIMIT AFTER dictHas(d, 1996 - k)", "dictHas"),
+        ("SELECT k FROM t ORDER BY k LIMIT UNTIL NOT dictHas(d, k + 997)", "dictHas"),
+        ("SELECT k, v FROM t WHERE k < 2 ORDER BY k WITH FILL FROM 0 TO 4 INTERPOLATE (v AS dictGet(d, 'name', k))", "dictGet"),
+    ]:
+        query_id = str(uuid.uuid4())
+        result = initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
+        assert result != ""
+        _flush_logs()
+        assert _remote_tasks(query_id) == 0, query
+        assert _worker_tasks(query_id) == 0, query
+        assert f"does not support the dictionary function {function}" in _fallback_reasons(query_id), query
+
+
 def test_strict_mode_throws(started_cluster):
     error = initiator.query_and_get_error(
         f"SELECT k, dictGet(d, 'name', k) FROM t ORDER BY k LIMIT 3 "

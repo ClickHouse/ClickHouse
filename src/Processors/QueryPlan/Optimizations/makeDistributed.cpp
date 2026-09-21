@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -23,6 +24,7 @@
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -69,6 +71,10 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
 /// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
 /// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
+/// Every serializable step that carries an `ActionsDAG` is scanned: expression, filter, the join expression,
+/// the filters pushed into a source read, `LIMIT AFTER/UNTIL` boundaries, `INTERPOLATE`, the element filter
+/// fused into `ARRAY JOIN`. `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
+/// `ObjectFilterStep` exists only in the old interpreter, which `make_distributed_plan` does not use.
 /// The check goes away once the workers receive the dictionaries a distributed plan reads.
 std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
 {
@@ -104,6 +110,20 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
         return find_in_dag(filter->getExpression());
     if (const auto * join = typeid_cast<const JoinStepLogical *>(&step))
         return find_in_dag(join->getActionsDAG());
+    if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(&step))
+        return find_in_dag(limit_range->getConditions());
+    if (const auto * filling = typeid_cast<const FillingStep *>(&step))
+    {
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            return find_in_dag(interpolate->actions);
+        return std::nullopt;
+    }
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
+    {
+        if (const auto & element_filter = array_join->getElementFilter())
+            return find_in_dag(*element_filter);
+        return std::nullopt;
+    }
     if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
     {
         if (const auto & prewhere = source->getPrewhereInfo())
