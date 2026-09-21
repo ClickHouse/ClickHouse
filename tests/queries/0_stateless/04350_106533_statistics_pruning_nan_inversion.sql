@@ -41,12 +41,16 @@ SELECT count() FROM t_106533_stats WHERE val < 10.;
 SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats WHERE val < 10. SETTINGS use_skip_indexes = 0);
 
 -- The negated arms above never reach the range analysis at all: a float column under a negation is
--- dropped before any of it is built, so each implementation below is also queried with a non-negated
--- shape, which leaves `val` prunable. There `nan IN (nan)` holds for the row while `nan` sits outside
--- part 1's [1, 3], so the analysis has to tolerate the NaN the stored bounds omit. Expected 1.
-SELECT count() FROM t_106533_stats WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
--- A NaN-free set of the same shape must still prune, or the assertion above could hold merely by a
--- set never pruning anything.
+-- dropped from the statistics map before any of it is built, so each implementation below is also
+-- queried with a non-negated shape that leaves `val` prunable and still matches the NaN row.
+-- `sign(-val)` is a chain of two monotonic functions, so the analysis maps part 1's stored [1, 3] to
+-- sign([-3, -1]) = [-1, -1] and reads `= 1` as definitely false, while row-wise `sign(-nan)` is `sign(nan)`,
+-- which is 1 and matches. A positive `IN` holding a NaN is not the shape to use here: a set whose
+-- elements contain a NaN is already declined outright in `tryPrepareSetIndexForIn`, so it never reaches
+-- this relaxation. Expected 1.
+SELECT count() FROM t_106533_stats WHERE sign(-val) = 1 SETTINGS use_skip_indexes = 0;
+-- A NaN-free lookup must still prune, or the assertion above could hold merely by the pruner never
+-- pruning anything.
 SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats WHERE val IN (150.) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_106533_stats;
@@ -65,7 +69,7 @@ INSERT INTO t_106533_stats_basic VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats_basic VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
 SELECT count() FROM t_106533_stats_basic WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_106533_stats_basic WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_106533_stats_basic WHERE sign(-val) = 1 SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats_basic WHERE val IN (150.) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_106533_stats_basic;
@@ -84,7 +88,7 @@ INSERT INTO t_106533_stats_auto VALUES (1, 1.0), (2, nan), (3, 3.0);
 INSERT INTO t_106533_stats_auto VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 
 SELECT count() FROM t_106533_stats_auto WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_106533_stats_auto WHERE val IN (nan) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_106533_stats_auto WHERE sign(-val) = 1 SETTINGS use_skip_indexes = 0;
 SELECT countIf(explain LIKE '%Parts: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_stats_auto WHERE val IN (150.) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_106533_stats_auto;
