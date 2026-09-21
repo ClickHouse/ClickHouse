@@ -1,7 +1,9 @@
 --- implicit projection serves the query within the budget ---
 9
 9
-1
+9
+05250_declined_pr	0
+05250_projection_pr	1
 --- the limit still applies to the read that executes ---
 --- unchanged without parallel replicas ---
 9

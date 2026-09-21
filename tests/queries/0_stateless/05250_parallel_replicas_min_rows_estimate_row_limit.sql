@@ -15,23 +15,30 @@ SYSTEM STOP MERGES x;
 INSERT INTO x SELECT number FROM numbers(10);
 
 SELECT '--- implicit projection serves the query within the budget ---';
+-- A threshold the 10-row table cannot meet reaches the same block's silent decline, so this pair
+-- is what shows the estimate ran at all: a regression that stopped reaching it would leave every
+-- result and both counters below unchanged.
+SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1,
+    parallel_replicas_min_number_of_rows_per_replica = 1000, log_comment = '05250_declined_pr';
 SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1, log_comment = '05250_projection_pr';
 SELECT max(i) FROM x SETTINGS max_rows_to_read_leaf = 2, optimize_use_implicit_projections = 1;
 
--- Parallel replicas really engaged for this shape. The planner declines them silently, so a
--- regression that stopped reaching the estimate under test would leave every assertion above green
--- while covering nothing. The counter is incremented when the reading coordinator is destroyed.
+-- Parallel replicas really engaged for the shape under test, and really declined for the paired
+-- threshold, so both propositions are observed rather than assumed. The counter is incremented
+-- when the reading coordinator is destroyed.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ParallelReplicasQueryCount'] > 0 AS parallel_replicas_engaged
+SELECT log_comment, ProfileEvents['ParallelReplicasQueryCount'] > 0 AS parallel_replicas_engaged
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND initial_query_id = query_id
-  AND log_comment = '05250_projection_pr'
+  AND log_comment IN ('05250_projection_pr', '05250_declined_pr')
+ORDER BY log_comment
 SETTINGS enable_parallel_replicas = 0;
 
 SELECT '--- the limit still applies to the read that executes ---';
 -- sum() cannot be answered from _minmax_count_projection, so the base table is read and must throw.
 SELECT sum(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1 FORMAT Null; -- { serverError TOO_MANY_ROWS }
+SELECT sum(i) FROM x SETTINGS max_rows_to_read_leaf = 2, optimize_use_implicit_projections = 1 FORMAT Null; -- { serverError TOO_MANY_ROWS }
 SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 0 FORMAT Null; -- { serverError TOO_MANY_ROWS }
 
 SELECT '--- unchanged without parallel replicas ---';
