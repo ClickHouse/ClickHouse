@@ -91,20 +91,33 @@ committed partitionValues:
 "partitionValues":{"p":"-0.9"}
 "partitionValues":{"p":"0.0"}
 "partitionValues":{"p":"0.9"}
--- a Delta timestamp partition value is a UTC wall clock (the kernel parses the committed
--- string with Utc.from_utc_datetime), while the write schema type is DateTime64(6) with no
--- explicit time zone, so a plain toString renders the session zone instead. p (partitioned)
--- and d (a plain column) are given the same instant under a non-UTC session zone: before the
--- fix p was committed as the Tokyo wall clock and came back 9 hours off d, with no error.
+-- a Delta timestamp is adjusted to UTC, and for it the protocol asks writers for the ISO8601
+-- Z form, which is also what delta-kernel-rs itself commits (format_timestamp). The write
+-- schema type is DateTime64(6) with no explicit time zone, so a plain toString renders the
+-- session zone in the space-separated form, which the protocol defines as the writer's local
+-- time. p (partitioned) and d (a plain column) are given the same instant under a non-UTC
+-- session zone: before the fix p was committed as the Tokyo wall clock and came back 9 hours
+-- off d, with no error.
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
+committed partitionValues: "partitionValues":{"p":"2026-09-18T03:34:56.123456Z"}
+committed paths: p=2026-09-18T03%253A34%253A56.123456Z/<uuid>.parquet
+-- timestamp_ntz has no time zone, so it keeps the space-separated form, and it was shifted
+-- the same way before the fix
 2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
 committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
-committed paths: p=2026-09-18%2003%253A34%253A56.123456/<uuid>.parquet
--- timestamp_ntz behaves the same, and was shifted the same way before the fix
-2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
-committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
--- the remaining Delta primitive types need no per-type conversion, and this pins that: each
--- is written both as a partition column and as a plain column, and the two must agree.
--- boolean is the case that would look wrong but is not: ClickHouse maps it to Bool, whose
--- toString already yields the true/false the kernel accepts, not 1/0.
+-- the remaining Delta primitive types need no per-type conversion under default settings, and
+-- this pins that: each is written both as a partition column and as a plain column, and the
+-- two must agree.
 1	1	1	1	1	1
 committed partitionValues: "partitionValues":{"pb":"true","pd":"2026-09-18","pl":"-9223372036854775808","pf":"0.1","ps":"a b","pn":"ab"}
+-- a boolean partition value does not follow bool_true_representation: before the fix a session
+-- using yes/no committed yes, and the table then failed to read at all with a kernel ParseError
+1	yes	yes	1	0
+2	no	no	1	0
+3	\N	\N	\N	1
+committed partitionValues: "partitionValues":{"p":"false"}
+"partitionValues":{"p":"true"}
+"partitionValues":{"p":null}
+committed paths: p=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+p=false/<uuid>.parquet
+p=true/<uuid>.parquet

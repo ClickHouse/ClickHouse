@@ -52,6 +52,9 @@ public:
     /// Raw Delta `StructType.fields` JSON of this snapshot, preserving exact Delta types (`binary`,
     /// `timestamp_ntz`, ...) that `getTableSchema` collapses. Used for catalog registration.
     Poco::JSON::Array::Ptr getRawDeltaSchemaFields() const;
+    /// Which of `columns` are Delta `timestamp` (adjusted to UTC) rather than `timestamp_ntz` (no time
+    /// zone), a distinction `getTableSchema` collapses.
+    DB::NameSet getUtcAdjustedTimestampColumns(const DB::Names & columns) const;
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
     const DB::NamesAndTypesList & getReadSchema() const;

@@ -17,10 +17,11 @@
 # halves transposed while being decoded, and came back as a different number with no error.
 # That half is engine-independent: it also affects Spark-written and delta-rs-written tables.
 #
-# The same serializer got a timestamp partition value wrong in the same way: Delta commits it as
-# a UTC wall clock, so rendering it in the session time zone shifted the value by the zone offset
-# with no error. The cases at the end cover that, plus every other Delta primitive type as a
-# partition column, since which types need their own text conversion is what the writer decides.
+# The same serializer got a timestamp partition value wrong in the same way: Delta commits it as a
+# UTC wall clock, so rendering it in the session time zone shifted the value by the zone offset with
+# no error, and the two Delta timestamp types do not share one form. The cases at the end cover
+# that, plus every other Delta primitive type as a partition column, since which types need their
+# own text conversion is what the writer decides.
 #
 # Every case asserts BOTH the exact committed partitionValues JSON (the protocol string under
 # test) and a SELECT returning the value: the JSON alone would not prove readability, and the
@@ -202,11 +203,13 @@ decimal_case 1 1 "(1, toDecimal32('0.9', 1)), (2, toDecimal32('-0.9', 1)), (3, t
 # (id Int32 NOT NULL, p Nullable(DateTime64(6)), d Nullable(DateTime64(6))) partitioned by p
 SCHEMA_TS='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}}]}'
 
-echo "-- a Delta timestamp partition value is a UTC wall clock (the kernel parses the committed"
-echo "-- string with Utc.from_utc_datetime), while the write schema type is DateTime64(6) with no"
-echo "-- explicit time zone, so a plain toString renders the session zone instead. p (partitioned)"
-echo "-- and d (a plain column) are given the same instant under a non-UTC session zone: before the"
-echo "-- fix p was committed as the Tokyo wall clock and came back 9 hours off d, with no error."
+echo "-- a Delta timestamp is adjusted to UTC, and for it the protocol asks writers for the ISO8601"
+echo "-- Z form, which is also what delta-kernel-rs itself commits (format_timestamp). The write"
+echo "-- schema type is DateTime64(6) with no explicit time zone, so a plain toString renders the"
+echo "-- session zone in the space-separated form, which the protocol defines as the writer's local"
+echo "-- time. p (partitioned) and d (a plain column) are given the same instant under a non-UTC"
+echo "-- session zone: before the fix p was committed as the Tokyo wall clock and came back 9 hours"
+echo "-- off d, with no error."
 bootstrap "${ROOT}/ts" "${SCHEMA_TS}" '["p"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' --query "
     INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/ts')
@@ -220,12 +223,14 @@ echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts")"
 echo "committed paths: $(committed_paths "${ROOT}/ts")"
 
 # The same schema with timestamp_ntz, which the kernel only accepts when the table declares the
-# feature. Both Delta timestamp types read back through the same parse, so both are written the
-# same way; for this one the form is also byte-identical to the kernel's own writer
-# (format_timestamp_ntz: space separator, no Z, naive_utc).
+# feature. This type has no time zone, so the ISO Z form above is not merely non-canonical for it
+# but unparseable (the kernel retries that pattern only for timestamp), and it keeps the
+# space-separated form of the kernel's own writer (format_timestamp_ntz: no Z, naive_utc). This is
+# the case that makes the write schema insufficient: it collapses both Delta types to DateTime64(6).
 SCHEMA_TS_NTZ='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"timestamp_ntz\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"timestamp_ntz\",\"nullable\":true,\"metadata\":{}}]}'
 
-echo "-- timestamp_ntz behaves the same, and was shifted the same way before the fix"
+echo "-- timestamp_ntz has no time zone, so it keeps the space-separated form, and it was shifted"
+echo "-- the same way before the fix"
 bootstrap "${ROOT}/ts_ntz" "${SCHEMA_TS_NTZ}" '["p"]' \
     '{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":["timestampNtz"],"writerFeatures":["timestampNtz"]}'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' --query "
@@ -242,10 +247,9 @@ echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts_ntz")"
 # plain column of the same type holding the same value) partitioned by the six partition columns.
 SCHEMA_TYPES='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"pb\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}},{\"name\":\"db\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pd\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dd\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pl\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dl\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pf\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}},{\"name\":\"df\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ps\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ds\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"pn\",\"type\":\"binary\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dn\",\"type\":\"binary\",\"nullable\":true,\"metadata\":{}}]}'
 
-echo "-- the remaining Delta primitive types need no per-type conversion, and this pins that: each"
-echo "-- is written both as a partition column and as a plain column, and the two must agree."
-echo "-- boolean is the case that would look wrong but is not: ClickHouse maps it to Bool, whose"
-echo "-- toString already yields the true/false the kernel accepts, not 1/0."
+echo "-- the remaining Delta primitive types need no per-type conversion under default settings, and"
+echo "-- this pins that: each is written both as a partition column and as a plain column, and the"
+echo "-- two must agree."
 bootstrap "${ROOT}/types" "${SCHEMA_TYPES}" '["pb","pd","pl","pf","ps","pn"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/types')
@@ -259,3 +263,24 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     SELECT pb = db, pd = dd, pl = dl, pf = df, ps = ds, pn = dn FROM deltaLakeLocal('${ROOT}/types');
 "
 echo "committed partitionValues: $(committed_partition_values "${ROOT}/types")"
+
+# A Delta boolean partition value is the literal true/false the kernel accepts, but Bool's text form
+# follows bool_true_representation/bool_false_representation, so a session that sets those committed
+# a string the kernel cannot parse. The values read back below are rendered with the same non-default
+# settings, so a run where they failed to apply would not pass either. The NULL row is here because
+# the setting-independent form still has to leave a null partition value null.
+SCHEMA_BOOL='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"boolean\",\"nullable\":true,\"metadata\":{}}]}'
+
+echo "-- a boolean partition value does not follow bool_true_representation: before the fix a session"
+echo "-- using yes/no committed yes, and the table then failed to read at all with a kernel ParseError"
+bootstrap "${ROOT}/bool" "${SCHEMA_BOOL}" '["p"]'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --bool_true_representation='yes' --bool_false_representation='no' --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/bool')
+        SELECT 1 AS id, true AS p, true AS d
+        UNION ALL SELECT 2 AS id, false AS p, false AS d
+        UNION ALL SELECT 3 AS id, NULL AS p, NULL AS d;
+    SELECT id, p, d, p = d AS partition_matches_data, p IS NULL AS is_null
+    FROM deltaLakeLocal('${ROOT}/bool') ORDER BY id;
+"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/bool")"
+echo "committed paths: $(committed_paths "${ROOT}/bool")"

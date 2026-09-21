@@ -834,7 +834,11 @@ void deltaVisitMap(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, con
 
 }
 
-Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot)
+namespace
+{
+
+/// Returns the raw Delta `StructType.fields` JSON, and whether any column is CHAR/VARCHAR.
+std::pair<Poco::JSON::Array::Ptr, bool> visitDeltaSchemaFields(ffi::SharedSnapshot * snapshot)
 {
     using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
     KernelSharedSchema schema(ffi::logical_schema(snapshot));
@@ -866,16 +870,47 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * sn
     if (visitor.exception)
         std::rethrow_exception(visitor.exception);
 
+    return {visitor.buildFields(top_level_list_id), visitor.has_char_varchar};
+}
+
+}
+
+Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot)
+{
+    auto [fields, has_char_varchar] = visitDeltaSchemaFields(snapshot);
+
     /// CHAR(n)/VARCHAR(n) columns are stored as `string` with a field-metadata annotation the raw-schema
     /// helper drops, so the registered catalog schema would differ from the `_delta_log`. Reject onboarding
     /// such tables (mirrors the column-mapping rejection).
-    if (visitor.has_char_varchar)
+    if (has_char_varchar)
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
             "Registering a DeltaLake table with CHAR/VARCHAR columns into a catalog is not supported "
             "(the char/varchar annotation cannot be preserved in the catalog schema)");
 
-    return visitor.buildFields(top_level_list_id);
+    return fields;
+}
+
+DB::NameSet getUtcAdjustedTimestampColumns(ffi::SharedSnapshot * snapshot, const DB::Names & columns)
+{
+    /// A CHAR/VARCHAR column only loses an annotation in this JSON, which no type name below depends on.
+    auto fields = visitDeltaSchemaFields(snapshot).first;
+
+    const DB::NameSet requested(columns.begin(), columns.end());
+    DB::NameSet result;
+    for (const auto & field : *fields)
+    {
+        const auto & object = field.extract<Poco::JSON::Object::Ptr>();
+        /// A nested type is an object here, and no partition column has one.
+        const auto type = object->get("type");
+        if (!type.isString() || type.extract<std::string>() != "timestamp")
+            continue;
+
+        auto name = object->getValue<std::string>("name");
+        if (requested.contains(name))
+            result.insert(std::move(name));
+    }
+    return result;
 }
 
 /// CH -> kernel schema visitor for `ffi::get_create_table_builder`: registers each leaf via `ffi::visit_field_*`, then the top-level struct.

@@ -32,6 +32,7 @@ public:
     DeltaLakePartitionedSink(
         DeltaLake::WriteTransactionPtr delta_transaction_,
         const Names & partition_columns_,
+        const NameSet & utc_adjusted_timestamp_columns_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         SharedHeader sample_block_,
