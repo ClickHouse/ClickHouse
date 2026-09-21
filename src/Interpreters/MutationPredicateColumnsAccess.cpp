@@ -305,12 +305,13 @@ private:
     /// `getJoin`), and the analyzer resolves the argument as an expression identifier first
     /// (`resolveFunction.cpp`), so a one-part identifier may be an alias standing for the name, as
     /// in `WITH 'dict' AS d SELECT dictGet(d, ...)`. Only two shapes name one object provably: a
-    /// string literal, and an identifier that is not an in-scope alias. An alias is followed when
-    /// it holds a string literal; anything else - an alias holding another expression, `concat('db',
-    /// '.dict')`, a column reference - leaves the object unknown, which is reported in
-    /// `unknown_object` so that the caller requires the access on every object instead of skipping
-    /// the read. Skipping it is what would let a mutation with `validate_mutation_query = 0` read
-    /// the object in the background, under full access.
+    /// string literal, and an identifier that neither is an in-scope alias nor can read a column
+    /// where it appears (`mayResolveToColumn`). An alias is followed when it holds a string
+    /// literal; anything else - an alias holding another expression, `concat('db', '.dict')`, a
+    /// column reference such as `d` or `s.d` of `FROM (SELECT 'db.dict' AS d) s` - leaves the
+    /// object unknown, which is reported in `unknown_object` so that the caller requires the access
+    /// on every object instead of skipping the read. Skipping it is what would let a mutation with
+    /// `validate_mutation_query = 0` read the object in the background, under full access.
     std::optional<StorageID> tryGetFunctionObject(const IAST & argument, bool & unknown_object) const
     {
         unknown_object = false;
@@ -343,6 +344,12 @@ private:
                 }
                 return tryGetNamedTable(**alias_value);
             }
+        }
+
+        if (mayResolveToColumn(*identifier))
+        {
+            unknown_object = true;
+            return {};
         }
 
         return tryGetNamedTable(argument);
@@ -427,6 +434,14 @@ private:
         for (const auto & child : select.children)
             collectExpressionAliases(child);
         SCOPE_EXIT({ expression_aliases = std::move(enclosing_expression_aliases); });
+
+        /// The alias names of every level on the way down stay known, so that a name a nested level
+        /// borrows from an enclosing one is not taken for an object name; see `mayResolveToColumn`.
+        NameSet alias_names;
+        for (const auto & [alias, _] : expression_aliases)
+            alias_names.insert(alias);
+        alias_scopes.push_back(std::move(alias_names));
+        SCOPE_EXIT({ alias_scopes.pop_back(); });
 
         if (const auto with = select.with())
         {
@@ -579,7 +594,7 @@ private:
         /// grant no one can give. `namesATable` decides the two apart the same way.
         const auto in_right_hand_side_names = collectInRightHandSideIdentifiers(expressions);
         /// `visitSelect` pushes this level before it calls this, so the stack is never empty here.
-        const NameSet & visible = subquery_levels.back();
+        const std::optional<NameSet> & visible = subquery_levels.back();
 
         /// The metadata of this level's table, when it can be looked up: a virtual column of it
         /// needs no `SELECT` grant, exactly as in a plain `SELECT` from it, and requiring one on a
@@ -599,7 +614,7 @@ private:
         {
             if (in_right_hand_side_names.bare.contains(name))
                 continue;
-            if (in_right_hand_side_names.compound.contains(name) && !visible.contains(name))
+            if (in_right_hand_side_names.compound.contains(name) && !(visible && visible->contains(name)))
                 continue;
 
             std::string_view bare = name;
@@ -659,15 +674,25 @@ private:
             return true;
 
         if (inside_subquery)
-            return subquery_levels.empty() || !subquery_levels.back().contains(name);
+        {
+            if (subquery_levels.empty() || !subquery_levels.back())
+                return true;
+            return !subquery_levels.back()->contains(name);
+        }
 
         if (!mutated_metadata)
             return true;
 
-        /// Resolve the name against the mutated table the same way `addExpressionColumnsSelectAccess`
-        /// does: as written first, then with a `table.` / `db.table.` qualifier stripped.
+        return !resolvesToMutatedTableColumn(name);
+    }
+
+    /// Whether the name reads a column of the mutated table, resolved the same way
+    /// `addExpressionColumnsSelectAccess` resolves it: as written first, then with a `table.` /
+    /// `db.table.` qualifier stripped. Only called when the mutated table's columns are known.
+    bool resolvesToMutatedTableColumn(const String & name) const
+    {
         if (isColumnOfMutatedTable(name))
-            return false;
+            return true;
 
         std::string_view bare = name;
         const String db_table_prefix = mutated_database.empty() ? String{} : mutated_database + "." + mutated_table + ".";
@@ -677,7 +702,41 @@ private:
         else if (bare.starts_with(table_prefix))
             bare.remove_prefix(table_prefix.size());
 
-        return !isColumnOfMutatedTable(String(bare));
+        return isColumnOfMutatedTable(String(bare));
+    }
+
+    /// Whether an identifier used as the object of a `dictGet` / `joinGet` can read a value instead
+    /// of naming the object: `resolveFunction.cpp` resolves that argument through the expression
+    /// scope of the query first, so any name that scope can answer - a column of a table of this
+    /// level, a column a subquery below projects (`FROM (SELECT 'db.dict' AS d) s`, read as `d` or
+    /// `s.d`), an alias of an enclosing level - carries a name this collector cannot read off the
+    /// AST.
+    ///
+    /// Inside a subquery the columns of the level decide, and a level whose columns cannot be
+    /// looked up here answers yes, so that the object is left unknown and the access is required on
+    /// every object. At the top level of the mutation expression the mutated table's columns decide;
+    /// when they are unknown - the `ON CLUSTER` path with no local table - the name is taken for the
+    /// object, as `namesATable` takes it for a table, and the host that does have the table repeats
+    /// this check against its own metadata when it runs the query.
+    bool mayResolveToColumn(const ASTIdentifier & identifier) const
+    {
+        const String & name = identifier.name();
+
+        for (const auto & scope : alias_scopes)
+            if (scope.contains(name))
+                return true;
+
+        if (inside_subquery)
+        {
+            if (subquery_levels.empty() || !subquery_levels.back())
+                return true;
+            return subquery_levels.back()->contains(name);
+        }
+
+        if (!mutated_metadata)
+            return false;
+
+        return resolvesToMutatedTableColumn(name);
     }
 
     bool isColumnOfMutatedTable(const String & name) const
@@ -702,14 +761,16 @@ private:
     }
 
     /// Every name a column of the given tables can be written as at this level: bare, and qualified
-    /// with the table's alias, its name and its database and name. Empty when a table expression at
-    /// this level is not an ordinary named table, or when a table cannot be found in the catalog -
-    /// then nothing is a known column and `namesATable` fails closed.
-    NameSet visibleColumns(const std::vector<StorageID> & tables, const Strings & aliases, bool all_tables_named) const
+    /// with the table's alias, its name and its database and name. Nothing at all when a table
+    /// expression at this level is not an ordinary named table, or when a table cannot be found in
+    /// the catalog - then no name can be told apart from a column here, and both `namesATable` and
+    /// `tryGetFunctionObject` fail closed. An empty set, in contrast, is a level whose columns are
+    /// known and where nothing is a column, as in a `SELECT` with no `FROM`.
+    std::optional<NameSet> visibleColumns(const std::vector<StorageID> & tables, const Strings & aliases, bool all_tables_named) const
     {
         NameSet names;
         if (!all_tables_named)
-            return names;
+            return {};
 
         for (size_t i = 0; i < tables.size(); ++i)
         {
@@ -833,8 +894,12 @@ private:
     std::vector<String> cte_names;
     /// The scalar `WITH` aliases in scope, innermost last; see `tryGetFunctionObject`.
     std::vector<WithScalar> with_scalars;
-    /// The column names visible at each enclosing subquery level, innermost last; see `visibleColumns`.
-    std::vector<NameSet> subquery_levels;
+    /// The column names visible at each enclosing subquery level, innermost last; nothing where
+    /// they cannot be looked up - see `visibleColumns`.
+    std::vector<std::optional<NameSet>> subquery_levels;
+    /// The expression alias names of each enclosing `SELECT` level, innermost last; see
+    /// `mayResolveToColumn`.
+    std::vector<NameSet> alias_scopes;
     /// The expression aliases of the `SELECT` level being visited, each with the string literal it
     /// stands for when it is one; see `collectExpressionAliases`.
     std::unordered_map<String, std::optional<String>> expression_aliases;
