@@ -70,12 +70,12 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Both events are incremented by the one `update` call that writes the entry, and that call is
--- reached exactly when at least one of them is non-zero - so their disjunction is "an entry was
--- written". Reading the input side alone would be wrong: it is dropped when the compression-ratio
--- sample comes out empty, which a one-byte column does often enough to make the check flap.
+-- reached exactly when at least one of them is non-zero - so their sum is "an entry was written".
+-- Reading the input side alone would be wrong: it is dropped when the compression-ratio sample comes
+-- out empty, which a one-byte column does often enough to make the check flap.
 SELECT log_comment AS query,
-       (ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0
-        OR ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0) AS collected_own_statistics
+       ProfileEvents['RuntimeDataflowStatisticsInputBytes']
+           + ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS collected_own_statistics
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
   AND (current_database = currentDatabase()) AND (log_comment LIKE '05234_query_%') AND (type = 'QueryFinish')
