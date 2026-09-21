@@ -943,6 +943,9 @@ static void serializeTextImpl(
     NestedSerialize nested_serialize,
     SerializeNull serialize_null)
 {
+    /// See the comment in deserializeBinary: the same data-driven nesting is walked here, one level per nested value.
+    checkStackSize();
+
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
