@@ -309,7 +309,7 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
         markSecretArgument(4);
-        findTLSCredentialsSecretArguments(5);
+        findTLSCredentialsSecretArguments(0);
     }
 }
 
@@ -1168,7 +1168,7 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         markSecretArgument(3);
-        findTLSCredentialsSecretArguments(4);
+        findTLSCredentialsSecretArguments(0);
     }
 }
 
