@@ -17,6 +17,10 @@ a
 a
 b
 \N
+-- an aggregate inside a window function: the aggregate keeps the unconverted key, the window function sees the Nullable one
+a	1	String	Nullable(String)
+b	3	String	Nullable(String)
+\N	6	String	Nullable(String)
 -- other window function names
 a	1	1	1	\N
 b	1	1	1	\N

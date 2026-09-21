@@ -31,6 +31,13 @@ SELECT '-- the key in both the argument and the partition';
 SELECT min(k) OVER (PARTITION BY k) AS m
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
 
+SELECT '-- an aggregate inside a window function: the aggregate keeps the unconverted key, the window function sees the Nullable one';
+SELECT k,
+    sum(sum(x)) OVER (ORDER BY k) AS running_total_of_an_aggregate,
+    any(any(toTypeName(k))) OVER (ORDER BY k) AS inside_the_nested_aggregate,
+    any(toTypeName(k)) OVER (ORDER BY k) AS the_window_argument
+FROM values('k String, x UInt8', ('a', 1), ('b', 2)) GROUP BY k WITH ROLLUP ORDER BY ALL;
+
 SELECT '-- other window function names';
 SELECT k,
     row_number() OVER (PARTITION BY k) AS a,
