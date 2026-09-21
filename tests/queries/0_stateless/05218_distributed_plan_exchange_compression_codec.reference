@@ -1,6 +1,0 @@
-1000
-1000
-1000
-serializers: uncompressed packets are bigger than LZ4 and ZSTD:	1	1
-sorted gather: every task with a sink has a serializer, and uncompressed is bigger than LZ4:	1	1
-zstd level: the tasks run with the level of the initiator, and level 19 packs tighter than level 1:	1	1	1	1

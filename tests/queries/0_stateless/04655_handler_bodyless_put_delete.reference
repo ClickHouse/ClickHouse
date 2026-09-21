@@ -1,8 +1,0 @@
-=== a lengthless non-chunked PUT to a handler that does not read the body succeeds ===
-1
-=== a lengthless non-chunked DELETE to a handler that does not read the body succeeds ===
-2
-=== a handler reading _request_body still requires the length up front ===
-1
-=== and it returns the body when the length is given ===
-hello

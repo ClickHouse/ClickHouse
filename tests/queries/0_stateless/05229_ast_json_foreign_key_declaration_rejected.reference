@@ -1,1 +1,0 @@
-CREATE TABLE child (`id` Int32, `pid` Int32) ENGINE = MergeTree PRIMARY KEY id

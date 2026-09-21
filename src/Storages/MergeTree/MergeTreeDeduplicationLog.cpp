@@ -35,7 +35,7 @@ enum class MergeTreeDeduplicationOp : uint8_t
 /// Record for deduplication on disk
 struct MergeTreeDeduplicationLogRecord
 {
-    MergeTreeDeduplicationOp operation{};
+    MergeTreeDeduplicationOp operation;
     std::string part_name;
     std::string block_id;
 };
@@ -53,7 +53,7 @@ void writeRecord(const MergeTreeDeduplicationLogRecord & record, WriteBuffer & o
 
 void readRecord(MergeTreeDeduplicationLogRecord & record, ReadBuffer & in)
 {
-    uint8_t op = 0;
+    uint8_t op;
     readIntText(op, in);
     record.operation = static_cast<MergeTreeDeduplicationOp>(op);
     assertChar('\t', in);
@@ -169,33 +169,27 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
-    /// Open the new log before finalizing the current one. If opening fails, nothing has changed
-    /// and `current_writer` still points to a live buffer, so the log stays usable.
-    /// Otherwise, `current_writer` would be left finalized and the next write to it would fail
-    /// with the logical error "Cannot write to finalized buffer".
-    size_t new_log_number = current_log_number + 1;
-    MergeTreeDeduplicationLogNameDescription new_log_description{getLogPath(logs_dir, new_log_number), 0};
-    auto new_writer = disk->writeFile(new_log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    existing_logs.emplace(new_log_number, new_log_description);
-
-    /// Nothing below can throw.
-    /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
-    if (current_writer && !current_writer->isCanceled())
+    try
     {
-        try
+        if (current_writer)
         {
             current_writer->finalize();
             current_writer->sync();
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost records: " + DB::toString(existing_logs[current_log_number].entries_count));
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        if (current_writer)
             current_writer->cancel();
-        }
+        current_writer = nullptr;
     }
 
-    current_log_number = new_log_number;
-    current_writer = std::move(new_writer);
+    current_log_number++;
+    auto new_path = getLogPath(logs_dir, current_log_number);
+    MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
+    existing_logs.emplace(current_log_number, log_description);
+
+    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -223,9 +217,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            /// A writer that was canceled instead of finalized never published its path on an
-            /// object-storage disk, so the log this entry names may not exist.
-            disk->removeFileIfExists(itr->second.path);
+            disk->removeFile(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;
@@ -243,33 +235,6 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
         rotate();
         dropOutdatedLogs();
     }
-}
-
-void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
-{
-    /// The records are already written and applied to the in-memory map, so failing here would
-    /// report an operation that has actually succeeded as failed. For an insert this means that the
-    /// block IDs stay published for a part that never became active, and a retry of the insert
-    /// would be wrongly deduplicated. Rotation is only housekeeping, and it is retried on the next
-    /// operation, because `rotate` leaves the state untouched when it fails.
-    try
-    {
-        rotateAndDropIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while rotating MergeTree deduplication log in " + logs_dir + ", will retry on the next operation");
-    }
-}
-
-void MergeTreeDeduplicationLog::prepareToWrite()
-{
-    /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
-    /// writer must be replaced. `rotate` also works on a disk that cannot append.
-    if (!current_writer || current_writer->isCanceled() || current_writer->isFinalized())
-        rotate();
-
-    chassert(current_writer != nullptr);
 }
 
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
@@ -303,7 +268,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    prepareToWrite();
+    chassert(current_writer != nullptr);
 
     for (const auto & block_id : block_ids)
     {
@@ -319,8 +284,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// Add to deduplication map
         deduplication_map.insert(record.block_id, part_info);
     }
-
-    rotateAndDropIfNeededAfterWrite();
+    /// Rotate and drop old logs if needed
+    rotateAndDropIfNeeded();
 
     return {};
 }
@@ -341,6 +306,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
+    chassert(current_writer != nullptr);
+
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
@@ -348,8 +315,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
-            prepareToWrite();
-
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
@@ -365,7 +330,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
-            rotateAndDropIfNeededAfterWrite();
+            /// Rotate and drop old logs if needed
+            rotateAndDropIfNeeded();
         }
         else
         {
@@ -411,9 +377,7 @@ void MergeTreeDeduplicationLog::shutdown()
         /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
-            /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
-            if (!current_writer->isCanceled())
-                current_writer->finalize();
+            current_writer->finalize();
             current_writer.reset();
         }
         catch (...)

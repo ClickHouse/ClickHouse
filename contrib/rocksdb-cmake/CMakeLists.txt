@@ -33,12 +33,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/tiered_secondary_cache.cc
     ${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc
-    ${ROCKSDB_SOURCE_DIR}/db/version_util.cc
     ${ROCKSDB_SOURCE_DIR}/db/attribute_group_iterator_impl.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_contents.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_partition_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_gen2_format.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_write_batch_transformer.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_fetcher.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc
@@ -77,7 +73,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc
@@ -97,12 +92,10 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/log_reader.cc
     ${ROCKSDB_SOURCE_DIR}/db/log_writer.cc
     ${ROCKSDB_SOURCE_DIR}/db/malloc_stats.cc
-    ${ROCKSDB_SOURCE_DIR}/db/manifest_ops.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/multi_scan.cc
     ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
     ${ROCKSDB_SOURCE_DIR}/db/periodic_task_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
@@ -121,7 +114,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/wal_edit.cc
     ${ROCKSDB_SOURCE_DIR}/db/wal_manager.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_column_serialization.cc
-    ${ROCKSDB_SOURCE_DIR}/db/wide/read_path_blob_resolver.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_columns.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_columns_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/write_batch.cc
@@ -163,7 +155,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/skiplistrep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/vectorrep.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/wbwi_memtable.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/write_buffer_manager.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram_windowing.cc
@@ -190,7 +181,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/port/stack_trace.cc
     ${ROCKSDB_SOURCE_DIR}/table/adaptive/adaptive_table_factory.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/binary_search_index_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/multi_scan_index_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_builder.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_factory.cc
@@ -249,8 +239,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_record.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_replay.cc
     ${ROCKSDB_SOURCE_DIR}/util/async_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/util/coro_stats_util.cc
-    ${ROCKSDB_SOURCE_DIR}/util/io_dispatcher_imp.cc
     ${ROCKSDB_SOURCE_DIR}/util/cleanable.cc
     ${ROCKSDB_SOURCE_DIR}/util/coding.cc
     ${ROCKSDB_SOURCE_DIR}/util/compaction_job_stats_impl.cc
@@ -277,11 +265,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/write_batch_util.cc
     ${ROCKSDB_SOURCE_DIR}/util/xxhash.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/agg_merge/agg_merge.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/copy_engine/copy_engine.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/sorted_run_builder/sorted_run_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/bitvector.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/louds_trie.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/trie_index_factory.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/backup/backup_engine.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters.cc

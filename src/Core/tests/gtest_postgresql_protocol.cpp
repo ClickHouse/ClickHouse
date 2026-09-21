@@ -66,47 +66,6 @@ bool throwsUnknownPacket(const std::string & bytes, F && body)
 }
 
 template <typename TMessage>
-void expectUnknownPacketAndAligned(std::string payload)
-{
-    /// These bytes look like a `Sync` frame, but they are part of the rejected message payload.
-    payload.append("S\0\0\0\4", 5);
-    std::string bytes = framePayload(std::move(payload));
-    bytes.push_back('X');
-
-    ReadBufferFromMemory in(bytes.data(), bytes.size());
-    TMessage msg;
-    try
-    {
-        msg.deserialize(in);
-        FAIL() << "Expected UNKNOWN_PACKET_FROM_CLIENT";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-    }
-
-    char marker = 0;
-    in.readStrict(marker);
-    EXPECT_EQ(marker, 'X');
-}
-
-template <typename TMessage>
-void expectIncompletePayloadAndAligned(std::string payload = {})
-{
-    /// The following `Sync` must remain unread if the current payload is incomplete.
-    std::string bytes = framePayload(std::move(payload));
-    bytes.append("S\0\0\0\4", 5);
-
-    ReadBufferFromMemory in(bytes.data(), bytes.size());
-    TMessage msg;
-    EXPECT_THROW(msg.deserialize(in), Exception);
-
-    char message_type = 0;
-    in.readStrict(message_type);
-    EXPECT_EQ(message_type, 'S');
-}
-
-template <typename TMessage>
 void expectTrailingPayloadIsRejectedAndAligned(std::string payload)
 {
     /// These bytes look like a `Sync` frame, but they are trailing bytes in the current message.
@@ -130,18 +89,6 @@ void expectTrailingPayloadIsRejectedAndAligned(std::string payload)
     in.readStrict(marker);
     EXPECT_EQ(marker, 'X');
 }
-
-class FailingReadBuffer : public ReadBuffer
-{
-public:
-    FailingReadBuffer() : ReadBuffer(nullptr, 0) {}
-
-private:
-    bool nextImpl() override
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Synthetic read failure");
-    }
-};
 
 }
 
@@ -168,95 +115,6 @@ TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
     WriteBufferFromOwnString out;
     Messaging::MessageTransport mt(&in, &out);
     EXPECT_NO_THROW(mt.dropMessage());
-}
-
-TEST(PostgreSQLProtocol, StartupMessageRejectsParametersExceedingDeclaredPayload)
-{
-    std::string bytes("user\0default\0", 13);
-    bytes.push_back('\0');
-
-    {
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_EQ(msg.user, "default");
-    }
-
-    ReadBufferFromMemory in(bytes.data(), bytes.size());
-    try
-    {
-        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size() - 1));
-        msg.deserialize(in);
-        FAIL() << "Expected malformed startup message to be rejected";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-    }
-    EXPECT_EQ(in.count(), bytes.size() - 1);
-}
-
-TEST(PostgreSQLProtocol, StartupMessageDoesNotReadPastDeclaredPayload)
-{
-    const std::string bytes("user\0default\0\0subsequent data", 29);
-
-    for (Int32 payload_size : {2, 7})
-    {
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        try
-        {
-            Messaging::StartupMessage msg(payload_size);
-            msg.deserialize(in);
-            FAIL() << "Expected truncated startup message to be rejected";
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-        }
-        EXPECT_EQ(in.count(), payload_size);
-    }
-}
-
-TEST(PostgreSQLProtocol, StartupMessageValidatesPayloadAndTerminator)
-{
-    /// Total startup message lengths from 0 through 8 leave no room for the required final zero.
-    for (Int32 payload_size = -8; payload_size <= 0; ++payload_size)
-    {
-        EXPECT_TRUE(throwsUnknownPacket("", [&](ReadBuffer & in)
-        {
-            Messaging::StartupMessage msg(payload_size);
-            msg.deserialize(in);
-        })) << "payload_size = " << payload_size;
-    }
-
-    {
-        const std::string bytes(1, '\0');
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::StartupMessage msg(static_cast<Int32>(bytes.size()));
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_EQ(in.count(), bytes.size());
-    }
-
-    EXPECT_TRUE(throwsUnknownPacket("x", [&](ReadBuffer & in)
-    {
-        Messaging::StartupMessage msg(1);
-        msg.deserialize(in);
-    }));
-}
-
-TEST(PostgreSQLProtocol, StartupMessagePreservesUnrelatedReadErrors)
-{
-    FailingReadBuffer in;
-    Messaging::StartupMessage msg(1);
-    try
-    {
-        msg.deserialize(in);
-        FAIL() << "Expected synthetic read failure";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
-    }
 }
 
 TEST(PostgreSQLProtocol, SASLResponseRejectsLengthBelowFour)
@@ -346,15 +204,16 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
 {
     auto build = [](Int32 sz_param, const std::string & data)
     {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 0); /// no parameter format codes
-        putInt16(payload, 1); /// one parameter
-        putInt32(payload, sz_param);
-        payload += data;
-        putInt16(payload, 0); /// no result format codes
-        return framePayload(std::move(payload));
+        std::string bytes;
+        putInt32(bytes, 0); /// the outer size field is not used for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, 0); /// no parameter format codes
+        putInt16(bytes, 1); /// one parameter
+        putInt32(bytes, sz_param);
+        bytes += data;
+        putInt16(bytes, 0); /// no result format codes
+        return bytes;
     };
 
     /// Below -1 is malformed.
@@ -395,114 +254,35 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
 
 TEST(PostgreSQLProtocol, BindRejectsNegativeCounts)
 {
-    /// Reject negative counts after consuming the full declared payload.
+    /// Reject negative counts before they desynchronize the stream.
     {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 0); /// no parameter format codes
-        putInt16(payload, -1); /// negative parameter count
-        expectUnknownPacketAndAligned<Messaging::BindQuery>(std::move(payload));
+        std::string bytes;
+        putInt32(bytes, 0); /// outer size field is unused for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, 0); /// no parameter format codes
+        putInt16(bytes, -1); /// negative parameter count
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        {
+            Messaging::BindQuery msg;
+            msg.deserialize(in);
+        }));
     }
 
     /// A negative result-format-code count is also malformed.
     {
-        std::string payload;
-        payload.push_back('\0');
-        payload.push_back('\0');
-        putInt16(payload, 0); /// no parameter format codes
-        putInt16(payload, 0); /// no parameters
-        putInt16(payload, -1); /// negative result-format-code count
-        expectUnknownPacketAndAligned<Messaging::BindQuery>(std::move(payload));
-    }
-}
-
-TEST(PostgreSQLProtocol, ParseRejectsNegativeCountAndKeepsStreamAligned)
-{
-    std::string payload;
-    payload.push_back('\0'); /// empty statement name
-    payload += "SELECT 1";
-    payload.push_back('\0');
-    putInt16(payload, -1); /// negative parameter count
-    expectUnknownPacketAndAligned<Messaging::ParseQuery>(std::move(payload));
-}
-
-TEST(PostgreSQLProtocol, ExtendedQueryMessagesKeepIncompletePayloadsAligned)
-{
-    expectIncompletePayloadAndAligned<Messaging::DescribeQuery>();
-    expectIncompletePayloadAndAligned<Messaging::ExecuteQuery>();
-    expectIncompletePayloadAndAligned<Messaging::CloseQuery>();
-}
-
-TEST(PostgreSQLProtocol, QueryKeepsIncompletePayloadAligned)
-{
-    expectIncompletePayloadAndAligned<Messaging::Query>();
-}
-
-TEST(PostgreSQLProtocol, LengthDelimitedMessagesRejectTrailingPayload)
-{
-    std::string query_payload = "SELECT 1";
-    query_payload.push_back('\0');
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::Query>(std::move(query_payload));
-
-    std::string parse_payload;
-    parse_payload.push_back('\0');
-    parse_payload += "SELECT 1";
-    parse_payload.push_back('\0');
-    putInt16(parse_payload, 0);
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::ParseQuery>(std::move(parse_payload));
-
-    std::string bind_payload;
-    bind_payload.append("\0\0", 2);
-    putInt16(bind_payload, 0); /// no parameter format codes
-    putInt16(bind_payload, 0); /// no parameters
-    putInt16(bind_payload, 0); /// no result format codes
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::BindQuery>(std::move(bind_payload));
-
-    std::string describe_payload = "S";
-    describe_payload.push_back('\0');
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::DescribeQuery>(std::move(describe_payload));
-
-    std::string execute_payload(1, '\0');
-    putInt32(execute_payload, 0);
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::ExecuteQuery>(std::move(execute_payload));
-
-    std::string close_payload = "P";
-    close_payload.push_back('\0');
-    expectTrailingPayloadIsRejectedAndAligned<Messaging::CloseQuery>(std::move(close_payload));
-}
-
-TEST(PostgreSQLProtocol, SyncRejectsNonEmptyPayload)
-{
-    for (Int32 size : {0, 1, 2, 3, 5})
-    {
         std::string bytes;
-        putInt32(bytes, size);
-        if (size > 4)
-            bytes.append(static_cast<size_t>(size - 4), '\0');
-
+        putInt32(bytes, 0);
+        bytes.push_back('\0');
+        bytes.push_back('\0');
+        putInt16(bytes, 0); /// no parameter format codes
+        putInt16(bytes, 0); /// no parameters
+        putInt16(bytes, -1); /// negative result-format-code count
         EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
         {
-            Messaging::SyncQuery msg;
+            Messaging::BindQuery msg;
             msg.deserialize(in);
-        })) << "size = " << size;
-    }
-}
-
-TEST(PostgreSQLProtocol, CopyDoneRejectsNonEmptyPayload)
-{
-    for (Int32 size : {0, 1, 2, 3, 5})
-    {
-        std::string bytes;
-        putInt32(bytes, size);
-        if (size > 4)
-            bytes.append(static_cast<size_t>(size - 4), '\0');
-
-        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
-        {
-            Messaging::CopyDone msg;
-            msg.deserialize(in);
-        })) << "size = " << size;
+        }));
     }
 }
 
@@ -511,17 +291,18 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
     /// Build a `Bind` with explicit parameter format codes and one value.
     auto build = [](const std::vector<Int16> & format_codes)
     {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, static_cast<Int16>(format_codes.size()));
+        std::string bytes;
+        putInt32(bytes, 0); /// outer size field, unused for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, static_cast<Int16>(format_codes.size()));
         for (Int16 code : format_codes)
-            putInt16(payload, code);
-        putInt16(payload, 1); /// one parameter
-        putInt32(payload, 2);
-        payload += "hi";
-        putInt16(payload, 0); /// no result format codes
-        return framePayload(std::move(payload));
+            putInt16(bytes, code);
+        putInt16(bytes, 1); /// one parameter
+        putInt32(bytes, 2);
+        bytes += "hi";
+        putInt16(bytes, 0); /// no result format codes
+        return bytes;
     };
 
     /// Deserialization records binary format only after consuming the message.
@@ -596,180 +377,12 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
 
     /// A negative format-code count is malformed and rejected during deserialize.
     {
-        std::string payload;
-        payload.push_back('\0');
-        payload.push_back('\0');
-        putInt16(payload, -1); /// negative format-code count
-        EXPECT_TRUE(deserializeThrows(framePayload(std::move(payload)), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT));
-    }
-
-    /// `C = 1` broadcasts one format code to all parameters, which is legal when the message
-    /// carries none; with no values there is no binary payload to decode.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 1); /// one parameter format code
-        putInt16(payload, 1); /// binary, applied to all parameters
-        putInt16(payload, 0); /// zero parameter values
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        auto msg = std::make_unique<Messaging::BindQuery>();
-        EXPECT_NO_THROW(msg->deserialize(in));
-        EXPECT_FALSE(msg->has_binary_format_param);
-        char marker = 0;
-        in.readStrict(&marker, 1);
-        EXPECT_EQ(marker, 'X');
-
-        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        ASTPreparedStatement statement;
-        statement.function_name = "";
-        statement.function_body = "SELECT 1";
-        manager.addStatement(&statement);
-        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
-    }
-
-    /// Two format codes with no values: the codes describe nothing, so the message is accepted
-    /// even though the count matches no parameter.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 2); /// two parameter format codes
-        putInt16(payload, 1); /// binary
-        putInt16(payload, 1); /// binary
-        putInt16(payload, 0); /// zero parameter values
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        auto msg = std::make_unique<Messaging::BindQuery>();
-        EXPECT_NO_THROW(msg->deserialize(in));
-        EXPECT_FALSE(msg->has_binary_format_param);
-        char marker = 0;
-        in.readStrict(&marker, 1);
-        EXPECT_EQ(marker, 'X');
-
-        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        ASTPreparedStatement statement;
-        statement.function_name = "";
-        statement.function_body = "SELECT 1";
-        manager.addStatement(&statement);
-        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
-    }
-
-    /// A binary format code over a protocol NULL carries no bytes to decode, so it is accepted
-    /// and the parameter is substituted as `NULL`.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 1); /// one parameter format code
-        putInt16(payload, 1); /// binary
-        putInt16(payload, 1); /// one parameter value
-        putInt32(payload, -1); /// NULL: no value bytes follow
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        auto msg = std::make_unique<Messaging::BindQuery>();
-        EXPECT_NO_THROW(msg->deserialize(in));
-        EXPECT_FALSE(msg->has_binary_format_param);
-        ASSERT_EQ(msg->parameters.size(), 1u);
-        EXPECT_FALSE(msg->parameters[0].has_value());
-
-        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        ASTPreparedStatement statement;
-        statement.function_name = "";
-        statement.function_body = "SELECT $1";
-        manager.addStatement(&statement);
-        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT NULL");
-    }
-
-    /// The flag is message-wide, not per parameter: with `C = N` the binary code covers only the
-    /// NULL, yet the text-coded value still carries bytes, and the message is refused.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 2); /// one format code per parameter
-        putInt16(payload, 1); /// binary, for the NULL below
-        putInt16(payload, 0); /// text, for the value below
-        putInt16(payload, 2); /// two parameter values
-        putInt32(payload, -1); /// NULL: no value bytes follow
-        putInt32(payload, 2);
-        payload += "hi";
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_TRUE(msg.has_binary_format_param);
-        ASSERT_EQ(msg.parameters.size(), 2u);
-        EXPECT_FALSE(msg.parameters[0].has_value());
-
-        EXPECT_TRUE(deserializeThenAttach(bytes));
-    }
-
-    /// Acceptance depends on neither the value count nor the broadcast form: a per-parameter code
-    /// array over NULLs alone is still nothing to decode.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 2); /// one format code per parameter
-        putInt16(payload, 0); /// text
-        putInt16(payload, 1); /// binary
-        putInt16(payload, 2); /// two parameter values
-        putInt32(payload, -1); /// NULL: no value bytes follow
-        putInt32(payload, -1); /// NULL
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        auto msg = std::make_unique<Messaging::BindQuery>();
-        EXPECT_NO_THROW(msg->deserialize(in));
-        EXPECT_FALSE(msg->has_binary_format_param);
-        ASSERT_EQ(msg->parameters.size(), 2u);
-
-        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        ASTPreparedStatement statement;
-        statement.function_name = "";
-        statement.function_body = "SELECT $1 + $2";
-        manager.addStatement(&statement);
-        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT NULL + NULL");
-    }
-
-    /// A zero-length value is a value: only the `-1` sentinel means no bytes follow, so a binary
-    /// code over an empty value is refused like any other.
-    {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 1); /// one parameter format code
-        putInt16(payload, 1); /// binary
-        putInt16(payload, 1); /// one parameter value
-        putInt32(payload, 0); /// present, and empty
-        putInt16(payload, 0); /// no result format codes
-        std::string bytes = framePayload(std::move(payload));
-
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_TRUE(msg.has_binary_format_param);
-        ASSERT_EQ(msg.parameters.size(), 1u);
-        ASSERT_TRUE(msg.parameters[0].has_value());
-        EXPECT_TRUE(msg.parameters[0]->empty());
-
-        EXPECT_TRUE(deserializeThenAttach(bytes));
+        std::string bytes;
+        putInt32(bytes, 0);
+        bytes.push_back('\0');
+        bytes.push_back('\0');
+        putInt16(bytes, -1); /// negative format-code count
+        EXPECT_TRUE(deserializeThrows(bytes, ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT));
     }
 }
 
@@ -778,17 +391,17 @@ TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
     /// Build a `Bind` with explicit result formats and a trailing alignment marker.
     auto build = [](const std::vector<Int16> & result_codes)
     {
-        std::string payload;
-        payload.push_back('\0'); /// empty portal name
-        payload.push_back('\0'); /// empty statement name
-        putInt16(payload, 0); /// no parameter format codes (all text)
-        putInt16(payload, 1); /// one parameter
-        putInt32(payload, 2);
-        payload += "hi";
-        putInt16(payload, static_cast<Int16>(result_codes.size()));
+        std::string bytes;
+        putInt32(bytes, 0); /// outer size field, unused for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, 0); /// no parameter format codes (all text)
+        putInt16(bytes, 1); /// one parameter
+        putInt32(bytes, 2);
+        bytes += "hi";
+        putInt16(bytes, static_cast<Int16>(result_codes.size()));
         for (Int16 code : result_codes)
-            putInt16(payload, code);
-        std::string bytes = framePayload(std::move(payload));
+            putInt16(bytes, code);
         bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
         return bytes;
     };
@@ -1482,20 +1095,4 @@ TEST(PostgreSQLProtocol, PasswordMessageRejectsTrailingPayload)
     std::string password_payload = "hunter2";
     password_payload.push_back('\0');
     expectTrailingPayloadIsRejectedAndAligned<Messaging::PasswordMessage>(std::move(password_payload));
-}
-
-TEST(PostgreSQLProtocol, CommandCompletePreservesUInt64RowCount)
-{
-    WriteBufferFromOwnString out;
-    Messaging::CommandComplete response(Messaging::CommandComplete::SELECT, std::numeric_limits<UInt64>::max());
-    response.serialize(out);
-    out.finalize();
-
-    std::string expected;
-    expected.push_back('C');
-    putInt32(expected, 32);
-    expected += "SELECT 18446744073709551615";
-    expected.push_back('\0');
-
-    EXPECT_EQ(out.str(), expected);
 }

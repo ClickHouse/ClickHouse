@@ -37,7 +37,7 @@ public:
 
     /// TODO: remove context somehow.
     void setContext(const ContextPtr & context_);
-    void setQueryParameters(const NameToNameMap & parameters) override;
+    void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
@@ -105,7 +105,7 @@ private:
     size_t approx_bytes_read_for_chunk = 0;
 };
 
-class ValuesSchemaReader final : public IRowSchemaReader
+class ValuesSchemaReader : public IRowSchemaReader
 {
 public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

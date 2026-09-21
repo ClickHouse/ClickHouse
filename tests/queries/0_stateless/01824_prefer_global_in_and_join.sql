@@ -1,5 +1,4 @@
--- Tags: global, no-parallel, no-flaky-check
-SET enable_analyzer = 1;
+-- Tags: global, no-parallel
 
 -- { echo }
 CREATE DATABASE IF NOT EXISTS test_01824;

@@ -7,7 +7,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -36,12 +35,8 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
-    /// `common_assignee_trigger` treats the argument as "delay the next attempt": a successfully
-    /// finished task does not have to be retried, and a failed one is paced by the queue's
-    /// exponential backoff. A task that intentionally did nothing because it waits for another
-    /// replica has no such pacing, so ask for a delay explicitly.
-    bool delay_next_attempt = state == State::SUCCESS || postpone_next_attempt;
-    task_result_callback(delay_next_attempt);
+    bool successfully_executed = state == State::SUCCESS;
+    task_result_callback(successfully_executed);
 }
 
 
@@ -196,21 +191,11 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                 /// Depending on condition there is no need to execute a merge
                 if (res == CheckExistingPartResult::PART_EXISTS)
                     return remove_processed_entry();
-
-                /// The entry waits for the part check thread instead of producing a part that is
-                /// already there. No exception is thrown, so the queue cannot apply its exponential
-                /// backoff - ask the background assignee to postpone the next attempt instead.
-                if (res == CheckExistingPartResult::PART_MISSING_IN_ZOOKEEPER)
-                {
-                    postpone_next_attempt = true;
-                    return false;
-                }
             }
 
             auto prepare_result = prepare();
 
             part_log_writer = prepare_result.part_log_writer;
-            postpone_next_attempt = prepare_result.postpone_next_attempt;
 
             /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
@@ -263,11 +248,8 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
     if (!existing_part)
         existing_part = storage.getActiveContainingPart(entry.new_part_name);
 
-    if (!existing_part)
-        return CheckExistingPartResult::OK;
-
     /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-    if (storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
+    if (existing_part && storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
     {
         LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 
@@ -275,27 +257,8 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
         return CheckExistingPartResult::PART_EXISTS;
     }
 
-    /** The part is in the working set but has no node in ZooKeeper, a state crash recovery can leave
-      * behind. Executing the entry cannot get out of it: whichever way it produces the part - a merge
-      * or a mutation of the local source parts, or a fetch from a peer when `prepare` declines the
-      * local execution - `renameTempPartAndReplaceImpl` throws `DUPLICATE_DATA_PART` for the part
-      * that is already there, and nothing in the retry path reconciles the two, so the entry is
-      * retried forever. The part check thread is what reconciles it: it adds the missing node when
-      * the local part is intact, and detaches the part when it is not, after which this entry is
-      * either skipped above or has nothing in its way. The same handling is in
-      * `StorageReplicatedMergeTree::executeLogEntry` for `GET_PART` and `ATTACH_PART`, which never
-      * reach this task.
-      */
-    storage.enqueuePartForCheck(existing_part->name);
 
-    LOG_INFO(
-        log,
-        "Part {} exists locally but has no node in ZooKeeper. Enqueued it for check; the log entry {} for part {} will be retried.",
-        existing_part->name,
-        entry.znode_name,
-        entry.new_part_name);
-
-    return CheckExistingPartResult::PART_MISSING_IN_ZOOKEEPER;
+    return CheckExistingPartResult::OK;
 }
 
 
@@ -334,7 +297,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = static_cast<double>(std::logf(static_cast<float>(min_parts_size_sleep)));
+            double start_to_sleep_seconds = std::logf(static_cast<float>(min_parts_size_sleep));
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

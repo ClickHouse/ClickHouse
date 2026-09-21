@@ -23,7 +23,7 @@ public:
 
     TMapped & ALWAYS_INLINE operator[](const Key & x)
     {
-        bool inserted = false;
+        bool inserted;
         LookupResult it;
         this->emplace(x, it, inserted);
         if (inserted)

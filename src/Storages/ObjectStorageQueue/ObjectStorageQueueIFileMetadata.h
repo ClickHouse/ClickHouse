@@ -34,13 +34,10 @@ public:
         /// Set how much time it took to list this object from s3.
         void setGetObjectTime(size_t elapsed_ms);
         void onProcessing();
-        /// Called with the state which keeper has for the file, when this server failed to take
-        /// it for processing. The state was not set through this file status, but a `Failed`
-        /// state can still come from a node which this server created.
-        void onStateObservedInKeeper(State observed_state);
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
+        void updateState(State state_);
 
         std::string getException() const;
 
@@ -53,15 +50,8 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
-        /// Non-zero only while `state` is a `Processing` state which was read from keeper instead
-        /// of being set by the processor which holds the file: the time of that observation.
-        std::atomic<time_t> processing_observed_in_keeper_time = 0;
 
     private:
-        /// Forget everything the previous state left behind: the data of the processing
-        /// attempt of this server (rows, timings, exception) and `processing_observed_in_keeper_time`.
-        void resetAttempt();
-
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
@@ -113,7 +103,6 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -131,23 +120,6 @@ public:
     const std::string & getProcessorInfo() const { return processor_info; }
 
     static std::string generateProcessingID();
-
-    enum class PathState
-    {
-        /// The path has been successfully processed.
-        Processed,
-        /// The path has permanently failed; the failure message is populated.
-        Failed,
-        /// The path has not been processed yet (or its status is unknown).
-        Unknown,
-    };
-
-    /// Check Keeper to determine whether this file has already been processed or failed.
-    /// Sets `failure_message` when the result is `Failed`.
-    virtual PathState getPathState(std::string & failure_message) const = 0;
-
-    const std::string & getFailedNodePath() const { return failed_node_path; }
-    const std::string & getProcessedNodePath() const { return processed_node_path; }
 
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
@@ -185,7 +157,7 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
+    void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
@@ -193,18 +165,13 @@ public:
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests reset processing without marking as failed.
     void finalizeResetProcessing();
-
     /// Whether prepareFailedRequests just reset processing
     /// without actually marking the file as failed.
     bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
-    /// Whether the file was given up on for good (see `permanently_failed`).
-    bool wasPermanentlyFailed() const { return permanently_failed; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
-
-    void setUncertainCommit() { uncertain_commit = true; }
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
@@ -219,11 +186,6 @@ public:
     };
 
 protected:
-    /// Returns a single-component Keeper node name for the given file path.
-    /// Raw file paths contain '/' and cannot be used directly as Keeper node names,
-    /// so SipHash64 of the path is used instead.
-    static std::string getNodeName(const std::string & path);
-
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
@@ -233,15 +195,7 @@ protected:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
-    virtual void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
-
-    virtual void debugFinalizeProcessed();
-    virtual void debugFinalizeFailed();
-    virtual void debugFinalizeResetProcessing();
-
-    /// Whether the cached file status alone already tells that the file
-    /// must not be processed, so keeper does not have to be asked at all.
-    bool hasNonProcessableState() const;
+    void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
     const std::string zookeeper_name;
@@ -250,7 +204,6 @@ protected:
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
-    const std::atomic<size_t> & processing_state_cache_ttl_seconds;
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
@@ -260,23 +213,16 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
-    /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
-    /// the multi-op may have succeeded in ZK but the connection was lost before we received
-    /// the response. In this case the destructor must check ownership before removing the
-    /// processing node rather than asserting it.
-    bool uncertain_commit = false;
     /// Whether prepareFailedRequests just reset processing without actually
     /// marking the file as failed (when reduce_retry_count was false).
     bool processing_reset_without_failure = false;
-    /// Whether prepareFailedRequests gave up on the file for good, i.e. created
-    /// the terminal /failed node rather than a retriable one (retries exhausted,
-    /// or retries are disabled altogether).
-    bool permanently_failed = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
+
+    static std::string getNodeName(const std::string & path);
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 
