@@ -565,7 +565,13 @@ def test_admission_timeout_shared_budget_across_slot_and_memory():
         )
         assert elapsed > 4.0, f"timed out too early to have used the shared budget: {elapsed:.1f}s"
     finally:
-        node.query("kill query where query_id = 'shared_budget_mem_holder' sync")
-        node.query("kill query where query_id = 'shared_budget_slot_holder' sync")
+        node.query(
+            "kill query where query_id = 'shared_budget_mem_holder' sync "
+            "settings kill_throw_if_noop = false"
+        )
+        node.query(
+            "kill query where query_id = 'shared_budget_slot_holder' sync "
+            "settings kill_throw_if_noop = false"
+        )
         mem.join()
         slot.join()
