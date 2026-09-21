@@ -15,8 +15,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # counts it against insert_keeper_max_retries: a workload that keeps re-creating the node has to end the
 # insert with an error rather than keep it running.
 
-# Matches sleepForSeconds() at both failpoints.
-DELAY_MS=5000
 COMMIT_FAILPOINT=rmt_delay_commit_part
 RESOLVE_FAILPOINT=rmt_delay_dedup_conflict_resolution
 ZK="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t"
@@ -35,8 +33,7 @@ lock_conflicts()
 }
 
 # Keeper rejected the commit transaction because the node appeared behind this insert's back, which is
-# the second conflict. The entry is written at the rejection site, so it also dates the resolution that
-# the failpoint then holds.
+# the second conflict.
 commit_rejections()
 {
     $CLICKHOUSE_CLIENT -q "
@@ -47,36 +44,36 @@ commit_rejections()
         SETTINGS max_rows_to_read = 0"
 }
 
-last_rejection_at()
-{
-    $CLICKHOUSE_CLIENT -q "
-        SYSTEM FLUSH LOGS text_log;
-        SELECT max(toUnixTimestamp64Micro(event_time_microseconds)) FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$1'
-          AND message_format_string = 'Block with ID {} already exists (it was just appeared) for part {}. Ignore it.'
-        SETTINGS max_rows_to_read = 0"
-}
-
 locks_held()
 {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/block_numbers/all'"
 }
 
-# Every window below is opened by one of the two failpoints, so a state that has not been reached in
-# twice DELAY_MS will not be reached at all.
+# A PreActive part means the insert is past renameTempPartAndAdd and has nothing left but the commit that
+# the failpoint delays.
+parts_awaiting_commit()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_04955' AND _state = 'PreActive'"
+}
+
+# Every state below is opened by a 5 s failpoint sleep, so one that has not appeared in 12 s will not
+# appear. The deadline is wall clock, so a slow probe cannot stretch it.
 await()
 {
-    for _ in {1..50}; do
-        [ "$("$1" "$3")" -eq "$2" ] && return 0
+    local deadline=$(($(date +%s) + 12))
+    while :; do
+        [ "$("$1" "$3")" = "$2" ] && return 0
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
         sleep 0.2
     done
-    return 1
 }
 
 # The insert has to resolve a vanished node twice: once reported by the lock request, once by the commit
-# transaction. An attempt that misses any of the four windows proves nothing rather than failing, so it
-# is retried on a fresh table.
-for attempt in {1..3}; do
+# transaction. An attempt that misses one of those windows proves nothing rather than failing, so it is
+# retried on a fresh table, but not past the point where the run itself would be killed for running long.
+attempt_deadline=$(($(date +%s) + 100))
+for attempt in {1..4}; do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS t_04955 SYNC;
         CREATE TABLE t_04955 (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t', 'r1') ORDER BY k;
@@ -90,30 +87,30 @@ for attempt in {1..3}; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "INSERT INTO t_04955 SETTINGS $INSERT_SETTINGS VALUES (1)" 2> "$victim_err" &
     insert_job=$!
 
-    gone=0
-    probed_at=
-    rejected_at=
+    removed_while_resolving=0
     # First conflict: the lock request refuses, then the node has to disappear while the resolution is
     # held. This insert holds no lock of its own here, so the drop cannot wait on one.
     if await lock_conflicts 1 "$query_id"; then
         $CLICKHOUSE_CLIENT -q "ALTER TABLE t_04955 DROP PARTITION tuple()"
 
-        # The resolution finds the node gone and goes back to allocating a block number. Only once it
-        # holds that block number can the other insert create the node behind its back.
-        if await locks_held 1; then
+        # The resolution finds the node gone and goes back to allocating a block number. Disabling the
+        # failpoint only leaves this insert waiting once it is already waiting at it, and only then can
+        # the other one create the node behind its back.
+        if await parts_awaiting_commit 1; then
             $CLICKHOUSE_CLIENT -q "
                 SYSTEM DISABLE FAILPOINT $COMMIT_FAILPOINT;
                 INSERT INTO t_04955 SETTINGS $INSERT_SETTINGS VALUES (1);"
 
-            # Second conflict: Keeper rejects the commit. The block number is released before the second
-            # resolution starts, and DROP PARTITION warns on stderr while that lock is still held, so the
-            # drop waits for it to disappear instead of racing it.
-            if await commit_rejections 1 "$query_id" && await locks_held 0; then
-                rejected_at=$(last_rejection_at "$query_id")
-                $CLICKHOUSE_CLIENT -q "ALTER TABLE t_04955 DROP PARTITION tuple()"
-                read -r gone probed_at <<< "$($CLICKHOUSE_CLIENT -q "
-                    SELECT count() = 0, toUnixTimestamp64Micro(now64(6))
-                    FROM system.zookeeper WHERE path = '$ZK/deduplication_hashes'")"
+            # Second conflict: Keeper rejects the commit, which releases the block number before the
+            # second resolution starts. DROP PARTITION warns on stderr while that lock is still held, so
+            # the drop waits for it to disappear instead of racing it.
+            if await locks_held 0; then
+                # The removal and the check that this insert is still resolving are one round trip
+                # because both have to describe the same instant of the resolution.
+                removed_while_resolving=$($CLICKHOUSE_CLIENT -q "
+                    ALTER TABLE t_04955 DROP PARTITION tuple();
+                    SELECT (SELECT count() FROM system.zookeeper WHERE path = '$ZK/deduplication_hashes') = 0
+                       AND (SELECT count() FROM system.processes WHERE query_id = '$query_id') = 1")
             fi
         fi
     fi
@@ -125,24 +122,19 @@ for attempt in {1..3}; do
         SYSTEM DISABLE FAILPOINT $RESOLVE_FAILPOINT;
         SYSTEM DISABLE FAILPOINT $COMMIT_FAILPOINT;"
 
-    # Both stamps come from the server clock: the rejection proves the node was still there, and the
-    # removal is confirmed less than DELAY_MS later, which is while the second resolution is still held.
     conflicts=$(lock_conflicts "$query_id")
     rejections=$(commit_rejections "$query_id")
-    in_window=0
-    if [ "$gone" = "1" ] && [ -n "$probed_at" ] && [ -n "$rejected_at" ]; then
-        removed_after_us=$((probed_at - rejected_at))
-        [ "$removed_after_us" -gt 0 ] && [ "$removed_after_us" -lt "$((DELAY_MS * 1000))" ] && in_window=1
-    fi
     bounded=0
-    grep -q "UNFINISHED" "$victim_err" && bounded=1
+    grep -q "keep being created and removed" "$victim_err" && bounded=1
     rm -f "$victim_err"
 
-    [ "$conflicts" = "1" ] && [ "$rejections" = "1" ] && [ "$in_window" = "1" ] && break
+    # Only the premises decide whether the attempt materialized, never the assertion they support.
+    [ "$conflicts" = "1" ] && [ "$rejections" = "1" ] && [ "$removed_while_resolving" = "1" ] && break
+    [ "$(date +%s)" -lt "$attempt_deadline" ] || break
 done
 
 echo "conflicts reported by the lock request and by the commit $conflicts $rejections"
-echo "node removed while resolving the second one $in_window"
+echo "node removed while the insert was still resolving $removed_while_resolving"
 echo "insert bounded by the retry limit $bounded"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_04955 SYNC"
