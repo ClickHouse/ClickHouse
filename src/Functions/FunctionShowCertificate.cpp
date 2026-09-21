@@ -54,7 +54,7 @@ std::optional<X509Certificate> getServerCertificate()
 #endif
 
 // showCertificate()
-class FunctionShowCertificate final : public IFunction
+class FunctionShowCertificate : public IFunction
 {
 public:
     static constexpr auto name = "showCertificate";
@@ -77,10 +77,6 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
-
-    /// The connection's client certificate, or the executing node's own server certificate.
-    bool isDeterministic() const override { return false; }
-    bool isServerConstant() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
@@ -167,7 +163,7 @@ REGISTER_FUNCTION(ShowCertificate)
     FunctionDocumentation::Description description = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
 An empty map is returned if the server has no certificate, for example, when the certificate is provisioned with ACME and has not been issued yet.
-See [Configuring TLS](/concepts/features/security/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+See [Configuring TLS](/guides/sre/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     )";
     FunctionDocumentation::Syntax syntax = "showCertificate()";
     FunctionDocumentation::Arguments arguments = {};

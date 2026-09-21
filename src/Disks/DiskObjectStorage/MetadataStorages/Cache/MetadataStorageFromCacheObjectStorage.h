@@ -26,10 +26,7 @@ public:
     std::string getZooKeeperPath() const override;
 
     bool supportsEmptyFilesWithoutBlobs() const override;
-    bool supportsInlineData() const override;
-    bool appliesOperationsEagerly() const override;
     bool areBlobPathsRandom() const override;
-    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -74,7 +71,6 @@ public:
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
-    int64_t getDeadBlobsQueueEstimate() override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
@@ -132,10 +128,6 @@ public:
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
     void truncateFile(const std::string & path, size_t size) override;
-
-    void incrementBlobRefCount(const std::string & blob) override;
-    void decrementBlobRefCount(const std::string & blob) override;
-    void submitBlobForRemoval(const std::string & remote_path) override;
 
 private:
     const MetadataTransactionPtr underlying;

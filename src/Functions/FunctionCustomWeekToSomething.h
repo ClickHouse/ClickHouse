@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 /// See CustomWeekTransforms.h
 template <typename ToDataType, typename Transform>
-class FunctionCustomWeekToSomething final : public IFunctionCustomWeek<Transform>
+class FunctionCustomWeekToSomething : public IFunctionCustomWeek<Transform>
 {
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }

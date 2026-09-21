@@ -1,16 +1,15 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <span>
 #include <bit>
 #include <concepts>
-#include <cstring>
 
 
 namespace DB
@@ -26,7 +25,6 @@ public:
     CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -70,19 +68,14 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
-    hash.update(float_width);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_)
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-}
-
-ASTPtr CompressionCodecFPC::getCodecDescription() const
-{
-    return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
+    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -192,7 +185,7 @@ private:
         }
     }
 
-    VectorWithMemoryTracking<TUInt> table;
+    std::vector<TUInt> table;
     TUInt prev_value;
     size_t hash;
 };
@@ -233,7 +226,7 @@ private:
         }
     }
 
-    VectorWithMemoryTracking<TUInt> table;
+    std::vector<TUInt> table;
     size_t hash;
 };
 
