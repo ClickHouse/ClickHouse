@@ -59,8 +59,8 @@ SELECT
 FROM VALUES('value Float64, time Float64', (1000, -10000), (2, 0));
 
 WITH
-    exponentialTimeDecayingFloat64(1)(1000, toFloat64(-10000)) AS old_value,
-    exponentialTimeDecayingFloat64(1)(2, toFloat64(0)) AS current_value,
+    exponentialTimeDecaying(1)(1000, toFloat64(-10000)) AS old_value,
+    exponentialTimeDecaying(1)(2, toFloat64(0)) AS current_value,
     old_value + current_value AS combined
 SELECT
     exponentialTimeDecayingValueAt(combined, toFloat64(0)),
@@ -137,9 +137,9 @@ SELECT round(
     6)
 FROM
 (
-    SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)) AS decaying_value
+    SELECT exponentialTimeDecaying(10)(1, toFloat64(0)) AS decaying_value
     UNION ALL
-    SELECT exponentialTimeDecayingFloat64(10)(2, toFloat64(100)) AS decaying_value
+    SELECT exponentialTimeDecaying(10)(2, toFloat64(100)) AS decaying_value
 );
 
 -- The same setting must never approximate persisted SimpleAggregateFunction
@@ -150,14 +150,14 @@ CREATE TABLE time_decay_budget_engine_exact
     key UInt8,
     value SimpleAggregateFunction(
         exponentialTimeDecayedSum,
-        ExponentialTimeDecayingFloat64(10))
+        ExponentialTimeDecaying(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;
 INSERT INTO time_decay_budget_engine_exact
-SELECT 1, exponentialTimeDecayingFloat64(10)(1, toFloat64(0));
+SELECT 1, exponentialTimeDecaying(10)(1, toFloat64(0));
 INSERT INTO time_decay_budget_engine_exact
-SELECT 1, exponentialTimeDecayingFloat64(10)(2, toFloat64(100));
+SELECT 1, exponentialTimeDecaying(10)(2, toFloat64(100));
 OPTIMIZE TABLE time_decay_budget_engine_exact FINAL;
 SELECT round(exponentialTimeDecayingValueAt(value, toFloat64(100)), 6)
 FROM time_decay_budget_engine_exact;
