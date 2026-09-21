@@ -15,7 +15,10 @@ struct ReverseImpl
 {
     static constexpr size_t max_word_path_size = 4 * sizeof(UInt64);
 
-    static void reverseBytes(const UInt8 * __restrict src, UInt8 * __restrict dst, size_t size)
+    /// Note: the pointers never alias, but do not say so with `__restrict`. On AArch64 the annotation
+    /// makes the vectorizer pick a fixed-width NEON `rev64`/`stp` loop instead of the predicated SVE one,
+    /// which is measurably slower for the long strings this path handles.
+    static void reverseBytes(const UInt8 * src, UInt8 * dst, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             dst[i] = src[size - i - 1];
