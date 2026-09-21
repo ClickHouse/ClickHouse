@@ -24,6 +24,10 @@ SELECT * FROM v_dep_in_113711b ORDER BY id;
 SELECT * FROM v_dep_plain_113711b ORDER BY id;
 
 SELECT '-- the CTE name is not a dependency of any of the three views';
+-- Only the two `MATERIALIZED`-CTE views can record such a dependency in this shape: a fresh `CREATE`
+-- expands a plain CTE before the dependency visitor sees the definition, so the plain-CTE case needs a
+-- server restart and lives in
+-- `tests/integration/test_materialized_cte_view_legacy_metadata::test_plain_cte_dependency_after_restart`.
 DROP TABLE c_dep_113711b SETTINGS check_referential_table_dependencies = 1;
 SELECT * FROM v_dep_113711b ORDER BY id;
 
