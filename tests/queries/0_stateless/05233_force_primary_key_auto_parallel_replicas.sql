@@ -60,13 +60,26 @@ SELECT v FROM t_unusable_pk WHERE startsWith(CAST(s, 'FixedString(40)'), '11') O
 SETTINGS force_primary_key = 1, max_rows_to_read = 3, use_query_condition_cache = 1,
     use_query_condition_cache_for_top_k = 0, use_skip_indexes_for_top_k = 1; -- { serverError INDEX_NOT_USED }
 
--- G. Same as A through a view: the estimate also analyzes a read found inside one, and there the row
--- limit comes from the view rather than from the query selecting from it.
+-- G. Same as A with the estimate analyzing a read found inside a view, where the row limit comes from
+-- the view's own context rather than from the query selecting from it. Only a pass-through view is
+-- read this way, so the inner query carries no ORDER BY.
 SET parallel_replicas_allow_view_over_mergetree = 1;
 CREATE VIEW v_unusable_pk_limited AS
-    SELECT v FROM t_unusable_pk WHERE startsWith(CAST(s, 'FixedString(40)'), '11') ORDER BY v
+    SELECT v FROM t_unusable_pk WHERE startsWith(CAST(s, 'FixedString(40)'), '11')
     SETTINGS max_rows_to_read = 3;
 SELECT * FROM v_unusable_pk_limited SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+
+-- H. Same as A through the leaf row limit, the other clause of the gate.
+SET enable_parallel_replicas = 1;
+SET automatic_parallel_replicas_mode = 2;
+SELECT v FROM t_unusable_pk WHERE startsWith(CAST(s, 'FixedString(40)'), '11') ORDER BY v
+SETTINGS force_primary_key = 1, max_rows_to_read_leaf = 3; -- { serverError INDEX_NOT_USED }
+
+-- I. Same as B through the leaf row limit: it is still enforced when the read really exceeds it.
+SET enable_parallel_replicas = 1;
+SET automatic_parallel_replicas_mode = 2;
+SELECT v FROM t_usable_pk WHERE k >= 10 ORDER BY v
+SETTINGS force_primary_key = 1, max_rows_to_read_leaf = 3; -- { serverError TOO_MANY_ROWS }
 
 DROP VIEW v_unusable_pk_limited;
 DROP TABLE t_unusable_pk;
