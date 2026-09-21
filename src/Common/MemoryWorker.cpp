@@ -952,7 +952,7 @@ void MemoryWorker::updateResidentMemoryThread()
                 page_cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
             if (auto cache = getReleasableCache())
-                cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+                cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
