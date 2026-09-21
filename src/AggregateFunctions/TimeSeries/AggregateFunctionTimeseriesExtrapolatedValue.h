@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 /// `is_rate` divides the accumulated value by the window;
 /// `check_resets` counts resets and clamps extrapolation at zero.
 template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
@@ -333,6 +338,49 @@ public:
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        if (exact_rate)
+        {
+            writeBinaryLittleEndian(UInt16(5), buf);
+            writeBinaryLittleEndian(UInt8(1), buf);
+            this->serializeBuckets(place, buf);
+        }
+        else
+        {
+            writeBinaryLittleEndian(UInt16(4), buf);
+            this->serializeBuckets(place, buf);
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        UInt16 format_version = 0;
+        readBinaryLittleEndian(format_version, buf);
+
+        if (format_version == 5)
+        {
+            UInt8 state_exact_rate = 0;
+            readBinaryLittleEndian(state_exact_rate, buf);
+            if (static_cast<bool>(state_exact_rate) != exact_rate)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot deserialize timeSeries*ToGrid state: state was created with exact_rate={} but function has exact_rate={}",
+                    static_cast<bool>(state_exact_rate), exact_rate);
+            this->deserializeBuckets(place, buf);
+        }
+        else if (format_version == 4)
+        {
+            if (exact_rate)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot deserialize timeSeries*ToGrid state: legacy format version 4 does not support promql_exact_rate = 1");
+            this->deserializeBuckets(place, buf);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with unexpected format version {}", format_version);
+        }
     }
 };
 

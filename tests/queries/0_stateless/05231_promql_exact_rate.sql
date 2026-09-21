@@ -46,9 +46,8 @@ SELECT '--- Materialized state retains semantics under both settings ---';
 DROP TABLE IF EXISTS t_promql_exact_rate_state;
 CREATE TABLE t_promql_exact_rate_state ENGINE = Memory AS
 SELECT
-    timeSeriesIncreaseToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) AS inc_state,
-    timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) AS rate_state
-SETTINGS promql_exact_rate = 1;
+    timeSeriesIncreaseToGridState(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) AS inc_state,
+    timeSeriesRateToGridState(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) AS rate_state;
 
 SET promql_exact_rate = 0;
 SELECT finalizeAggregation(inc_state) FROM t_promql_exact_rate_state;
@@ -59,8 +58,6 @@ SELECT timeSeriesRateToGridMerge(120, 120, 1, 40, 1)(rate_state) FROM t_promql_e
 SET promql_exact_rate = 1;
 SELECT finalizeAggregation(inc_state) FROM t_promql_exact_rate_state;
 SELECT finalizeAggregation(rate_state) FROM t_promql_exact_rate_state;
-SELECT timeSeriesIncreaseToGridMerge(120, 120, 1, 40)(inc_state) FROM t_promql_exact_rate_state;
-SELECT timeSeriesRateToGridMerge(120, 120, 1, 40)(rate_state) FROM t_promql_exact_rate_state;
 SELECT timeSeriesIncreaseToGridMerge(120, 120, 1, 40, 1)(inc_state) FROM t_promql_exact_rate_state;
 SELECT timeSeriesRateToGridMerge(120, 120, 1, 40, 1)(rate_state) FROM t_promql_exact_rate_state;
 

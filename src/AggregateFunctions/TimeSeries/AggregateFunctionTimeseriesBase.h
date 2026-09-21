@@ -308,9 +308,8 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serializeBuckets(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const
     {
-        writeBinaryLittleEndian(FORMAT_VERSION, buf);
         writeBinaryLittleEndian(bucket_count, buf);
 
         writeBinaryLittleEndian(data(place)->buckets.size(), buf);
@@ -322,14 +321,14 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        UInt16 format_version = 0;
-        readBinaryLittleEndian(format_version, buf);
+        writeBinaryLittleEndian(FORMAT_VERSION, buf);
+        serializeBuckets(place, buf);
+    }
 
-        if (format_version != FORMAT_VERSION)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
-
+    void deserializeBuckets(AggregateDataPtr __restrict place, ReadBuffer & buf) const
+    {
         size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
@@ -361,6 +360,17 @@ public:
             /// Validate that each deserialized sample falls into this bucket's timestamp range.
             bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
         }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        UInt16 format_version = 0;
+        readBinaryLittleEndian(format_version, buf);
+
+        if (format_version != FORMAT_VERSION)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
+
+        deserializeBuckets(place, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -31,13 +31,7 @@ static std::pair<Array, bool> parseTimeseriesExtrapolatedParameters(
     else
         exact_rate = settings && (*settings)[Setting::promql_exact_rate];
 
-    Array parameters_with_exact = parameters;
-    if (parameters.size() == 4)
-        parameters_with_exact.push_back(static_cast<UInt64>(exact_rate ? 1 : 0));
-    else
-        parameters_with_exact[4] = static_cast<UInt64>(exact_rate ? 1 : 0);
-
-    return {std::move(parameters_with_exact), exact_rate};
+    return {parameters, exact_rate};
 }
 
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory);
