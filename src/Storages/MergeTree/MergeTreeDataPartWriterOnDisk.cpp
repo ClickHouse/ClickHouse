@@ -261,9 +261,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
             const auto full_column = column->convertToFullColumnIfConst();
             const auto & decaying
                 = assert_cast<const ColumnExponentialTimeDecaying &>(*full_column);
-            const auto & prefix
-                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingPrefixColumn());
-            const UInt64 key = prefix.getData()[row];
+            const auto & ordering_key
+                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn());
+            const UInt64 key = ordering_key.getData()[row];
             writeBinaryLittleEndian(key, index_stream);
 
             if (settings.save_primary_index_in_memory)
