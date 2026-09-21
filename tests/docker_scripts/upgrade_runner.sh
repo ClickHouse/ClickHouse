@@ -200,15 +200,92 @@ timeout 1m clickhouse-client --query "
 # in the list of a `for` loop is not a command that `set -e` watches: a listing that fails or times out
 # would simply be an empty list, every mutation would survive into the upgraded server, and the log scan
 # below - which no longer tolerates their errors - would fail far away from the cause. Report it here.
-if mutation_keys=$(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done")
-then
+#
+# Each `KILL` keeps its error message, because the count below reports only how many mutations
+# survived: a survivor held by a read-only replica has an empty `latest_fail_reason`, so without the
+# message the report shows nothing about why the kill did not happen.
+function kill_unfinished_mutations()
+{
+    local mutation_key mutation_keys
+    mutation_keys=$(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done") || return 1
+
     for mutation_key in $mutation_keys
     do
         timeout 1m clickhouse-client --param_mutation_key="$mutation_key" --query \
-            "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" ||:
+            "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" \
+            2>> /test_output/unkilled_mutation_errors.txt ||:
     done
-else
-    echo -e "Cannot list the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
+}
+
+kill_unfinished_mutations \
+    || echo -e "Cannot list the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
+
+# A read-only replica refuses `KILL MUTATION`: killing a replicated mutation removes its ZooKeeper
+# node, which a replica with no session cannot do. Waiting does not reach it either - the read-only
+# state that preparing a table for shutdown leaves behind also deactivates the restarting thread, so
+# nothing activates the replica again - while re-attaching the table builds it from its metadata and
+# starts a replica that can. Restart only the read-only replicas that still hold an unfinished
+# mutation, so a run with nothing to recover pays nothing. The names travel base64-encoded and are
+# substituted server-side as identifiers, so an arbitrary one is neither split by the shell nor
+# parsed as SQL.
+#
+# A restart detaches the table before rebuilding it, and it returns as soon as the first
+# initialization attempt is over, whether that attempt succeeded or not. A table left detached, and
+# a replica whose initialization failed, both hold no mutations in memory, and `system.mutations`
+# reports only what an attached replica holds - so either state would drive the count below to zero
+# and report success for a mutation the upgraded server then resumes. A restart that does not report
+# success, that changes the number of replicas it found, or that leaves its replica still read-only,
+# is therefore a failure of this step on its own, whatever the count says.
+if mutations_left=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.mutations WHERE NOT is_done") \
+    && [ "$mutations_left" != 0 ] \
+    && replicas_before=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.replicas") \
+    && readonly_replicas=$(timeout 1m clickhouse-client --query "
+        SELECT DISTINCT base64Encode(database), base64Encode(table)
+        FROM system.replicas
+        WHERE is_readonly
+          AND (database, table) IN (SELECT database, table FROM system.mutations WHERE NOT is_done)
+        FORMAT TSV")
+then
+    restart_failed=0
+
+    while IFS=$'\t' read -r encoded_database encoded_table
+    do
+        [ -n "$encoded_database" ] || continue
+        restart_database=$(base64 -d <<< "$encoded_database")
+        restart_table=$(base64 -d <<< "$encoded_table")
+        timeout 1m clickhouse-client \
+            --param_database="$restart_database" \
+            --param_table="$restart_table" \
+            --query "SYSTEM RESTART REPLICA {database:Identifier}.{table:Identifier}" \
+            2>> /test_output/unkilled_mutation_errors.txt || restart_failed=1
+
+        recovered_replica=$(timeout 1m clickhouse-client \
+            --param_database="$restart_database" \
+            --param_table="$restart_table" \
+            --query "SELECT count() FROM system.replicas
+                WHERE database = {database:String} AND table = {table:String} AND NOT is_readonly" \
+            2>> /test_output/unkilled_mutation_errors.txt) || recovered_replica=unknown
+
+        if [ "$recovered_replica" != 1 ]
+        then
+            restart_failed=1
+            echo "The replica of $restart_database.$restart_table is missing or still read-only after SYSTEM RESTART REPLICA" \
+                >> /test_output/unkilled_mutation_errors.txt
+        fi
+    done <<< "$readonly_replicas"
+
+    replicas_after=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.replicas") || replicas_after=unknown
+    if [ "$replicas_after" != "$replicas_before" ]
+    then
+        restart_failed=1
+    fi
+
+    if [ "$restart_failed" != 0 ]
+    then
+        echo -e "Cannot restart a read-only replica holding a mutation left unfinished by the stress phase (see unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutation_errors.txt)" >> /test_output/test_results.tsv
+    fi
+
+    kill_unfinished_mutations ||:
 fi
 
 # The mutation entries of the `<Error>` scan below are removed on the assumption that this queue is empty
@@ -229,7 +306,7 @@ then
             WHERE NOT is_done
             ORDER BY database, table, mutation_id
             FORMAT Vertical" > /test_output/unkilled_mutations.txt ||:
-        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
+        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt and unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
     fi
 else
     echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
@@ -238,6 +315,7 @@ fi
 # The reports are only interesting when there was something to kill, or something left after it
 [ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
 [ -s /test_output/unkilled_mutations.txt ] || rm -f /test_output/unkilled_mutations.txt
+[ -s /test_output/unkilled_mutation_errors.txt ] || rm -f /test_output/unkilled_mutation_errors.txt
 
 # A mutation submitted to the old server and finished by the new one is a real part of the upgrade
 # contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
