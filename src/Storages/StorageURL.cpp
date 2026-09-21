@@ -600,6 +600,23 @@ StorageURLSource::~StorageURLSource() = default;
 
 Chunk StorageURLSource::generate()
 {
+    /// Release the reader, the format and the HTTP buffer on every exit from the loop, not only at the
+    /// end of a file: `ISource::work` merely marks the source finished, the processor itself is
+    /// destroyed only when the whole query is, and a query cancelled softly - a `max_execution_time`
+    /// with the `break` overflow mode, or a consumer which has enough data - keeps running afterwards.
+    /// Until these are released the background work of the format, the HTTP session and its buffers
+    /// stay pinned for the rest of the query, which is exactly what a cancellation is asking to stop.
+    auto release_reader = [&]
+    {
+        if (pipeline)
+            pipeline->reset();
+        reader.reset();
+        input_format.reset();
+        read_buf.reset();
+        http_response_headers_initialized = false;
+        total_rows_in_file = 0;
+    };
+
     while (true)
     {
         if (isCancelled())
@@ -614,7 +631,7 @@ Chunk StorageURLSource::generate()
         try
         {
             if (!reader && !initialize())
-                return {};
+                break;
 
             /// Re-check after initialize: some of its helpers swallow the errors of the requests they
             /// make - a failover probe, or the HEAD request for the file metadata whose absence is not
@@ -774,13 +791,10 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
-        reader.reset();
-        input_format.reset();
-        read_buf.reset();
-        http_response_headers_initialized = false;
-        total_rows_in_file = 0;
+        release_reader();
     }
+
+    release_reader();
     return {};
 }
 
