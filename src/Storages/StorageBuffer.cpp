@@ -1547,6 +1547,7 @@ void registerStorageBuffer(StorageFactory & factory)
             auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
             auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
+            columns.resetColumnTTLs();
         }
 
         return std::make_shared<StorageBuffer>(
