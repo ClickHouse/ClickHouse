@@ -82,8 +82,17 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt64 ordering_key)
     const UInt64 distance = negative
         ? midpoint - 1 - ordering_key
         : ordering_key - midpoint;
-    const UInt64 sortable = distance << 1;
-    const Float64 unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
+
+    UInt64 sortable = distance << 1;
+    Float64 unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
+    if (!std::isfinite(unit_timestamp))
+    {
+        /// Each ordering key represents two neighboring sortable Float64 values.
+        /// Pick the finite member of the pair at the infinities.
+        sortable += negative ? 1 : static_cast<UInt64>(-1);
+        unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
+    }
+
     return {negative ? -1.0 : 1.0, unit_timestamp};
 }
 
