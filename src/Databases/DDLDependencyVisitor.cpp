@@ -42,6 +42,7 @@ namespace
     class DDLDependencyVisitorData
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
+        friend void visitExpandedViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
             : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
@@ -91,6 +92,8 @@ namespace
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
+        /// Identifiers `ApplyWithSubqueryVisitor` left as references to `MATERIALIZED` CTEs.
+        std::unordered_set<const IAST *> skip_identifiers;
         QualifiedTableName table_name;
         String default_database;
         String current_database;
@@ -168,11 +171,15 @@ namespace
             {
                 if (create.isView())
                 {
+                    /// A name declared by a `WITH` list is not a table, so the dependencies of a view
+                    /// are collected from a copy of its query with the CTE references expanded.
+                    auto select_copy = create.select->clone();
+                    ApplyWithSubqueryVisitor::visit(select_copy);
+                    skip_asts.insert(create.select);
+                    visitExpandedViewQuery(select_copy, *this);
+
                     if (create.is_materialized_view)
                     {
-                        auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor::visit(select_copy);
-
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
                         /// (which strips the database before serialization). In that case, keep the global context's current database.
@@ -240,6 +247,10 @@ namespace
         void visitTableExpression(const ASTTableExpression & expr)
         {
             if (!expr.database_and_table_name)
+                return;
+
+            /// A reference to a `MATERIALIZED` CTE is not a table.
+            if (skip_identifiers.contains(expr.database_and_table_name.get()))
                 return;
 
             const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
@@ -468,6 +479,10 @@ namespace
 
             if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
             {
+                /// A reference to a `MATERIALIZED` CTE is not a table.
+                if (skip_identifiers.contains(arg.get()))
+                    return {};
+
                 /// ASTIdentifier or ASTTableIdentifier
                 auto table_identifier = identifier->createTable();
                 if (!table_identifier)
@@ -572,6 +587,13 @@ namespace
         static bool needChildVisit(const ASTPtr &, const ASTPtr & child, const Data & data) { return data.needChildVisit(child); }
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
+
+    /// Visits the query of a view with the `WITH` list applied, see `visitCreateQuery`.
+    void visitExpandedViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data)
+    {
+        DDLDependencyVisitor::Visitor visitor{data};
+        visitor.visit(select);
+    }
 
     void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
     {
