@@ -738,6 +738,13 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             }
         }
 
+        /// The target sink keeps the part it just wrote delayed until its next consume(), so a block
+        /// that writes no tags of its own must still push once this insert has pushed tags. Otherwise
+        /// the samples push below commits the previous block's samples while its tags stay delayed,
+        /// which is the ordering the unconditional push in step 4 used to guarantee.
+        if (tags_to_write == 0 && tags_pushed)
+            tags_to_write = num_time_series;
+
         if (tags_to_write > 0)
         {
             if (tags_to_write < num_time_series)
@@ -750,6 +757,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             }
 
             tags_pipeline->push(std::move(tags_block));
+            tags_pushed = true;
         }
     }
     else
