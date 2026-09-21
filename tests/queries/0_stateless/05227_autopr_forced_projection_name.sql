@@ -16,6 +16,10 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET enable_analyzer = 1;
+-- `clickhouse-test` randomizes `optimize_use_projections`, and both forcing settings are gated on it
+-- (`QueryPlanOptimizationSettings.cpp`: `force_projection_name` is left empty when projections are
+-- off). With it randomized to 0 nothing is forced, so there would be no skip to observe.
+SET optimize_use_projections = 1;
 SET force_optimize_projection_name = 'p_by_val';
 
 -- Twice: the first run would only collect statistics, so a single run could not tell a query the
