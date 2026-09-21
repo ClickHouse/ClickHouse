@@ -138,12 +138,43 @@ def test_features_without_table():
     response = requests.get(f"http://{node.ip_address}:9093/api/v1/features")
 
     assert response.status_code == 200, response.text
-    assert response.json() == {
-        "status": "success",
-        "data": {
-            "promql": {
-                "at_modifier": True,
-                "subqueries": True,
-            }
-        },
+    response_json = response.json()
+    assert response_json["status"] == "success"
+
+    features = response_json["data"]
+    assert set(features) == {"promql", "promql_functions", "promql_operators"}
+
+    expected_promql = {
+        "at_modifier", "bool", "by", "group_left", "group_right",
+        "ignoring", "negative_offset", "offset", "on", "per_query_lookback_delta",
+        "subqueries", "without",
     }
+    expected_functions = {
+        "abs", "absent", "absent_over_time", "acos", "acosh",
+        "asin", "asinh", "atan", "atanh", "avg_over_time",
+        "ceil", "changes", "clamp", "clamp_max", "clamp_min",
+        "cos", "cosh", "count_over_time", "day_of_month", "day_of_week",
+        "day_of_year", "days_in_month", "deg", "delta", "deriv",
+        "exp", "floor", "histogram_quantile", "hour", "idelta",
+        "increase", "irate", "label_join", "label_replace", "last_over_time",
+        "ln", "log10", "log2", "max_over_time", "min_over_time",
+        "minute", "month", "pi", "predict_linear", "present_over_time",
+        "quantile_over_time", "rad", "rate", "resets", "round",
+        "scalar", "sgn", "sin", "sinh", "sqrt",
+        "sum_over_time", "tan", "tanh", "time", "ts_of_max_over_time",
+        "ts_of_min_over_time", "vector", "year",
+    }
+    expected_operators = {
+        "!=", "!~", "%", "*", "+",
+        "-", "/", "<", "<=", "==",
+        "=~", ">", ">=", "@", "^",
+        "and", "atan2", "avg", "bottomk", "count",
+        "count_values", "group", "limitk", "max", "min",
+        "or", "quantile", "stddev", "stdvar", "sum",
+        "topk", "unless",
+    }
+
+    assert set(features["promql"]) == expected_promql
+    assert set(features["promql_functions"]) == expected_functions
+    assert set(features["promql_operators"]) == expected_operators
+    assert all(value is True for category in features.values() for value in category.values())
