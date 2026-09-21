@@ -27,10 +27,8 @@ using ValueMaskingFunc = std::function<bool(String &)>;
 /// precondition holds by construction and needs no check.
 inline bool maskURLCredentials(String & value)
 {
-    /// Nothing validates these settings when they are set, `StorageURL::resolveURLBase` accepts a base
-    /// whose `://` is anywhere rather than at the start, and a statement is masked for logging before
-    /// its settings are validated. So a value with no scheme in front still reaches a log, and no URI
-    /// parser can locate the credential inside it: hide such a value whole.
+    /// A statement is masked for logging before its settings are validated, so a value that no URI
+    /// parser can read still reaches a log.
     if (findURIAuthority(value) == String::npos && value.contains('@'))
     {
         value = "[HIDDEN]";
