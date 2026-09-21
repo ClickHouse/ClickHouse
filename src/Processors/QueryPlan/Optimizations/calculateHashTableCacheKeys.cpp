@@ -58,6 +58,24 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
         if (table_expression->as<TableFunctionNode>())
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
+    /// The columns the read produces. Two reads of the same table that produce different columns move
+    /// different volumes of data, so they must not share a statistics entry: the cache stores
+    /// `input_bytes` and `output_bytes`, and nothing downstream catches the difference - the drift
+    /// check compares `total_rows_to_read`, which is the same for both. A projection above the read is
+    /// no help either, since one that hands its inputs onward unchanged is transparent for the key.
+    ///
+    /// Types are hashed alongside the names because a subcolumn is a column of its own here: `n.a` and
+    /// `n.a.size0` are both read from the same `Nested` column under names that differ only in a
+    /// suffix, and they differ by the whole array payload.
+    ///
+    /// This is the read's own header, before any renaming step, so the names are the table's columns
+    /// rather than the branch-local `__tableN.x` form, and the single-replica and parallel-replicas
+    /// plan builds agree on them.
+    for (const auto & column : *read.getOutputHeader())
+    {
+        hash.update(column.name);
+        hash.update(column.type->getName());
+    }
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();
