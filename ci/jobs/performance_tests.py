@@ -61,7 +61,7 @@ GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
@@ -69,7 +69,8 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+-- The display name is part of the key: compare.sh joins this file on all three.
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
