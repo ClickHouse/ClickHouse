@@ -26,6 +26,19 @@ env TZDIR="${TZDIR_LOCAL}" TZ="right/Europe/Berlin" ${CLICKHOUSE_LOCAL} --query 
 env TZDIR="${TZDIR_LOCAL}" TZ=":${TZDIR_LOCAL}/posix/Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
 env TZDIR="${TZDIR_LOCAL}" TZ=":${TZDIR_LOCAL}/right/Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
 
+# The filesystem also accepts path spellings that a zone name does not have: a `./` component, a
+# repeated separator, or a leading `./`. They all point at the same zone file, so they have to end
+# up as the zone name the path resolves to, and not be kept verbatim.
+env TZDIR="${TZDIR_LOCAL}" TZ="Europe/./Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+env TZDIR="${TZDIR_LOCAL}" TZ="Europe//Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+env TZDIR="${TZDIR_LOCAL}" TZ="./Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+env TZDIR="${TZDIR_LOCAL}" TZ=":Europe/./Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+env TZDIR="${TZDIR_LOCAL}" TZ=":Europe//Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+
+# A non-canonical spelling of a prefixed name has to lose both the prefix and the spelling.
+env TZDIR="${TZDIR_LOCAL}" TZ="posix/./Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+env TZDIR="${TZDIR_LOCAL}" TZ="right//Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
+
 # A canonical name is unaffected.
 env TZDIR="${TZDIR_LOCAL}" TZ="Europe/Berlin" ${CLICKHOUSE_LOCAL} --query "SELECT timezone()"
 

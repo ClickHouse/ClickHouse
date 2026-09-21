@@ -54,6 +54,24 @@ std::string canonicalTimeZoneName(std::string name)
 }
 
 
+/// The host selects its time zone by a path, and the same zone has many path spellings that the
+/// filesystem accepts but a zone name does not: `Europe/./Amsterdam`, `Europe//Amsterdam`, and any
+/// repetition of `./` and `/`. The raw spelling is preferred only because resolving symlinks can
+/// rename a zone (`UTC` -> `UCT`), so keep it when the time zone database knows it, and otherwise
+/// use the name that resolving the path produced.
+std::string preferredTimeZoneName(const std::string & tz_name, const std::filesystem::path & relative_path)
+{
+    if (!tz_name.empty())
+    {
+        std::string candidate = canonicalTimeZoneName(tz_name);
+        if (DateLUTImpl::isSupportedTimeZoneName(candidate))
+            return candidate;
+    }
+
+    return canonicalTimeZoneName(relative_path.lexically_normal().string());
+}
+
+
 std::string determineDefaultTimeZone()
 {
     namespace fs = std::filesystem;
@@ -123,7 +141,7 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
 
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return canonicalTimeZoneName(tz_name.empty() ? relative_path.string() : tz_name);
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// Try the same with full symlinks resolution
@@ -135,7 +153,7 @@ std::string determineDefaultTimeZone()
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return canonicalTimeZoneName(tz_name.empty() ? relative_path.string() : tz_name);
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied (not symlinked)
