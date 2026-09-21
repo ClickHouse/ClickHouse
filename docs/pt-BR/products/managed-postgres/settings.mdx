@@ -40,3 +40,11 @@ Para modificar um parâmetro, selecione o botão **Editar parâmetros**. Selecio
 Todas as alterações feitas nos parâmetros de configuração normalmente são persistidas na instância em até um minuto. Alguns parâmetros exigem a reinicialização do banco de dados para entrarem em vigor. Essas alterações serão aplicadas após a próxima reinicialização, que você pode acionar manualmente na barra de ferramentas **Ações do serviço**.
 
 Consulte a [documentação](https://www.postgresql.org/docs/current/runtime-config.html) oficial sobre os parâmetros de configuração. A lista de parâmetros disponíveis para configuração será ampliada em breve. Enquanto isso, entre em contato com o [suporte](https://clickhouse.com/support/program) para solicitar um parâmetro que ainda não é suportado.
+
+<div id="scheduled-upgrades">
+  ## Upgrades agendados
+</div>
+
+A seção **Configuration** também permite controlar quando a manutenção da plataforma — upgrades de versões secundárias do PostgreSQL, atualizações de recursos do serviço gerenciado e patches do sistema operacional — será aplicada à sua instância. Selecione **Configure agendamento** na subseção **Upgrades agendados** para escolher uma janela de duas horas em UTC e, opcionalmente, os dias da semana em que os upgrades poderão ser aplicados.
+
+Para conhecer as janelas disponíveis e saber o que um agendamento cobre ou não, consulte [upgrades agendados](/pt-BR/products/managed-postgres/upgrades#scheduled-upgrades).

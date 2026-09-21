@@ -44,7 +44,7 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "해시 조인의 자동 디스크 스필을 제어하는 새로운 설정입니다. 0이 아닌 값을 지정하면 스필이 활성화되고 바이트 임계값이 설정됩니다."}]}]} />
 
-0이 아닌 값으로 설정하고 `join_algorithm`이 `hash`, `parallel_hash`, `default` 또는 `auto`인 경우, 오른쪽 데이터가 이 바이트 수를 초과하면 디스크로 스필할 수 있도록 해시 조인이 자동으로 grace hash join으로 변환됩니다. `0`(기본값)으로 설정하면 이 절대 바이트 임계값은 비활성화되지만, `max_bytes_ratio_before_external_join`(기본값 `0.5`)을 통해 자동 스필이 계속 발생할 수 있습니다. 자동 스필을 완전히 비활성화하려면 두 값 모두 `0`으로 설정하십시오. 스필될 수 있는 조인은 일반적으로 조인을 통한 순서대로 읽기 최적화를 방해합니다. 하지만 최적화가 계속 적용되고 대신 조인이 메모리에 고정되는 경우는 [`query_plan_read_in_order_through_spilling_join`](/ko/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join)을 참조하십시오.
+0이 아닌 값으로 설정하고 `join_algorithm`이 `hash`, `parallel_hash`, `default` 또는 `auto`인 경우, 오른쪽 데이터가 이 바이트 수를 초과하면 디스크로 스필할 수 있도록 해시 조인이 자동으로 grace hash join으로 변환됩니다. `0`(기본값)으로 설정하면 이 절대 바이트 임계값은 비활성화되지만, `max_bytes_ratio_before_external_join`(기본값 `0.5`)을 통해 자동 스필이 계속 발생할 수 있습니다. 자동 스필을 완전히 비활성화하려면 두 값 모두 `0`으로 설정하십시오. 이 설정을 사용하면 조인을 통한 read in order 최적화는 적용되지 않습니다.
 
 <div id="max_bytes_before_external_sort">
   ## max_bytes_before_external_sort
@@ -149,8 +149,6 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 `max_bytes_before_external_join`과 `max_bytes_ratio_before_external_join`이 모두 설정된 경우 계산된 임계값 중 더 작은 값이 사용됩니다. 비율이 `0`이면 절대값 설정만 적용됩니다.
 
 `join_algorithm`이 `hash`, `parallel_hash`, `default`, `auto` 중 하나이고 임시 데이터 경로가 구성된 경우에만 적용됩니다.
-
-일반적으로 스필될 수 있는 조인은 조인을 통한 순서대로 읽기 최적화를 방지합니다. 최적화가 계속 적용되고 조인이 대신 메모리에 고정되어 이 비율에 도달해도 grace hash join으로 전환되지 않는 조건은 [`query_plan_read_in_order_through_spilling_join`](/ko/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join)을 참조하십시오.
 
 <div id="max_bytes_ratio_before_external_sort">
   ## max_bytes_ratio_before_external_sort

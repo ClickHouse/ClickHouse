@@ -44,7 +44,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre permettant de contrôler le déversement sur disque automatique des hash joins sur disque. Une valeur non nulle active le déversement sur disque et définit le seuil en octets."}]}]} />
 
-S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, le hash join sera automatiquement converti en grace hash join pour permettre le déversement sur disque sur disque lorsque les données du côté droit dépassent ce nombre d&#39;octets. Lorsqu&#39;il est défini sur 0 (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`) ; définissez les deux sur `0` pour désactiver complètement le déversement sur disque automatique. Une jointure susceptible de se déverser sur disque empêche normalement l&#39;optimisation de lecture dans l’ordre via jointure ; consultez [`query_plan_read_in_order_through_spilling_join`](/fr/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) pour savoir dans quels cas l&#39;optimisation s&#39;applique malgré tout et où la jointure est plutôt maintenue en mémoire.
+S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, le hash join sera automatiquement converti en grace hash join pour permettre le déversement sur disque sur disque lorsque les données de droite dépassent ce nombre d&#39;octets. Lorsqu&#39;il est défini sur 0 (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`) ; définissez les deux sur `0` pour désactiver complètement le déversement sur disque automatique. Cela empêche l&#39;optimisation de lecture `read in order` via join.
 
 <div id="max_bytes_before_external_sort">
   ## max_bytes_before_external_sort
@@ -146,8 +146,6 @@ Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utili
 Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` sont tous deux définis, c&#39;est le plus petit seuil obtenu qui est utilisé. Si le ratio vaut `0`, seule la valeur absolue s&#39;applique.
 
 N&#39;a d&#39;effet que lorsque `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto` et qu&#39;un chemin de données temporaire est configuré.
-
-Un join susceptible de déverser des données sur disque empêche normalement l&#39;optimisation de lecture dans l&#39;ordre via jointure ; consultez [`query_plan_read_in_order_through_spilling_join`](/fr/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_spilling_join) pour savoir dans quels cas l&#39;optimisation s&#39;applique malgré tout et où le join est plutôt maintenu en mémoire, afin que l&#39;atteinte de ce ratio ne le convertisse pas en grace hash join.
 
 <div id="max_bytes_ratio_before_external_sort">
   ## max_bytes_ratio_before_external_sort

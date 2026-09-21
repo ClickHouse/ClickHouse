@@ -34,10 +34,8 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
     virtual size_t readRows(size_t from_mark, bool continue_reading,
-                            size_t max_rows_to_read, size_t rows_offset,
-                            Columns & res_columns) = 0;
+                            size_t max_rows_to_read, MutableColumns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -117,8 +115,8 @@ public:
     const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
 
 protected:
-    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
-    /// propagated. Used when compiling default or virtual-column expressions at read time.
+    /// Creates a context copy with experimental settings enabled.
+    /// Used when compiling default or virtual-column expressions at read time.
     ContextPtr createContextForDefaultExpressions() const;
 
     /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
@@ -131,7 +129,7 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;

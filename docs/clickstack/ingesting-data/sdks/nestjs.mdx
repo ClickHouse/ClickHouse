@@ -6,20 +6,12 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integration', 'application monitoring']
 ---
 
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 The ClickStack NestJS integration allows you to create a logger or use the default
 logger to send logs to ClickStack (powered by [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
 
-**This guide integrates:**
-
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✖️ Metrics</td>
-      <td className="pe-2">✖️ Traces</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs']} />
 
 _To send over metrics or APM/traces, you'll need to add the corresponding language
 integration to your application as well._
@@ -36,8 +28,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 @Module({
   imports: [
     HyperDXNestLoggerModule.forRoot({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // Not need for Managed ClickStack
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     }),
@@ -92,8 +84,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: HyperDXNestLoggerModule.createLogger({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // Not needed for Managed ClickStack
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     })

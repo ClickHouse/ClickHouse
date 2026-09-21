@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- A read is priced on the rows the primary key keeps, not on the rows the filter keeps.
 -- `t_rc_dim` is filtered on `v`, which is not in the sorting key, so the scan covers the whole
 -- table although the estimate (from column statistics) is a few hundred rows. Without the
@@ -9,7 +6,6 @@
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 8;
 -- The tables are small, so remove the fixed exchange cost: it would decide the plan instead

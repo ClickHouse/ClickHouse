@@ -38,6 +38,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。允许绕过分布式缓存连接池。
 
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
+
+<CloudOnlyBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "新增设置（仅用于 CI 测试），可针对每个查询覆盖分布式缓存客户端 ID。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置（仅用于 CI 测试），可针对每个查询覆盖分布式缓存客户端 ID。"}]}]} />
+
+仅在 ClickHouse Cloud 中生效。此设置仅用于 CI 测试：非空时，会覆盖 registry 中为该查询请求配置的分布式缓存客户端 ID。它使测试能够将数据分布在一组数量有限的客户端 ID 上，同时确保相同的数据始终位于同一客户端 ID 上。要求在分布式缓存客户端配置中启用 `ci_mode`：如果未启用 (默认情况，例如在生产环境中) ，通过分布式缓存路由读写的查询将以 `SUPPORT_IS_DISABLED` 失败，而不会静默回退到已配置的客户端 ID。从不访问分布式缓存的查询不受影响，因此会忽略此值。
+
 <div id="distributed_cache_connect_backoff_max_ms">
   ## distributed_cache_connect_backoff_max_ms
 </div>
@@ -188,7 +198,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}]} />
 
 仅在 ClickHouse Cloud 中有效。当从已打开的分布式缓存 stream 的当前位置寻道至其他位置时，如果为继续通过读取范围 ID 机制重用连接而需丢弃的预估在途字节数超过此值，则会丢弃该连接并新建连接。这样可避免在频繁寻道时排空大量未使用的数据。设为 0 可禁用此功能，并始终重用连接。
 

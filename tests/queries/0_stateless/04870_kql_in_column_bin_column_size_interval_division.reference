@@ -1,0 +1,43 @@
+-- in (column) is a scalar membership test --
+a
+b
+-- in (column, literal) mixes columns and literals --
+b
+-- a let-bound tabular name and a piped expression still read as tables --
+1
+0
+-- bin of a datetime by a timespan column --
+2026-08-01 12:00:00.0000000
+2026-08-01 00:00:00.0000000
+2026-08-01 12:30:00.0000000
+-- bin of a datetime by a negative or null timespan column is null per row --
+2026-08-01 12:00:00.0000000
+\N
+-- bin of a datetime by a constant keeps its alignment --
+2026-08-01 12:00:00.0000000
+2026-08-01 00:00:00.0000000
+2026-07-30 00:00:00.0000000
+1969-12-30 00:00:00.0000000
+\N
+-- bin_at still agrees with bin when the fixed point is the epoch --
+2026-08-01 12:00:00.0000000
+1969-12-31 00:00:00.0000000
+-- timespan / timespan is a real --
+1.5
+2
+4.8
+1120343
+-- timespan / timespan over columns --
+1.5
+4
+-- a null operand gives a null ratio --
+\N
+-- integer and real division are unchanged --
+3
+3.5
+-- kqlDivide over intervals from SQL --
+1.5
+2
+-- kqlBin over a datetime with a non-constant interval from SQL --
+2026-08-01 12:00:00.0000000
+2026-08-01 12:34:56.1230000
