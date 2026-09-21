@@ -120,11 +120,11 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     if (collectors.logs && client_logs_level != LogsLevel::none)
     {
         /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
-        /// unbounded (the default queue blocks and never drops).
+        /// unbounded (the default capacity is never reached in practice).
         const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
         task_state->logs_queue = max_buffered_log_rows != 0
             ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
-            : std::make_shared<InternalTextLogsQueue>();
+            : std::make_shared<InternalTextLogsQueue>(); /// default capacity: effectively unbounded
         task_state->logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
         task_state->logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
     }
