@@ -155,10 +155,17 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
-/// An EXPLAIN-shaped dump of a plan with every step's hash beside it. The hashes are computed
-/// bottom-up, so when two plans that should match do not, the deepest level at which two dumps stop
-/// agreeing is where they actually diverge. That is the one thing a failed match needs and a single
-/// log line cannot carry, which is why this sits at the test level and the summary stays at trace.
+/// `EXPLAIN` of a plan with every step's hash beside it. The hashes are computed bottom-up, so when
+/// two plans that should match do not, the deepest level at which two dumps stop agreeing is where
+/// they actually diverge. That is the one thing a failed match needs and a single log line cannot
+/// carry, which is why this sits at the test level and the summary stays at trace.
+///
+/// Not `QueryPlan::explainPlan`: the text renderer behind it (`explainStep` in `QueryPlan.cpp`) is
+/// file-local, and the entry point takes a `QueryPlan` where the only thing in hand here is a node.
+/// The JSON form is a public method and does carry the step id, but reading two JSON documents side
+/// by side to find the level they stop agreeing at defeats the purpose. So the line is built from
+/// the same two accessors `explainStep` uses, `getName` through `getUniqID` and `getStepDescription`,
+/// and the hash - the one thing `EXPLAIN` has no way to show - is appended.
 String explainPlanWithHashes(const QueryPlan::Node & root, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
 {
     String out;
@@ -175,11 +182,14 @@ String explainPlanWithHashes(const QueryPlan::Node & root, const std::unordered_
 
         const auto * step = frame.node->step.get();
         const auto it = hashes.find(frame.node);
+        const auto description = step->getStepDescription();
+        /// `getUniqID` is the step name with an instance number appended, so this is the name
+        /// `EXPLAIN` prints, disambiguated - which the trace message below refers to.
         out += fmt::format(
-            "{}{} ({}) hash={}\n",
+            "{}{}{} hash={}\n",
             String(frame.depth * 2, ' '),
             step->getUniqID(),
-            step->getStepDescription().empty() ? step->getName() : String(step->getStepDescription()),
+            description.empty() ? "" : fmt::format(" ({})", description),
             it != hashes.end() ? fmt::format("{}", it->second) : "<not hashed>");
 
         /// Reversed, so that the children come out of the stack in plan order.
