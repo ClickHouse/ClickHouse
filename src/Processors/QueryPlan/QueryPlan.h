@@ -90,6 +90,11 @@ struct ExplainPlanOptions
     /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
     /// durin colleciton
     bool matches = false;
+    /// When set, each step is annotated with the hash of the plan node it belongs to. Nothing in a
+    /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
+    /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
+    /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
+    const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };

@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -155,48 +156,29 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
-/// `EXPLAIN` of a plan with every step's hash beside it. The hashes are computed bottom-up, so when
-/// two plans that should match do not, the deepest level at which two dumps stop agreeing is where
-/// they actually diverge. That is the one thing a failed match needs and a single log line cannot
-/// carry, which is why this sits at the test level and the summary stays at trace.
-///
-/// Not `QueryPlan::explainPlan`: the text renderer behind it (`explainStep` in `QueryPlan.cpp`) is
-/// file-local, and the entry point takes a `QueryPlan` where the only thing in hand here is a node.
-/// The JSON form is a public method and does carry the step id, but reading two JSON documents side
-/// by side to find the level they stop agreeing at defeats the purpose. So the line is built from
-/// the same two accessors `explainStep` uses, `getName` through `getUniqID` and `getStepDescription`,
-/// and the hash - the one thing `EXPLAIN` has no way to show - is appended.
-String explainPlanWithHashes(const QueryPlan::Node & root, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+/// `calculateHashTableCacheKeys` keys by plan node; `ExplainPlanOptions` keys by step, so that it
+/// does not have to know about `QueryPlan::Node`. One node owns one step, so this is a rekeying.
+std::unordered_map<const IQueryPlanStep *, UInt64> hashesByStep(const std::unordered_map<const QueryPlan::Node *, UInt64> & by_node)
 {
-    String out;
-    struct Frame
-    {
-        const QueryPlan::Node * node;
-        size_t depth;
-    };
-    std::vector<Frame> stack{{&root, 0}};
-    while (!stack.empty())
-    {
-        const auto frame = stack.back();
-        stack.pop_back();
+    std::unordered_map<const IQueryPlanStep *, UInt64> by_step;
+    by_step.reserve(by_node.size());
+    for (const auto & [node, hash] : by_node)
+        by_step.emplace(node->step.get(), hash);
+    return by_step;
+}
 
-        const auto * step = frame.node->step.get();
-        const auto it = hashes.find(frame.node);
-        const auto description = step->getStepDescription();
-        /// `getUniqID` is the step name with an instance number appended, so this is the name
-        /// `EXPLAIN` prints, disambiguated - which the trace message below refers to.
-        out += fmt::format(
-            "{}{}{} hash={}\n",
-            String(frame.depth * 2, ' '),
-            step->getUniqID(),
-            description.empty() ? "" : fmt::format(" ({})", description),
-            it != hashes.end() ? fmt::format("{}", it->second) : "<not hashed>");
-
-        /// Reversed, so that the children come out of the stack in plan order.
-        for (auto child = frame.node->children.rbegin(); child != frame.node->children.rend(); ++child)
-            stack.push_back({*child, frame.depth + 1});
-    }
-    return out;
+/// The plan as `EXPLAIN` prints it, with each step's hash alongside. The hashes are bottom-up, so
+/// when two plans that should match do not, the deepest level at which the two dumps stop agreeing
+/// is where they actually diverge - the one thing a failed match needs that a single line cannot
+/// carry, which is why this sits at the test level and the summary stays at trace.
+String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+{
+    const auto by_step = hashesByStep(hashes);
+    ExplainPlanOptions options;
+    options.step_hashes = &by_step;
+    WriteBufferFromOwnString buffer;
+    plan.explainPlan(buffer, options);
+    return buffer.str();
 }
 
 /// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
@@ -206,13 +188,13 @@ String explainPlanWithHashes(const QueryPlan::Node & root, const std::unordered_
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
 std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
-    QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_replica_plan_root)
+    const QueryPlan & parallel_replicas_plan,
+    const QueryPlan & single_replica_plan)
 {
-    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
+    auto pr_node_hashes = calculateHashTableCacheKeys(*parallel_replicas_plan.getRootNode());
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
-        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+        auto nopr_node_hashes = calculateHashTableCacheKeys(*single_replica_plan.getRootNode());
 
         for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
         {
@@ -239,8 +221,8 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             getLogger("AutoParallelReplicas"),
             "No match for hash {}. Plan with parallel replicas:\n{}\nSingle-node plan:\n{}",
             it->second,
-            explainPlanWithHashes(parallel_replicas_plan_root, pr_node_hashes),
-            explainPlanWithHashes(single_replica_plan_root, nopr_node_hashes));
+            explainWithHashes(parallel_replicas_plan, pr_node_hashes),
+            explainWithHashes(single_replica_plan, nopr_node_hashes));
 
         /// Say what was looked for. Without the hash and the step there is nothing to act on: this
         /// is by far the most common reason the optimization gives up.
@@ -534,7 +516,7 @@ void considerEnablingParallelReplicas(
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
-        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas, query_plan);
     if (!corresponding_node_in_single_replica_plan)
         return;
 

@@ -304,6 +304,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
 
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            map.add("Node Hash", fmt::format("{}", it->second));
+    }
+
     if (options.description)
     {
         const auto & description = step.getStepDescription();
@@ -441,6 +447,12 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            settings.out << fmt::format(" hash={}", it->second);
+    }
 
     if (options.estimates)
     {
