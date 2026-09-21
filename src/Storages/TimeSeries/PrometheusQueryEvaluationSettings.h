@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -33,9 +32,6 @@ struct PrometheusQueryEvaluationSettings
     /// We use these data types for the columns we read from table function prometheusQuery().
     DataTypePtr timestamp_data_type;
     DataTypePtr scalar_data_type;
-
-    /// The version of the TimeSeries table.
-    UInt64 time_series_version = TimeSeriesVersion::LATEST;
 
     PrometheusQueryEvaluationMode mode = PrometheusQueryEvaluationMode::QUERY;
 

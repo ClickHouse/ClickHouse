@@ -43,56 +43,49 @@ MaterializedCTEPtr extractCTE(StoragePtr storage)
 
 /// Each call to a parameterized view with a different set of argument values produces a fresh
 /// `StorageView` that carries the substituted inner query but shares the original `StorageID`.
-/// Return the hash of that query so `isEqualImpl` and `updateTreeHashImpl` can distinguish such
-/// storages by content.
-///
-/// The hash is computed once per node: the inner query can be very large, and the tree hash of
-/// every expression that references a column of the view descends into this node, so traversing
-/// the query on every call made analysis of large parameterized view trees several times slower.
-std::optional<IASTHash> getParameterizedViewQueryHash(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
+/// Return that substituted query so callers can distinguish such storages by content.
+ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
 {
     if (!storage)
-        return {};
-    const auto * view = storage->as<StorageView>();
+        return nullptr;
+    auto * view = storage->as<StorageView>();
     if (!view || !view->isParameterizedView())
-        return {};
-    return storage_snapshot->metadata->getSelectQuery().inner_query->getTreeHash(/*ignore_aliases=*/false);
+        return nullptr;
+    auto metadata_snapshot = view->getInMemoryMetadataPtr(nullptr, false);
+    return metadata_snapshot->getSelectQuery().inner_query;
 }
 
 }
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))
     , storage_metadata(storage_snapshot_->metadata)
     , storage_snapshot(std::move(storage_snapshot_))
     , materialized_cte(extractCTE(storage))
-    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {}
 
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(std::move(storage_lock_))
     , storage_metadata(storage_snapshot_->metadata)
     , storage_snapshot(std::move(storage_snapshot_))
     , materialized_cte(extractCTE(storage))
-    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]))
     , storage_metadata(storage->getInMemoryMetadataPtr(context, false))
     , storage_snapshot(storage->getStorageSnapshot(storage_metadata, context))
     , materialized_cte(extractCTE(storage))
-    , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {
 }
 
@@ -134,22 +127,8 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-
-    if (table_expression_modifiers)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
-
-    parameterized_view_query_hash = getParameterizedViewQueryHash(storage, storage_snapshot);
-}
-
-void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-{
-    table_expression_modifiers = std::move(table_expression_modifiers_value);
-
-    if (storage_snapshot)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -188,7 +167,16 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     /// Parameterized views: two calls with different argument values share the same `StorageID` but
     /// hold different substituted queries. Compare the substituted queries so downstream passes that
     /// key off the tree hash (e.g. `PreparedSets` in `CollectSets`) do not collapse them.
-    return parameterized_view_query_hash == rhs_typed.parameterized_view_query_hash;
+    auto lhs_inner = getParameterizedViewInnerQuery(storage);
+    auto rhs_inner = getParameterizedViewInnerQuery(rhs_typed.storage);
+    if (lhs_inner || rhs_inner)
+    {
+        if (!lhs_inner || !rhs_inner)
+            return false;
+        return lhs_inner->getTreeHash(/*ignore_aliases=*/false) == rhs_inner->getTreeHash(/*ignore_aliases=*/false);
+    }
+
+    return true;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -213,11 +201,8 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     /// See note in `isEqualImpl`: parameterized-view calls reuse the same `StorageID`, so we mix in
     /// the substituted inner query to keep distinct argument values hashing to distinct values.
-    if (parameterized_view_query_hash)
-    {
-        state.update(parameterized_view_query_hash->low64);
-        state.update(parameterized_view_query_hash->high64);
-    }
+    if (auto inner_query = getParameterizedViewInnerQuery(storage))
+        inner_query->updateTreeHash(state, /*ignore_aliases=*/false);
 }
 
 QueryTreeNodePtr TableNode::cloneImpl() const
@@ -227,7 +212,6 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->temporary_table_name = temporary_table_name;
 
     result_table_node->materialized_cte = materialized_cte;
-    result_table_node->parameterized_view_query_hash = parameterized_view_query_hash;
 
     return result_table_node;
 }

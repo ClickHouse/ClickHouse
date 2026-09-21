@@ -9,7 +9,6 @@ Positions: 2
       sum(__table1.number)
         Function: sum(UInt64) → UInt64
         Arguments: __table1.number
-  Mode: memory-efficient
     Union
       Aggregating
       Keys: bitAnd(__table1.number, 3_UInt8)
@@ -77,7 +76,6 @@ Positions: 2
       sum(__table1.number)
         Function: sum(UInt64) → UInt64
         Arguments: __table1.number
-  Mode: memory-efficient
     Union
       Aggregating
       Keys: bitAnd(__table1.number, 3_UInt8)
@@ -151,7 +149,6 @@ Positions: 2
       sum(__table1.number)
         Function: sum(UInt64) → UInt64
         Arguments: __table1.number
-  Mode: memory-efficient
     Union
       Aggregating
       Keys: bitAnd(__table1.number, 3_UInt8)
@@ -201,7 +198,6 @@ Positions: 2
       sum(__table1.number)
         Function: sum(UInt64) → UInt64
         Arguments: __table1.number
-  Mode: memory-efficient
     Union
       Aggregating
       Keys: bitAnd(__table1.number, 3_UInt8)

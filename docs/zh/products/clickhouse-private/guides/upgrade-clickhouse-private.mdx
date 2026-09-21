@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "升级 ClickHouse Private"
+description: "将 ClickHouse Private 组件——operator 和 ClickHouse 集群（Keeper + 服务器）——升级到新版本。"
+---
+
+将 ClickHouse Private 组件——operator 和 ClickHouse 集群 (Keeper + 服务器) ——升级到新版本。
+
+> **最佳实践：** 在应用到生产环境之前，务必先在暂存或测试集群上执行升级。强烈建议在标准升级流程中使用一个与生产环境一致的专用测试集群。
+
+<div id="pre-upgrade-checklist">
+  ## 升级前检查清单
+</div>
+
+开始升级前：
+
+1. **确认集群健康** —— 确认所有 服务器 和 keeper Pod (容器组) 都在运行且已就绪，并且 `ClickhouseCluster` CR 的状态中没有任何错误：
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   如果有任何 pod (容器组) 处于崩溃重启循环状态，或集群处于降级状态，请勿继续。
+
+2. **&#x20;(强烈建议在生产环境中执行) 对集群进行一次全量备份** —— 请参阅 [备份和恢复 ClickHouse](/zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)。继续前，请确认备份已成功完成 (`system.backups` 中的 `status = BACKUP_DONE`) 。
+
+3. **确保上一版本可用于回滚** —— 确认上一版本的制品仍可从内部 ECR 获取。只要相关镜像和 chart 仍然可用，就足以在需要时快速回滚。
+
+4. **将新版本的所有镜像复制到内部 ECR**。目标版本请参考 [组件版本参考](/zh/products/clickhouse-private/reference/component-versions)。
+
+5. **运行预检**。预检会验证其他要求，并检查已弃用的功能开关。更多详情，请参阅 [操作指南：运行预检](/zh/products/clickhouse-private/guides/run-preflight-checks) 页面。
+
+<div id="upgrade-procedure">
+  ## 升级流程
+</div>
+
+<Steps>
+  <Step>
+    ### 1. 升级 Operator Helm 图表
+
+    保持现有的所有 helm 配置值不变，只将 operator 版本更新为新的目标版本。
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **注意：** 升级 operator 可能会触发其管理的所有 ClickHouse 集群滚动重启。如果你有多个集群，并希望先在其中一个集群上验证升级，再让 operator 对其他集群执行协调，请参阅下方的[升级期间保护集群](#protecting-clusters-during-upgrade)。
+  </Step>
+
+  <Step>
+    ### 2. 验证升级后的 Operator
+
+    确认 operator 部署正在运行且状态正常：
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    检查日志中没有错误，并确认所有受管集群均已成功完成协调：
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. 升级 onprem-clickhouse-cluster Helm 图表
+
+    为每个集群升级 `onprem-clickhouse-cluster` helm 图表。保持现有的所有 helm 配置值不变，只将 ClickHouse 服务器 和 Keeper image 的版本更新为新的目标版本。
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    这会触发 **Keeper 和 服务器 pod (容器组) 的滚动重启** (每次重启一个 pod (容器组) ) 。对每个集群重复此操作。
+  </Step>
+
+  <Step>
+    ### 4. 验证升级后的集群
+
+    滚动重启完成后，确认集群状态正常：
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    所有 Pod (容器组) 都应处于 `Running` 状态，且 `ClickhouseCluster` CR 不应显示任何错误。若要进一步验证连通性，可对 ClickHouse 服务执行端口转发 (参见相关[教程](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)中的 端口转发 部分) ，并运行测试查询。
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## 升级期间保护集群
+</div>
+
+如果你在同一个 operator 下管理多个集群，并希望先在其中一个集群上验证 operator 升级，再让它协调其他集群 (例如，先在暂存集群上测试，再推广到生产环境) ，请使用 `clickhouse.com/skip-reconcile` 注解来暂停特定集群的协调。
+
+在升级 operator 之前，将该注解添加到你想要保护的任意集群：
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+对于带有注解的集群，Operator 将完全跳过协调——不会执行任何重启或配置变更。待你在测试集群上验证升级后，删除该注解，即可让 Operator 恢复正常协调：
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+通过查看其日志，确认 operator 已检测到该注解：
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## 回滚
+</div>
+
+如果升级后发现问题：
+
+* **Operator 回滚：**重新部署上一版本的 operator Helm 图表。
+* **集群回滚：**使用先前的 服务器 和 Keeper 镜像版本，重新部署上一版本的 `onprem-clickhouse-cluster` Helm 图表。
+* **数据恢复：**如果怀疑存在数据问题，请从升级前检查清单中备份的数据进行恢复——参见 [备份和恢复 ClickHouse](/zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)。

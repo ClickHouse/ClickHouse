@@ -20,11 +20,15 @@ ID プロバイダーの変更などの理由で、組織から SAML インテ�
 組織には、SAML を削除した後にユーザーを組織へ再招待できるよう、別の認証方法を持つ管理ユーザーが 1 人必要です。これらの手順を実行するには、Admin 権限を持つ ClickHouse Cloud ユーザーが必要です。
 
 <Steps>
-  <Step title="招待を有効にする" id="enable-invitations">
+  <Step>
+    ### 招待を有効にする
+
     [ClickHouse Cloud](https://console.clickhouse.cloud) にログインし、件名を `Enable invitations for SAML organization` としてサポートチケットを送信します。これは、SAML 以外の方法でユーザーを追加できるようにするための依頼です。
   </Step>
 
-  <Step title="再招待するユーザーを確認する" id="note-users-to-be-reinvited">
+  <Step>
+    ### 再招待するユーザーを確認する
+
     左下の組織名をクリックし、`Users and Roles` を選択します。各ユーザーの `Provider` カラムを確認します。`Signed in with SSO` と表示されているユーザーは、SAML を削除した後に組織へ再招待する必要があります。
 
     SAML が削除された後にアカウントへアクセスするには、新しい招待を承諾する必要があることを、ユーザーに必ず伝えてください。
@@ -36,11 +40,15 @@ ID プロバイダーの変更などの理由で、組織から SAML インテ�
 </div>
 
 <Steps>
-  <Step title="ユーザーを招待する" id="invite-users">
+  <Step>
+    ### ユーザーを招待する
+
     左下にある組織名をクリックし、`Users and Roles` を選択します。[Invite users](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users) の手順に従ってください。
   </Step>
 
-  <Step title="ユーザーが招待を承諾する" id="accept-invitation">
+  <Step>
+    ### ユーザーが招待を承諾する
+
     ユーザーは、招待を承諾する前に、SAML 接続から完全にログアウトしておく必要があります。Google または Microsoft のソーシャルログインで招待を承諾する場合は、`Continue with Google` または `Continue with Microsoft` ボタンをクリックしてください。メールアドレスとパスワードを使用するユーザーは、https://console.clickhouse.cloud/?with=email にアクセスしてログインし、招待を承諾してください。
 
     <Note>
@@ -48,7 +56,9 @@ ID プロバイダーの変更などの理由で、組織から SAML インテ�
     </Note>
   </Step>
 
-  <Step title="クエリとダッシュボードを保存する" id="save-queries-and-dashboards">
+  <Step>
+    ### クエリとダッシュボードを保存する
+
     ユーザーは新しい ID でサインインした後、いったんログアウトし、SAML アカウントで再度ログインして、保存済みのクエリやダッシュボードを新しい ID と共有する必要があります。最後に、新しい ID でコピーを保存してこの手順を完了してください。
   </Step>
 </Steps>

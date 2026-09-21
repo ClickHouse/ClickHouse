@@ -81,24 +81,30 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 </div>
 
 <Steps>
-  <Step title="Team Settings로 이동" id="step-navigate">
-    **Team Settings**를 열고 **RBAC Roles**로 스크롤합니다.
+  <Step>
+    ### Team Settings로 이동
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+    **Team Settings**를 열고 **RBAC Roles** 섹션으로 스크롤합니다.
+
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC 역할" size="lg" />
   </Step>
 
-  <Step title="새 역할 추가" id="step-add-role">
+  <Step>
+    ### 새 역할 추가
+
     **+ Add Role**를 클릭합니다. **Role Name**을 입력하고, 필요하면 **Description**을 추가합니다.
   </Step>
 
-  <Step title="권한 구성 및 저장" id="step-configure">
-    역할의 권한을 설정한 다음 **Create Role**를 클릭합니다.
+  <Step>
+    ### 권한 구성 및 저장
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Add Role modal" size="md" />
+    역할에 대한 권한을 설정한 다음 **Create Role**를 클릭합니다.
+
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="역할 추가 모달" size="md" />
   </Step>
 </Steps>
 
-사용자 지정 역할은 RBAC Roles 섹션에 시스템 역할과 함께 표시되며, **Edit** 및 **Delete** 컨트롤이 제공됩니다.
+사용자 지정 역할은 RBAC Roles 섹션에 시스템 역할과 함께 표시되며, **Edit** 및 **Delete** 버튼이 제공됩니다.
 
 <div id="role-permissions">
   ## 역할 권한
@@ -147,7 +153,7 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 각 리소스 유형에는 **액세스 제어 모드**가 있습니다.
 
 * **기본 액세스** — 해당 유형의 모든 리소스에 단일 액세스 수준(액세스 없음, 읽기 또는 관리)을 적용합니다.
-* **세분화된 제어** — 조건에 따라 특정 리소스와 일치하는 액세스 규칙을 정의할 수 있습니다. 어떤 규칙과도 일치하지 않는 리소스는 기본적으로 액세스할 수 없습니다.
+* **세분화된 제어** — 조건에 따라 특정 리소스에 일치하는 액세스 규칙을 정의할 수 있습니다. 어떤 규칙에도 일치하지 않는 리소스에는 기본적으로 액세스 권한이 부여되지 않습니다.
 
 모드를 전환하려면 역할 편집기에서 셰브론을 클릭해 리소스 유형을 펼친 다음 **액세스 제어 모드**를 전환하십시오.
 
@@ -161,11 +167,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 <Image img="/images/clickstack/rbac/condition-tip.webp" alt="조건 툴팁: 이름 또는 태그(제목에 표시됨), 혹은 ID(URL에서 확인 가능)를 기준으로 리소스를 식별" size="md" />
 
-| 조건 필드    | 연산자              | 일치 대상                                                                     | 예시                                                                           |
-| -------- | ---------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Name** | `is`, `contains` | 리소스의 표시 이름입니다. 예를 들어 대시보드 제목이 이에 해당합니다.                                   | Name contains `production` — 제목에 &quot;production&quot;이 포함된 모든 대시보드와 일치합니다. |
+| 조건 필드    | 연산자              | 일치 대상                                                                                         | 예시                                                                           |
+| -------- | ---------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Name** | `is`, `contains` | 리소스의 표시 이름입니다. 예를 들어 대시보드 제목이 이에 해당합니다.                                                       | Name contains `production` — 제목에 &quot;production&quot;이 포함된 모든 대시보드와 일치합니다. |
 | **Tag**  | `is`, `contains` | 리소스 보기의 오른쪽 상단 태그 패널을 통해 리소스에 할당된 태그입니다. 대시보드, 저장된 검색, 노트북에서만 사용할 수 있습니다. | Tag is `critical` — &quot;critical&quot; 태그가 지정된 리소스와 일치합니다.                 |
-| **ID**   | `is`, `contains` | 리소스를 열었을 때 URL 표시줄에서 확인할 수 있는 리소스 식별자입니다.                                 | ID is `abc123` — 특정 리소스 하나와 일치합니다.                                           |
+| **ID**   | `is`, `contains` | 리소스를 열었을 때 URL 표시줄에서 확인할 수 있는 리소스 식별자입니다.                                                     | ID is `abc123` — 특정 리소스 하나와 일치합니다.                                           |
 
 다음 스크린샷에는 URL 표시줄에서 강조된 대시보드 ID와 태그 패널(오른쪽 상단)에 표시된 &quot;TESTING&quot; 태그가 함께 나와 있습니다.
 
@@ -188,9 +194,9 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
   ## 보안 정책
 </div>
 
-**Team Settings**의 **보안 정책** 섹션에서는 추가 제어 옵션을 제공합니다.
+**Team Settings**의 **Security Policies** 섹션에서는 추가 제어 옵션을 제공합니다.
 
-**기본 신규 사용자 역할**은 팀에 새로 참여하는 사용자에게 자동으로 할당할 역할을 설정합니다.
+**Default New User Role**은 팀에 새로 참여하는 사용자에게 자동으로 할당할 역할을 설정합니다.
 
 **Generative AI**를 사용하면 Anthropic 또는 Amazon Bedrock으로 구동되는 LLM 기반 기능(예: 자연어 쿼리 생성)을 활성화하거나 비활성화할 수 있습니다. 비활성화하면 데이터가 AI 프로바이더로 전송되지 않습니다.
 

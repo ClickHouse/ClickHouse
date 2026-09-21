@@ -83,7 +83,7 @@ bool isSensitiveParameterName(std::string_view raw_name)
 
     for (auto needle : sensitive_name_substrings)
     {
-        if (lower.contains(needle))
+        if (lower.find(needle) != std::string::npos)
             return true;
     }
     return false;

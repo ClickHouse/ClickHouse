@@ -73,6 +73,7 @@ Expression ((Project names + Projection))
             Granules: 4/4
           Statistics
             Keys:
+              str
               value
             Parts: 1/4
             Granules: 1/4
@@ -107,7 +108,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_pruning)
         Indexes:
           Min-Max

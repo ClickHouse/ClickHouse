@@ -1,0 +1,250 @@
+---
+noindex: true
+title: "ClickHouse용 FIPS 준수 인증서 생성"
+sidebarTitle: "FIPS 인증서 구성"
+description: "ClickHouse Private의 서버, Keeper, 클라이언트 구성 요소에 필요한 TLS 인증서를 생성합니다."
+---
+
+ClickHouse Private의 서버, Keeper, 클라이언트 구성 요소에 필요한 TLS 인증서를 생성합니다. 아래 스크립트는 FIPS 140-2 컴플라이언스를 충족하도록 FIPS가 활성화된 Red Hat UBI8 컨테이너 내부에서 OpenSSL을 실행합니다.
+
+조직에 기존 PKI 프로세스가 있다면 이를 대신 사용할 수 있습니다. 다만 생성된 인증서가 아래 SAN 요구 사항과 시크릿 키 이름에 맞는지 확인하십시오.
+
+> 이러한 인증서의 개념인 용도, 검증 모드, 인증서 교체 방식에 대해서는 [ClickHouse Private의 PKI 및 mTLS](/ko/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)를 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* `registry.access.redhat.com/ubi8/ubi`에 접근할 수 있도록 Docker 설치
+* 클러스터 이름 선택(이 가이드에서는 `default-xx-01` 사용)
+
+<div id="clickhouse-private-requirements">
+  ## ClickHouse Private 요구 사항
+</div>
+
+공통 CA로 서명된 3개의 인증서 세트가 필요합니다.
+
+| 인증서    | SAN 패턴                                                                                                                                          | 시크릿 키 이름                   |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 서버     | `*.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.cluster.local`, `c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.cluster.local` | `server.crt`, `server.key` |
+| Keeper | `*.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.cluster.local`                                                                      | `keeper.crt`, `keeper.key` |
+| 클라이언트  | SAN 필요 없음(서버의 아웃바운드 연결용)                                                                                                                        | `client.crt`, `client.key` |
+
+* FIPS 컴플라이언스를 위해 최소 RSA 3072비트 키 크기가 필요합니다
+* Kubernetes 클러스터에서 `.cluster.local`이 아닌 다른 도메인을 사용하는 경우 SAN의 도메인도 해당 값으로 바꾸십시오
+* 각 ClickHouse 클러스터마다 고유한 인증서 세트(CA 제외)를 생성해야 합니다
+
+<div id="generate-the-certificates">
+  ## 인증서 생성
+</div>
+
+> **경고:** 아래에서 생성하는 인증서는 **365일** 후에 만료됩니다(CA는 3650일 후 만료됨). 보안 요구 사항에 맞게 `-days` 값을 수정하십시오.
+
+스크립트 상단의 변수를 수정한 후 실행하십시오:
+
+```text expandable
+# update the variables below as needed:
+
+CLUSTER_NAME=default-xx-01
+KUBERNETES_DOMAIN=cluster.local
+COUNTRY=US
+STATE=YourState
+CITY=YourCity
+ORG=YourOrganization
+ORG_UNIT=YourOrganizationalUnit
+CN=YourRootCA
+
+docker run -it --rm \
+  -v $(pwd):/certs \
+  registry.access.redhat.com/ubi8/ubi \
+  /bin/bash -c "
+    set -e
+
+    # Install required packages
+    dnf -y install openssl crypto-policies-scripts
+
+    # Enable FIPS mode
+    fips-mode-setup --enable
+
+    # Create directory structure in the mounted volume
+    mkdir -p /certs/{ca,server,keeper,client}
+
+    # Generate CA certificate
+    cd /certs/ca
+    openssl genrsa -out ca.key 3072
+
+    cat > ca.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_ca
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = ${CN}
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = critical, CA:true
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+
+    openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -config ca.cnf
+
+    # Generate server certificate
+    cd /certs/server
+
+    cat > server.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-server
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-server-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+DNS.2 = c-${CLUSTER_NAME}-server-any.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out server.key 3072
+    openssl req -new -key server.key -out server.csr -config server.cnf
+    openssl x509 -req -days 365 -in server.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out server.crt -extensions v3_req -extfile server.cnf
+
+    # Generate keeper certificate
+    cd /certs/keeper
+
+    cat > keeper.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-keeper
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = *.c-${CLUSTER_NAME}-keeper-headless.ns-${CLUSTER_NAME}.svc.${KUBERNETES_DOMAIN}
+EOF
+
+    openssl genrsa -out keeper.key 3072
+    openssl req -new -key keeper.key -out keeper.csr -config keeper.cnf
+    openssl x509 -req -days 365 -in keeper.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out keeper.crt -extensions v3_req -extfile keeper.cnf
+
+    # Generate client certificate
+    cd /certs/client
+
+    cat > client.cnf << EOF
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[ req_distinguished_name ]
+C  = ${COUNTRY}
+ST = ${STATE}
+L  = ${CITY}
+O  = ${ORG}
+OU = ${ORG_UNIT}
+CN = clickhouse-client
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth
+EOF
+
+    openssl genrsa -out client.key 3072
+    openssl req -new -key client.key -out client.csr -config client.cnf
+    openssl x509 -req -days 365 -in client.csr -CA /certs/ca/ca.crt -CAkey /certs/ca/ca.key \
+      -CAcreateserial -out client.crt -extensions v3_req -extfile client.cnf
+
+    # Fix permissions
+    chmod -R 755 /certs
+
+    # Verify FIPS compliance
+    echo 'Verifying FIPS compliance of generated certificates:'
+    openssl version
+    openssl rsa -in /certs/server/server.key -text -noout | grep 'Private-Key'
+    openssl x509 -in /certs/server/server.crt -text -noout | grep 'Signature Algorithm'
+
+    # Show success message
+    echo 'FIPS-compliant certificates have been generated successfully!'
+  "
+```
+
+실행 후 현재 디렉터리에 다음 파일이 생성됩니다:
+
+| 디렉터리      | 파일                         |
+| --------- | -------------------------- |
+| `ca/`     | `ca.crt`, `ca.key`         |
+| `server/` | `server.crt`, `server.key` |
+| `keeper/` | `keeper.crt`, `keeper.key` |
+| `client/` | `client.crt`, `client.key` |
+
+<div id="create-kubernetes-secrets">
+  ## Kubernetes 시크릿 생성
+</div>
+
+시크릿은 ClickHouse 클러스터를 실행할 동일한 네임스페이스(`ns-<cluster_name>`)에 설치해야 합니다. 시크릿 이름이나 키 이름은 변경하지 마십시오.
+
+```ini
+CERT_DIR=.
+CLUSTER_NAME=default-xx-01
+
+# Ensure the namespace exists
+kubectl create namespace ns-${CLUSTER_NAME} --dry-run=client -o yaml | kubectl apply -f -
+
+# Server secret (includes client cert for outbound connections)
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-server-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=server.crt="$CERT_DIR/server/server.crt" \
+  --from-file=server.key="$CERT_DIR/server/server.key" \
+  --from-file=client.crt="$CERT_DIR/client/client.crt" \
+  --from-file=client.key="$CERT_DIR/client/client.key"
+
+# Keeper secret
+kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-secret \
+  --from-file=ca.crt="$CERT_DIR/ca/ca.crt" \
+  --from-file=keeper.crt="$CERT_DIR/keeper/keeper.crt" \
+  --from-file=keeper.key="$CERT_DIR/keeper/keeper.key"
+```
+
+<div id="using-your-own-ca">
+  ## 자체 CA 사용
+</div>
+
+기존 certificate authority(CA)가 있다면 스크립트에서 CA 생성 단계는 건너뛰십시오. 서명에 사용할 수 있도록 CA 인증서를 Docker 컨테이너에 마운트하고, 이 가이드에서 `ca.crt` 파일을 참조하는 모든 위치(위의 Kubernetes 시크릿 포함)에서 해당 파일을 사용하십시오. CA를 제외한 인증서 세트는 각 ClickHouse 클러스터별로 고유하게 생성해야 합니다.

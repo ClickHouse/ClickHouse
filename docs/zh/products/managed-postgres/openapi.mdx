@@ -1,17 +1,17 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'ClickHouse Managed Postgres OpenAPI'
-description: '通过我们的 OpenAPI 管理您的 ClickHouse Managed Postgres 服务'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询', '服务器日志', '日志']
+title: 'Managed Postgres OpenAPI'
+description: '通过我们的 OpenAPI 管理您的 Managed Postgres 服务'
+keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/api-overview) 可像管理 ClickHouse 服务一样，以编程方式管理您的 ClickHouse Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [ClickHouse Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
+使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/index) 可像管理 ClickHouse 服务一样，以编程方式管理您的 Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
 
 <div id="api-keys">
   ## API 密钥
@@ -104,14 +104,12 @@ create_data='{
 }'
 ```
 
-现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头。保存响应：它是唯一包含服务
-凭据的响应 (当请求未提供密码时，[password reset] 响应也会返回这些凭据) ：
+现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头：
 
 ```bash
-pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
-    -d "$create_data")
-echo "$pg_created" | jq
+    -d "$create_data" | jq
 ```
 
 成功后，将创建一个新的实例并返回其相关信息，
@@ -154,9 +152,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-输出将与创建操作返回的 JSON 类似，但不包含
-凭据，不过请留意
-`state`；当它变为 `running` 时，服务器即表示已就绪：
+输出将与创建操作返回的 JSON 类似，但请留意 `state`；当它变为 `running` 时，服务器即表示已就绪：
 
 ```bash
 curl -s --user "$KEY_ID:$KEY_SECRET" \
@@ -168,10 +164,15 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-现在可以使用创建响应中保存的 `connectionString` 属性进行连接，例如通过 [psql]：
+现在可以使用 `connectionString` 属性进行连接，例如通过
+[psql]：
 
 ```bash
-$ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
+$ psql "$(
+    curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq -r .result.connectionString
+)"
 
 psql (18.3)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
@@ -215,7 +216,9 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
@@ -290,7 +293,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## 监控
 </div>
 
-两个兼容 Prometheus 的端点可提供 ClickHouse Managed Postgres 服务的 CPU、内存、I/O、连接
+两个兼容 Prometheus 的端点可提供 Managed Postgres 服务的 CPU、内存、I/O、连接
 和事务指标：其中一个返回组织内所有服务的指标，另一个返回单个
 服务的指标。有关设置，请参阅 [Prometheus 端点] 页面；完整指标列表请参阅
 [指标参考]。
@@ -420,88 +423,36 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 该示例为简洁起见对这两个对象都进行了裁剪；API 返回的是
-[per-execution counters]中记录的完整计数器集合。
+[per-execution counters]中记录的完整
+计数器 集合。
 
-<div id="server-logs">
-  ## 服务器日志
-</div>
-
-云控制台中日志查看器所显示的 PostgreSQL 服务器日志也可通过
-编程方式获取。[日志 API] 会返回某项服务在指定时间窗口内的各条日志记录。
-与 Query Insights 一样，必须指定时间窗口，因此请将 `from_date` 和
-`to_date` 作为 RFC 3339 时间戳传递。该时间范围不得超过 30 天，且
-`to_date` 必须晚于 `from_date`：
-
-```bash
-FROM=2026-05-25T00:00:00Z
-TO=2026-05-26T00:00:00Z
-
-curl -s --user "$KEY_ID:$KEY_SECRET" \
-    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
-    | jq
-```
-
-条目默认按时间从新到旧返回；可通过 `sort_order` (`asc` 或
-`desc`) 切换排序方向。使用 `severity` 筛选单个严重级别 (例如 `ERROR`、
-`WARNING` 或 `LOG`) ，使用 `body_contains` 匹配日志正文中区分大小写的
-子串，并使用 `limit` 和 `offset` 对结果分页。
-
-每个条目都包含其 `timestamp`、`severity` 和原始 `body`。正文始终是
-字符串：结构化日志行以 JSON 编码形式返回，普通行则按原样返回：
-
-```json
-{
-  "result": [
-    {
-      "timestamp": "2026-05-25T16:42:09.512844Z",
-      "severity": "ERROR",
-      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
-    },
-    {
-      "timestamp": "2026-05-25T16:41:58.004120Z",
-      "severity": "LOG",
-      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
-    }
-  ],
-  "limit": 50,
-  "offset": 0,
-  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
-  "status": 200
-}
-```
-
-该端点通过 `limit` 和 `offset` 进行分页，不返回总数；
-不断增加 `offset`，直到某页返回的条目数少于 `limit`。
-
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "管理 API 密钥"
 
-[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API 参考文档：Postgres"
+[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "ClickHouse Cloud 的 Postgres OpenAPI 规范"
 
-[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "获取组织的 Postgres 服务列表"
+[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "获取组织的 Postgres 服务 列表"
 
-[create API]: /products/cloud/api-reference/postgres/postgres-service-create "创建新的 Postgres 服务"
+[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "创建新的 Postgres 服务"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs：psql — PostgreSQL 交互式终端"
 
-[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "更新 PostgreSQL 服务"
+[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "更新 PostgreSQL 服务"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396：JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs：服务器配置"
 
-[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "替换 Postgres 服务 配置"
+[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "更新 Postgres 服务 配置"
 
-[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "删除 PostgreSQL 服务"
+[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "删除 PostgreSQL 服务"
 
-[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "重置 Postgres 服务 superuser 的密码"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 端点"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus 端点"
-
-[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres 指标参考"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres 指标参考"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres Query Insights"
 
@@ -509,8 +460,6 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Query Insights 的单次执行计数器"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "列出 Postgres 慢查询模式"
+[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "列出 Postgres 慢查询模式"
 
-[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "获取包含最近执行记录的 Postgres 慢查询模式"
-
-[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "列出 Postgres 服务器日志"
+[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "获取带有近期执行记录的 Postgres 慢查询模式"

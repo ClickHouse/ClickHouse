@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **参数**
 
 * `codec` — 包含一个压缩编解码器，或多个以逗号分隔的编解码器的 String。[`String`](/zh/reference/data-types/string)
-* `block_size_bytes` — 压缩数据的块大小。这类似于同时设置 [`max_compress_block_size`](/zh/reference/settings/merge-tree-settings/max#max_compress_block_size) 和 [`min_compress_block_size`](/zh/reference/settings/merge-tree-settings/min#min_compress_block_size)。默认值为 1 MiB (1048576 字节) 。允许的最大值为 256 MiB (268435456 字节) 。[`UInt64`](/zh/reference/data-types/int-uint)
+* `block_size_bytes` — 压缩数据的块大小。这类似于同时设置 [`max_compress_block_size`](/zh/reference/settings/merge-tree-settings#max_compress_block_size) 和 [`min_compress_block_size`](/zh/reference/settings/merge-tree-settings#min_compress_block_size)。默认值为 1 MiB (1048576 字节) 。允许的最大值为 256 MiB (268435456 字节) 。[`UInt64`](/zh/reference/data-types/int-uint)
 
 **参数说明**
 

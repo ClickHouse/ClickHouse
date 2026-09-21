@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="Примечание о компактных и широких частях">
   Если вы видите значения `compressed_size` или `uncompressed_size`, равные `0`, это может быть связано с тем, что тип
   частей — `compact`, а не `wide` (см. описание `part_type` в [`system.parts`](/ru/reference/system-tables/parts)).
-  Формат части задаётся настройками [`min_bytes_for_wide_part`](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
-  и [`min_rows_for_wide_part`](/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part), то есть если вставленные
+  Формат части задаётся настройками [`min_bytes_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  и [`min_rows_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_rows_for_wide_part), то есть если вставленные
   данные приводят к созданию части, которая не превышает значения вышеупомянутых настроек, часть будет компактной, а не
   широкой, и вы не увидите значений `compressed_size` или `uncompressed_size`.
 
@@ -141,7 +141,7 @@ GROUP BY name
 
 > Приведённый выше запрос использует таблицу `columns` в системной базе данных. Этой базой данных управляет ClickHouse, и она представляет собой настоящий кладезь полезной информации: от метрик производительности запросов до фоновых журналов кластера. Если вам интересно, рекомендуем статью [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) и связанные с ней статьи[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse).
 
-Чтобы получить общий размер таблицы, можно упростить приведённый выше запрос:
+Чтобы получить суммарный размер таблицы, можно упростить приведённый выше запрос:
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
@@ -236,7 +236,7 @@ ClickHouse поддерживает большое количество коде
 | **`Gorilla` и `T64` для неизвестных шаблонов?**           | Если у данных нет очевидного шаблона, возможно, стоит попробовать `Gorilla` и `T64`.                                                                                                                                                                                                                                                                                                                                                                                          |
 | **`Gorilla` для данных типа Gauge**                       | `Gorilla` может быть эффективен для данных с плавающей точкой, особенно если они представляют показания типа Gauge, то есть случайные всплески.                                                                                                                                                                                                                                                                                                                               |
 
-Дополнительные варианты см. [здесь](/ru/reference/statements/create/table/codec).
+Дополнительные варианты см. [здесь](/ru/reference/statements/create/table#column_compression_codec).
 
 Ниже мы указываем кодек `Delta` для `Id`, `ViewCount` и `AnswerCount`, предполагая, что они будут линейно коррелировать с ключом сортировки и, следовательно, выиграют от Delta-кодирования.
 
@@ -270,7 +270,7 @@ ENGINE = MergeTree
 ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
 ```
 
-Ниже показано улучшение сжатия для этих столбцов:
+Ниже показаны улучшения сжатия для этих столбцов:
 
 ```sql
 SELECT

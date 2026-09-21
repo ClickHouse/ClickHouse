@@ -21,7 +21,6 @@ SET use_text_index_postings_cache = 1;
 SET use_query_condition_cache = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET log_queries = 1;
-SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab_seg_cache;
 
