@@ -1,9 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <cstddef>
-#include <Core/Field.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -24,10 +22,6 @@ public:
     virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
-    virtual std::optional<Field> getDefault() const { return std::nullopt; }
-    /// Most custom names are aliases for their storage type. Semantic custom types can
-    /// opt in when layout equality must not erase the custom type identity.
-    virtual bool useCustomNameForTypeIdentity() const { return false; }
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
