@@ -69,7 +69,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
                 if (!table_replicated)
                     continue;
 

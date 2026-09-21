@@ -181,7 +181,7 @@ namespace
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, StorageResolution::Load).get();
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
         if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)

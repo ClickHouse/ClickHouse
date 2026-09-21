@@ -347,7 +347,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (storage)
         {
-            if (auto storage_join = castStorage<StorageJoin>(storage, StorageResolution::Load); storage_join)
+            if (auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load); storage_join)
             {
                 table_join->setStorageJoin(storage_join);
             }
@@ -375,7 +375,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, StorageResolution::Load); storage_kv && try_use_direct_join)
+            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }

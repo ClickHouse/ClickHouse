@@ -2977,7 +2977,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-        return castStorage<StorageKeeperMap>(table, StorageResolution::Load) != nullptr;
+        return castStorage<StorageKeeperMap>(table, DeferredTable::Load) != nullptr;
     };
 
     const auto is_replicated_table = [&](const ASTPtr & ast)

@@ -563,7 +563,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto rmt = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Peek);
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 

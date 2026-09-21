@@ -9100,7 +9100,7 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
     if (dest_storage->getStorageID() == this->getStorageID())
         return;
 
-    auto * dest_storage_merge_tree = castStorage<MergeTreeData>(dest_storage, StorageResolution::Load).get();
+    auto * dest_storage_merge_tree = castStorage<MergeTreeData>(dest_storage, DeferredTable::Load).get();
     if (!dest_storage_merge_tree)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot move partition from table {} to table {} with storage {}",
@@ -9237,7 +9237,7 @@ Pipe MergeTreeData::alterPartition(
                 auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
                             auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
 
-                auto * from_storage_merge_tree = castStorage<MergeTreeData>(from_storage, StorageResolution::Load).get();
+                auto * from_storage_merge_tree = castStorage<MergeTreeData>(from_storage, DeferredTable::Load).get();
                 if (!from_storage_merge_tree)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot replace partition from table {} with storage {} to table {}",

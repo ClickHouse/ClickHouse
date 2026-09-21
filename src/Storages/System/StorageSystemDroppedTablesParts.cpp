@@ -57,7 +57,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         if (query_status && !query_status->checkTimeLimit())
             break;
 
-        auto storage = castStorage<MergeTreeData>(dropped_table.table, StorageResolution::Peek);
+        auto storage = castStorage<MergeTreeData>(dropped_table.table, DeferredTable::Skip);
         if (!storage)
             continue;
 

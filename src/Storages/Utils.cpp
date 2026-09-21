@@ -27,7 +27,7 @@ namespace DB
             return {CurrentMetrics::AttachedDictionary};
         }
         /// Asked while attaching, so this must not load a lazy table.
-        if (castStorage<StorageReplicatedMergeTree>(storage, StorageResolution::Peek))
+        if (castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Skip))
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};
         }

@@ -166,7 +166,7 @@ BlockIO InterpreterDeleteQuery::execute()
         if (metadata_snapshot->hasProjections())
         {
             /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
-            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, StorageResolution::Load).get())
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "

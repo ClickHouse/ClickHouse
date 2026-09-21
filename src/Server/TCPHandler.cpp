@@ -1794,7 +1794,7 @@ void TCPHandler::processTablesStatusRequest()
 
         TableStatus status;
         /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
-        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load).get())
+        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());

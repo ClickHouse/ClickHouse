@@ -707,7 +707,7 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, StorageResolution::Load);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());

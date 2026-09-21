@@ -488,7 +488,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (storage->getName() != "Set")
         return nullptr;
-    const auto storage_set = castStorage<StorageSet>(storage, StorageResolution::Load);
+    const auto storage_set = castStorage<StorageSet>(storage, DeferredTable::Load);
     return storage_set->getSet();
 }
 

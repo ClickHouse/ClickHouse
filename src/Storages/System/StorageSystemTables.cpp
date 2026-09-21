@@ -870,7 +870,7 @@ protected:
                     ++res_index;
                 }
 
-                auto table_merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Peek);
+                auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip);
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)

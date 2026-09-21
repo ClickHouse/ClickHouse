@@ -262,7 +262,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
         auto table_node = resolveTable(identifier, context);
-        const auto * storage_set = castStorage<StorageSet>(table_node->getStorage(), StorageResolution::Load).get();
+        const auto * storage_set = castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get();
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 

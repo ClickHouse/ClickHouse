@@ -80,7 +80,7 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        StorageSet * storage_set = second_argument_table != nullptr ? castStorage<StorageSet>(second_argument_table->getStorage(), StorageResolution::Load).get() : nullptr;
+        StorageSet * storage_set = second_argument_table != nullptr ? castStorage<StorageSet>(second_argument_table->getStorage(), DeferredTable::Load).get() : nullptr;
 
         if (storage_set)
         {

@@ -277,9 +277,9 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
         {
             StoragePtr storage = it->table();
-            if (auto kafka_table = castStorage<StorageKafka>(storage, StorageResolution::Peek))
+            if (auto kafka_table = castStorage<StorageKafka>(storage, DeferredTable::Skip))
                 handle_table(it, *kafka_table);
-            else if (auto kafka_2_table = castStorage<StorageKafka2>(storage, StorageResolution::Peek))
+            else if (auto kafka_2_table = castStorage<StorageKafka2>(storage, DeferredTable::Skip))
                 handle_table(it, *kafka_2_table);
         }
     }

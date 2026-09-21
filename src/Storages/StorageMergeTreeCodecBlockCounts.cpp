@@ -326,7 +326,7 @@ std::shared_ptr<MergeTreeData> StorageMergeTreeCodecBlockCounts::resolveSourceTa
     checkSourceTableAccess(source_table, context);
 
     /// Reading the parts is what the function is for, so a not yet loaded source table is loaded here.
-    auto merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load);
+    auto merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load);
     if (!merge_tree)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeCodecBlockCounts expected MergeTree table, got: {}", source_table->getName());
