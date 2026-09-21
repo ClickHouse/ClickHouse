@@ -6817,8 +6817,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    if (const auto & original_ast = query_node_typed.getOriginalAST();
-        original_ast && original_ast->as<ASTSelectQuery>() && original_ast->as<ASTSelectQuery>()->is_pivot_rewrite)
+    const IAST * original_ast = query_node_typed.getOriginalAST().get();
+    if (const auto * subquery = original_ast ? original_ast->as<ASTSubquery>() : nullptr)
+    {
+        if (!subquery->children.empty())
+            original_ast = subquery->children[0].get();
+    }
+    if (const auto * union_query = original_ast ? original_ast->as<ASTSelectWithUnionQuery>() : nullptr)
+    {
+        if (union_query->list_of_selects && union_query->list_of_selects->children.size() == 1)
+            original_ast = union_query->list_of_selects->children[0].get();
+    }
+
+    if (const auto * select_query = original_ast ? original_ast->as<ASTSelectQuery>() : nullptr;
+        select_query && select_query->is_pivot_rewrite)
     {
         std::unordered_set<String> output_names;
         output_names.reserve(projection_columns.size());
