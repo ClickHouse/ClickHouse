@@ -249,8 +249,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
 
-    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    query_context->setSetting("allow_experimental_analyzer", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
@@ -612,9 +610,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
-
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try
@@ -927,9 +922,6 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     auto sql_query = makeSelectFromSubquery({std::move(array_expression)}, std::move(series_ids_query), /* distinct = */ false, {});
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
