@@ -41,8 +41,8 @@ CROSS JOIN merged;
 
 -- The value type represents signed decay curves and addition preserves cancellation.
 WITH
-    exponentialTimeDecayingFloat64(10)(-8, toFloat64(0)) AS a,
-    exponentialTimeDecayingFloat64(10)(4, toFloat64(10)) AS b,
+    exponentialTimeDecaying(10)(-8, toFloat64(0)) AS a,
+    exponentialTimeDecaying(10)(4, toFloat64(10)) AS b,
     a + b AS c
 SELECT
     toTypeName(c),
@@ -56,7 +56,7 @@ SELECT
 SELECT round(exponentialTimeDecayingValueAt(value, toFloat64(0)), 6)
 FROM
 (
-    SELECT exponentialTimeDecayingFloat64(10)(v, toFloat64(0)) AS value
+    SELECT exponentialTimeDecaying(10)(v, toFloat64(0)) AS value
     FROM VALUES('v Float64', (-1), (2), (0), (-2), (1))
     GROUP BY v
 )
@@ -70,7 +70,7 @@ FROM
 (
     SELECT
         id,
-        exponentialTimeDecayingFloat64(10)(value, time) AS decaying_value
+        exponentialTimeDecaying(10)(value, time) AS decaying_value
     FROM VALUES(
         'id UInt8, value Float64, time Float64',
         (1, -100, 0),
@@ -87,7 +87,7 @@ FROM
 (
     SELECT
         id,
-        exponentialTimeDecayingFloat64(10)(value, time) AS decaying_value
+        exponentialTimeDecaying(10)(value, time) AS decaying_value
     FROM VALUES(
         'id UInt8, value Float64, time Float64',
         (1, -100, 0),
@@ -100,10 +100,10 @@ FROM
 ORDER BY decaying_value DESC, id;
 
 WITH
-    exponentialTimeDecayingFloat64(10)(100, toFloat64(0)) AS old_positive,
-    exponentialTimeDecayingFloat64(10)(2, toFloat64(45)) AS recent_positive,
-    exponentialTimeDecayingFloat64(10)(-100, toFloat64(0)) AS old_negative,
-    exponentialTimeDecayingFloat64(10)(-2, toFloat64(45)) AS recent_negative
+    exponentialTimeDecaying(10)(100, toFloat64(0)) AS old_positive,
+    exponentialTimeDecaying(10)(2, toFloat64(45)) AS recent_positive,
+    exponentialTimeDecaying(10)(-100, toFloat64(0)) AS old_negative,
+    exponentialTimeDecaying(10)(-2, toFloat64(45)) AS recent_negative
 SELECT
     old_positive < recent_positive,
     old_positive <= recent_positive,
@@ -116,15 +116,15 @@ SELECT
 
 -- Equal curves reconstructed at different anchor times have the same sort key.
 WITH
-    exponentialTimeDecayingFloat64(10)(2, toFloat64(0)) AS a,
-    exponentialTimeDecayingFloat64(10)(1, toFloat64(10 * log(2))) AS b
+    exponentialTimeDecaying(10)(2, toFloat64(0)) AS a,
+    exponentialTimeDecaying(10)(1, toFloat64(10 * log(2))) AS b
 SELECT a = b, a <= b, a >= b, a < b, a > b;
 
 WITH
-    exponentialTimeDecayingFloat64(10)(-2, toFloat64(0)) AS a,
-    exponentialTimeDecayingFloat64(10)(-1, toFloat64(0)) AS b
+    exponentialTimeDecaying(10)(-2, toFloat64(0)) AS a,
+    exponentialTimeDecaying(10)(-1, toFloat64(0)) AS b
 SELECT a < b, a <= b, a > b, a >= b, a = b, a != b;
 
 SELECT
-    exponentialTimeDecayingFloat64(10)(1, toFloat64(0))
-    < exponentialTimeDecayingFloat64(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+    exponentialTimeDecaying(10)(1, toFloat64(0))
+    < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
