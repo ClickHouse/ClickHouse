@@ -58,6 +58,13 @@ format "mysql table function, credentials before the positional arguments" \
 format "MySQL database engine, credentials before the positional arguments" \
     "CREATE DATABASE d ENGINE = MySQL(ssl_ca_pem = '${SECRET}', '127.0.0.1:3306', 'db', 'u', '${SECRET}')"
 
+# A named `password` override with no named collection: the parsers reject the mix, but the statement is
+# formatted for logging first, and the key is readable, so only the named scan can hide this value.
+format "mysql table function, named password without a collection" \
+    "SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', password = '${SECRET}')"
+format "MySQL database engine, named password without a collection" \
+    "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', password = '${SECRET}')"
+
 # The key of a named argument is not required to be a plain identifier or literal: the named
 # collection parser evaluates it as a constant expression, so `concat('ssl_ca', '_pem')` names a TLS
 # credential too. The formatter cannot evaluate it, so it hides the value of every argument whose key
