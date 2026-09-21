@@ -68,7 +68,6 @@ public:
 private:
     DataTypes index_data_types;
     KeyCondition condition;
-    bool disabled = false;
 };
 
 
