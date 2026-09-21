@@ -1,0 +1,8 @@
+-- PARALLEL WITH ATTACH of a facade over another facade is rejected as well
+BAD_ARGUMENTS
+-- the rejected facade was not persisted
+0
+-- PARALLEL WITH CREATE of a facade over another facade is rejected too
+BAD_ARGUMENTS
+-- a facade over a regular database still attaches through PARALLEL WITH, and reads its source
+2

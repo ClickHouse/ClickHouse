@@ -382,9 +382,28 @@ DatabasePtr DatabaseOverlay::tryGetTableCreationDatabase() const
         }
 
         /// A nested read-only facade contributes nothing to the union (see `resolveDatabases`), so
-        /// it can neither receive the table nor hold one that would shadow it.
+        /// right now it can neither receive the table nor hold one that would shadow it -- but, just
+        /// like an unresolved source, it makes the placement time-dependent. Such a pair is only
+        /// reachable from metadata written by an older server, and the documented way to repair that
+        /// definition is to re-create the source as a normal database, which puts it back into the
+        /// facade order: a table created past it would then be owned by the wrong source or shadowed
+        /// by the one it failed to see. Fail closed for the same reason as above.
         if (const auto * nested = typeid_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
-            continue;
+        {
+            LOG_WARNING(
+                log,
+                "Source database {} of Overlay database {} is itself an Overlay database, which is not supported, "
+                "so CREATE TABLE through the facade is rejected",
+                backQuote(name),
+                backQuote(getDatabaseName()));
+            /// Names only the facade, like the unresolved-source case above.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Database {} is an Overlay facade and one of its source databases cannot be used as a source. "
+                "It is therefore unknown which source would own a table created through the facade. "
+                "Run CREATE TABLE in an underlying database, or re-create the database to fix its definition",
+                backQuote(getDatabaseName()));
+        }
 
         if (!db->isReadOnly())
             return db;
@@ -1252,11 +1271,14 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         /// Loading previously-written metadata on server startup uses `ATTACH` too, but it must not
         /// refuse a definition: a server that does not start is far worse than a facade that loses a
         /// source, and `resolveDatabases` already fail-closes on exactly that shape at every lookup.
-        /// `internal` is what separates the two (`RESTORE` is internal as well, hence the separate
-        /// `SECONDARY_CREATE` arm above it).
+        /// The loader flag, not `internal`, is what separates the two: an internal query is not
+        /// necessarily the server's own replay, because wrappers such as `PARALLEL WITH` execute
+        /// user statements as internal ones, and keying the guard on `internal` let
+        /// `PARALLEL WITH ATTACH DATABASE ... ENGINE = Overlay(...)` persist a nested facade.
+        /// (`RESTORE` sets neither flag, hence the separate `SECONDARY_CREATE` arm above it.)
         const bool validate_no_nested_facade = validate_sources_exist
             || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.internal);
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.is_metadata_replay);
 
         /// The same nesting can also be configured from the other side: an existing facade names a
         /// database that is only now (re-)created as a facade itself (`db_top = Overlay('db_hid')`,
@@ -1323,7 +1345,7 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_a', 'db_b');
 
 - `'db1', 'db2', ...` — Names of the underlying source databases. At least one is required. Duplicate names are removed while preserving the first occurrence.
 
-A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. Reads keep working while a source is unavailable, but `CREATE TABLE` through the facade is rejected with `UNKNOWN_DATABASE` while a configured source that precedes the creation target is unresolved: which source would own the new table is time-dependent in that state. An `Overlay` database cannot reference itself or use another `Overlay` database as a source. That is checked in both directions: a database that an existing `Overlay` database already uses as a source cannot be created (or attached) as an `Overlay` database either.
+A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. Reads keep working while a source is unavailable, but `CREATE TABLE` through the facade is rejected with `UNKNOWN_DATABASE` while a configured source that precedes the creation target is unresolved: which source would own the new table is time-dependent in that state. The same rejection, with `BAD_ARGUMENTS`, applies while such a source resolves to another read-only `Overlay` — a shape only reachable from metadata written by an older server, and one that the documented repair (re-creating that source as a normal database) would likewise turn into a different placement. An `Overlay` database cannot reference itself or use another `Overlay` database as a source. That is checked in both directions: a database that an existing `Overlay` database already uses as a source cannot be created (or attached) as an `Overlay` database either.
 
 ## Table discovery {#discovery}
 
@@ -1364,7 +1386,7 @@ The facade is a **view**: only `CREATE TABLE` is delegated to the first member d
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay references another Overlay, or a reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on the `CREATE`/`ATTACH` that would form it — checked from both sides, so a persisted definition never becomes unusable |
 | Overlay references missing database at `CREATE` | `BAD_ARGUMENTS` — a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source exists right now |
-| Overlay references missing database after `ATTACH`/restore/startup | No error for reads — sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created; `CREATE TABLE` through the facade is rejected with `UNKNOWN_DATABASE` while a configured source that precedes the creation target is unresolved |
+| Overlay references missing database after `ATTACH`/restore/startup | No error for reads — sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created; `CREATE TABLE` through the facade is rejected with `UNKNOWN_DATABASE` while a configured source that precedes the creation target is unresolved, and with `BAD_ARGUMENTS` while such a source resolves to another read-only `Overlay` |
 | `DROP DATABASE` overlay while tables "exist" | Succeeds — the facade is always considered empty for the purposes of `DATABASE_NOT_EMPTY` |
 
 ## Notes {#notes}
@@ -1423,7 +1445,7 @@ Accessing a table through an `Overlay` database requires a grant on **both** the
 - a `SELECT` grant on an underlying database alone is **not** enough to read through the facade either, though it does allow reading that database directly (independently of the `Overlay`);
 - `INSERT` through the facade likewise requires the `INSERT` privilege on both the `Overlay` and the underlying source database;
 - management operations that resolve the facade name to a source table follow the same rule: `CHECK TABLE` requires the `CHECK` privilege on both the `Overlay` and the underlying source table, and `KILL MUTATION` / `KILL PART_MOVE TO SHARD` targeting a facade row of `system.mutations` / `system.part_moves_between_shards` require the corresponding `ALTER` privilege on both, and `CREATE HYPOTHETICAL PROJECTION` / `CREATE HYPOTHETICAL INDEX` on a facade name prove the source-side grant (`ALTER ADD PROJECTION`, respectively table visibility) before the source table is looked up;
-- `CREATE TABLE` through the facade creates the table in the first writable source database (read-only sources are skipped; the query is rejected while a configured source that precedes that database is unavailable, so the table cannot land in a later source) and requires the `CREATE TABLE` privilege on both the `Overlay` and that source database; the denial names only the facade;
+- `CREATE TABLE` through the facade creates the table in the first writable source database (read-only sources are skipped; the query is rejected while a configured source that precedes that database is unavailable or is itself a read-only `Overlay`, so the table cannot land in a later source) and requires the `CREATE TABLE` privilege on both the `Overlay` and that source database; the denial names only the facade;
 - create-time paths that read or write through the facade follow the same rule: `CREATE TABLE ... AS` (including `CLONE AS`) a facade name copies the schema of the underlying source table and requires `SHOW COLUMNS` on both the `Overlay` and the source table, and `CREATE MATERIALIZED VIEW ... TO` a facade target funnels writes into the source table and requires the `SELECT` and `INSERT` privileges on both;
 - a parameterized view called through the facade (`SELECT ... FROM overlay_db.v(param = ...)`) runs the underlying source view and requires `SELECT` on both the `Overlay` and the source view, and `DESCRIBE` of such a call requires `SHOW COLUMNS` on both.
 
