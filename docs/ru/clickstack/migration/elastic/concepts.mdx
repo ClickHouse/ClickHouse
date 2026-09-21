@@ -191,7 +191,7 @@ ClickHouse спроектирован так, чтобы максимально 
 Выполнение запросов дополнительно распараллеливается за счет:
 
 1. **SIMD-векторизации**: операции над столбцовыми данными используют [SIMD-инструкции CPU](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (например, [AVX512](https://en.wikipedia.org/wiki/AVX-512)), что позволяет обрабатывать значения пакетами.
-2. **Параллелизма на уровне кластера**: в распределенных конфигурациях каждый узел выполняет обработку запросов локально. [Промежуточные состояния агрегации](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) потоково передаются на инициирующий узел и объединяются. Если ключи `GROUP BY` в запросе совпадают с ключами сегментирования, слияние можно [свести к минимуму или полностью избежать](/ru/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **Параллелизма на уровне кластера**: в распределенных конфигурациях каждый узел выполняет обработку запросов локально. [Промежуточные состояния агрегации](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) потоково передаются на инициирующий узел и объединяются. Если ключи `GROUP BY` в запросе совпадают с ключами сегментирования, слияние можно [свести к минимуму или полностью избежать](/ru/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 

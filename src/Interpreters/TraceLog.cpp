@@ -17,6 +17,7 @@
 #include <Interpreters/TraceLog.h>
 #include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Dwarf.h>
@@ -41,6 +42,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
     {"MemoryAllocatedWithoutCheck", static_cast<UInt8>(TraceType::MemoryAllocatedWithoutCheck)},
     {"Instrumentation", static_cast<UInt8>(TraceType::Instrumentation)},
+    {"MemoryLargeAllocation", static_cast<UInt8>(TraceType::MemoryLargeAllocation)},
 };
 
 static_assert(TraceSender::MEMORY_CONTEXT_UNKNOWN == -1);
@@ -78,6 +80,8 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of sampling moment."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision."},
@@ -91,8 +95,9 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`MemoryPeak` represents collecting updates of peak memory usage. "
             "`ProfileEvent` represents collecting of increments of profile events. "
             "`JemallocSample` represents collecting of jemalloc samples. "
-            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
+            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only). "
             "`Instrumentation` represents traces collected by the instrumentation performed through XRay."
+            " `MemoryLargeAllocation` represents a single charge to the global memory tracker whose size reached `min_allocation_size_to_log_stack_trace`; such a trace is also written to the server log (for ClickHouse developers only)."
         },
         {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
@@ -102,9 +107,11 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "For profiler-collected trace types, on ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
             "and other addresses are virtual memory addresses inside the ClickHouse server process. "
             "Instrumentation trace rows are an exception: they store raw virtual memory addresses."},
-        {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
+        {"size", std::make_shared<DataTypeInt64>(), "For the memory trace types is a size in bytes: the allocated size for Memory and MemoryAllocatedWithoutCheck; "
+            "the allocated size, negated on a deallocation, for MemorySample and JemallocSample; the new peak of the tracker for MemoryPeak; "
+            "the size of the charge to the global memory tracker for MemoryLargeAllocation. For other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
-        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory/MemoryPeak): {}", context_description)},
+        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory, MemoryPeak and MemoryLargeAllocation): {}", context_description)},
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
@@ -218,6 +225,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     const auto & hostname = getFQDNOrHostName();
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    const std::string_view version = VERSION_STRING;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(version.data(), version.size());
+    const std::string_view system_processor = SYSTEM_PROCESSOR;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);

@@ -1,0 +1,26 @@
+--- corrupted input is rejected instead of counted
+optimize_count_from_files = 1
+1
+1
+1
+optimize_count_from_files = 0
+1
+1
+1
+--- valid input still counts every row
+optimize_count_from_files = 1
+777
+555
+optimize_count_from_files = 0
+777
+555
+--- an empty and a single byte ProtobufList input are still valid and empty
+0
+0
+--- reading valid input is unchanged, at several block sizes
+777	17923501796967578832
+555	1051572866248882964
+777	17923501796967578832
+555	1051572866248882964
+777	17923501796967578832
+555	1051572866248882964

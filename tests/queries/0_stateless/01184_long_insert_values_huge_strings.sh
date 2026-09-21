@@ -17,7 +17,8 @@ done;
 wait
 
 $CLICKHOUSE_CLIENT -q "select count() from huge_strings"
-$CLICKHOUSE_CLIENT -q "select sum(l = length(s)) from huge_strings"
-$CLICKHOUSE_CLIENT -q "select sum(h = cityHash64(s)) from huge_strings"
+# Pin `max_threads`: each read stream holds its own buffer for a ~9 MB row of `s`, so the randomized 32-thread draw exceeds `max_memory_usage`.
+$CLICKHOUSE_CLIENT -q "select sum(l = length(s)) from huge_strings SETTINGS max_threads = 3"
+$CLICKHOUSE_CLIENT -q "select sum(h = cityHash64(s)) from huge_strings SETTINGS max_threads = 3"
 
 $CLICKHOUSE_CLIENT -q "drop table huge_strings"

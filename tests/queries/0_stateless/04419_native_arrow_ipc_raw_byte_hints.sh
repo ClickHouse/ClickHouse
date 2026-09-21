@@ -45,14 +45,9 @@ write('tup_ipv6', pa.field('x', pa.struct([('ip', pa.binary())])),
       pa.array([{'ip': b16a}], type=pa.struct([('ip', pa.binary())])))
 EOF
 
-    both() { # $1=file-suffix $2=hint $3=select-expr : print native result, then native-vs-library parity
-        local n l
-        n=$(${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
-            --query "SELECT $3 FROM file('${PREFIX}_$1.arrow', '${FORMAT}', 'x $2')" 2>&1)
-        l=$(${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=0 \
-            --query "SELECT $3 FROM file('${PREFIX}_$1.arrow', '${FORMAT}', 'x $2')" 2>&1)
-        echo "$n"
-        [ "$n" = "$l" ] && echo "native==library" || echo "MISMATCH native=[$n] library=[$l]"
+    both() { # $1=file-suffix $2=hint $3=select-expr : print the result of the raw-byte-hinted read
+        ${CLICKHOUSE_LOCAL} \
+            --query "SELECT $3 FROM file('${PREFIX}_$1.arrow', '${FORMAT}', 'x $2')" 2>&1
     }
 
     echo "--- ${FORMAT}: Binary -> IPv6 ---";        both bin_ipv6 'IPv6'              'hex(x)'

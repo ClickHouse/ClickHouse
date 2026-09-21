@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <gtest/gtest.h>
@@ -3552,6 +3553,62 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
+{
+    const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
+    ASSERT_GT(cores, 0) << "Test host must report a non-zero core count";
+
+    // In-range ratio — resolves to `ratio * cores`, unaffected by the clamp.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(2.5)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, static_cast<Int64>(2.5 * static_cast<Float64>(cores)));
+    }
+
+    // Ratios whose product with the core count exceeds `Int64` range must clamp to `unlimited`
+    // instead of narrowing a float outside the destination range, which is undefined behaviour and
+    // could yield a negative or garbage limit.
+    for (Float64 ratio : {9223372036854775807.0, 1e19, 1e100, std::numeric_limits<Float64>::max()})
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(ratio), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited) << "ratio = " << ratio;
+    }
+
+    // The reported input arrived as an integer literal, which takes the `UInt64` branch of
+    // `getFloat64` and so bypasses its finiteness check entirely.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(UInt64(9223372036854775807ULL)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+
+    // A smaller exact limit still wins over the saturated ratio limit.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads", Field(Int64(4)), "");
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(1e100)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, 4);
+    }
+
+    // Zero ratio does not constrain.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+}
+
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
 // (current_max_slots gated schedule + setMax growth). Higher-level fairness /
 // preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
@@ -3790,4 +3847,157 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
     });
 
     t.wait();
+}
+
+// Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
+struct UnsubscribeProbe
+{
+    std::mutex mutex;
+    std::condition_variable blocker_entered_cv;
+    bool blocker_entered = false;
+    std::condition_variable release_cv;
+    bool release_blocker = false;
+    std::chrono::seconds blocker_hold{2};
+    std::atomic<bool> armed{false};
+    std::atomic<int> blocker_in_flight{0};
+    std::atomic<int> unsubscribed_handler_calls{0};
+    std::atomic<int> live_handler_calls{0};
+};
+
+// Captures `this` in its handler, like every real subscriber of getAllEntitiesAndSubscribe.
+// `subscription` is declared last, so it is destroyed before any state the handler reads.
+struct UnsubscribeTestSubscriber
+{
+    enum class Role
+    {
+        Blocker, // holds the notification inside the handler for a while
+        CountUnsubscribed, // increments unsubscribed_handler_calls
+        CountLive, // increments live_handler_calls
+    };
+
+    UnsubscribeTestSubscriber(WorkloadEntityTestStorage & storage, std::shared_ptr<UnsubscribeProbe> probe_, Role role_)
+        : probe(std::move(probe_)), role(role_)
+    {
+        subscription = storage.getAllEntitiesAndSubscribe(
+            [this, shared_probe = probe] (const std::vector<IWorkloadEntityStorage::Event> &)
+            {
+                // Reading a member is what makes the `this` capture load-bearing.
+                if (state.empty())
+                    return;
+
+                if (!shared_probe->armed.load())
+                    return;
+
+                switch (role)
+                {
+                    case Role::Blocker:
+                    {
+                        shared_probe->blocker_in_flight.fetch_add(1);
+                        {
+                            std::lock_guard lock{shared_probe->mutex};
+                            shared_probe->blocker_entered = true;
+                        }
+                        shared_probe->blocker_entered_cv.notify_all();
+                        // Held until the test releases it, or for blocker_hold if the test has nothing to signal.
+                        {
+                            std::unique_lock lock{shared_probe->mutex};
+                            shared_probe->release_cv.wait_for(
+                                lock, shared_probe->blocker_hold, [&] { return shared_probe->release_blocker; });
+                        }
+                        shared_probe->blocker_in_flight.fetch_sub(1);
+                        break;
+                    }
+                    case Role::CountUnsubscribed:
+                        shared_probe->unsubscribed_handler_calls.fetch_add(1);
+                        break;
+                    case Role::CountLive:
+                        shared_probe->live_handler_calls.fetch_add(1);
+                        break;
+                }
+            });
+    }
+
+    std::shared_ptr<UnsubscribeProbe> probe;
+    Role role;
+    String state = "subscribed";
+    scope_guard subscription;
+};
+
+// Blocks until the blocker handler is provably inside its window.
+static bool waitForBlocker(UnsubscribeProbe & probe)
+{
+    std::unique_lock lock{probe.mutex};
+    return probe.blocker_entered_cv.wait_for(lock, std::chrono::seconds(60), [&] { return probe.blocker_entered; });
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+
+    // The initial handler(current_state) call already happened above, with `armed == false`.
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Handler never started, so the barrier was never exercised";
+    EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
+
+    // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
+    // The handler must still be running when unsubscribe is entered, so only the blocked thread could signal a release.
+    blocker.reset();
+
+    EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
+
+    notifier.join();
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+
+    // Subscription order is notification order, so the blocker holds the notification before it
+    // reaches the two handlers below.
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+    auto unsubscribed = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountUnsubscribed);
+    auto live = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
+
+    // A deadlock escape that must never fire; the release after the unsubscribe below ends the hold.
+    probe->blocker_hold = std::chrono::seconds(60);
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Blocker handler never started, so nothing was exercised";
+
+    // The notifier already copied all three handlers out of the list and is parked in the first
+    // one, so this unsubscribe cannot wait for anything and must return immediately.
+    // Only the guard is dropped: the subscriber stays alive so that a handler invoked in breach of
+    // the contract reads live state and fails the assertion below instead of reading freed memory.
+    unsubscribed->subscription.reset();
+
+    {
+        std::lock_guard lock{probe->mutex};
+        probe->release_blocker = true;
+    }
+    probe->release_cv.notify_all();
+
+    notifier.join();
+
+    EXPECT_EQ(probe->live_handler_calls.load(), 1)
+        << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
+    EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
+        << "A handler was called after its subscription guard had already been destroyed";
 }

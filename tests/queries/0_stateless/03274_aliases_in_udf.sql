@@ -23,12 +23,13 @@ ORDER BY tuple();
 ALTER TABLE test_table ADD COLUMN mat_a String MATERIALIZED 03274_test_function(metadata_a);
 ALTER TABLE test_table MATERIALIZE COLUMN `mat_a`;
 
-ALTER TABLE test_table ADD COLUMN mat_b String MATERIALIZED 03274_test_function(metadata_b); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
-
-SET skip_redundant_aliases_in_udf = 1;
-
+-- The aliases inside the UDF bodies of the two column defaults conflict, but they are not
+-- referenced and do not name a projection column, so this is not an error anymore,
+-- and each column computes its own value.
 ALTER TABLE test_table ADD COLUMN mat_b String MATERIALIZED 03274_test_function(metadata_b);
 ALTER TABLE test_table MATERIALIZE COLUMN `mat_b`;
+
+SET skip_redundant_aliases_in_udf = 1;
 
 INSERT INTO test_table SELECT 'a', 'b';
 

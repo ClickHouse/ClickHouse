@@ -1,0 +1,331 @@
+---
+sidebarTitle: 'Microsoft Fabric'
+slug: /integrations/microsoft-fabric
+description: 'ClickHouse for Microsoft Fabric 是 OneLake 的加速层，无需离开 Fabric，即可为您的 OneLake 数据提供亚秒级且高性价比的分析。'
+keywords: ['clickhouse', 'microsoft fabric', 'onelake', 'workload', 'power bi', 'mcp']
+title: 'ClickHouse for Microsoft Fabric'
+doc_type: 'guide'
+hidden: true
+integration:
+  - support_level: 'core'
+  - category: 'data_integration'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## 概述
+</div>
+
+适用于 Microsoft Fabric 的 ClickHouse 工作负载是 OneLake 的加速层，可将速度最快的开源分析型数据库 ClickHouse 作为原生工作负载直接引入您的 Fabric 工作区。
+
+您的数据已存储在 OneLake 中。该工作负载可让您将选定的表同步到专用的 ClickHouse Cloud 服务，并利用高性价比的专用计算资源，以高并发实现亚秒级响应的查询。OneLake 始终是权威数据源。
+
+常见用例：
+
+* **AI 智能体**：通过 MCP，为 Copilot Studio、Azure AI Foundry、GitHub Copilot 以及任何兼容 MCP 的工具中的智能体提供受治理的只读 SQL 数据访问权限
+* **交互式分析**：在数十亿行数据上进行仪表盘分析和数据探索，查询延迟低至毫秒级
+* **面向客户的应用程序**：以 PB 级规模提供实时分析查询，供应用程序使用
+
+<Frame>
+  ![Microsoft Fabric 工作负载中心中的 ClickHouse 工作负载页面](/images/integrations/tools/data-integration/microsoft-fabric/fabric-01-workload-hub-card.webp)
+</Frame>
+
+该工作负载可在 Microsoft Fabric 工作负载中心获取。有关安全、隐私和合规性详情，请参阅[供应商证明](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)。
+
+<div id="provisioning">
+  ## 预配
+</div>
+
+要创建 ClickHouse 项目：
+
+1. 在 Fabric 工作区中，选择 **+ 新建项目**
+2. 搜索并选择 **ClickHouse**
+3. 为项目命名，然后选择 **创建**
+
+<Frame>
+  ![设置 ClickHouse：创建 Cloud 组织并预配服务](/images/integrations/tools/data-integration/microsoft-fabric/fabric-02-provisioning-canvas.webp)
+</Frame>
+
+在工作区中首次创建 ClickHouse 项目时，具有计费权限的 Fabric 管理员需要安装该工作负载并接受[服务条款](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)。之后，工作区成员即可访问。
+
+服务会预配到最靠近您的 Fabric 容量区域的 ClickHouse Cloud Azure 区域。请参阅[支持的区域](/zh/products/cloud/reference/supported-regions)。有关数据存储和处理位置的详细信息，请参阅[证明中的数据驻留部分](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)。
+
+<div id="clickhouse-cloud-trial">
+  ## ClickHouse Cloud 试用
+</div>
+
+创建第一个 ClickHouse 项目时，系统会自动开启试用。系统将使用您的 Microsoft Entra 身份预配试用组织和专用服务。
+
+试用包括：
+
+* 有效期为 30 天的试用额度
+* [ClickHouse Scale 层级](https://clickhouse.com/docs/products/cloud/features/cloud-tiers)的专用服务
+* 默认启用服务空闲功能，因此暂停期间，非活动的试用服务不会消耗计算额度
+
+试用期结束或额度用尽后，可通过 [Azure Marketplace 上的 ClickHouse Cloud 产品](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)转换为付费组织。
+
+<div id="syncing-data-from-onelake">
+  ## 从 OneLake 同步数据
+</div>
+
+使用 Sync 流程将 OneLake 表导入 ClickHouse：
+
+1. 打开您的 ClickHouse 项目，选择 **Sync**
+2. 选择 **Sync from OneLake**，然后从您的 工作区 中选择 Lakehouse
+3. 选择要加速的表
+4. 选择 **Save and sync**，开始同步数据的时间点快照
+
+<Frame>
+  ![配置 Sync：使用排序键创建新的目标表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
+</Frame>
+
+您可以根据 OneLake 中发现的 schema，使用推断的数据类型和默认配置创建目标表。如果希望更好地控制表定义，可以预先创建表，并将现有表用作目标端。
+
+<Frame>
+  ![将 OneLake 源表映射到现有 ClickHouse 表的 Sync 列映射](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
+</Frame>
+
+每个表都会显示同步状态。表同步完成后，即可立即在 SQL 控制台中查询。大型表会在后台同步，因此您可以在加载期间继续工作。
+
+<Note>
+  在公开预览中，仅支持复制时间点快照。未来的发行版计划提供更多复制选项。
+</Note>
+
+<div id="powered-by-clickpipes">
+  ### 由 ClickPipes 提供支持
+</div>
+
+每个同步的表均由 [ClickPipe](/zh/integrations/clickpipes/home) 提供支持；ClickPipe 是 ClickHouse Cloud 的托管摄取服务：
+
+1. 工作负载使用您授权的凭证直接从 OneLake 读取表数据
+2. ClickPipe 将数据流式传输到 ClickHouse 服务中的表，并将 OneLake 类型映射为 ClickHouse 类型
+
+<div id="cost">
+  ### 成本
+</div>
+
+在 Microsoft Fabric 公开预览期间，将数据从 OneLake 同步到 ClickHouse 不收费。Fabric 工作负载正式发布后将开始计费。工作负载达到 GA 后将公布定价详情。
+
+<div id="sql-console-and-saved-queries">
+  ## SQL 控制台和已保存的查询
+</div>
+
+通过嵌入式 SQL 控制台，您无需离开 Fabric 即可查询 ClickHouse 中的数据。
+
+<Frame>
+  ![嵌入式 ClickHouse SQL 控制台正在查询已同步的 NYC 出租车表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
+</Frame>
+
+<div id="saved-queries">
+  ### 已保存的查询
+</div>
+
+为任意查询命名并保存，以便日后复用。已保存的查询会与该项目一同保存，因此工作区中的所有人都能使用同一组查询。
+
+<div id="go-further-with-clickhouse-sql">
+  ### 深入探索 ClickHouse SQL
+</div>
+
+ClickHouse 提供的功能远不止快速执行 SELECT：materialized view 可在数据写入时预先计算结果，还支持全文搜索、近似聚合以及数百种专用函数。要详细了解 ClickHouse 的各项功能，请参阅 [ClickHouse 最佳实践](/zh/concepts/best-practices/index)、[materialized view](/zh/concepts/features/materialized-views/index) 和[示例用例](/zh/guides/use-cases/index)。
+
+<div id="connecting-your-data">
+  ## 连接数据
+</div>
+
+**Connect** 页面提供可直接复制粘贴的操作说明，涵盖所有可连接到您的服务的工具和方式。
+
+* **分析和 BI**：Power BI Desktop 和服务、通过 Python client 使用的 Fabric 笔记本等
+* **智能体和 AI**：适用于 Copilot Studio、Azure AI Foundry 和 GitHub Copilot 的 ClickHouse MCP 服务器
+* **构建和接口**：HTTPS、JDBC/ODBC，以及官方 ClickHouse client (Python、Node.js、Java、Go、C#、Rust 等)
+
+<Frame>
+  ![显示 ClickHouse 服务的 Power BI 连接详细信息的 Connect 页面](/images/integrations/tools/data-integration/microsoft-fabric/fabric-06-connect-power-bi.webp)
+</Frame>
+
+MCP 访问可按服务选择启用，且仅支持只读操作。启用后，会提供一个受治理的端点，智能体可通过 SQL 查询该端点。它们可获得与控制台相同的亚秒级响应，而无需占用您的 Fabric 容量。有关设置步骤，请参阅[启用远程 MCP 服务器](/zh/products/cloud/features/ai-ml/remote-mcp#enabling)；有关可用工具，请参阅 [ClickHouse MCP 服务器参考](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)。
+
+<div id="administration-and-management">
+  ## 管理与运维
+</div>
+
+<div id="open-in-clickhouse-cloud">
+  ### 在 ClickHouse Cloud 中打开
+</div>
+
+选择 **在 ClickHouse Cloud 中打开**，即可打开完整的 ClickHouse Cloud 控制台，并使用您的 Microsoft 身份登录。您可以从 Fabric 工作负载将数据同步到 ClickHouse 并运行任何 SQL 语句；但如需执行管理任务，则需要进入 Cloud Console 管理服务。
+
+<Frame>
+  ![从工作负载进入的 ClickHouse Cloud 控制台服务设置](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
+</Frame>
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+服务可在配置的边界内进行纵向和横向扩缩容。在 Cloud 控制台的 **设置** 中调整最小和最大副本大小。对于可预测且对延迟敏感的工作负载，请固定最小副本大小，以保持服务处于预热状态。有关详细信息，请参阅[自动扩缩容](/zh/products/cloud/features/autoscaling/overview)。
+
+<div id="idling">
+  ### 空闲
+</div>
+
+当服务没有收到查询时，空闲功能会暂停计算资源；当下一个查询到达后，会在短暂的启动延迟后自动恢复。试用服务创建时默认启用空闲功能。
+
+* 对于开发和间歇性工作负载，请保持空闲功能**开启**，以尽可能降低成本
+* 对于需要稳定毫秒级延迟的生产环境仪表盘、应用程序和智能体，请将空闲功能**关闭**
+
+请在 Cloud 控制台 的 **Settings** 页面配置空闲功能。有关完整行为说明，请参阅[自动空闲](/zh/products/cloud/features/autoscaling/idling)。
+
+<div id="monitoring-the-service">
+  ### 监控服务
+</div>
+
+可通过 ClickHouse Cloud 控制台监控服务健康状况、查询性能和资源使用情况。有关内置监控功能和集成选项，请参阅 [ClickHouse Cloud 监控](/zh/guides/use-cases/observability/cloud-monitoring)。有关整个平台的健康状况和事件历史记录，请参阅 [status.clickhouse.com](https://status.clickhouse.com)。
+
+<div id="monitoring-clickpipes">
+  ### 监控 ClickPipes
+</div>
+
+从 OneLake 执行的每次同步都会作为一个 ClickPipe 运行。您可以在 ClickHouse Cloud 控制台的 [ClickPipes 页面](/zh/integrations/clickpipes/monitoring)上跟踪同步进度、吞吐量和错误。
+
+<div id="mapping-to-clickhouse-cloud">
+  ## 映射到 ClickHouse Cloud
+</div>
+
+该工作负载由运行在 Azure 上的 [ClickHouse Cloud](https://clickhouse.com/cloud) 支持。以下三种映射定义了 Fabric 概念与 ClickHouse 概念之间的对应关系：
+
+| Fabric        | ClickHouse Cloud | 关系                              |
+| ------------- | ---------------- | ------------------------------- |
+| 工作区           | 组织     | 1:1，在工作区中创建第一个 ClickHouse 项目时创建 |
+| ClickHouse 项目 | Service          | 1:1，在创建项目时确定                    |
+| 用户            | User             | 1:1，用户首次打开 ClickHouse 项目时创建     |
+
+**工作区与组织。** 每个 Fabric 工作区都恰好对应一个 ClickHouse Cloud 组织。首次有人在该工作区中创建 ClickHouse 项目时，系统会自动创建该组织。访问权限仅限于您的 Microsoft Entra tenant，且无法通过此工作负载在 tenant 之间共享数据。
+
+**项目与服务。** 工作区中的每个 ClickHouse 项目都恰好对应一个专用的 ClickHouse 服务。创建项目时会预配该服务，删除项目时则会删除该服务。该服务使用专用基础设施。您的查询不会与其他 tenant 争用资源，较高的查询负载也不会占用您的 Fabric 容量。
+
+**用户。** Fabric 工作区成员首次打开 ClickHouse 项目时，系统会在与该工作区对应的 ClickHouse Cloud 组织中自动预配一个 ClickHouse 用户。
+
+<div id="support">
+  ## 支持
+</div>
+
+ClickHouse 为 ClickHouse 工作负载提供支持。有关严重级别、响应时间等详细信息，请参阅 [ClickHouse 支持计划](https://clickhouse.com/support/program)。您可以在该页面或直接通过 ClickHouse Cloud 控制台提交支持请求。有关平台状态和事件历史，请参阅 [status.clickhouse.com](https://status.clickhouse.com)。
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+此工作负载通过 [Azure Marketplace 上的 ClickHouse Cloud 产品](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)实现商业化：
+
+* 试用期结束后，工作负载中的升级流程会引导您通过市场为组织购买服务。之后，使用费用将通过您的 Azure 账户按使用量付费方式计费。详情请参阅 [Azure Marketplace 按使用量付费计费](/zh/products/cloud/reference/billing/marketplace/azure-marketplace-payg)。
+* 完成市场购买需要拥有 ClickHouse 组织的 billing 权限，工作区管理员具备此权限。组织管理员可在 Cloud 控制台 中将该权限授予其他用户。
+
+<div id="getting-started-tutorial">
+  ## 入门教程
+</div>
+
+本演练使用 Fabric 内置的示例数据，您无需自备数据集即可试用该工作负载。
+
+<div id="load-the-sample-data">
+  ### 加载样本数据
+</div>
+
+在 Fabric 工作区中，选择 **+ New item**，再选择 **Sample lakehouse**，添加 **Public holidays** 示例数据。确认 `publicholidays` 表显示在“表”下。
+
+<Frame>
+  ![Fabric Lakehouse 中的 Public holidays 示例表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+</Frame>
+
+<div id="create-a-clickhouse-item-and-sync">
+  ### 创建 ClickHouse 项目并同步
+</div>
+
+1. 按照[预配](#provisioning)中的说明，在同一工作区内创建一个 ClickHouse 项目
+2. 打开 **Sync**，选择你的 Lakehouse，然后选择 `publicholidays` 表
+3. 按最常用于过滤的列排序：`countryOrRegion, date`
+4. 启动同步后，数据很快便会填充完成。此规模的表可在数秒内完成同步
+
+<div id="query-the-data">
+  ### 查询数据
+</div>
+
+打开 SQL 控制台，然后尝试：
+
+```sql
+-- Which countries have the most holidays?
+SELECT countryOrRegion, count() AS holidays
+FROM publicholidays
+GROUP BY countryOrRegion
+ORDER BY holidays DESC
+LIMIT 10;
+```
+
+```sql
+-- Paid time off vs. observance days by year
+SELECT
+    toYear(date) AS year,
+    countIf(isPaidTimeOff) AS paid_days,
+    count() AS all_days
+FROM publicholidays
+GROUP BY year
+ORDER BY year;
+```
+
+将第一个查询保存为 **按国家/地区统计的节假日**，体验已保存查询功能。
+
+<div id="connect-to-mcp">
+  ### 连接到 MCP
+</div>
+
+1. 在 **连接** 页面，为服务启用 **MCP**
+2. 按照[远程 MCP 服务器入门](/zh/products/cloud/features/ai-ml/remote-mcp#getting-started)中的说明，在您选择的 MCP 客户端中注册 ClickHouse MCP 服务器
+3. 提问：*&quot;2026 年哪个国家的公共假期最多，其中有多少天为带薪休假？&quot;*
+
+agent 会对您同步的表运行受治理的只读 SQL，并据此作答。
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+ClickHouse 工作负载 目前处于公开预览阶段。以下限制仅反映当前状态，并非最终目标；大多数已在路线图中规划。
+
+<div id="data-movement">
+  ### 数据移动
+</div>
+
+* **复制为时间点快照。** 目前不支持计划复制或连续复制。若要使用最新的 OneLake 数据刷新表，请重新运行同步。源表中的更新和删除不会同步到 ClickHouse 副本。
+* **仅支持湖仓表。** Sync 会从同一工作区中的 Lakehouse 读取表。
+* **不支持写回 OneLake。** 数据仅从 OneLake 单向流入 ClickHouse。未来计划支持将查询结果写回 OneLake。
+
+<div id="service-management">
+  ### 服务管理
+</div>
+
+* **每个项目只能有一个服务，且在创建时即已确定。** 您无法将现有的 ClickHouse Cloud 服务附加到 Fabric 项目，也无法将该工作负载连接到现有的 ClickHouse Cloud 组织。
+* **在 ClickHouse Cloud 控制台中删除服务会导致 Fabric 项目成为孤立项，且无法恢复。** 删除 Fabric 项目会删除其服务，但目前不支持反向操作。
+* **服务配置在 Cloud 控制台中管理。** 扩缩容、闲置和备份均在 ClickHouse Cloud 中管理，而非通过 Fabric 项目设置。
+
+<div id="access-and-identity">
+  ### 访问和身份
+</div>
+
+* **角色变更会在下次打开时生效。** 每次打开 ClickHouse 项目时，您的 ClickHouse 组织角色都会根据您在 Fabric 工作区中的角色进行映射。Fabric 无法将角色变更通知给 ClickHouse，因此工作区角色变更不会立即生效。
+* **在 Fabric 中移除或降级用户不会撤销其 ClickHouse 访问权限。** 由于角色仅在用户打开 ClickHouse 项目时才会应用，被从工作区移除或降级的用户可能会保留其在 ClickHouse Cloud 端的现有访问权限；如果他们之后从未再次打开该项目，该变更将完全不会传播。要立即可靠地撤销访问权限，请在 ClickHouse Cloud 控制台中将该用户从组织中移除。
+* **工作区级访问。** 工作区中的所有成员都可以使用其中的 ClickHouse 项目。目前不支持从 OneLake 同步细粒度的表级权限。
+* **Console SSO 要求您的 Entra 配置文件中设置电子邮件地址。** ClickHouse Cloud 用户必须具有电子邮件地址；如果您的 Microsoft Entra 配置文件中未设置电子邮件地址，登录 Cloud 控制台 将会失败。
+
+<div id="reference">
+  ## 参考
+</div>
+
+* [供应商证明](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
+* [Microsoft Marketplace 上的 ClickHouse Cloud](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)
+* [Azure Marketplace 按使用量付费计费](/zh/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [支持的区域](/zh/products/cloud/reference/supported-regions)
+* [ClickPipes 定价维度](/zh/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage)
+* [支持计划](https://clickhouse.com/support/program)
+* [服务状态](https://status.clickhouse.com)
+* [服务条款](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)

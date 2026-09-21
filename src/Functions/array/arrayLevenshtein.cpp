@@ -620,8 +620,8 @@ REGISTER_FUNCTION(ArrayLevenshtein)
     FunctionDocumentation::Description description_arrayLevDis = "Calculates the Levenshtein distance for two arrays.";
     FunctionDocumentation::Syntax syntax_arrayLevDis = "arrayLevenshteinDistance(from, to)";
     FunctionDocumentation::Arguments arguments_arrayLevDis = {
-        {"from", "The first array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to", "The second array. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"from", "The first array. [`Array(T)`](/reference/data-types/array)."},
+        {"to", "The second array. [`Array(T)`](/reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_arrayLevDis = {"Levenshtein distance between the first and the second arrays.", {"Float64"}};
     FunctionDocumentation::Examples example_arrayLevDis = {
@@ -643,8 +643,8 @@ The number of elements for the array and its weights should match.
     )";
     FunctionDocumentation::Syntax syntax_arrayLevDisW = "arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)";
     FunctionDocumentation::Arguments arguments_arrayLevDisW = {
-        {"from", "first array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"from", "first array. [`Array(T)`](/reference/data-types/array)."},
+        {"to", "second array. [`Array(T)`](/reference/data-types/array)."},
         {"from_weights", "weights for the first array.", {"Array((U)Int*|Float*)"}},
         {"to_weights", "weights for the second array.", {"Array((U)Int*|Float*)"}},
     };

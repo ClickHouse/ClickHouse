@@ -1,10 +1,10 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
 -- `optimizeUseNormalProjections` may replace a read that `tryOptimizeTopK` has already stamped
 -- for TopK filtering with a fresh projection read. The replacement must observe the same query
--- condition cache (QCC) gating as the read it replaces: with the default
+-- condition cache (QCC) gating as the read it replaces: with
 -- `use_query_condition_cache_for_top_k = 0`, the projection read must not write any QCC entry,
 -- and the projection candidate analysis must not consult entries under the plain condition hash.
 --
@@ -20,7 +20,8 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
--- Pin the gate to its default value: this test covers the default-off contract.
+-- Turn the gate off: this test covers the contract of the query condition cache being
+-- switched off for TopK reads.
 SET use_query_condition_cache_for_top_k = 0;
 -- `force_optimize_projection` only checks (and the rewrite only runs) when projections are allowed at
 -- all, so pin `optimize_use_projections`: the test settings randomization turns it off.
@@ -29,8 +30,6 @@ SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 

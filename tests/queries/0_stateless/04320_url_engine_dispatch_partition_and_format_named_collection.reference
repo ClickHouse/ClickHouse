@@ -1,0 +1,3 @@
+--- ENGINE = URL(named_collection) with format = auto persists the inferred format ---
+1
+1

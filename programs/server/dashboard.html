@@ -135,46 +135,12 @@
             background: var(--background-color-1);
         }
 
-        .inputs.unconnected {
-            height: 100vh;
-        }
-        .unconnected #params {
-            display: flex;
-            flex-flow: column nowrap;
-            justify-content: center;
-            align-items: center;
-        }
-        .unconnected #connection-params {
-            width: 50%;
-
-            display: flex;
-            flex-flow: column nowrap;
-        }
-        .unconnected #url {
-            width: 100%;
-        }
-        .unconnected #button-options {
-            display: grid;
-            grid-auto-flow: column;
-            grid-auto-columns: 1fr;
-            gap: 0.3rem;
-        }
-        .unconnected #user {
-            margin-right: 0;
-            width: auto;
-        }
-        .unconnected #password {
-            width: auto;
-        }
         #user {
             margin-right: 0.25rem;
             width: 50%;
         }
         #password {
             width: 49.5%;
-        }
-        .unconnected input {
-            margin-bottom: 5px;
         }
 
         #username-password {
@@ -183,21 +149,9 @@
             display: flex;
             flex-flow: row nowrap;
         }
-        .unconnected #username-password {
-            width: 100%;
-
-            gap: 0.3rem;
-
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-        }
 
         .inputs #chart-params {
             display: block;
-        }
-
-        .inputs.unconnected #chart-params {
-            display: none;
         }
 
         #connection-params {
@@ -249,19 +203,6 @@
             display: inline-block;
             transform: translate(1px, 1px);
             filter: brightness(125%);
-        }
-
-        #run {
-            background: var(--button-background-color);
-            color: var(--button-text-color);
-            font-weight: bold;
-            user-select: none;
-            cursor: pointer;
-            margin-bottom: 1rem;
-        }
-
-        #run:hover {
-            filter: contrast(125%);
         }
 
         #add, #add-metrics, #reload, #edit, #search {
@@ -344,10 +285,6 @@
         }
         .chart-buttons a:hover {
             color: var(--chart-button-hover-color);
-        }
-
-        .disabled {
-            opacity: 0.5;
         }
 
         .query-editor {
@@ -490,7 +427,7 @@
     </style>
 </head>
 <body>
-<div class="inputs unconnected">
+<div class="inputs">
     <form id="params">
         <div id="connection-params">
             <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
@@ -502,11 +439,11 @@
         </div>
         <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-            <input id="edit" type="button" value="✎" style="display: none;">
-            <input id="add-metrics" type="button" value="Add charts from metrics" style="display: none;">
-            <input id="add" type="button" value="Add chart" style="display: none;">
+            <input id="edit" type="button" value="✎">
+            <input id="add-metrics" type="button" value="Add charts from metrics">
+            <input id="add" type="button" value="Add chart">
             <input id="reload" type="button" value="Reload">
-            <span id="search-span" class="nowrap" style="display: none;"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse. Either select dashboard name or write your own query"><input id="search-query" name="search" list="search-options" type="text" spellcheck="false"><datalist id="search-options"></datalist></span>
+            <span id="search-span" class="nowrap"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse. Either select dashboard name or write your own query"><input id="search-query" name="search" list="search-options" type="text" spellcheck="false"><datalist id="search-options"></datalist></span>
             <div id="chart-params"></div>
         </div>
     </form>
@@ -754,13 +691,6 @@ function buildParams() {
     for (let [name, value] of Object.entries(params)) {
         insertParam(name, value);
     }
-
-    let run = document.createElement('input');
-    run.id = 'run';
-    run.type = 'submit';
-    run.value = 'Ok';
-
-    document.getElementById('chart-params').appendChild(run);
 }
 
 function updateParams() {
@@ -829,7 +759,11 @@ function insertChart(i) {
         refreshCustomized(true);
         saveState();
         const idx = getCurrentIndex();
-        draw(idx, chart, getParamsForURL(), q.query);
+        draw(idx, chart, getParamsForURL(), q.query).catch((e) => {
+            if (e.name != 'AbortError') {
+                showError(e.message);
+            }
+        });
     }
 
     query_editor_confirm.addEventListener('click', editConfirm);
@@ -994,7 +928,7 @@ function insertChart(i) {
     chart.addEventListener('mouseenter', e => { edit_buttons.style.display = 'block'; });
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
-    charts.appendChild(chart);
+    charts.insertBefore(chart, charts.children[i] || null);
     return {chart: chart, textarea: query_editor_textarea};
 }
 
@@ -1082,18 +1016,25 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 let metrics_editor_active = false;
 const metric_column_regex = /\b(?:ProfileEvent|CurrentMetric)_[A-Za-z0-9_]+\b/;
-const async_metric_condition_regex = /\bmetric\s*(?:=|LIKE)\s*'[^']+'/;
+/// The whole asynchronous metric condition of a chart: the `metric` predicate together with the
+/// `key` predicate that a key-value metric adds after it, and the parenthesized legacy-name
+/// alternative that `buildQueryFromTemplate` generates for a key-value metric. All are matched
+/// as a unit, so that generating a chart from a template that is already keyed replaces the
+/// previous key (and legacy-name branch) instead of leaving it behind.
+const async_metric_condition_regex = /\(\s*metric\s*(?:=|LIKE)\s*'(?:[^'\\]|\\.)*'\s+AND\s+key\s*=\s*'(?:[^'\\]|\\.)*'\s+OR\s+metric\s*=\s*'(?:[^'\\]|\\.)*'\s*\)|\bmetric\s*(?:=|LIKE)\s*'(?:[^'\\]|\\.)*'(?:\s+AND\s+key\s*=\s*'(?:[^'\\]|\\.)*')?/i;
 
-/// Extracts an ordered list of {kind, name} from a pasted text, ignoring unrecognized lines. Accepted lines:
+/// Extracts an ordered list of {kind, name, key?} from a pasted text, ignoring unrecognized lines. Accepted lines:
 ///     extern const Event RejectedInserts;
 ///     extern const Metric DelayedInserts;
 ///     M(RejectedInserts, "description", ValueType::Number)
 ///     M(DelayedInserts, "description")
-///     ClickHouseAsyncMetrics_KeeperPacketsSent 67    (the Prometheus endpoint format)
+///     ClickHouseAsyncMetrics_KeeperPacketsSent 67                 (the Prometheus endpoint format)
+///     ClickHouseAsyncMetrics_BlockReadBytes{device="sda"} 123     (a key-value asynchronous metric)
 function parseMetricsInput(text) {
     const extern_regex = /\bextern\s+const\s+(Event|Metric)\s+([A-Za-z_][A-Za-z0-9_]*)/;
     const macro_regex = /\bM\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/;
-    const async_regex = /\bClickHouseAsyncMetrics_([A-Za-z0-9_]+)/;
+    const async_regex = /\bClickHouseAsyncMetrics_([A-Za-z0-9_]+)(?:\{([^}]*)\})?/;
+    const prometheus_label_regex = /[A-Za-z_][A-Za-z0-9_]*="((?:[^"\\]|\\.)*)"/g;
 
     let result = [];
     let seen = new Set();
@@ -1117,15 +1058,26 @@ function parseMetricsInput(text) {
         if (match === null && (match = line.match(async_regex))) {
             kind = 'AsyncMetric';
             name = match[1];
+            if (match[2]) {
+                /// The Prometheus exporter appends the key-value metric label after constant labels.
+                let label_match = null;
+                let key = null;
+                while ((label_match = prometheus_label_regex.exec(match[2])) !== null) {
+                    key = label_match[1].replaceAll(/\\(.)/g, (unused, c) => c == 'n' ? '\n' : c);
+                }
+                if (key !== null) {
+                    match.key = key;
+                }
+            }
         }
 
         if (match !== null) {
-            const key = `${kind}_${name}`;
-            if (seen.has(key)) {
+            const deduplication_key = `${kind}_${name}_${match.key ?? ''}`;
+            if (seen.has(deduplication_key)) {
                 continue;
             }
-            seen.add(key);
-            result.push({kind: kind, name: name});
+            seen.add(deduplication_key);
+            result.push({kind: kind, name: name, key: match.key});
         }
     }
 
@@ -1154,11 +1106,43 @@ function metricChartTemplates() {
     return templates;
 }
 
-function buildQueryFromTemplate(template, kind, name) {
+/// The flat per-entity name a key-value asynchronous metric had before the per-entity metrics
+/// were collapsed into key-value metrics, e.g. `BlockReadBytes_sda` for `BlockReadBytes` with
+/// the key `sda`. The inverse of the family-specific mapping the performance report uses.
+function legacyAsyncMetricName(name, key) {
+    if (name.startsWith('OS') && name.endsWith('CPU')) {
+        return name + key;
+    }
+    if (name == 'Temperature' && /^[0-9]+$/.test(key)) {
+        return name + key;
+    }
+    if (name == 'EDACCorrectable' || name == 'EDACUncorrectable') {
+        return 'EDAC' + key + '_' + name.substring(4);
+    }
+    if (name == 'DeadBlobsQueueEstimate' || name == 'MissingBlobsQueueEstimate') {
+        return key + name;
+    }
+    if (name == 'AsyncLoggingQueueSize') {
+        return 'AsyncLogging' + key + 'QueueSize';
+    }
+    return name + '_' + key;
+}
+
+function buildQueryFromTemplate(template, kind, name, key) {
     if (kind == 'AsyncMetric') {
         const token = template.match(async_metric_condition_regex)[0];
-        const escaped_name = name.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-        return template.replaceAll(token, `metric LIKE '${escaped_name}'`);
+        const escape = s => s.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+        let condition = `metric LIKE '${escape(name)}'`;
+        if (key !== undefined) {
+            /// The default charts read `merge('system', '^asynchronous_metric_log')`, which also
+            /// includes the pre-upgrade log tables renamed by the schema migration. Their rows
+            /// keep the flat per-entity names and have no `key` column (the merge fills it with
+            /// an empty string), so the chart also matches the legacy name to keep the history
+            /// continuous across the upgrade.
+            condition = `(metric LIKE '${escape(name)}' AND key = '${escape(key)}'`
+                + ` OR metric = '${escape(legacyAsyncMetricName(name, key))}')`;
+        }
+        return template.replaceAll(token, condition);
     }
 
     const token = template.match(metric_column_regex)[0];
@@ -1191,7 +1175,7 @@ function metricsEditorParse() {
     let metrics = 0;
     let asyncs = 0;
     for (const metric of parsed) {
-        const query = buildQueryFromTemplate(templates[metric.kind], metric.kind, metric.name);
+        const query = buildQueryFromTemplate(templates[metric.kind], metric.kind, metric.name, metric.key);
         if (existing.has(query)) {
             ++skipped;
             continue;
@@ -1202,7 +1186,8 @@ function metricsEditorParse() {
         else if (metric.kind == 'CurrentMetric') { ++metrics; }
         else { ++asyncs; }
 
-        new_charts.push({title: metric.name, query: query});
+        const title = metric.key === undefined ? metric.name : `${metric.name} (${metric.key})`;
+        new_charts.push({title: title, query: query});
     }
 
     return {new_charts: new_charts, skipped: skipped, events: events, metrics: metrics, asyncs: asyncs, error: null};
@@ -1262,14 +1247,28 @@ function metricsEditorApplyChanges() {
     }
     queries.unshift(...new_charts);
     hideMetricsEditor();
-    regenerate();
+
+    /// Insert and draw only the new charts; the existing ones are not reloaded.
+    new_charts.forEach(q => findParamsInQuery(q.query, params));
+    buildParams();
+    plots.unshift(...new_charts.map(() => null));
+    for (let i = 0; i < new_charts.length; i++) {
+        insertChart(i);
+    }
+    resize();
     refreshCustomized(true);
     saveState();
-    drawAll();
-    const chart_divs = charts.querySelectorAll('.chart');
-    if (chart_divs[0]) {
-        chart_divs[0].scrollIntoView();
+
+    const url_params = getParamsForURL();
+    const chartsArray = charts.getElementsByClassName('chart');
+    for (let i = 0; i < new_charts.length; i++) {
+        draw(i, chartsArray[i], url_params, queries[i].query).catch((e) => {
+            if (e.name != 'AbortError') {
+                showError(e.message);
+            }
+        });
     }
+    chartsArray[0].scrollIntoView();
 }
 
 document.getElementById('add-metrics').addEventListener('click', e => {
@@ -1394,6 +1393,14 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
 }
 
 
+/// Aborted and recreated on every reload, so stale in-flight queries never paint over a newer run.
+let query_controller = new AbortController();
+
+function cancelQueries() {
+    query_controller.abort();
+    query_controller = new AbortController();
+}
+
 async function doFetch(query, url_params = '') {
     host = document.getElementById('url').value || host;
     user = document.getElementById('user').value;
@@ -1415,7 +1422,7 @@ async function doFetch(query, url_params = '') {
 
     let response, reply, error;
     try {
-        response = await fetch(url + url_params, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await fetch(url + url_params, { method: "POST", body: query, headers: { 'Authorization': 'never' }, signal: query_controller.signal });
         reply = await response.text();
         if (response.ok) {
             reply = JSON.parse(reply);
@@ -1426,6 +1433,9 @@ async function doFetch(query, url_params = '') {
             error = reply;
         }
     } catch (e) {
+        if (e.name == 'AbortError') {
+            throw e;
+        }
         console.log(e);
         error = e.toString();
     }
@@ -1460,7 +1470,11 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
+    const signal = query_controller.signal;
     let {reply, error} = await doFetch(query, url_params);
+    if (signal.aborted) {
+        return false;
+    }
     if (!error) {
         if (reply.rows == 0) {
             error = "Query returned empty result.";
@@ -1641,70 +1655,37 @@ async function draw(idx, chart, url_params, query) {
     return true;
 }
 
+/// The error is shown as a banner above the charts; the charts always stay visible.
 function showError(message) {
-    const charts = document.getElementById('charts');
-    charts.style.height = '0px';
-    charts.style.opacity = '0';
-    document.getElementById('add').style.display = 'none';
-    document.getElementById('add-metrics').style.display = 'none';
-    document.getElementById('edit').style.display = 'none';
-
     const error = document.getElementById('global-error');
     error.textContent = message;
     error.style.display = 'flex';
 }
 
 function hideError() {
-    const charts = document.getElementById('charts');
-    charts.style.height = 'auto';
-    charts.style.opacity = '1';
-
     const error = document.getElementById('global-error');
     error.textContent = '';
     error.style.display = 'none';
 }
 
-let firstLoad = true;
-let is_drawing = false; // Prevent race condition leading to duplicate/dangling charts.
 async function drawAll() {
-    if (is_drawing) return;
-    is_drawing = true;
+    /// Supersede any in-flight run: its queries are aborted, so it cannot paint stale charts.
+    cancelQueries();
+    const signal = query_controller.signal;
 
-    try {
-        hideError();
+    hideError();
 
-        let params = getParamsForURL();
-        const chartsArray = document.getElementsByClassName('chart');
+    let params = getParamsForURL();
+    const chartsArray = document.getElementsByClassName('chart');
 
-        let had_global_error = false;
-        const results = await Promise.all([...Array(queries.length)].map(async (_, i) => {
-            return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
+    await Promise.all([...Array(queries.length)].map(async (_, i) => {
+        return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
+            if (e.name != 'AbortError' && !signal.aborted) {
                 showError(e.message);
-                had_global_error = true;
-                return false;
-            });
-        }));
-
-        if (firstLoad) {
-            firstLoad = false;
-        } else {
-            enableButtons();
-        }
-
-        if (!had_global_error && results.length > 0) {
-            /// At least one chart was processed without a global error
-            /// (auth/connection).  Show the connected UI.  Individual charts
-            /// may still have per-chart query errors displayed in their divs.
-            const element = document.querySelector('.inputs');
-            element.classList.remove('unconnected');
-            document.getElementById('add').style.display = 'inline-block';
-            document.getElementById('add-metrics').style.display = 'inline-block';
-            document.getElementById('edit').style.display = 'inline-block';
-            document.getElementById('search-span').style.display = '';
-        }
-    } finally {
-        is_drawing = false;
-    }
+            }
+            return false;
+        });
+    }));
 }
 
 function resize() {
@@ -1718,46 +1699,17 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
-function disableButtons() {
-    const reloadButton = document.getElementById('reload');
-    reloadButton.value = 'Reloading…';
-    reloadButton.disabled = true;
-    reloadButton.classList.add('disabled');
-
-    const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Reloading…';
-        runButton.disabled = true;
-        runButton.classList.add('disabled');
-    }
-
-    const searchButton = document.getElementById('search');
-    searchButton.value = '…';
-    searchButton.disabled = true;
-    searchButton.classList.add('disabled');
+/// The buttons stay clickable while loading: pressing Reload again cancels the in-flight queries and restarts.
+function setButtonsLoading(loading) {
+    document.getElementById('reload').value = loading ? 'Reloading…' : 'Reload';
+    document.getElementById('search').value = loading ? '…' : '🔎';
 }
 
-function enableButtons() {
-    const reloadButton = document.getElementById('reload');
-    reloadButton.value = 'Reload';
-    reloadButton.disabled = false;
-    reloadButton.classList.remove('disabled');
-
-    const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Ok';
-        runButton.disabled = false;
-        runButton.classList.remove('disabled');
-    }
-
-    const searchButton = document.getElementById('search');
-    searchButton.value = '🔎';
-    searchButton.disabled = false;
-    searchButton.classList.remove('disabled');
-}
-
+let reload_epoch = 0;
 async function reloadAll(do_search) {
-    disableButtons();
+    const epoch = ++reload_epoch;
+    cancelQueries();
+    setButtonsLoading(true);
     try {
         updateParams();
         if (do_search) {
@@ -1771,9 +1723,13 @@ async function reloadAll(do_search) {
         }
         await drawAll();
     } catch (e) {
-        showError(e.message);
+        if (e.name != 'AbortError') {
+            showError(e.message);
+        }
     }
-    enableButtons();
+    if (epoch == reload_epoch) {
+        setButtonsLoading(false);
+    }
 }
 
 document.getElementById('params').onsubmit = function(event) {
@@ -1920,7 +1876,9 @@ async function start() {
         }
         await populateSearchOptions();
     } catch (e) {
-        showError(e.message);
+        if (e.name != 'AbortError') {
+            showError(e.message);
+        }
     }
 }
 

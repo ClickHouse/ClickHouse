@@ -1,10 +1,13 @@
 ---
 slug: /use-cases/observability
 title: 'Observability'
+sidebarTitle: 'نظرة عامة'
 description: 'الصفحة الرئيسية لدليل حالة استخدام رصد'
 keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
+
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 يوفّر ClickHouse سرعةً وقابليةَ توسّعٍ وكفاءةً من حيث التكلفة لا مثيل لها في مجال رصد. يقدّم هذا الدليل مسارين وفقًا لاحتياجاتك:
 
@@ -24,7 +27,7 @@ doc_type: 'guide'
 | [معمارية](/ar/clickstack/architecture)                              | نظرة عامة على معمارية النظام ومكوناته            |
 | [النشر](/ar/clickstack/deployment/overview)                         | أدلة النشر وخياراته                              |
 | [التهيئة](/ar/clickstack/managing/config)                           | خيارات التهيئة والإعدادات التفصيلية              |
-| [إدخال البيانات](/ar/clickstack/ingesting-data/index)               | إرشادات إدخال البيانات إلى ClickStack            |
+| [إدخال البيانات](/ar/clickstack/ingesting-data/overview)            | إرشادات إدخال البيانات إلى ClickStack            |
 | [البحث](/ar/clickstack/features/search)                             | كيفية البحث في بيانات الرصد لديك والاستعلام عنها |
 | [بيئة الإنتاج](/ar/clickstack/managing/production)                  | أفضل الممارسات للنشر في بيئة الإنتاج             |
 
@@ -42,3 +45,11 @@ doc_type: 'guide'
 | [دمج OpenTelemetry](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | جمع السجلات وتتبع وتصديرها باستخدام OpenTelemetry مع ClickHouse.                                                                            |
 | [استخدام أدوات التصور](/ar/guides/use-cases/observability/build-your-own/grafana)                | تعرّف على كيفية استخدام أدوات تصور رصد مع ClickHouse، بما في ذلك HyperDX وGrafana.                                                  |
 | [التطبيق التجريبي](/ar/guides/use-cases/observability/build-your-own/demo-application)           | استكشف OpenTelemetry demo application المهيأ للعمل مع ClickHouse للسجلات وتتبع.                                                             |
+
+<div id="prometheus-metrics">
+  ## مقاييس Prometheus
+</div>
+
+<CloudNotSupportedBadge />
+
+يمكن لـ ClickHouse تخزين مقاييس Prometheus في جدول [`TimeSeries`](/ar/reference/engines/table-engines/integrations/time-series) وتنفيذ استعلامات PromQL. راجع [بروتوكولات Prometheus وPromQL](/ar/concepts/features/interfaces/prometheus) لإعداد الإدخال والاستعلام والتصور.
