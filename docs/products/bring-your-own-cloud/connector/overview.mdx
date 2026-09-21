@@ -31,7 +31,7 @@ Every connection the connector makes is outbound. ClickHouse Cloud never initiat
 Deploy the connector when you want ClickHouse Cloud to operate ClickHouse services inside your own cloud account under these constraints:
 
 - All access paths originate inside your boundary; there is no inbound connectivity.
-- Changes to your cluster are confined to the namespaces of the services ClickHouse manages. The platform components those services depend on change only after you approve each update.
+- Writes to your cluster are confined to the namespaces of the services ClickHouse manages, apart from the executor's own token and registry in its home namespace. The platform components those services depend on change only after you approve each update.
 - Your data stays in buckets and behind IAM roles that you create and remove yourself. The executor holds no credentials to your buckets or IAM roles.
 - Support access is time-boxed, enabled by you, and revocable by you at any moment. Every support-session command is recorded in an audit log you own.
 
