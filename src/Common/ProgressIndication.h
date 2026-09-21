@@ -122,6 +122,8 @@ private:
     /// `bar_history_resolution` cells, and rendered at the current width of the bar.
     std::vector<std::pair<UInt64, bool>> bar_segments;
     static constexpr size_t bar_history_resolution = 4096;
+    /// Whether the counts stored in `bar_segments` are numbers of rows (or of bytes otherwise).
+    bool bar_segments_in_rows = false;
 
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.

@@ -39,6 +39,7 @@ void ProgressIndication::resetProgress()
         show_progress_bar = false;
         written_progress_chars = 0;
         bar_segments.clear();
+        bar_segments_in_rows = false;
         write_progress_on_update = false;
     }
     {
@@ -223,6 +224,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     {
         size_t current_count = 0;
         size_t max_count = 0;
+        bool count_in_rows = progress.total_rows_to_read != 0;
         if (progress.total_rows_to_read)
         {
             current_count = progress.read_rows;
@@ -247,6 +249,17 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         /// the build side), which shows the bar later and colors the cells of the interval that
         /// was hidden. The history is compacted below, so recording it does not let it grow with
         /// the duration of the query.
+
+        /// The counts are in rows while the total number of rows is known, and in bytes otherwise,
+        /// and a query can switch from the second to the first: a source that reports only the size
+        /// of a file (`StorageFile`, `StorageURL`, object storage) can be read before a source that
+        /// adds a total number of rows. A count recorded in bytes means nothing once the counts are
+        /// in rows, so the history of the previous carrier is dropped and recorded anew.
+        if (bar_segments_in_rows != count_in_rows)
+        {
+            bar_segments.clear();
+            bar_segments_in_rows = count_in_rows;
+        }
 
         /// The first segment always covers the bar from its first cell, because `colored_bar`
         /// treats each stored count as the first cell of its segment. The progress bar appears
