@@ -34,6 +34,20 @@ SELECT '-- explain plan verifies join_group filter pushdown with subquery on rig
 SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) >= 2
 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) last_over_time(target_info[5m:1m])', 110));
 
+SELECT '-- group_left with offset on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) (target_info offset 10s)', 110) ORDER BY tags;
+
+SELECT '-- explain plan verifies join_group filter pushdown with offset on right side';
+SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) >= 2
+FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) (target_info offset 10s)', 110));
+
+SELECT '-- group_left with fixed at modifier on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) (target_info @ 110)', 110) ORDER BY tags;
+
+SELECT '-- explain plan verifies join_group filter pushdown with fixed at modifier on right side';
+SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) >= 2
+FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) (target_info @ 110)', 110));
+
 SELECT '-- group_left with label_replace on right side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'label_replace(requests, "dc2", "$1", "dc", "(.*)") * on (dc2) group_left (env) label_replace(target_info, "dc2", "$1", "dc", "(.*)")', 110) ORDER BY tags;
 
