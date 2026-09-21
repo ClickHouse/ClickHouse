@@ -8,6 +8,8 @@
 #   `05100_reattach_tables_create`    - unresolvable references, object kinds, `CREATE` destinations
 #   `05101_reattach_tables_engines`   - engines and database engines the hook has to skip
 #   `05102_reattach_tables_mutations` - mutation carriers, a busy table, `max_tables`, `INSERT`
+#   `05103_reattach_tables_internal_settings` - the settings the internal `DETACH`/`ATTACH` runs with
+#   `05104_reattach_tables_dynamic_disk` - a table that builds its own disk with the `disk` function
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 

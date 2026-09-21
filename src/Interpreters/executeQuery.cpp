@@ -60,6 +60,9 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -3273,6 +3276,48 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 continue;
             }
+        }
+
+        /// A table whose definition builds its own disk with the `disk` function must not be reattached.
+        /// The internal `ATTACH TABLE` below is an ordinary user-initiated attach
+        /// (`LoadingStrictnessLevel::ATTACH`), and only a load from existing metadata — a server restart or
+        /// an `UNDROP TABLE` — is exempt from the security checks that `getDiskConfigurationFromAST` runs
+        /// over such a definition: `dynamic_disk_allow_from_env`, `dynamic_disk_allow_include`,
+        /// `dynamic_disk_allow_from_zk`, and the restriction on a dynamic S3 disk resolving the server's own
+        /// credentials (whose `_server_credentials_allowed` marker is likewise honored only on a metadata
+        /// load). The table may legitimately exist because it was created once under a session that was
+        /// allowed to define it, while the internal queries below run with the server's default settings, so
+        /// the `ATTACH` back would be rejected with `ACCESS_DENIED` and leave the table detached — the
+        /// recovery `ATTACH` fails the same way. A SQL `ATTACH` cannot ask for the metadata-load treatment,
+        /// so skip these tables entirely. A `disk` setting naming a disk from the server configuration is
+        /// not affected: nothing about it is re-resolved on attach.
+        {
+            const auto create_query = database->tryGetCreateTableQuery(table_id.getTableName(), context);
+            /// No stored definition means the check cannot be made, which is reason enough to skip: this is
+            /// the definition the `ATTACH` below re-parses.
+            if (!create_query)
+                continue;
+
+            bool defines_own_disk = false;
+            const auto * create = create_query->as<ASTCreateQuery>();
+            if (create && create->storage && create->storage->settings)
+            {
+                for (const auto & change : create->storage->settings->as<ASTSetQuery &>().changes)
+                {
+                    if (change.name != "disk")
+                        continue;
+
+                    CustomType custom;
+                    if (change.value.tryGet<CustomType>(custom) && custom.getTypeName() == std::string_view("AST")
+                        && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
+                    {
+                        defines_own_disk = true;
+                        break;
+                    }
+                }
+            }
+            if (defines_own_disk)
+                continue;
         }
 
         /// A table another query is using right now must not be reattached. The internal
