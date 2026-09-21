@@ -1,17 +1,15 @@
 #pragma once
 
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <functional>
 #include <type_traits>
 
 namespace DB
 {
 
-class IFunctionBase;
+class ActionsDAG;
 
 struct IDescriptionHolder
 {
@@ -61,14 +59,6 @@ bool makeFilterNodeOnTopOf(
     DescriptionHolderPtr step_description = {});
 
 bool isPassthroughActions(const ActionsDAG & actions_dag);
-
-/// The first function in the subtrees under `roots` for which `predicate` holds, or nullptr. A walk over the
-/// `FUNCTION` nodes alone misses the functions inside lambdas: a lambda body is a separate `ActionsDAG` behind a
-/// `FunctionExpression` / `FunctionCapture`, and a lambda that captures nothing is folded into a `COLUMN` node
-/// holding a `ColumnFunction`, reachable only through that column (and, when nested, through the columns an
-/// enclosing folded lambda captured). This walk descends into all of them.
-const IFunctionBase * findFunctionInSubtrees(
-    std::vector<const ActionsDAG::Node *> roots, const std::function<bool(const IFunctionBase &)> & predicate);
 
 namespace QueryPlanOptimizations
 {
