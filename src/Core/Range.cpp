@@ -56,7 +56,7 @@ std::optional<UInt64> getExponentialTimeDecayingPrefixFromField(
     {
         const Float64 value = tuple[0].safeGet<Float64>();
         const Float64 time = tuple[1].safeGet<Float64>();
-        return getExponentialTimeDecayingOrderingPrefix(
+        return getExponentialTimeDecayingOrderingKey(
             value,
             time,
             type.getDecayLength());
@@ -88,9 +88,9 @@ std::optional<UInt64> getExponentialTimeDecayingPrefixFromColumn(
 
     if (const auto * decaying = typeid_cast<const ColumnExponentialTimeDecaying *>(value.column.get()))
     {
-        const auto & prefix
-            = assert_cast<const ColumnUInt64 &>(decaying->getOrderingPrefixColumn());
-        return prefix.getData()[row];
+        const auto & key
+            = assert_cast<const ColumnUInt64 &>(decaying->getOrderingKeyColumn());
+        return key.getData()[row];
     }
 
     return std::nullopt;
@@ -110,29 +110,29 @@ std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef
 
     if (direct_type)
     {
-        std::optional<UInt64> lhs_prefix;
-        std::optional<UInt64> rhs_prefix;
+        std::optional<UInt64> lhs_key;
+        std::optional<UInt64> rhs_key;
 
         if (lhs_value)
-            lhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*lhs_value, lhs.row_idx);
+            lhs_key = getExponentialTimeDecayingPrefixFromColumn(*lhs_value, lhs.row_idx);
         else
-            lhs_prefix = getExponentialTimeDecayingPrefixFromField(lhs, *direct_type);
+            lhs_key = getExponentialTimeDecayingPrefixFromField(lhs, *direct_type);
 
         if (rhs_value)
-            rhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*rhs_value, rhs.row_idx);
+            rhs_key = getExponentialTimeDecayingPrefixFromColumn(*rhs_value, rhs.row_idx);
         else
-            rhs_prefix = getExponentialTimeDecayingPrefixFromField(rhs, *direct_type);
+            rhs_key = getExponentialTimeDecayingPrefixFromField(rhs, *direct_type);
 
         /// A compact primary-index boundary intentionally has only the UInt64 bucket.
-        /// Equal prefixes therefore compare equal even if the underlying direct values
+        /// Equal keyes therefore compare equal even if the underlying direct values
         /// would differ. This can only make pruning more conservative.
-        if (lhs_prefix && rhs_prefix
+        if (lhs_key && rhs_key
             && ((lhs_value && typeid_cast<const ColumnUInt64 *>(lhs_value->column.get()))
                 || (rhs_value && typeid_cast<const ColumnUInt64 *>(rhs_value->column.get()))))
         {
-            if (*lhs_prefix < *rhs_prefix)
+            if (*lhs_key < *rhs_key)
                 return -1;
-            if (*lhs_prefix > *rhs_prefix)
+            if (*lhs_key > *rhs_key)
                 return 1;
             return 0;
         }
