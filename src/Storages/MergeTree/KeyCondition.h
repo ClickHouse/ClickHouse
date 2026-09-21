@@ -266,9 +266,9 @@ public:
 
     bool matchesExactContinuousRange() const;
 
-    /// Project direct `ExponentialTimeDecaying` key atoms to the lossy UInt64
-    /// ordering domain used by sparse/minmax indexes. Unsupported negative/set
-    /// predicates become unknown so the projection can only make pruning more conservative.
+    /// Project direct `ExponentialTimeDecaying` key atoms to the UInt64 ordering
+    /// domain used by the column comparator and sparse/minmax indexes. Unsupported
+    /// set/special predicates become unknown so pruning remains conservative.
     void projectExponentialTimeDecayingIndexKeys(const DataTypes & key_types);
 
     /// Extract plain ranges of the condition.
