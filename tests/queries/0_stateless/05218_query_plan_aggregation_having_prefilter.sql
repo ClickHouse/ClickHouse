@@ -9,7 +9,7 @@
 -- `EXPLAIN actions = 1` for the `HAVING pre-filter` line rather than printing whole plans, how many
 -- groups each shape skips, and what a conversion that skips groups leaves observable above it.
 -- The value oracles - the same rows with the setting off and on - and the dataflow statistics live in
--- `05233_query_plan_aggregation_having_prefilter_results`, which runs on the same fixture: a
+-- `05234_query_plan_aggregation_having_prefilter_results`, which runs on the same fixture: a
 -- sanitizer build has to finish either file inside one test's time budget.
 
 -- The pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
