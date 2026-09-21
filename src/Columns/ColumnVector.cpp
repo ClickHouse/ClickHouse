@@ -248,6 +248,13 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
+/// clang 23 folds the `Int8` truncation of the three-way compare into a `ucmp`/`scmp` intrinsic with an `Int8` result
+/// (llvm/llvm-project#196847), and the x86 backend scalarizes that form for 32- and 64-bit operands because integer
+/// promotion of `ucmp`/`scmp` was reverted (llvm/llvm-project#204978): the loop below turned into a `cmp`/`sbb` per row
+/// instead of a `vpcmp` per vector. Combining the `int` compare result with a value the compiler cannot see through
+/// keeps the truncation separate from the compare and restores the vectorized lowering on every x86 level.
+static volatile int compare_results_opaque_zero = 0;
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
@@ -260,16 +267,17 @@ void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
 {
     auto * result_data = compare_results.data();
     size_t num_rows = data.size();
+    const int opaque_zero = compare_results_opaque_zero;
     /// 2 independent loops, otherwise the compiler does not vectorize it
     if (direction < 0)
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint) | opaque_zero);
     }
     else
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint) | opaque_zero);
     }
 })
 )

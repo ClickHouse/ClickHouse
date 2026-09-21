@@ -14,7 +14,11 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp"
+    # cbrt deliberately omitted: with clang 23 llvm-libc's cbrt returns its result in the
+    # register that the next call's `bzhi` count is materialised into with a byte-sized
+    # `mov`, so every call waits for the previous one through a partial-register merge and
+    # the function measures 2.9x slower than with clang 22 (13 ns vs 4.7 ns per call on
+    # Sapphire Rapids). The libc cbrt (musl, or glibc in dynamic builds) takes 6 ns.
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ceill.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/copysignl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cos.cpp"

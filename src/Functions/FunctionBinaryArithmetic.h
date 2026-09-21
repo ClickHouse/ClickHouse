@@ -492,6 +492,9 @@ private:
         ///    ^^^^^^^^^^^^^^^^
 
         /// PaddedPODArray allows overflow for 15 bytes.
+        /// The unroll factor is pinned: clang 22 unrolled this loop four times on its own, clang 23 leaves it rolled,
+        /// which makes the wrap-around bookkeeping below dominate the two SIMD instructions of the body.
+#pragma clang loop unroll_count(4)
         for (size_t i = 0; i < size; i += 16)
         {
             /// This loop is formed in a way to be vectorized into two SIMD mov.
