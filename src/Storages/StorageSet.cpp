@@ -290,6 +290,20 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 }
 
 
+/** The fence is on the lifetime of the sinks, not on the success of the inserts they carried.
+  * `SetOrJoinSink::consume` publishes each block into the in-memory `set` / `join` before anything
+  * is written durably, and there is no way to take a block out of either again, so an `INSERT` that
+  * throws on its way out - in `flush`, `finalize` or `replaceFile` - leaves its rows visible to
+  * every subsequent `SELECT` while no `.bin` of its own is ever published. That divergence between
+  * what the table shows and what it would show after a restart is a property of the insert path and
+  * predates the mutation work here: a mutation has always rewritten whatever the table held in
+  * memory into a single file, so those rows were already made durable by the next `ALTER ... DELETE`
+  * whether or not it overlapped the failed insert. Waiting here changes when the snapshot is taken,
+  * not what is in it, and it makes the durable copy agree with what readers are already served
+  * rather than leaving the two apart. Making an `INSERT` into these engines atomic - staging the
+  * blocks and publishing them in memory only once the file is in place - is a change to the insert
+  * path of both `Set` and `Join`, and is deliberately not attempted here.
+  */
 void StorageSetOrJoinBase::waitForOutstandingSinks(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(outstanding_sinks_mutex);
