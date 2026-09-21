@@ -1,1 +1,1 @@
-ExponentialTimeDecayingFloat64(10)
+ExponentialTimeDecaying(10)
