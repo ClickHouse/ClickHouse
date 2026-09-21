@@ -1,3 +1,5 @@
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/DefinerDependencies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
