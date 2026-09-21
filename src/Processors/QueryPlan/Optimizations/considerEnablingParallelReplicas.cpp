@@ -41,11 +41,11 @@ extern const Event AutoParallelReplicasPlanShapeNotSupported;
 extern const Event AutoParallelReplicasPlanNotSuitable;
 extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
-extern const Event AutoParallelReplicasDecisionSkippedByMode;
 extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
+extern const Event AutoParallelReplicasRejectedBytesPerReplica;
 }
 
 namespace DB
@@ -448,7 +448,12 @@ void considerEnablingParallelReplicas(
 
         if (!found_read_worth_parallelizing)
         {
+            /// Same reason as at the late check below: the threshold is a number someone has to
+            /// choose, and this is the gate that turns most queries away, so this is where most of
+            /// the distribution to choose it from lives.
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedEarly);
+            ProfileEvents::increment(
+                ProfileEvents::AutoParallelReplicasRejectedBytesPerReplica, max_bytes_to_read / num_replicas);
             LOG_TRACE(
                 getLogger("optimizeTree"),
                 "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
@@ -554,12 +559,11 @@ void considerEnablingParallelReplicas(
         else
         {
             table_data_drifted_significantly = false;
-            /// `apply_plan_with_parallel_replicas` starts as `mode != 2` and drift is the only other
-            /// thing that clears it, so here it is false exactly when the mode says to collect
-            /// statistics and never decide. The statistics are usable, there is simply no decision to
-            /// make - without this the attempt above would have no terminal outcome at all.
-            if (!apply_plan_with_parallel_replicas)
-                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasDecisionSkippedByMode);
+            /// No counter here when mode 2 leaves `apply_plan_with_parallel_replicas` false. Every
+            /// other way of reaching this point ends in one of the events above, so in modes 0 and 1
+            /// the attempts balance against the outcomes. Mode 2 only ever collects statistics and
+            /// never decides, so it sits outside that accounting by construction, and it is not a
+            /// mode production runs in - a dedicated event for it would only be noise there.
         }
 
         if (apply_plan_with_parallel_replicas)
@@ -602,10 +606,17 @@ void considerEnablingParallelReplicas(
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
                 {
+                    /// Record the size as well as the fact. The threshold is a number someone has to
+                    /// choose, and the only way to choose it is to see what the queries it turns away
+                    /// would have read - which the log line below says but cannot be aggregated over.
                     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
+                    ProfileEvents::increment(
+                        ProfileEvents::AutoParallelReplicasRejectedBytesPerReplica, stats->input_bytes / num_replicas);
                     LOG_DEBUG(
                         getLogger("optimizeTree"),
-                        "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
+                        "Not enabling parallel replicas reading because the read of {} bytes gives {} per replica, "
+                        "less than automatic_parallel_replicas_min_bytes_per_replica {}",
+                        stats->input_bytes,
                         stats->input_bytes / num_replicas,
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                     return;
