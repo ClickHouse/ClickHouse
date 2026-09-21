@@ -2942,6 +2942,29 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+#if defined(__AVX2__)
+        constexpr size_t simd_width = 32;
+        const __m256i zero = _mm256_setzero_si256();
+
+        while (new_value_idx + simd_width <= page.num_values)
+        {
+            const __m256i rep_values
+                = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(page.rep.data() + new_value_idx));
+            const UInt32 row_start_mask
+                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(rep_values, zero)));
+            const size_t rows_in_chunk = std::popcount(row_start_mask);
+            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
+
+            /// Consume a whole SIMD chunk only if it doesn't cross the target row.
+            /// Otherwise the scalar loop below finds the exact boundary.
+            if (rows_in_chunk > rows_to_advance)
+                break;
+
+            page.next_row_idx += rows_in_chunk;
+            new_value_idx += simd_width;
+        }
+#endif
+
         while (new_value_idx < page.num_values)
         {
             if (page.rep[new_value_idx] == 0)
