@@ -185,6 +185,9 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
+    /// Drops every column TTL, leaving the rest of each column as it is.
+    void clearColumnTTLs();
+    /// Drops every column TTL and puts each column back through the checks that `add` runs.
     void resetColumnTTLs();
 
     bool has(const String & column_name) const;
