@@ -89,7 +89,10 @@ getExponentialTimeDecayingCanonicalDirectValue(UInt64 ordering_key)
     {
         /// Each ordering key represents two neighboring sortable Float64 values.
         /// Pick the finite member of the pair at the infinities.
-        sortable += negative ? 1 : static_cast<UInt64>(-1);
+        if (negative)
+            ++sortable;
+        else
+            --sortable;
         unit_timestamp = getExponentialTimeDecayingFloatFromSortableKey(sortable);
     }
 
