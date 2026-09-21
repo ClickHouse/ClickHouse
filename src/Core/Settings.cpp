@@ -6988,19 +6988,6 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -9633,6 +9620,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
