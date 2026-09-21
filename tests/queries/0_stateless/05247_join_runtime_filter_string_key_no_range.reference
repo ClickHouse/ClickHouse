@@ -1,0 +1,11 @@
+5	10000
+5	10000
+5000	12497500
+5000	12497500
+5000	12497500
+granules considered and dropped
+05247_int_pk_overflowed	1	1
+05247_string_pk_exact	1	1
+05247_string_pk_overflowed	0	0
+05247_string_set_exact	1	1
+05247_string_set_overflowed	0	0
