@@ -736,6 +736,16 @@ void RuntimeFilter::insert(ColumnPtr values)
 
 void RuntimeFilter::finishInsert()
 {
+    /// A prebuilt shared filter is finished by construction; the filter it superseded is not, and it is
+    /// the one whose index-analysis metadata the probe side reads. Finish it at most once: the
+    /// underlying filter implementations do the final conversion here.
+    if (auto metadata_source = getIndexAnalysisMetadataSource())
+    {
+        if (!metadata_source->isReady())
+            metadata_source->finishInsert();
+        return;
+    }
+
     std::lock_guard lock(mutex);
     if (data.build_state.hasPendingMerges())
         return;
@@ -764,15 +774,27 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
     if (&source == this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge a runtime filter with itself");
 
-    MergeLock lock(source.mutex, mutex);
-
     /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
     /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
     /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
     /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter
-    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
-    /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
-    /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
+    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom filter
+    /// could contribute, so it has nothing to merge for probing - but the exact key set and the key
+    /// range that the probe-side index analysis reads are only complete once every stream-local filter
+    /// has registered. Complete them on the superseded filter, which `getRecordedKeyValues` and
+    /// `getRecordedKeyRanges` read through. `IRuntimeFilterLookup` serializes `add` and `replace`, so
+    /// the `canAcceptMerge` check cannot race another registration.
+    if (auto metadata_source = getIndexAnalysisMetadataSource())
+    {
+        if (metadata_source->canAcceptMerge())
+            metadata_source->merge(source);
+        return;
+    }
+
+    MergeLock lock(source.mutex, mutex);
+
+    /// No superseded filter to forward to (a prebuilt filter constructed with its metadata handed over,
+    /// or one published over an empty lookup slot): ignore the merge instead of failing the query.
     if (std::holds_alternative<SharedFixedHashTable>(data.filter))
         return;
 
@@ -814,8 +836,29 @@ void RuntimeFilter::enableKeyRangeTracking()
     data.index_analysis.enableKeyRangeTracking();
 }
 
+void RuntimeFilter::setIndexAnalysisMetadataSource(SharedRuntimeFilterPtr source)
+{
+    std::lock_guard lock(mutex);
+    index_analysis_metadata_source = std::move(source);
+}
+
+SharedRuntimeFilterPtr RuntimeFilter::getIndexAnalysisMetadataSource() const
+{
+    SharedLockGuard lock(mutex);
+    return index_analysis_metadata_source;
+}
+
+bool RuntimeFilter::canAcceptMerge() const
+{
+    SharedLockGuard lock(mutex);
+    return data.build_state.canAcceptMerge();
+}
+
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
+    if (auto metadata_source = getIndexAnalysisMetadataSource())
+        return metadata_source->getRecordedKeyValues();
+
     SharedLockGuard lock(mutex);
     if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
         return nullptr;
@@ -824,6 +867,9 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
+    if (auto metadata_source = getIndexAnalysisMetadataSource())
+        return metadata_source->getRecordedKeyRanges();
+
     SharedLockGuard lock(mutex);
     if (!data.build_state.isFinished())
         return {};
@@ -860,6 +906,13 @@ public:
         auto & filter = filters_by_name[name];
         if (!filter)
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
+        else
+        {
+            /// Keep the superseded filter as the source of the index-analysis metadata: the replacement
+            /// probes a complete build-side structure, but the exact key set and the key range are only
+            /// finished by the stream-local filters that may still register after the replacement.
+            runtime_filter->setIndexAnalysisMetadataSource(filter);
+        }
         filter.reset(runtime_filter.release());
     }
 

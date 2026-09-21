@@ -2828,16 +2828,16 @@ void HashJoin::publishSharedRuntimeFilters()
             || target_which.isLowCardinality())
             continue;
 
-        /// Metadata accessors expose data only after all stream-local filters have merged. If publication races
-        /// a late registration, they return no partial metadata; copied metadata is therefore complete or absent.
+        /// Do not snapshot the index-analysis metadata here: publication can run before the last
+        /// stream-local filter has registered, and a snapshot taken then is empty for good. `replace`
+        /// keeps `existing` as the metadata source of the replacement instead, so a late registration
+        /// still completes the exact key set and the key range the probe side prunes with.
         auto filter = std::make_unique<RuntimeFilter>(
             /*filters_to_merge_=*/0,
             existing->getConfig(),
             RuntimeFilter::SharedFixedHashTable(
                 existing->getFilterColumnTargetType(),
-                probe_fn,
-                existing->getRecordedKeyRanges(),
-                existing->getRecordedKeyValues()));
+                probe_fn));
         /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
         LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", descriptor.filter_key);
         lookup->replace(descriptor.filter_key, std::move(filter));

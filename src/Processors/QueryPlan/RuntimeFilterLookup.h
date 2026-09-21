@@ -60,6 +60,8 @@ struct RuntimeFilterBuildState
     void assertCanFind() const;
     void assertCanMerge() const;
     bool hasPendingMerges() const { return filters_to_merge != 0; }
+    /// Whether one more `merge` is still expected and would not throw.
+    bool canAcceptMerge() const { return !inserts_are_finished && filters_to_merge != 0; }
     bool isFinished() const { return inserts_are_finished; }
     void finishMerge();
     void finishInserts() { inserts_are_finished = true; }
@@ -336,8 +338,9 @@ private:
             detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>)};
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
-            /// The metadata of a prebuilt filter is copied from the filter it replaces, so there is
-            /// nothing to collect and no reason to withhold either part of it.
+            /// A prebuilt filter collects nothing itself: its metadata either comes from the filter it
+            /// supersedes (see `setIndexAnalysisMetadataSource`) or is handed over at construction, so
+            /// there is no reason to withhold either part of it.
             result.index_analysis.enable();
             result.index_analysis.enableKeyRangeTracking();
             if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
@@ -380,6 +383,17 @@ public:
     void enableKeyRangeTracking();
     ColumnPtr getRecordedKeyValues() const;
     std::optional<Range> getRecordedKeyRanges() const;
+
+    /// Keep the filter this one supersedes (see `IRuntimeFilterLookup::replace`) as the source of the
+    /// index-analysis metadata. A prebuilt shared filter probes the complete build-side hash table from
+    /// the moment it is published, but `HashJoin` can publish it before every stream-local filter has
+    /// registered, and the exact key set / key range are only complete once they all have. Forwarding
+    /// `merge`, `finishInsert` and the metadata getters to the superseded filter lets the late
+    /// registrations finish it, so the probe side never loses the metadata to that ordering.
+    /// Must be called before the filter becomes reachable through the lookup.
+    void setIndexAnalysisMetadataSource(SharedRuntimeFilterPtr source);
+    /// Whether one more `merge` is still expected and would not throw.
+    bool canAcceptMerge() const;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
     /// Usage statistics
@@ -387,11 +401,16 @@ public:
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
 
 private:
+    SharedRuntimeFilterPtr getIndexAnalysisMetadataSource() const;
+
     const DataTypePtr filter_column_target_type;
 
     RuntimeFilterEvaluationState evaluation_state;
     mutable SharedMutex mutex;
     Data data TSA_GUARDED_BY(mutex);
+    /// Set at most once, before this filter is published in the lookup. Never a prebuilt filter itself,
+    /// so the forwarding below cannot recurse.
+    SharedRuntimeFilterPtr index_analysis_metadata_source TSA_GUARDED_BY(mutex);
 };
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
