@@ -101,10 +101,10 @@ SELECT p.x, p.y
 FROM values('group_key String, k String, v UInt64', ('g', 'a', 1))
 PIVOT (sum(v) FOR k IN ('a' AS a)) AS p(x, y);
 
--- Generated PIVOT names may duplicate an implicit grouping-column name.
+-- Generated PIVOT names must not duplicate an implicit grouping-column name.
 SELECT *
 FROM values('g String, k String, v UInt64', ('group', 'a', 1))
-PIVOT (sum(v) FOR k IN ('a' AS g));
+PIVOT (sum(v) FOR k IN ('a' AS g)); -- { serverError AMBIGUOUS_COLUMN_NAME }
 
 -- The generated query keeps source-column resolution under the caller's alias setting.
 WITH 999 AS v
