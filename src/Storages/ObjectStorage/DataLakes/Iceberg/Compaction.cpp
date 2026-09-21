@@ -1478,6 +1478,28 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        auto log = getLogger("IcebergCompaction");
+        const auto [_metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage_,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context_,
+            log.get(),
+            persistent_table_components.table_uuid,
+            persistent_table_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_metadata_pointer_overrides */ true);
+        auto current_metadata = getMetadataJSONObject(
+            metadata_file_path,
+            object_storage_,
+            persistent_table_components.metadata_cache,
+            context_,
+            log,
+            compression_method,
+            persistent_table_components.table_uuid);
+        validateGarbageCollectionEnabled(current_metadata, "optimize Iceberg table");
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,

@@ -1959,6 +1959,8 @@ value: 993
 
 ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
 
+Because compaction deletes the replaced data and metadata files, `OPTIMIZE TABLE` refuses to run when the Iceberg table property `gc.enabled` is `false`.
+
 How to use it:
 
 ```sql
@@ -2097,6 +2099,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 <Note>
 - Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
 - The current snapshot is always preserved, even if it is older than the specified timestamp
+- Refuses to run when the Iceberg table property `gc.enabled` is `false`, because deleting files may corrupt other tables (see the [Iceberg table properties](https://iceberg.apache.org/docs/latest/configuration/#table-properties))
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - Requires the `allow_experimental_expire_snapshots` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
@@ -2178,6 +2181,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 
 <Note>
 - **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
+- Refuses to run when the Iceberg table property `gc.enabled` is `false`, because deleting files may corrupt other tables (see the [Iceberg table properties](https://iceberg.apache.org/docs/latest/configuration/#table-properties))
 - Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
 - It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
 - Use `dry_run = 1` to preview orphan files before deletion

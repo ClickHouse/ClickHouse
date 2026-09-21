@@ -262,8 +262,20 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
+    auto root = resolveReachableFilesRoot(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+
+    Int32 current_format_version = root.metadata->getValue<Int32>(f_format_version);
+    if (current_format_version < 2)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "remove_orphan_files requires Iceberg format version >= 2, "
+            "but this table uses format version {}",
+            current_format_version);
+
+    validateGarbageCollectionEnabled(root.metadata, "delete orphan files");
+
+    auto reachable = collectReachableFiles(root, object_storage, persistent_table_components, context, log);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -279,13 +291,14 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
+    auto recheck_root = resolveReachableFilesRoot(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
-    if (recheck_path != metadata_path)
+    if (recheck_root.metadata_path != root.metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_path, metadata_version, recheck_path, recheck_version);
+            root.metadata_path, root.metadata_version, recheck_root.metadata_path, recheck_root.metadata_version);
+    validateGarbageCollectionEnabled(recheck_root.metadata, "delete orphan files");
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -312,41 +325,6 @@ Pipe executeRemoveOrphanFiles(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const String & table_name)
 {
-    /// `persistent_components.format_version` is captured when the table was opened and
-    /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
-    /// between queries. Resolve the same metadata file the scan below roots at, so the
-    /// gate and the scan judge one table state.
-    auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
-        object_storage,
-        catalog,
-        table_name,
-        persistent_components.table_path,
-        data_lake_settings,
-        persistent_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method,
-        /* ignore_metadata_pointer_overrides */ true);
-
-    auto latest_metadata = getMetadataJSONObject(
-        latest_metadata_path,
-        object_storage,
-        persistent_components.metadata_cache,
-        context,
-        log,
-        compression_method,
-        persistent_components.table_uuid);
-
-    Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
-    if (current_format_version < 2)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "remove_orphan_files requires Iceberg format version >= 2, "
-            "but this table uses format version {}",
-            current_format_version);
-
     auto parsed = makeSchema().parse(args);
 
     RemoveOrphanFilesParams params;

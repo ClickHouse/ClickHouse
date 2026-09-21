@@ -7,7 +7,8 @@ from helpers.iceberg_utils import (
     default_upload_directory,
     default_download_directory,
     get_uuid_str,
-    get_last_snapshot
+    get_last_snapshot,
+    spark_alter_table,
 )
 
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
@@ -186,3 +187,83 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejects_latest_gc_disabled_with_pinned_metadata(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_gc_disabled_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
+    )
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+    pinned_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    assert pinned_metadata_file
+    pinned_metadata_path = "metadata/" + pinned_metadata_file.split("/")[-1]
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        explicit_metadata_path=pinned_metadata_path,
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "SET TBLPROPERTIES('gc.enabled' = 'false')",
+    )
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    files_before = instance.exec_in_container(
+        ["bash", "-c", f"find {table_dir} -type f | sort"]
+    ).strip().splitlines()
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    assert "GC is disabled" in error, error
+
+    files_after = instance.exec_in_container(
+        ["bash", "-c", f"find {table_dir} -type f | sort"]
+    ).strip().splitlines()
+    assert files_after == files_before
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
