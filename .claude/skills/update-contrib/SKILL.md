@@ -53,8 +53,9 @@ the fork's branches before assuming a pin is a plain upstream commit.
 Submodules are cloned shallow in most checkouts. `git describe` and `git log OLD..NEW` then report nonsense or fail;
 run `git -C contrib/<lib> fetch --unshallow --tags origin` first (the pipeline does this for you).
 
-A few libraries are built through the Rust workspace instead of `contrib/<lib>-cmake/`; see [rust.md](rust.md)
-only when `rust/workspace/<lib>/` exists.
+A few libraries are built through cargo instead of a plain CMake file list — either from `rust/workspace/<lib>/`
+(`wasmtime`) or from a `contrib/<lib>-cmake/` file that drives cargo (`chdig`, `delta-kernel-rs`); they export
+`ch_rust::*` targets. See [rust.md](rust.md) for those.
 
 ## Process
 
@@ -71,13 +72,36 @@ git config --file .gitmodules --get "submodule.contrib/$LIB.url"   # upstream or
 git -C "contrib/$LIB" rev-parse HEAD                                 # current pin
 git -C "contrib/$LIB" fetch --unshallow --tags origin 2>/dev/null || git -C "contrib/$LIB" fetch --tags origin
 git -C "contrib/$LIB" describe --tags --abbrev=0 2>/dev/null || echo "no tags"
-ls contrib/${LIB}-cmake/CMakeLists.txt 2>/dev/null
-grep -rl --include=CMakeLists.txt "ch_contrib::${LIB}" src programs base   # who consumes it
 ```
 
-Read `contrib/${LIB}-cmake/CMakeLists.txt` once; it tells you which sources are compiled, which defines and
-generated headers exist, and whether the library is header-only (`add_library(... INTERFACE)` — then nothing of it
-is compiled and only its consumers can break).
+Then locate the integration file. There are two shapes:
+
+```bash
+ls contrib/${LIB}-cmake/CMakeLists.txt 2>/dev/null        # plain CMake integration
+ls rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null       # Rust workspace integration (see rust.md)
+grep -n "\b${LIB}\b" contrib/CMakeLists.txt rust/workspace/CMakeLists.txt   # where it is added
+```
+
+A library may have both a `contrib/<lib>-cmake/` directory and a Rust build (`chdig`, `delta-kernel-rs`: the
+`*-cmake/` file drives cargo), or only a Rust workspace directory (`wasmtime`). If nothing matches, the library
+is consumed by another contrib's CMake file (`grep -rl "contrib/${LIB}" contrib/*-cmake/`).
+
+Do not assume the exported target is `ch_contrib::${LIB}`. Take the actual alias names from the integration file
+and grep for those — Rust-backed libraries export `ch_rust::*` (`ch_rust::wasmtime`, `ch_rust::chdig`,
+`ch_rust::delta_kernel_rs`), a few keep upstream-style names (`OpenSSL::SSL`, `boost::filesystem`), and one
+library can export several:
+
+```bash
+INTEGRATION=$(ls contrib/${LIB}-cmake/CMakeLists.txt rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null)
+ALIASES=$(grep -ho 'add_library *( *[A-Za-z0-9_:.-]*::[A-Za-z0-9_.-]* *ALIAS' $INTEGRATION \
+          | sed -E 's/add_library *\( *//; s/ *ALIAS$//' | sort -u)
+echo "$ALIASES"
+for a in $ALIASES; do grep -rl --include=CMakeLists.txt -F "$a" src programs base rust; done | sort -u   # consumers
+```
+
+Read the integration file once; it tells you which sources are compiled, which defines and generated headers exist,
+and whether the library is header-only (`add_library(... INTERFACE)` — then nothing of it is compiled and only its
+consumers can break). The consumer list is what steps 9 and 11 work from.
 
 ### 2. Determine the target version
 
@@ -92,12 +116,36 @@ Interactive mode only: present the current and target versions to the user with 
 before proceeding. `VERSION` is whatever was confirmed (or `$1`). Verify it matches the charset above before using it
 in branch names or commits.
 
-### 3. Check for ClickHouse patches (forked libraries only)
+### 3. Check for ClickHouse patches
 
-If the pin lives in a ClickHouse fork, identify the patches that must survive the bump:
+First decide whether the pin is a plain upstream commit. Do not rely on the `.gitmodules` URL alone: `origin` is
+the upstream repo when the URL names upstream, and `ls-remote --heads origin 'ClickHouse/*'` then returns nothing
+even if the pin sits on a fork branch. Check that `HEAD` is reachable from an upstream ref, and probe the fork
+separately (pipeline mode: the facts block names the fork URL and branch — use them):
 
 ```bash
-git -C "contrib/$LIB" ls-remote --heads origin 'ClickHouse/*'
+git -C "contrib/$LIB" fetch --tags origin '+refs/heads/*:refs/remotes/origin/*'    # full upstream refs (step 1)
+git -C "contrib/$LIB" branch -r --contains HEAD | head -3                          # empty: not an upstream commit
+git -C "contrib/$LIB" tag --contains HEAD | head -3
+
+UPSTREAM_URL=$(git config --file .gitmodules --get "submodule.contrib/$LIB.url")
+FORK_URL="https://github.com/ClickHouse/$(basename "$UPSTREAM_URL" .git)"        # guess; may differ (cassandra → cpp-driver)
+git -C "contrib/$LIB" fetch "$FORK_URL" '+refs/heads/ClickHouse/*:refs/remotes/ch-fork/ClickHouse/*' 2>/dev/null
+git -C "contrib/$LIB" branch -r --contains HEAD 'ch-fork/*'                       # non-empty: pin lives on a fork branch
+```
+
+Classify:
+- `HEAD` is on an upstream branch or tag and on no `ch-fork/ClickHouse/*` branch → unpatched upstream pin; skip
+  the rest of this step.
+- `HEAD` is on a `ch-fork/ClickHouse/*` branch → forked, patched pin (even when `.gitmodules` names upstream; step 5
+  fixes the URL). Continue below.
+- `HEAD` is on neither and the fork guess failed (`fetch` errored or the repo name differs) → do not conclude
+  "unpatched". Interactive mode: ask the user for the fork URL. Pipeline mode: stop and record the reason in
+  `BLOCKED.md`.
+
+For a forked pin, identify the patches that must survive the bump:
+
+```bash
 UPSTREAM_TAG=$(git -C "contrib/$LIB" describe --tags --abbrev=0)     # needs full history (step 1)
 git -C "contrib/$LIB" log --oneline "$UPSTREAM_TAG"..HEAD              # ClickHouse-specific commits
 ```
@@ -123,8 +171,9 @@ fork with the patches rebased onto the upstream tag before the ClickHouse-side b
    that commit and never touch the fork.
 
 If the library has no ClickHouse patches but uses a fork, switch the submodule to the upstream URL instead of
-creating a new fork branch (update `.gitmodules`, see step 6). Conversely, if the pin sits on a fork branch while
-`.gitmodules` names upstream, fix the URL to the fork in the same commit.
+creating a new fork branch (update `.gitmodules`, see step 6). Conversely, if step 3 found the pin on a fork branch
+while `.gitmodules` names upstream, fix the URL to the fork in the same commit. Never rewrite a URL to upstream
+unless step 3 positively classified the pin as an unpatched upstream commit.
 
 ### 6. Update the submodule pointer
 
@@ -167,7 +216,8 @@ version floors that force co-bumps).
 
 ### 8. Update build integration files
 
-If `contrib/<lib>-cmake/CMakeLists.txt` exists, update it to reflect the new version:
+Update the integration file found in step 1 (`contrib/<lib>-cmake/CMakeLists.txt`, or the Rust workspace files —
+see [rust.md](rust.md)) to reflect the new version:
 
 1. Compare source file lists against the actual files in the updated submodule; add new files after the first
    existing sibling from the same directory, remove deleted ones.
@@ -188,7 +238,8 @@ If `contrib/<lib>-cmake/CMakeLists.txt` exists, update it to reflect the new ver
 
 ### 9. Fix ClickHouse source code
 
-Find the consumers (step 1's `ch_contrib::` grep) and, if the public API changed, the includes:
+Find the consumers (step 1's alias grep — `ch_contrib::*`, `ch_rust::*` or whatever the integration file exports)
+and, if the public API changed, the includes:
 
 ```bash
 grep -rl "#include.*[<\"]$LIB" src/ --include='*.h' --include='*.cpp'

@@ -1,10 +1,14 @@
 # update-contrib: libraries built through the Rust workspace
 
-Read this only when `rust/workspace/<lib>/` exists for the library being bumped. The integration points are:
-- `rust/workspace/<lib>/Cargo.toml` — dependency path, crate name, enabled features
-- `rust/workspace/<lib>/CMakeLists.txt` — generated headers, copied headers, CMake target names
-- `rust/workspace/Cargo.lock`
-- `contrib/rust_vendor/` — a submodule pointing at `github.com/ClickHouse/rust_vendor`
+Read this when the library is built by cargo. Two layouts exist:
+- `rust/workspace/<lib>/` exists (`wasmtime`): `Cargo.toml` (dependency path, crate name, enabled features),
+  `CMakeLists.txt` (generated headers, copied headers, CMake target names), plus the shared `rust/workspace/Cargo.lock`
+  and `contrib/rust_vendor/` (a submodule pointing at `github.com/ClickHouse/rust_vendor`).
+- `contrib/<lib>-cmake/CMakeLists.txt` drives cargo itself (`chdig`, `delta-kernel-rs`): the crate lives in the
+  submodule, the `*-cmake/` file runs the build and exports the alias; there is no `rust/workspace/<lib>/`.
+
+Both export `ch_rust::<name>` aliases, not `ch_contrib::*`; the name may differ from the contrib directory
+(`ch_rust::delta_kernel_rs` for `contrib/delta-kernel-rs`). Take the names from the integration file (SKILL.md step 1).
 
 Updating such a library often means regenerating `rust/workspace/Cargo.lock`, re-vendoring crates with
 `rust/vendor.sh`, and verifying the Rust/C++ bridge build rather than editing `contrib/<lib>-cmake/`.
@@ -12,8 +16,9 @@ Updating such a library often means regenerating `rust/workspace/Cargo.lock`, re
 ## Gather information
 
 ```bash
-ls rust/workspace/${LIB}/Cargo.toml rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null
+ls rust/workspace/${LIB}/Cargo.toml rust/workspace/${LIB}/CMakeLists.txt contrib/${LIB}-cmake/CMakeLists.txt 2>/dev/null
 grep -R "contrib/${LIB}\|${LIB}" rust/workspace/ --include='Cargo.toml' --include='CMakeLists.txt'
+grep -rl --include=CMakeLists.txt "ch_rust::" src programs   # consumers of Rust-backed targets
 ```
 
 Inspect `Cargo.toml` (path, crate name, features), `CMakeLists.txt` (generated/copied headers, target names) and
