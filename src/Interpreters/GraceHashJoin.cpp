@@ -876,12 +876,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         {
             std::lock_guard lock(hash_join_mutex);
             hash_join.reset();
-        }
-
-        auto next_hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
-        {
-            std::lock_guard lock(hash_join_mutex);
-            hash_join = std::move(next_hash_join);
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
             delayed_bucket_loading = true;
         }
 
