@@ -25,7 +25,7 @@ entre outras.
 
 Introduzido em: v24.1.0
 
-Decompõe uma série de dados usando STL [(Procedimento de Decomposição Sazonal-Tendência Baseado em Loess)](https://www.wessa.net/download/stl.pdf) em sazonalidade, tendência e um componente residual.
+Decompõe dados de série temporal usando STL [(Procedimento de Decomposição Sazonal-Tendência Baseado em Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) em sazonalidade, tendência e um componente residual.
 
 **Sintaxe**
 
@@ -51,26 +51,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -79,7 +62,7 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 
 Introduzido em: v24.2.0
 
-Detecta valores atípicos em dados de séries temporais usando [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
+Detecta valores atípicos em dados de série temporal usando [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
 **Sintaxe**
 
@@ -92,7 +75,7 @@ seriesOutliersDetectTukey(series[, min_percentile, max_percentile, K])
 * `series` — Um array de valores numéricos. [`Array((UInt8/16/32/64))`](/pt-BR/reference/data-types/array) ou [`Array(Float*)`](/pt-BR/reference/data-types/array)
 * `min_percentile` — Opcional. O percentil mínimo a ser usado para calcular o intervalo interquartil [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). O valor deve estar no intervalo [0.02,0.98]. O padrão é 0.25. [`Float*`](/pt-BR/reference/data-types/float)
 * `max_percentile` — Opcional. O percentil máximo a ser usado para calcular o intervalo interquartil (IQR). O valor deve estar no intervalo [0.02,0.98]. O padrão é 0.75. [`Float*`](/pt-BR/reference/data-types/float)
-* `K` — Opcional. Valor constante não negativo para detectar outliers leves ou mais severos. O valor padrão é 1.5. [`Float*`](/pt-BR/reference/data-types/float)
+* `K` — Opcional. Valor constante não negativo para detectar valores atípicos leves ou mais severos. O valor padrão é 1.5. [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
@@ -100,16 +83,16 @@ Retorna um array com o mesmo comprimento do array de entrada, em que cada valor 
 
 **Exemplos**
 
-**Detecção básica de outliers**
+**Detecção básica de valores atípicos**
 
 ```sql title=Query
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0
 ```
 
 ```response title=Response
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
+┌─print_0────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└────────────────────────────────────┘
 ```
 
 **Detecção de valores atípicos com parâmetros personalizados**
@@ -155,9 +138,9 @@ SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4,
 ```
 
 ```response title=Response
-┌───────────print_0──────┐
-│                      3 │
-└────────────────────────┘
+┌─print_0─┐
+│       3 │
+└─────────┘
 ```
 
 **Detecção de período usando padrão complexo**
@@ -183,6 +166,10 @@ A função substitui todos os valores anteriores da tag copiada em `dest_group`.
 Se a tag copiada não estiver presente em `src_group`, a função também a removerá de `dest_group`.
 A função imita a lógica de cópia dos modificadores
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) do Prometheus.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -212,9 +199,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesCopyTags">
@@ -228,6 +215,10 @@ A função substitui quaisquer valores anteriores das tags copiadas em `dest_gro
 Se algumas das tags copiadas não estiverem presentes em `src_group`, a função também as removerá de `dest_group`.
 A função reproduz a lógica de cópia dos modificadores
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) do Prometheus.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -270,6 +261,10 @@ Introduzida na versão: v26.1.0
 
 Extrai o valor de uma tag específica do grupo. Retorna NULL se não for encontrada.
 Veja também a função [timeSeriesGroupToTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -344,7 +339,7 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 ```
 
 ```response title=Response
-┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+┌─result─────────────────────────────────────────────────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -359,6 +354,10 @@ Retorna uma chave de amostragem `UInt64` estável derivada das tags de um grupo 
 
 O valor é determinístico: tags de entrada idênticas sempre produzem a mesma chave.
 Ela foi projetada para ser usada como chave de ordenação para operadores de amostragem como `limitk` e `limit_ratio`.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -385,7 +384,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 ```response title=Response
 ┌─group─┬─────────sampling_key─┐
-│     1 │ 12876543210987654321 │
+│     1 │ 15511321834549144507 │
 └───────┴──────────────────────┘
 ```
 
@@ -397,6 +396,10 @@ Introduzido em: v26.1.0
 
 Retorna os nomes e valores das tags associadas a um grupo especificado.
 Veja também a função [timeSeriesTagsToGroup()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -428,9 +431,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notE⋯up, group))─┐
-│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                        0 │
-└───────┴────────────────────────────────────────────────────────────────────┴────────────┴──────────────────────────┘
+┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notEquals(same_group, group))─┐
+│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                                     0 │
+└───────┴────────────────────────────────────────────────────────────────────┴────────────┴───────────────────────────────────────┘
 ```
 
 <div id="timeSeriesIdToGroup">
@@ -442,17 +445,21 @@ Introduzido em: v26.1.0
 Retorna os nomes e os valores das tags associadas ao identificador especificado de uma série temporal.
 Consulte também a função [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
 timeSeriesIdToGroup(id)
 ```
 
-**Aliases**: `timeSeriesIdToTagsGroup`
+**nome alternativo**: `timeSeriesIdToTagsGroup`
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Deve ser do mesmo tipo usado ao chamar [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
@@ -471,9 +478,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesIdToTags">
@@ -485,6 +492,10 @@ Introduzido em: v25.8.0
 Retorna as tags associadas a um identificador específico de uma série temporal.
 Veja também a função [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -493,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Deve ser do mesmo tipo usado ao chamar [timeSeriesStoreTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
@@ -513,9 +524,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesJoinTags">
@@ -529,6 +540,10 @@ A função insere um separador entre os valores concatenados e retorna um novo g
 com a tag `dest_tag` definida como o valor concatenado.
 Esta função reproduz a lógica da função do Prometheus
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
+
+<Note>
+  Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -561,6 +576,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 ┌─group─┬─result_group─┬─timeSeriesGroupToTags(result_group)─────────────────────────────────────────────────────────────┐
 │     1 │            2 │ [('__name__','up'),('foo','a,b,c'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')] │
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+Introduzido em: v26.8.0
+
+Retorna os sufixos de nomes de métricas de uma família de métricas do tipo Prometheus especificado.
+
+**Sintaxe**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**Argumentos**
+
+* `type` — Tipo de métrica do Prometheus (`counter`, `gauge`, `histogram`, `summary`, ...). [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna os sufixos de uma família desse tipo. [`Array(String)`](/pt-BR/reference/data-types/array)
+
+**Exemplos**
+
+**Exemplo**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes────────────────────┐
+│ ['_bucket','_count','_sum'] │
+└─────────────────────────────┘
 ```
 
 <div id="timeSeriesRange">
@@ -600,9 +651,9 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 ```
 
 ```response title=Response
-┌────────────────────────────────────result─────────────────────────────────────────┐
-│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRange(CAST('2025-06-01 00:00:00', 'DateTime64(3)'), CAST('2025-06-01 00:01:00', 'DateTime64(3)'), 30)─┐
+│ ['2025-06-01 00:00:00.000','2025-06-01 00:00:30.000','2025-06-01 00:01:00.000']                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesRemoveAllTagsExcept">
@@ -614,6 +665,10 @@ Introduzido em: v26.1.0
 Remove todas as tags, exceto as especificadas, de um grupo de tags.
 Veja também a função [timeSeriesRemoveTag()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -656,6 +711,10 @@ Remove uma tag específica de um grupo de tags.
 Se essa tag não existir no grupo, ele será retornado sem alterações.
 Veja também as funções [timeSeriesRemoveTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -703,6 +762,10 @@ Se algumas das tags especificadas não estiverem no grupo, a função as ignorar
 Consulte também a função [timeSeriesRemoveTag()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -747,6 +810,10 @@ Se houver correspondência, o valor da tag `dest_tag` no grupo retornado será a
 junto com as tags originais da entrada.
 Esta função reproduz a lógica da função do Prometheus
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -801,7 +868,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Argumentos**
 
-* `id` — Identificador de uma série temporal. [`UInt64`](/pt-BR/reference/data-types/int-uint) ou [`UInt128`](/pt-BR/reference/data-types/int-uint) ou [`UUID`](/pt-BR/reference/data-types/uuid) ou [`FixedString(16)`](/pt-BR/reference/data-types/fixedstring)
+* `id` — Identificador de uma série temporal. Pode ser de qualquer tipo comparável. Linhas com identificadores NULL são ignoradas. [`Any`](/pt-BR/reference/data-types/index)
 * `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/pt-BR/reference/data-types/array) ou [`NULL`](/pt-BR/reference/syntax#null)
 * `separate_tag_name_i` — O nome de uma tag. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
 * `separate_tag_value_i` — O valor de uma tag. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable)
@@ -839,6 +906,10 @@ Se o mesmo grupo de tags for encontrado várias vezes durante a execução da co
 Para um conjunto vazio de tags, a função sempre retorna 0.
 Veja também a função [timeSeriesGroupToTags()](/pt-BR/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -874,17 +945,61 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
 ```
 
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+Introduzido em: v26.8.0
+
+Combina um array de pares `(tag_name, tag_value)` com argumentos separados de nome e valor de tag em um único map.
+O resultado é ordenado por nome de tag, e nomes de tag duplicados e tags com valores vazios são removidos.
+
+**Sintaxe**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**Argumentos**
+
+* `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/pt-BR/reference/data-types/array), [`Map(String, String)`](/pt-BR/reference/data-types/map) ou [`NULL`](/pt-BR/reference/syntax#null)
+* `tag_name_i` — O nome de uma tag. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring)
+* `tag_value_i` — O valor de uma tag. [`String`](/pt-BR/reference/data-types/string), [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable)
+
+**Valor retornado**
+
+Retorna um map que associa nomes de tags a seus valores, ordenado por nome de tag, sem nomes de tags duplicados nem valores de tags vazios.
+[`Map(String, String)`](/pt-BR/reference/data-types/map)
+
+**Exemplos**
+
+**Exemplo**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags─────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'} │
+└──────────────────────────────────────────────────────────────┘
+```
+
 <div id="timeSeriesThrowDuplicateSeriesIf">
   ## timeSeriesThrowDuplicateSeriesIf
 </div>
 
 Introduzido em: v26.2.0
 
-Verifica a `condition` e, se ela for verdadeira, lança uma exceção com a seguinte mensagem:
+Verifica a `condition` e, se ela for verdadeira, lança uma exceção com a seguinte mensagem
 `Multiple series have the same tags <tags>, duplicate series in the same result set are not allowed`.
 Se a `condition` for falsa, a função retorna `0`.
 Esta função é semelhante a [throwIf()](/pt-BR/reference/functions/regular-functions/other-functions#throwIf),
 mas usa um código de erro diferente e formata a mensagem de erro de outra maneira.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -903,27 +1018,35 @@ Retorna `0`. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 
-**Exemplo**
+**Uma série por grupo**
 
 ```sql title=Query
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
-
-INSERT INTO test VALUES ([('__name__', 'up')]);
-
-SELECT timeSeriesTagsToGroup(tags) AS group
-FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Lança exceção "Multiple series have the same tags {'__name__': 'up'}"
+GROUP BY timeSeriesTagsToGroup(tags);
 ```
 
 ```response title=Response
+0
+```
+
+**Duas séries com as mesmas tags**
+
+```sql title=Query
+INSERT INTO test VALUES ([('__name__', 'up')]);
+
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
+FROM test
+GROUP BY timeSeriesTagsToGroup(tags);
+```
+
+```response title=Response
+Received exception:
+Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
 ```
 
 {/*AUTOGENERATED_END*/}

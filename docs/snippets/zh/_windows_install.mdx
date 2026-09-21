@@ -15,9 +15,7 @@ title: 在 Windows 上安装
 </Note>
 
 <Steps>
-  <Step>
-    ## 安装 WSL
-
+  <Step title="安装 WSL" id="install-wsl">
     以管理员身份打开 Windows PowerShell，并运行以下命令：
 
     ```bash
@@ -31,9 +29,7 @@ title: 在 Windows 上安装
     ```
   </Step>
 
-  <Step>
-    ## 使用 curl 通过脚本安装 ClickHouse
-
+  <Step title="使用 curl 通过脚本安装 ClickHouse" id="install-clickhouse-via-script-using-curl">
     运行以下命令，使用 curl 通过脚本安装 ClickHouse：
 
     ```bash
@@ -48,9 +44,7 @@ title: 在 Windows 上安装
     ```
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-local
-
+  <Step title="启动 clickhouse-local" id="start-clickhouse-local">
     `clickhouse-local` 允许您使用 ClickHouse 强大的 SQL 语法处理本地和远程文件，且无需任何配置。表数据存储在临时位置，这意味着 `clickhouse-local` 重启后，此前创建的表将不再可用。
 
     运行以下命令以启动 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)：
@@ -60,9 +54,7 @@ title: 在 Windows 上安装
     ```
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-server
-
+  <Step title="启动 clickhouse-server" id="start-clickhouse-server">
     如果您希望持久保存数据，则需要运行 `clickhouse-server`。您可以使用以下命令启动 ClickHouse server：
 
     ```bash
@@ -70,9 +62,7 @@ title: 在 Windows 上安装
     ```
   </Step>
 
-  <Step>
-    ## 启动 clickhouse-client
-
+  <Step title="启动 clickhouse-client" id="start-clickhouse-client">
     在 server 启动后，打开一个新的终端窗口，并运行以下命令来启动 `clickhouse-client`：
 
     ```bash

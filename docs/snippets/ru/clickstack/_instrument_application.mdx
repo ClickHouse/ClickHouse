@@ -3,9 +3,7 @@ title: Инструментирование приложения
 ---
 
 <Steps>
-  <Step>
-    ## Клонируйте и запустите приложение
-
+  <Step title="Клонируйте и запустите приложение" id="clone-and-run-the-application">
     Клонируйте репозиторий, установите зависимости и создайте файл `.env`:
 
     ```bash
@@ -23,14 +21,14 @@ title: Инструментирование приложения
 
     Откройте [http://localhost:5001](http://localhost:5001). Вы увидите выбор года, сводную статистику, диаграмму активности, таблицы с пользователями и доменами, а также строку поиска. Попробуйте интерфейс: переключайте годы, открывайте истории.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+    </Frame>
 
     На этом этапе приложение запущено, но пока без инструментирования. ClickStack не показывает данные: он ждёт поступления телеметрии. Это состояние &quot;до&quot;.
   </Step>
 
-  <Step>
-    ## Получите сведения о подключении
-
+  <Step title="Получите сведения о подключении" id="get-connection-details">
     Приложению нужны два значения для подключения к коллектору:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: конечная точка OTLP, которую предоставляет ваш коллектор (обычно это порт `4318` для OTLP по HTTP).
@@ -47,9 +45,7 @@ title: Инструментирование приложения
     SDK использует `OTEL_EXPORTER_OTLP_HEADERS` для задания заголовка авторизации для всех трёх сигналов: трассировок, метрик и журналов. Если ваш коллектор запущен локально и не требует аутентификации, можно оставить значение пустым (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), но сама переменная должна присутствовать; если она не задана или полностью пуста, SDK вообще пропускает инициализацию.
   </Step>
 
-  <Step>
-    ## Инструментируйте приложение
-
+  <Step title="Инструментируйте приложение" id="instrument-the-application">
     Инструментирование включает три части: установку SDK, изменение команды запуска и включение браузерного SDK. Ничто из этого не меняет бизнес-логику приложения.
 
     ### Установите SDK
@@ -102,9 +98,7 @@ title: Инструментирование приложения
     </Warning>
   </Step>
 
-  <Step>
-    ## Сгенерируйте трафик и просмотрите телеметрию
-
+  <Step title="Сгенерируйте трафик и просмотрите телеметрию" id="generate-traffic-and-view-telemetry">
     Перезапустите приложение, чтобы вступили в силу новая команда запуска и свежесобранный браузерный бандл:
 
     ```bash
@@ -118,15 +112,21 @@ title: Инструментирование приложения
 
     1. Перейдите в **Search** и отфильтруйте данные за последние 5 минут. Появятся журналы для `hn-analyzer-api`.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Журналы ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Журналы ClickStack" />
+    </Frame>
 
     2. Откройте запрос и поднимитесь вверх по трейсу. Вы увидите спан обработчика Express, дочерний HTTP-спан, указывающий на кластер ClickHouse с реальной длительностью сетевого взаимодействия, а также коррелированные записи `console.log` в том же трейсе.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Трейсы ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Трейсы ClickStack" />
+    </Frame>
 
     3. Откройте **Воспроизведение сеанса**, чтобы просмотреть видео сеанса браузера с возможностью перемотки, синхронизированное с временной шкалой трейса.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Сеансы ClickStack" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Сеансы ClickStack" />
+    </Frame>
 
     Журналы, метрики, трейсы и воспроизведения сеансов попадают в один и тот же интерфейс, используют один и тот же язык запросов и автоматически коррелируются.
   </Step>

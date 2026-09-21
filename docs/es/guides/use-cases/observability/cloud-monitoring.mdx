@@ -20,19 +20,19 @@ Esta guía proporciona a los equipos empresariales que evalúan ClickHouse Cloud
 
 ClickHouse Cloud proporciona una supervisión integral mediante interfaces de dashboard integradas accesibles desde la sección monitorización. Estos dashboards visualizan métricas del sistema y de rendimiento en tiempo real sin necesidad de configuración adicional y son las herramientas principales para la monitorización de producción en tiempo real dentro de ClickHouse Cloud.
 
-* **Advanced Dashboard**: La interfaz principal del dashboard, accesible desde monitorización → Advanced dashboard, proporciona visibilidad en tiempo real de la tasa de consultas, el uso de recursos, el estado del sistema y el rendimiento del almacenamiento. Este dashboard no requiere autenticación independiente, no impedirá que las instancias entren en estado inactivo y no añade carga de consultas a su sistema de producción. Cada visualización se basa en consultas SQL personalizables, con gráficos predefinidos agrupados en métricas específicas de ClickHouse, de estado del sistema y específicas de Cloud. Puede ampliar la supervisión creando consultas personalizadas directamente en la SQL Console.
+* **dashboard avanzado**: La interfaz principal del dashboard, accesible desde monitorización → dashboard avanzado, proporciona visibilidad en tiempo real de la tasa de consultas, el uso de recursos, el estado del sistema y el rendimiento del almacenamiento. Este dashboard no requiere autenticación independiente, no impedirá que las instancias entren en estado inactivo y no añade carga de consultas a su sistema de producción. Cada visualización se basa en consultas SQL personalizables, con gráficos predefinidos agrupados en métricas específicas de ClickHouse, de estado del sistema y específicas de Cloud. Puede ampliar la supervisión creando consultas personalizadas directamente en la SQL Console.
 
 <Note>
   Acceder a estas métricas no ejecuta ninguna consulta en el servicio subyacente ni reactivará servicios inactivos.
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
 
 Los usuarios que deseen ampliar estas visualizaciones pueden usar la funcionalidad de dashboards de ClickHouse Cloud y consultar directamente las tablas del sistema.
 
 * **Dashboard avanzado nativo**: Una interfaz de dashboard alternativa accesible a través de &quot;You can still access the native advanced dashboard&quot; dentro de la sección monitorización. Se abre en una pestaña independiente con autenticación y proporciona una UI alternativa para supervisar el estado del sistema y del servicio. Este dashboard permite análisis avanzados, ya que puede modificar las consultas SQL subyacentes.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
 
 Ambos dashboards ofrecen visibilidad inmediata del estado y del rendimiento del servicio sin dependencias externas, lo que los diferencia de herramientas externas centradas en la depuración como ClickStack.
 

@@ -26,7 +26,7 @@ head error.log
 2023/01/16 05:34:55 [error]  client: 9.9.7.6, server: example.com "GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1"
 ```
 
-يمكننا استخدام تنسيق [Template](/ar/reference/formats/Template/Template) لاستيراد هذه البيانات. ويجب تعريف سلسلة قالب تتضمن عناصر نائبة للقيم لكل صف من بيانات الإدخال:
+يمكننا استخدام تنسيق [قالب](/ar/reference/formats/Template/Template) لاستيراد هذه البيانات. ويجب تعريف سلسلة قالب تتضمن عناصر نائبة للقيم لكل صف من بيانات الإدخال:
 
 ```response
 <time> [error] client: <ip>, server: <host> "<request>"
@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-بشكلٍ افتراضي، سيُصدر ClickHouse خطأً عند وجود صفوف غير متطابقة. إذا كنت تريد تخطي الصفوف غير المتطابقة بدلًا من ذلك، ففعِّل هذا السلوك باستخدام الخيار [format&#95;regexp&#95;skip&#95;unmatched](/ar/reference/settings/formats#format_regexp_skip_unmatched):
+بشكلٍ افتراضي، سيُصدر ClickHouse خطأً عند وجود صفوف غير متطابقة. إذا كنت تريد تخطي الصفوف غير المتطابقة بدلًا من ذلك، ففعِّل هذا السلوك باستخدام الخيار [format&#95;regexp&#95;skip&#95;unmatched](/ar/reference/settings/formats/format-regexp#format_regexp_skip_unmatched):
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

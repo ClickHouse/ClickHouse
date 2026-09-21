@@ -362,7 +362,6 @@ export const RunnableCode = ({ children, run = false, showStats = true }) => {
                       backgroundColor: ri === hoveredRow
                         ? cellBgHover
                         : ri % 2 === 0 ? 'transparent' : bgColor,
-                      transition: 'background-color 0.1s',
                       ...getCellBarStyle(cell, ci, ri),
                     }}
                   >

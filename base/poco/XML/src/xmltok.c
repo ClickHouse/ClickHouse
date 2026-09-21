@@ -24,24 +24,26 @@
    Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
    Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
    Copyright (c) 2023      Hanno Böck <hanno@gentoo.org>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
    Licensed under the MIT license:
 
-   Permission is hereby granted, free of charge, to any person obtaining
-   a copy of this software  and associated documentation files (the
-   "Software"), to deal in the Software without restriction, including
-   without limitation the rights to use, copy, modify, merge, publish,
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
    distribute, sublicense, and/or sell copies of the Software, and to permit
-   persons to whom the Software is furnished to do so, subject to the
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
    following conditions:
 
-   The above copyright notice and this permission notice shall be included
+   The above copyright  notice and this permission notice  shall be included
    in all copies or substantial portions of the Software.
 
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
@@ -58,6 +60,7 @@
 
 #include "Poco/XML/expat_external.h"
 #include "internal.h"
+#include "fallthrough.h"
 #include "xmltok.h"
 #include "nametab.h"
 
@@ -641,7 +644,7 @@ unicode_byte_type(char hi, char lo) {
           *(*toP)++ = lo;                                                      \
           break;                                                               \
         }                                                                      \
-        /* fall through */                                                     \
+        EXPAT_FALLTHROUGH;                                                     \
       case 0x1:                                                                \
       case 0x2:                                                                \
       case 0x3:                                                                \
@@ -1557,7 +1560,7 @@ initScan(const ENCODING *const *encodingTable, const INIT_ENCODING *enc,
     case 0xEF: /* possibly first byte of UTF-8 BOM */
       if (INIT_ENC_INDEX(enc) == ISO_8859_1_ENC && state == XML_CONTENT_STATE)
         break;
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     case 0x00:
     case 0x3C:
       return XML_TOK_PARTIAL;

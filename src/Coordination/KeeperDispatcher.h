@@ -8,7 +8,10 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <chrono>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -20,6 +23,8 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
+#include <future>
+
 namespace DB
 {
 
@@ -28,6 +33,8 @@ namespace DB
 class KeeperDispatcher
 {
 private:
+    friend class KeeperDispatcherTestAccessor;
+
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     SnapshotsQueue snapshots_queue{1};
@@ -46,6 +53,8 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// TTL expiry: leader enqueues TryRemove for expired empty nodes
     ThreadFromGlobalPool ttl_garbage_collector_thread;
+    /// Container cleanup: leader enqueues TryRemove for childless container nodes
+    ThreadFromGlobalPool container_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -73,8 +82,38 @@ private:
     KeeperContextPtr keeper_context;
 
     /// Flag to signal TCP handlers that they should close connections.
-    /// Set before the full shutdown() to allow handlers to exit promptly.
+    /// Not to be confused with keeper_context->isShutdownCalled(), which happens later.
+    /// This flag means we should avoid taking new requests, while existing requests and RAFT etc
+    /// may keep running normally. Then after client sessions are closed shutdown() is called to
+    /// stop all activity and join threads.
     std::atomic<bool> shutting_down{false};
+
+    /// Flag to stop Keeper TCP connection handlers before the full dispatcher shutdown.
+    /// It lets non-TCP protocol handlers finish while the Keeper state and RAFT remain live.
+    std::atomic<bool> tcp_connections_draining{false};
+
+    /// Set after all request and response producers have stopped. Queue accounting can be
+    /// finalized after the TCP handlers have released their pending responses.
+    std::atomic<bool> ready_to_finish_shutdown{false};
+    std::atomic<bool> shutdown_finished{false};
+
+    /// Notified when shutting_down (not to be confused with keeper_context->isShutdownCalled())
+    /// becomes true. Wakes up interruptibleSleep().
+    std::mutex early_shutdown_wait_mutex;
+    std::condition_variable early_shutdown_wait_cv;
+
+    /// Protects admission and completion of four-letter commands. `signalShutdown` closes
+    /// admission under this mutex before any Keeper state can be destroyed.
+    std::mutex four_letter_command_mutex;
+    std::condition_variable four_letter_command_cv;
+    size_t running_four_letter_commands{0};
+
+    /// Sleep for `period`, returning early if `shutting_down` becomes true.
+    /// Useful for background work that must exit promptly during shutdown.
+    void interruptibleSleep(std::chrono::milliseconds period);
+
+    /// Wait for commands admitted before shutdown to stop accessing Keeper state.
+    void waitForFourLetterCommands();
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
@@ -92,9 +131,17 @@ private:
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
-    void garbageCollectorThread(size_t batch_size);
+    void ttlGarbageCollectorThread(size_t batch_size);
+    void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
+
+    /// The only place that knows which responses do not go to a per-session response callback.
+    bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
+
+    /// Completes every waiter that can no longer receive a response. Call once no dispatcher can
+    /// produce one.
+    void failPendingSessionIDRequests() noexcept;
 
 public:
     KeeperDispatcher();
@@ -123,15 +170,35 @@ public:
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
-    /// Signal TCP handlers to close connections before the full shutdown.
-    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+    /// Signal TCP handlers to close connections before the full shutdown, and wake the
+    /// GC threads from their inter-tick wait so they exit promptly.
+    void signalShutdown();
 
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
 
+    /// Stop accepting and processing Keeper TCP connections before the full dispatcher shutdown.
+    void beginTCPConnectionDrain();
+
+    /// Returns true after beginTCPConnectionDrain was called.
+    bool isTCPConnectionDrainStarted() const { return tcp_connections_draining.load(std::memory_order_acquire); }
+
+    /// Begin executing a four-letter command unless shutdown has started. Each successful call
+    /// must be matched by finishFourLetterCommand.
+    bool tryBeginFourLetterCommand();
+    void finishFourLetterCommand();
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     /// `closed_all_connections` should be false if there may be any remaining KeeperTCPHandler instances.
     void shutdown(bool closed_all_connections);
+
+    /// Stop all request and response producers and complete pending session-ID requests.
+    /// TCP handlers can then finish without waiting for the Keeper session timeout.
+    void shutdownBeforeConnectionsFinish();
+
+    /// Drain the queues after TCP handlers finish and check their byte accounting when all
+    /// connections closed. Must be called after `shutdownBeforeConnectionsFinish`.
+    void shutdownAfterConnectionsFinish(bool closed_all_connections);
 
     void forceRecovery();
 
@@ -225,9 +292,10 @@ public:
         keeper_stats.incrementPacketsReceived();
     }
 
-    void resetConnectionStats()
+    void resetServerStats()
     {
         keeper_stats.reset();
+        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot
@@ -262,6 +330,19 @@ public:
     void yieldLeadership()
     {
         server->yieldLeadership();
+    }
+
+    /// Ask the leader to start, or stop, waiting for replicas that cannot keep up.
+    bool requestSlowMemberBackpressure(bool enable)
+    {
+        return server->requestSlowMemberBackpressure(enable);
+    }
+
+    /// Whether this node is waiting for replicas that cannot keep up. Only the
+    /// leader holds the setting, so a follower always reports `false`.
+    bool isSlowMemberBackpressure() const
+    {
+        return server->isSlowMemberBackpressure();
     }
 
     void recalculateStorageStats()

@@ -1,12 +1,18 @@
 #pragma once
-#include <vector>
 #include <atomic>
-#include <unordered_map>
+#include <utility>
+#include <vector>
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 namespace JoinStuff
 {
 
@@ -16,9 +22,14 @@ class JoinUsedFlags
 public:
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
-    /// For multiple disjuncts each entry in hashmap stores flags for a particular stored block,
-    /// keyed by RowRef::block_no (globally unique across ConcurrentHashJoin slots).
-    std::unordered_map<UInt32, UsedFlagsForColumns> per_row_flags;
+    using PendingPerRowFlags = std::vector<std::pair<UInt32, UsedFlagsForColumns>>;
+
+    /// Per-row flags filled during the build phase: (block_no, flags) for each stored block.
+    PendingPerRowFlags pending_per_row_flags;
+
+    /// Dense flags indexed by block_no, that are built from `pending_per_row_flags` when the build phase finishes.
+    /// The probe and non-joined phases read and write only this.
+    std::vector<UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
     /// Index is the offset in FindResult
@@ -29,10 +40,10 @@ public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinit(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             chassert(per_offset_flags.size() <= size);
             need_flags = true;
@@ -46,32 +57,52 @@ public:
 
     /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
     /// Must be called only before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinitAllowShrinking(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             need_flags = true;
             per_offset_flags = std::vector<std::atomic_bool>(size);
         }
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
     void reinit(UInt32 block_no, size_t rows, const ScatteredBlock::Selector & selector)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
-            chassert(per_row_flags[block_no].size() <= rows);
             need_flags = true;
-            per_row_flags[block_no] = std::vector<std::atomic_bool>(rows);
+            auto & flags = pending_per_row_flags.emplace_back(block_no, UsedFlagsForColumns(rows)).second;
 
             /// Mark all rows outside of selector as used.
             /// We should not emit them in RIGHT/FULL JOIN result,
             /// since they belongs to another shard, which will handle flags for these rows
-            for (auto & flag : per_row_flags[block_no])
+            for (auto & flag : flags)
                 flag.store(true);
             for (size_t index : selector)
-                per_row_flags[block_no][index].store(false);
+                flags[index].store(false);
+        }
+    }
+
+    /// Move the source pending per-block flags into the dense `per_row_flags` vector, which is
+    /// sized to cover every block_no of the `StoredColumnsIndex`.
+    void finalizePerRowFlags(JoinUsedFlags & source, size_t num_blocks)
+    {
+        if (source.pending_per_row_flags.empty())
+            return;
+
+        auto source_pending_flags = std::exchange(source.pending_per_row_flags, PendingPerRowFlags{});
+
+        need_flags = true;
+        if (per_row_flags.size() < num_blocks)
+            per_row_flags.resize(num_blocks);
+
+        for (auto & [block_no, flags] : source_pending_flags)
+        {
+            if (block_no >= per_row_flags.size() || !per_row_flags[block_no].empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
+            per_row_flags[block_no] = std::move(flags);
         }
     }
 
@@ -79,8 +110,8 @@ public:
 
     bool getUsedSafe(UInt32 block_no, size_t row_idx) const
     {
-        if (auto it = per_row_flags.find(block_no); it != per_row_flags.end())
-            return it->second[row_idx].load();
+        if (block_no < per_row_flags.size() && !per_row_flags[block_no].empty())
+            return per_row_flags[block_no][row_idx].load();
         return !need_flags;
     }
 

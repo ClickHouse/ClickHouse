@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Добавленный в: v20.1.0
 
-Точно вычисляет несколько [квантилей](https://en.wikipedia.org/wiki/Quantile) числовой последовательности на разных уровнях одновременно, используя инклюзивный метод.
+Точно вычисляет несколько [квантилей](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных на разных уровнях одновременно, используя инклюзивный метод.
 
 Эта функция эквивалентна [`quantileExactInclusive`](/ru/reference/functions/aggregate-functions/quantileExactInclusive), но позволяет вычислять несколько уровней квантилей за один проход, что эффективнее, чем вызывать отдельные функции для каждого квантиля.
 
@@ -35,7 +35,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы, Date или DateTime. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Возвращаемое значение**
 

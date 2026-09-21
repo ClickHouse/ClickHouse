@@ -29,8 +29,7 @@ If you would like to test the integration before configuring your own existing s
 - ClickStack hostname or IP address
 
 <Steps>
-<Step>
-#### Install OpenTelemetry Nginx module {#install-module}
+<Step title="Install OpenTelemetry Nginx module" id="install-module">
 
 The easiest way to add tracing to Nginx is using the official Nginx image with OpenTelemetry support built-in.
 
@@ -49,8 +48,7 @@ This image includes the `ngx_otel_module.so` pre-installed and ready to use.
 If you're running Nginx outside of Docker, refer to the [OpenTelemetry Nginx documentation](https://github.com/open-telemetry/opentelemetry-cpp-contrib/tree/main/instrumentation/nginx) for manual installation instructions.
 </Note>
 </Step>
-<Step>
-#### Configure Nginx to send traces to ClickStack {#configure-nginx}
+<Step title="Configure Nginx to send traces to ClickStack" id="configure-nginx">
 
 Add OpenTelemetry configuration to your `nginx.conf` file. The configuration loads the module and directs traces to ClickStack's OTLP endpoint.
 
@@ -148,8 +146,7 @@ docker-compose restart nginx
 sudo systemctl reload nginx
 ```
 </Step>
-<Step>
-#### Verifying traces in HyperDX {#verifying-traces}
+<Step title="Verifying traces in HyperDX" id="verifying-traces">
 
 Once configured, log into HyperDX and verify traces are flowing, you should see something like this, if you don't see traces, try adjusting your time range:
 
@@ -162,8 +159,7 @@ Once configured, log into HyperDX and verify traces are flowing, you should see 
 For users who want to test the nginx trace integration before configuring their production systems, we provide a sample dataset of pre-generated Nginx Traces with realistic traffic patterns.
 
 <Steps>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you don't have ClickStack running yet, start it with:
 
@@ -179,8 +175,7 @@ Wait about 30 seconds for ClickStack to fully initialize before proceeding.
 - Port 4317: OTLP gRPC endpoint (used by nginx module)
 - Port 4318: OTLP HTTP endpoint (used for demo traces)
 </Step>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample traces file and update timestamps to the current time:
 
@@ -196,8 +191,7 @@ The dataset includes:
 - Latencies ranging from 10ms to 800ms
 - Original traffic patterns preserved, shifted to current time
 </Step>
-<Step>
-#### Send traces to ClickStack {#send-traces}
+<Step title="Send traces to ClickStack" id="send-traces">
 
 Set your API key as an environment variable (if not already set):
 
@@ -227,8 +221,7 @@ This demo assumes ClickStack is running locally on `localhost:4318`. For remote 
 
 You should see a response like `{"partialSuccess":{}}` indicating the traces were successfully sent. All 1,000 traces will be ingested into ClickStack.
 </Step>
-<Step>
-#### Verify traces in HyperDX {#verify-demo-traces}
+<Step title="Verify traces in HyperDX" id="verify-demo-traces">
 
 1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the Search view and set the source to `Traces`
@@ -251,11 +244,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring traces with ClickStack, we provide essential visualizations for trace data.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
@@ -265,8 +258,7 @@ To help you get started monitoring traces with ClickStack, we provide essential 
 
 <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Finish Import"/>
 </Step>
-<Step>
-#### The dashboard will be created with all visualizations pre-configured. {#created-dashboard}
+<Step title="The dashboard will be created with all visualizations pre-configured." id="created-dashboard">
 
 <Note>
 For the demo dataset, set the time range to **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

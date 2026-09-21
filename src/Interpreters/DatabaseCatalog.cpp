@@ -93,7 +93,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -146,7 +145,7 @@ private:
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
-    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
+    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -169,7 +168,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
     DatabaseCatalog::instance().addUUIDMapping(id);
-    temporary_tables->createTable(getContext(), global_name, table, original_create);
+    getDatabase()->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
 
@@ -196,7 +195,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(std::move(rhs.temporary_tables)), id(rhs.id), future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -216,7 +215,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         {
             auto table = getTable();
             table->flushAndShutdown(/*is_drop=*/ true);
-            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+            getDatabase()->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)
         {
@@ -230,9 +229,19 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
     return StorageID{DatabaseCatalog::TEMPORARY_DATABASE, "_tmp_" + toString(id), id};
 }
 
+std::shared_ptr<IDatabase> TemporaryTableHolder::getDatabase() const
+{
+    auto database = temporary_tables.lock();
+    if (!database)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Database for temporary tables is already destroyed, but TemporaryTableHolder for {} is still alive",
+            getGlobalTableID().getNameForLogs());
+    return database;
+}
+
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
+    auto table = getDatabase()->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
@@ -250,14 +259,14 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
+    auto drop_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
+    auto reload_disks_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
     reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 }
 
@@ -301,6 +310,70 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     }
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
+
+    /** Hand the buffered rows over before any database goes away.
+      *
+      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
+      * shut down one at a time in name order: a destination in an earlier-sorting database is already
+      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
+      * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
+      * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
+      * graceful shutdown.
+      *
+      * So drain every table of every database here, repeating while a pass still moves something -
+      * one pass per link of the longest chain. The number of tables bounds the number of passes; a
+      * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
+      */
+    {
+        size_t total_tables = 0;
+        std::vector<StoragePtr> buffered_tables;
+        for (const auto & database : current_databases)
+        {
+            /// Only user databases: enumerating a predefined one can materialize a lazily created
+            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+            if (isPredefinedDatabase(database.first))
+                continue;
+
+            try
+            {
+                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                {
+                    ++total_tables;
+                    buffered_tables.push_back(it->table());
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
+            }
+        }
+
+        for (size_t pass = 0; pass <= total_tables; ++pass)
+        {
+            size_t flushed = 0;
+            for (const auto & table : buffered_tables)
+            {
+                if (!table)
+                    continue;
+
+                try
+                {
+                    flushed += table->flushBufferedRowsBeforeShutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                }
+            }
+
+            if (flushed == 0)
+                break;
+
+            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+        }
+    }
 
     /// Delay shutdown of temporary and system databases. They will be shutdown last.
     /// Because some databases might use them until their shutdown is called, but calling shutdown
@@ -410,7 +483,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -440,8 +512,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (analyzer)
+        else
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1184,6 +1255,77 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     return guard;
 }
 
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(
+    const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout)
+{
+    if (database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
+
+    DDLGuardPtr guard;
+    {
+        std::unique_lock lock(ddl_guards_mutex);
+        auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
+        DatabaseGuard & db_guard = db_guard_iter->second;
+        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database, table_lock_timeout);
+    }
+
+    if (!guard->ownsTableLock())
+        return guard;
+
+    if (expected_database && expected_database != tryGetDatabase(database).get())
+        throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
+
+    return guard;
+}
+
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
+    const StoragePtr & storage,
+    const Poco::Timespan & timeout,
+    std::function<bool()> is_alive)
+{
+    /// Wait in short chunks: each chunk blocks on the guard mutex and wakes up as soon as it is
+    /// released, the chunk boundary only re-checks `is_alive` and the rename check below.
+    static constexpr auto wait_chunk = std::chrono::milliseconds(50);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    /// A zero or exhausted budget still gets one attempt, `try_lock_for` degrades to `try_lock`.
+    for (bool attempted = false; is_alive(); attempted = true)
+    {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (attempted && remaining <= std::chrono::milliseconds::zero())
+            return nullptr;
+        const auto attempt_timeout = std::max(std::chrono::milliseconds::zero(), std::min(wait_chunk, remaining));
+
+        StorageID before = storage->getStorageID();
+        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr, attempt_timeout);
+        if (guard->ownsTableLock())
+        {
+            /// Re-check StorageID: a RENAME could have moved the storage while we were waiting.
+            StorageID after = storage->getStorageID();
+            if (after.database_name == before.database_name
+                && after.table_name == before.table_name
+                && after.uuid == before.uuid)
+                return guard;
+            continue;
+        }
+
+        /// An exclusive database DDL is running, waiting it out on the table mutex is pointless.
+        if (guard->databaseLockBusy())
+            return nullptr;
+    }
+    return nullptr;
+}
+
+DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout)
+{
+    auto guard = tryGetDDLGuardForStorage(storage, timeout);
+    if (!guard)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot acquire the DDL guard for {}, lock_acquire_timeout is {} ms",
+            storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
+    return guard;
+}
+
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
@@ -1454,9 +1596,15 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
-    auto db_disk = getDatabase(table_id.database_name)->getDisk();
+    auto database = getDatabase(table_id.database_name);
+    auto db_disk = database->getDisk();
+
+    /// The table limit is checked below; wait for the database to finish loading first, otherwise
+    /// its table list is incomplete and the check would undercount. Do it before taking
+    /// `tables_marked_dropped_mutex`, because startup can drop tables.
+    database->waitDatabaseStarted();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1485,10 +1633,15 @@ void DatabaseCatalog::undropTable(StorageID table_id)
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end())
+        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// Check the limit before moving the metadata file: a table that cannot be attached must
+        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
+        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+            database_on_disk->checkTablesLimit();
+
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
@@ -1517,7 +1670,11 @@ void DatabaseCatalog::undropTable(StorageID table_id)
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
     while (!isSharedPtrUnique(dropped_table.table))
+    {
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     dropped_table.table.reset();
 
     auto ast_attach = make_intrusive<ASTCreateQuery>();
@@ -1932,7 +2089,8 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     }
 
     /// For DROP DATABASE we should ignore dependent tables from the same database.
-    /// TODO unload tables in reverse topological order and remove this code
+    /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
+    /// and referential dependencies, so a dependent is always dropped before the tables it depends on.
     std::vector<StorageID> from_other_databases;
     for (const auto & dependent : dependents)
         if (dependent.database_name != removing_table.database_name)
@@ -2278,15 +2436,37 @@ TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (Tempo
 }
 
 
-DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
+DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name, std::optional<std::chrono::milliseconds> try_timeout)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
-    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    it = map.emplace(elem, Entry{std::make_unique<std::timed_mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
-    table_lock = std::unique_lock(*it->second.mutex);
+    if (try_timeout)
+    {
+        table_lock = std::unique_lock(*it->second.mutex, std::defer_lock);
+        if (!table_lock.try_lock_for(*try_timeout))
+            return;
+    }
+    else
+    {
+        table_lock = std::unique_lock(*it->second.mutex);
+    }
     is_database_guard = elem.empty();
-    if (!is_database_guard)
+    if (is_database_guard)
+        return;
+
+    if (try_timeout)
+    {
+        /// Single attempt: try-variant callers handle contention themselves, never sleep or throw here.
+        if (!db_mutex.try_lock_shared())
+        {
+            database_lock_busy = true;
+            table_lock.unlock();
+            return;
+        }
+    }
+    else
     {
         static constexpr int MAX_TRY = 10;
         static constexpr UInt64 INTERVAL_MS = 100;
@@ -2315,6 +2495,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
                 MAX_TRY * INTERVAL_MS);
         }
     }
+    db_mutex_held = true;
 }
 
 void DDLGuard::releaseTableLock() noexcept
@@ -2325,7 +2506,8 @@ void DDLGuard::releaseTableLock() noexcept
     table_lock_removed = true;
     guards_lock.lock();
     UInt32 counter = --it->second.counter;
-    table_lock.unlock();
+    if (table_lock.owns_lock())
+        table_lock.unlock();
     if (counter == 0)
         map.erase(it);
     guards_lock.unlock();
@@ -2333,22 +2515,42 @@ void DDLGuard::releaseTableLock() noexcept
 
 DDLGuard::~DDLGuard()
 {
-    if (!is_database_guard)
+    if (db_mutex_held)
         db_mutex.unlock_shared();
     releaseTableLock();
 }
 
+
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {
-    auto results = this->getHints(table_name, getAllRegisteredNames());
-    /// Skip exact match from the same database - suggesting the same name is not helpful.
-    /// This can happen when a table name appears in `getAllRegisteredNames` but the table
-    /// itself cannot be retrieved (e.g., during server startup when a table has not yet been loaded,
-    /// or when the table is looked up by a stale UUID and a new table with the same name exists).
-    /// Fall through to extended search which may find the table in another database.
-    if (results.empty() || results[0] == table_name)
-        return getExtendedHintForTable(table_name);
-    return std::make_pair(database->getDatabaseName(), results[0]);
+    /// Ask the prompter for several ranked candidates (closest first), not only the single closest
+    /// one. A `SHOW_DICTIONARIES`-only grant can make the closest raw name a hidden table that must
+    /// not be suggested; in that case we still want to offer a slightly farther dictionary the user
+    /// is allowed to see, instead of masking it and falling back to the bare error.
+    auto results = NamePrompter<max_hint_candidates>::getHints(table_name, getAllRegisteredNames());
+
+    /// Return the closest candidate the user is actually allowed to see. Scanning past hidden names
+    /// (rather than checking only the closest) is what lets a `SHOW_DICTIONARIES`-only user still get
+    /// a dictionary hint when a closer hidden table would otherwise mask it. The visibility check is
+    /// cheap for `SHOW_TABLES`-covered names and loads at most one table per remaining candidate.
+    for (const auto & candidate : results)
+    {
+        /// Skip an exact match from the same database - suggesting the same name is not helpful. This
+        /// can happen when a table name appears in `getAllRegisteredNames` but the table itself cannot
+        /// be retrieved (e.g., during server startup when a table has not yet been loaded, or when the
+        /// table is looked up by a stale UUID and a new table with the same name exists), and also on
+        /// the remasked `SHOW CREATE DICTIONARY` path where the exact name is a hidden table. Skip only
+        /// this one candidate and keep scanning - a slightly farther but visible name in this database
+        /// (e.g. a dictionary such a user may see) is still a useful hint and must not be masked by it.
+        if (candidate == table_name)
+            continue;
+
+        if (isHintNameVisible(candidate))
+            return std::make_pair(database->getDatabaseName(), candidate);
+    }
+
+    /// Nothing else visible in this database - the table may still exist in another one.
+    return getExtendedHintForTable(table_name);
 }
 
 std::pair<String, String> TableNameHints::getExtendedHintForTable(const String & table_name) const
@@ -2382,15 +2584,24 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
             continue;
 
         TableNameHints hints(db, context);
-        auto results = hints.getHints(table_name);
-        if (results.empty())
-            continue;
-
-        size_t distance = levenshteinDistanceCaseInsensitive(results[0], table_name);
-        if (distance < best_distance)
+        auto results = NamePrompter<max_hint_candidates>::getHints(table_name, hints.getAllRegisteredNames());
+        /// As in `getHintForTable`, pick the closest candidate the user may actually see. Scanning
+        /// past hidden names (rather than checking only the closest) means a `SHOW_DICTIONARIES`-only
+        /// user still gets a dictionary hint when a closer hidden table would otherwise mask it.
+        for (const auto & candidate : results)
         {
-            best_distance = distance;
-            best_match = std::make_pair(db_name, results[0]);
+            if (!hints.isHintNameVisible(candidate))
+                continue;
+
+            /// Candidates are ordered closest-first, so the first visible one is the closest visible
+            /// one for this database and no farther candidate here can beat it.
+            size_t distance = levenshteinDistanceCaseInsensitive(candidate, table_name);
+            if (distance < best_distance)
+            {
+                best_distance = distance;
+                best_match = std::make_pair(db_name, candidate);
+            }
+            break;
         }
     }
     return best_match;
@@ -2407,21 +2618,71 @@ VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
         return {};
     auto names = database->getAllTableNames(context);
 
-    /// Filter out tables the user cannot `SHOW`, otherwise the hint can leak the existence of
+    /// Filter out names the user cannot `SHOW`, otherwise the hint can leak the existence of
     /// tables (e.g. for the cross-database hint search in `getExtendedHintForTable`).
+    ///
+    /// This is a cheap, name-only filter - it never loads a table. `SHOW CREATE DICTIONARY` is
+    /// authorized with `SHOW_DICTIONARIES`, which does not imply `SHOW_TABLES`, so a name visible
+    /// only through that grant is kept here as a candidate. Whether such a candidate is really a
+    /// dictionary (and not a table whose existence must stay hidden) is verified later by
+    /// `isHintNameVisible`, which runs only for the few names that actually match the query - not
+    /// for every table, which would otherwise foreground-load the whole database on a single typo.
     if (context)
     {
         const auto access = context->getAccess();
-        const bool need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, database->getDatabaseName());
+        const String & database_name = database->getDatabaseName();
+        const bool need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, database_name);
         if (need_to_check_access_for_tables)
         {
             std::erase_if(names, [&](const String & name)
             {
-                return !access->isGranted(AccessType::SHOW_TABLES, database->getDatabaseName(), name);
+                return !access->isGranted(AccessType::SHOW_TABLES, database_name, name)
+                    && !access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name);
             });
         }
     }
     return names;
+}
+
+bool TableNameHints::isHintNameVisible(const String & name) const
+{
+    if (!database || !context)
+        return true;
+
+    const auto access = context->getAccess();
+    const String & database_name = database->getDatabaseName();
+
+    /// Fast path: a name the user may `SHOW TABLES` is always safe to suggest, without any load.
+    if (access->isGranted(AccessType::SHOW_TABLES, database_name, name))
+        return true;
+
+    /// Otherwise the name survived `getAllRegisteredNames` only because of a `SHOW_DICTIONARIES`
+    /// grant. That grant does not tell tables and dictionaries apart, so verify the object really
+    /// is a dictionary before suggesting it - suggesting a table here would leak the existence of a
+    /// table the user is not allowed to see. This loads a single table (the matched candidate),
+    /// never the whole database.
+    if (access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name))
+    {
+        /// Fail closed. `TableNameHints` is shared by generic unknown-table lookups
+        /// (`IDatabase::getTable`, `DatabaseCatalog::tryGetTable`, `IdentifierResolver`, ...), not
+        /// only by the guarded `SHOW CREATE` wrapper, and `tryGetTable` on ordinary/atomic databases
+        /// waits for the matched table to start up and rethrows any load error. Computing a hint must
+        /// never replace the original `UNKNOWN_TABLE` with an unrelated startup/load failure, so treat
+        /// any such error - like a name that turned out not to be a dictionary - as "not visible".
+        try
+        {
+            auto table = database->tryGetTable(name, context);
+            return table && table->isDictionary();
+        }
+        catch (...)
+        {
+            /// Ok to swallow: this runs only while formatting a hint. Any load error is not the
+            /// reason the lookup failed, and it will resurface when the user really touches the table.
+            return false;
+        }
+    }
+
+    return false;
 }
 
 }

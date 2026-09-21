@@ -86,20 +86,7 @@ REPLICA IDENTITY FULL также позволяет реплицировать �
   ### Можно ли подключать базы данных Postgres без публичного IP-адреса или в частных сетях?
 </div>
 
-Да! ClickPipes для Postgres предлагает два способа подключения к базам данных в частных сетях:
-
-1. **SSH-туннелирование**
-   * Подходит для большинства сценариев
-   * Инструкции по настройке смотрите [здесь](/ru/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * Работает во всех регионах
-
-2. **AWS PrivateLink**
-   * Доступно в трёх регионах AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * Подробные инструкции по настройке см. в нашей [документации по PrivateLink](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * В регионах, где PrivateLink недоступен, используйте SSH-туннелирование
+Да. О способах, которыми ClickPipes может подключаться к источнику данных, недоступному из публичного интернета, см. в разделе [Сетевое взаимодействие ClickPipes](/ru/integrations/clickpipes/networking).
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### Как обрабатываются UPDATE и DELETE?
@@ -199,10 +186,15 @@ ClickPipes для Postgres стремится максимально натив�
 В настоящее время мы не поддерживаем настройку пользовательских сопоставлений типов данных в рамках пайпа. Однако обратите внимание, что сопоставление типов данных по умолчанию, используемое в ClickPipes, максимально приближено к нативным типам. Большинство типов столбцов в Postgres реплицируются в максимально близкие им нативные эквиваленты в ClickHouse. Например, типы целочисленных массивов в Postgres реплицируются как типы целочисленных массивов в ClickHouse.
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### Как реплицируются столбцы JSON и JSONB из Postgres?
+  ### Как реплицируются столбцы `json` и `jsonb` из Postgres?
 </div>
 
-Столбцы JSON и JSONB реплицируются в ClickHouse как тип String. Поскольку ClickHouse поддерживает [тип JSON](/ru/reference/data-types/newjson) нативно, при необходимости вы можете создать materialized view поверх таблиц ClickPipes, чтобы выполнить это преобразование. Либо можно напрямую использовать [функции JSON](/ru/reference/functions/regular-functions/json-functions) для столбцов String. Мы активно работаем над возможностью, которая позволит реплицировать столбцы JSON и JSONB напрямую в тип JSON в ClickHouse. Ожидается, что эта возможность станет доступна через несколько месяцев.
+Столбцы `json` и `jsonb` реплицируются в ClickHouse как тип String из-за несовместимости с [нативным типом JSON](/ru/reference/data-types/newjson). Например:
+
+* PostgreSQL допускает на верхнем уровне любое корректное значение JSON (строки, числа, массивы), тогда как тип JSON в ClickHouse поддерживает только объекты.
+* Ключи, содержащие точки (например, &quot;app.kubernetes.io/name&quot;), тип JSON в ClickHouse также интерпретирует как вложенные пути, что может изменить структуру данных.
+
+Чтобы работать с JSON-строками после Postgres CDC ClickPipe, можно напрямую применять [JSON functions](/ru/reference/functions/regular-functions/json-functions) к столбцам, чтобы извлекать и обрабатывать данные. Для повышения query performance можно также использовать materialized view: извлекать нужные поля в typed columns или приводить столбец к нативному типу JSON (учитывая, что приведение может завершиться ошибкой из-за межплатформенной несовместимости типов).
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### Что происходит со вставками, когда mirror приостановлен?
@@ -221,7 +213,7 @@ ClickPipes для Postgres стремится максимально натив�
   ### Можно ли автоматизировать создание ClickPipe или выполнять его через API или CLI?
 </div>
 
-ClickPipe для Postgres также можно создавать и управлять им через конечные точки [OpenAPI](/ru/products/cloud/features/admin-features/api/openapi). Эта возможность находится в стадии бета, а справочник API доступен [здесь](/ru/api-reference/organization/get-list-of-available-organizations#tag/beta). Мы также активно работаем над поддержкой Terraform для создания Postgres ClickPipes.
+ClickPipe для Postgres также можно создавать и управлять им через конечные точки [OpenAPI](/ru/products/cloud/features/admin-features/api/openapi). Эта возможность находится в стадии бета, а справочник API доступен [здесь](/ru/products/cloud/api-reference/clickpipes/list-clickpipes). Мы также активно работаем над поддержкой Terraform для создания Postgres ClickPipes.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### Как ускорить начальную загрузку?

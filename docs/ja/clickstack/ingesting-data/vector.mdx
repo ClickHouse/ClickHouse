@@ -30,9 +30,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
     以下のガイドは、Managed ClickStack のサービスを作成済みで、サービスの認証情報を控えていることを前提としています。まだ完了していない場合は、Managed ClickStack の [Getting Started](/ja/clickstack/getting-started/managed) ガイドに従い、Vector の設定を促される手順まで進めてください。
 
     <Steps>
-      <Step>
-        ### データベースとテーブルを作成する
-
+      <Step title="データベースとテーブルを作成する" id="create-a-database-table">
         Vector では、データをインジェストする前に、テーブルとスキーマを定義しておく必要があります。
 
         まず、データベースを作成します。これは [ClickHouse Cloud console](/ja/products/cloud/features/sql-console-features/sql-console) から行えます。
@@ -72,9 +70,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Info>
       </Step>
 
-      <Step>
-        ### Vector 設定に ClickHouse シンクを追加
-
+      <Step title="Vector 設定に ClickHouse シンクを追加" id="add-clickhouse-sink-to-config">
         Vector の設定を変更して ClickHouse シンクを追加し、既存のパイプラインからイベントを受信するよう `inputs` フィールドを更新します。
 
         この設定は、上流の Vector パイプラインで、**対象の ClickHouse スキーマに合うようにデータがすでに整えられている**ことを前提としています。つまり、フィールドは適切にパースされ、正しい名前が付けられ、insert できる型になっている必要があります。生のログ行を ClickStack に適したスキーマへパースして正規化する一連の流れについては、[**以下の Nginx の例**](#example-dataset-with-vector)を参照してください。
@@ -107,17 +103,13 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Note>
       </Step>
 
-      <Step>
-        ### ClickStack UI に移動する
-
+      <Step title="ClickStack UI に移動する" id="navigate-to-clickstack-ui">
         Managed ClickStack サービスに移動し、左側のメニューから &quot;ClickStack&quot; を選択します。すでにオンボーディングを完了している場合は、新しいタブで ClickStack UI が開き、自動的に認証されます。まだ完了していない場合は、オンボーディングを進め、入力ソースとして Vector を選択した後に「Launch ClickStack」を選択してください。
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector 用の ClickStack を起動" size="lg" />
       </Step>
 
-      <Step>
-        ### データソースを作成する
-
+      <Step title="データソースを作成する" id="create-a-datasource-managed">
         ログ用のデータソースを作成します。データソースがまだ存在しない場合は、初回ログイン時に作成するよう求められます。すでにある場合は、Team Settings に移動して新しいデータソースを追加してください。
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="データソースの作成 - vector" size="lg" />
@@ -131,9 +123,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         利用可能なその他のオプションについては、[設定リファレンス](/ja/clickstack/managing/config) を参照してください。
       </Step>
 
-      <Step>
-        ### データを確認する
-
+      <Step title="データを確認する" id="explore-the-data-managed">
         ログビューに移動してデータを確認し、ClickStack の利用を開始します。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 内の Nginx ログ" size="lg" />
@@ -143,9 +133,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
 
   <Tab title="オープンソース版 ClickStack">
     <Steps>
-      <Step>
-        ### データベースとテーブルを作成する
-
+      <Step title="データベースとテーブルを作成する" id="create-a-database-table-oss">
         Vector では、データをインジェストする前に、テーブルとスキーマをあらかじめ定義しておく必要があります。
 
         まず、データベースを作成します。これは、[ClickHouse Web UI](/ja/concepts/features/interfaces/http#web-ui) の [http://localhost:8123/play](http://localhost:8123/play) から行えます。ユーザー名とパスワードには、デフォルトの `api:api` を使用します。
@@ -158,7 +146,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        データ用のテーブルを作成します。これは、データの出力スキーマに一致している必要があります。以下の例では、典型的な Nginx の構造を想定しています。[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従い、データに応じて適宜調整してください。[主キーの概念](/ja/concepts/core-concepts/primary-indexes)を理解したうえで、[こちら](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)に示されているガイドラインに基づいて主キーを選択することを**強く推奨**します。
+        データ用のテーブルを作成します。これはデータの出力スキーマに一致している必要があります。以下の例では、一般的な Nginx の構造を前提としています。[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従い、実際のデータに合わせて適宜調整してください。[主キーの概念](/ja/concepts/core-concepts/primary-indexes)を理解したうえで、[こちら](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)に示されているガイドラインに基づいて主キーを選択することを**強く推奨**します。
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -187,9 +175,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Info>
       </Step>
 
-      <Step>
-        ### Vector の設定に ClickHouse sink を追加する
-
+      <Step title="Vector 設定に ClickHouse シンクを追加" id="add-clickhouse-config-to-sink-oss">
         Vector から ClickStack へのインジェストは、collector が公開する OTLP endpoint を経由せず、ClickHouse に直接送信する必要があります。
 
         Vector の設定を変更して ClickHouse sink を追加し、`inputs` フィールドを更新して既存の pipeline からイベントを受信するようにしてください。
@@ -224,17 +210,13 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Note>
       </Step>
 
-      <Step>
-        ### ClickStack UI にアクセスする
-
+      <Step title="ClickStack UI に移動する" id="navigate-to-clickstack-ui-oss">
         [http://localhost:8080](http://localhost:8080) で ClickStack UI にアクセスします。オンボーディングが完了していない場合は、ユーザーを作成してください。
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack ログイン" size="lg" />
       </Step>
 
-      <Step>
-        ### データソースを作成する
-
+      <Step title="データソースを作成する" id="create-a-datasource-oss">
         Team Settings に移動し、新しいデータソースを追加します。
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="データソースの作成 - vector" size="lg" />
@@ -248,12 +230,10 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         その他のオプションについては、[設定リファレンス](/ja/clickstack/managing/config)を参照してください。
       </Step>
 
-      <Step>
-        ### データを調べる
+      <Step title="データを確認する" id="explore-the-data-oss">
+        ログビューに移動してデータを確認し、ClickStack の利用を開始します。
 
-        ログビューに移動してデータを調べ、ClickStack を使い始めましょう。
-
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack の Nginx ログ" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 内の Nginx ログ" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -270,21 +250,15 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
     以下のガイドは、Managed ClickStack のサービスを作成済みで、サービスの認証情報を控えていることを前提としています。まだ完了していない場合は、Managed ClickStack の [Getting Started](/ja/clickstack/getting-started/managed) ガイドに従い、Vector の設定を求められる手順まで進めてください。
 
     <Steps>
-      <Step>
-        ### Vectorのインストール
-
+      <Step title="Vectorのインストール" id="installing-vector">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### サンプルデータをダウンロード
-
+      <Step title="サンプルデータをダウンロード" id="download-the-sample-data">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### データベースとテーブルを作成する
-
+      <Step title="データベースとテーブルを作成する" id="create-database-table-nginx-managed">
         Vector では、データのインジェスト前にテーブルとスキーマを定義しておく必要があります。
 
         まず、データベースを作成します。これは [ClickHouse Cloud console](/ja/products/cloud/features/sql-console-features/sql-console) から行えます。
@@ -324,9 +298,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Info>
       </Step>
 
-      <Step>
-        ### Vector の設定をコピー
-
+      <Step title="Vector の設定をコピー" id="copy-vector-configuration">
         Vector の設定をコピーし、`CLICKHOUSE_ENDPOINT` と `CLICKHOUSE_PASSWORD` を設定した `nginx.yaml` ファイルを作成します。
 
         ```yaml
@@ -346,7 +318,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouseに適したDateTimeフォーマット
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -370,9 +342,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Note>
       </Step>
 
-      <Step>
-        ### Vector を起動する
-
+      <Step title="Vector を起動する" id="start-vector">
         ファイルオフセットを記録するため、まずデータディレクトリを作成してから、次のコマンドで Vector を起動します。
 
         ```bash
@@ -381,17 +351,13 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         ```
       </Step>
 
-      <Step>
-        ### ClickStack UIに移動する
-
+      <Step title="ClickStack UIに移動する" id="navigate-to-clickstack-ui-nginx-managed">
         Managed ClickStack サービスに移動し、左側のメニューから &quot;ClickStack&quot; を選択します。すでにオンボーディングを完了している場合は、新しいタブで ClickStack UI が起動し、自動的に認証されます。まだ完了していない場合は、入力ソースとして Vector を選択したらオンボーディングを進め、&quot;Launch ClickStack&quot; を選択します。
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector 用の ClickStack の起動" size="lg" />
       </Step>
 
-      <Step>
-        ### データソースを作成する
-
+      <Step title="データソースを作成する" id="create-a-datasource-nginx-managed">
         ログ用のデータソースを作成します。データソースがまだ1つもない場合は、初回ログイン時に作成するよう求められます。すでにある場合は、Team Settings に移動して新しいデータソースを追加してください。
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="データソースの作成 - vector" size="lg" />
@@ -424,9 +390,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         そのほかのオプションについては、[設定リファレンス](/ja/clickstack/managing/config)を参照してください。
       </Step>
 
-      <Step>
-        ### データを確認する
-
+      <Step title="データを確認する" id="explore-the-data-nginx-managed">
         データを確認して ClickStack の利用を始めるには、`October 20th, 2025` の Search view に移動してください。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
@@ -438,21 +402,15 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
     以下のガイドは、[Getting Started ガイド](/ja/clickstack/getting-started/oss)を参照してClickStack Open Sourceをセットアップ済みであることを前提としています。
 
     <Steps>
-      <Step>
-        ### Vectorのインストール
-
+      <Step title="Vectorのインストール" id="installing-vector-oss">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### サンプルデータをダウンロード
-
+      <Step title="サンプルデータをダウンロード" id="download-the-sample-data-oss">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### データベースとテーブルを作成する
-
+      <Step title="データベースとテーブルを作成する" id="create-a-database-table-nginx-oss">
         Vector では、データをインジェストする前に、テーブルとスキーマを定義しておく必要があります。
 
         まず、データベースを作成します。これは、[ClickHouse Web UI](/ja/concepts/features/interfaces/http#web-ui) の [http://localhost:8123/play](http://localhost:8123/play) から実行できます。デフォルトのユーザー名とパスワード `api:api` を使用してください。
@@ -488,15 +446,13 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         ```
 
         <Info>
-          **Nginx 主キー**
+          **Nginxの主キー**
 
-          上記の主キーは、ClickStack UI における Nginx ログの一般的なアクセスパターンを前提としていますが、本番環境ではワークロードに応じて調整が必要になる場合があります。
+          上記の主キーは、ClickStack UIにおけるNginxログの一般的なアクセスパターンを前提としていますが、本番環境ではワークロードに応じて調整が必要になる場合があります。
         </Info>
       </Step>
 
-      <Step>
-        ### Vector の設定をコピー
-
+      <Step title="Vector の設定をコピー" id="copy-vector-configuration-nginx-oss">
         Vector から ClickStack へのインジェストは、collector が公開する OTLP endpoint を経由せず、ClickHouse に直接送信する必要があります。
 
         Vector の設定をコピーし、`nginx.yaml` ファイルを作成します。
@@ -518,7 +474,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouseに適したDateTimeフォーマット
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -542,9 +498,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         </Note>
       </Step>
 
-      <Step>
-        ### Vector を起動する
-
+      <Step title="Vector を起動する" id="start-vector-oss-nginx">
         次のコマンドを実行して Vector を起動します。
 
         ```bash
@@ -553,9 +507,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         ```
       </Step>
 
-      <Step>
-        ### データソースを作成する
-
+      <Step title="データソースを作成する" id="create-a-datasource-nginx-oss">
         `Team -> Sources` からログ用のデータソースを作成します
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="データソースの作成 - vector" size="lg" />
@@ -583,23 +535,19 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         )
         ```
 
-        構造化されたフィールドからログ行を再構成します。
+        これにより、構造化されたフィールドからログ行を再構成します。
 
-        その他のオプションについては、[設定リファレンス](/ja/clickstack/managing/config)を参照してください。
+        そのほかのオプションについては、[設定リファレンス](/ja/clickstack/managing/config)を参照してください。
       </Step>
 
-      <Step>
-        ### ClickStack UIにアクセスする
-
+      <Step title="ClickStack UIに移動する" id="navigate-to-clickstack-ui-nginx-oss">
         [http://localhost:8080](http://localhost:8080) で ClickStack UI にアクセスします。オンボーディングが完了していない場合は、ユーザーを作成してください。
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack ログイン" size="lg" />
       </Step>
 
-      <Step>
-        ### データを確認する
-
-        `2025年10月20日` の検索ビューに移動してデータを確認し、ClickStack を使い始めましょう。
+      <Step title="データを確認する" id="explore-the-data-nginx-oss">
+        データを確認して ClickStack の利用を始めるには、`October 20th, 2025` の Search view に移動してください。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
       </Step>

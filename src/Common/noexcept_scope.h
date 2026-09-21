@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 
 /// It can be used in critical places to exit on unexpected exceptions.
 /// SIGABRT is usually better that broken in-memory state with unpredictable consequences.
@@ -16,6 +17,7 @@
     }                                                          \
     catch (...)                                                \
     {                                                          \
+        ALLOW_ALLOCATIONS_IN_SCOPE;                            \
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);       \
         std::terminate();                                      \
     }                                                          \

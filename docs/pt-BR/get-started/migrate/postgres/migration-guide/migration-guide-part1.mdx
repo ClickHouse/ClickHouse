@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> O ClickHouse executará no servidor PostgreSQL cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN. Assim, cargas incrementais podem ser mais eficientes se houver um índice nas colunas usadas para identificar o conjunto de alterações.
+> O ClickHouse fará push down de cláusulas `WHERE` simples, como `=`, `!=`, `>`,`>=`, `<`, `<=` e IN, para o servidor PostgreSQL. Assim, cargas incrementais podem ser mais eficientes se houver um índice nas colunas usadas para identificar o conjunto de alterações.
 
-> Um método possível para detectar operações de UPDATE ao usar replicação de consultas é usar a [`coluna de sistema XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (IDs de transação) como watermark — uma mudança nessa coluna indica uma alteração e, portanto, pode ser aplicada à tabela de destino. Os usuários que adotarem essa abordagem devem estar cientes de que os valores de `XMIN` podem sofrer wraparound, e as comparações exigem uma varredura completa da tabela, o que torna o rastreamento de alterações mais complexo.
+> Um método possível para detectar operações de UPDATE ao usar replicação por consulta é usar a [coluna de sistema `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (IDs de transação) como watermark — uma mudança nessa coluna indica uma alteração e, portanto, pode ser aplicada à tabela de destino. Os usuários que adotarem essa abordagem devem estar cientes de que os valores de `XMIN` podem voltar ao início e que as comparações exigem uma varredura completa da tabela, tornando o rastreamento de alterações mais complexo.
 
 [Clique aqui para a Parte 2](/pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part2)

@@ -36,14 +36,14 @@ ClickHouse 是列式数据库。在这类系统中，表以列的集合形式存
 下面通过一个在 1 亿行[真实匿名网站分析数据](/zh/get-started/sample-datasets/anon-web-analytics-metrica)上运行的示例查询，来更直观地说明这种差异：
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;

@@ -14,20 +14,17 @@ Calculates the approximate number of different values of the argument.
 
 The function uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536. This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using uniq is almost as fast as using other aggregate functions.
 
-<details>
-<summary>Implementation details</summary>
-
+<Accordion title="Implementation details">
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses an adaptive sampling algorithm.
 For the calculation state, the function uses a sample of element hash values up to 65536.
 This algorithm is very accurate and very efficient on the CPU.
 When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+</Accordion>
 
-</details>
-
-:::tip
+<Tip>
 We recommend using this function over other variants in almost all scenarios.
-:::
+</Tip>
     
 
 **Syntax**

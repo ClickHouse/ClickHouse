@@ -17,6 +17,11 @@ BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
 
     String getName() const override { return "BroadcastExchange"; }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<BroadcastExchangeStep>(input_headers.front(), result_bucket_count);
+    }
+
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override
     {
         /// Doesn't change the pipeline if executed directly

@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
+#include <Columns/ColumnString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
@@ -8,6 +10,7 @@ namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -86,7 +89,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 {
     tokens.erase(token);
 
-    if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
+    if (query->getSearchMode() == TextSearchMode::All || query->getSearchMode() == TextSearchMode::Phrase)
     {
         markFailed();
         return;
@@ -94,7 +97,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 
     /// `Any` mode fails once none of its declared tokens can contribute.
     /// Pattern queries discover tokens dynamically, so the count applies only to pure-token queries.
-    if (query->patterns.empty())
+    if (query->getPatterns().empty())
     {
         if (num_live_tokens > 0)
             --num_live_tokens;
@@ -122,11 +125,11 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     {
         rows_range = token_rows_range;
     }
-    else if (query->search_mode == TextSearchMode::Any)
+    else if (query->getSearchMode() == TextSearchMode::Any)
     {
         rows_range = rows_range->unionWith(token_rows_range);
     }
-    else if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
+    else if (query->getSearchMode() == TextSearchMode::All || query->getSearchMode() == TextSearchMode::Phrase)
     {
         rows_range = rows_range->intersectWith(token_rows_range);
 
@@ -144,14 +147,14 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
 
     if (!postings)
         postings = token_postings;
-    else if (query->search_mode == TextSearchMode::Any)
+    else if (query->getSearchMode() == TextSearchMode::Any)
         *postings |= token_postings;
     else
         *postings &= token_postings;
 
     /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
-    bool need_all_tokens = query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase;
-    if (need_all_tokens && postings->cardinality() == 0)
+    bool need_all_tokens = query->getSearchMode() == TextSearchMode::All || query->getSearchMode() == TextSearchMode::Phrase;
+    if (need_all_tokens && postings->isEmpty())
         markFailed();
 }
 
@@ -164,24 +167,24 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         auto & query_builder = query_builders[hash];
         query_builder.query = query;
 
-        for (const auto & token : query->tokens)
+        for (const auto & token : query->getTokens())
         {
             if (queries_by_token[token].insert(hash).second)
                 ++query_builder.num_live_tokens;
         }
 
-        for (const auto & pattern : query->patterns)
+        for (const auto & pattern : query->getPatterns())
             queries_by_pattern[&pattern].insert(hash);
     }
 }
 
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
 {
-    auto hash = query.getHash().get128();
+    auto hash = query.getHash();
     auto it = query_builders.find(hash);
 
     if (it == query_builders.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search query with function '{}'", query.function_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search query with function '{}'", query.getFunctionName());
 
     return it->second;
 }
@@ -227,23 +230,27 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
 
-    if (token_info->embedded_postings)
-        addPostings(token, token_info->embedded_postings);
+    if (!token_info->embedded_postings.empty())
+    {
+        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        addPostings(token, embedded);
+        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+    }
 }
 
-void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
+void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
 {
     tokens_with_postings.emplace(token);
 
     /// Clip the postings to the readable rows once.
     std::optional<PostingList> clipped_postings;
-    const auto * postings_ptr = postings.get();
+    const auto * postings_ptr = &postings;
 
     if (readable_rows)
     {
-        clipped_postings = readable_rows->clipPostings(*postings);
+        clipped_postings = readable_rows->clipPostings(postings);
 
-        if (clipped_postings->cardinality() == 0)
+        if (clipped_postings->isEmpty())
         {
             processTokenOperation(token, [&](QueryBuilder & query_builder)
             {
@@ -289,6 +296,91 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
     return added;
 }
 
+std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::getPatternTokenKeyRanges() const
+{
+    if (queries_by_pattern.empty())
+        return std::nullopt;
+
+    std::vector<TokenKeyRange> key_ranges;
+    key_ranges.reserve(queries_by_pattern.size());
+
+    for (const auto & [pattern, _] : queries_by_pattern)
+    {
+        String literal(pattern->getRequiredSubstring());
+        if (literal.empty())
+            return std::nullopt;
+
+        /// An anchored kind compares bytes: the constructor demotes a case-insensitive one to `General`.
+        /// That is the order the dictionary is sorted in, so such a pattern matches inside one key range.
+        switch (pattern->getMatchKind())
+        {
+            case RegexpMatchKind::Prefix:
+                key_ranges.emplace_back(literal, firstStringThatIsGreaterThanAllStringsWithPrefix(literal));
+                break;
+            case RegexpMatchKind::Exact:
+                key_ranges.emplace_back(literal, literal);
+                break;
+            case RegexpMatchKind::Suffix:
+            case RegexpMatchKind::Substring:
+            case RegexpMatchKind::General:
+                return std::nullopt;
+        }
+    }
+
+    return key_ranges;
+}
+
+bool TextIndexAnalyzer::canFilterTokensByLiterals() const
+{
+    if (queries_by_pattern.empty())
+        return false;
+
+    return std::ranges::all_of(queries_by_pattern, [](const auto & entry) { return !entry.first->getRequiredSubstring().empty(); });
+}
+
+void TextIndexAnalyzer::markPatternCandidateTokens(
+    const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks)
+{
+    const auto & chars = tokens.getChars();
+    const auto & offsets = tokens.getOffsets();
+    const size_t literal_size = pattern.getRequiredSubstring().size();
+
+    const UInt8 * const begin = chars.data();
+    const UInt8 * const end = begin + chars.size();
+    const UInt8 * pos = begin;
+    size_t token_idx = 0;
+
+    while (pos < end && end != (pos = pattern.searchRequiredSubstring(pos, end - pos)))
+    {
+        while (begin + offsets[token_idx] <= pos)
+            ++token_idx;
+
+        /// Tokens are stored back to back and are not zero-terminated, so an occurrence may straddle two of
+        /// them. One that leaves the token cannot be followed by one inside it, which would start earlier.
+        if (pos + literal_size <= begin + offsets[token_idx])
+            candidate_marks[token_idx] = 1;
+
+        pos = begin + offsets[token_idx];
+        ++token_idx;
+    }
+}
+
+void TextIndexAnalyzer::matchTokensByLiterals(
+    const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices)
+{
+    const size_t num_tokens = tokens.size();
+    candidate_marks.assign(num_tokens, static_cast<UInt8>(0));
+
+    for (const auto & [pattern, _] : queries_by_pattern)
+        markPatternCandidateTokens(*pattern, tokens, candidate_marks);
+
+    for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+    {
+        if (candidate_marks[token_idx] && addTokenToPatterns(tokens.getDataAt(token_idx)))
+            matched_indices.push_back(token_idx);
+    }
+}
+
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
 {
     auto it = queries_by_token.find(token);
@@ -311,8 +403,9 @@ void TextIndexAnalyzer::bypassPatternQueries()
 
     for (const auto & query_hash : all_pattern_queries)
     {
-        auto & query_builder = query_builders[query_hash];
+        auto & query_builder = query_builders.at(query_hash);
         query_builder.markBypassed();
+        query_builder.is_analysis_incomplete = true;
 
         for (const auto & [query_token, _] : query_builder.tokens)
             queries_by_token[query_token].erase(query_hash);
@@ -322,10 +415,10 @@ void TextIndexAnalyzer::bypassPatternQueries()
 double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
 {
     const auto & query = *query_builder.query;
-    chassert(!query.tokens.empty());
+    chassert(!query.getTokens().empty() || !query.getPatterns().empty());
     const double n = static_cast<double>(total_rows);
 
-    switch (query.search_mode)
+    switch (query.getSearchMode())
     {
         case TextSearchMode::All:
         /// A phrase requires all its tokens to be present.
@@ -339,7 +432,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 : std::log(n);
 
             size_t num_unread = 0;
-            for (const auto & token : query.tokens)
+            for (const auto & token : query.getTokens())
             {
                 auto it = query_builder.tokens.find(token);
                 if (it == query_builder.tokens.end())
@@ -362,7 +455,21 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
                 : 1.0;
 
-            for (const auto & token : query.tokens)
+            /// A pattern query declares no tokens, it owns the ones the dictionary scan matched.
+            if (query.getTokens().empty())
+            {
+                for (const auto & [token, token_info] : query_builder.tokens)
+                {
+                    if (hasReadPostings(token))
+                        continue;
+
+                    not_in_any *= (1.0 - static_cast<double>(token_info->cardinality) / n);
+                }
+
+                return n * (1.0 - not_in_any);
+            }
+
+            for (const auto & token : query.getTokens())
             {
                 auto it = query_builder.tokens.find(token);
                 if (it != query_builder.tokens.end() && hasReadPostings(token))
@@ -396,13 +503,11 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
             continue;
 
         const auto & query = *query_builder.query;
-        if (query.direct_read_mode != TextIndexDirectReadMode::Hint)
+        if (query.getDirectReadMode() != TextIndexDirectReadMode::Hint)
             continue;
 
-        /// Pure-pattern queries have no declared tokens at parse time; their tokens are
-        /// discovered dynamically during dictionary scan. Skip the cardinality check in
-        /// that case — it would have no inputs to work with.
-        if (query.tokens.empty())
+        /// A pure-pattern query is estimated from the tokens the dictionary scan discovered.
+        if (query.getTokens().empty() && query_builder.tokens.empty())
             continue;
 
         double estimated_cardinality = estimateQueryCardinality(query_builder, total_rows);
@@ -418,13 +523,38 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
             query_builder.markBypassed();
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
 
-            auto hash = query.getHash().get128();
-            for (const auto & query_token : query.tokens)
+            auto hash = query.getHash();
+            for (const auto & query_token : query.getTokens())
                 queries_by_token[query_token].erase(hash);
 
             for (const auto & [query_token, _] : query_builder.tokens)
                 queries_by_token[query_token].erase(hash);
         }
+    }
+}
+
+void TextIndexAnalyzer::detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder)
+{
+    /// Detach the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
+    for (const auto & query_token : query_builder.query->getTokens())
+        queries_by_token[query_token].erase(query_hash);
+
+    /// Also detach already-discovered dynamic pattern tokens (not in `query->getTokens`).
+    for (const auto & [query_token, _] : query_builder.tokens)
+        queries_by_token[query_token].erase(query_hash);
+}
+
+void TextIndexAnalyzer::markAllQueriesFailed()
+{
+    always_false = true;
+
+    for (auto & [query_hash, query_builder] : query_builders)
+    {
+        if (query_builder.is_failed)
+            continue;
+
+        query_builder.markFailed();
+        detachQueryFromTokens(query_hash, query_builder);
     }
 }
 
@@ -438,7 +568,7 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
     for (const auto & query_hash : token_queries)
     {
-        auto & query_builder = query_builders[query_hash];
+        auto & query_builder = query_builders.at(query_hash);
         if (query_builder.is_failed || query_builder.is_bypassed)
             continue;
 
@@ -446,71 +576,14 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
+            detachQueryFromTokens(query_hash, query_builder);
+
+            /// One failed query in `All` global mode proves the whole conjunction false in this
+            /// part; the remaining queries cannot contribute to the result, so fail them all.
             if (global_search_mode == TextSearchMode::All)
-                always_false = true;
-
-            /// Erase the failed query for the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
-            for (const auto & query_token : query_builder.query->tokens)
-                queries_by_token[query_token].erase(query_hash);
-
-            /// Also erase for already-discovered dynamic pattern tokens (not in query->tokens).
-            for (const auto & [query_token, _] : query_builder.tokens)
-                queries_by_token[query_token].erase(query_hash);
+                markAllQueriesFailed();
         }
     }
-}
-
-/// Estimate memory footprint of an absl::flat_hash_map/set.
-/// absl flat containers use open addressing with one control byte per slot.
-template <typename Container>
-static size_t estimateAbslFlatContainerBytes(const Container & c)
-{
-    return c.empty() ? 0 : c.capacity() * (sizeof(typename Container::value_type) + 1);
-}
-
-size_t TextIndexAnalyzer::memoryUsageBytes() const
-{
-    size_t result = sizeof(*this);
-
-    /// query_builders: map<UInt128, QueryBuilder>, each QueryBuilder has tokens map and optional postings.
-    result += estimateAbslFlatContainerBytes(query_builders);
-    for (const auto & [_, query_builder] : query_builders)
-    {
-        result += estimateAbslFlatContainerBytes(query_builder.tokens);
-        if (query_builder.postings)
-            result += query_builder.postings->getSizeInBytes();
-    }
-
-    /// queries_by_token: map<String, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_token);
-    for (const auto & [key, hashes] : queries_by_token)
-    {
-        result += key.capacity();
-        result += estimateAbslFlatContainerBytes(hashes);
-    }
-
-    /// queries_by_pattern: map<ptr, QueryHashes>.
-    result += estimateAbslFlatContainerBytes(queries_by_pattern);
-    for (const auto & [_, hashes] : queries_by_pattern)
-        result += estimateAbslFlatContainerBytes(hashes);
-
-    /// all_token_infos: map<String, TokenPostingsInfoPtr>.
-    result += estimateAbslFlatContainerBytes(all_token_infos);
-    for (const auto & [key, _] : all_token_infos)
-        result += key.capacity();
-
-    /// missing_tokens: set<String>.
-    result += estimateAbslFlatContainerBytes(missing_tokens);
-    for (const auto & token : missing_tokens)
-        result += token.capacity();
-
-    /// tokens_with_postings: set<String>.
-    result += estimateAbslFlatContainerBytes(tokens_with_postings);
-    for (const auto & token : tokens_with_postings)
-        result += token.capacity();
-
-    result += readable_rows.has_value() ? readable_rows->getSizeInBytes() : 0;
-    return result;
 }
 
 }

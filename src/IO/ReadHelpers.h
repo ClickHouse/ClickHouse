@@ -170,6 +170,11 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -496,7 +501,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
 
 /// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
 /// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
-std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer, size_t max_size = 0);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -511,6 +516,7 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
+    size_t size() const { return 0; }
 };
 
 template <typename ReturnType>
@@ -687,7 +693,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
+    /// A calendar-invalid date (e.g. month 13) yields 1900-01-01 (-getDayNumOffsetEpoch(), -25567) for Date32 and 1970-01-01 for Date.
     date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
@@ -969,7 +975,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+        /// Why not `readIntTextUnsafe`? Because that reader cannot check for overflow.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
@@ -1232,11 +1238,12 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             }
         }
     }
-    /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
-    else if (whole >= 10413792000LL)
+    /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
+    /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
+    /// as a Unix timestamp with subsecond precision already scaled to an integer.
+    else if (whole >= 253402300800LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
-        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
         components.fractional =  components.whole % common::exp10_i32(scale);
         components.whole = components.whole / common::exp10_i32(scale);
     }
@@ -1433,6 +1440,22 @@ inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, c
 {
     return readTimeTextImpl<bool>(time64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
+
+/// Reading a `DateTime`/`DateTime64` column from an unquoted number in the `JSON`, `Values` and similar text
+/// formats (see `SerializationDateTime`/`SerializationDateTime64`). The number is a Unix timestamp (seconds
+/// since the epoch, with optional sub-second precision for `DateTime64`), consistent with `CAST`,
+/// `toDateTime64` and the `Values` format. Parsing stops at the first character that is not part of the
+/// number (e.g. the `,` or `}` following the value in JSON). The `AsRawValue` variants implement the legacy
+/// behavior, where the number is the raw underlying value.
+void readDateTimeAsNumber(time_t & x, ReadBuffer & buf);
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf);
+void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
+bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
+
+void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
+bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
+void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
+bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {

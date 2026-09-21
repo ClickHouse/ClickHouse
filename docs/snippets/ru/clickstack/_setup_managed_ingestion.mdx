@@ -2,6 +2,8 @@
 title: Настройка управляемой ингестии
 ---
 
+import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_example_otel.mdx';
+
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 Выберите &quot;Начать ингестию&quot;, и вам будет предложено выбрать источник ингестии. Управляемый ClickStack поддерживает OpenTelemetry и [Vector](https://vector.dev/) в качестве основных источников ингестии. Однако пользователи также могут отправлять данные напрямую в ClickHouse в собственной схеме, используя любые из [интеграций, поддерживаемых ClickHouse Cloud](/ru/integrations/home).
@@ -51,7 +53,7 @@ title: Настройка управляемой ингестии
 
     Для этого вам предоставляется пример конфигурации OpenTelemetry Collector, в которой используется ClickHouse exporter с подходящими настройками и открыты приёмники OTLP. Эта конфигурация соответствует интерфейсам и поведению, ожидаемым дистрибутивом ClickStack.
 
-    <ExampleOTelConfig />
+    <ManagedIngestionExampleOtelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

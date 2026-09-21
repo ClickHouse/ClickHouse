@@ -121,7 +121,6 @@ class WorkloadResourceManager : public IResourceManager
 public:
     explicit WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_);
     ~WorkloadResourceManager() override;
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
     void forEachNode(VisitorFunc visitor) override;

@@ -1,0 +1,122 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: '데모 데이 - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: '2026-07-10의 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="text-index-fix-for-map-column-disjunction-filters">
+  ## Map 컬럼 OR 조건 필터에 대한 text index 수정
+</div>
+
+*[@knudtty](https://github.com/knudtty)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron은 맵 컬럼 속성을 대상으로 쿼리하는 리포트를 디버그하던 중 이 문제를 발견했습니다. 해당 쿼리가 예상보다 느리게 동작했던 것입니다. 맵 속성에는 이미 최적화가 적용되어 있었기 때문에 사실 필요하지 않았지만, 사용자는 구체화된 컬럼(Materialized Column)과 블룸 필터를 추가해 직접 우회하고 있었습니다.
+
+원인은 맵 속성에서 여러 가능한 값을 기준으로 필터링할 때 `hasAny` 함수를 사용한다는 점이었습니다. 즉, 사실상 배열에 대한 OR 조건 검사입니다. 예를 들어 사용자 ID 같은 로그 속성이 값 목록 중 하나와 일치하는지 확인하는 경우입니다. ClickHouse 26.5 미만에서는 이 방식이 text index를 트리거하지 못했습니다. 이번 수정에서는 이 OR 조건을 괄호로 묶인 여러 개의 동등 비교식으로 재작성해 인덱스가 올바르게 활성화되도록 했습니다. Aaron은 `EXPLAIN`을 통해 재작성된 쿼리가 이제 예상대로 스킵 인덱스를 사용한다는 점도 확인했습니다.
+
+대부분의 사용자는 이미 26.5 이상을 사용하고 있지만, 아직 업그레이드하지 않은 경우에도 그전까지는 이 수정으로 해당 쿼리를 빠르게 유지할 수 있습니다.
+
+**관련 PR:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+<div id="profiling-data-in-clickcannon">
+  ## ClickCannon의 프로파일링 데이터
+</div>
+
+*[@SpencerTorres](https://github.com/SpencerTorres)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+최근 ClickHouse용 합성 데이터를 생성하고 벤치마크하기 위한 도구인 ClickCannon에 대해 [블로그 글을 게시했습니다](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse). 이제 Spencer는 기존의 로그, 메트릭, 트레이스 지원에 더해 프로파일링 신호도 추가했습니다. 구성 가능한 스택 깊이로 프로파일링 데이터를 생성할 수 있으며, 즉석에서 시뮬레이션하거나 디스크에서 읽어올 수도 있습니다. 또한 다른 신호와 동일한 방식으로 수집할 수 있습니다. 즉, ClickCannon이 프로파일 테이블을 가리키도록 설정하면 행 생성을 시작합니다.
+
+프로파일 payload는 다른 신호보다 훨씬 큰 것으로 확인되어, sample당 추가되는 key 수를 조정하고 instance 크기별 처리량을 확인하는 작업은 아직 진행 중입니다. 이 데이터를 대량으로 생성할 수 있게 되면서 팀은 스키마 최적화를 시작하고 이를 위한 기준점도 마련할 수 있게 되었으며, 이는 ClickStack 전반에서 프로파일링 데이터와 그 시각화를 지원하려는 더 큰 노력과도 맞닿아 있습니다. Spencer는 또한 ClickStack 로그 뷰어에서 프로파일 frame을 렌더링하는 작업도 처음으로 살펴보았습니다.
+
+<div id="bar-charts">
+  ## 막대 차트
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+막대 차트가 추가되었습니다. 몇 달 전에 올라왔지만 리베이스 중 오래된 상태가 되었던 PR에서 영감을 받은 기능입니다. 이제 ClickStack에서 차트가 표시되는 모든 곳, 즉 대시보드, MCP 대시보드 빌더 등 전반에서 사용할 수 있습니다. 또한 막대 차트가 시점별 비교에서 기존 라인 차트가 맡던 역할을 동일하게 수행하게 되면서, 차이를 더 명확히 하기 위해 line charts의 이름을 time series로 변경했습니다.
+
+막대 차트는 시리즈 제한을 지원하므로, 카디널리티가 높은 GROUP BY를 사용할 때 표시할 막대 개수를 제어할 수 있습니다. 또한 사용자 지정 ORDER BY도 지원하므로, 기본 정렬 대신 가장 중요한 메트릭을 기준으로 정렬할 수 있습니다.
+
+**관련 PR:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: 범주형 막대 차트 표시 유형 추가, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: 범주형(원형/막대) 차트에서 사용자 지정 ORDER BY 허용
+
+<div id="community-contributions">
+  ## 커뮤니티 기여
+</div>
+
+*[@vinzee](https://github.com/vinzee) 및 [@zoov-xavier](https://github.com/zoov-xavier)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이번 주에는 PR 검토를 통해 유용한 커뮤니티 기여 두 건이 반영되었습니다. [@vinzee](https://github.com/vinzee)의 기여는 검색창의 Lucene/SQL 토글 옆에 구문 참고 버튼을 추가한 것입니다. 이 버튼을 통해 페이지를 벗어나지 않고도 앱 내에서 쿼리 구문과 사용 가능한 옵션의 예시를 빠르게 확인할 수 있습니다.
+
+[@zoov-xavier](https://github.com/zoov-xavier)의 기여로 이제 필터 pill에서 직접 입력한 값도 사용할 수 있게 되었습니다. 이전에는 샘플링된 값이 담긴 드롭다운에서만 선택할 수 있었기 때문에, 아직 해당 샘플에 로드되지 않은 값으로는 필터링할 수 없었습니다. 이제는 원하는 값을 직접 입력한 뒤 Enter 키를 누르면 됩니다.
+
+**관련 PR:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) 검색 입력에 쿼리 구문 참고 추가, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): 필터 pill 편집 시 자유 텍스트 값 허용
+
+<div id="alert-annotations-on-charts">
+  ## 차트의 알림 어노테이션
+</div>
+
+*[@teeohhem](https://github.com/teeohhem)의 시연*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이는 알림이 발생할 때 차트에 어노테이션을 표시해 달라는 고객 요청에서 시작되었습니다. 기본적으로 꺼져 있는 새로운 show alert annotations 토글이 추가되었으며, 이를 사용하면 알림이 정확히 언제 발생했고 언제 해소되었는지를 차트에 직접 표시합니다. 현재 표시된 시간 범위 밖에서 알림이 발생 상태였다면 차트의 왼쪽 가장자리에 마커가 표시되어, 윈도우가 시작되기 전부터 이미 활성 상태였음을 알려 줍니다. 또한 알림이 발생하고 해소됨에 따라 어노테이션이 실시간으로 업데이트됩니다.
+
+Tom은 이를 재사용 가능한 어노테이션 패턴으로 구현했기 때문에, 이후 릴리스나 Kubernetes 이벤트 같은 새로운 어노테이션 유형도 같은 방식 위에 쉽게 추가할 수 있습니다.
+
+**관련 PR:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): tile charts의 알림 발생/복구 어노테이션, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): tile charts에서 알림 어노테이션 가시성 개선
+
+<div id="event-patterns-tile-polish-and-line-series-actions">
+  ## Event patterns, 타일 개선, 그리고 선 시리즈 작업
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)의 시연*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 Event patterns는 정식 대시보드 타일 유형으로 제공됩니다. 패턴 타일을 만들고 `WHERE` 절 또는 패턴 표현식을 전달할 수 있으며, 예를 들어 서비스 이름이나 심각도 텍스트를 기준으로 필터링해 반복적으로 나타나는 패턴을 한눈에 확인할 수 있습니다.
+
+Brandon은 작은 타일에서 visualization의 텍스트 줄바꿈도 개선했습니다. 이제 긴 제목은 어색하게 잘리지 않고 여러 줄에 걸쳐 표시되며 끝에는 말줄임표가 적용됩니다. 또한 타일 작업 버튼의 표시 방식도 더 깔끔해졌습니다. 작은 타일에서는 CSS 컨테이너 쿼리를 사용해 컨텍스트 메뉴로 접히고, 타일 크기를 키우면 다시 타일에 직접 표시됩니다. 저장하지 않고 타일의 Display Settings를 닫을 때 변경 사항이 조용히 버려질 수 있던 문제도 수정되었습니다. 이제 편집 내용이 손실되기 전에 제대로 경고가 표시됩니다.
+
+마지막으로, 사용자 피드백을 반영해 이제 기존 검색 작업에 더해 선 시리즈를 클릭하여 값을 복사하거나 해당 선에만 포커스를 맞출 수 있습니다. Brandon은 또한 Recharts v3 업그레이드도 진행 중이며, 이는 그룹이 많은 테이블에서 툴팁이 잘리는 문제를 해결하는 것을 목표로 합니다.
+
+**관련 PR:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: add event patterns as a first-class dashboard tile type, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): use multi-line ellipsis for dashboard tile titles, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: track display/heatmap settings as dirty for unsaved changes modal, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): per-series drill-down actions, new-tab drill-in, and search-synced focus
+
+<div id="dashboard-and-service-map-styling">
+  ## 대시보드 및 서비스 맵 스타일링
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+사용성을 중심으로 한 스타일링 개선이 이루어졌습니다. 각각의 변경은 작지만, 전체적으로 훨씬 더 깔끔한 사용 경험을 제공합니다. 대시보드에서는 편집 가능한 타일의 헤더 색상이 라이트 모드에서 어떤 것은 회색, 어떤 것은 흰색으로 일관되지 않았지만, 이제는 헤더 아래의 깔끔한 구분선과 함께 일관되게 표시됩니다. 또한 작은 반응형 카드에서 제목과 겹치지 않도록 마우스 오버 시에만 보이던 타일 작업의 위치를 조정했으며, 차트에서 확대를 초기화하는 기능도 지원합니다.
+
+서비스 맵에도 비슷한 개선이 적용되었습니다. 이제 컨트롤은 색상 모드를 인식하므로, 항상 검은색으로 표시되는 대신 라이트 모드에서는 밝게, 다크 모드에서는 어둡게 유지됩니다. 또한 범례에서 지연 시간, 오류율, 처리량을 더 명확하게 표시하며, 서비스를 클릭해 해당 서비스에 집중한 뒤 다시 클릭하면 집중 상태를 해제하고 전체 보기로 돌아갈 수 있습니다.
+
+**관련 PR:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) 대시보드 타일 스타일링 및 헤더 레이아웃 개선, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): 메트릭 색상 토글 및 popover 개선

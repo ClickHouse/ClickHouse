@@ -16,7 +16,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## مجموعة البيانات
 </div>
 
-ولعرض مجموعة بيانات تجريبية تُظهر عملية ترحيل نموذجية من Postgres إلى ClickHouse، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). وهي تتضمن كل `post` و`vote` و`user` و`comment` و`badge` على Stack Overflow من عام 2008 حتى أبريل 2024. ويظهر أدناه مخطط PostgreSQL لهذه البيانات:
+ولعرض مجموعة بيانات تجريبية تُظهر عملية ترحيل نموذجية من Postgres إلى ClickHouse، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). وهي تتضمن كل `post` و`vote` و`user` و`comment` و`badge` ظهر على Stack Overflow من عام 2008 حتى أبريل 2024. ويظهر أدناه مخطط PostgreSQL لهذه البيانات:
 
 <Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="مخطط Stack Overflow في PostgreSQL" />
 
@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> سيدفع ClickHouse عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`,`>=`, `<`, `<=`, وIN إلى خادم PostgreSQL. وبذلك يمكن جعل التحميلات التزايدية أكثر كفاءة من خلال التأكد من وجود فهرس على الأعمدة المستخدمة لتحديد مجموعة التغييرات.
+> سيُمرِّر ClickHouse عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`,`>=`, `<`, `<=` و IN إلى خادم PostgreSQL. وبذلك يمكن جعل التحميلات التزايدية أكثر كفاءة من خلال التأكد من وجود فهرس على الأعمدة المستخدمة لتحديد مجموعة التغييرات.
 
-> تتمثل إحدى الطرق الممكنة لاكتشاف عمليات UPDATE عند استخدام النسخ المتماثل للاستعلامات في استخدام [`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (معرّفات المعاملات) كعلامة مائية — إذ يشير التغيّر في هذا العمود إلى حدوث تغيير، وبالتالي يمكن تطبيقه على جدول الوجهة. يجب على المستخدمين الذين يعتمدون هذا الأسلوب الانتباه إلى أن قيم `XMIN` قد تلتف، وأن المقارنات تتطلب فحصًا كاملًا للجدول، مما يجعل تتبّع التغييرات أكثر تعقيدًا.
+> من الطرق الممكنة لاكتشاف عمليات UPDATE عند استخدام نسخ الاستعلامات استخدام [عمود النظام `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (معرّفات المعاملات) كعلامة مائية، إذ يشير التغيّر في هذا العمود إلى حدوث تغيير، وبالتالي يمكن تطبيقه على الجدول الوجهة. ويجب على المستخدمين الذين يعتمدون هذا الأسلوب الانتباه إلى أن قيم `XMIN` قد تلتف، وأن المقارنات تتطلب فحصًا كاملًا للجدول، مما يجعل تتبّع التغييرات أكثر تعقيدًا.
 
 [انقر هنا للجزء 2](/ar/get-started/migrate/postgres/migration-guide/migration-guide-part2)

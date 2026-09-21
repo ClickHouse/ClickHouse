@@ -20,8 +20,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
-#include <IO/SnappyReadBuffer.h>
-#include <IO/SnappyWriteBuffer.h>
+#include <IO/SnappyBasicReadBuffer.h>
+#include <IO/SnappyBasicWriteBuffer.h>
+#include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -34,6 +35,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -50,8 +52,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -300,8 +305,22 @@ public:
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
-        checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
-        checkHTTPHeader(request, "Content-Encoding", "snappy");
+        /// Unsupported content types and encodings get 415 Unsupported Media Type.
+        const String content_type = request.get("Content-Type", "");
+        if (content_type != "application/x-protobuf")
+            throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
+                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf')", content_type);
+
+        /// The remote-write 1.0 spec mandates snappy, but some senders can also compress with zstd.
+        const String content_encoding = request.get("Content-Encoding", "");
+        std::unique_ptr<ReadBuffer> decompressing_buf;
+        if (content_encoding == "snappy")
+            decompressing_buf = std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()));
+        else if (content_encoding == "zstd")
+            decompressing_buf = std::make_unique<ZstdInflatingReadBuffer>(wrapReadBufferPointer(request.getStream()));
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
+                "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
@@ -309,18 +328,13 @@ public:
         prometheus::WriteRequest write_request;
 
         {
-            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
             if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        if (write_request.timeseries_size())
-            protocol.writeTimeSeries(write_request.timeseries());
-
-        if (write_request.metadata_size())
-            protocol.writeMetricsMetadata(write_request.metadata());
+        protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
@@ -357,37 +371,51 @@ public:
 
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+                std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()))};
 
             if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
         }
 
-        prometheus::ReadResponse read_response;
-
-        size_t num_queries = read_request.queries_size();
-        for (size_t i = 0; i != num_queries; ++i)
-        {
-            const auto & query = read_request.queries(static_cast<int>(i));
-            auto & new_query_result = *read_response.add_results();
-            protocol.readTimeSeries(
-                *new_query_result.mutable_timeseries(),
-                query.start_timestamp_ms(),
-                query.end_timestamp_ms(),
-                query.matchers(),
-                query.hints());
-        }
-
-#    if 0
-    LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
-#    endif
-
+        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
+        /// used by `SnappyFramedWriteBuffer` for HTTP `Content-Encoding`). Serialize the response
+        /// straight into the compression buffer, then drop the `prometheus::ReadResponse` object
+        /// tree before finalizing `SnappyBasicWriteBuffer`, so only the accumulated serialized data
+        /// (not the object tree) is held while it is compressed into a single raw snappy block.
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
-        zero_copy_output_stream.finalize();
+        auto & out = getOutputStream(response);
+        SnappyBasicWriteBuffer snappy_out(&out);
+        {
+            prometheus::ReadResponse read_response;
+
+            size_t num_queries = read_request.queries_size();
+            for (size_t i = 0; i != num_queries; ++i)
+            {
+                const auto & query = read_request.queries(static_cast<int>(i));
+                auto & new_query_result = *read_response.add_results();
+                protocol.readTimeSeries(
+                    *new_query_result.mutable_timeseries(),
+                    query.start_timestamp_ms(),
+                    query.end_timestamp_ms(),
+                    query.matchers(),
+                    query.hints());
+            }
+
+#    if 0
+            LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
+#    endif
+
+            /// The zero-copy stream is intentionally not finalized here: finalizing it would flush
+            /// and compress `snappy_out` while the object tree is still alive. Serialization leaves
+            /// all bytes buffered in `snappy_out`; compression happens in `snappy_out.finalize()`
+            /// below, after the object tree has been released.
+            ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{snappy_out};
+            if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+                throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
+        }
+        snappy_out.finalize();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote read protocol is disabled");
@@ -396,7 +424,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -418,9 +446,25 @@ public:
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
+        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
+    /// with 0 (the default) meaning no limit.
+    UInt64 getLimitParam() const
+    {
+        String limit_param = params->get("limit", "");
+        if (limit_param.empty())
+            return 0;
+
+        Int64 parsed_limit = 0;
+        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                            limit_param);
+        return static_cast<UInt64>(parsed_limit);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -434,6 +478,20 @@ public:
 
         try
         {
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/format_query"))
+            {
+                /// The format_query endpoint only parses and reformats the given PromQL expression,
+                /// so it doesn't need the TimeSeries table.
+                formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -442,23 +500,17 @@ public:
                 getOutputStream(response).finalize();
             };
 
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
-
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
+                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
                 /// - limit=<number>: Maximum number of returned series
-                /// - lookback_delta=<number>: Override for the lookback period for this query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -468,6 +520,7 @@ public:
                     .start_param = start,
                     .end_param = end,
                     .step_param = step,
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -476,6 +529,7 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
+                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -487,13 +541,10 @@ public:
                     .start_param = "",
                     .end_param = "",
                     .step_param = "",
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -501,29 +552,39 @@ public:
             }
             else if (uri_path.ends_with("/series"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                /// TODO: Support limit=<number> optional parameter
+                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/metadata"))
+            {
+                String metric = params->get("metric", "");
+                /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
+                Int64 limit = getMetadataLimitParam("limit");
+                Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
 
-                protocol.getSeries(getOutputStream(response), match, start, end);
+                protocol.getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {
@@ -544,10 +605,16 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+            /// not with the query: report it as an internal error so that clients don't attribute it
+            /// to the PromQL expression.
+            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            response.setStatusAndReason(
+                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
+                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();
@@ -558,6 +625,33 @@ public:
     }
 
 private:
+    /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
+    /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
+    /// the comments removed, and the redundant parentheses dropped.
+    static void formatQuery(WriteBuffer & out, const String & query)
+    {
+        PrometheusQueryTree promql_tree;
+        promql_tree.parse(query);
+
+        writeString(R"({"status":"success","data":)", out);
+        writeJSONString(promql_tree.toString(), out, FormatSettings{});
+        writeChar('}', out);
+    }
+
+    /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
+    Int64 getMetadataLimitParam(const String & name) const
+    {
+        String value = params->get(name, "");
+        if (value.empty())
+            return -1;
+
+        Int64 result = 0;
+        if (!tryParse(result, value.data(), value.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value of the '{}' parameter: '{}', expected an integer", name, value);
+        return result;
+    }
+
     /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
     /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
     static std::optional<String> extractLabelValuesName(std::string_view uri_path)
@@ -637,7 +731,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

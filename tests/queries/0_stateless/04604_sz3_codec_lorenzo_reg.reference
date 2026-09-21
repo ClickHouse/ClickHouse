@@ -1,0 +1,4 @@
+ALGO_LORENZO_REG data round-trips within the error bound (the read failed with CORRUPTED_DATA before the fix)
+1	1	1
+The same holds after a merge recompresses the data
+1	1

@@ -34,9 +34,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Имя хоста или IP-адрес ClickStack
 
 <Steps>
-  <Step>
-    #### Установите модуль OpenTelemetry для Nginx
-
+  <Step title="Установите модуль OpenTelemetry для Nginx" id="install-module">
     Самый простой способ добавить трассировку в Nginx — использовать официальный образ Nginx со встроенной поддержкой OpenTelemetry.
 
     ##### Использование образа nginx:otel
@@ -55,9 +53,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Настройте Nginx для отправки трассировок в ClickStack
-
+  <Step title="Настройте Nginx для отправки трассировок в ClickStack" id="configure-nginx">
     Добавьте конфигурацию OpenTelemetry в файл `nginx.conf`. Она загружает модуль и направляет трассировки в конечную точку OTLP ClickStack.
 
     Сначала получите свой ключ API:
@@ -97,7 +93,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
                 otel_trace_context propagate;
                 otel_span_name "$request_method $uri";
                 
-                # Добавить сведения о запросе в трассы
+                # Добавить сведения о запросе в трассировки
                 otel_span_attr http.status_code $status;
                 otel_span_attr http.request.method $request_method;
                 otel_span_attr http.route $uri;
@@ -132,7 +128,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ##### Что делает эта конфигурация
 
     **Что трассируется:**
-    Каждый запрос к Nginx создает спан трассировки, в котором отображаются:
+    Каждый запрос к Nginx создаёт спан трассировки, в котором отображаются:
 
     * Метод запроса и путь
     * Код состояния HTTP
@@ -159,9 +155,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверка трассировок в HyperDX
-
+  <Step title="Проверка трассировок в HyperDX" id="verifying-traces">
     После настройки войдите в HyperDX и убедитесь, что трассировки поступают. Вы должны увидеть примерно такую картину; если трассировки не отображаются, попробуйте изменить временной диапазон:
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Просмотр трассировок" />
@@ -175,9 +169,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию трассировки nginx перед настройкой рабочих систем, мы предоставляем демо-набор данных с заранее сгенерированными трассировками Nginx с реалистичными шаблонами трафика.
 
 <Steps>
-  <Step>
-    #### Запустите ClickStack
-
+  <Step title="Запустите ClickStack" id="start-clickstack">
     Если ClickStack у вас ещё не запущен, запустите его с помощью:
 
     ```bash
@@ -193,9 +185,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Порт 4318: конечная точка OTLP HTTP (используется для демо-трассировок)
   </Step>
 
-  <Step>
-    #### Загрузите демо-набор данных
-
+  <Step title="Загрузите демо-набор данных" id="download-sample">
     Скачайте файл с примерами трассировок и сдвиньте временные метки к текущему времени:
 
     ```bash
@@ -212,9 +202,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Исходные шаблоны трафика сохранены, но сдвинуты к текущему времени
   </Step>
 
-  <Step>
-    #### Отправьте трассировки в ClickStack
-
+  <Step title="Отправьте трассировки в ClickStack" id="send-traces">
     Задайте свой ключ API как переменную окружения (если он ещё не задан):
 
     ```bash
@@ -245,9 +233,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Вы должны увидеть ответ вида `{"partialSuccess":{}}`, который означает, что трассировки успешно отправлены. Все 1 000 трассировок будут приняты ClickStack.
   </Step>
 
-  <Step>
-    #### Проверьте трассировки в HyperDX
-
+  <Step title="Проверьте трассировки в HyperDX" id="verify-demo-traces">
     1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется её создать)
     2. Перейдите в Search view и выберите в поле source значение `Traces`
     3. Установите временной диапазон **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
@@ -271,13 +257,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы помочь вам начать мониторинг трассировок в ClickStack, мы предоставляем основные визуализации для данных трассировок.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенный дашборд
-
+  <Step title="Импортируйте преднастроенную панель мониторинга" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
@@ -288,11 +272,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step>
-    #### Панель мониторинга будет создана со всеми преднастроенными визуализациями.
-
+  <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями." id="created-dashboard">
     <Note>
-      Для демо-набора данных установите временной диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (с учётом вашего местного часового пояса). По умолчанию у импортированного дашборда временной диапазон не задан.
+      Для демо-набора данных установите временной диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (с учётом вашего местного часового пояса). По умолчанию у импортированной панели мониторинга временной диапазон не задан.
     </Note>
 
     <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Пример панели мониторинга" />
@@ -358,7 +340,7 @@ tail -f /var/log/nginx/access.log
 * Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинг API, события безопасности)
 
 <div id="going-to-production">
-  ## Переход в production
+  ## Переход к продакшну
 </div>
 
-В этом руководстве трассировки отправляются напрямую из модуля Nginx OpenTelemetry в конечную точку OTLP ClickStack. Для production-развертываний мы рекомендуем запускать собственный OTel Collector в роли шлюза, чтобы обеспечить батчинг и устойчивость к сбоям. Описание production-конфигурации см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве трассировки отправляются напрямую из модуля Nginx OpenTelemetry в конечную точку OTLP ClickStack. Для продакшн-развертываний мы рекомендуем запускать собственный OTel collector в роли шлюза, чтобы обеспечить пакетную отправку и отказоустойчивость. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

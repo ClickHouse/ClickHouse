@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 #include <IO/ReadHelpers.h>
@@ -11,6 +12,8 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Coordination/KeeperMemNodesStorage.h>
 
 
 namespace DB
@@ -46,7 +49,7 @@ static void deserializeSnapshotMagic(ReadBuffer & in)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
 }
 
-static int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer & in)
+static int64_t deserializeSessionAndTimeout(KeeperMemoryStorage & storage, ReadBuffer & in)
 {
     int32_t count = 0;
     Coordination::read(count, in);
@@ -65,7 +68,7 @@ static int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer 
     return max_session_id;
 }
 
-static void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
+static void deserializeACLMap(KeeperMemoryStorage & storage, ReadBuffer & in)
 {
     int32_t count = 0;
     Coordination::read(count, in);
@@ -93,7 +96,7 @@ static void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+static int64_t deserializeStorageData(KeeperMemoryStorage & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -101,7 +104,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
     size_t count = 0;
     while (path != "/")
     {
-        typename KeeperStorage::Node node{};
+        KeeperMemoryStorage::Node node{};
         String data;
         Coordination::read(data, in);
         node.setData(data);
@@ -111,7 +114,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
             /// Some strange ACL ID during deserialization from ZooKeeper
             if (acl_id_64 == -1)
                 acl_id_64 = 0;
-            node.acl_id = static_cast<ACLId>(acl_id_64);
+            node.stats.acl_id = static_cast<ACLId>(acl_id_64);
         }
 
         /// Deserialize stat
@@ -123,30 +126,38 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
 
         int64_t ctime = 0;
         Coordination::read(ctime, in);
-        node.stats.setCtime(ctime);
+        node.stats.setCTime(ctime);
         Coordination::read(node.stats.mtime, in);
         Coordination::read(node.stats.version, in);
         Coordination::read(node.stats.cversion, in);
         Coordination::read(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         Coordination::read(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
-            node.stats.setEphemeralOwner(ephemeral_owner);
+        const bool is_container = ephemeral_owner == KeeperNodeStats::CONTAINER_EPHEMERAL_OWNER;
+        const bool is_ephemeral = !is_container && ephemeral_owner != 0;
+        if (is_container)
+            node.stats.makeContainer();
+        else if (is_ephemeral)
+            node.stats.makeEphemeral(ephemeral_owner);
         Coordination::read(node.stats.pzxid, in);
         if (!path.empty())
         {
-            if (ephemeral_owner == 0)
+            if (!is_ephemeral)
                 node.stats.setSeqNum(node.stats.cversion);
 
-            storage.container.insertOrReplace(path, node);
+            storage.nodes.container.insertOrReplace(path, node);
 
-            if (ephemeral_owner != 0)
+            if (is_container)
+            {
+                storage.container_paths.insert(path);
+            }
+            else if (is_ephemeral)
             {
                 storage.committed_ephemerals[ephemeral_owner].insert(path);
                 ++storage.committed_ephemeral_nodes;
             }
 
-            storage.acl_map.addUsage(node.acl_id);
+            storage.acl_map.addUsage(node.stats.acl_id);
         }
         Coordination::read(path, in);
         count++;
@@ -154,17 +165,25 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
             LOG_INFO(log, "Deserialized nodes from snapshot: {}", count);
     }
 
-    for (const auto & itr : storage.container)
+    /// ZooKeeper snapshot format uses '/' as a loop terminator, not a serialized node.
+    /// Insert an empty root.
+    if (!storage.nodes.container.contains("/"))
+    {
+        KeeperMemoryStorage::Node root_node{};
+        storage.nodes.container.insertOrReplace("/", root_node);
+    }
+
+    for (const auto & itr : storage.nodes.container)
     {
         if (itr.key != "/")
         {
             auto parent_path = Coordination::parentNodePath(itr.key);
-            storage.container.updateValue(
+            storage.nodes.container.updateValue(
                 parent_path,
-                [my_path = itr.key](typename KeeperStorage::Node & value)
+                [my_path = itr.key](KeeperMemoryStorage::Node & value)
                 {
                     value.addChild(Coordination::getBaseNodeName(my_path));
-                    value.increaseNumChildren();
+                    value.stats.increaseNumChildren();
                 });
         }
     }
@@ -172,7 +191,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeKeeperStorageFromSnapshot(KeeperMemoryStorage & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -213,7 +232,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
 
 namespace fs = std::filesystem;
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, LoggerPtr log)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperMemoryStorage & storage, const std::string & path, LoggerPtr log)
 {
     std::map<int64_t, std::string> existing_snapshots;
     for (const auto & p : fs::directory_iterator(path))
@@ -331,6 +350,21 @@ Coordination::ZooKeeperRequestPtr deserializeCreateTxn(ReadBuffer & in)
     return result;
 }
 
+/// ZooKeeper's CreateContainerTxn has the same layout as CreateTxn but without the `ephemeral`
+/// boolean (containers are never ephemeral), so it needs its own deserializer.
+Coordination::ZooKeeperRequestPtr deserializeCreateContainerTxn(ReadBuffer & in)
+{
+    std::shared_ptr<Coordination::ZooKeeperCreateRequest> result = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    Coordination::read(result->path, in);
+    Coordination::read(result->data, in);
+    Coordination::read(result->acls, in);
+    result->is_container = true;
+    Coordination::read(result->parent_cversion, in);
+
+    result->restored_from_zookeeper_log = true;
+    return result;
+}
+
 Coordination::ZooKeeperRequestPtr deserializeDeleteTxn(ReadBuffer & in)
 {
     std::shared_ptr<Coordination::ZooKeeperRemoveRequest> result = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
@@ -433,6 +467,13 @@ Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtx
         case 2:
             result = deserializeDeleteTxn(in);
             break;
+        case 19:
+            result = deserializeCreateContainerTxn(in);
+            break;
+        /// OpCode.deleteContainer carries an ordinary DeleteTxn payload.
+        case 20:
+            result = deserializeDeleteTxn(in);
+            break;
         case 5:
             result = deserializeSetTxn(in);
             break;
@@ -501,7 +542,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-static bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
+static bool deserializeTxn(KeeperMemoryStorage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t checksum = 0;
     Coordination::read(checksum, in);
@@ -548,7 +589,7 @@ static bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /
             if (request->getOpNum() == Coordination::OpNum::Multi && hasErrorsInMultiRequest(request))
                 return true;
 
-            storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false);
+            storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false, /*digest=*/std::nullopt, /*log_idx=*/0);
             storage.processRequest(request, session_id, zxid);
         }
     }
@@ -556,7 +597,7 @@ static bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, LoggerPtr log)
+void deserializeLogAndApplyToStorage(KeeperMemoryStorage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -586,7 +627,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeLogsAndApplyToStorage(KeeperMemoryStorage & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     std::map<int64_t, std::string> existing_logs;
     for (const auto & p : fs::directory_iterator(path))

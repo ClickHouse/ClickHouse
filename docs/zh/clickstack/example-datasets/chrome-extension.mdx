@@ -41,18 +41,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 克隆扩展仓库
-
+  <Step title="克隆扩展仓库" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### 安装扩展
-
+  <Step title="安装扩展" id="install-extension">
     1. 打开 Chrome，前往 `chrome://extensions`。
     2. 启用**开发者模式** (右上角) 。
     3. 点击**加载已解压的扩展程序**。
@@ -61,10 +57,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     扩展安装后会以 **HyperDX Browser Extension** 的形式出现在工具栏中。
   </Step>
 
-  <Step>
-    ### 启动 ClickStack
-
-    如果你已经有 ClickStack 或 HyperDX 摄取端点，请跳到[配置扩展](#configure-extension)。
+  <Step title="启动 ClickStack" id="start-clickstack">
+    如果你已经有 ClickStack 或 HyperDX 摄取端点，请跳到 [配置扩展](#configure-extension)。
 
     如果是本地 ClickStack 环境，请启动 OpenTelemetry collector。将 `{{CLICKHOUSE_ENDPOINT}}` 和 `{{CLICKHOUSE_PASSWORD}}` 替换为你的 ClickHouse 连接信息：
 
@@ -87,17 +81,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     如需在本地完整部署 ClickHouse 和 HyperDX UI，请参阅 [ClickStack 入门](/zh/clickstack/getting-started/oss)。
   </Step>
 
-  <Step>
-    ### 获取你的 API key
-
+  <Step title="获取你的 API key" id="get-api-key">
     对于本地 ClickStack，可能不需要 API key——如果将遥测数据发送到 `http://localhost:4318` 上的自托管 collector，请将扩展中的该字段留空。
 
     对于 ClickStack Cloud 或 HyperDX Cloud 摄取，请打开 HyperDX，前往 **Team Settings → API Keys**，然后复制你的**摄取 API key**。
   </Step>
 
-  <Step>
-    ### 配置扩展
-
+  <Step title="配置扩展" id="configure-extension">
     点击 Chrome 工具栏中的 **HyperDX Browser Extension** 图标，并填写以下设置：
 
     | 字段                               | 本地 ClickStack 示例                      | 说明                                                   |
@@ -119,20 +109,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     上面的截图展示了一个典型的本地配置：已启用监控，已设置服务名称，collector 指向 `http://localhost:4318`，并且 trace 传播仅限 API 和 localhost URL。
   </Step>
 
-  <Step>
-    ### 浏览网站并生成一个 session
-
+  <Step title="浏览网站并生成一个会话" id="browse-site">
     在 Chrome 中打开任意网站或本地应用——例如前端开发服务器的 [http://localhost:3000](http://localhost:3000)。
 
     像平常一样与页面交互：点击链接、提交表单、触发错误，以及在不同视图之间切换。只要配置有效，扩展就会在每次页面加载时自动注入 Browser SDK。
   </Step>
 
-  <Step>
-    ### 查看你的 会话回放
-
+  <Step title="查看你的 会话回放" id="view-session-replay">
     返回 [http://localhost:8080](http://localhost:8080) 上的 HyperDX，并从左侧边栏进入 **Client Sessions**。
 
-    你应该能看到自己的 session 已显示在列表中，包括其耗时和事件数。点击 ▶️ 按钮即可回放。
+    你应该能看到自己的会话已显示在列表中，包括其耗时和事件数。点击 ▶️ 按钮即可回放。
 
     在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间线显示的详细程度。
   </Step>

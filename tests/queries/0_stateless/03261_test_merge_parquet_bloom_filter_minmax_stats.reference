@@ -2,15 +2,13 @@
   "data": [],
   "rows": 0,
   "statistics": {
-    "rows_read": 4,
-    "bytes_read": 56
+    "rows_read": 4
   }
 }
 {
   "data": [],
   "rows": 0,
   "statistics": {
-    "rows_read": 0,
-    "bytes_read": 0
+    "rows_read": 0
   }
 }

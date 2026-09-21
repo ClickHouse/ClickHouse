@@ -110,6 +110,127 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+## geoToUTM {#geotoutm}
+
+Converts WGS84 geographic coordinates `(longitude, latitude)` to [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) coordinates.
+
+UTM is a set of 60 transverse Mercator projections, each covering a 6°-wide longitudinal zone, that map geographic coordinates to a planar grid in metres. The zone is selected automatically from the longitude, applying the standard exceptions for Norway and Svalbard, unless an explicit `zone` is given. UTM is only defined for latitudes in the range `[-80°, 84°]`; the polar caps use the separate UPS system.
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**Arguments**
+
+- `longitude` — Longitude in degrees. Range: `[-180°, 180°]`. [`Float32`](/reference/data-types/float)/[`Float64`](/reference/data-types/float).
+- `latitude` — Latitude in degrees. Range: `[-80°, 84°]`. [`Float32`](/reference/data-types/float)/[`Float64`](/reference/data-types/float).
+- `zone` — Optional. Force the projection into this UTM zone instead of selecting it automatically. Range: `[1, 60]`. [`(U)Int*`](/reference/data-types/int-uint).
+
+**Returned value**
+
+A named tuple `(easting, northing, zone, band)`: `easting` and `northing` in metres ([`Float64`](/reference/data-types/float)), the UTM `zone` number ([`UInt8`](/reference/data-types/int-uint)), and the MGRS latitude `band` letter ([`FixedString(1)`](/reference/data-types/fixedstring)). A `band` of `'N'` or later denotes the northern hemisphere.
+
+Generates an exception when the latitude is outside `[-80°, 84°]` or the longitude is outside `[-180°, 180°]`.
+
+**Example**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+## UTMToGeo {#utmtogeo}
+
+Converts [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) coordinates back to WGS84 geographic coordinates `(longitude, latitude)`. This is the inverse of [`geoToUTM`](#geotoutm).
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**Arguments**
+
+- `easting` — Easting in metres (includes the 500000 m false easting). [`(U)Int*`](/reference/data-types/int-uint)/[`Float*`](/reference/data-types/float).
+- `northing` — Northing in metres (includes the 10000000 m false northing on the southern hemisphere). [`(U)Int*`](/reference/data-types/int-uint)/[`Float*`](/reference/data-types/float).
+- `zone` — UTM zone number. Range: `[1, 60]`. [`(U)Int*`](/reference/data-types/int-uint).
+- `is_north` — Hemisphere: `1` for the northern hemisphere, `0` for the southern. [`(U)Int*`](/reference/data-types/int-uint).
+
+**Returned value**
+
+A named tuple `(longitude, latitude)` in degrees. [`Tuple(Float64, Float64)`](/reference/data-types/tuple).
+
+**Example**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+## geoToMGRS {#geotomgrs}
+
+Encodes WGS84 geographic coordinates `(longitude, latitude)` as a [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) string.
+
+The string is `<zone><band><100km square><easting><northing>`, for example `31UDQ4825111935`. The `precision` argument controls the number of digits used for each of the easting and northing: `5` (default) for 1 m, `4` for 10 m, `3` for 100 m, `2` for 1 km, `1` for 10 km, and `0` for the 100 km grid square only. MGRS is only defined for latitudes in the range `[-80°, 84°]`.
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**Arguments**
+
+- `longitude` — Longitude in degrees. Range: `[-180°, 180°]`. [`Float32`](/reference/data-types/float)/[`Float64`](/reference/data-types/float).
+- `latitude` — Latitude in degrees. Range: `[-80°, 84°]`. [`Float32`](/reference/data-types/float)/[`Float64`](/reference/data-types/float).
+- `precision` — Optional. Number of digits for each of easting and northing. Default: `5`. Range: `[0, 5]`. [`(U)Int*`](/reference/data-types/int-uint).
+
+**Returned value**
+
+The MGRS reference string. [`String`](/reference/data-types/string).
+
+**Example**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+## MGRSToGeo {#mgrstogeo}
+
+Decodes an [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) string into WGS84 geographic coordinates `(longitude, latitude)`. This is the inverse of [`geoToMGRS`](#geotomgrs).
+
+The returned point is the centre of the referenced grid square, so the precision of the result matches the precision encoded in the string. Whitespace in the input is ignored and letters are case-insensitive.
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**Arguments**
+
+- `mgrs` — MGRS reference string to decode. [`String`](/reference/data-types/string)/[`FixedString`](/reference/data-types/fixedstring).
+
+**Returned value**
+
+A named tuple `(longitude, latitude)` in degrees. [`Tuple(Float64, Float64)`](/reference/data-types/tuple).
+
+**Example**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 ## pointInEllipses {#pointinellipses}
 
 Checks whether the point belongs to at least one of the ellipses.
@@ -153,10 +274,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](/reference/data-types/tuple) — A tuple of two numbers.
-- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](/reference/data-types/array). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](/reference/data-types/tuple) — A tuple of two numbers, or a [Point](/reference/data-types/geo#point).
+- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](/reference/data-types/array) or [Ring](/reference/data-types/geo#ring). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3.
 - The function supports polygon with holes (cut-out sections). Data type — [Polygon](/reference/data-types/geo#polygon). Either pass the entire `Polygon` as the second argument, or pass the outer ring first and then each hole as separate additional arguments.
 - The function also supports multipolygon. Data type — [MultiPolygon](/reference/data-types/geo#multipolygon). Either pass the entire `MultiPolygon` as the second argument, or list each component polygon as its own argument.
+- The polygon argument can also be a [Geometry](/reference/data-types/geo#geometry) column holding polygon-shaped values (`Ring`, `Polygon`, or `MultiPolygon`).
+
+The polygon-shaped types ([Ring](/reference/data-types/geo#ring), [Polygon](/reference/data-types/geo#polygon), [MultiPolygon](/reference/data-types/geo#multipolygon) and [Geometry](/reference/data-types/geo#geometry)) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
 
 **Returned values**
 
@@ -173,6 +297,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+The polygon can also be given using the named geometric data types, including as a table column:
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **Note**  

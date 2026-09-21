@@ -187,8 +187,8 @@ If the regular expression has capturing groups (sub-patterns), the function matc
         "SELECT extract('test@clickhouse.com', '.*@(.*)$')",
         R"(
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                            │
-└───────────────────────────────────────────┘
+│ clickhouse.com                             │
+└────────────────────────────────────────────┘
         )"
     },
     {

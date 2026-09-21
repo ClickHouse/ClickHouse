@@ -4,7 +4,7 @@
 -- when a constant is cast to a `Variant` containing nested `LowCardinality`.
 --
 -- Root cause: `KeyCondition::applyFunctionChainToColumn` used to call
--- `convertToFullIfNeeded` on the input column which, for `ColumnConst<ColumnVariant(LowCardinality, ...)>`,
+-- `convertToFullIfWrapped` on the input column which, for `ColumnConst<ColumnVariant(LowCardinality, ...)>`,
 -- recursed into variant sub-columns and stripped `LowCardinality` — but `removeLowCardinality`
 -- on the type only strips the outer level, leaving the type with `LowCardinality` inside the
 -- `Variant` while the column had it stripped. A subsequent cast dispatched to

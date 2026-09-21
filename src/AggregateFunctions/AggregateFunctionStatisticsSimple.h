@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <memory>
 
 #include <base/arithmeticOverflow.h>
 
@@ -13,6 +14,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 
 
 /** This is simple, not numerically stable
@@ -77,6 +80,7 @@ public:
     using ColVecT2 = ColumnVectorOrDecimal<T2>;
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
+    using Base = IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>;
 
     explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_, StatisticsFunctionKind kind_)
         : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
@@ -111,6 +115,96 @@ public:
             else
                 this->data(place).add(
                     static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
+        }
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        /// Decimal arguments need a per-row conversion with the source scale; keep them on the generic path.
+        if constexpr (is_decimal<T1>)
+        {
+            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+        }
+        else
+        {
+            auto & data = this->data(place);
+            if (if_argument_pos >= 0)
+            {
+                const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                if constexpr (StatFunc::num_args == 2)
+                    data.template addManyConditional<T1, T2, false>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(),
+                        static_cast<const ColVecT2 &>(*columns[1]).getData().data(),
+                        flags, row_begin, row_end);
+                else
+                    data.template addManyConditional<T1, false>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(), flags, row_begin, row_end);
+            }
+            else
+            {
+                if constexpr (StatFunc::num_args == 2)
+                    data.addMany(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(),
+                        static_cast<const ColVecT2 &>(*columns[1]).getData().data(),
+                        row_begin, row_end);
+                else
+                    data.addMany(static_cast<const ColVecT1 &>(*columns[0]).getData().data(), row_begin, row_end);
+            }
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if constexpr (is_decimal<T1>)
+        {
+            Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+        }
+        else
+        {
+            auto & data = this->data(place);
+            if (if_argument_pos >= 0)
+            {
+                /// Merging the two sets of flags into a temporary buffer vectorizes better
+                /// than fusing both flags into the accumulation loop.
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+                std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+                for (size_t i = row_begin; i < row_end; ++i)
+                    final_flags[i] = (!null_map[i]) & !!if_flags[i];
+
+                if constexpr (StatFunc::num_args == 2)
+                    data.template addManyConditional<T1, T2, false>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(),
+                        static_cast<const ColVecT2 &>(*columns[1]).getData().data(),
+                        final_flags.get(), row_begin, row_end);
+                else
+                    data.template addManyConditional<T1, false>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(), final_flags.get(), row_begin, row_end);
+            }
+            else
+            {
+                if constexpr (StatFunc::num_args == 2)
+                    data.template addManyConditional<T1, T2, true>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(),
+                        static_cast<const ColVecT2 &>(*columns[1]).getData().data(),
+                        null_map, row_begin, row_end);
+                else
+                    data.template addManyConditional<T1, true>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData().data(), null_map, row_begin, row_end);
+            }
         }
     }
 

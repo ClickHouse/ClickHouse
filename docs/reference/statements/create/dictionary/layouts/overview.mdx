@@ -30,6 +30,9 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 | [direct](/reference/statements/create/dictionary/layouts/direct) | No in-memory storage — queries the source directly for each request. |
 | [complex_key_direct](/reference/statements/create/dictionary/layouts/direct#complex_key_direct) | Like `direct`, for composite keys. |
 | [ip_trie](/reference/statements/create/dictionary/layouts/ip-trie) | Trie structure for fast IP prefix lookups (CIDR-based). |
+| [hierarchical](/reference/statements/create/dictionary/layouts/hierarchical) | Support for hierarchies with a numeric key describing parent-child relationships. |
+| [polygon](/reference/statements/create/dictionary/layouts/polygon) | Efficient point-in-polygon lookups (reverse geocoding). |
+| [regexp_tree](/reference/statements/create/dictionary/layouts/regexp-tree) | Matches keys against a tree of regular expressions. |
 
 <Tip>
 **Recommended layouts**

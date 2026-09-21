@@ -57,7 +57,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   * [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)，并将其添加到类路径中
     * 从 `0.9.4` 版本开始，已提供制品 https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc-all
     * 使用限定符 `all` 可获取包含所有已打包依赖项的 jar。
-  * 或从官方仓库[这里](https://github.com/ClickHouse/clickhouse-java/releases)获取
+  * 或从官方仓库[这里](https://github.com/ClickHouse/clickhouse-java/releases)下载
 
   ## 配置
 
@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   这等同于以下 JDBC URL：
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -223,7 +223,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | Decimal256    | DECIMAL  | java.math.BigDecimal |
   | Bool          | BOOLEAN  | java.lang.Boolean    |
 
-  * 数值类型之间可以相互转换。因此，`Int8` 可以获取为 `Float64`，反之亦然。:
+  * 数值类型之间可以相互转换。因此，`Int8` 可以读取为 `Float64`，反之亦然。:
     * `rs.getObject(1, Float64.class)` 将返回 `Int8` 列的 `Float64` 值。
     * `rs.getLong(1)` 将返回 `Int8` 列的 `Long` 值。
     * 如果 `Int16` 列的值可以放入 `Byte`，`rs.getByte(1)` 就可以返回 `Byte` 值。
@@ -260,7 +260,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | ------------- | --------- | ------------------ |
   | Date          | DATE      | java.sql.Date      |
   | Date32        | DATE      | java.sql.Date      |
-  | DateTime      | TIMESTAMP | java.sql.Timestamp |
+  | 日期时间          | TIMESTAMP | java.sql.Timestamp |
   | DateTime64    | TIMESTAMP | java.sql.Timestamp |
   | Time          | TIME      | java.sql.Time      |
   | Time64        | TIME      | java.sql.Time      |
@@ -300,10 +300,10 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | ClickHouse 类型                              | `getBaseTypeName()`                 | `getBaseType()`       |
   | ------------------------------------------ | ----------------------------------- | --------------------- |
   | `Array(<基本类型>)`                            | `<基本类型>`                            | `<JDBC 基本类型>`         |
-  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型的 JDBC 类型>`     |
+  | `Array(<Parameterized Type>(<N>))`         | `<参数化类型>(<N>)`                      | `<基本类型对应的 JDBC 类型>`   |
   | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                  | `<内部 Type 的 JDBC 类型>` |
   | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`            | `<内部 Type 的 JDBC 类型>` |
-  | `Array(Array(...(<类型>)))`                  | `<Type>` (最内层的元素)                   | `<最内层元素的 JDBC 类型>`    |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (最内层的元素)                   | `<最内层元素的 JDBC 类型>`    |
   | `Array(Tuple(...))`                        | `Tuple(...)` (完整定义)                 | `OTHER`               |
   | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (完整定义) | `VARCHAR`             |
 
@@ -331,7 +331,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | Array(FixedString(8))                                                      | FixedString(8)                                                      | VARCHAR         |
   | Array(Bool)                                                                | Bool                                                                | BOOLEAN         |
   | Array(Date)                                                                | Date                                                                | DATE            |
-  | Array(DateTime)                                                            | 日期时间                                                                | TIMESTAMP       |
+  | Array(日期时间)                                                                | 日期时间                                                                | TIMESTAMP       |
   | Array(UUID)                                                                | UUID                                                                | OTHER           |
   | Array(Nullable(Int32))                                                     | Nullable(Int32)                                                     | INTEGER         |
   | Array(Nullable(String))                                                    | Nullable(String)                                                    | VARCHAR         |
@@ -396,7 +396,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -772,7 +772,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   | 事务支持                          | 部分支持    | 不支持               |
   | 响应列重命名                        | 部分支持    | 不支持               |
   | 多条 SQL 语句                     | 不支持     | 不允许               |
-  | 命名参数                          | 支持      | 不支持 (JDBC 规范中未定义) |
+  | 命名参数                          | 支持      | 不支持 (不在 JDBC 规范中) |
   | 通过 `PreparedStatement` 流式传输数据 | 支持      | 不支持               |
 
   * JDBC V2 采用了更轻量的实现，因此移除了一些功能。

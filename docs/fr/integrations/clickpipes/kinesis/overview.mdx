@@ -36,23 +36,23 @@ Vous vous êtes familiarisé avec l’[introduction à ClickPipes](/fr/integrati
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Sélectionner le type de source de données" size="lg" border />
 
-4. Remplissez le formulaire en indiquant un nom pour votre ClickPipe, une description (facultative), votre rôle IAM ou vos identifiants, ainsi que les autres informations de connexion.
+4. Remplissez le formulaire en indiquant un nom pour votre ClickPipe, une description (facultative), votre rôle IAM ou vos identifiants, ainsi que les autres détails de connexion.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Renseigner les détails de connexion" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Remplir les détails de connexion" size="lg" border />
 
-5. Sélectionnez le Kinesis Stream et l&#39;offset de départ. L&#39;UI affichera un exemple de document provenant de la source sélectionnée (Kafka topic, etc.). Vous pouvez également activer Enhanced Fan-out pour les Kinesis streams afin d&#39;améliorer les performances et la stabilité de votre ClickPipe (plus d&#39;informations sur Enhanced Fan-out sont disponibles [ici](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. Sélectionnez le Kinesis Stream et l&#39;offset de départ. L&#39;UI affichera un exemple de document provenant de la source sélectionnée (topic Kafka, etc.). Vous pouvez également activer Enhanced Fan-out pour les Kinesis streams afin d&#39;améliorer les performances et la stabilité de votre ClickPipe (vous trouverez plus d&#39;informations sur Enhanced Fan-out [ici](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Définir le format de données et le topic" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Définir le format des données et le topic" size="lg" border />
 
-6. À l&#39;étape suivante, vous pouvez choisir d&#39;ingérer les données dans une nouvelle table ClickHouse ou de réutiliser une table existante. Suivez les instructions à l&#39;écran pour modifier le nom de la table, le schéma et les paramètres. Vous pouvez voir un aperçu en temps réel de vos modifications dans l&#39;exemple de table affiché en haut.
+6. À l&#39;étape suivante, vous pouvez choisir d&#39;ingérer les données dans une nouvelle table ClickHouse ou de réutiliser une table existante. Suivez les instructions affichées à l&#39;écran pour modifier le nom de la table, le schéma et les paramètres. Un aperçu en temps réel de vos modifications s&#39;affiche dans l&#39;exemple de table en haut de l&#39;écran.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Définir la table, le schéma et les paramètres" size="lg" border />
 
-Vous pouvez également personnaliser les paramètres avancés à l&#39;aide des contrôles fournis
+Vous pouvez également personnaliser les paramètres avancés à l&#39;aide des contrôles fournis.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Définir les contrôles avancés" size="lg" border />
 
-7. Vous pouvez aussi choisir d&#39;ingérer vos données dans une table ClickHouse existante. Dans ce cas, l&#39;UI vous permettra de mapper les champs de la source aux champs ClickHouse dans la table de destination sélectionnée.
+7. Vous pouvez aussi choisir d&#39;ingérer vos données dans une table ClickHouse existante. Dans ce cas, l&#39;UI vous permettra de mapper les champs de la source vers les champs ClickHouse de la table de destination sélectionnée.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Utiliser une table existante" size="lg" border />
 
@@ -65,21 +65,21 @@ Vous pouvez également personnaliser les paramètres avancés à l&#39;aide des 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border />
 
-9. En cliquant sur &quot;Complete Setup&quot;, le système enregistrera votre ClickPipe et vous pourrez le voir dans le tableau récapitulatif.
+9. En cliquant sur &quot;Complete Setup&quot;, le système enregistrera votre ClickPipe et vous pourrez le voir apparaître dans le tableau récapitulatif.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Avis de réussite" size="sm" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Notification de réussite" size="sm" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Avis de suppression" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Notification de suppression" size="lg" border />
 
-Le tableau récapitulatif fournit des contrôles pour afficher des données d&#39;exemple provenant de la source ou de la table de destination dans ClickHouse
+Le tableau récapitulatif fournit des contrôles permettant d&#39;afficher un échantillon de données provenant de la source ou de la table de destination dans ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Afficher la destination" size="lg" border />
 
 Ainsi que des contrôles pour supprimer le ClickPipe et afficher un récapitulatif de la tâche d&#39;ingestion.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Afficher l'aperçu" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Afficher la vue d'ensemble" size="lg" border />
 
-10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe. S&#39;il s&#39;agit d&#39;un ClickPipe de streaming, il s&#39;exécutera en continu et ingérera des données en temps réel depuis votre source de données distante. Sinon, il ingérera le batch, puis se terminera.
+10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe. S&#39;il s&#39;agit d&#39;un ClickPipe de streaming, il s&#39;exécutera en continu et ingérera les données en temps réel depuis votre source de données distante. Sinon, il ingérera le batch puis se terminera.
 
 <div id="supported-data-formats">
   ## Formats de données pris en charge
@@ -225,4 +225,4 @@ le ClickPipe redémarre automatiquement le consommateur et poursuit le traitemen
   ## Authentification
 </div>
 
-Pour accéder aux flux Amazon Kinesis, vous pouvez utiliser des [identifiants IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) ou un [rôle IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Pour en savoir plus sur la configuration d’un rôle IAM, vous pouvez [consulter ce guide](/fr/integrations/clickpipes/kinesis/auth), qui explique comment configurer un rôle compatible avec ClickHouse Cloud
+Pour accéder aux Kinesis streams d’Amazon, vous pouvez utiliser des [identifiants IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) ou un [rôle IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Pour plus de détails sur la configuration d’un rôle IAM, vous pouvez [consulter ce guide](/fr/integrations/clickpipes/kinesis/auth) expliquant comment configurer un rôle compatible avec ClickHouse Cloud

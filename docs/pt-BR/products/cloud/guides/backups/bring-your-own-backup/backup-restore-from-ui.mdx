@@ -26,21 +26,17 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 </div>
 
 <Note>
-  Estas etapas são semelhantes à configuração segura do S3, conforme descrito em [&quot;Acessando dados do S3 com segurança&quot;](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely). No entanto, há ações adicionais necessárias nas permissões da role.
+  Estas etapas são semelhantes à configuração segura do S3, conforme descrito em [&quot;Acessando dados do S3 com segurança&quot;](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely), no entanto, há ações adicionais necessárias nas permissões da role
 </Note>
 
 Siga as etapas abaixo na sua conta da AWS:
 
 <Steps>
-  <Step>
-    ##### Crie um bucket do S3 na AWS
-
+  <Step title="Crie um bucket do S3 na AWS" id="create-s3-bucket">
     Crie um bucket do S3 na AWS na sua conta para o qual você deseja exportar os backups.
   </Step>
 
-  <Step>
-    ##### Crie uma IAM role
-
+  <Step title="Crie uma IAM role" id="create-iam-role">
     A AWS usa autenticação baseada em roles, então crie uma IAM role que o serviço ClickHouse Cloud poderá assumir para gravar nesse bucket.
 
     * a. Obtenha o ARN na página de configurações do serviço ClickHouse Cloud, em Network security information, que será semelhante a este:
@@ -66,9 +62,7 @@ Siga as etapas abaixo na sua conta da AWS:
     ```
   </Step>
 
-  <Step>
-    ##### Atualize as permissões da role
-
+  <Step title="Atualize as permissões da role" id="update-permissions-for-role">
     Você também precisará definir as permissões dessa role para que este serviço ClickHouse Cloud possa gravar no bucket do S3.
     Isso é feito criando uma política de permissões para a role com um JSON semelhante a este, no qual você substitui o ARN do seu bucket no recurso em ambos os locais.
 
@@ -119,31 +113,23 @@ Siga as etapas abaixo na sua conta da AWS:
 Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
 
 <Steps>
-  <Step>
-    ##### Alterar o backup externo
-
+  <Step title="Alterar backup externo" id="configure-external-bucket">
     Na página Settings, clique em Configurar backup externo:
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar o backup externo" size="lg" />
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar backup externo" size="lg" />
   </Step>
 
-  <Step>
-    ##### Configurar o ARN da IAM role da AWS e os detalhes do bucket do S3
-
+  <Step title="Configurar o ARN da IAM role da AWS e os detalhes do bucket do S3" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     Na tela seguinte, informe o ARN da IAM role da AWS que você acabou de criar e a URL do bucket do S3 no formato a seguir:
 
     <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configurar o ARN da IAM role da AWS e os detalhes do bucket do S3" size="lg" />
   </Step>
 
-  <Step>
-    ##### Salvar alterações
-
+  <Step title="Salvar alterações" id="save-changes">
     Clique em “Salvar bucket externo” para salvar as configurações
   </Step>
 
-  <Step>
-    ##### Alterar o agendamento de backups em relação ao padrão
-
+  <Step title="Alterar o agendamento de backups em relação ao padrão" id="changing-the-backup-schedule">
     Agora, os backups externos serão realizados no seu bucket de acordo com o agendamento padrão.
     Como alternativa, você pode configurar o agendamento de backups na página “Settings”.
     Se ele for configurado de outra forma, o agendamento personalizado será usado para gravar backups no seu
@@ -151,9 +137,7 @@ Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket ex
     bucket pertencente ao ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Ver backups armazenados no seu bucket
-
+  <Step title="Ver backups armazenados no seu bucket" id="view-backups-stored-in-your-bucket">
     A página Backups exibirá esses backups no seu bucket em uma tabela separada,
     como mostrado abaixo:
 
@@ -168,24 +152,18 @@ Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket ex
 Siga as etapas abaixo para restaurar backups da AWS:
 
 <Steps>
-  <Step>
-    ##### Crie um novo serviço para receber a restauração
-
+  <Step title="Crie um novo serviço para receber a restauração" id="create-new-service-to-restore-to">
     Crie um novo serviço para o qual o backup será restaurado.
   </Step>
 
-  <Step>
-    ##### Adicione o ARN do serviço
-
+  <Step title="Adicione o ARN do serviço" id="add-service-arn">
     Adicione o ARN do serviço recém-criado (na página de configurações do serviço no console do ClickHouse
     Cloud) à política de confiança da IAM role. Isso é o mesmo que a
     [segunda etapa](#create-iam-role) na seção Etapas da AWS acima. Isso é necessário
     para que o novo serviço possa acessar o bucket do S3.
   </Step>
 
-  <Step>
-    ##### Obtenha o comando SQL usado para restaurar o backup
-
+  <Step title="Obtenha o comando SQL usado para restaurar o backup" id="obtain-sql-command-to-restore-backup">
     Clique no link “acessar ou restaurar um backup” acima da lista de backups na
     UI para obter o comando SQL de restauração do backup. O comando será semelhante a este:
 
@@ -208,10 +186,8 @@ Siga as etapas abaixo para restaurar backups da AWS:
     </Tip>
   </Step>
 
-  <Step>
-    ##### Execute o comando de restauração
-
-    Execute o comando de restauração no SQL Console do serviço recém-criado para
+  <Step title="Execute o comando de restauração" id="run-the-restore-command">
+    Execute o comando de restauração no console SQL do serviço recém-criado para
     restaurar o backup.
   </Step>
 </Steps>
@@ -231,15 +207,11 @@ Siga as etapas abaixo para fazer backup no GCP:
 </div>
 
 <Steps>
-  <Step>
-    ##### Crie um bucket de armazenamento no GCP
-
+  <Step title="Crie um bucket de armazenamento no GCP" id="create-a-gcp-storage-bucket">
     Crie um bucket de armazenamento na sua conta do GCP para exportar backups.
   </Step>
 
-  <Step>
-    ##### Gere uma chave HMAC e um segredo
-
+  <Step title="Gere uma chave HMAC e um segredo" id="generate-an-hmac-key-and-secret">
     Gere uma chave HMAC e um segredo, necessários para a autenticação baseada em senha. Siga as etapas abaixo para gerar as chaves:
 
     * a. Crie uma conta de serviço
@@ -268,31 +240,23 @@ Siga as etapas abaixo para fazer backup no GCP:
 Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
 
 <Steps>
-  <Step>
-    ##### Alterar backup externo
-
-    Na página `Settings`, clique em `Change external backup`
+  <Step title="Alterar backup externo" id="gcp-configure-external-bucket">
+    Na página `Settings`, clique em `Alterar backup externo`
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar backup externo" size="lg" />
   </Step>
 
-  <Step>
-    ##### Configurar a chave HMAC e o Secret do GCP
-
+  <Step title="Configurar a chave HMAC e o Secret do GCP" id="gcp-configure-gcp-hmac-key-and-secret">
     Na janela pop-up, informe o caminho do bucket do GCP, a chave HMAC e o Secret criados na seção anterior.
 
     <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Configurar a chave HMAC e o Secret do GCP" size="md" />
   </Step>
 
-  <Step>
-    ##### Salvar bucket externo
-
+  <Step title="Salvar bucket externo" id="gcp-save-external-bucket">
     Clique em `Save External Bucket` para salvar as configurações.
   </Step>
 
-  <Step>
-    ##### Alterar o agendamento de backup em relação ao padrão
-
+  <Step title="Alterar o agendamento de backup em relação ao padrão" id="gcp-changing-the-backup-schedule">
     Os backups externos passarão a ser realizados no seu bucket de acordo com o agendamento padrão.
     Como alternativa, você pode configurar o agendamento de backup na página `Settings`.
     Se ele for configurado de outra forma, o agendamento personalizado será usado para gravar backups no seu
@@ -300,9 +264,7 @@ Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket ex
     bucket do ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Ver backups armazenados no seu bucket
-
+  <Step title="Ver backups armazenados no seu bucket" id="gcp-view-backups-stored-in-your-bucket">
     A página Backups deve exibir esses backups no seu bucket em uma tabela separada, como mostrado abaixo:
 
     <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Ver backups armazenados no seu bucket" size="lg" />
@@ -316,16 +278,12 @@ Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket ex
 Siga as etapas abaixo para restaurar backups do GCP:
 
 <Steps>
-  <Step>
-    ##### Crie um novo serviço para o qual restaurar
-
+  <Step title="Crie um novo serviço para o qual restaurar" id="gcp-create-new-service-to-restore-to">
     Crie um novo serviço para o qual o backup será restaurado.
   </Step>
 
-  <Step>
-    ##### Obtenha o comando SQL usado para restaurar o backup
-
-    Clique no link `access or restore a backup` acima da lista de backups na
+  <Step title="Obtenha o comando SQL usado para restaurar o backup" id="gcp-obtain-sql-command-to-restore-backup">
+    Clique no link `acessar ou restaurar um backup` acima da lista de backups na
     UI para obter o comando SQL para restaurar o backup. O comando deve ser parecido com este,
     e você pode selecionar o backup adequado no menu suspenso para obter o comando de restauração
     desse backup específico. Você precisará adicionar sua chave de acesso secreta
@@ -342,7 +300,7 @@ Siga as etapas abaixo para restaurar backups do GCP:
     <Tip>
       **Comando ASYNC**
 
-      No comando Restore, você também pode adicionar opcionalmente `ASYNC` ao final para restaurações grandes.
+      No comando de restauração, você também pode adicionar opcionalmente `ASYNC` ao final para restaurações grandes.
       Isso permite que as restaurações ocorram de forma assíncrona, de modo que, se a conexão for perdida, a restauração continue em execução.
       É importante observar que o comando ASYNC retorna imediatamente um status de sucesso.
       Isso não significa que a restauração foi bem-sucedida.
@@ -350,10 +308,8 @@ Siga as etapas abaixo para restaurar backups do GCP:
     </Tip>
   </Step>
 
-  <Step>
-    ##### Execute o comando SQL para restaurar o backup
-
-    Execute o comando de restauração no SQL Console do serviço recém-criado para
+  <Step title="Execute o comando SQL para restaurar o backup" id="gcp-run-sql-command-to-restore-backup">
+    Execute o comando de restauração no console SQL do serviço recém-criado para
     restaurar o backup.
   </Step>
 </Steps>
@@ -373,65 +329,51 @@ Siga as etapas abaixo para fazer backups no Azure:
 </div>
 
 <Steps>
-  <Step>
-    ##### Criar uma conta de armazenamento
-
+  <Step title="Criar uma conta de armazenamento" id="azure-create-a-storage-account">
     Crie uma conta de armazenamento ou selecione uma conta de armazenamento existente no portal do Azure
     onde deseja armazenar seus backups.
   </Step>
 
-  <Step>
-    ##### Obter a string de conexão
-
+  <Step title="Obter a string de conexão" id="azure-get-connection-string">
     * a. Na visão geral da sua conta de armazenamento, procure a seção chamada `Security + networking` e clique em `Access keys`.
     * b. Aqui, você verá `key1` e `key2`. Em cada uma delas, encontrará um campo `Connection string`.
     * c. Clique em `Show` para exibir a string de conexão. Copie a string de conexão que você usará na configuração do ClickHouse Cloud.
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### Etapas no ClickHouse Cloud
+<div id="gcp-cloud-steps">
+  #### Etapas a seguir no ClickHouse Cloud
 </div>
 
 Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
 
 <Steps>
-  <Step>
-    ##### Alterar backup externo
-
-    Na página `Settings`, clique em `Change external backup`
+  <Step title="Alterar backup externo" id="azure-configure-external-bucket">
+    Na página `Settings`, clique em `Alterar backup externo`
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar backup externo" size="lg" />
   </Step>
 
-  <Step>
-    ##### Informe a Connection String e o nome do Container da sua conta de armazenamento do Azure
-
+  <Step title="Informe a string de conexão e o nome do Container da sua conta de armazenamento do Azure" id="azure-provide-connection-string-and-container-name-azure">
     Na próxima tela, informe a Connection String e o Container Name da sua
     conta de armazenamento do Azure criada na seção anterior:
 
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Informe a Connection String e o nome do Container da sua conta de armazenamento do Azure" size="md" />
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Informe a string de conexão e o nome do Container da sua conta de armazenamento do Azure" size="md" />
   </Step>
 
-  <Step>
-    ##### Salvar bucket externo
-
-    Clique em `Save External Bucket` para salvar as configurações
+  <Step title="Salvar bucket externo" id="azure-save-external-bucket">
+    Clique em `Salvar bucket externo` para salvar as configurações
   </Step>
 
-  <Step>
-    ##### Alterar o agendamento de backup padrão
-
-    Os backups externos passarão a ser feitos no seu bucket seguindo o agendamento padrão. Como alternativa,
-    você pode configurar o agendamento de backup na página “Settings”. Se ele for configurado de forma diferente,
+  <Step title="Alterando o agendamento de backup padrão" id="azure-changing-the-backup-schedule">
+    Os backups externos passarão a ser feitos no seu bucket de acordo com o agendamento padrão. Como alternativa,
+    você pode configurar o agendamento de backup na página `Settings`. Se ele for configurado de forma diferente,
     o agendamento personalizado será usado para gravar backups no seu bucket, e o agendamento padrão
     (backups a cada 24 horas) será usado para os backups no bucket gerenciado pelo ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Ver backups armazenados no seu bucket
-
-    A página Backups deve exibir esses backups no seu bucket em uma tabela separada,
+  <Step title="Ver backups armazenados no seu bucket" id="azure-view-backups-stored-in-your-bucket">
+    A página `Backups` deve exibir esses backups no seu bucket em uma tabela separada,
     como mostrado abaixo:
 
     <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Ver backups armazenados no seu bucket" size="md" />
@@ -445,16 +387,12 @@ Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket ex
 Para restaurar backups do Azure, siga as etapas abaixo:
 
 <Steps>
-  <Step>
-    ##### Crie um novo serviço para restaurar o backup
-
+  <Step title="Crie um novo serviço para restaurar o backup" id="azure-create-new-service-to-restore-to">
     Crie um novo serviço para o qual o backup será restaurado. No momento, oferecemos suporte apenas à restauração de um backup em um novo serviço.
   </Step>
 
-  <Step>
-    ##### Obtenha o comando SQL usado para restaurar o backup
-
-    Clique no link `access or restore a backup` acima da lista de backups na UI para obter o comando SQL de restauração do backup. O comando deve ser parecido com este, e você pode selecionar o backup apropriado na lista suspensa para obter o comando de restauração desse backup específico. Você precisará adicionar ao comando a string de conexão da sua conta de armazenamento do Azure.
+  <Step title="Obtenha o comando SQL usado para restaurar o backup" id="azure-obtain-sql-command-to-restore-backup">
+    Clique no link `acessar ou restaurar um backup` acima da lista de backups na UI para obter o comando SQL de restauração do backup. O comando deve ser parecido com este, e você pode selecionar o backup apropriado na lista suspensa para obter o comando de restauração desse backup específico. Você precisará adicionar ao comando a string de conexão da sua conta de armazenamento do Azure.
 
     <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Restaurar backups no Azure" size="md" />
 
@@ -475,9 +413,7 @@ Para restaurar backups do Azure, siga as etapas abaixo:
     </Tip>
   </Step>
 
-  <Step>
-    ##### Execute o comando SQL para restaurar o backup
-
+  <Step title="Execute o comando SQL para restaurar o backup" id="azure-run-sql-command-to-restore-backup">
     Execute o comando de restauração no console SQL do serviço recém-criado para restaurar o backup.
   </Step>
 </Steps>

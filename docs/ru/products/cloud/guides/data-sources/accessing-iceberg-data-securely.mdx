@@ -25,25 +25,15 @@ ClickHouse Cloud поддерживает безопасный ролевой д
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Войдите в свою учетную запись ClickHouse Cloud.
-  </Step>
+  <Step title="1. Войдите в свою учетную запись ClickHouse Cloud." id="login" />
 
-  <Step>
-    ### 2. Выберите сервис ClickHouse, в котором хотите выполнять запросы к данным Iceberg.
-  </Step>
+  <Step title="2. Выберите сервис ClickHouse, в котором хотите выполнять запросы к данным Iceberg." id="select-service" />
 
-  <Step>
-    ### 3. Перейдите на вкладку **Settings**.
-  </Step>
+  <Step title={<>3. Перейдите на вкладку <strong>Settings</strong>.</>} id="settings-tab" />
 
-  <Step>
-    ### 4. Прокрутите страницу до раздела **Network security information**.
-  </Step>
+  <Step title={<>4. Прокрутите страницу до раздела <strong>Network security information</strong>.</>} id="network-security-information" />
 
-  <Step>
-    ### 5. Скопируйте значение **Service role ID (IAM)**.
-
+  <Step title={<>5. Скопируйте значение <strong>Идентификатор сервисной роли (IAM)</strong>.</>} id="service-role-iam-value">
     Этот ARN требуется для политики доверия роли IAM в AWS, которая будет использоваться для доступа к вашим данным Iceberg.
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Получение ARN сервисной роли IAM ClickHouse" border />
@@ -55,19 +45,13 @@ ClickHouse Cloud поддерживает безопасный ролевой д
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Войдите в AWS и перейдите в сервис IAM.
-  </Step>
+  <Step title="1. Войдите в AWS и перейдите в сервис IAM." id="aws-iam-service" />
 
-  <Step>
-    ### 2. Выберите Roles, затем Create role.
-
+  <Step title="2. Выберите Roles, затем Create role." id="create-role">
     В поле `Trusted entity type` выберите `Custom trust policy` и введите значения из шага 3.
   </Step>
 
-  <Step>
-    ### 3. Добавьте policy доверия и политику IAM.
-
+  <Step title="3. Добавьте policy доверия и политику IAM." id="add-trust-iam-policies">
     Замените `{service-role-id}` на Service Role ID (IAM) из вашего экземпляра ClickHouse.
 
     ```json
@@ -122,9 +106,7 @@ ClickHouse Cloud поддерживает безопасный ролевой д
     </Note>
   </Step>
 
-  <Step>
-    ### 4. Завершите создание роли.
-
+  <Step title="4. Завершите создание роли." id="finish-role-creation">
     a. Нажмите Next, затем ещё раз Next на экране назначения разрешений.
 
     b. Укажите имя (например, `iceberg-role-for-clickhouse`) и описание.
@@ -136,9 +118,7 @@ ClickHouse Cloud поддерживает безопасный ролевой д
     e. Выберите `Create role`.
   </Step>
 
-  <Step>
-    ### 5. После создания скопируйте новый **IAM Role Arn**.
-  </Step>
+  <Step title={<>5. После создания скопируйте новый <strong>IAM Role Arn</strong>.</>} id="copy-role-arn" />
 </Steps>
 
 <div id="configure-iceberg-access">

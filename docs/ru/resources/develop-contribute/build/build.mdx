@@ -53,7 +53,7 @@ sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm y
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 Для других дистрибутивов Linux проверьте, можно ли установить один из [предварительно собранных пакетов LLVM](https://releases.llvm.org/download.html).
@@ -98,8 +98,8 @@ cd build
 Необязательно: если у вас установлено несколько версий компилятора, при необходимости можно указать, какой именно компилятор использовать.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 Для разработки рекомендуется использовать отладочные сборки.
@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`, `clickhouse-client` и другие подобные бинарные файлы представляют собой символические ссылки в каталоге `programs/`, указывающие на исполняемый файл `clickhouse` после завершения сборки.
+</Note>
 
-  :::tip
+<Tip>
   CMake предоставляет сокращённые варианты приведённых выше команд:
 
   ```sh
   cmake -S . -B build  # настроить сборку, запускать из корневого каталога репозитория
   cmake --build build  # скомпилировать
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## исполняемый файл ClickHouse

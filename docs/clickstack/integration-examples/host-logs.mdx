@@ -29,8 +29,7 @@ If you would like to test the host logs integration before configuring your own 
 - Access to modify ClickStack configuration files
 
 <Steps>
-<Step>
-#### Verify syslog files exist {#verify-syslog}
+<Step title="Verify syslog files exist" id="verify-syslog">
 
 First, verify that your system is writing syslog files:
 
@@ -50,8 +49,7 @@ Common syslog locations:
 - **RHEL/CentOS/Fedora**: `/var/log/messages`
 - **macOS**: `/var/log/system.log`
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
 ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable.
 
@@ -196,8 +194,7 @@ All configurations:
 - This configuration uses `start_at: end` to avoid re-ingesting logs on collector restarts. For testing, change to `start_at: beginning` to see historical logs immediately.
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -237,8 +234,7 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the syslog files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
 Once configured, log into HyperDX and verify logs are flowing:
 
@@ -257,8 +253,7 @@ Once configured, log into HyperDX and verify logs are flowing:
 For users who want to test the host logs integration before configuring their production systems, we provide a sample dataset of pre-generated system logs with realistic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log file:
 
@@ -275,8 +270,7 @@ The dataset includes:
 - Kernel messages and firewall activity
 - Mix of normal operations and notable events
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `host-logs-demo.yaml` with the following configuration:
 
@@ -318,8 +312,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -334,10 +327,10 @@ docker run --name clickstack-demo \
 
 <Note>
 **This mounts the log file directly into the container. This is done for testing purposes with static demo data.**
+
 </Note>
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-demo-logs}
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once ClickStack is running:
 
@@ -361,11 +354,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring host logs with ClickStack, we provide essential visualizations for system logs.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -376,8 +369,7 @@ To help you get started monitoring host logs with ClickStack, we provide essenti
 
 <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finish import"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

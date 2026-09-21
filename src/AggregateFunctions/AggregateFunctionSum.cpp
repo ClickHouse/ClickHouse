@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -63,8 +64,8 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                        argument_types[0]->getName(), name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
+                        argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
     return res;
 }
 
@@ -175,8 +176,8 @@ FROM employees;
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
-Slower than [`sum`](/sql-reference/aggregate-functions/reference/sum) function.
-The compensation works only for [Float](/sql-reference/data-types/float) types.
+Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
+The compensation works only for [Float](/reference/data-types/float) types.
     )";
     FunctionDocumentation::Syntax syntax_kahan = R"(
 sumKahan(x)

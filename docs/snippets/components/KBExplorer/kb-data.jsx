@@ -35,6 +35,7 @@ export const kbIndex = {
     "Managing Data",
     "Native Clients and Interfaces",
     "Performance and Optimizations",
+    "Runbooks",
     "Security and Authentication",
     "Server Admin",
     "Settings",
@@ -107,16 +108,6 @@ export const kbIndex = {
       ]
     },
     {
-      "id": "tables-schema/schema-migration-tools",
-      "title": "Automatic schema migration tools for ClickHouse",
-      "description": "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      "href": "/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      "category": "Tables & schema",
-      "tags": [
-        "Tools and Utilities"
-      ]
-    },
-    {
       "id": "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       "title": "AWS PrivateLink setup to expose MSK for ClickPipes",
       "description": "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -132,6 +123,17 @@ export const kbIndex = {
       "title": "AWS PrivateLink setup to expose private RDS for ClickPipes",
       "description": "Setup steps to expose a private RDS via AWS PrivateLink to ClickPipes.",
       "href": "/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
+      "category": "Cloud",
+      "tags": [
+        "Security and Authentication",
+        "Managing Cloud"
+      ]
+    },
+    {
+      "id": "cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+      "title": "AWS PrivateLink VPC endpoint service for MSK cluster",
+      "description": "Setup steps to expose an MSK cluster to ClickPipes through AWS PrivateLink VPC endpoint services.",
+      "href": "/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
       "category": "Cloud",
       "tags": [
         "Security and Authentication",
@@ -199,7 +201,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "This article explains how to change the prompt in your ClickHouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [
@@ -229,16 +231,6 @@ export const kbIndex = {
       ]
     },
     {
-      "id": "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      "title": "Configuring CAP_IPC_LOCK and CAP_SYS_NICE Capabilities in Docker",
-      "description": "Learn how to resolve Docker capability warnings for `CAP_IPC_LOCK` and `CAP_SYS_NICE` when running ClickHouse in a container.",
-      "href": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      "category": "Configuration & settings",
-      "tags": [
-        "Errors and Exceptions"
-      ]
-    },
-    {
       "id": "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
       "title": "Configuring CAP_IPC_LOCK and CAP_SYS_NICE Capabilities in Docker",
       "description": "Learn how to resolve Docker capability warnings for `CAP_IPC_LOCK` and `CAP_SYS_NICE` when running ClickHouse in a container.",
@@ -246,6 +238,17 @@ export const kbIndex = {
       "category": "Troubleshooting & errors",
       "tags": [
         "Errors and Exceptions"
+      ]
+    },
+    {
+      "id": "cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+      "title": "Confluent Cloud private connectivity for ClickPipes",
+      "description": "How to connect ClickPipes to an existing Confluent Cloud Kafka cluster over AWS PrivateLink or GCP Private Service Connect.",
+      "href": "/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+      "category": "Cloud",
+      "tags": [
+        "Security and Authentication",
+        "Managing Cloud"
       ]
     },
     {
@@ -576,6 +579,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "monitoring-debugging/collect-and-draw-traces",
+      "title": "How to collect and draw a query trace",
+      "description": "This guide shows you how to collect and draw query traces with self-managed ClickHouse using either built-in methods or using Grafana. This is particularly useful when you're working with complex queries and need to understand the internal execution mechanics beyond what EXPLAIN provides.",
+      "href": "/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+      "category": "Monitoring & debugging",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "configuration-settings/configure-a-user-setting",
       "title": "How to configure settings for a user in ClickHouse",
       "description": "Learn how to define settings in ClickHouse for individual queries, client sessions, or specific users using `SET` and `ALTER USER` commands.",
@@ -756,6 +769,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "cloud-services/opt-out-core-dump-collection",
+      "title": "How to opt out of crash report collection",
+      "description": "This article shows you how you can opt out of crash report collection on ClickHouse Cloud",
+      "href": "/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+      "category": "Cloud",
+      "tags": [
+        "Managing Cloud"
+      ]
+    },
+    {
       "id": "monitoring-debugging/outputSendLogsLevelTracesToFile",
       "title": "How to output send logs level traces to file using the clickhouse-client",
       "description": "How to output send logs level traces to file using the clickhouse-client",
@@ -773,6 +796,26 @@ export const kbIndex = {
       "category": "Tables & schema",
       "tags": [
         "Tools and Utilities"
+      ]
+    },
+    {
+      "id": "troubleshooting/recovering-from-corrupt-keeper-snapshot",
+      "title": "How to recover from a corrupt Keeper snapshot",
+      "description": "Article describing how to recover from a corrupt Keeper snapshot: how the problem manifests, what a snapshot is and where to find it and possible recovery strategies.",
+      "href": "/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+      "category": "Troubleshooting & errors",
+      "tags": [
+        "Troubleshooting"
+      ]
+    },
+    {
+      "id": "troubleshooting/restore-replica-after-storage-failure",
+      "title": "How to restore a replica after storage failure",
+      "description": "This article explains how to recover data when using replicated tables in atomic databases in ClickHouse and disks/storage on one of the replica is lost/currupted.",
+      "href": "/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+      "category": "Troubleshooting & errors",
+      "tags": [
+        "Deployments and Scaling"
       ]
     },
     {
@@ -848,7 +891,7 @@ export const kbIndex = {
     },
     {
       "id": "performance-optimization/finding-expensive-queries-by-memory-usage",
-      "title": "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      "title": "Identifying expensive queries by memory usage in ClickHouse",
       "description": "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       "href": "/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       "category": "Performance & optimization",
@@ -1018,23 +1061,23 @@ export const kbIndex = {
       ]
     },
     {
-      "id": "troubleshooting/exception-too-many-parts",
-      "title": "Resolving \"Too Many Parts\" error in ClickHouse",
-      "description": "Learn how to address the \"Too many parts\" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.",
-      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      "category": "Troubleshooting & errors",
-      "tags": [
-        "Errors and Exceptions"
-      ]
-    },
-    {
       "id": "troubleshooting/certificate-verify-failed-error",
-      "title": "Resolving SSL Certificate Verify Error in ClickHouse",
+      "title": "Resolving SSL certificate verify error in ClickHouse",
       "description": "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       "href": "/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
       "category": "Troubleshooting & errors",
       "tags": [
         "Security and Authentication",
+        "Errors and Exceptions"
+      ]
+    },
+    {
+      "id": "troubleshooting/exception-too-many-parts",
+      "title": "Resolving the \"Too many parts\" exception in ClickHouse",
+      "description": "Learn how to diagnose and resolve the \"Too many parts\" exception by batching inserts, using asynchronous inserts, and choosing an appropriate partitioning key.",
+      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      "category": "Troubleshooting & errors",
+      "tags": [
         "Errors and Exceptions"
       ]
     },
@@ -1049,6 +1092,27 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "tables-schema/runbook-json",
+      "title": "Runbook: JSON schema",
+      "description": "Choose the right schema approach for JSON data in ClickHouse — typed columns, hybrid, native JSON, or String storage",
+      "href": "/resources/support-center/knowledge-base/tables-schema/runbook-json",
+      "category": "Tables & schema",
+      "tags": [
+        "Runbooks",
+        "Data Modelling"
+      ]
+    },
+    {
+      "id": "tables-schema/schema-migration-tools",
+      "title": "Schema migration tools for ClickHouse",
+      "description": "Learn about schema migration tools for ClickHouse and how to manage changing database schemas over time.",
+      "href": "/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      "category": "Tables & schema",
+      "tags": [
+        "Tools and Utilities"
+      ]
+    },
+    {
       "id": "tables-schema/search-across-node-for-tables-with-a-wildcard",
       "title": "Searching across nodes for tables with a wildcard",
       "description": "Learn how to search across nodes for tables with a wildcard.",
@@ -1056,6 +1120,16 @@ export const kbIndex = {
       "category": "Tables & schema",
       "tags": [
         "Deployments and Scaling"
+      ]
+    },
+    {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "Set up the ClickHouse documentation MCP server",
+      "description": "Connect AI tools to the ClickHouse documentation through the Model Context Protocol.",
+      "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
       ]
     },
     {
@@ -1108,6 +1182,16 @@ export const kbIndex = {
       "category": "Performance & optimization",
       "tags": [
         "Performance and Optimizations"
+      ]
+    },
+    {
+      "id": "data-management/understanding-part-types-and-storage-formats",
+      "title": "Understanding part types and storage formats",
+      "description": "Learn about the different part types (Wide vs Compact) and storage formats (Full vs Packed) in ClickHouse, and how they affect performance.",
+      "href": "/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+      "category": "Data management",
+      "tags": [
+        "Core Data Concepts"
       ]
     },
     {
@@ -1233,6 +1317,18 @@ export const kbIndex = {
       "href": "/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       "category": "General & FAQs",
       "tags": []
+    },
+    {
+      "id": "security/set-role-not-persisting-in-sql-console",
+      "title": "Why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console",
+      "description": "Learn why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console and how to assign persistent per-user permissions.",
+      "href": "/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      "category": "Security & access control",
+      "tags": [
+        "Security and Authentication",
+        "Managing Cloud",
+        "Troubleshooting"
+      ]
     },
     {
       "id": "data-management/dictionaries-consistent-state",

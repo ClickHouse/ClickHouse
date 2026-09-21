@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/config_with_hosts.xml"])
@@ -21,9 +21,14 @@ node5 = cluster.add_instance(
     user_configs=["configs/allow_server_credentials.xml"],
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
-node7 = cluster.add_instance(
-    "node7", main_configs=["configs/config_with_pinned_port.xml"]
+node8 = cluster.add_instance(
+    "node8", main_configs=["configs/config_with_pinned_port.xml"]
 )  # Allows only 127.0.0.1:3306 (port-pinned entry).
+
+if not is_arm():
+    node7 = cluster.add_instance(
+        "node7", main_configs=["configs/config_for_redirect.xml"], with_hdfs=True
+    )
 
 
 @pytest.fixture(scope="module")
@@ -56,6 +61,27 @@ def test_config_with_hosts(start_cluster):
     )
     node1.query("DROP TABLE table_test_1_1")
     node1.query("DROP TABLE table_test_1_2")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+    ],
+)
+def test_azure_host_filter_before_client_creation(start_cluster, query):
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node5.query(container_requests)
+    error = node5.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
+    assert "UNACCEPTABLE_URL" in error
+    # The host check must run before even a container existence probe.
+    assert node5.query(container_requests) == before
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -230,11 +256,11 @@ def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
     """A REPLICA(...) without its own PORT connects to the top-level PORT (mysqlxx::Pool
     falls back to the parent prefix), so the host filter must validate that effective
     port, not the 3306 default."""
-    # node7 allows only 127.0.0.1:3306 and 127.0.0.1:3308. 127.0.0.1 (instead of the
+    # node8 allows only 127.0.0.1:3306 and 127.0.0.1:3308. 127.0.0.1 (instead of the
     # unroutable 10.0.0.1 used above) makes any dial that passes the filter fail
     # instantly with connection-refused instead of hanging until the connect timeout.
-    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
-    node7.query(
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+    node8.query(
         """
         CREATE DICTIONARY default.test_mysql_inherited_port (id UInt64, val String)
         PRIMARY KEY id
@@ -247,19 +273,19 @@ def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
     )
     # The replica inherits the denied top-level port 3307; before the fix the filter
     # checked the 3306 default, passed, and dialed 127.0.0.1:3307 anyway.
-    error = node7.query_and_get_error(
+    error = node8.query_and_get_error(
         "SELECT dictGet('default.test_mysql_inherited_port', 'val', toUInt64(1))"
     )
     assert "not allowed" in error, f"Expected host filter error, got: {error}"
-    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
 
     # A replica's own PORT takes precedence over the top-level PORT: 127.0.0.1:3308 is
     # allowed, so the filter must pass and the failure is a plain connection error.
     # 3308 differs from both the denied parent port 3307 and the 3306 default, so a
     # regression that validated either of those instead of the replica's own port
     # would fail this case.
-    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
-    node7.query(
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+    node8.query(
         """
         CREATE DICTIONARY default.test_mysql_own_port (id UInt64, val String)
         PRIMARY KEY id
@@ -270,11 +296,11 @@ def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
         LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
         """
     )
-    error = node7.query_and_get_error(
+    error = node8.query_and_get_error(
         "SELECT dictGet('default.test_mysql_own_port', 'val', toUInt64(1))"
     )
     assert "not allowed" not in error, f"Filter rejected an allowed replica: {error}"
-    node7.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
 
 
 def test_table_function_remote(start_cluster):
@@ -372,3 +398,126 @@ def test_table_function_remote(start_cluster):
             "SELECT * FROM remote('localhost:800', system, metrics)"
         )
     )
+
+
+def test_storage_engine_remote(start_cluster):
+    # The persistent Remote/RemoteSecure engines must enforce remote_url_allow_hosts, like the
+    # remote/remoteSecure table functions: the check runs at CREATE time, before any connection.
+    for engine in ["Remote", "RemoteSecure"]:
+        # Disallowed host: rejected with UNACCEPTABLE_URL.
+        assert "not allowed in configuration file" in node6.query_and_get_error(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-3', system, one)"
+        )
+        # A glob that expands to an allowed and a disallowed host is rejected: every expanded host
+        # is checked, not only the first one.
+        assert "not allowed in configuration file" in node6.query_and_get_error(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-{{1,3}}', system, one)"
+        )
+        # Allowed host, but a disallowed explicit port is still rejected.
+        assert (
+            'URL "localhost:800" is not allowed in configuration file'
+            in node6.query_and_get_error(
+                f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('localhost:800', system, one)"
+            )
+        )
+        # Allowed host: the table is created (system.tables reports it as Distributed).
+        node6.query(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-1', system, one)"
+        )
+        assert (
+            node6.query(
+                "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'test_remote_engine'"
+            ).strip()
+            == "Distributed"
+        )
+        node6.query("DROP TABLE test_remote_engine")
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_redirect(start_cluster):
+    hdfs_api = start_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\t\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
+    node7.query(
+        "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)"
+    )
+    assert "not allowed" in node7.query_and_get_error(
+        "SET max_http_get_redirects=1; SELECT * from table_test_7_1"
+    )
+    node7.query("DROP TABLE table_test_7_1")
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_HDFS(start_cluster):
+    assert "not allowed" in node7.query_and_get_error(
+        "CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')"
+    )
+    assert "not allowed" in node7.query_and_get_error(
+        "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
+    )
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_schema_inference(start_cluster):
+    # Schema inference in the URL engine must check `remote_url_allow_hosts` before
+    # any connection attempt: the error has to come from the host check, not from
+    # the HTTP layer.
+    error = node7.query_and_get_error("desc url('http://test.com', 'TSVRaw')")
+    assert "not allowed" in error
+    assert error.find("ReadWriteBufferFromHTTPBase") == -1
+
+
+# The AI functions read their HTTP endpoint from a named collection, so `NAMED COLLECTION ADMIN`
+# alone must not let a user aim the server's HTTP client at a host the operator did not allow.
+# Nothing listens on port 1; the check runs before any connection, so no server is needed.
+AI_ENDPOINT = "http://localhost:1/v1/chat/completions"
+
+AI_QUERIES = [
+    "SELECT aiGenerate('x', map('credentials', 'ai_text'))",
+    "SELECT aiEmbed('x', 'test-model', map('credentials', 'ai_embed'))",
+    "SELECT aiSimilarity('x', 'y', 'test-model', map('credentials', 'ai_embed'))",
+]
+
+
+def create_ai_collections(node):
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_text AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', model = 'test-model', api_key = 'test-key'"
+    )
+    # An embedding collection must not define `model`: `aiEmbed` and `aiSimilarity` take it as an
+    # argument and reject a collection that declares it too.
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_embed AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', api_key = 'test-key'"
+    )
+
+
+def drop_ai_collections(node):
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_text")
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_embed")
+
+
+def test_ai_functions_host_filter(start_cluster):
+    # `node5` declares an empty `remote_url_allow_hosts` (allows nothing); `node4` declares none at
+    # all, so its filter stays uninitialized and allows everything. Same collections, same endpoint.
+    create_ai_collections(node4)
+    create_ai_collections(node5)
+    try:
+        for query in AI_QUERIES:
+            error = node5.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" in error, f"{query}: {error}"
+            # The check must run before the request, so the refusal carries no connection error.
+            assert "Connection refused" not in error, f"{query}: {error}"
+
+            # Control: without an allow-list the same call gets past the check and fails at the
+            # network instead. Without this arm, a filter that rejected everything would also pass.
+            error = node4.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" not in error, f"{query}: {error}"
+    finally:
+        drop_ai_collections(node4)
+        drop_ai_collections(node5)

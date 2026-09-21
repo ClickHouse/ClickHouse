@@ -25,25 +25,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 1. سجّل الدخول إلى حسابك في ClickHouse Cloud.
-  </Step>
+  <Step title="1. سجّل الدخول إلى حسابك في ClickHouse Cloud." id="login" />
 
-  <Step>
-    ### 2. حدّد خدمة ClickHouse التي تريد الاستعلام من خلالها عن بيانات Iceberg.
-  </Step>
+  <Step title="2. حدّد خدمة ClickHouse التي تريد الاستعلام من خلالها عن بيانات Iceberg." id="select-service" />
 
-  <Step>
-    ### 3. انتقل إلى علامة التبويب **Settings**.
-  </Step>
+  <Step title={<>3. انتقل إلى علامة التبويب <strong>Settings</strong>.</>} id="settings-tab" />
 
-  <Step>
-    ### 4. مرّر إلى **Network security information**.
-  </Step>
+  <Step title={<>4. مرّر إلى <strong>Network security information</strong>.</>} id="network-security-information" />
 
-  <Step>
-    ### 5. انسخ قيمة **Service role ID (IAM)**.
-
+  <Step title={<>5. انسخ قيمة <strong>معرّف دور خدمة ClickHouse ‏(IAM)</strong>.</>} id="service-role-iam-value">
     هذا الـ ARN مطلوب لسياسة الثقة في دور AWS IAM الذي سيصل إلى بيانات Iceberg الخاصة بك.
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM لخدمة ClickHouse" border />
@@ -55,20 +45,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 1. سجّل الدخول إلى AWS وانتقل إلى خدمة IAM.
-  </Step>
+  <Step title="1. سجّل الدخول إلى AWS وانتقل إلى خدمة IAM." id="aws-iam-service" />
 
-  <Step>
-    ### 2. حدّد Roles ثم Create role.
-
+  <Step title="2. حدّد Roles ثم Create role." id="create-role">
     عيّن `Trusted entity type` إلى `Custom trust policy` وأدخل القيم استنادًا إلى الخطوة 3.
   </Step>
 
-  <Step>
-    ### 3. أضف سياسات Trust وIAM.
-
-    استبدل `{service-role-id}` بـ Service Role ID (IAM) الخاص بـ ClickHouse instance لديك.
+  <Step title="3. أضف سياسات Trust وIAM." id="add-trust-iam-policies">
+    استبدل `{service-role-id}` بـ معرّف دور الخدمة (IAM) الخاص بـ ClickHouse instance لديك.
 
     ```json
     {
@@ -122,9 +106,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ### 4. أكمل إنشاء الدور.
-
+  <Step title="4. أكمل إنشاء الدور." id="finish-role-creation">
     a. انقر على Next، ثم Next مرة أخرى في شاشة تعيين الأذونات.
 
     b. أضف اسمًا (مثل `iceberg-role-for-clickhouse`) ووصفًا.
@@ -136,9 +118,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     e. حدّد `Create role`.
   </Step>
 
-  <Step>
-    ### 5. انسخ **IAM Role Arn** الجديد بعد إنشائه.
-  </Step>
+  <Step title={<>5. انسخ <strong>IAM Role Arn</strong> الجديد بعد إنشائه.</>} id="copy-role-arn" />
 </Steps>
 
 <div id="configure-iceberg-access">

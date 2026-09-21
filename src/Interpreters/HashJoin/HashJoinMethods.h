@@ -21,14 +21,24 @@ size_t getMinBytesForPrefetchInJoin();
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
+    /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
+    /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
+    /// prove that the write leaves the flag alone and has to reload it.
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    insertOne(bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-        if (emplace_result.isInserted() || join.anyTakeLastRow())
+        const bool store_row = emplace_result.isInserted() || any_take_last_row;
+        if (store_row)
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
-        return emplace_result.isInserted() || join.anyTakeLastRow();
+        return store_row;
+    }
+
+    /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
+    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
+    {
+        key_getter.emplaceKey(map, i, pool);
     }
 
     static ALWAYS_INLINE bool
@@ -47,8 +57,12 @@ struct Inserter
         return emplace_result.isInserted();
     }
 
+    /// `asof_type` and `asof_inequality` are read from the join once, before the loop, for the reason
+    /// given above `insertOne`: reading them here would be a load per row, and the type is behind an
+    /// `std::optional` that was dereferenced on every row even though only an insert needs it.
     static ALWAYS_INLINE bool insertAsof(
-        HashJoin & join,
+        TypeIndex asof_type,
+        ASOFJoinInequality asof_inequality,
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
@@ -59,15 +73,14 @@ struct Inserter
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
         typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
 
-        TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
-            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
+            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, asof_inequality));
         (*time_series_map)->insert(asof_column, stored_block_no, i);
         return emplace_result.isInserted();
     }
 };
 
-/// MapsTemplate is one of MapsOne, MapsAll and MapsAsof
+/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
@@ -147,12 +160,13 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+    /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
+    /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
     template <
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
@@ -166,33 +180,10 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
-        bool check_null_map,
-        typename AddedColumns,
-        typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
-        std::vector<KeyGetter> && key_getter_vector,
-        const std::vector<const Map *> & mapv,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <
-        typename KeyGetter,
-        typename Map,
-        bool need_filter,
-        bool check_null_map,
-        JoinCommon::JoinMask::Kind join_mask_kind,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
-        KeyGetter & key_getter,
-        const Map * map,
-        AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags,
-        const Selector & selector);
-
-    template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
@@ -244,6 +235,8 @@ extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, Hash
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, HashJoin::MapsSet>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsSet>;
 
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Any, HashJoin::MapsAll>;

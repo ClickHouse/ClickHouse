@@ -11,6 +11,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Error),
     static_cast<int32_t>(OpNum::Create),
     static_cast<int32_t>(OpNum::Create2),
+    static_cast<int32_t>(OpNum::CreateContainer),
     static_cast<int32_t>(OpNum::Remove),
     static_cast<int32_t>(OpNum::TryRemove),
     static_cast<int32_t>(OpNum::Exists),
@@ -58,6 +59,7 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::Error: return "Error";
         case OpNum::Create: return "Create";
         case OpNum::Create2: return "Create2";
+        case OpNum::CreateContainer: return "CreateContainer";
         case OpNum::CreateTTL: return "CreateTTL";
         case OpNum::Remove: return "Remove";
         case OpNum::Exists: return "Exists";
@@ -117,6 +119,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
 
         case OpNum::Create:
         case OpNum::Create2:
+        case OpNum::CreateContainer:
         case OpNum::CreateTTL:
         case OpNum::Remove:
         case OpNum::TryRemove:

@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   ce qui sera équivalent à l&#39;URL JDBC suivante :
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -188,7 +188,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   ## Types de données pris en charge
 
-  Le JDBC driver prend en charge les mêmes formats de données que le [java client](/fr/integrations/language-clients/java/index#supported-data-types) sous-jacent.
+  Le JDBC driver prend en charge les mêmes formats de données que le [client Java](/fr/integrations/language-clients/java/index#supported-data-types) sous-jacent.
 
   ### Correspondance de types JDBC
 
@@ -301,7 +301,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   | Type ClickHouse                            | `getBaseTypeName()`                                | `getBaseType()`                        |
   | ------------------------------------------ | -------------------------------------------------- | -------------------------------------- |
-  | `Array(<Primitive Type>)`                  | `<Type primitif>`                                  | `<Type primitif JDBC>`                 |
+  | `Array(<Type primitif>)`                   | `<Type primitif>`                                  | `<Type primitif JDBC>`                 |
   | `Array(<Parameterized Type>(<N>))`         | `<Type paramétré>(<N>)`                            | `<Type JDBC du type de base>`          |
   | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                                 | `<type JDBC du Type interne>`          |
   | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                           | `<type JDBC du Type interne>`          |
@@ -399,7 +399,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -469,7 +469,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   }
   ```
 
-  **Lecture des Maps**
+  **Lecture des cartes**
 
   Map peut être lu en tant qu&#39;objet `java.collections.Map` via la méthode `getObject(columnIndex, Map.class)`.
 
@@ -556,14 +556,14 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   **Types spéciaux**
 
-  | Type ClickHouse         | Type JDBC          | Classe Java              |
-  | ----------------------- | ------------------ | ------------------------ |
-  | UUID                    | OTHER              | java.util.UUID           |
-  | IPv4                    | OTHER              | java.net.Inet4Address    |
-  | IPv6                    | OTHER              | java.net.Inet6Address    |
-  | JSON                    | OTHER              | java.lang.String         |
-  | AggregateFunction       | OTHER              | (représentation binaire) |
-  | SimpleAggregateFunction | (type sous-jacent) | (classe encapsulée)      |
+  | Type ClickHouse         | Type JDBC        | Classe Java              |
+  | ----------------------- | ---------------- | ------------------------ |
+  | UUID                    | OTHER            | java.util.UUID           |
+  | IPv4                    | OTHER            | java.net.Inet4Address    |
+  | IPv6                    | OTHER            | java.net.Inet6Address    |
+  | JSON                    | OTHER            | java.lang.String         |
+  | AggregateFunction       | OTHER            | (représentation binaire) |
+  | SimpleAggregateFunction | (type encapsulé) | (classe encapsulée)      |
 
   * `UUID` n&#39;est pas un type JDBC standard. Il fait toutefois partie du JDK. Par défaut, la méthode `getObject()` renvoie un `java.util.UUID`.
   * `UUID` peut être lu/écrit sous forme de `String` à l&#39;aide de la méthode `getObject(columnIndex, String.class)`.
@@ -781,7 +781,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
   | Données en streaming avec `PreparedStatement` | Pris en charge            | Non pris en charge                                       |
 
   * JDBC V2 a été conçu pour être plus léger, et certaines fonctionnalités ont été supprimées.
-    * JDBC V2 ne prend pas en charge les données en streaming, car elles ne font partie ni de la spécification JDBC ni de Java.
+    * Les données en streaming ne sont pas prises en charge dans JDBC V2, car elles ne font partie ni de la spécification JDBC ni de Java.
   * JDBC V2 nécessite une configuration explicite. Aucun basculement n’est défini par défaut.
     * Le protocole doit être indiqué dans l’URL. Aucune détection implicite du protocole en fonction du numéro de port.
 
@@ -843,7 +843,7 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   * La principale différence est que les types non signés sont associés à des types Java pour une meilleure portabilité.
 
-  **Types String**
+  **Types de chaînes**
 
   | Type ClickHouse | Compatible avec la V1 | Type JDBC (V2) | Classe Java (V2) | Type JDBC (V1) | Classe Java (V1) |
   | --------------- | --------------------- | -------------- | ---------------- | -------------- | ---------------- |
@@ -878,12 +878,12 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   **Types imbriqués**
 
-  | Type ClickHouse | Compatible avec V1 | Type JDBC (V2)  | Classe Java (V2) | Type JDBC (V1) | Classe Java (V1)                               |
-  | --------------- | ------------------ | --------------- | ---------------- | -------------- | ---------------------------------------------- |
-  | Array           | ❌                  | ARRAY           | java.sql.Array   | ARRAY          | Object[] ou tableau de types primitifs |
-  | Tuple           | ❌                  | OTHER           | Object[] | STRUCT         | java.sql.Struct                                |
-  | Map             | ❌                  | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                                  |
-  | Nested          | ❌                  | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                                |
+  | Type ClickHouse | Compatible avec la V1 | Type JDBC (V2)  | Classe Java (V2) | Type JDBC (V1) | Classe Java (V1)                               |
+  | --------------- | --------------------- | --------------- | ---------------- | -------------- | ---------------------------------------------- |
+  | Array           | ❌                     | ARRAY           | java.sql.Array   | ARRAY          | Object[] ou tableau de types primitifs |
+  | Tuple           | ❌                     | OTHER           | Object[] | STRUCT         | java.sql.Struct                                |
+  | Map             | ❌                     | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                                  |
+  | Nested          | ❌                     | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                                |
 
   * En V2, `Array` est associé à `java.sql.Array` par défaut pour assurer la compatibilité avec JDBC. Cela permet aussi de fournir davantage d’informations sur la valeur de tableau renvoyée. Utile pour l’inférence de type.
   * En V2, `Array` implémente la méthode `getResultSet()` afin de renvoyer un `java.sql.ResultSet` avec le même contenu que le tableau d’origine.
@@ -897,12 +897,12 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | Type ClickHouse | Compatible avec V1 | Type JDBC (V2) | Classe Java (V2)                               | Type JDBC (V1) | Classe Java (V1)                               |
-  | --------------- | ------------------ | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
-  | Point           | ✅                  | OTHER          | double[]                               | OTHER          | double[]                               |
-  | Ring            | ✅                  | OTHER          | double[][]                     | OTHER          | double[][]                     |
-  | Polygon         | ✅                  | OTHER          | double[][][]           | OTHER          | double[][][]           |
-  | MultiPolygon    | ✅                  | OTHER          | double[][][][] | OTHER          | double[][][][] |
+  | Type ClickHouse | Compatible avec la V1 | Type JDBC (V2) | Classe Java (V2)                               | Type JDBC (V1) | Classe Java (V1)                               |
+  | --------------- | --------------------- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
+  | Point           | ✅                     | OTHER          | double[]                               | OTHER          | double[]                               |
+  | Ring            | ✅                     | OTHER          | double[][]                     | OTHER          | double[][]                     |
+  | Polygon         | ✅                     | OTHER          | double[][][]           | OTHER          | double[][][]           |
+  | MultiPolygon    | ✅                     | OTHER          | double[][][][] | OTHER          | double[][][][] |
 
   **Types Nullable et LowCardinality**
 
@@ -911,16 +911,16 @@ import WideTableWrapper from "/snippets/fr/components/WideTableWrapper/WideTable
 
   **Types spéciaux**
 
-  | Type ClickHouse         | Compatible avec V1 | Type JDBC (V2)   | Classe Java (V2)         | Type JDBC (V1)     | Classe Java (V1)         |
-  | ----------------------- | ------------------ | ---------------- | ------------------------ | ------------------ | ------------------------ |
-  | JSON                    | ❌                  | OTHER            | java.lang.String         | non pris en charge | non pris en charge       |
-  | AggregateFunction       | ✅                  | OTHER            | (représentation binaire) | OTHER              | (représentation binaire) |
-  | SimpleAggregateFunction | ✅                  | (type encapsulé) | (classe encapsulée)      | (type encapsulé)   | (classe encapsulée)      |
-  | UUID                    | ✅                  | OTHER            | java.util.UUID           | VARCHAR            | java.util.UUID           |
-  | IPv4                    | ✅                  | OTHER            | java.net.Inet4Address    | VARCHAR            | java.net.Inet4Address    |
-  | IPv6                    | ✅                  | OTHER            | java.net.Inet6Address    | VARCHAR            | java.net.Inet6Address    |
-  | Dynamic                 | ❌                  | OTHER            | java.Object              | non pris en charge | non pris en charge       |
-  | Variant                 | ❌                  | OTHER            | java.Object              | non pris en charge | non pris en charge       |
+  | Type ClickHouse         | Compatible avec la V1 | Type JDBC (V2)   | Classe Java (V2)         | Type JDBC (V1)     | Classe Java (V1)         |
+  | ----------------------- | --------------------- | ---------------- | ------------------------ | ------------------ | ------------------------ |
+  | JSON                    | ❌                     | OTHER            | java.lang.String         | non pris en charge | non pris en charge       |
+  | AggregateFunction       | ✅                     | OTHER            | (représentation binaire) | OTHER              | (représentation binaire) |
+  | SimpleAggregateFunction | ✅                     | (type encapsulé) | (classe encapsulée)      | (type encapsulé)   | (classe encapsulée)      |
+  | UUID                    | ✅                     | OTHER            | java.util.UUID           | VARCHAR            | java.util.UUID           |
+  | IPv4                    | ✅                     | OTHER            | java.net.Inet4Address    | VARCHAR            | java.net.Inet4Address    |
+  | IPv6                    | ✅                     | OTHER            | java.net.Inet6Address    | VARCHAR            | java.net.Inet6Address    |
+  | Dynamic                 | ❌                     | OTHER            | java.Object              | non pris en charge | non pris en charge       |
+  | Variant                 | ❌                     | OTHER            | java.Object              | non pris en charge | non pris en charge       |
 
   * V1 utilise `VARCHAR` pour `UUID`, mais renvoie toujours un objet `java.util.UUID`. V2 corrige cela en associant `UUID` à `OTHER` et renvoie un objet `java.util.UUID`.
   * V1 utilise `VARCHAR` pour `IPv4` et `IPv6`, mais renvoie toujours des objets `java.net.Inet4Address` et `java.net.Inet6Address`. V2 corrige cela en associant `IPv4` et `IPv6` à `OTHER` et renvoie des objets `java.net.Inet4Address` et `java.net.Inet6Address`.
