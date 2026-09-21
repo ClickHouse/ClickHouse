@@ -1,0 +1,20 @@
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_1	1
+t_merge_hint_2	2
+1
+2
+t_merge_hint_2	2
+constant-only indexHint arguments do not lose the one-row block
+2
+1
+2
+t_merge_hint_1	1
+t_merge_hint_2	2
+2
+0
+plain virtual column filters are unaffected
+1
+2
+2
