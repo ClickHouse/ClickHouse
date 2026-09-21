@@ -65,6 +65,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     }
     hash_state.update(recursive_with);
     hash_state.update(distinct);
+    hash_state.update(is_pivot_rewrite);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
@@ -684,6 +685,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("recursive_with", true);
     if (distinct)
         w.writeBool("distinct", true);
+    if (is_pivot_rewrite)
+        w.writeBool("is_pivot_rewrite", true);
     if (group_by_all)
         w.writeBool("group_by_all", true);
     if (group_by_with_totals)
@@ -736,6 +739,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     recursive_with = r.getBool("recursive_with");
     distinct = r.getBool("distinct");
+    is_pivot_rewrite = r.getBool("is_pivot_rewrite");
     group_by_all = r.getBool("group_by_all");
     group_by_with_totals = r.getBool("group_by_with_totals");
     group_by_with_rollup = r.getBool("group_by_with_rollup");
