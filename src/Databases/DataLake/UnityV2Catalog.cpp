@@ -66,9 +66,11 @@ static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
 
-/// UniForm ("DELTA_UNIFORM_ICEBERG") is a Delta table that also publishes Iceberg metadata;
-/// read it as Delta because the Delta log is the source of truth.
-static const std::unordered_set<std::string> READABLE_DELTA_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+/// Formats handled by the Delta reader. UniForm (`DELTA_UNIFORM_ICEBERG`) can be read as either
+/// Delta or Iceberg, and we choose to read it as Delta because the Delta log is the source of truth.
+static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+/// Formats handled by the Iceberg reader (via the Iceberg REST catalog endpoint).
+static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
 
 /// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
 /// do not support direct reads of their storage.
@@ -283,9 +285,9 @@ DataLakeTableFormat UnityV2Catalog::detectTableFormat(const Poco::JSON::Object::
     }
 
     auto format = table_json->get("data_source_format").extract<String>();
-    if (READABLE_DELTA_FORMATS.contains(format))
+    if (DELTA_READER_FORMATS.contains(format))
         return DataLakeTableFormat::DELTA;
-    if (format == "ICEBERG")
+    if (ICEBERG_READER_FORMATS.contains(format))
         return DataLakeTableFormat::ICEBERG;
 
     LOG_DEBUG(log, "Unrecognized data_source_format: '{}'", format);
@@ -484,7 +486,7 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
 
     if (hasValueAndItsNotNone("data_source_format", object))
     {
-        if (!READABLE_DELTA_FORMATS.contains(object->get("data_source_format").extract<String>()))
+        if (!DELTA_READER_FORMATS.contains(object->get("data_source_format").extract<String>()))
         {
             result.setTableIsNotReadable(fmt::format(
                 "Cannot read table `{}` as Delta because it has data_source_format '{}'",
