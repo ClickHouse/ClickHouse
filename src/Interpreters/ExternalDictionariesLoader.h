@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
 #include <Common/quoteString.h>
+#include <Core/QualifiedTableName.h>
 
 #include <memory>
 
@@ -27,11 +28,20 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
+    void reloadDictionary(const QualifiedTableName & dictionary_name) const;
+
     bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
+
+    bool unloadDictionary(const QualifiedTableName & dictionary_name) const;
 
     void unloadAllDictionaries() const;
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
+
+    /// The same, but resolving an unqualified name against the given database rather than the
+    /// current database of a context. Used when the name has to resolve against the database
+    /// owning the definition, e.g. when the metadata of a table is loaded.
+    QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
@@ -71,8 +81,12 @@ protected:
 
     std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
+    std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;
+
     /// Try convert qualified dictionary name to persistent UUID
     std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
+
+    std::string resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
