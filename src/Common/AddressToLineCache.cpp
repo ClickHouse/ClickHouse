@@ -90,12 +90,18 @@ std::string_view AddressToLineCache::implCached(uintptr_t addr)
     /// Slow path: write lock — DWARF lookup + insert
     std::unique_lock write_lock(mutex);
 
-    /// Double-check: another thread may have inserted while we waited
+    /// Double-check: another thread may have inserted while we waited for the write lock.
+    if (auto * it = map.find(addr); it)
+        return it->getMapped();
+
+    /// Compute before publishing: if impl() throws, nothing is inserted, so the next
+    /// lookup for this address retries instead of getting a stale empty result.
+    std::string_view result = impl(addr);
+
     typename Map::LookupResult it = nullptr;
     bool inserted = false;
     map.emplace(addr, it, inserted);
-    if (inserted)
-        it->getMapped() = impl(addr);
+    it->getMapped() = result;
     return it->getMapped();
 }
 

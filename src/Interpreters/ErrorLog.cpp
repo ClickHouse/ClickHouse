@@ -144,6 +144,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     IColumn & symbols_column = *columns[column_idx++];
     IColumn & lines_column = *columns[column_idx++];
+    bool symbols_inserted = false;
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (!last_error_trace.empty())
@@ -163,6 +164,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
         {
             auto [symbols, lines] = symbolizeTrace(frame_pointers.data(), frame_pointers.size());
             symbols_column.insert(Array(symbols.begin(), symbols.end()));
+            symbols_inserted = true;
             lines_column.insert(Array(lines.begin(), lines.end()));
             return;
         }
@@ -176,13 +178,14 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
                 tryLogCurrentException(
                     getLogger("ErrorLog"),
                     "Cannot symbolize the stack trace for system.error_log, "
-                    "last_error_symbols and last_error_lines will be empty");
+                    "last_error_symbols and/or last_error_lines will be empty");
             });
         }
     }
 #endif
-
-    symbols_column.insertDefault();
+    /// Avoid a second insert if the code above already inserted real data before failing to insert into lines_column.
+    if (!symbols_inserted)
+        symbols_column.insertDefault();
     lines_column.insertDefault();
 }
 
