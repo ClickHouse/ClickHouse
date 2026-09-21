@@ -2,8 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -71,7 +69,6 @@ namespace Setting
 {
     extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -405,7 +402,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
     /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
     /// A `LIMIT [n] AFTER/UNTIL` range is applied once on the initiator on the normal path
-    /// (StorageDistributed::getOptimizedQueryProcessingStage keeps the default stage for it), whereas
+    /// (StorageDistributed::getOptimizedQueryProcessingStageAnalyzer keeps the default stage for it), whereas
     /// the pushdown would apply it on every shard to that shard's rows, so it is rejected as well.
     ///
     /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
@@ -911,27 +908,11 @@ void StorageView::readImpl(
     if (hides_rows && view_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0)
         view_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, post_filter);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
-    }
-    else
-    {
-        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        interpreter.buildQueryPlan(query_plan);
-
-        /// It's expected that the columns read from storage are not constant.
-        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-        ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-        materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
-
-        auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
-        materializing->setStepDescription("Materialize constants after VIEW subquery");
-        query_plan.addStep(std::move(materializing));
     }
 
     /// And also convert to expected structure.
