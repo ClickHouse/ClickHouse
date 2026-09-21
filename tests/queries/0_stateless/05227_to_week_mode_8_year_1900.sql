@@ -48,11 +48,23 @@ DROP TABLE t_year_week_1900;
 -- are computed by shifting through the 400 year cycle. The Sunday-first week of 9999-12-26 and the
 -- Monday-first week of 9999-12-27 contain January 1 of the year 10000, so their week-year is 10000 and
 -- must not be clamped back to 9999, which would make `toYearWeek` fall from 999952 to 999901. 0000-01-01 is
--- a Saturday belonging to the week-year -1, which is not representable: it saturates to week 0 of the year 0
--- instead of week 52, so that the value does not fall on the next day either.
+-- a Saturday belonging to the week-year -1, which is not representable: `toYearWeek` saturates to zero - the
+-- value sorting before every other one - so that it does not fall on the next day either. The saturation is
+-- confined to the `YYYYWW` number: `toWeek` keeps reporting the real week number of such a day.
 SELECT d, toYearWeek(d, 8), toYearWeek(d, 9), toYearWeek(d, 0), toYearWeek(d, 3), toWeek(d, 8), toWeek(d, 9), toWeek(d, 0), toWeek(d, 3)
 FROM (SELECT toDate32('9999-12-25') + number AS d FROM numbers(3) UNION ALL SELECT toDate32('0000-01-01') + number FROM numbers(3))
 ORDER BY d;
+
+-- `toWeek(date, 3)` is documented to be exactly `toISOWeek(date)` and to return a number in the `1-53`
+-- range, including for the days at the bottom of the range, whose ISO week belongs to the unrepresentable
+-- week-year -1.
+SELECT d, toWeek(d, 3), toISOWeek(d), toWeek(d, 1), toWeek(d, 5), toWeek(d, 7)
+FROM (SELECT toDate32('0000-01-01') + number AS d FROM numbers(4))
+ORDER BY d;
+
+SELECT count()
+FROM (SELECT toDate32('0000-01-01') + number AS d FROM numbers(1000) UNION ALL SELECT toDate32('9999-12-31') - number FROM numbers(1000))
+WHERE toWeek(d, 3) != toISOWeek(d) OR toWeek(d, 3) < 1 OR toWeek(d, 3) > 53;
 
 -- `toYearWeek` must be non-decreasing over the whole representable range for every mode.
 SELECT mode, count()

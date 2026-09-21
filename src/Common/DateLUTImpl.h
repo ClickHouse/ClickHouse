@@ -1178,6 +1178,49 @@ public:
         return static_cast<UInt8>(1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7);
     }
 
+    /// The week number together with its week-year, which is returned as a signed number, because it can
+    /// fall outside of the representable [0000, 9999] range at the boundaries of the `Date32` range: the
+    /// last days of 9999 can belong to the week-year 10000, and 0000-01-01 is a Saturday belonging to the
+    /// week-year -1. See `toYearWeek` and `toYearWeekPacked` for how each of them handles that.
+    template <typename DateOrTime>
+    std::pair<Int32, UInt8> toSignedYearWeek(DateOrTime v, UInt8 week_mode) const
+    {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                /// A raw `Date32` day number can be arbitrarily far outside the representable
+                /// [0000-01-01, 9999-12-31] window (`DataTypeDate32` is just an `Int32`, and e.g.
+                /// `toDate32('9999-12-31') + 146097` stays a valid column value). Saturate it first, the same
+                /// way every other out-of-range helper does through `outOfRangeDayIndex`, so that the
+                /// week-year cannot run away from the calendar and overflow the four-digit year.
+                /// The clamp is a no-op for every representable day, so it does not affect the boundary
+                /// values. It is needed exactly for a day number, because `toDayNum` is the identity
+                /// for an `ExtendedDayNum`, while for a `Time` it already saturates the same way.
+                const ExtendedDayNum saturated = dayNumOfDayIndex(outOfRangeDayIndex(toDayNum(v)));
+                /// Year/week numbering is timezone-independent and repeats every 400 years.
+                Int32 cycles = 0;
+                const ExtendedDayNum shifted = shiftIntoLUTRange(saturated, cycles);
+                const YearWeek yw = toYearWeek(shifted, week_mode);
+                return {static_cast<Int32>(yw.first) - cycles * 400, yw.second};
+            }
+
+        const YearWeek yw = toYearWeek(v, week_mode);
+        return {static_cast<Int32>(yw.first), yw.second};
+    }
+
+    /// The result of `toYearWeek` packed into the `YYYYWW` number, as the `toYearWeek` function returns it.
+    /// `ToYearWeekImpl::hasMonotonicity` is `true` and `KeyCondition` relies on it, so a week-year below the
+    /// representable range saturates to zero - the value that sorts before every other one - instead of
+    /// wrapping around. The week-year 10000 of the last days of 9999 fits `UInt32` and is kept as is.
+    template <typename DateOrTime>
+    UInt32 toYearWeekPacked(DateOrTime v, UInt8 week_mode) const
+    {
+        const auto [year, week] = toSignedYearWeek(v, week_mode);
+        if (year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+            return 0;
+        return static_cast<UInt32>(year) * 100 + week;
+    }
+
     /*
       The bits in week_mode has the following meaning:
        WeekModeFlag::MONDAY_FIRST (0)  If not set Sunday is first day of week
@@ -1217,30 +1260,13 @@ public:
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
-                /// A raw `Date32` day number can be arbitrarily far outside the representable
-                /// [0000-01-01, 9999-12-31] window (`DataTypeDate32` is just an `Int32`, and e.g.
-                /// `toDate32('9999-12-31') + 146097` stays a valid column value). Saturate it first, the same
-                /// way every other out-of-range helper does through `outOfRangeDayIndex`, so that the
-                /// week-year cannot run away from the calendar and overflow the four-digit year.
-                /// The clamp is a no-op for every representable day, so it does not affect the boundary
-                /// values below. It is needed exactly for a day number, because `toDayNum` is the identity
-                /// for an `ExtendedDayNum`, while for a `Time` it already saturates the same way.
-                const ExtendedDayNum saturated = dayNumOfDayIndex(outOfRangeDayIndex(toDayNum(v)));
-                /// Year/week numbering is timezone-independent and repeats every 400 years.
-                Int32 cycles = 0;
-                const ExtendedDayNum shifted = shiftIntoLUTRange(saturated, cycles);
-                YearWeek yw = toYearWeek(shifted, week_mode);
-                /// The week-year can fall just outside the representable [0000, 9999] range at the boundaries,
-                /// and `toYearWeek` promises to be monotonic, so the result must not fall back when that
-                /// happens. The last days of 9999 can belong to week-year 10000, which fits both the UInt16
-                /// year and the UInt32 YYYYWW result, so it is kept as is. 0000-01-01 is a Saturday belonging
-                /// to week-year -1, which cannot be represented: it saturates to week 0 of the year 0, the
-                /// number of the days preceding the first week of a year, which sorts before every other value.
-                const Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
-                if (adjusted_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
-                    return YearWeek(DATE_LUT_MIN_REPRESENTABLE_YEAR, 0);
-                yw.first = static_cast<UInt16>(adjusted_year);
-                return yw;
+                const auto [year, week] = toSignedYearWeek(v, week_mode);
+                /// Only the week-year can be unrepresentable here, the week number itself is always
+                /// correct, and it is shared with `toWeek`, so it must be returned as is: mode 3 is
+                /// documented to return a number in the `1-53` range, and `toWeek(date, 3)` has to agree
+                /// with `toISOWeek`. The monotonic saturation of the whole `YYYYWW` number lives in
+                /// `toYearWeekPacked` instead.
+                return YearWeek(static_cast<UInt16>(std::max<Int32>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR)), week);
             }
 
         const bool newyear_day_mode = week_mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY);
