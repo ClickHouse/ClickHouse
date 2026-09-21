@@ -182,6 +182,48 @@ bool fieldHasStringWithNulByte(const Field & field)
     }
 }
 
+/// Whether a string literal (possibly nested in an IN tuple / array / map) is written differently by
+/// the SQL dialects: `LiteralEscapingStyle::Regular` escapes a quote as `\'` and a backslash as `\\`,
+/// which is what MySQL reads back, while a standard-conforming database (PostgreSQL, SQLite) reads the
+/// backslash literally and ends the string at the quote. A caller that does not know the dialect of its
+/// remote (the XDBC bridge reports the identifier quoting style only) must not push such a literal down:
+/// the remote would compare against different bytes and drop the matching rows before ClickHouse can
+/// filter them itself.
+bool fieldHasStringWithDialectSpecificEscaping(const Field & field)
+{
+    checkStackSize();
+
+    switch (field.getType())
+    {
+        case Field::Types::String:
+        {
+            const auto & value = field.safeGet<String>();
+            return std::any_of(value.begin(), value.end(), [](char c)
+            {
+                const auto byte = static_cast<unsigned char>(c);
+                return c == '\'' || c == '\\' || byte < 0x20 || byte == 0x7F;
+            });
+        }
+        case Field::Types::Tuple:
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasStringWithDialectSpecificEscaping(element))
+                    return true;
+            return false;
+        case Field::Types::Array:
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasStringWithDialectSpecificEscaping(element))
+                    return true;
+            return false;
+        case Field::Types::Map:
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasStringWithDialectSpecificEscaping(element))
+                    return true;
+            return false;
+        default:
+            return false;
+    }
+}
+
 /// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers rather than
 /// numeric literals. Keep predicates containing non-finite floating-point values local.
 bool fieldHasNonFiniteFloatingPointValue(const Field & field)
@@ -436,7 +478,8 @@ bool isCompatible(
     LiteralEscapingStyle literal_escaping_style,
     const NamesAndTypesList & available_columns,
     RowValueContext row_value_context,
-    const NameSet & unsupported_functions)
+    const NameSet & unsupported_functions,
+    bool require_dialect_neutral_literals)
 {
     /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
     /// instead of exhausting the stack.
@@ -511,7 +554,8 @@ bool isCompatible(
         auto & arguments = function->arguments->children;
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
-                              argumentRowValueContext(name, i, row_value_context), unsupported_functions))
+                              argumentRowValueContext(name, i, row_value_context), unsupported_functions,
+                              require_dialect_neutral_literals))
                 return false;
 
         /// Normalize a single-row multi-column IN set so it does not collapse to scalars when
@@ -529,6 +573,12 @@ bool isCompatible(
         /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
         /// bytes in string values, so do not push such predicates down.
         if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
+            return false;
+
+        /// The caller does not know which dialect reads the literal back (see
+        /// `fieldHasStringWithDialectSpecificEscaping`), so only a string that every dialect reads the
+        /// same way may be pushed down.
+        if (require_dialect_neutral_literals && fieldHasStringWithDialectSpecificEscaping(literal->value))
             return false;
 
         if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasNonFiniteFloatingPointValue(literal->value))
@@ -743,7 +793,8 @@ String transformQueryForExternalDatabaseImpl(
     ContextPtr context,
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
-    const NameSet & local_only_columns)
+    const NameSet & local_only_columns,
+    bool require_dialect_neutral_literals)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
@@ -801,7 +852,8 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions))
+        if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions,
+                         require_dialect_neutral_literals))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -824,7 +876,8 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions))
+                        if (isCompatible(elem, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate,
+                                         unsupported_functions, require_dialect_neutral_literals))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
@@ -889,7 +942,8 @@ String transformQueryForExternalDatabase(
     ContextPtr context,
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
-    const NameSet & local_only_columns)
+    const NameSet & local_only_columns,
+    bool require_dialect_neutral_literals)
 {
     if (!query_info.syntax_analyzer_result)
     {
@@ -918,7 +972,8 @@ String transformQueryForExternalDatabase(
             context,
             limit,
             unsupported_functions,
-            local_only_columns);
+            local_only_columns,
+            require_dialect_neutral_literals);
     }
 
     auto clone_query = query_info.query->clone();
@@ -934,7 +989,8 @@ String transformQueryForExternalDatabase(
         context,
         limit,
         unsupported_functions,
-        local_only_columns);
+        local_only_columns,
+        require_dialect_neutral_literals);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(

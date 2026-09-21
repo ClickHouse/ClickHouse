@@ -100,15 +100,22 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         bridge_helper->getIdentifierQuotingStyle(),
         /// The bridge protocol only reports the identifier quoting style, not the literal
         /// escaping dialect of the remote database, so string literals keep the historical
-        /// `Regular` (backslash-escaping) serialization here. Predicates whose literals such
-        /// a database (e.g. PostgreSQL over ODBC) would read differently should not be pushed
-        /// down until the bridge exposes an escaping style; see the dialect-specific handling
-        /// in `transformQueryForExternalDatabase.cpp`.
+        /// `Regular` (backslash-escaping) serialization here. That serialization is only what
+        /// MySQL reads back: a standard-conforming database behind the bridge (PostgreSQL,
+        /// SQLite) reads the backslash literally and ends the string at the quote, so it would
+        /// compare against different bytes and drop the matching rows before ClickHouse can
+        /// filter them itself. Until the bridge exposes the escaping dialect, such a literal is
+        /// therefore not pushed down at all (`require_dialect_neutral_literals`); a predicate
+        /// over it is evaluated by ClickHouse, and rejected under `external_table_strict_query`.
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         getStorageID(),
-        local_context);
+        local_context,
+        /*limit=*/ {},
+        /*unsupported_functions=*/ {},
+        /*local_only_columns=*/ {},
+        /*require_dialect_neutral_literals=*/ true);
     LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;

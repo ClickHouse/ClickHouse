@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <fmt/format.h>
+
 #include <Storages/MemorySettings.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -134,7 +136,8 @@ static void checkOld(
     const std::string & query,
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {})
+    const NameSet & local_only_columns = {},
+    bool require_dialect_neutral_literals = false)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -168,7 +171,8 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
-        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns);
+        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns,
+        require_dialect_neutral_literals);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -200,7 +204,8 @@ static void checkNewAnalyzer(
     const std::string & query,
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {})
+    const NameSet & local_only_columns = {},
+    bool require_dialect_neutral_literals = false)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -224,7 +229,8 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
-        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns);
+        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns,
+        require_dialect_neutral_literals);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -237,16 +243,62 @@ static void check(
     const std::string & expected,
     const std::string & expected_new = "",
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const NameSet & local_only_columns = {})
+    const NameSet & local_only_columns = {},
+    bool require_dialect_neutral_literals = false)
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style, local_only_columns);
+        checkOld(state, table_num, query, expected, literal_escaping_style, local_only_columns, require_dialect_neutral_literals);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, local_only_columns);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style,
+                         local_only_columns, require_dialect_neutral_literals);
     }
+}
+
+/// `StorageXDBC` does not know which database is behind the bridge, so it asks for dialect-neutral
+/// literals only: a string that `Regular` escaping writes differently from a standard-conforming
+/// database is filtered by ClickHouse instead of being compared against different bytes remotely.
+TEST(TransformQueryForExternalDatabase, DialectNeutralLiteralsOnly)
+{
+    const State & state = State::instance();
+
+    /// A string every dialect reads the same way is still pushed down.
+    check(state, 1, {"field"},
+          "SELECT field FROM test.table WHERE field = 'plain'",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = 'plain')",
+          "",
+          LiteralEscapingStyle::Regular, {}, true);
+
+    /// A backslash, a quote and a control character are all written differently by the dialects.
+    for (const char * literal : {R"('a\\b')", R"('it\'s')", R"('a\nb')"})
+    {
+        const std::string query = fmt::format("SELECT field FROM test.table WHERE field = {}", literal);
+        check(state, 1, {"field"},
+              query,
+              R"(SELECT "field" FROM "test"."table")",
+              "",
+              LiteralEscapingStyle::Regular, {}, true);
+
+        /// Without the flag the very same predicate is pushed down (this is what MySQL gets).
+        SCOPED_TRACE(query);
+        checkOld(state, 1, query, fmt::format(R"(SELECT "field" FROM "test"."table" WHERE "field" = {})", literal));
+    }
+
+    /// Only the branch over the unsafe literal stays local; a conjunction keeps the rest.
+    check(state, 1, {"field", "column"},
+          R"(SELECT field, column FROM test.table WHERE column = 1 AND field = 'a\\b')",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "column" = 1)",
+          R"(SELECT "field", "column" FROM "test"."table" WHERE "column" = 1)",
+          LiteralEscapingStyle::Regular, {}, true);
+
+    /// A nested literal in an IN set is covered too.
+    check(state, 1, {"field"},
+          R"(SELECT field FROM test.table WHERE field IN ('plain', 'a\\b'))",
+          R"(SELECT "field" FROM "test"."table")",
+          "",
+          LiteralEscapingStyle::Regular, {}, true);
 }
 
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)

@@ -35,6 +35,12 @@ class IAST;
   * over such a column is kept local as a whole. Under `external_table_strict_query` this throws
   * `INCORRECT_QUERY`, like any other condition that cannot be pushed down.
   *
+  * When `require_dialect_neutral_literals` is set, a string literal that the SQL dialects read back
+  * differently (one holding a quote, a backslash or a control character) is not pushed down. A caller
+  * that does not know the literal escaping dialect of its remote - the XDBC bridge reports the
+  * identifier quoting style only - sets it, so that such a predicate is filtered by ClickHouse instead
+  * of being compared against different bytes on the remote side.
+  *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   *
   * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
@@ -52,7 +58,8 @@ String transformQueryForExternalDatabase(
     ContextPtr context,
     std::optional<size_t> limit = {},
     const NameSet & unsupported_functions = {},
-    const NameSet & local_only_columns = {});
+    const NameSet & local_only_columns = {},
+    bool require_dialect_neutral_literals = false);
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
