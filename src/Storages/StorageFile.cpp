@@ -3191,6 +3191,8 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            checkStorageSettingNames(factory_args);
+
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3222,7 +3224,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Apply changes from SETTINGS clause, with validation.
+                // Applying the changes validates the values, not the names.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);

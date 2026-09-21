@@ -17,6 +17,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -738,28 +739,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -782,9 +761,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -793,9 +770,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -853,7 +827,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -3351,6 +3325,15 @@ private:
                     ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
+            /// The same for a declaration that could not be analyzed: `prepare` left its directory out of this
+            /// part and nothing can rebuild it, so its inherited entry is always an orphan.
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+            {
+                const auto projection_file = projection_name + ".proj";
+                if (ctx->files_to_skip.contains(projection_file))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -4301,6 +4284,15 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
+        /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
+        /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
+        if (ctx->mutating_pipeline_builder.initialized())
+        {
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+                ctx->files_to_skip.insert(projection_name + ".proj");
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,
