@@ -308,9 +308,37 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-        markSecretArgument(4);
+        const auto positional = classifyPositionalArguments();
+        if (positional.size() > 4)
+            markSecretArgument(positional[4]);
+        findSecretNamedArgument("password", 0);
         findTLSCredentialsSecretArguments(0);
     }
+}
+
+std::vector<size_t> FunctionSecretArgumentsFinder::classifyPositionalArguments(size_t start)
+{
+    std::vector<size_t> positional;
+    bool seen_named = false;
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (equals_func && equals_func->name() == "equals" && equals_func->hasArguments()
+            && equals_func->arguments->size() == 2)
+        {
+            seen_named = true;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+
+        positional.push_back(i);
+    }
+    return positional;
 }
 
 void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t start)
@@ -1167,7 +1195,10 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
-        markSecretArgument(3);
+        const auto positional = classifyPositionalArguments();
+        if (positional.size() > 3)
+            markSecretArgument(positional[3]);
+        findSecretNamedArgument("password", 0);
         findTLSCredentialsSecretArguments(0);
     }
 }

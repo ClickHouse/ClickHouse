@@ -238,6 +238,13 @@ protected:
     /// expression, so it can name a secret argument that `findNamedArgument` never sees.
     void markNamedArgumentsWithUnreadableKeys(size_t start);
 
+    /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order, so a
+    /// branch that knows a secret's positional slot can find the argument that actually holds it. A
+    /// positional argument after the first named one is hidden instead of listed: the parsers reject that
+    /// mix, the statement is formatted for logging before they do, and the slot it was meant to fill is
+    /// then unknowable. `classifyS3Arguments` applies the same rule to the `s3` signatures.
+    std::vector<size_t> classifyPositionalArguments(size_t start = 0);
+
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
     /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
     /// and the `headers(...)` / `extra_credentials(...)` map overrides.
