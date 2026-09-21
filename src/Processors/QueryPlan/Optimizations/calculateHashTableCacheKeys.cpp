@@ -92,6 +92,13 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// after a decision has already been made on the wrong estimate.
     if (const auto & modifiers = read.getQueryInfo().table_expression_modifiers)
         modifiers->updateTreeHash(hash);
+    /// A row policy is pushed into the read itself rather than becoming a step above it, so there is
+    /// nothing else in the plan to tell two policies apart: the header is the same, and a policy over
+    /// a column outside the primary key leaves index analysis - and so the drift check - unmoved. Two
+    /// policies that pass very different numbers of rows to the boundary would otherwise share an
+    /// entry.
+    if (const auto & row_level_filter = read.getRowLevelFilter())
+        row_level_filter->actions.updateHash(hash);
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();

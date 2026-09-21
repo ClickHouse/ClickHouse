@@ -10,17 +10,21 @@
 -- degenerates to the read, and the read is all that can tell the queries apart.
 --
 -- `automatic_parallel_replicas_mode` = 1 installs the statistics collector exactly when the lookup
--- found nothing (or found something stale), so `RuntimeDataflowStatisticsInputBytes` > 0 reads as
--- "this query did not reuse an entry". Mode 2 would collect unconditionally and assert nothing.
+-- found nothing (or found something stale), so a query that recorded statistics is one that did not
+-- reuse an entry. Mode 2 would collect unconditionally and assert nothing.
 
 DROP TABLE IF EXISTS t_autopr_stats_key;
 DROP TABLE IF EXISTS t_autopr_stats_key_sampled;
 DROP TABLE IF EXISTS t_autopr_stats_key_split;
+DROP TABLE IF EXISTS t_autopr_stats_key_policy;
 
 CREATE TABLE t_autopr_stats_key (k UInt64, narrow UInt8, wide String) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_autopr_stats_key_sampled (k UInt64, v UInt32) ENGINE = MergeTree ORDER BY k SAMPLE BY k;
 -- `a` + `UInt8` and `aU` + `Int8` are the same bytes under a different split.
 CREATE TABLE t_autopr_stats_key_split (a UInt8, aU Int8) ENGINE = MergeTree ORDER BY tuple();
+-- `narrow` is deliberately outside the primary key: a policy over it cannot narrow index analysis,
+-- so `total_rows_to_read` stays put and the drift check has nothing to catch.
+CREATE TABLE t_autopr_stats_key_policy (k UInt64, narrow UInt8) ENGINE = MergeTree ORDER BY k;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3,
@@ -38,6 +42,7 @@ SET automatic_parallel_replicas_min_bytes_per_replica=0;
 INSERT INTO t_autopr_stats_key SELECT number, number % 7, repeat('x', 200) FROM numbers(200000);
 INSERT INTO t_autopr_stats_key_sampled SELECT number, number FROM numbers(200000);
 INSERT INTO t_autopr_stats_key_split SELECT number % 256, number % 128 FROM numbers(200000);
+INSERT INTO t_autopr_stats_key_policy SELECT number, number % 7 FROM numbers(200000);
 
 -- A different set of columns. `wide` is a two-hundred-byte string where `narrow` is one byte, so
 -- reusing query 0's entry would price query 2 at a fraction of what it reads.
@@ -65,6 +70,20 @@ SELECT a FROM t_autopr_stats_key_split ORDER BY a FORMAT Null
 SELECT aU FROM t_autopr_stats_key_split ORDER BY aU FORMAT Null
     SETTINGS log_comment='05234_query_7_au_int8';
 
+-- A row policy. It is pushed into the read rather than becoming a step above it, so nothing else in
+-- the plan distinguishes two policies: both leave the header identical, and a policy over a column
+-- outside the primary key leaves index analysis - and so the drift check - unmoved. The two below
+-- pass a different number of rows into the sort.
+CREATE ROW POLICY r_05234_a ON t_autopr_stats_key_policy USING narrow < 3 TO ALL;
+SELECT k, narrow FROM t_autopr_stats_key_policy ORDER BY k FORMAT Null
+    SETTINGS log_comment='05234_query_8_policy_a';
+DROP ROW POLICY r_05234_a ON t_autopr_stats_key_policy;
+
+CREATE ROW POLICY r_05234_b ON t_autopr_stats_key_policy USING narrow < 5 TO ALL;
+SELECT k, narrow FROM t_autopr_stats_key_policy ORDER BY k FORMAT Null
+    SETTINGS log_comment='05234_query_9_policy_b';
+DROP ROW POLICY r_05234_b ON t_autopr_stats_key_policy;
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -85,3 +104,4 @@ FORMAT TSVWithNames;
 DROP TABLE t_autopr_stats_key;
 DROP TABLE t_autopr_stats_key_sampled;
 DROP TABLE t_autopr_stats_key_split;
+DROP TABLE t_autopr_stats_key_policy;
