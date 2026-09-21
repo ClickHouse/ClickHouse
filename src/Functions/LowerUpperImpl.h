@@ -35,13 +35,14 @@ private:
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), arrayImpl, MULTITARGET_FUNCTION_BODY((const UInt8 * __restrict src, const UInt8 * src_end, UInt8 * __restrict dst) /// NOLINT
     {
-        const auto flip_case_mask = 'A' ^ 'a';
+        constexpr UInt8 flip_case_mask = 'A' ^ 'a';
 
+        /// Selecting the mask rather than the result keeps the vectorizer on `vpand`, not the 2-uop `vpblendvb`.
         for (; src < src_end; ++src, ++dst)
-            if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
-                *dst = *src ^ flip_case_mask;
-            else
-                *dst = *src;
+        {
+            const UInt8 c = *src;
+            *dst = c ^ ((c >= not_case_lower_bound && c <= not_case_upper_bound) ? flip_case_mask : UInt8(0));
+        }
     }))
 
     static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
