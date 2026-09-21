@@ -28,7 +28,7 @@ On a VM the executor runs as the `clicklink-executor` systemd unit next to the o
 
 You choose managed mode when you enroll: pass `--managed` to `clicklink clctl init`, or answer the prompt on a terminal. On a VM, `init` takes the cluster from this host's kubeconfig (`--cluster-name` when it holds more than one EKS cluster) and grants the executor's cluster-wide access inline. On Kubernetes, pass `--egress-cidrs` with the CIDRs of your connector endpoint so the chart stages its default-deny NetworkPolicy enabled.
 
-The install itself is unchanged. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#enroll-and-install) for the full flow and the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli#init) for the flags.
+The install itself is unchanged. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) for the full flow and the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli#init) for the flags.
 
 ## Create a service {#create-a-service}
 
@@ -156,7 +156,7 @@ Version upgrades and configuration changes have no customer approval step. Click
 
 Creates, scales, and starts complete asynchronously. The executor reports the command as running as soon as it applies the definition and sends a progress report every 2 minutes. It reports the final outcome once the server replicas are ready. If they are not ready within 2 hours it reports the command as failed. Should the replicas come up later, it moves the service back to `running`.
 
-The `instances scale`, `instances patch`, and `instances delete` subcommands post commands straight to the executor's local API, without ClickHouse Cloud's involvement. Leave them alone unless your ClickHouse account team asks you to run one.
+The `instances scale`, `instances patch`, and `instances delete` subcommands post commands straight to the executor's local API, without ClickHouse Cloud's involvement. Leave them alone unless your ClickHouse account team asks you to run one; the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli#instances-scale) describes what each does.
 
 ## Support sessions for a managed service {#support-sessions}
 

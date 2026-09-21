@@ -237,7 +237,7 @@ clicklink clctl scraper access provision --target helm \
 
 ## clicklink clctl executor access {#executor-access}
 
-`init --managed` applies the executor's cluster-wide grant with your credentials. When it cannot, `init` prints the commands to run from a kubeconfig with cluster admin: `access apply` alone on a VM (the bundle is already staged), `access grant` then `access apply` on Kubernetes. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#enroll-and-install).
+`init --managed` applies the executor's cluster-wide grant with your credentials. When it cannot, `init` prints the commands to run from a kubeconfig with cluster admin: `access apply` alone on a VM (the bundle is already staged), `access grant` then `access apply` on Kubernetes. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
 ### executor access grant {#executor-access-grant}
 
@@ -344,7 +344,19 @@ Prints every service the executor knows, as JSON. `--cluster <name>` filters by 
 
 Prints one service, as JSON, with the storage it was created with. `--name <name>` is required, and so is the cluster: pass `--cluster`, set `CLCTL_CLUSTER`, or put it in `~/.clicklink/clctl.yaml`.
 
-The `instances scale`, `instances patch`, and `instances delete` subcommands post commands straight to the executor's local API, without ClickHouse Cloud's involvement. Run them only when your ClickHouse account team asks you to.
+The three subcommands below post commands straight to the executor's local API, without ClickHouse Cloud's involvement. Run them only when your ClickHouse account team asks you to. Each needs `--name <name>` and the cluster (`--cluster`, `CLCTL_CLUSTER`, or `~/.clicklink/clctl.yaml`), and each prints the command as JSON. Pass its `id` to [`commands get`](#commands-get) to track it; a failed command's `result` holds its error.
+
+### instances scale {#instances-scale}
+
+Sets the server replica count of one service through a `ScalingOverride`. `--server-replicas <n>` is required and must be above zero. The executor reports the command as running when it applies the override and as completed when the replicas are ready.
+
+### instances patch {#instances-patch}
+
+Changes one service in place. `--create-nlb` is the only patch. It provisions an internal NLB, as a Kubernetes `Service`, so a scraper outside the cluster can reach the servers, on AWS only. The executor backfills the scraper's host from the load balancer on its next sync. Without `--create-nlb` the command refuses with `nothing to patch`.
+
+### instances delete {#instances-delete}
+
+Removes one service from the cluster. It stops the service and waits for the operator's ordered shutdown. It then uninstalls the workload, deletes the `ns-<name>` namespace and the scraper's artifacts, waits for the namespace to be gone, and marks the service `terminated`. The service's buckets and IAM role stay; [`executor teardown`](#executor-teardown) removes them with your credentials. A retry of a completed delete is a no-op. The normal path is to delete the service in ClickHouse Cloud; see [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 ## clicklink clctl commands {#commands}
 
