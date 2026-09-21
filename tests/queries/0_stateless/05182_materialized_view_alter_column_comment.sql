@@ -56,4 +56,14 @@ WHERE database = currentDatabase() AND table = 'mv_comment_to' AND name = 'id';
 
 DROP TABLE mv_comment_to;
 DROP TABLE mv_comment_tgt;
+
+-- A plain view has no inner table, so nothing overwrites its column descriptions.
+CREATE VIEW mv_comment_view (id UInt64 COMMENT 'initial') AS SELECT id FROM mv_comment_src;
+ALTER TABLE mv_comment_view COMMENT COLUMN id 'changed';
+DETACH TABLE mv_comment_view;
+ATTACH TABLE mv_comment_view;
+SELECT 'plain view', comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_view' AND name = 'id';
+
+DROP TABLE mv_comment_view;
 DROP TABLE mv_comment_src;
