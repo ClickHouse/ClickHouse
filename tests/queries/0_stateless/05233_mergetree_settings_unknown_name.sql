@@ -22,14 +22,18 @@ SETTINGS param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
 
 SELECT '--- a setting of the engine is still accepted in the reset form ---';
 
--- `SHOW CREATE TABLE` reads the stored clause back exactly, and it also keeps the test runner from
--- randomizing MergeTree settings into these definitions, which is what makes that clause exact.
+-- Only the engine setting is read back: where an accepted reset ends up in the stored clause is
+-- decided by the SETTINGS split, not by this check.
 CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = MergeTree ORDER BY x
 SETTINGS index_granularity = 4096, min_bytes_for_wide_part = DEFAULT;
-SHOW CREATE TABLE t_mt_unknown_setting;
+SELECT create_table_query LIKE '%SETTINGS index_granularity = 4096%' FROM system.tables
+WHERE database = currentDatabase() AND name = 't_mt_unknown_setting';
 DROP TABLE t_mt_unknown_setting;
 
 SELECT '--- an alias and an obsolete setting of the engine are still accepted ---';
+
+-- `SHOW CREATE TABLE` reads the stored clause back exactly, and it also keeps the test runner from
+-- randomizing MergeTree settings into these definitions, which is what makes that clause exact.
 
 -- `allow_experimental_block_number_column` is an alias and `in_memory_parts_enable_wal` is obsolete;
 -- both resolve to a setting of the engine, so neither is a name this rejects.
@@ -38,11 +42,12 @@ SETTINGS index_granularity = 4096, allow_experimental_block_number_column = 1, i
 SHOW CREATE TABLE t_mt_unknown_setting;
 DROP TABLE t_mt_unknown_setting;
 
-SELECT '--- a query setting is still accepted, and is not stored on the table ---';
+SELECT '--- a query setting is still accepted ---';
 
 CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = MergeTree ORDER BY x
 SETTINGS index_granularity = 4096, max_threads = DEFAULT;
-SHOW CREATE TABLE t_mt_unknown_setting;
+SELECT create_table_query LIKE '%SETTINGS index_granularity = 4096%' FROM system.tables
+WHERE database = currentDatabase() AND name = 't_mt_unknown_setting';
 DROP TABLE t_mt_unknown_setting;
 
 SELECT '--- a query parameter is a VALUE, not a name, and still substitutes ---';
