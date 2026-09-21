@@ -33,10 +33,6 @@
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
-
 #if USE_SNAPPY
 #include <snappy.h>
 #endif
@@ -2942,28 +2938,21 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
-#if defined(__AVX2__)
-        constexpr size_t simd_width = 32;
-        const __m256i zero = _mm256_setzero_si256();
-
-        while (new_value_idx + simd_width <= page.num_values)
+        constexpr size_t batch_size = 64;
+        while (new_value_idx + batch_size <= page.num_values)
         {
-            const __m256i rep_values
-                = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(page.rep.data() + new_value_idx));
-            const UInt32 row_start_mask
-                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(rep_values, zero)));
-            const size_t rows_in_chunk = std::popcount(row_start_mask);
+            const size_t rows_in_chunk = std::popcount(
+                ~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx));
             const size_t rows_to_advance = end_row_idx - page.next_row_idx;
 
-            /// Consume a whole SIMD chunk only if it doesn't cross the target row.
+            /// Consume a whole batch only if it doesn't cross the target row.
             /// Otherwise the scalar loop below finds the exact boundary.
             if (rows_in_chunk > rows_to_advance)
                 break;
 
             page.next_row_idx += rows_in_chunk;
-            new_value_idx += simd_width;
+            new_value_idx += batch_size;
         }
-#endif
 
         while (new_value_idx < page.num_values)
         {
@@ -3099,158 +3088,92 @@ static void processDefLevelsForInnermostColumn(
     out_num_encoded_values = num_encoded_values;
 }
 
-static void processRepDefLevelsForArrayScalar(
-    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+static size_t processRepDefLevelsForFlatArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, size_t num_rows,
+    PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back();
+    const UInt64 initial_offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    UInt64 offset = initial_offset;
 
+    /// The caller already counted row boundaries while advancing through repetition levels.
+    /// Pre-size the offsets once instead of growing the PODArray for every row.
+    const size_t old_size = out_offsets.size();
+    out_offsets.reserve(old_size + num_rows);
+    UInt64 * out = &out_offsets.back();
+    out_offsets.resize_assume_reserved(old_size + num_rows);
+
+    size_t i = 0;
+    if (num_rows <= num_values / 4)
+    {
+        constexpr size_t batch_size = 64;
+        for (; i + batch_size <= num_values; i += batch_size)
+        {
+            /// Flat arrays have repetition levels 0/1 and array definition level 1.
+            /// Reuse ClickHouse's generic 64-byte mask helper for row boundaries and
+            /// values that contribute to the array offset.
+            UInt64 boundaries = ~bytes64MaskToBits64Mask(rep + i);
+            const UInt64 contributes = bytes64MaskToBits64Mask(def + i);
+            UInt64 processed = 0;
+
+            while (boundaries)
+            {
+                const unsigned boundary = std::countr_zero(boundaries);
+                const UInt64 before_boundary = boundary ? (UInt64(1) << boundary) - 1 : 0;
+                const UInt64 boundary_bit = UInt64(1) << boundary;
+
+                offset += std::popcount(contributes & before_boundary & ~processed);
+                *out++ = offset;
+                offset += (contributes >> boundary) & 1;
+
+                processed |= before_boundary | boundary_bit;
+                boundaries &= boundaries - 1;
+            }
+
+            offset += std::popcount(contributes & ~processed);
+        }
+    }
+
+    for (; i < num_values; ++i)
+    {
+        if (rep[i] == 0)
+            *out++ = offset;
+        offset += def[i] != 0;
+    }
+
+    *out = offset;
+    chassert(out == &out_offsets.back());
+    return static_cast<size_t>(offset - initial_offset);
+}
+
+/// Produces array offsets at a given level of nested arrays.
+static size_t processRepDefLevelsForArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
+    UInt8 parent_array_def, UInt8 max_rep, size_t num_rows, PaddedPODArray<UInt64> & out_offsets)
+{
+    if (max_rep == 1 && array_rep == 1 && array_def == 1 && parent_array_def == 0)
+        return processRepDefLevelsForFlatArray(num_values, def, rep, num_rows, out_offsets);
+
+    const UInt64 initial_offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    UInt64 offset = initial_offset;
     for (size_t i = 0; i < num_values; ++i)
     {
         if (def[i] < parent_array_def)
-            continue;
-
-        if (rep[i] < array_rep)
-        {
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-        }
-
-        offset += rep[i] <= array_rep && def[i] >= array_def;
-    }
-
-    out_offsets.back() = offset;
-}
-
-#if defined(__AVX2__)
-static void NO_INLINE processRepDefLevelsForArrayScalarRange(
-    size_t begin, size_t end, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, UInt64 & offset, PaddedPODArray<UInt64> & out_offsets)
-{
-    for (size_t i = begin; i < end; ++i)
-    {
-        if (def[i] < parent_array_def)
             /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
             continue;
 
         if (rep[i] < array_rep)
         {
             /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
             out_offsets.back() = offset;
             out_offsets.resize(out_offsets.size() + 1);
         }
 
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
+
+    /// The array may continue in the next page. The next call reads this offset back.
     out_offsets.back() = offset;
-}
-#endif
-
-/// Produces array offsets at a given level of nested arrays.
-///
-/// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
-/// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
-/// But I expect it would be slower because (a) simd would be less effective (especially after we
-/// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
-    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
-{
-#if defined(__AVX2__)
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
-
-    size_t i = 0;
-    constexpr size_t simd_width = 32;
-    constexpr int max_boundaries_for_simd = 12;
-
-    if (num_values < simd_width)
-    {
-        processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
-        return;
-    }
-
-    const __m256i sign_bit = _mm256_set1_epi8(static_cast<char>(0x80));
-    const __m256i array_rep_xored = _mm256_set1_epi8(static_cast<char>(array_rep ^ 0x80));
-    const __m256i array_def_xored = _mm256_set1_epi8(static_cast<char>(array_def ^ 0x80));
-    const __m256i parent_array_def_xored = _mm256_set1_epi8(static_cast<char>(parent_array_def ^ 0x80));
-
-    if (num_values >= 2 * simd_width)
-    {
-        const auto count_boundaries = [&](size_t pos)
-        {
-            const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + pos));
-            const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + pos));
-            const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
-            const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
-            const UInt32 boundary_mask
-                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
-            const UInt32 def_lt_parent_mask
-                = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
-            return std::popcount(boundary_mask & ~def_lt_parent_mask);
-        };
-
-        if (count_boundaries(0) > max_boundaries_for_simd && count_boundaries(simd_width) > max_boundaries_for_simd)
-        {
-            processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
-            return;
-        }
-    }
-
-    for (; i + simd_width <= num_values; i += simd_width)
-    {
-        const __m256i rep_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(rep + i));
-        const __m256i def_values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(def + i));
-        const __m256i rep_values_xored = _mm256_xor_si256(rep_values, sign_bit);
-        const __m256i def_values_xored = _mm256_xor_si256(def_values, sign_bit);
-        const UInt32 boundary_mask
-            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_rep_xored, rep_values_xored)));
-        const UInt32 def_lt_parent_mask
-            = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(parent_array_def_xored, def_values_xored)));
-        const UInt32 valid_mask = ~def_lt_parent_mask;
-        const UInt32 new_array_mask = valid_mask & boundary_mask;
-
-        if (std::popcount(new_array_mask) > max_boundaries_for_simd)
-        {
-            processRepDefLevelsForArrayScalarRange(
-                i, i + simd_width, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
-            continue;
-        }
-
-        const UInt32 rep_gt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(rep_values_xored, array_rep_xored)));
-        const UInt32 def_lt_array_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(array_def_xored, def_values_xored)));
-        const UInt32 contributes_mask = valid_mask & ~rep_gt_array_mask & ~def_lt_array_mask;
-
-        UInt32 processed_mask = 0;
-        UInt32 boundaries = new_array_mask;
-        while (boundaries)
-        {
-            const UInt32 boundary = std::countr_zero(boundaries);
-            const UInt32 before_boundary_mask = boundary ? (UInt32(1) << boundary) - 1 : 0;
-            const UInt32 boundary_bit = UInt32(1) << boundary;
-            offset += std::popcount(contributes_mask & before_boundary_mask & ~processed_mask);
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-            offset += (contributes_mask >> boundary) & 1;
-            processed_mask |= before_boundary_mask | boundary_bit;
-            boundaries &= boundaries - 1;
-        }
-        offset += std::popcount(contributes_mask & ~processed_mask);
-    }
-    processRepDefLevelsForArrayScalarRange(i, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
-    /// Note that the array may continue in the next page. In that case the next call to this
-    /// function will read this offset back, add to it, and assign it again.
-    out_offsets.back() = offset;
-#else
-    processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
-#endif
+    return static_cast<size_t>(offset - initial_offset);
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3275,8 +3198,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
+    std::optional<size_t> encoded_values_from_offsets;
     if (!page.rep.empty())
     {
+        const size_t num_rows = page.next_row_idx - first_row_idx;
         UInt8 parent_array_def = 0;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
@@ -3285,9 +3210,18 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            const size_t values_added = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                column_info.levels.back().rep, num_rows, offsets);
+
+            /// If the innermost array level is also the maximum definition level, every
+            /// element added to it corresponds to an encoded primitive value. Reuse that
+            /// count instead of scanning definition levels again below.
+            if (!subchunk.null_map
+                && level.rep == column_info.levels.back().rep
+                && level.def == column_info.levels.back().def)
+                encoded_values_from_offsets = values_added;
 
             parent_array_def = level.def;
         }
@@ -3295,7 +3229,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (encoded_values_from_offsets)
+    {
+        encoded_values_to_read = *encoded_values_from_offsets;
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
