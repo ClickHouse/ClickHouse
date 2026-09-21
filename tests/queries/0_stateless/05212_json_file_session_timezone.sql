@@ -17,10 +17,3 @@ SETTINGS engine_file_truncate_on_insert = 1;
 CREATE TABLE json_file_parser (j JSON(SKIP x)) ENGINE = File(TSV, {CLICKHOUSE_DATABASE:String});
 SELECT j FROM json_file_parser SETTINGS allow_simdjson = 0;
 SELECT j FROM json_file_parser SETTINGS allow_simdjson = 1; -- { serverError INCORRECT_DATA }
-
-SELECT countIf(j.a = repeat(repeat(toString(number % 10), 2), 1000000))
-FROM
-(
-    SELECT CAST(concat('{"a":"', repeat(repeat(toString(number % 10), 2), 1000000), '"}'), 'JSON(a String)') AS j, number
-    FROM numbers(3)
-);

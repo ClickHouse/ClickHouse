@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <algorithm>
+#include <Common/DateLUT.h>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -67,6 +68,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+namespace
+{
+
+const DateLUTImpl & getJSONSessionTimezone(const FormatSettings & format_settings)
+{
+    return format_settings.json.session_timezone ? *format_settings.json.session_timezone : DateLUT::instance();
+}
+
 }
 
 template <typename JSONParser>
@@ -714,11 +725,11 @@ public:
 };
 
 template <typename JSONParser>
-class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
+class DateTimeNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     explicit DateTimeNode(const DataTypeDateTime & datetime_type)
-        : TimezoneMixin(datetime_type.hasExplicitTimeZone() ? datetime_type.getTimeZone().getTimeZone() : "")
+        : explicit_time_zone(datetime_type.hasExplicitTimeZone() ? &datetime_type.getTimeZone() : nullptr)
         , utc_time_zone(DateLUT::instance("UTC"))
     {
     }
@@ -739,7 +750,8 @@ public:
         time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            const auto & time_zone = explicit_time_zone ? *explicit_time_zone : getJSONSessionTimezone(format_settings);
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, time_zone))
             {
                 error = fmt::format("cannot parse DateTime value here: {}", element.getString());
                 return false;
@@ -792,7 +804,11 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(
+        time_t & value,
+        std::string_view data,
+        FormatSettings::DateTimeInputFormat date_time_input_format,
+        const DateLUTImpl & time_zone) const
     {
         ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
@@ -816,6 +832,7 @@ public:
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
     /// `DateTime` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl * explicit_time_zone;
     const DateLUTImpl & utc_time_zone;
 };
 
@@ -841,7 +858,7 @@ public:
         time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), getJSONSessionTimezone(format_settings)))
             {
                 error = fmt::format("cannot parse Time value here: {}", element.getString());
                 return false;
@@ -861,10 +878,9 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
+    bool tryParse(time_t & value, std::string_view data, const DateLUTImpl & date_lut) const
     {
         ReadBufferFromMemory buf(data);
-        const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
             return true;
@@ -949,11 +965,11 @@ private:
 
 
 template <typename JSONParser>
-class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
+class DateTime64Node : public JSONExtractTreeNode<JSONParser>
 {
 public:
     explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
-        : TimezoneMixin(datetime64_type.hasExplicitTimeZone() ? datetime64_type.getTimeZone().getTimeZone() : "")
+        : explicit_time_zone(datetime64_type.hasExplicitTimeZone() ? &datetime64_type.getTimeZone() : nullptr)
         , utc_time_zone(DateLUT::instance("UTC"))
         , scale(datetime64_type.getScale())
     {
@@ -975,7 +991,8 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            const auto & time_zone = explicit_time_zone ? *explicit_time_zone : getJSONSessionTimezone(format_settings);
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, time_zone))
             {
                 error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
                 return false;
@@ -1046,7 +1063,11 @@ public:
         return true;
     }
 
-    bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(
+        DateTime64 & value,
+        std::string_view data,
+        FormatSettings::DateTimeInputFormat date_time_input_format,
+        const DateLUTImpl & time_zone) const
     {
         ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
@@ -1071,6 +1092,7 @@ public:
 private:
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
     /// `DateTime64` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl * explicit_time_zone;
     const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
@@ -1099,7 +1121,7 @@ public:
         Time64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), getJSONSessionTimezone(format_settings)))
             {
                 error = fmt::format("cannot parse Time64 value here: {}", element.getString());
                 return false;
@@ -1131,10 +1153,9 @@ public:
         return true;
     }
 
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
+    bool tryParse(Time64 & value, std::string_view data, const DateLUTImpl & date_lut) const
     {
         ReadBufferFromMemory buf(data);
-        const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
             return true;
