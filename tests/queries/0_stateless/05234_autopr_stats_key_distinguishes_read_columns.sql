@@ -1,3 +1,7 @@
+-- Tags: no-sanitizers
+-- no-sanitizers: too slow - the same parallel-replicas machinery makes `03783` and `04034`
+-- too slow there as well. This test took 275s against the 180s cap in the ASan flaky check.
+
 -- The runtime dataflow statistics entry that feeds the automatic parallel replicas cost model is
 -- keyed per plan node, and for a read that key has to describe what the read actually touches.
 -- Queries that differ only in something the key ignores end up sharing an entry, and the second one
@@ -39,10 +43,10 @@ SET max_threads=4, max_block_size=128;
 -- collects statistics at all.
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
-INSERT INTO t_autopr_stats_key SELECT number, number % 7, repeat('x', 200) FROM numbers(200000);
-INSERT INTO t_autopr_stats_key_sampled SELECT number, number FROM numbers(200000);
-INSERT INTO t_autopr_stats_key_split SELECT number % 256, number % 128 FROM numbers(200000);
-INSERT INTO t_autopr_stats_key_policy SELECT number, number % 7 FROM numbers(200000);
+INSERT INTO t_autopr_stats_key SELECT number, number % 7, repeat('x', 200) FROM numbers(20000);
+INSERT INTO t_autopr_stats_key_sampled SELECT number, number FROM numbers(20000);
+INSERT INTO t_autopr_stats_key_split SELECT number % 256, number % 128 FROM numbers(20000);
+INSERT INTO t_autopr_stats_key_policy SELECT number, number % 7 FROM numbers(20000);
 
 -- A different set of columns. `wide` is a two-hundred-byte string where `narrow` is one byte, so
 -- reusing query 0's entry would price query 2 at a fraction of what it reads.
