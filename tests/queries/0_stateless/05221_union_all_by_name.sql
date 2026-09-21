@@ -252,6 +252,19 @@ WITH RECURSIVE r AS
 )
 SELECT min(a), max(a) FROM r;
 
+SELECT 'recursive CTE with nested BY NAME in recursive member';
+WITH RECURSIVE r AS
+(
+    SELECT toUInt64(1) AS a, toUInt64(10) AS b
+    UNION ALL
+    (
+        SELECT a + 1 AS a, b + 10 AS b FROM r WHERE a < 2
+        UNION ALL BY NAME
+        SELECT b + 20 AS b, a + 2 AS a FROM r WHERE a < 2
+    )
+)
+SELECT a, b FROM r ORDER BY a, b;
+
 SELECT 'UNION BY NAME with INTERSECT';
 SELECT *
 FROM
