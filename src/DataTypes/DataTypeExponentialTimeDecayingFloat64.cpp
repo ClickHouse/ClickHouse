@@ -22,6 +22,7 @@
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fmt/format.h>
 #include <utility>
@@ -65,14 +66,18 @@ Float64 getDecayLength(const ASTPtr & parameters)
 class SerializationExponentialTimeDecayingFloat64 final : public SerializationWrapper
 {
 public:
-    SerializationExponentialTimeDecayingFloat64(SerializationPtr nested_serialization_, Float64 decay_length_)
-        : SerializationWrapper(nested_serialization_)
+    SerializationExponentialTimeDecayingFloat64(
+        SerializationPtr storage_serialization_,
+        SerializationPtr logical_serialization_,
+        DataTypePtr logical_type_,
+        Float64 decay_length_)
+        : SerializationWrapper(std::move(storage_serialization_))
+        , logical_serialization(std::move(logical_serialization_))
+        , logical_type(std::move(logical_type_))
         , decay_length(decay_length_)
     {
     }
 
-    /// The validation parameter is part of this wrapper and must not be pooled
-    /// with a serialization for a different decay length.
     bool supportsPooling() const override { return false; }
 
     void deserializeBinaryBulk(
@@ -91,8 +96,7 @@ public:
         SubstreamsCache * cache) const override
     {
         const size_t previous_size = column.size();
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(
-            column, limit, settings, state, cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
         validateNewRows(column, previous_size);
     }
 
@@ -103,97 +107,123 @@ public:
         validateNewRows(column, previous_size);
     }
 
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextEscaped(*logical, row_num, ostr, settings);
+    }
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        nested_serialization->deserializeTextEscaped(column, istr, settings);
-        validateNewRows(column, previous_size);
+        deserializeLogical(column, [&](IColumn & logical) { logical_serialization->deserializeTextEscaped(logical, istr, settings); });
     }
-
     bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        const bool result = nested_serialization->tryDeserializeTextEscaped(column, istr, settings);
-        if (result)
-            validateNewRows(column, previous_size);
-        return result;
+        return tryDeserializeLogical(column, [&](IColumn & logical) { return logical_serialization->tryDeserializeTextEscaped(logical, istr, settings); });
     }
 
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextQuoted(*logical, row_num, ostr, settings);
+    }
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        nested_serialization->deserializeTextQuoted(column, istr, settings);
-        validateNewRows(column, previous_size);
+        deserializeLogical(column, [&](IColumn & logical) { logical_serialization->deserializeTextQuoted(logical, istr, settings); });
     }
-
     bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        const bool result = nested_serialization->tryDeserializeTextQuoted(column, istr, settings);
-        if (result)
-            validateNewRows(column, previous_size);
-        return result;
+        return tryDeserializeLogical(column, [&](IColumn & logical) { return logical_serialization->tryDeserializeTextQuoted(logical, istr, settings); });
     }
 
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextCSV(*logical, row_num, ostr, settings);
+    }
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        nested_serialization->deserializeTextCSV(column, istr, settings);
-        validateNewRows(column, previous_size);
+        deserializeLogical(column, [&](IColumn & logical) { logical_serialization->deserializeTextCSV(logical, istr, settings); });
     }
-
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        const bool result = nested_serialization->tryDeserializeTextCSV(column, istr, settings);
-        if (result)
-            validateNewRows(column, previous_size);
-        return result;
+        return tryDeserializeLogical(column, [&](IColumn & logical) { return logical_serialization->tryDeserializeTextCSV(logical, istr, settings); });
+    }
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextHive(*logical, row_num, ostr, settings);
     }
 
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeText(*logical, row_num, ostr, settings);
+    }
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        nested_serialization->deserializeWholeText(column, istr, settings);
-        validateNewRows(column, previous_size);
+        deserializeLogical(column, [&](IColumn & logical) { logical_serialization->deserializeWholeText(logical, istr, settings); });
     }
-
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        const bool result = nested_serialization->tryDeserializeWholeText(column, istr, settings);
-        if (result)
-            validateNewRows(column, previous_size);
-        return result;
+        return tryDeserializeLogical(column, [&](IColumn & logical) { return logical_serialization->tryDeserializeWholeText(logical, istr, settings); });
     }
 
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextJSON(*logical, row_num, ostr, settings);
+    }
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        nested_serialization->deserializeTextJSON(column, istr, settings);
-        validateNewRows(column, previous_size);
+        deserializeLogical(column, [&](IColumn & logical) { logical_serialization->deserializeTextJSON(logical, istr, settings); });
     }
-
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        const size_t previous_size = column.size();
-        const bool result = nested_serialization->tryDeserializeTextJSON(column, istr, settings);
-        if (result)
-            validateNewRows(column, previous_size);
-        return result;
+        return tryDeserializeLogical(column, [&](IColumn & logical) { return logical_serialization->tryDeserializeTextJSON(logical, istr, settings); });
+    }
+    void serializeTextJSONPretty(
+        const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextJSONPretty(*logical, row_num, ostr, settings, indent);
+    }
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        auto logical = materializeExponentialTimeDecayingFloat64LogicalColumn(column, decay_length);
+        logical_serialization->serializeTextXML(*logical, row_num, ostr, settings);
     }
 
 private:
+    template <typename Deserialize>
+    void deserializeLogical(IColumn & column, Deserialize && deserialize) const
+    {
+        auto logical = logical_type->createColumn();
+        deserialize(*logical);
+        auto storage = materializeExponentialTimeDecayingFloat64StorageColumn(*logical, decay_length, "deserialization");
+        column.insertRangeFrom(*storage, 0, storage->size());
+    }
+
+    template <typename Deserialize>
+    bool tryDeserializeLogical(IColumn & column, Deserialize && deserialize) const
+    {
+        auto logical = logical_type->createColumn();
+        if (!deserialize(*logical))
+            return false;
+        auto storage = materializeExponentialTimeDecayingFloat64StorageColumn(*logical, decay_length, "deserialization");
+        column.insertRangeFrom(*storage, 0, storage->size());
+        return true;
+    }
+
     void validateNewRows(const IColumn & column, size_t previous_size) const
     {
         if (column.size() <= previous_size)
             return;
-
         const auto new_rows = column.cut(previous_size, column.size() - previous_size);
-        validateExponentialTimeDecayingFloat64Column(
-            *new_rows, decay_length, "deserialization");
+        validateExponentialTimeDecayingFloat64Column(*new_rows, "deserialization");
     }
 
+    const SerializationPtr logical_serialization;
+    const DataTypePtr logical_type;
     const Float64 decay_length;
 };
 
@@ -206,7 +236,12 @@ DataTypePtr createFromParameters(const ASTPtr & parameters)
 
 DataTypeExponentialTimeDecayingFloat64::DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_)
     : decay_length(decay_length_)
-    , nested_type(std::make_shared<DataTypeTuple>(
+    , storage_type(std::make_shared<DataTypeTuple>(
+          DataTypes{
+              std::make_shared<DataTypeFloat64>(),
+              std::make_shared<DataTypeFloat64>()},
+          Names{"sign", "signed_unit_time"}))
+    , logical_type(std::make_shared<DataTypeTuple>(
           DataTypes{
               std::make_shared<DataTypeFloat64>(),
               std::make_shared<DataTypeFloat64>(),
@@ -222,12 +257,12 @@ String DataTypeExponentialTimeDecayingFloat64::doGetName() const
 
 MutableColumnPtr DataTypeExponentialTimeDecayingFloat64::createColumn() const
 {
-    return nested_type->createColumn();
+    return storage_type->createColumn();
 }
 
 Field DataTypeExponentialTimeDecayingFloat64::getDefault() const
 {
-    return Tuple{Float64(0), Float64(0), decay_length};
+    return Tuple{Float64(0), Float64(0)};
 }
 
 void DataTypeExponentialTimeDecayingFloat64::insertDefaultInto(IColumn & column) const
@@ -243,17 +278,17 @@ bool DataTypeExponentialTimeDecayingFloat64::equals(const IDataType & rhs) const
 
 bool DataTypeExponentialTimeDecayingFloat64::haveMaximumSizeOfValue() const
 {
-    return nested_type->haveMaximumSizeOfValue();
+    return storage_type->haveMaximumSizeOfValue();
 }
 
 size_t DataTypeExponentialTimeDecayingFloat64::getMaximumSizeOfValueInMemory() const
 {
-    return nested_type->getMaximumSizeOfValueInMemory();
+    return storage_type->getMaximumSizeOfValueInMemory();
 }
 
 size_t DataTypeExponentialTimeDecayingFloat64::getSizeOfValueInMemory() const
 {
-    return nested_type->getSizeOfValueInMemory();
+    return storage_type->getSizeOfValueInMemory();
 }
 
 void DataTypeExponentialTimeDecayingFloat64::updateHashImpl(SipHash & hash) const
@@ -264,25 +299,25 @@ void DataTypeExponentialTimeDecayingFloat64::updateHashImpl(SipHash & hash) cons
 SerializationPtr DataTypeExponentialTimeDecayingFloat64::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
-        nested_type->getDefaultSerialization(), decay_length);
+        storage_type->getDefaultSerialization(), logical_type->getDefaultSerialization(), logical_type, decay_length);
 }
 
 SerializationPtr DataTypeExponentialTimeDecayingFloat64::getSerialization(const SerializationInfo & info) const
 {
     return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
-        nested_type->getSerialization(info), decay_length);
+        storage_type->getSerialization(info), logical_type->getDefaultSerialization(), logical_type, decay_length);
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::createSerializationInfo(
     const SerializationInfoSettings & settings) const
 {
-    return nested_type->createSerializationInfo(settings);
+    return storage_type->createSerializationInfo(settings);
 }
 
 SerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::getSerializationInfo(
     const IColumn & column, const SerializationInfoSettings & settings) const
 {
-    return nested_type->getSerializationInfo(column, settings);
+    return storage_type->getSerializationInfo(column, settings);
 }
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
@@ -484,12 +519,49 @@ void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     assertExponentialTimeDecayingFloat64ConversionTypesCompatible(probe_type, set_type, "IN");
 }
 
+ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
+    const IColumn & storage_column, Float64 decay_length)
+{
+    ColumnPtr full = storage_column.convertToFullColumnIfConst();
+    const auto & tuple = assert_cast<const ColumnTuple &>(*full);
+    chassert(tuple.tupleSize() == 2);
+    auto decay = ColumnFloat64::create(tuple.size(), decay_length);
+    return ColumnTuple::create(Columns{tuple.getColumnPtr(0), tuple.getColumnPtr(1), std::move(decay)});
+}
+
+ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
+    const IColumn & logical_column, Float64 decay_length, const String & operation)
+{
+    ColumnPtr full = logical_column.convertToFullColumnIfConst();
+    const auto & tuple = assert_cast<const ColumnTuple &>(*full);
+    if (tuple.tupleSize() != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed ExponentialTimeDecayingFloat64 value in {}: expected three logical fields", operation);
+
+    const auto & signs = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+    for (size_t row = 0; row < tuple.size(); ++row)
+    {
+        if (!std::isfinite(decay_lengths[row]) || decay_lengths[row] != decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: supplied decay length {} does not match type decay length {}",
+                operation, decay_lengths[row], decay_length);
+        if (!isCanonicalExponentialTimeDecayingFloat64Value(signs[row], signed_unit_times[row]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: expected canonical sign and signed unit time fields",
+                operation);
+    }
+
+    return ColumnTuple::create(Columns{tuple.getColumnPtr(0), tuple.getColumnPtr(1)});
+}
+
 void validateExponentialTimeDecayingFloat64Column(
-    const IColumn & column, Float64 decay_length, const String & operation)
+    const IColumn & column, const String & operation)
 {
     ColumnPtr full_column = column.convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(full_column.get());
-
     ColumnPtr nested_holder;
     const IColumn * nested_column = full_column.get();
     if (nullable)
@@ -499,27 +571,16 @@ void validateExponentialTimeDecayingFloat64Column(
     }
 
     const auto & tuple = assert_cast<const ColumnTuple &>(*nested_column);
+    if (tuple.tupleSize() != 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed ExponentialTimeDecayingFloat64 value in {}: expected two stored fields", operation);
+
     const auto & signs = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
     const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
-    const auto & stored_decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
-
     for (size_t row = 0; row < tuple.size(); ++row)
     {
         if (nullable && nullable->isNullAt(row))
             continue;
-
-        const Float64 stored_decay_length = stored_decay_lengths[row];
-        if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecayingFloat64 value in {}: stored decay length {} does not match type decay length {}",
-                operation,
-                stored_decay_length,
-                decay_length);
-
-        const Float64 sign = signs[row];
-        const Float64 signed_unit_time = signed_unit_times[row];
-        if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
+        if (!isCanonicalExponentialTimeDecayingFloat64Value(signs[row], signed_unit_times[row]))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Malformed ExponentialTimeDecayingFloat64 value in {}: expected canonical sign and signed unit time fields",
@@ -553,9 +614,9 @@ void validateExponentialTimeDecayingFloat64ColumnImpl(
         return;
     }
 
-    if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(type))
+    if (isExponentialTimeDecayingFloat64(type))
     {
-        validateExponentialTimeDecayingFloat64Column(*full_column, *decay_length, operation);
+        validateExponentialTimeDecayingFloat64Column(*full_column, operation);
         return;
     }
 
@@ -614,17 +675,17 @@ Represents one or more finite exponentially time-decaying values at a shared anc
 
 The decay length is part of the type: `ExponentialTimeDecayingFloat64(decay_length)`.
 The stored fields form a canonical, order-preserving representation:
-`sign Float64`, `signed_unit_time Float64`, and a redundant `decay_length Float64` marker.
+`sign Float64` and `signed_unit_time Float64`. The decay length is stored only in the type.
 For a nonzero curve, `unit_time = anchor_time + decay_length * ln(abs(value_at_anchor))` is
 the time at which its magnitude is one. `signed_unit_time` stores `sign * unit_time`.
 This layout makes ClickHouse's regular tuple comparison and sorting order match the numeric order
 of curves with the same decay length. Zero, including the implicit empty value, is represented as
-`(0, 0, decay_length)`.
+`(0, 0)`.
 
 DateTime and DateTime64 inputs are represented as seconds. The type has first-class logical
-identity while retaining the tuple-backed column and serialization layout. The marker is validated
-against the type parameter when a value is constructed, read, combined, or evaluated, so
-incompatible decay lengths are not silently mixed. The type can be used with
+identity while retaining tuple-backed storage. For SQL/text compatibility a third
+`decay_length` field is synthesized from, or validated against, the type parameter, but it is
+never stored in the column. Incompatible decay lengths are rejected by type compatibility. The type can be used with
 `SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an `AggregatingMergeTree`.
 
 Addition uses `Float64` arithmetic. Large signed values that nearly cancel can produce different

@@ -80,11 +80,13 @@ public:
     using IDataType::getSerializationInfo;
 
     Float64 getDecayLength() const { return decay_length; }
-    const DataTypePtr & getNestedType() const { return nested_type; }
+    const DataTypePtr & getNestedType() const { return storage_type; }
+    const DataTypePtr & getLogicalTupleType() const { return logical_type; }
 
 private:
     const Float64 decay_length;
-    const DataTypePtr nested_type;
+    const DataTypePtr storage_type;
+    const DataTypePtr logical_type;
 };
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length);
@@ -109,9 +111,15 @@ void assertExponentialTimeDecayingFloat64ConversionTypesCompatible(
 void assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(
     const DataTypePtr & probe_type, const DataTypePtr & set_type);
 
-/// Rejects rows whose redundant marker or canonical ordering fields do not match the type.
+/// Rejects rows whose stored canonical ordering fields are invalid.
 void validateExponentialTimeDecayingFloat64Column(
-    const IColumn & column, Float64 decay_length, const String & operation);
+    const IColumn & column, const String & operation);
+
+ColumnPtr materializeExponentialTimeDecayingFloat64LogicalColumn(
+    const IColumn & storage_column, Float64 decay_length);
+
+ColumnPtr materializeExponentialTimeDecayingFloat64StorageColumn(
+    const IColumn & logical_column, Float64 decay_length, const String & operation);
 
 /// Applies the same validation recursively when the experimental value is nested in
 /// `Array`, `Tuple`, `Map`, `Variant`, `Nullable`, or `LowCardinality`.
