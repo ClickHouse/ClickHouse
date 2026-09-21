@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
@@ -428,12 +429,15 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         {
             if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
-                if (function_name == "notIn")
+                /// `transform_null_in = 1` renames the family; a NULL element is refused above.
+                if (function_name == "notIn" || function_name == "globalNotIn"
+                    || function_name == "notNullIn" || function_name == "globalNotNullIn")
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
-                if (function_name == "in")
+                if (function_name == "in" || function_name == "globalIn"
+                    || function_name == "nullIn" || function_name == "globalNullIn")
                 {
                     out.function = RPNElement::FUNCTION_IN;
                     return true;
@@ -926,7 +930,8 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
     for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
     {
-        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+        /// A `Nullable` key keeps the wrapper on its elements at `transform_null_in = 1`.
+        auto prepared_set_data_type_id = removeNullable(prepared_set_data_type)->getTypeId();
         if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
     }
@@ -945,10 +950,17 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
-        const bool is_fixed_string_element = WhichDataType(column->getDataType()).isFixedString();
+        const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get());
+        const auto & column_values = column_nullable ? column_nullable->getNestedColumn() : *column;
+
+        const bool is_fixed_string_element = WhichDataType(column_values.getDataType()).isFixedString();
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
+            /// A NULL element also matches the column's NULL rows, which the filter cannot express.
+            if (column->isNullAt(row))
+                return false;
+
             bloom_filters.back().emplace_back(params);
 
             /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.

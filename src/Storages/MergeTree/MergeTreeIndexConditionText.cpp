@@ -36,6 +36,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -748,7 +749,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        /// `transform_null_in = 1` renames the family; a NULL element is refused in the helper.
+        if ((function_name == "in" || function_name == "globalIn"
+             || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -2085,15 +2088,27 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// A `Nullable` key keeps the wrapper on its elements at `transform_null_in = 1`.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
-    const bool is_fixed_string_element = WhichDataType(set_column.getDataType()).isFixedString();
+    const bool is_fixed_string_element = WhichDataType(set_column_values.getDataType()).isFixedString();
     const bool strip_fixed_string_padding = canStripFixedStringPadding(tokenizer->getType(), header);
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// A NULL element also matches the column's NULL rows, which a token search cannot express.
+        if (set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         std::string_view element = set_column.getDataAt(row);
 
         /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
