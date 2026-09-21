@@ -364,6 +364,86 @@ def test_iceberg_truncate_then_optimize(started_cluster_iceberg_no_spark):
     assert instance.query(f"SELECT x FROM {table_name} ORDER BY x").split() == ["4", "5", "6"]
 
 
+def test_iceberg_delete_then_truncate_then_optimize(started_cluster_iceberg_no_spark):
+    """`OPTIMIZE TABLE` must keep a `TRUNCATE` snapshot's ancestry intact when the snapshot
+    immediately before it is one that compaction drops.
+
+    A merge-on-read `ALTER TABLE ... DELETE` commits a position-delete-only snapshot, which
+    `tryGetAppendUpdate` classifies as "not an append" -- compaction does not re-emit it. The
+    truncate that follows must therefore not keep that dropped snapshot as its
+    `parent-snapshot-id`: the link would resolve to nothing, so `getParentSnapshot` returns null,
+    the truncate's `deleted-*` counters silently collapse to 0, and `expire_snapshots` stops its
+    ancestor walk at the break (letting it expire older snapshots that the retention policy
+    should still protect). Drives APPEND -> DELETE -> TRUNCATE -> `OPTIMIZE TABLE`.
+
+    Must be plain `OPTIMIZE TABLE`, not `OPTIMIZE TABLE ... MANIFEST` -- only the
+    data-compaction path rewrites the whole snapshot history, so a `MANIFEST` variant would
+    pass vacuously. Uses a local (non-catalog) table so ClickHouse both writes and compacts."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_iceberg_delete_truncate_optimize_" + get_uuid_str()
+
+    create_iceberg_table(
+        "local",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int)",
+        2,
+    )
+
+    write = {"allow_insert_into_iceberg": 1}
+    instance.query(f"INSERT INTO {table_name} VALUES (1), (2), (3);", settings=write)
+    # Merge-on-read: this writes a position-delete file, so the snapshot is a
+    # position-delete-only overwrite rather than an append -- exactly the shape compaction drops.
+    instance.query(f"ALTER TABLE {table_name} DELETE WHERE x = 1", settings=write)
+    instance.query(f"TRUNCATE TABLE {table_name}", settings=write)
+
+    # Guard the premise: the delete really landed between the append and the truncate.
+    history = read_iceberg_history(instance, "default", table_name)
+    assert [op for op, _ in history] == ["APPEND", "OVERWRITE", "DELETE"], history
+    assert history[-1][1]["deleted-records"] == "3", history[-1][1]
+
+    instance.query(
+        f"OPTIMIZE TABLE {table_name}",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    # The truncate must survive compaction as the current snapshot.
+    assert int(instance.query(f"SELECT count() FROM {table_name}").strip()) == 0
+
+    compacted = read_iceberg_history(instance, "default", table_name)
+    ops = [op for op, _ in compacted]
+    # The dropped delete snapshot is gone, but the truncate is still there and still last.
+    assert ops[-1] == "DELETE", compacted
+    assert "OVERWRITE" not in ops, compacted
+
+    truncate_summary = compacted[-1][1]
+    # The regression: with the truncate's parent still pointing at the dropped delete snapshot,
+    # `getParentSnapshot` found nothing and both of these came out as "0".
+    assert truncate_summary["deleted-records"] == "3", truncate_summary
+    assert int(truncate_summary["deleted-data-files"]) >= 1, truncate_summary
+    assert truncate_summary["total-records"] == "0", truncate_summary
+    assert truncate_summary["total-data-files"] == "0", truncate_summary
+
+    # Every `parent-snapshot-id` in the rewritten metadata must resolve to a retained snapshot,
+    # otherwise `expire_snapshots` cannot walk the branch back to its root and stops early.
+    links = [
+        tuple(row.split("\t"))
+        for row in instance.query(
+            f"SELECT snapshot_id, parent_id FROM system.iceberg_history "
+            f"WHERE database = 'default' AND table = '{table_name}' FORMAT TSV"
+        )
+        .strip()
+        .split("\n")
+    ]
+    retained_ids = {snapshot_id for snapshot_id, _ in links}
+    dangling = [(s, p) for s, p in links if p != "0" and p not in retained_ids]
+    assert not dangling, f"dangling parent-snapshot-id after OPTIMIZE: {dangling} in {links}"
+
+    # The table stays usable after the compacted truncate.
+    instance.query(f"INSERT INTO {table_name} VALUES (4), (5), (6);", settings=write)
+    assert instance.query(f"SELECT x FROM {table_name} ORDER BY x").split() == ["4", "5", "6"]
+
 def test_iceberg_truncate_rejected_when_pinned_to_explicit_metadata_file(started_cluster_iceberg_no_spark):
     """A direct-path (catalog-less) Iceberg table pinned to a specific metadata file via the
     `iceberg_metadata_file_path` setting freezes its reads at that snapshot — the setting is a

@@ -1051,20 +1051,59 @@ static void writeMetadataFiles(
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
 
+    /// Original (pre-rewrite) parent links of every retained snapshot, used to step over the
+    /// snapshots this rewrite drops when re-pointing an empty snapshot's parent below.
+    std::unordered_map<Int64, Int64> original_parent_of;
+    for (const auto & history_record : plan.history)
+        original_parent_of[history_record.snapshot_id] = history_record.parent_id;
+
+    /// Resolve `parent_id` to the nearest ancestor this rewrite actually emits.
+    /// Snapshots that are not appends are dropped from the regenerated metadata, so keeping a
+    /// dropped snapshot as `parent-snapshot-id` leaves a link that resolves to nothing:
+    /// `MetadataGenerator::getParentSnapshot` returns null, which silently zeroes the rewritten
+    /// truncate's `deleted-*` counters, and ancestor walks such as `expire_snapshots` stop at the
+    /// break, so older snapshots on the branch can be expired while still inside the retention
+    /// policy. The only non-append snapshots compaction accepts are position-delete-only ones,
+    /// and those change neither `total-records` nor `total-data-files`, so the nearest emitted
+    /// ancestor carries exactly the totals the truncate has to charge itself against.
+    auto resolve_emitted_parent = [&](Int64 parent_id)
+    {
+        /// Each hop moves strictly up the chain, so the retained history length bounds the walk;
+        /// exceeding it means the parent links form a cycle and the metadata is corrupt.
+        for (size_t hops = 0; hops <= plan.history.size(); ++hops)
+        {
+            /// `IcebergHistoryRecord::parent_id` is 0 when the snapshot has no parent.
+            if (parent_id == 0)
+                return static_cast<Int64>(0);
+            if (auto it = snapshot_id_to_snapshot.find(parent_id); it != snapshot_id_to_snapshot.end() && it->second)
+                return parent_id;
+            auto next = original_parent_of.find(parent_id);
+            /// The ancestor was expired from the table before OPTIMIZE ran, so the chain ends here.
+            if (next == original_parent_of.end())
+                return static_cast<Int64>(0);
+            parent_id = next->second;
+        }
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cycle in the Iceberg snapshot parent chain while resolving the parent of an empty snapshot");
+    };
+
     for (const auto & history_record : plan.history)
     {
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
             /// Empty snapshots (e.g. TRUNCATE) leave the table empty at this point in history.
-            /// The original id, parent, and timestamp are preserved so later snapshots' `parent-snapshot-id`
-            /// still resolves and history / time-travel stays intact after compaction.
+            /// The original id and timestamp are preserved so later snapshots' `parent-snapshot-id`
+            /// still resolves and history / time-travel stays intact after compaction. The parent is
+            /// re-pointed at the nearest ancestor this rewrite emits, since the immediate parent may
+            /// itself be a snapshot compaction drops (see `resolve_emitted_parent`).
             if (isEmptySnapshot(plan, history_record))
             {
                 auto new_snapshot = metadata_generator.generateNextMetadata(
                     plan.generator,
                     generated_metadata_info.path,
-                    history_record.parent_id,
+                    resolve_emitted_parent(history_record.parent_id),
                     /*added_files=*/0,
                     /*added_records=*/0,
                     /*added_files_size=*/0,
