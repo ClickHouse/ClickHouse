@@ -2322,8 +2322,7 @@ void addReadFromQueryResultCacheStep(
 
 /// `input()` is a one-shot stream from the client: the data arrives on the connection that carries
 /// the query, so the storage is only readable on the server the client is talking to.
-/// A table function argument the analyzer skips, such as the query `view()` takes, is never resolved,
-/// so the `input()` node inside it has no storage and only its name identifies it.
+/// An unresolved table function node, such as one inside the query `view()` takes, has no storage, so only its name identifies it.
 bool readsInputTableFunction(const QueryTreeNodePtr & root)
 {
     std::vector<const IQueryTreeNode *> to_visit{root.get()};
@@ -2339,8 +2338,7 @@ bool readsInputTableFunction(const QueryTreeNodePtr & root)
                 return true;
         }
 
-        /// A reused materialized CTE is sent as an external table and `TableNode::toASTImpl` emits only
-        /// its temporary table name, so its defining subquery is not part of what a replica receives.
+        /// A reused materialized CTE reaches a replica as an external table under its temporary name, so its subquery is not sent.
         const auto * table_node = node->as<TableNode>();
         const auto * materialized_cte_subquery = table_node && table_node->isMaterializedCTE()
             ? table_node->getMaterializedCTESubquery().get()
