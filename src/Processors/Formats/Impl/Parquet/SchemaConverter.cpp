@@ -975,9 +975,12 @@ void SchemaConverter::processPrimitiveColumn(
     auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
     {
         WhichDataType which(get_output_type_index());
-        if (which.isNativeInteger())
+        /// An Enum orders and compares by its underlying signed integer, so it belongs with the
+        /// native integers of that width rather than with the reinterpreting types below.
+        const bool which_is_enum = which.isEnum();
+        if (which.isNativeInteger() || which_is_enum)
         {
-            converter.field_signed = which.isNativeInt();
+            converter.field_signed = which.isNativeInt() || which_is_enum;
 
             /// Statistics endpoints are ordered as the stored type, so they bound the output column only
             /// if the cast to it preserves that order for every stored value, not just the ones present.
@@ -1009,8 +1012,6 @@ void SchemaConverter::processPrimitiveColumn(
                     return false;
                 converter.field_signed = false;
                 break;
-            case TypeIndex::Enum8:
-            case TypeIndex::Enum16:
             case TypeIndex::Date32:
                 break;
             /// Not supported: DateTime64, Decimal*, Float*

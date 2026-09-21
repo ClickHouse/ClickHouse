@@ -71,6 +71,21 @@ select count() from file(currentDatabase() || '_05230_i32n.parquet', Parquet, 'x
     settings input_format_parquet_dictionary_filter_push_down = 0,
              input_format_parquet_bloom_filter_push_down = 0;
 
+-- An Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
+-- integer of that width: a UINT_8 column {5, 200} read 8-bit signed gives {5, -56}, and the stored max 200
+-- is not an upper bound. A range predicate is served by neither hash filter, so these four need no pinning
+-- and all four returned 0 at completely default settings.
+insert into function file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x UInt8')
+    select arrayJoin([toUInt8(5), toUInt8(200)]) as x;
+insert into function file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x UInt16')
+    select arrayJoin([toUInt16(5), toUInt16(40000)]) as x;
+select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Int8') where x < 0;
+select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Enum8(''lo'' = 5, ''hi'' = -56)')
+    where x < 'lo';
+select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Int16') where x < 0;
+select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = -25536)')
+    where x < 'lo';
+
 -- The dictionary and bloom filters hash both sides after casting to the parquet physical type, so they
 -- agree for a same-width signedness flip. Pin that: with both min/max legs off and each hash filter on
 -- in turn, the row is still found.
@@ -103,6 +118,12 @@ insert into function file(currentDatabase() || '_05230_c_bool.parquet', Parquet,
     select number >= 1000 as x from numbers(2000) settings output_format_parquet_row_group_size = 1000;
 insert into function file(currentDatabase() || '_05230_c_d32.parquet', Parquet, 'x Date32')
     select toDate32('2001-01-01') + number as x from numbers(2000) settings output_format_parquet_row_group_size = 1000;
+-- The two order-preserving Enum hints: an INT_8 column read as Enum8 is the identity, and a UINT_8 column
+-- read as Enum16 is a widening flip. Two row groups each, so a pruned one is visible in the counters.
+insert into function file(currentDatabase() || '_05230_c_i8e.parquet', Parquet, 'x Int8')
+    select toInt8(if(number < 1000, -100, 100)) as x from numbers(2000) settings output_format_parquet_row_group_size = 1000;
+insert into function file(currentDatabase() || '_05230_c_u8e.parquet', Parquet, 'x UInt8')
+    select toUInt8(if(number < 1000, 5, 200)) as x from numbers(2000) settings output_format_parquet_row_group_size = 1000;
 
 select count() from file(currentDatabase() || '_05230_c_i32.parquet', Parquet, 'x Int32') where x > 3500
     settings log_comment = '05230prune_i32', input_format_parquet_dictionary_filter_push_down = 1048576;
@@ -120,6 +141,12 @@ select count() from file(currentDatabase() || '_05230_c_bool.parquet', Parquet, 
     settings log_comment = '05230prune_bool', input_format_parquet_dictionary_filter_push_down = 1048576;
 select count() from file(currentDatabase() || '_05230_c_d32.parquet', Parquet, 'x Date') where x > toDate('2003-10-01')
     settings log_comment = '05230prune_date', input_format_parquet_dictionary_filter_push_down = 1048576;
+select count() from file(currentDatabase() || '_05230_c_i8e.parquet', Parquet, 'x Enum8(''lo'' = -100, ''hi'' = 100)')
+    where x > 'lo'
+    settings log_comment = '05230prune_i8e8', input_format_parquet_dictionary_filter_push_down = 1048576;
+select count() from file(currentDatabase() || '_05230_c_u8e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = 200)')
+    where x > 'lo'
+    settings log_comment = '05230prune_u8e16', input_format_parquet_dictionary_filter_push_down = 1048576;
 
 system flush logs query_log;
 select distinct log_comment, ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
