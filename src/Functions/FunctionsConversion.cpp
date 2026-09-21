@@ -1035,7 +1035,29 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     if (!from_type)
     {
         if (const auto * decaying_type = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(from_type_untyped.get()))
+        {
+            const auto & logical_type = decaying_type->getLogicalTupleType();
+            const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
+            if (to_type->getElements().size() == logical_tuple.getElements().size())
+            {
+                auto logical_wrapper = createTupleWrapper(logical_type, to_type);
+                const Float64 decay_length = decaying_type->getDecayLength();
+                return [logical_wrapper = std::move(logical_wrapper), logical_type, decay_length]
+                    (ColumnsWithTypeAndName & arguments,
+                     const DataTypePtr & result_type,
+                     const ColumnNullable * nullable_source,
+                     size_t input_rows_count) -> ColumnPtr
+                {
+                    ColumnsWithTypeAndName logical_arguments = arguments;
+                    logical_arguments[0].column
+                        = materializeExponentialTimeDecayingFloat64LogicalColumn(*arguments[0].column, decay_length);
+                    logical_arguments[0].type = logical_type;
+                    return logical_wrapper(logical_arguments, result_type, nullable_source, input_rows_count);
+                };
+            }
+
             from_type = assert_cast<const DataTypeTuple *>(decaying_type->getNestedType().get());
+        }
     }
 
     if (!from_type)
@@ -3082,6 +3104,15 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
+    const auto from_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(from_type);
+    const auto to_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(to_type);
+    if (from_decay_length && to_decay_length && *from_decay_length != *to_decay_length)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot convert ExponentialTimeDecayingFloat64 values between different decay lengths: {} and {}",
+            *from_decay_length,
+            *to_decay_length);
+
     /// Accurate conversions are used for implicit key coercion (for example by IN).
     /// A finalized decaying value must not become a layout-compatible plain Tuple, or
     /// silently change its decay length. Container conversions recurse through this path.
@@ -3296,6 +3327,28 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::ExponentialTimeDecayingFloat64:
         {
             const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*to_type);
+            if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
+            {
+                const auto & logical_type = decaying_type.getLogicalTupleType();
+                const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*logical_type);
+                if (from_tuple->getElements().size() == logical_tuple.getElements().size())
+                {
+                    auto logical_wrapper = createTupleWrapper(from_type, &logical_tuple);
+                    const Float64 decay_length = decaying_type.getDecayLength();
+                    return [logical_wrapper = std::move(logical_wrapper), logical_type, decay_length]
+                        (ColumnsWithTypeAndName & arguments,
+                         const DataTypePtr &,
+                         const ColumnNullable * nullable_source,
+                         size_t input_rows_count) -> ColumnPtr
+                    {
+                        auto logical_column
+                            = logical_wrapper(arguments, logical_type, nullable_source, input_rows_count);
+                        return materializeExponentialTimeDecayingFloat64StorageColumn(
+                            *logical_column, decay_length, "CAST to ExponentialTimeDecayingFloat64");
+                    };
+                }
+            }
+
             return createTupleWrapper(
                 from_type,
                 assert_cast<const DataTypeTuple *>(decaying_type.getNestedType().get()));

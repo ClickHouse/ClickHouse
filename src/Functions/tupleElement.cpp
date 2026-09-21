@@ -102,7 +102,7 @@ public:
         }
         else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
         {
-            const auto & tuple = assert_cast<const DataTypeTuple &>(*decaying->getNestedType());
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*decaying->getLogicalTupleType());
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, tuple, number_of_arguments);
             if (index.has_value())
             {
@@ -212,16 +212,20 @@ public:
         }
         else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
         {
-            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getNestedType());
+            const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getLogicalTupleType());
             const auto & tuple_column = checkAndGetColumn<ColumnTuple>(*input_col);
-            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, tuple_type, arguments.size());
+            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, logical_tuple, arguments.size());
 
             if (!index.has_value())
                 return arguments[2].column;
 
-            res = tuple_column.getColumnPtr(index.value());
+            if (*index < tuple_column.tupleSize())
+                res = tuple_column.getColumnPtr(*index);
+            else
+                res = ColumnFloat64::create(tuple_column.size(), input_type_as_decaying->getDecayLength());
+
             if (null_map_column)
-                res = applyOuterNullMap(res, tuple_type.getElements()[index.value()], null_map_column);
+                res = applyOuterNullMap(res, logical_tuple.getElements()[*index], null_map_column);
         }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
