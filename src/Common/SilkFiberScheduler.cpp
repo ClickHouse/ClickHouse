@@ -4,10 +4,12 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 
 #if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
 #    include <Common/SilkThreadLocalStorageSanitizer.h>
@@ -18,10 +20,17 @@
 #include <silk/util/init.h>
 #include <silk/util/perf.h>
 
+#include <liburing.h>
+
 #include <cerrno>
 #include <functional>
 #include <memory>
 #include <utility>
+
+namespace DB::ErrorCodes
+{
+    extern const int IO_URING_INIT_FAILED;
+}
 
 namespace Silk
 {
@@ -111,10 +120,41 @@ void onMemoryUnmapped(void * ptr, size_t size) noexcept
     trace.onFree(ptr, size);
 }
 
+/// The silk scheduler asserts, and so aborts the process, when io_uring cannot be set up or lacks a
+/// feature it relies on. Probe first, so that a server with the runtime enabled where io_uring is
+/// unavailable (an old kernel, or a container whose seccomp profile blocks it, which the default
+/// Docker profile does) refuses to start with an explanation instead of a core dump.
+void checkIOUringIsUsable()
+{
+    io_uring ring{};
+    io_uring_params params{};
+    const int res = io_uring_queue_init_params(/* entries */ 8, &ring, &params);
+    if (res < 0)
+        DB::ErrnoException::throwWithErrno(
+            DB::ErrorCodes::IO_URING_INIT_FAILED,
+            -res,
+            "Cannot initialize the silk fiber runtime: io_uring is not available. "
+            "Check that the kernel supports io_uring and that seccomp does not block it, "
+            "or disable the `enable_silk_runtime` server setting");
+    SCOPE_EXIT({ io_uring_queue_exit(&ring); });
+
+    /// Silk relies on NODROP (Linux 5.5) so that a full completion queue never loses a completion,
+    /// and on CQE_SKIP (Linux 5.17) for its cross-ring wakeups.
+    constexpr unsigned required_features = IORING_FEAT_NODROP | IORING_FEAT_CQE_SKIP;
+    if ((params.features & required_features) != required_features)
+        throw DB::Exception(
+            DB::ErrorCodes::IO_URING_INIT_FAILED,
+            "Cannot initialize the silk fiber runtime: the kernel's io_uring lacks features required by silk "
+            "(IORING_FEAT_NODROP needs Linux 5.5, IORING_FEAT_CQE_SKIP needs Linux 5.17). "
+            "Upgrade the kernel or disable the `enable_silk_runtime` server setting");
+}
+
 }
 
 void initializeFiberScheduler(uint32_t fiber_stack_size)
 {
+    checkIOUringIsUsable();
+
     silk::initialize();
 
     const silk::FiberScheduler::Options options =
