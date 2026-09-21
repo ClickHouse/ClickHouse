@@ -35,6 +35,8 @@ DISTRIBUTED_SETTINGS = ", ".join(
         "enable_parallel_replicas = 0",
         "automatic_parallel_replicas_mode = 0",
         "distributed_plan_default_reader_bucket_count = 2",
+        # The `assignCentroid` cases aggregate; a global GROUP BY limit would be a fallback reason of its own.
+        "max_rows_to_group_by = 0",
         # The runner may randomize it; the rewrite into `IN (SELECT ... FROM dictionary)` takes the function out of the plan.
         "optimize_inverse_dictionary_lookup = 0",
     ]
@@ -65,6 +67,16 @@ def started_cluster():
         )
         initiator.query("SYSTEM RELOAD DICTIONARY d")
         assert worker.query("SELECT count() FROM system.dictionaries WHERE name = 'd'").strip() == "0"
+        # A centroid dictionary for `assignCentroid`, again on the initiator only.
+        initiator.query("CREATE TABLE centroids (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid")
+        initiator.query("INSERT INTO centroids SELECT number, [toFloat32(1 - number), toFloat32(number)] FROM numbers(2)")
+        initiator.query(
+            """
+            CREATE DICTIONARY c (cid UInt64, vec Array(Float32)) PRIMARY KEY cid
+            SOURCE(CLICKHOUSE(TABLE 'centroids' DB 'default')) LAYOUT(HASHED()) LIFETIME(0)
+            """
+        )
+        initiator.query("SYSTEM RELOAD DICTIONARY c")
         yield cluster
     finally:
         cluster.shutdown()
@@ -151,6 +163,33 @@ def test_dict_get_inside_lambda_falls_back(started_cluster):
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
     assert "does not support the dictionary function dictHas" in _fallback_reasons(query_id)
+
+
+def test_assign_centroid_dictionary_form_falls_back(started_cluster):
+    """`assignCentroid` reaches a dictionary only through its `String` argument; the plan holds just that constant,
+    so the function is recognised by name and argument type. The inline form carries its centroids and stays distributed."""
+    query_id = str(uuid.uuid4())
+    result = initiator.query(
+        f"SELECT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], 'default.c') AS cid, count() FROM t GROUP BY cid ORDER BY cid "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}",
+        query_id=query_id,
+    )
+    assert result == "0\t500\n1\t500\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert _worker_tasks(query_id) == 0
+    assert "does not support the dictionary function assignCentroid" in _fallback_reasons(query_id)
+
+    query_id = str(uuid.uuid4())
+    result = initiator.query(
+        f"SELECT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], [[1.0, 0.0], [0.0, 1.0]]::Array(Array(Float32))) AS cid, count() "
+        f"FROM t GROUP BY cid ORDER BY cid SETTINGS {DISTRIBUTED_SETTINGS}",
+        query_id=query_id,
+    )
+    assert result == "0\t500\n1\t500\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) > 0
+    assert _fallback_reasons(query_id) == ""
 
 
 def test_strict_mode_throws(started_cluster):

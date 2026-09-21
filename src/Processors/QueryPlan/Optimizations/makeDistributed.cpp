@@ -40,6 +40,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/misc.h>
 #include <Storages/SelectQueryInfo.h>
@@ -76,9 +77,14 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
         std::optional<String> found;
         auto is_dictionary_function = [&](const IFunctionBase & function)
         {
-            if (!functionIsDictGet(function.getName()))
+            const auto & name = function.getName();
+            /// `assignCentroid` reads a dictionary only when its second argument is a `String` (the name); the other form
+            /// carries the centroids inline as an array and ships fine.
+            const auto & argument_types = function.getArgumentTypes();
+            bool is_assign_centroid_over_dictionary = name == "assignCentroid" && argument_types.size() == 2 && isString(argument_types[1]);
+            if (!functionIsDictGet(name) && !is_assign_centroid_over_dictionary)
                 return false;
-            found = function.getName();
+            found = name;
             return true;
         };
 
