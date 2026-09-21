@@ -2999,8 +2999,8 @@ struct ConvertImpl
 
             Int64 conversion_factor = 1;
 
-            int from_position = static_cast<int>(from.kind);
-            int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
+            int from_position = from.toBinary();
+            int to_position = to.toBinary(); /// Positions of each interval according to granularity map
 
             bool is_const = isColumnConst(*arguments[0].column);
             size_t calc_num_rows = is_const ? 1 : input_rows_count;
