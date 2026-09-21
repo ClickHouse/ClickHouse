@@ -6,7 +6,9 @@
 # at server startup uses `ATTACH` too and must *not* refuse the definition -- a server that does not
 # start is far worse -- so the two cases have to be told apart, and the discriminator is the loader's
 # own replay flag rather than `internal`: wrappers such as `PARALLEL WITH` execute user statements
-# as internal ones, so a nesting written through `PARALLEL WITH ATTACH DATABASE` skipped the check.
+# as internal ones. This test pins that a nesting written through the `PARALLEL WITH` form is
+# refused like the plain one, so neither that discriminator nor the `user_initiated` propagation
+# the wrapper relies on can change without being noticed.
 #
 # The databases are named after `CLICKHOUSE_DATABASE` because they are server-wide objects.
 # Related: https://github.com/ClickHouse/ClickHouse/pull/86768
@@ -19,6 +21,7 @@ DB_SRC="db_src_${CLICKHOUSE_DATABASE}"
 DB_MID="db_mid_${CLICKHOUSE_DATABASE}"
 DB_TOP="db_top_${CLICKHOUSE_DATABASE}"
 DB_FLAT="db_flat_${CLICKHOUSE_DATABASE}"
+DB_PROBE="db_probe_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP DATABASE IF EXISTS ${DB_TOP};
@@ -47,7 +50,7 @@ echo "-- PARALLEL WITH CREATE of a facade over another facade is rejected too"
 $CLICKHOUSE_CLIENT -q "
 CREATE DATABASE ${DB_TOP} ENGINE = Overlay('${DB_MID}')
 PARALLEL WITH
-SELECT 1" 2>&1 \
+DROP DATABASE IF EXISTS ${DB_PROBE}" 2>&1 \
     | grep -o "BAD_ARGUMENTS" | head -1
 
 echo "-- a facade over a regular database still attaches through PARALLEL WITH, and reads its source"
@@ -55,7 +58,7 @@ $CLICKHOUSE_CLIENT -m -q "
 DROP DATABASE IF EXISTS ${DB_FLAT};
 ATTACH DATABASE ${DB_FLAT} ENGINE = Overlay('${DB_SRC}')
 PARALLEL WITH
-SELECT 1;
+DROP DATABASE IF EXISTS ${DB_PROBE};
 SELECT count() FROM ${DB_FLAT}.t;
 "
 

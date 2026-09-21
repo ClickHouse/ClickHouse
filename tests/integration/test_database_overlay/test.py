@@ -33,8 +33,7 @@ def start_cluster():
 
 
 def test_create_table_through_facade_with_nested_source(start_cluster):
-    node.query(
-        """
+    node.query("""
         DROP DATABASE IF EXISTS db_top;
         DROP DATABASE IF EXISTS db_mid;
         DROP DATABASE IF EXISTS db_b;
@@ -50,8 +49,7 @@ def test_create_table_through_facade_with_nested_source(start_cluster):
         INSERT INTO db_b.t_b VALUES (3);
 
         CREATE DATABASE db_top ENGINE = Overlay('db_mid', 'db_b');
-        """
-    )
+        """)
 
     # While both sources are ordinary databases, the first one takes the table.
     node.query("CREATE TABLE db_top.t_new (id UInt64) ENGINE = MergeTree ORDER BY id")
@@ -67,7 +65,10 @@ def test_create_table_through_facade_with_nested_source(start_cluster):
 
     # Replaying the metadata must keep the server startable and the facade attached.
     node.restart_clickhouse()
-    assert node.query("SELECT engine FROM system.databases WHERE name = 'db_top'").strip() == "Overlay"
+    assert (
+        node.query("SELECT engine FROM system.databases WHERE name = 'db_top'").strip()
+        == "Overlay"
+    )
 
     # The nested source contributes nothing to the union, so only the later source is visible.
     assert node.query("SELECT count() FROM db_top.t_b").strip() == "1"
@@ -98,11 +99,9 @@ def test_create_table_through_facade_with_nested_source(start_cluster):
     assert node.query("EXISTS TABLE db_mid.t_third").strip() == "1"
     assert node.query("EXISTS TABLE db_b.t_third").strip() == "0"
 
-    node.query(
-        """
+    node.query("""
         DROP DATABASE db_top;
         DROP DATABASE db_mid;
         DROP DATABASE db_b;
         DROP DATABASE db_src;
-        """
-    )
+        """)

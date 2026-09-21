@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # An explicit `ATTACH DATABASE ... ENGINE = Overlay(...)` is user-facing DDL just like `CREATE`,
 # so it must not persist a facade layered over another read-only `Overlay` facade: such a database
-# would fail every later lookup in `resolveDatabases` with `BAD_ARGUMENTS`. `CREATE` already
-# rejects the nesting up front; this test pins the same rejection for the explicit `ATTACH` form,
-# and checks that a legitimate `DETACH DATABASE` / `ATTACH DATABASE` roundtrip of a valid facade
-# keeps working.
+# would silently lose that source on every later lookup in `resolveDatabases`, and would reject
+# `CREATE TABLE` through the facade. `CREATE` already rejects the nesting up front; this test pins
+# the same rejection for the explicit `ATTACH` form, and checks that a legitimate `DETACH DATABASE`
+# / `ATTACH DATABASE` roundtrip of a valid facade keeps working. The `PARALLEL WITH` form, which
+# runs the same statement as an internal one, is covered by
+# `05236_overlay_database_parallel_with_attach_nested_rejected`.
 #
 # The databases are named after `CLICKHOUSE_DATABASE` because they are server-wide objects: with
 # fixed names, another run of this same test (the flaky check runs it repeatedly) drops the

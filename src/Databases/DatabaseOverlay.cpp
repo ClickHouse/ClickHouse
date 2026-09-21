@@ -1271,10 +1271,13 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         /// Loading previously-written metadata on server startup uses `ATTACH` too, but it must not
         /// refuse a definition: a server that does not start is far worse than a facade that loses a
         /// source, and `resolveDatabases` already fail-closes on exactly that shape at every lookup.
-        /// The loader flag, not `internal`, is what separates the two: an internal query is not
-        /// necessarily the server's own replay, because wrappers such as `PARALLEL WITH` execute
-        /// user statements as internal ones, and keying the guard on `internal` let
-        /// `PARALLEL WITH ATTACH DATABASE ... ENGINE = Overlay(...)` persist a nested facade.
+        /// The loader flag, not `internal`, is what separates the two, as in `DatabaseFilesystem`:
+        /// an internal query is not necessarily the server's own replay, because wrappers such as
+        /// `PARALLEL WITH` execute user statements as internal ones. Those wrappers do mark the
+        /// statement `user_initiated`, so `executeQuery` does not pass `internal` on to the create
+        /// interpreter and the guard already reached them; keying it on the replay flag states the
+        /// intent directly instead of depending on that propagation. Startup replay is exempt
+        /// either way -- it uses `FORCE_ATTACH`, which this arm does not cover.
         /// (`RESTORE` sets neither flag, hence the separate `SECONDARY_CREATE` arm above it.)
         const bool validate_no_nested_facade = validate_sources_exist
             || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE
