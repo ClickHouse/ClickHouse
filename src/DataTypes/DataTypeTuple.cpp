@@ -328,7 +328,7 @@ bool DataTypeTuple::textCanContainOnlyValidUTF8() const
 
 bool DataTypeTuple::hasDynamicStructure() const
 {
-    return std::ranges::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicStructure(); });
+    return std::ranges::any_of(elems, [](auto && elem) { return elem->hasDynamicStructure(); });
 }
 
 bool DataTypeTuple::haveMaximumSizeOfValue() const
@@ -541,7 +541,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 ```text
 ┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
 │ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
-└─────────┴───────────────────────────────────────┴─────────────┘
+└─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
 ## Data Type Detection {#data-type-detection}
@@ -586,7 +586,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 ## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
-Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller), otherwise (both elements are equal), the next element is compared.
+Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
 
 Example:
 
@@ -619,6 +619,47 @@ SELECT * FROM test;
 │ 2022 │    12 │  31 │
 │ 2000 │     1 │   1 │
 └──────┴───────┴─────┘
+
+SELECT *
+FROM test
+WHERE (year, month, day) > (2010, 1, 1);
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+└──────┴───────┴─────┘
+CREATE TABLE test
+(
+    `key` Int64,
+    `duration` UInt32,
+    `value` Float64
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((1, 42, 66.5), (1, 42, 70), (2, 1, 10), (2, 2, 0));
+
+SELECT * FROM test;
+
+┌─key─┬─duration─┬─value─┐
+│   1 │       42 │  66.5 │
+│   1 │       42 │    70 │
+│   2 │        1 │    10 │
+│   2 │        2 │     0 │
+└─────┴──────────┴───────┘
+
+-- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
+
+SELECT
+    key,
+    max(duration),
+    argMax(value, (duration, value))
+FROM test
+GROUP BY key
+ORDER BY key ASC;
+
+┌─key─┬─max(duration)─┬─argMax(value, tuple(duration, value))─┐
+│   1 │            42 │                                    70 │
+│   2 │             2 │                                     0 │
+└─────┴───────────────┴───────────────────────────────────────┘
 ```
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
@@ -646,7 +687,7 @@ SELECT * FROM test WHERE data IS NULL;
 ```txt
 ┌─id─┬─data─┐
 │  2 │ ᴺᵁᴸᴸ │
-└────┴───────┘
+└────┴──────┘
 ```
 )DOCS_MD",
             .syntax = "Tuple(T1, T2, ...)",
