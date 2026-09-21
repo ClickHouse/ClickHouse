@@ -403,6 +403,7 @@ Possible values:
 
 - basic — Use the standard serialization for `Map`.
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- with_key_columns — Store each distinct key of a `Map(String, V)` in independent streams (`m.keys` for the sorted key set, `m.values.<key>` for the values and `m.exists.<key>` for the presence bitmap). Requires `String` keys. Improves reading individual keys from the Map.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
 )", 0) \

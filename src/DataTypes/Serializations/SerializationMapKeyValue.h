@@ -30,6 +30,15 @@ public:
         ColumnPtr key_,
         const DataTypePtr & nested_type_);
 
+    /// Builds the per-key value reader used for `with_key_columns` Maps, where
+    /// `map_nested_serialization_` is the `SerializationMapKeyColumns` itself and
+    /// the key is the raw `String` key bytes.
+    static SerializationPtr createKeyColumns(
+        const SerializationPtr & value_serialization_,
+        const SerializationPtr & map_nested_serialization_,
+        String key_,
+        String subcolumn_name_);
+
     /// Does not support pooling because it stores runtime data (ColumnPtr key).
     bool supportsPooling() const override { return false; }
 
@@ -75,6 +84,10 @@ private:
     ColumnPtr key;
     /// The full nested type of the Map: Array(Tuple(key_type, value_type)).
     DataTypePtr nested_type;
+
+    /// The per-key value reader for `with_key_columns` Maps (key from `key`,
+    /// serialization from `map_nested_serialization`).
+    SerializationPtr createKeyColumnsSerialization() const;
 };
 
 }
