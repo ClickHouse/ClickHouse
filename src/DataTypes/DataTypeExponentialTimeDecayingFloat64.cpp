@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <cmath>
@@ -349,9 +350,10 @@ DataTypeExponentialTimeDecayingFloat64::DataTypeExponentialTimeDecayingFloat64(
 
 String DataTypeExponentialTimeDecayingFloat64::doGetName() const
 {
-    return fmt::format(
-        legacy_name ? "ExponentialTimeDecayingFloat64({})" : "ExponentialTimeDecaying({})",
-        decay_length);
+    if (legacy_name)
+        return fmt::format("ExponentialTimeDecayingFloat64({})", decay_length);
+
+    return fmt::format("ExponentialTimeDecaying({})", decay_length);
 }
 
 MutableColumnPtr DataTypeExponentialTimeDecayingFloat64::createColumn() const
