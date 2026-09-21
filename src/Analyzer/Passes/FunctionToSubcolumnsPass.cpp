@@ -890,6 +890,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
 {
     {TypeIndex::Map, "arrayElement"},
     {TypeIndex::Map, "mapContainsKey"},
+    {TypeIndex::Map, "mapContainsValue"},
     {TypeIndex::Map, "has"},
     {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},

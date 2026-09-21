@@ -38,6 +38,29 @@ WHERE mapContainsValue(m, 4)
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
+-- The full Map stays available for the result while PREWHERE reads m.values.
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id, m
+    FROM t_map_contains_value_subcolumn
+    PREWHERE mapContainsValue(m, 4)
+)
+WHERE explain LIKE '%m.values%';
+
+SELECT id, m
+FROM t_map_contains_value_subcolumn
+PREWHERE mapContainsValue(m, 4)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+SELECT id, m
+FROM t_map_contains_value_subcolumn
+PREWHERE mapContainsValue(m, 4)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 SELECT count()
 FROM t_map_contains_value_subcolumn
 WHERE mapContainsValue(m, 99)

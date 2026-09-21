@@ -3,7 +3,9 @@
          mapContainsValue() needs only the values subcolumn, but before the
          analyzer rewrite the whole Map is read. Use wide parts, many relatively
          wide keys and compact numeric values so the skipped key stream is large.
-         The searched value is last in each array, forcing the values scan too.
+         The searched value is last in matching arrays, forcing the values scan too.
+         Other rows do not contain it, so the full Map query reads the wide Map only
+         for the matching rows.
     -->
 
     <settings>
@@ -31,7 +33,7 @@
             number AS id,
             mapFromArrays(
                 arrayMap(i -&gt; concat('attribute_', hex(cityHash64(number, i)), '_', hex(cityHash64(number, i + 1)), '_', hex(cityHash64(number, i + 2))), range(16)),
-                arrayMap(i -&gt; toUInt64(i), range(16))) AS m
+                arrayMap(i -&gt; if(i = 15, if(number &lt; 50000, toUInt64(15), toUInt64(14)), toUInt64(i)), range(16))) AS m
         FROM numbers_mt(5000000)
     </fill_query>
     <fill_query>OPTIMIZE TABLE map_contains_value_subcolumn_perf FINAL SETTINGS mutations_sync = 1</fill_query>
@@ -61,6 +63,25 @@
         SELECT count()
         FROM map_contains_value_subcolumn_perf
         WHERE mapContainsValue(m, toUInt64(15))
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 0,
+                 optimize_move_to_prewhere = 0, use_query_condition_cache = 0
+    </query>
+
+    <!-- Full Map projection, with mapContainsValue using only the value stream for PREWHERE. -->
+    <query tag='mapContainsValue with full Map'>
+        SELECT m
+        FROM map_contains_value_subcolumn_perf
+        PREWHERE mapContainsValue(m, toUInt64(15))
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1,
+                 optimize_move_to_prewhere = 0, use_query_condition_cache = 0
+    </query>
+
+    <query tag='full Map optimizer disabled'>
+        SELECT m
+        FROM map_contains_value_subcolumn_perf
+        PREWHERE mapContainsValue(m, toUInt64(15))
         FORMAT Null
         SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 0,
                  optimize_move_to_prewhere = 0, use_query_condition_cache = 0
