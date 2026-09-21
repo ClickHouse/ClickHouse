@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 ### Who can change my services, and when? {#who-can-change-my-services}
 
-In managed mode, ClickHouse Cloud changes the services you asked it to manage, and nothing else. It sends lifecycle commands over the executor's outbound channel:
+In managed mode, ClickHouse Cloud changes only the services you asked it to manage. Anyone with access to the executor host or pod can also drive them with local `clicklink clctl instances` commands; see [service lifecycle](/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud sends lifecycle commands over the executor's outbound channel:
 
 - create, from the definition you submitted
 - scale, to a fixed replica count that ClickHouse Cloud sets (capped by a ClickHouse Cloud setting, 20 in the default configuration)

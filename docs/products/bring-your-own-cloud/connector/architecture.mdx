@@ -71,7 +71,7 @@ The connector verifies your endpoint's server certificate against the system tru
 
 - **Raw query text, on the scrape path.** `system.query_log` is excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets. Re-adding it is a per-deployment override you make knowingly. The default session table allowlist does include `system.processes`, which shows the text of live queries; see [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for trimming it.
 - **Your table data and backups.** They stay in buckets in your account. The executor holds no credentials to your buckets and cannot read them.
-- **Credentials.** Configuration files hold no credentials. ClickHouse stores only bcrypt hashes of the connector users' passwords, and secrets stay in Kubernetes Secrets or root-readable files on the host. The default user password of a managed service is generated on your side and shown once; only its hashes are submitted. Nothing in the scrape or sync paths transmits a credential.
+- **Credentials.** `init` writes no credentials into configuration files. ClickHouse stores only bcrypt hashes of the connector users' passwords, and secrets stay in Kubernetes Secrets or root-readable files on the host. The default user password of a managed service is generated on your side and shown once; only its hashes are submitted. Nothing in the scrape or sync paths transmits a credential.
 - **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
 
 ## Trust boundaries {#trust-boundaries}
