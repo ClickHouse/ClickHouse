@@ -647,7 +647,7 @@ private:
     static void writeFeatures(WriteBuffer & out)
     {
         /// Prometheus treats omitted capability entries as unsupported, so report every
-        /// currently implemented PromQL capability using Prometheus' canonical feature names.
+        /// currently implemented API and PromQL capability using Prometheus' canonical feature names.
         writeString(
             R"({"status":"success","data":{)"
             R"("api":{"label_values_match":true,"query_warnings":true,"time_range_labels":true,"time_range_series":true},)"
