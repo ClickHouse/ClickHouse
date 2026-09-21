@@ -3608,6 +3608,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// silently clearing the user's active transaction on the caller session.
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
+            /// Detach the seed query's ProcessList entry: a fuzzed query failing before registering
+            /// its own entry would log `ExceptionBeforeStart` with the seed query's ProfileEvents.
+            fuzz_session_context->setProcessListElement(nullptr);
+
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
