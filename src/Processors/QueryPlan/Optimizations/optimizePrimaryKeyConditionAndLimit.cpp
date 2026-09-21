@@ -61,7 +61,10 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         {
             /// A LIMIT above an ARRAY JOIN says nothing about the source row count.
             if (array_join_dags.empty())
-                source_step_with_filter->setLimit(limit_step->getLimitForSorting());
+            {
+                if (auto rows_to_read = limit_step->getLimitWithOffset())
+                    source_step_with_filter->setLimit(*rows_to_read);
+            }
             break;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
