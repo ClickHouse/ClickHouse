@@ -10,6 +10,8 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
+#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -53,6 +55,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/quoteString.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
@@ -95,7 +98,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
@@ -104,8 +106,6 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
-    extern const SettingsString network_compression_method;
-    extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
@@ -1260,7 +1260,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            processUnexpectedData();
+            /// The payload is deliberately left unread: nothing consumes it here (the connection
+            /// closes with no reply), and in interserver mode the connection is not authenticated
+            /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::Ping:
@@ -2800,16 +2808,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
     query_kind = state->query_context->getClientInfo().query_kind;
 
-    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
-    /// Analyzer became Beta in 24.3 and started to be enabled by default.
-    /// We have to disable it for ourselves to make sure we don't have different settings on
-    /// different servers.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
-            < VersionNumber(23, 3, 0)
-        && !passed_settings[Setting::allow_experimental_analyzer].changed)
-        passed_settings.set("allow_experimental_analyzer", false);
-
     if (state->stage == QueryProcessingStage::WithMergeableState
         && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)
             < VersionNumber(25, 10, 0)
@@ -2969,6 +2967,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
+
+        /// The block is self-describing and comes from the client, while the schema of an external table
+        /// is bound once, by its first block (see the branch above). Every block after that one must match
+        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// and `MemorySink::consume` labels them with the table header again. A block declaring other
+        /// types would therefore not be rejected anywhere, and its data would later be read as the type
+        /// the header names - a type confusion on data the client controls, not a data error.
+        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Structure of the block for external table {} does not match the structure of the table. "
+                "Received:\n{}\nExpected:\n{}",
+                backQuoteIfNeed(temporary_id.table_name),
+                block.dumpStructure(),
+                metadata_snapshot->getSampleBlock().dumpStructure());
+
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
@@ -3037,29 +3051,10 @@ void TCPHandler::initBlockInput(QueryState & state)
 
 CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_settings, Protocol::Compression compression)
 {
-    std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-    std::optional<int> level;
+    if (compression != Protocol::Compression::Enable)
+        return nullptr;
 
-    /// Bad custom logic
-    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-    /// be broken afterwards.
-    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-    /// More bad custom logic
-    if (method == "ZSTD")
-        level = query_settings[Setting::network_zstd_compression_level];
-
-    if (compression == Protocol::Compression::Enable)
-    {
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
-
-        return CompressionCodecFactory::instance().get(method, level);
-    }
-
-    return nullptr;
+    return chooseNetworkCompressionCodec(&query_settings);
 }
 
 void TCPHandler::initMaybeCompressedOut(QueryState & state)
