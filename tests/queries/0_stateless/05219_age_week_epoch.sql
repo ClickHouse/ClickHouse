@@ -19,3 +19,18 @@ SELECT age('week', toDateTime64('1969-12-01 00:00:00.000', 3), toDateTime64('197
 SELECT 'partial weeks either side of the epoch (was 0)';
 SELECT age('week', toDate32('1969-12-25'), toDate32('1970-01-05'));
 SELECT age('week', toDateTime64('1969-12-25 10:00:00.000', 3), toDateTime64('1970-01-05 10:00:00.000', 3));
+
+-- The week adjustment in src/Functions/dateDiff.cpp compares `toDayOfWeek` of both arguments and,
+-- only when those are equal, their time of day. The time-of-day chain used to sit *outside* the
+-- `x_day_of_week == y_day_of_week` guard, so `age('week', ...)` also decremented when the end fell
+-- on a later weekday than the start but at an earlier time of day.
+
+SELECT 'later weekday, earlier time of day (was 0)';
+SELECT age('week', toDateTime64('1969-12-30 01:30:00.000', 3, 'UTC'), toDateTime64('1970-01-07 01:15:00.000', 3, 'UTC'));
+SELECT age('week', toDateTime64('1969-12-30 01:15:30.000', 3, 'UTC'), toDateTime64('1970-01-07 01:15:10.000', 3, 'UTC'));
+
+SELECT 'the same, entirely before the epoch (was -1)';
+SELECT age('week', toDateTime64('1969-12-23 01:30:00.000', 3, 'UTC'), toDateTime64('1969-12-31 01:15:00.000', 3, 'UTC'));
+
+SELECT 'control: on the same weekday an earlier time of day still rounds down';
+SELECT age('week', toDateTime64('1969-12-30 01:30:00.000', 3, 'UTC'), toDateTime64('1970-01-06 01:15:00.000', 3, 'UTC'));

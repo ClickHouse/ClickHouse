@@ -235,13 +235,18 @@ public:
             {
                 auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
                 auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                /// The time-of-day chain must stay nested under `x_day_of_week == y_day_of_week`, the same
+                /// way the `month` branch above keeps it under `a_comp.date.day == b_comp.date.day`. It used
+                /// to be a separate top-level `||` term, so `age('week', ...)` decremented the result even
+                /// when `x_day_of_week < y_day_of_week`, i.e. when the end really is later in the week than
+                /// the start.
                 if ((x_day_of_week > y_day_of_week)
-                    || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
+                    || ((x_day_of_week == y_day_of_week) && ((a_comp.time.hour > b_comp.time.hour)
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
