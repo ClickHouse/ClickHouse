@@ -220,25 +220,16 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// after the fact (no read from the other replicas in it) and thrown away. Nothing about that verdict
     /// is remembered, so every execution of such a query pays for it. Ask up front instead: the
     /// eligibility rules are a walk over the query tree, and the tree is already built.
-    ///
-    /// The walk needs the settings the nested build will see, which are not `ctx`: the query's own
-    /// `SETTINGS` clause is re-applied on top of it while building the tree (see `removeSettingsFromQuery`
-    /// below), and it can flip any of the settings the rules read - `max_parallel_replicas`,
-    /// `parallel_replicas_for_non_replicated_merge_tree`, ... So take them from the single-node tree's
-    /// root, which already carries that clause, and correct the two the probe overrides:
-    /// `automatic_parallel_replicas_mode` is forced off here, and `enable_parallel_replicas` was cleared
-    /// on the single-node context by `buildContext` and has to be restored to what the user asked for.
-    /// Restoring it is what makes this a sound negative even when the clause turned it off explicitly:
-    /// that case is then reported as possibly eligible and falls through to the full attempt below.
     const auto * root_query = single_node_query_tree ? single_node_query_tree->as<QueryNode>() : nullptr;
     if (root_query || (single_node_query_tree && single_node_query_tree->as<UnionNode>()))
     {
         auto eligibility_context = Context::createCopy(
             root_query ? root_query->getContext() : single_node_query_tree->as<UnionNode &>().getContext());
+        /// `buildContext` cleared `enable_parallel_replicas` in this context because the automatic mode
+        /// is on, and `canUseTaskBasedParallelReplicas` needs both settings back. The exact value does not
+        /// matter: everything on this path only tests it against zero, and the outer one is known non-zero.
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
-        if (!eligibility_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
-            eligibility_context->setSetting(
-                "enable_parallel_replicas", Field{ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value});
+        eligibility_context->setSetting("enable_parallel_replicas", Field{1});
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
