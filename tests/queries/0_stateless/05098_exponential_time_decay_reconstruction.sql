@@ -1,5 +1,5 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 5;
+SET exponential_time_decay_significance_cutoff = 5;
 
 -- The constructor alias accepts indexed values too. Persisted states must keep
 -- their small contributions even when the query enables the finalized-value cutoff.
@@ -33,7 +33,7 @@ FROM
 
 -- Reconstructing stored type names must not consult an unrelated query cutoff,
 -- even when that cutoff value would be rejected for a new aggregate invocation.
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = -1;
+SET exponential_time_decay_significance_cutoff = -1;
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayingFloat64(10), Float64, Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedCount(10), Float64)'));
 SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(exponentialTimeDecayedAvg(10), Float64, Float64)'));

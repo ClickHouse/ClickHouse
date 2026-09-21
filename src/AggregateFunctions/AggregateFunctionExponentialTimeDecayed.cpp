@@ -24,7 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
-    extern const SettingsFloat exponential_time_decay_finalized_value_max_distance_in_decay_lengths;
+    extern const SettingsFloat exponential_time_decay_significance_cutoff;
 }
 
 namespace ErrorCodes
@@ -320,11 +320,11 @@ Float64 getMaxDecayDistance(const String & name, const Settings * settings, Floa
         return std::numeric_limits<Float64>::infinity();
 
     const Float64 max_distance_in_decay_lengths
-        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_finalized_value_max_distance_in_decay_lengths]);
+        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_significance_cutoff]);
     if (!std::isfinite(max_distance_in_decay_lengths) || max_distance_in_decay_lengths < 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting exponential_time_decay_finalized_value_max_distance_in_decay_lengths must be finite and non-negative for aggregate function {}",
+            "Setting exponential_time_decay_significance_cutoff must be finite and non-negative for aggregate function {}",
             name);
 
     if (max_distance_in_decay_lengths == 0)

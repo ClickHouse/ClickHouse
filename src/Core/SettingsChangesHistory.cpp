@@ -50,7 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a private cache capped at 100 MiB, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"allow_experimental_time_decay_aggregate_functions", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."},
-            {"exponential_time_decay_finalized_value_max_distance_in_decay_lengths", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."},
+            {"exponential_time_decay_significance_cutoff", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

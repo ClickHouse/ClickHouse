@@ -9023,7 +9023,7 @@ and `exponentialTimeDecayedCount`,
 and the scalar functions for `ExponentialTimeDecayingFloat64` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL) \
-    DECLARE(Float, exponential_time_decay_finalized_value_max_distance_in_decay_lengths, 0.0, R"(
+    DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
 Maximum distance, measured in decay lengths, between calculation-index timestamps when
 aggregating inputs of type `ExponentialTimeDecayingFloat64`. A finalized decaying value
 already carries the timestamp at which its magnitude reaches one. When two such values are

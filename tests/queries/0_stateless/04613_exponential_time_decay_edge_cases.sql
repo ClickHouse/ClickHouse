@@ -59,7 +59,7 @@ SELECT
 
 
 -- A zero finalized-value cutoff preserves exact behavior.
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 0;
+SET exponential_time_decay_significance_cutoff = 0;
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -69,7 +69,7 @@ FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
 -- Raw rows do not carry a calculation index, so the finalized-value cutoff leaves
 -- their aggregation exact.
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 5;
+SET exponential_time_decay_significance_cutoff = 5;
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -153,8 +153,8 @@ SELECT round(exponentialTimeDecayingValueAt(value, toFloat64(100)), 6)
 FROM time_decay_budget_engine_exact;
 DROP TABLE time_decay_budget_engine_exact;
 
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = -1;
+SET exponential_time_decay_significance_cutoff = -1;
 SELECT exponentialTimeDecayedSum(10)(value, time)
 FROM VALUES('value Float64, time Float64', (1, 0)); -- { serverError BAD_ARGUMENTS }
 
-SET exponential_time_decay_finalized_value_max_distance_in_decay_lengths = 0;
+SET exponential_time_decay_significance_cutoff = 0;
