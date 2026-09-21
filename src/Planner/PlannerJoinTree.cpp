@@ -2674,11 +2674,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 = !mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings);
                             /// This analysis only sizes the replica set, so it must not enforce the read row
                             /// limits: the read that executes analyzes again once its final mode is known.
-                            auto result_ptr = reading_step->hasThrowingReadRowLimit()
+                            auto result_ptr = (reading_step->hasThrowingReadRowLimit() || !allow_query_condition_cache)
                                 ? reading_step->selectRangesToReadForEstimation(allow_query_condition_cache)
-                                : (allow_query_condition_cache
-                                       ? reading_step->selectRangesToRead()
-                                       : reading_step->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/false));
+                                : reading_step->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
