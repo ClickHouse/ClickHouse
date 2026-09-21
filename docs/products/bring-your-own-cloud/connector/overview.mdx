@@ -22,7 +22,7 @@ The connector has three components:
 - **The scraper** collects metrics from an allowlist of ClickHouse system tables, plus infrastructure metadata and health status, and ships them to ClickHouse Cloud.
 - **The troubleshooter** lets ClickHouse support engineers run read-only diagnostics during a [support session](/products/bring-your-own-cloud/connector/support-sessions) that you enable and can end at any time.
 
-Managed mode is the default. You can also run without it and keep observability and support for clusters you operate yourself; see [run without managed mode](#run-without-managed-mode).
+On a terminal, `init` asks whether to enable managed mode and preselects yes; a scripted `init` enables it only with `--managed`. You can also run without it and keep observability and support for clusters you operate yourself; see [run without managed mode](#run-without-managed-mode).
 
 Every connection the connector makes is outbound. ClickHouse Cloud never initiates a connection into your environment. The [architecture](/products/bring-your-own-cloud/connector/architecture) page lists every connection, its protocol, and how it authenticates.
 
