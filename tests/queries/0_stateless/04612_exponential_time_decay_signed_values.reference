@@ -1,6 +1,6 @@
 13.288552	6.730391
 1	1
-ExponentialTimeDecayingFloat64(10)	1.056964	10	10	0.388835
+ExponentialTimeDecaying(10)	1.056964	10	10	0.388835
 -2
 -1
 0
