@@ -35,12 +35,8 @@ def count_hdfs_objects(fs, path="/clickhouse"):
     return sum(len(files) for _, _, files in fs.walk(path))
 
 
-def count_hdfs_directories(fs, path="/clickhouse"):
-    return sum(len(dirs) for _, dirs, _ in fs.walk(path))
-
-
-def count_empty_hdfs_directories(fs, path="/clickhouse"):
-    return sum(1 for _, dirs, files in fs.walk(path) if not dirs and not files)
+def hdfs_directories(fs, path="/clickhouse"):
+    return {root + "/" + name for root, dirs, _ in fs.walk(path) for name in dirs}
 
 
 def assert_objects_count(started_cluster, objects_count, num_tries=30):
@@ -111,12 +107,11 @@ def test_log_family_hdfs(
         node.query("DROP TABLE hdfs_test SYNC")
 
 
-def test_no_leftover_directories_after_removal(started_cluster):
-    # Every object key contains a nested directory prefix (e.g. `abc/xyz...`)
-    # whose directories are created on write, so object removal must delete the
-    # emptied prefix directories together with the files - otherwise every
-    # removed blob leaks one directory and the NameNode namespace grows without
-    # bound.
+def test_prefix_directories_are_not_reclaimed(started_cluster):
+    # An emptied object-key prefix directory is deliberately kept: deleting it
+    # races a concurrent write that has just created the same directory and has
+    # not opened its object yet, which fails that write with
+    # `Parent directory doesn't exist`.
     node = started_cluster.instances["node"]
     fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
@@ -126,20 +121,21 @@ def test_no_leftover_directories_after_removal(started_cluster):
     try:
         node.query("INSERT INTO hdfs_dir_cleanup SELECT number FROM numbers(5)")
         assert count_hdfs_objects(fs) > 0
-        assert count_hdfs_directories(fs) > 0
+        directories_before = hdfs_directories(fs)
+        assert directories_before
 
         node.query("TRUNCATE TABLE hdfs_dir_cleanup")
         assert_objects_count(started_cluster, 0)
-        assert count_hdfs_directories(fs) == 0
+        # Removing the objects must not remove their prefix directories.
+        assert hdfs_directories(fs) >= directories_before
     finally:
         node.query("DROP TABLE hdfs_dir_cleanup SYNC")
 
 
-def test_no_leftover_directories_after_canceled_write(started_cluster):
+def test_no_leftover_files_after_canceled_write(started_cluster):
     # A canceled write (e.g. an INSERT that fails mid-stream, or a zero-row
-    # rewrite of a part) removes the file it created, and must also remove the
-    # emptied prefix directories: the cancel path never reaches `removeObject`,
-    # which does this cleanup for committed blobs.
+    # rewrite of a part) creates its HDFS file already at open, so it has to
+    # remove that file explicitly.
     node = started_cluster.instances["node"]
     fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
@@ -152,10 +148,11 @@ def test_no_leftover_directories_after_canceled_write(started_cluster):
         # sizes (`sizes.json`) upfront to be able to roll back on error.
         node.query("INSERT INTO hdfs_canceled_write SELECT number FROM numbers(5)")
         assert_objects_count(started_cluster, 2)
+        directories_before = hdfs_directories(fs)
+        assert directories_before
 
         # Stream small blocks so that the write buffers (and with them the HDFS
-        # files and their prefix directories) are created before the exception
-        # cancels the insert.
+        # files) are created before the exception cancels the insert.
         error = node.query_and_get_error(
             "INSERT INTO hdfs_canceled_write"
             " SELECT throwIf(number = 100000, 'canceled write') FROM numbers(200000)"
@@ -164,19 +161,15 @@ def test_no_leftover_directories_after_canceled_write(started_cluster):
         assert "canceled write" in error
 
         # The canceled insert must roll back to the baseline without leaking
-        # objects (the keys may differ - the sink rewrites `sizes.json`) ...
+        # objects (the keys may differ - the sink rewrites `sizes.json`).
         assert_objects_count(started_cluster, 2)
+        # The sink rewrites `sizes.json` upfront so it can roll back, which removes
+        # the previous blob and empties its prefix directory inside this query; that
+        # directory must survive the removal.
+        assert hdfs_directories(fs) >= directories_before
         assert (
             node.query("SELECT * FROM hdfs_canceled_write ORDER BY id")
             == "0\n1\n2\n3\n4\n"
         )
-
-        # ... and without leaking the prefix directories of the removed files:
-        # every remaining directory must still lead to a live object.
-        num_tries = 30
-        while num_tries > 0 and count_empty_hdfs_directories(fs) != 0:
-            num_tries -= 1
-            time.sleep(1)
-        assert count_empty_hdfs_directories(fs) == 0
     finally:
         node.query("DROP TABLE hdfs_canceled_write SYNC")
