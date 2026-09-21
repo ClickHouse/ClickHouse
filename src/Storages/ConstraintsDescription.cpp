@@ -32,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int ILLEGAL_COLUMN;
 }
 
 String ConstraintsDescription::toString() const
@@ -205,7 +204,7 @@ void ConstraintsDescription::checkNamesAreUnique() const
     {
         const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
         if (!names.insert(declaration.name).second)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Constraint {} is declared more than once", backQuote(declaration.name));
     }
 }

@@ -9,19 +9,18 @@ DROP TABLE IF EXISTS t_alter_constraint_array_join;
 
 -- `DROP CONSTRAINT` erases and `MODIFY CONSTRAINT` replaces the first declaration of a name, so a second
 -- declaration of it is reachable only once the first one has been dropped (see
--- `05234_constraint_repeated_name_legacy_metadata.sh`). `ALTER TABLE ... ADD CONSTRAINT` already refuses
--- a name the table has, with this same error code.
+-- `05234_constraint_repeated_name_legacy_metadata.sh`).
 CREATE TABLE t_constraint_repeated_name (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK k > 0, CONSTRAINT c CHECK k < 1000)
-ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE t_constraint_repeated_name (k UInt32, CONSTRAINT c CHECK k > 0, CONSTRAINT c ASSUME k < 1000)
-ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
 -- A full-definition `ATTACH` states the definition in the query itself, so it is user input like
 -- `CREATE` is, rather than a replay of metadata this server has already accepted.
 ATTACH TABLE t_constraint_repeated_name UUID 'c2d4f1b7-3a86-4e52-9f0c-71d5e8a29b64'
 (k UInt32, CONSTRAINT c CHECK k > 0, CONSTRAINT c CHECK k < 1000)
-ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE t_constraint_repeated_name (k UInt32, CONSTRAINT c CHECK k > 0, CONSTRAINT c2 CHECK k < 1000)
 ENGINE = MergeTree ORDER BY k;
