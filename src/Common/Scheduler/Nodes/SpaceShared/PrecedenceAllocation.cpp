@@ -130,15 +130,10 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     apply(update);
-    if (update.attached)
+    // On attach, or when a zero-size admission takes a child from zero to one running allocation (which changes
+    // no bytes and no increase/decrease pointer), refresh its running-child membership.
+    if (update.attached || update.admissions)
     {
-        if (!from_child.isRunning() && from_child.allocations > 0)
-            running_children.insert(from_child);
-    }
-    if (update.admissions)
-    {
-        // A zero-size admission can take a child from zero to one running allocation with no byte change and no
-        // increase/decrease pointer change, so refresh its running-child membership here as well.
         if (!from_child.isRunning() && from_child.allocations > 0)
             running_children.insert(from_child);
     }
