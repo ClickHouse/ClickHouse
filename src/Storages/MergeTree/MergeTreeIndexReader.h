@@ -27,7 +27,10 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         SkippingIndexCache * skipping_index_cache,
-        MergeTreeReaderSettings settings_);
+        MergeTreeReaderSettings settings_,
+        /// Only readers whose caller tolerates a cancellation exception may pass true: a throw
+        /// from the marks read is reported as a corrupt part by readers that validate or load parts.
+        bool interruptible_marks_read_);
     virtual ~MergeTreeIndexReader();
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges);
@@ -47,6 +50,7 @@ private:
     VectorSimilarityIndexCache * vector_similarity_index_cache;
     SkippingIndexCache * skipping_index_cache;
     MergeTreeReaderSettings settings;
+    const bool interruptible_marks_read;
 
     /// Empty if the part is not Active: such parts are removed soon, so their granules are not cached.
     String cache_key_prefix;

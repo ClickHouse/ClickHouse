@@ -84,8 +84,6 @@ public:
         RELOAD_DICTIONARIES,
         UNLOAD_DICTIONARY,
         UNLOAD_DICTIONARIES,
-        RELOAD_MODEL,
-        RELOAD_MODELS,
         RELOAD_FUNCTION,
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
@@ -119,6 +117,7 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        DISABLE_ALL_FAILPOINTS,
         ALLOCATE_MEMORY,
         FREE_MEMORY,
         WAIT_FAILPOINT,
@@ -184,7 +183,6 @@ public:
     void setDatabase(const String & name);
     void setTable(const String & name);
 
-    String target_model;
     String target_function;
     String replica;
     String shard;

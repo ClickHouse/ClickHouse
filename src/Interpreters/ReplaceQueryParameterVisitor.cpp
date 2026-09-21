@@ -97,7 +97,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
                 visit(to_table_ast);
 
                 create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-                create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
+                create_query->targets->setTableASTWithQueryParams(ViewTarget::To, nullptr);
 
                 visitChildren(ast);
             }

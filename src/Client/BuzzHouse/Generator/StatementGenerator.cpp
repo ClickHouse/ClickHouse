@@ -587,7 +587,7 @@ static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
 {
     SQLView next;
-    const uint32_t view_ncols = rg.randomInt<uint32_t>(1, fc.max_columns);
+    uint32_t view_ncols = rg.randomInt<uint32_t>(1, fc.max_columns);
     const bool alltables = rg.nextMediumNumber() < 26;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
@@ -662,42 +662,42 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(next.has_with_cols ? table_to_lambda : attached_tables));
+            std::vector<String> nids;
+            const bool allCols = rg.nextBool();
+            const bool newdef = rg.nextSmallNumber() < 4;
 
             t.setName(cmvt->mutable_est(), false);
-            if (next.has_with_cols)
+            for (const auto & [key, val] : t.cols)
             {
-                std::vector<String> nids;
-                const bool allCols = rg.nextBool();
-                const bool newdef = rg.nextSmallNumber() < 4;
+                if (allCols || val.canBeInserted())
+                {
+                    nids.push_back(key);
+                }
+            }
+            if (nids.empty())
+            {
+                nids.push_back(rg.pickRandomly(t.cols));
+            }
+            else if (rg.nextBool())
+            {
+                std::shuffle(nids.begin(), nids.end(), rg.generator);
+            }
+            /// The view's columns have to exist in the target table, and the SELECT has to project
+            /// exactly as many. Otherwise the view is created broken: too many columns and every read
+            /// is NOT_FOUND_COLUMN_IN_BLOCK, too few and the alias list is rejected as BAD_ARGUMENTS.
+            view_ncols = std::min(view_ncols, static_cast<uint32_t>(nids.size()));
+            next.has_with_cols = true;
 
-                for (const auto & [key, val] : t.cols)
-                {
-                    if (allCols || val.canBeInserted())
-                    {
-                        nids.push_back(key);
-                    }
-                }
-                if (nids.empty())
-                {
-                    nids.push_back(rg.pickRandomly(t.cols));
-                }
-                else if (rg.nextBool())
-                {
-                    std::shuffle(nids.begin(), nids.end(), rg.generator);
-                }
-                const uint32_t limit = std::min(view_ncols, static_cast<uint32_t>(nids.size()));
+            chassert(view_ncols > 0);
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                SQLColumn col = t.cols.at(nids[i]);
 
-                chassert(limit > 0);
-                for (uint32_t i = 0; i < limit; i++)
+                if (newdef)
                 {
-                    SQLColumn col = t.cols.at(nids[i]);
-
-                    if (newdef)
-                    {
-                        addTableColumnInternal(rg, t, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
-                    }
-                    next.cols.insert(col.getColumnName());
+                    addTableColumnInternal(rg, t, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
                 }
+                next.cols.insert(col.getColumnName());
             }
         }
         if (!next.isDeterministic() && (next.is_refreshable = rg.nextBool()))
@@ -2623,7 +2623,6 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     rg.pickWeighted({
         {0, [&] { sc->set_reload_embedded_dictionaries(true); }},
         {0, [&] { sc->set_reload_dictionaries(true); }},
-        {0, [&] { sc->set_reload_models(true); }},
         {3, [&] { sc->set_reload_functions(true); }},
         {1 * static_cast<uint32_t>(!functions.empty()),
          [&]

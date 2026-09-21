@@ -115,6 +115,32 @@ ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 
 
 `a ILIKE b` – `ilike(a, b)` 함수입니다.
 
+<div id="match-function">
+  ### match 함수
+</div>
+
+`a REGEXP b` – `match(a, b)` 함수입니다.
+
+`a ~ b` – `match(a, b)` 함수입니다(PostgreSQL 스타일의 정규식 일치).
+
+<div id="notmatch-function">
+  ### notMatch 함수
+</div>
+
+`a !~ b` – `notMatch(a, b)` 함수(`a`가 정규식 `b`와 일치하지 않는지 확인합니다).
+
+<div id="matchcaseinsensitive-function">
+  ### matchCaseInsensitive 함수
+</div>
+
+`a ~* b` – `matchCaseInsensitive(a, b)` 함수(대소문자를 구분하지 않는 정규식 일치)입니다.
+
+<div id="notmatchcaseinsensitive-function">
+  ### notMatchCaseInsensitive 함수
+</div>
+
+`a !~* b` – `notMatchCaseInsensitive(a, b)` 함수(`a`가 정규식 `b`와 대소문자를 구분하지 않고 일치하지 않는지 확인합니다).
+
 <div id="between-function">
   ### BETWEEN 함수
 </div>

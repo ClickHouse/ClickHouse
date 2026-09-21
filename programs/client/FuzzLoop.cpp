@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/copyData.h>
@@ -26,6 +27,8 @@
 #include <Parsers/ParserOptimizeQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+
+#include <algorithm>
 
 #if USE_BUZZHOUSE
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
@@ -197,22 +200,18 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         return true;
     }
 
+    /// Do not let a corpus query change the session parser for later fuzzing inputs. The AST
+    /// fuzzer serializes ASTs as ClickHouse SQL, so retaining `dialect = 'kusto'` would make a
+    /// later replay use the wrong parser.
+    if (const auto * set = orig_ast->as<ASTSetQuery>(); set
+        && std::any_of(set->changes.begin(), set->changes.end(), [](const auto & change) { return change.name == "dialect"; }))
+        return true;
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
         return true;
-    }
-
-    // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
-    {
-        return true;
-    }
-    if (auto * q = orig_ast->as<ASTSetQuery>())
-    {
-        if (auto * set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
-            return true;
     }
 
     // Don't repeat:

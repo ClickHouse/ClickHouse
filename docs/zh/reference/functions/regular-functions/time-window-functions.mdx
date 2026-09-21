@@ -45,7 +45,7 @@ hop(time_attr, hop_interval, window_interval[, timezone])
 
 * `time_attr` — 日期和时间。[`DateTime`](/zh/reference/data-types/datetime)
 * `hop_interval` — 正的 Hop 间隔。[`Interval`](/zh/reference/data-types/int-uint)
-* `window_interval` — 正的窗口间隔。[`Interval`](/zh/reference/data-types/int-uint)
+* `window_interval` — 正的窗口时间间隔。[`Interval`](/zh/reference/data-types/int-uint)
 * `timezone` — 可选。时区名称。[`String`](/zh/reference/data-types/string)
 
 **返回值**
@@ -57,11 +57,11 @@ hop(time_attr, hop_interval, window_interval[, timezone])
 **跳跃窗口**
 
 ```sql title=Query
-SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hop(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-('2024-07-03 00:00:00','2024-07-05 00:00:00')
+('2026-01-01 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="hopEnd">
@@ -70,9 +70,9 @@ SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
 
 引入版本：v22.1.0
 
-返回对应跳跃窗口的排他上界。
+返回对应跳跃窗口的上界 (不包含) 。
 
-由于一条记录可能会被分配到多个 hop window，因此在未使用 `WINDOW VIEW` 的情况下使用 hop 函数时，该函数仅返回第一个窗口的边界。
+由于一条记录可能会被分配到多个 hop 窗口，因此在未使用 `WINDOW VIEW` 的情况下使用 hop 函数时，该函数仅返回第一个窗口的边界。
 
 **语法**
 
@@ -84,23 +84,23 @@ hopEnd(time_attr, hop_interval, window_interval[, timezone])
 
 * `time_attr` — 日期和时间。[`DateTime`](/zh/reference/data-types/datetime)
 * `hop_interval` — 正的 Hop 间隔。[`Interval`](/zh/reference/data-types/int-uint)
-* `window_interval` — 正的 Window 间隔。[`Interval`](/zh/reference/data-types/int-uint)
+* `window_interval` — 正的窗口时间间隔。[`Interval`](/zh/reference/data-types/int-uint)
 * `timezone` — 可选。时区名称。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
-返回对应跳跃窗口的独占上界。[`DateTime`](/zh/reference/data-types/datetime)
+返回对应跳跃窗口的上界 (不包含) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
 **跳跃窗口 结束时间**
 
 ```sql title=Query
-SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="hopStart">
@@ -109,9 +109,9 @@ SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
 
 引入版本：v22.1.0
 
-返回对应 hopping window 的下界 (包含该下界) 。
+返回对应跳跃窗口的下界 (包含) 。
 
-由于一条记录可能会被分配到多个 hop window，因此在未结合 `WINDOW VIEW` 使用 hop 函数时，该函数只返回第一个窗口的边界。
+由于一条记录可能会被分配到多个 hop 窗口，因此在未结合 `WINDOW VIEW` 使用 hop 函数时，该函数只返回第一个窗口的边界。
 
 **语法**
 
@@ -128,18 +128,18 @@ hopStart(time_attr, hop_interval, window_interval[, timezone])
 
 **返回值**
 
-返回对应跳跃窗口的包含下界。[`DateTime`](/zh/reference/data-types/datetime)
+返回对应跳跃窗口的下界 (包含) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
 **跳跃窗口起始时间**
 
 ```sql title=Query
-SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopStart(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-03 00:00:00
+2026-01-01 00:00:00
 ```
 
 <div id="tumble">
@@ -148,7 +148,7 @@ SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
 
 引入版本：v21.12.0
 
-Tumbling 时间窗口会将记录分配到持续时间固定 (`interval`) 、连续且互不重叠的窗口中。
+滚动时间窗口会将记录分配到持续时间固定 (`interval`) 、连续且互不重叠的窗口中。
 
 **语法**
 
@@ -171,11 +171,11 @@ tumble(time_attr, interval[, timezone])
 **滚动窗口**
 
 ```sql title=Query
-SELECT tumble(now(), toIntervalDay('1'))
+SELECT tumble(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-('2024-07-04 00:00:00','2024-07-05 00:00:00')
+('2026-01-02 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="tumbleEnd">
@@ -184,7 +184,7 @@ SELECT tumble(now(), toIntervalDay('1'))
 
 于以下版本引入：v22.1.0
 
-返回相应滚动窗口不包含在内的上界。
+返回相应滚动窗口的上界 (不包含) 。
 
 **语法**
 
@@ -200,18 +200,18 @@ tumbleEnd(time_attr, interval[, timezone])
 
 **返回值**
 
-返回对应滚动窗口的不包含上边界。[`DateTime`](/zh/reference/data-types/datetime)
+返回对应滚动窗口的上界 (不包含) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
 **滚动窗口结束**
 
 ```sql title=Query
-SELECT tumbleEnd(now(), toIntervalDay('1'))
+SELECT tumbleEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="tumbleStart">
@@ -220,7 +220,7 @@ SELECT tumbleEnd(now(), toIntervalDay('1'))
 
 引入版本：v22.1.0
 
-返回对应滚动窗口的下界 (包含该下界) 。
+返回对应滚动窗口的下界 (包含) 。
 
 **语法**
 
@@ -236,18 +236,18 @@ tumbleStart(time_attr, interval[, timezone])
 
 **返回值**
 
-返回对应滚动窗口的下界 (包含该边界) 。[`DateTime`](/zh/reference/data-types/datetime)
+返回对应滚动窗口的下界 (包含) 。[`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 
 **滚动窗口起始**
 
 ```sql title=Query
-SELECT tumbleStart(now(), toIntervalDay('1'))
+SELECT tumbleStart(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-04 00:00:00
+2026-01-02 00:00:00
 ```
 
 <div id="windowID">
@@ -280,7 +280,11 @@ windowID(time_attr, interval[, timezone])
 **窗口 ID**
 
 ```sql title=Query
-SELECT windowID(now(), toIntervalDay('1'))
+SELECT windowID(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
+```
+
+```response title=Response
+1767398400
 ```
 
 {/*AUTOGENERATED_END*/}
