@@ -259,11 +259,14 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /// The size of the object recorded in the metadata is a locally known bound, so it is used
         /// as the right bound of the read rather than trusting the length of whatever the endpoint
-        /// answers with. `UnknownSize` is a sentinel for "the size was never determined", and `0`
-        /// is treated as unknown as well, the same as in `S3ObjectStorage::readObject`, because
-        /// callers that do not know the size leave it at the default-constructed value; both map
-        /// to `std::nullopt`, which reads to the end of the object.
-        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize)
+        /// answers with. `UnknownSize` is the only sentinel for "the size was never determined":
+        /// it is the default-constructed value, so a caller that does not know the size leaves it
+        /// there, and `bytes_size == 0` means a genuinely empty object, which must read as empty
+        /// rather than unbounded.
+        /// `S3ObjectStorage::readObject` maps `0` to "no bound" as well, because
+        /// `ReadBufferFromS3::read_until_position` is a plain `size_t` whose `0` already means
+        /// "unbounded" and therefore cannot express the empty range at all.
+        object.bytes_size != StoredObject::UnknownSize
             ? std::optional<size_t>(object.bytes_size)
             : std::nullopt,
         std::move(blob_storage_log),

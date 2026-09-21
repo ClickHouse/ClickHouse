@@ -611,4 +611,22 @@ TEST(AzureReadObject, UnknownObjectSizeReadsToTheEnd)
     assertCountsUpFromZero(data);
 }
 
+/// `UnknownSize` is the only sentinel for an undetermined size, so `bytes_size == 0` describes a
+/// genuinely empty object and is a bound like any other. Treating it as "no bound" made an empty
+/// object read unbounded, so an endpoint answering with a non-empty body handed the caller bytes
+/// of an object that the metadata says has none.
+TEST(AzureReadObject, EmptyObjectReadsAsEmpty)
+{
+    auto object_storage = makeObjectStorage(/* claimed_size */ 128, /* served_size */ 128);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 0);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_TRUE(data.empty());
+    ASSERT_TRUE(buffer->eof());
+}
+
 #endif
