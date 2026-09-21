@@ -2,3 +2,9 @@
 SETTING_CONSTRAINT_VIOLATION
 -- the profile alone still applies
 10
+-- a value passed before the profile parameter is rejected too
+SETTING_CONSTRAINT_VIOLATION
+-- a parameter repeated around the profile is rejected on its last value
+SETTING_CONSTRAINT_VIOLATION
+-- a value within the constraint is still accepted
+999

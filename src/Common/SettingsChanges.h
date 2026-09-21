@@ -61,4 +61,10 @@ public:
     String namesToString() const;
 };
 
+/// Moves the `profile` changes to the front, keeping the order of everything else. A `profile` change
+/// installs the constraint set for the changes that follow it, so when the changes come from a source
+/// with no order of its own - a protobuf map, URL parameters that `setSetting` deduplicates in place -
+/// the profile has to come first, or whether its constraints bind the rest of the request is luck.
+void moveProfileChangesToFront(SettingsChanges & changes);
+
 }

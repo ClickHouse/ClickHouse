@@ -611,6 +611,47 @@ def test_external_table():
     )
 
 
+def test_settings_profile_constraints():
+    profile = "grpc_profile_constraints"
+    query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
+    query(f"CREATE SETTINGS PROFILE {profile} SETTINGS max_execution_time = 10 CONST")
+    try:
+        # `settings` is a protobuf map, so the position of `profile` in it is arbitrary: the constraint
+        # must bind the other settings either way.
+        for settings in [
+            {"profile": profile, "max_execution_time": "999"},
+            {"max_execution_time": "999", "profile": profile},
+        ]:
+            e = query_and_get_error("SELECT 1", settings=settings)
+            assert "SETTING_CONSTRAINT_VIOLATION" in e.display_text
+        assert query("SELECT getSetting('max_execution_time')", settings={"profile": profile}) == "10\n"
+    finally:
+        query(f"DROP SETTINGS PROFILE {profile}")
+
+
+def test_settings_profile_constraints_external_table():
+    profile = "grpc_profile_constraints_external_table"
+    query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
+    query(f"CREATE SETTINGS PROFILE {profile} SETTINGS max_execution_time = 10 CONST")
+    try:
+        columns = [clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64")]
+        for settings in [
+            {"profile": profile, "max_execution_time": "999"},
+            {"max_execution_time": "999", "profile": profile},
+        ]:
+            ext = clickhouse_grpc_pb2.ExternalTable(
+                name="ext1",
+                columns=columns,
+                data=b"1\n2\n",
+                format="TabSeparated",
+                settings=settings,
+            )
+            e = query_and_get_error("SELECT * FROM ext1 ORDER BY UserID", external_tables=[ext])
+            assert "SETTING_CONSTRAINT_VIOLATION" in e.display_text
+    finally:
+        query(f"DROP SETTINGS PROFILE {profile}")
+
+
 def test_external_table_streaming():
     columns = [
         clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),

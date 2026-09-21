@@ -409,6 +409,10 @@ void HTTPHandler::processQuery(
     if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
         settings_changes.setSetting("output_format", header_value);
 
+    /// URL parameters have no meaningful order (and `setSetting` overwrites in place), so the profile
+    /// must be moved first for its constraints to bind the rest of the request.
+    moveProfileChangesToFront(settings_changes);
+
     ContextMutablePtr context;
     {
         /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
