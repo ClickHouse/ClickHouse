@@ -3,16 +3,16 @@ SET use_variant_default_implementation_for_comparisons = 0;
 SET allow_suspicious_types_in_order_by = 1;
 
 -- Native comparisons must recurse through the carrier for constants and columns.
-WITH CAST(CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'),
-          'Variant(ExponentialTimeDecayingFloat64(10), UInt8)') AS value
+WITH CAST(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'),
+          'Variant(ExponentialTimeDecaying(10), UInt8)') AS value
 SELECT value = value, value <= value, value >= value, value != value;
 
 DROP TABLE IF EXISTS time_decay_variant;
 CREATE TABLE time_decay_variant
 (
     id UInt8,
-    a Variant(ExponentialTimeDecayingFloat64(10), UInt8),
-    b Variant(ExponentialTimeDecayingFloat64(10), UInt8)
+    a Variant(ExponentialTimeDecaying(10), UInt8),
+    b Variant(ExponentialTimeDecaying(10), UInt8)
 )
 ENGINE = Memory;
 INSERT INTO time_decay_variant VALUES
@@ -28,28 +28,28 @@ DROP TABLE time_decay_variant;
 -- Extending a carrier can give its member columns a different local order from
 -- the global type discriminators. Empty decaying alternatives and NULL are valid.
 SELECT CAST(CAST(toUInt8(number), 'Variant(UInt8)'),
-            'Variant(ExponentialTimeDecayingFloat64(10), UInt8)') FROM numbers(3);
-SELECT CAST(NULL, 'Variant(ExponentialTimeDecayingFloat64(10), UInt8)');
+            'Variant(ExponentialTimeDecaying(10), UInt8)') FROM numbers(3);
+SELECT CAST(NULL, 'Variant(ExponentialTimeDecaying(10), UInt8)');
 
 -- The same compatibility rules apply to nested members and reject mixed lengths.
 WITH
-    CAST(CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))'),
-         'Variant(Array(ExponentialTimeDecayingFloat64(10)), UInt8)') AS value
+    CAST(CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecaying(10))'),
+         'Variant(Array(ExponentialTimeDecaying(10)), UInt8)') AS value
 SELECT value = value;
 WITH
-    CAST(CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'),
-         'Variant(ExponentialTimeDecayingFloat64(10), UInt8)') AS a,
-    CAST(CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(20)'),
-         'Variant(ExponentialTimeDecayingFloat64(20), UInt8)') AS b
+    CAST(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'),
+         'Variant(ExponentialTimeDecaying(10), UInt8)') AS a,
+    CAST(CAST((1., 0., 20.), 'ExponentialTimeDecaying(20)'),
+         'Variant(ExponentialTimeDecaying(20), UInt8)') AS b
 SELECT a = b; -- { serverError BAD_ARGUMENTS }
 
 -- Typed input must validate decaying members inside `Variant` before they can
 -- reach native sorting or set membership.
 SELECT *
-FROM VALUES('value Variant(ExponentialTimeDecayingFloat64(10), UInt8)', ((1., 0., 20.)))
+FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.)))
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
-SELECT value IN (SELECT * FROM VALUES('value Variant(ExponentialTimeDecayingFloat64(10), UInt8)', ((1., 0., 10.))))
-FROM VALUES('value Variant(ExponentialTimeDecayingFloat64(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
+SELECT value IN (SELECT * FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 10.))))
+FROM VALUES('value Variant(ExponentialTimeDecaying(10), UInt8)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
 SELECT *
-FROM VALUES('value Variant(Array(ExponentialTimeDecayingFloat64(10)), UInt8)', ([(1., 0., 20.)]))
+FROM VALUES('value Variant(Array(ExponentialTimeDecaying(10)), UInt8)', ([(1., 0., 20.)]))
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
