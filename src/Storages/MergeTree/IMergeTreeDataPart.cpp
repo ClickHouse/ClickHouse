@@ -923,15 +923,20 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     /// layout matches the chosen serialization, instead of silently degrading to
     /// the plain Map serialization. Zero-level parts follow
     /// `map_serialization_version_for_zero_level_parts`, merged parts follow
-    /// `map_serialization_version`.
+    /// `map_serialization_version`; `with_key_columns` applies to both.
     applyTableMapSerializationVersionForBasicInfos();
 }
 
 void IMergeTreeDataPart::applyTableMapSerializationVersionForBasicInfos()
 {
-    const auto table_map_version = (*storage.getSettings())[
-        isZeroLevel() ? MergeTreeSetting::map_serialization_version_for_zero_level_parts
-                      : MergeTreeSetting::map_serialization_version];
+    const auto & table_settings = *storage.getSettings();
+    const auto merged_version = table_settings[MergeTreeSetting::map_serialization_version];
+    /// `with_key_columns` governs zero-level parts too (the per-key layout does not
+    /// support a part-level mix), while `with_buckets` may keep zero-level parts on
+    /// `basic` through `map_serialization_version_for_zero_level_parts`.
+    const auto table_map_version = merged_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+        ? merged_version
+        : (isZeroLevel() ? table_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts] : merged_version);
     if (table_map_version == MergeTreeMapSerializationVersion::BASIC)
         return;
 
