@@ -1,0 +1,14 @@
+mode=custom_key_sampling
+http rows: [(7,14),(19,38),(123,246)]
+tcp rows: [(7,14),(19,38),(123,246)]
+engaged remote replicas > 1: 1
+mode=custom_key_range
+http rows: [(7,14),(19,38),(123,246)]
+tcp rows: [(7,14),(19,38),(123,246)]
+engaged remote replicas > 1: 1
+force mode rows: [(7,14),(19,38),(123,246)]
+force mode direct input rows: [7,19,123]
+wrapped input rows: [(7,14),(19,38),(123,246)]
+materialized cte rows: [(7,14),(19,38),(123,246)]
+materialized cte engaged remote replicas > 1: 1
+serialize_query_plan rows: [(7,14),(19,38),(123,246)]
