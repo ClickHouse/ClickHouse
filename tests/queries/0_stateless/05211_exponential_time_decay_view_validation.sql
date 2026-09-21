@@ -6,7 +6,7 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE time_decay_view_source
 (
-    value ExponentialTimeDecayingFloat64(10),
+    value ExponentialTimeDecaying(10),
     ordinary LowCardinality(UInt8)
 )
 ENGINE = Memory;
@@ -23,7 +23,7 @@ DROP VIEW time_decay_view;
 
 SET allow_experimental_time_decay_aggregate_functions = 0;
 CREATE VIEW time_decay_view AS SELECT value FROM time_decay_view_source; -- { serverError ILLEGAL_COLUMN }
-CREATE VIEW time_decay_parameterized_view AS SELECT {value:ExponentialTimeDecayingFloat64(10)}; -- { serverError ILLEGAL_COLUMN }
-ATTACH TABLE time_decay_attached (value ExponentialTimeDecayingFloat64(10)) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+CREATE VIEW time_decay_parameterized_view AS SELECT {value:ExponentialTimeDecaying(10)}; -- { serverError ILLEGAL_COLUMN }
+ATTACH TABLE time_decay_attached (value ExponentialTimeDecaying(10)) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 
 DROP TABLE time_decay_view_source;
