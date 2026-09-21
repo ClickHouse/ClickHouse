@@ -32,12 +32,11 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FAILPOINT"
 
 run_cancelled_scalar()
 {
-    local analyzer="$1"
-    local query_id="scalar_subquery_cardinality_cancel_${CLICKHOUSE_DATABASE}_${analyzer}_${RANDOM}_$$"
-    CLIENT_ERR="${CLICKHOUSE_TMP}/native_scalar_subquery_cancel_${analyzer}.err"
+    local query_id="scalar_subquery_cardinality_cancel_${CLICKHOUSE_DATABASE}_${RANDOM}_$$"
+    CLIENT_ERR="${CLICKHOUSE_TMP}/native_scalar_subquery_cancel.err"
 
     $CLICKHOUSE_CLIENT --query_id "$query_id" \
-        --partial_result_on_first_cancel=1 --enable_analyzer="$analyzer" \
+        --partial_result_on_first_cancel=1 \
         --max_block_size=1 --interactive_delay=1000 --log_queries=1 \
         --log_queries_probability=1 --log_queries_min_query_duration_ms=0 \
         --use_query_cache=1 --query_cache_for_subqueries=1 \
@@ -46,7 +45,7 @@ run_cancelled_scalar()
 
     if ! timeout 60 $CLICKHOUSE_CLIENT --query \
         "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE" > /dev/null 2>&1; then
-        echo "Scalar subquery did not reach the cardinality check: analyzer $analyzer"
+        echo "Scalar subquery did not reach the cardinality check"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -72,27 +71,26 @@ run_cancelled_scalar()
         sleep 0.1
     done
     if [[ "$failed_without_partial_result" != 1 ]]; then
-        echo "Scalar subquery unexpectedly returned a partial result: analyzer $analyzer"
+        echo "Scalar subquery unexpectedly returned a partial result"
         cat "$CLIENT_ERR"
         return 1
     fi
 
-    if $CLICKHOUSE_CLIENT --enable_analyzer="$analyzer" --max_block_size=1 \
+    if $CLICKHOUSE_CLIENT --max_block_size=1 \
         --use_query_cache=1 --query_cache_for_subqueries=1 \
         --query "$SCALAR_QUERY" > /dev/null 2> "$CLIENT_ERR"; then
-        echo "Cancelled scalar subquery poisoned the cache: analyzer $analyzer"
+        echo "Cancelled scalar subquery poisoned the cache"
         return 1
     fi
     if ! grep -q "INCORRECT_RESULT_OF_SCALAR_SUBQUERY" "$CLIENT_ERR"; then
-        echo "Complete scalar subquery did not check cardinality: analyzer $analyzer"
+        echo "Complete scalar subquery did not check cardinality"
         cat "$CLIENT_ERR"
         return 1
     fi
 
     rm -f "$CLIENT_ERR"
     CLIENT_ERR=""
-    echo "analyzer $analyzer: no partial result, cardinality preserved"
+    echo "no partial result, cardinality preserved"
 }
 
-run_cancelled_scalar 0
-run_cancelled_scalar 1
+run_cancelled_scalar

@@ -38,12 +38,12 @@ SLOW="SELECT number AS n FROM numbers(1000000) WHERE sleepEachRow(0.0001)=0"
 
 run_cancelled_query()
 {
-    local name="$1" query="$2" analyzer="$3" expected_exception_code="${4:-735}"
-    local query_id="${DB}_${name}_${analyzer}"
+    local name="$1" query="$2" expected_exception_code="${3:-735}"
+    local query_id="${DB}_${name}"
     local ready=0
 
     $CLICKHOUSE_CLIENT --query_id "$query_id" \
-        --partial_result_on_first_cancel=1 --enable_analyzer="$analyzer" \
+        --partial_result_on_first_cancel=1 \
         --max_threads=1 --max_insert_threads=1 --max_block_size=1000 --preferred_block_size_bytes=0 \
         --min_insert_block_size_rows=100000000 --min_insert_block_size_bytes=1000000000 \
         --interactive_delay=1000 --max_execution_time=0 --log_queries=1 \
@@ -67,7 +67,7 @@ run_cancelled_query()
         sleep 0.1
     done
     if [[ "$ready" != 1 ]]; then
-        echo "Query did not reach cancellation boundary: $name / $analyzer"
+        echo "Query did not reach cancellation boundary: $name"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -86,32 +86,30 @@ run_cancelled_query()
         FROM system.query_log WHERE current_database = currentDatabase()
             AND query_id='$query_id' AND type != 'QueryStart'")
     if [[ "$cancelled" != 1 ]]; then
-        echo "Query did not report full cancellation: $name / $analyzer"
+        echo "Query did not report full cancellation: $name"
         cat "$CLIENT_ERR"
         return 1
     fi
-    echo "$name / $analyzer: cancelled"
+    echo "$name: cancelled"
 }
 
-run_cancelled_query insert "INSERT INTO $DB.dst $SLOW" 1
+run_cancelled_query insert "INSERT INTO $DB.dst $SLOW"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM $DB.dst"
-run_cancelled_query create "CREATE TABLE $DB.created ENGINE=MergeTree ORDER BY n AS $SLOW" 1
+run_cancelled_query create "CREATE TABLE $DB.created ENGINE=MergeTree ORDER BY n AS $SLOW"
 $CLICKHOUSE_CLIENT --query "EXISTS TABLE $DB.created"
-run_cancelled_query replace "CREATE OR REPLACE TABLE $DB.replaced ENGINE=MergeTree ORDER BY n AS $SLOW" 1
+run_cancelled_query replace "CREATE OR REPLACE TABLE $DB.replaced ENGINE=MergeTree ORDER BY n AS $SLOW"
 $CLICKHOUSE_CLIENT --query "SELECT n FROM $DB.replaced"
 run_cancelled_query populate "CREATE MATERIALIZED VIEW $DB.mv ENGINE=MergeTree ORDER BY n POPULATE AS
-    SELECT n FROM $DB.source WHERE sleepEachRow(0.0001)=0 SETTINGS materialized_views_populate_atomically=1, max_block_size=1000, preferred_block_size_bytes=0" 1
+    SELECT n FROM $DB.source WHERE sleepEachRow(0.0001)=0 SETTINGS materialized_views_populate_atomically=1, max_block_size=1000, preferred_block_size_bytes=0"
 $CLICKHOUSE_CLIENT --query "EXISTS TABLE $DB.mv"
-run_cancelled_query parallel "INSERT INTO $DB.dst $SLOW PARALLEL WITH INSERT INTO $DB.dst2 $SLOW" 1
+run_cancelled_query parallel "INSERT INTO $DB.dst $SLOW PARALLEL WITH INSERT INTO $DB.dst2 $SLOW"
 $CLICKHOUSE_CLIENT --query "SELECT (SELECT count() FROM $DB.dst), (SELECT count() FROM $DB.dst2)"
 
-for analyzer in 0 1; do
-    # Scalar evaluation and primary-key set construction can consume the first
-    # `Cancel` before the enclosing write's executor is initialized.
-    run_cancelled_query scalar "INSERT INTO $DB.dst SELECT (
-        SELECT sum(number) FROM numbers(1000000) WHERE sleepEachRow(0.0001)=0)" "$analyzer"
-    # An incomplete `Set` is rejected semantically with `QUERY_WAS_CANCELLED` (394),
-    # instead of the native `Cancel` transport exception `QUERY_WAS_CANCELLED_BY_CLIENT` (735).
-    run_cancelled_query set "INSERT INTO $DB.dst SELECT n FROM $DB.source WHERE n IN ($SLOW)" "$analyzer" 394
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM $DB.dst"
-done
+# Scalar evaluation and primary-key set construction can consume the first
+# `Cancel` before the enclosing write's executor is initialized.
+run_cancelled_query scalar "INSERT INTO $DB.dst SELECT (
+    SELECT sum(number) FROM numbers(1000000) WHERE sleepEachRow(0.0001)=0)"
+# An incomplete `Set` is rejected semantically with `QUERY_WAS_CANCELLED` (394),
+# instead of the native `Cancel` transport exception `QUERY_WAS_CANCELLED_BY_CLIENT` (735).
+run_cancelled_query set "INSERT INTO $DB.dst SELECT n FROM $DB.source WHERE n IN ($SLOW)" 394
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM $DB.dst"

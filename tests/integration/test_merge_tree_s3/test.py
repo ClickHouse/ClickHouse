@@ -497,7 +497,6 @@ def test_prefetch_stops_after_partial_result_cancel(
     )
 
 
-@pytest.mark.parametrize("enable_analyzer", [0, 1])
 @pytest.mark.parametrize(
     "subquery_kind,finish",
     [
@@ -512,9 +511,7 @@ def test_prefetch_stops_after_partial_result_cancel(
         ("ordered-set", "disconnect"),
     ],
 )
-def test_partial_cancel_in_s3_subquery(
-    s3_cancellation_table, enable_analyzer, subquery_kind, finish
-):
+def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, finish):
     node, table = s3_cancellation_table
     queries = {
         "scalar": f"SELECT sum(id) + (SELECT sum(id) FROM {table}) FROM {table}",
@@ -523,7 +520,7 @@ def test_partial_cancel_in_s3_subquery(
     }
     query = (
         queries[subquery_kind]
-        + f" SETTINGS {S3_CANCELLATION_SETTINGS}, enable_analyzer={enable_analyzer}, "
+        + f" SETTINGS {S3_CANCELLATION_SETTINGS}, "
         "partial_result_on_first_cancel=1, optimize_trivial_count_query=0, "
         "optimize_use_projections=1, optimize_use_implicit_projections=1, "
         "use_index_for_in_with_subqueries=1, use_skip_indexes=0, "

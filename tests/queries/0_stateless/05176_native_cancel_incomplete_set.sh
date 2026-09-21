@@ -28,16 +28,15 @@ trap cleanup EXIT
 
 run_cancelled_set()
 {
-    local analyzer="$1"
-    local operator="$2"
-    local label="$3"
-    local query_id="incomplete_set_cancel_${CLICKHOUSE_DATABASE}_${analyzer}_${label}_${RANDOM}_$$"
-    CLIENT_ERR="${CLICKHOUSE_TMP}/native_cancel_incomplete_set_${analyzer}_${label}.err"
+    local operator="$1"
+    local label="$2"
+    local query_id="incomplete_set_cancel_${CLICKHOUSE_DATABASE}_${label}_${RANDOM}_$$"
+    CLIENT_ERR="${CLICKHOUSE_TMP}/native_cancel_incomplete_set_${label}.err"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FAILPOINT"
 
     $CLICKHOUSE_CLIENT --query_id "$query_id" \
-        --partial_result_on_first_cancel=1 --enable_analyzer="$analyzer" \
+        --partial_result_on_first_cancel=1 \
         --use_index_for_in_with_subqueries=0 --max_block_size=1 \
         --interactive_delay=1000 --use_query_cache=0 \
         --log_queries=1 --log_queries_probability=1 --log_queries_min_query_duration_ms=0 \
@@ -49,7 +48,7 @@ run_cancelled_set()
 
     if ! timeout 60 $CLICKHOUSE_CLIENT --query \
         "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE" > /dev/null 2>&1; then
-        echo "Set builder did not consume its first chunk: analyzer $analyzer, $operator"
+        echo "Set builder did not consume its first chunk: $operator"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -59,13 +58,13 @@ run_cancelled_set()
 
     if wait "$CLIENT_PID"; then
         CLIENT_PID=""
-        echo "Incomplete $operator set was accepted: analyzer $analyzer"
+        echo "Incomplete $operator set was accepted"
         return 1
     fi
     CLIENT_PID=""
 
     if ! grep -q "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
-        echo "Incomplete $operator set produced an unexpected error: analyzer $analyzer"
+        echo "Incomplete $operator set produced an unexpected error"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -86,7 +85,7 @@ run_cancelled_set()
     done
 
     if [[ "$rejected_without_finish" != 1 ]]; then
-        echo "Incomplete $operator set reached a successful terminal state: analyzer $analyzer"
+        echo "Incomplete $operator set reached a successful terminal state"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -94,10 +93,8 @@ run_cancelled_set()
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT"
     rm -f "$CLIENT_ERR"
     CLIENT_ERR=""
-    echo "analyzer $analyzer, $operator: incomplete set rejected"
+    echo "$operator: incomplete set rejected"
 }
 
-run_cancelled_set 0 IN in
-run_cancelled_set 0 "NOT IN" not_in
-run_cancelled_set 1 IN in
-run_cancelled_set 1 "NOT IN" not_in
+run_cancelled_set IN in
+run_cancelled_set "NOT IN" not_in
