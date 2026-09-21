@@ -34,7 +34,7 @@
             ),
             range(8)
         )
-        FROM numbers_mt(50000)
+        FROM numbers_mt(25000)
     </fill_query>
 
     <query>
