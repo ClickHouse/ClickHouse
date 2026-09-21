@@ -93,7 +93,7 @@ run_cancelled_global_subquery()
     CLIENT_ERR=""
 
     echo "$label: incomplete external table rejected"
-    $CLICKHOUSE_CLIENT --query "$control_query"
+    $CLICKHOUSE_CLIENT --enable_analyzer=1 --query "$control_query"
 }
 
 SLOW_RHS="SELECT number FROM numbers(1000000) WHERE sleepEachRow(0.001) = 0"
