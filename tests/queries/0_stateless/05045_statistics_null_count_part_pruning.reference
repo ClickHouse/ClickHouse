@@ -50,6 +50,12 @@ Test 15: `use_statistics_for_part_pruning = 0` disables pruning
 Test 18: `LIKE` / `!=` on `Nullable(String)` do not activate statistics pruning
 1
 1
+Test 19: rejected nullable-only probe is not listed as a `Statistics` key
+1	1	1	1
+4
+Test 20: rejected OR-nested `IS NULL` probe is not listed as a `Statistics` key
+1	1	1	1
+4
 Test 14a: real +Inf max does not disable tightened-range pruning
 1
 0

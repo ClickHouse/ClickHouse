@@ -1,9 +1,0 @@
-Rejected `!=` probe is not listed as a `Statistics` key
-1	1	1	1
-1
-Rejected OR-nested `IS NULL` probe is not listed as a `Statistics` key
-1	1	1	1	1
-1
-Accepted nullable-only equality is listed as a `Statistics` key
-1	1	1	1
-1

@@ -130,6 +130,24 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value
 SELECT countIf(explain LIKE '%Statistics%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_lc != 'x');
 
+SELECT 'Test 19: rejected nullable-only probe is not listed as a `Statistics` key';
+SELECT
+    countIf(explain LIKE '%Statistics%') > 0,
+    countIf(explain LIKE '%Parts: 2/4%') > 0,
+    countIf(trim(explain) = 'value_for_range') > 0,
+    countIf(trim(explain) = 'value_lc') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND value_lc != 'x');
+SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND value_lc != 'x';
+
+SELECT 'Test 20: rejected OR-nested `IS NULL` probe is not listed as a `Statistics` key';
+SELECT
+    countIf(explain LIKE '%Statistics%') > 0,
+    countIf(explain LIKE '%Parts: 2/4%') > 0,
+    countIf(trim(explain) = 'value_for_range') > 0,
+    countIf(trim(explain) = 'value_lc') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND (value_lc IS NULL OR value IS NOT NULL));
+SELECT count() FROM test_nullcount_pruning WHERE value_for_range > 150 AND (value_lc IS NULL OR value IS NOT NULL);
+
 DROP TABLE test_nullcount_pruning;
 
 DROP TABLE IF EXISTS test_float_inf_pruning;
