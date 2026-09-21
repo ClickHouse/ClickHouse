@@ -126,6 +126,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int TYPE_MISMATCH;
@@ -6814,6 +6815,22 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (const auto & original_ast = query_node_typed.getOriginalAST();
+        original_ast && original_ast->as<ASTSelectQuery>() && original_ast->as<ASTSelectQuery>()->is_pivot_rewrite)
+    {
+        std::unordered_set<String> output_names;
+        output_names.reserve(projection_columns.size());
+
+        for (const auto & column : projection_columns)
+        {
+            if (!output_names.emplace(column.name).second)
+                throw Exception(
+                    ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                    "PIVOT produces duplicate output column '{}'. Choose a different PIVOT value or aggregate alias",
+                    column.name);
+        }
     }
 
     /** Resolve nodes with duplicate aliases.
