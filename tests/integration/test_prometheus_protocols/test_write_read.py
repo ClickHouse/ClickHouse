@@ -39,7 +39,7 @@ def wait_for_scraped_data():
     data_num_rows = int(node.query("SELECT count() FROM timeSeriesData(prometheus)"))
     tags_num_rows = int(node.query("SELECT count() FROM timeSeriesTags(prometheus)"))
     metrics_num_rows = int(
-        node.query("SELECT count() FROM timeSeriesMetrics(prometheus)")
+        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
     )
     print(f"After waiting {elapsed} seconds got numbers of rows:")
     print(

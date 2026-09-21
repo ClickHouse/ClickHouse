@@ -1,0 +1,23 @@
+<!--
+`addDays` over a `DateTime` column skips the source-range check for timestamps outside the calendar
+lookup table, which a `UInt32` cannot denote. The last five queries are controls: a fixed-offset time
+zone takes the arithmetic shortcut and never reads the table, and a `DateTime64` argument keeps the check.
+Nine queries fit inside the sample the performance runner takes;
+`tests/performance/add_days_fixed_offset.xml` covers the same functions but expands past it.
+ -->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, addDays(t, 1, 'Asia/Istanbul'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, addWeeks(t, 1, 'Asia/Istanbul'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, subtractDays(t, 1, 'Asia/Istanbul'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, subtractWeeks(t, 1, 'Asia/Istanbul'))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, addDays(t, 1, 'UTC'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, addWeeks(t, 1, 'UTC'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, subtractDays(t, 1, 'UTC'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, subtractWeeks(t, 1, 'UTC'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime64('2017-01-01 00:00:00', 3, 'UTC') + number % 100000000 + rand() % 100000 AS t, addDays(t, 1, 'Asia/Istanbul'))</query>
+</test>

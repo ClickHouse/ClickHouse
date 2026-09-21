@@ -1696,7 +1696,7 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
 /// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
 /// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
 /// `ns`). Keep in sync with `parseIntervalKind.cpp`.
-static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind & result)
 {
     if (IntervalKind::tryParseString(unit_lower, result))
         return true;
@@ -1765,12 +1765,8 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind{};
-    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
-    {
-        interval_kind = IntervalKind{kind};
+    if (tryParseIntervalKindFromLowerString(unit_lower, interval_kind))
         return true;
-    }
 
     if (unit_lower == "epoch")
         extract_unit = ExtractUnit::Epoch;
@@ -2367,17 +2363,8 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Trimming an empty string is a no-op. (shortcut that works when we supply an empty string as the first argument)
-                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
-                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
-                {
-                    noop = true;
-                }
-                else
-                {
-                    to_remove = std::move(elements[0]);
-                    elements.clear();
-                }
+                to_remove = std::move(elements[0]);
+                elements.clear();
 
                 state = 2;
             }
@@ -2396,10 +2383,6 @@ public:
                 if (!mergeElement())
                     return false;
 
-                if (noop)
-                {
-                    /// The operation does nothing.
-                }
                 if (trim_left && trim_right)
                     function_name = "trimBoth";
                 else if (trim_left)
@@ -2421,10 +2404,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (noop)
-            node = std::move(elements.at(1));
-        else
-            node = makeASTFunction(function_name, std::move(elements));
+        node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -2432,7 +2412,6 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
-    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;
@@ -2629,9 +2608,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    auto range = extract_range(year_month_group, from_kind, to_kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+        range = extract_range(day_time_group, from_kind, to_kind);
     if (range.empty())
         return {};
 
@@ -3286,6 +3265,7 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Callers downcast the result without checking, so a layer must build a function, never reduce to an operand.
     ASTPtr identifier;
 
     if (ParserFunctionName().parse(pos, identifier, expected)
@@ -3522,6 +3502,44 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
         "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
     };
     return predicates.contains(function_name);
+}
+
+/// See the declaration for the ambiguity this resolves. The word is read as a column only when an
+/// operator follows it, because otherwise it is the clause keyword in front of a table expression and
+/// the subquery reading is the only one: `(FROM t)`, `(FROM numbers(10) |> LIMIT 1)`,
+/// `(FROM (SELECT 1))`. Even then the reading is taken only if the parentheses really do hold an
+/// expression, which keeps a relation named after an operator readable as one: `1 IN (FROM in)`.
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    /// A clause keyword is always a BareWord token, so a quoted `` `from` `` never starts a FROM clause.
+    auto contents_pos = pos;
+    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from"))
+        return false;
+    ++pos;
+
+    Expected expected;
+    bool operator_follows = false;
+    for (const auto & [lexeme, unused_operator] : ParserExpressionImpl::operators_table)
+    {
+        auto operator_pos = pos;
+        if (parseOperator(operator_pos, lexeme, expected))
+        {
+            operator_follows = true;
+            break;
+        }
+    }
+
+    if (!operator_follows)
+        return false;
+
+    /// The contents can also be a tuple or carry an alias, so parse them the way RoundBracketsLayer does.
+    ASTPtr contents;
+    ParserExpressionList contents_parser(/*allow_alias_without_as_keyword*/ false);
+    return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)

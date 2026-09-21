@@ -1,0 +1,33 @@
+-- Merge INNER JOIN MergeTree, the Merge is the coordinated side
+20	13500
+20	13500
+MergingAggregated Union Aggregating Join Union ReadFromMergeTree ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+-- Merge LEFT JOIN MergeTree
+2000	1498500	20
+2000	1498500	20
+-- MergeTree RIGHT JOIN Merge, the Merge is the coordinated side
+2000	1498500
+2000	1498500
+MergingAggregated Union Aggregating Join ReadFromMergeTree Union ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+-- MergeTree INNER JOIN Merge, the Merge is the broadcast side
+20	13500
+20	13500
+MergingAggregated Union Aggregating Join ReadFromMergeTree Union ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+-- Merge INNER JOIN Merge
+20	13500
+20	13500
+MergingAggregated Union Aggregating Join Union ReadFromMergeTree ReadFromMergeTree Union ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+-- Merge FULL JOIN MergeTree, nothing is distributed
+2000	1498500
+2000	1498500
+Aggregating Join ReadFromMerge ReadFromMergeTree ReadFromMergeTree ReadFromMergeTree
+-- merge() table function INNER JOIN MergeTree
+20	13500
+20	13500
+-- the join of a Merge in a subquery
+20
+20
+-- Merge FINAL joined
+20	13500
+20	13500
+Aggregating Join ReadFromMerge ReadFromMergeTree ReadFromMergeTree ReadFromMergeTree

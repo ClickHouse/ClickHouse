@@ -253,17 +253,27 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
+    /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
+    auto alias_database_name = getStorageID().database_name;
+
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// ALTER through alias on a table in a Replicated database is not supported when the alias
+    /// and target are in different databases, because the DDL worker path is bypassed and the
+    /// metadata change would not be replicated. Check under the target's guard, so a concurrent
+    /// RENAME cannot move the target into a Replicated database after the check.
     auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
+    if (alias_database_name != target_storage_id.database_name)
     {
         auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
         if (target_db && target_db->getEngineName() == "Replicated")
@@ -276,18 +286,32 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
+    /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
+    /// locks; every other engine needs its readers excluded while its data goes away.
+    TableExclusiveLockHolder target_excl_lock;
+    TableLockHolder target_shared_lock;
+    if (target_storage->isMergeTree())
+        target_shared_lock = target_storage->lockForShare(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        target_excl_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_excl_lock);
 }
 
 bool StorageAlias::optimize(
@@ -417,12 +441,19 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+    /// Bind the target to a named local so that one owning pointer spans both calls, and hand it to the
+    /// snapshot: getTargetTable resolves through DatabaseCatalog and returns a temporary, while our
+    /// caller owns and share-locks this alias rather than the target the snapshot refers to.
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshot(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
 }
 
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
@@ -596,18 +627,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-:::note
+<Note>
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
+</Note>
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-:::note
+<Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
+</Note>
 
 ## Supported Operations {#supported-operations}
 

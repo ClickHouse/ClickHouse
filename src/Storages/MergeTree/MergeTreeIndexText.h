@@ -10,7 +10,6 @@
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
@@ -20,6 +19,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 
 #include <concepts>
 #include <span>
@@ -168,7 +168,7 @@ private:
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = HashMap<PackedStringRef, PostingListBuilder>;
 /// A token paired with its posting/position builder views.
 struct SortedToken
 {
@@ -299,6 +299,7 @@ public:
 
     bool empty() const { return size() == 0; }
     size_t size() const;
+    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
 
     std::string_view getToken(size_t idx) const;
@@ -435,7 +436,6 @@ private:
     void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Analyzer for the text index. Tracks regular tokens, pattern tokens, and per-query state.
     std::unique_ptr<TextIndexAnalyzer> analyzer;
@@ -474,7 +474,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
     TokenToPostingsBuilderMap tokens_map;
@@ -564,6 +563,9 @@ private:
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
 
+    /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
+    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
@@ -593,6 +595,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,

@@ -196,7 +196,14 @@ The byte values differ from the compact codes: `REPLICATED` is `0x03` in this ne
 
 The `count` is the full stack length **including the leading `DEFAULT` entry** that begins every stack. The compact codes already cover every one- and two-entry stack, so a `COMBINATION` always has a `count` of at least three.
 
-**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse, replicated, or detached still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
+**Kind stack validity.** A decoder rejects a malformed stack with `INCORRECT_DATA` rather than building the serialization it describes:
+
+- the stack starts with `DEFAULT`;
+- the stack is a subsequence of `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED` — the order in which the kinds wrap each other. `SPARSE` can sit inside `REPLICATED` but not the other way round, and `DETACHED` is always last because a `ColumnBLOB` holds the serialized form of everything below it. This also means no kind occurs twice, which bounds `count` by the number of kinds.
+
+Note that this order is not the order of the kind byte values above. Any other stack describes a column layout no writer builds and that no materialization step unwraps back to a full column of the declared type — a `ColumnSparse` whose values column is itself sparse or replicated, for instance, stays wrapped.
+
+**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse or replicated still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
 
 **Sparse wire format.** When `kind_stack = 0x01`, the column `data` is two streams written back-to-back in the single shared TCP stream:
 
@@ -229,6 +236,8 @@ A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for ea
 3. The column `data` is written as a `VarUInt` blob size followed by exactly that many blob bytes.
 
 If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
+
+`DETACHED` is directional: it may appear only in result blocks sent by a server, and only for a whole top-level column — never as one of the element kinds of a `Tuple`. Unlike the other kinds, it makes the runtime column a `ColumnBLOB` instead of the column of the declared type, so a receiver accepts it only when its own pipeline converts the blob back. A server therefore rejects `DETACHED` in any block a client sends — external table data, scalars and insert data alike — with `INCORRECT_DATA`.
 
 ### Block variants {#block-variants}
 
@@ -537,7 +546,7 @@ The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateT
 
 A clock duration rather than a point in time. `Time` is a signed second count, 4 bytes little-endian Int32; `Time64(scale)` is a signed tick count at the given decimal scale (0–9), 8 bytes little-endian Int64 — the same wire shape as `DateTime64`.
 
-The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders at the cap with a zeroed fraction (`999:59:59.000`). `CAST` clamps the stored value to this range as well, though arithmetic can produce out-of-range values that are clamped only on display. None of this affects the wire bytes, which are the plain signed integer.
+The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders with the seconds at the cap and the stored fraction kept as-is, so a tick count of `3700000.25` renders as `999:59:59.250000`. `CAST` saturates the stored value to the largest representable tick at the target scale (`999:59:59.999999` for `Time64(6)`), not to the whole second, whereas arithmetic can still leave an out-of-range tick count in the column that is capped only on display. None of this affects the wire bytes, which are the plain signed integer.
 
 `Time` value `45296` (`12:34:56`):
 
@@ -1398,7 +1407,7 @@ The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + b
 
 ### Method byte values {#method-byte-values}
 
-These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output uses the server's default codec (`ZSTD(3)`), and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
 
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
@@ -1424,6 +1433,8 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
 
+`DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
+
 `0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
@@ -1448,7 +1459,7 @@ On the native TCP protocol, the packet envelope — the packet-type VarUInt and 
 
 On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
 
-Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`LZ4`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
+Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`ZSTD(3)`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
 <Note>
 With compression on, the server may also route columns through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478) for blocks with more than one row. An implementation that compresses INSERT data must be prepared to handle (or explicitly opt out of) that path to avoid a desynchronized stream.

@@ -1053,6 +1053,13 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
     return schema->read_schema;
 }
 
+Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
+{
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
+}
+
 const DB::Names & TableSnapshot::getPartitionColumns() const
 {
     std::lock_guard lock(mutex);
