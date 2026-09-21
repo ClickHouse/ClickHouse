@@ -63,7 +63,7 @@ SELECT x + 1 AS y, tuple(* RENAME a AS x) = (1, 2, 3, 4) AS ok FROM t_columns_re
 SELECT DISTINCT toTypeName(x)
 FROM
 (
-    SELECT COLUMNS('^a$') REPLACE((SELECT toUInt8(1)) AS a) RENAME a AS x
+    SELECT COLUMNS('^a$') REPLACE((SELECT toUInt8(1)) AS a) RENAME a AS x, count()
     FROM t_columns_rename
     GROUP BY ALL WITH ROLLUP
     SETTINGS group_by_use_nulls = 1
