@@ -1,41 +1,75 @@
 <test>
     <!--
-        Keep the join output column nullable while the source column is not
-        nullable. One right row matches a large duplicate-key range on the
-        left, so MergeJoin copies the right value in bulk into the Nullable
-        column.
+        Compare unique keys and repeated right values with and without Nullable
+        output. The planner can make the right source Nullable before MergeJoin,
+        which then calls insertManyFrom rather than insertManyFromNotNullable.
+        This is an end-to-end control, not proof that the latter helper is used.
+        Select the payload directly so aggregation does not obscure insertion.
     -->
     <settings>
         <max_threads>1</max_threads>
         <max_block_size>65536</max_block_size>
         <join_algorithm>partial_merge</join_algorithm>
-        <join_use_nulls>1</join_use_nulls>
     </settings>
 
+    <substitutions>
+        <substitution>
+            <name>fanout</name>
+            <values>
+                <value>1</value>
+                <value>256</value>
+                <value>65536</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>use_nulls</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <create_query>
-        CREATE TABLE nullable_bulk_left
+        CREATE TABLE nullable_bulk_left_{fanout}
         (
             k UInt64
         ) ENGINE = MergeTree ORDER BY k
     </create_query>
     <create_query>
-        CREATE TABLE nullable_bulk_right
+        CREATE TABLE nullable_bulk_right_{fanout}
         (
             k UInt64,
-            value String
+            value_number UInt64,
+            value_string String
         ) ENGINE = MergeTree ORDER BY k
     </create_query>
 
-    <fill_query>INSERT INTO nullable_bulk_left SELECT toUInt64(0) FROM numbers(2097152)</fill_query>
-    <fill_query>INSERT INTO nullable_bulk_right SELECT toUInt64(0), repeat('x', 64) FROM numbers(1)</fill_query>
+    <fill_query>
+        INSERT INTO nullable_bulk_left_{fanout}
+        SELECT intDiv(number, {fanout}) FROM numbers(262144)
+    </fill_query>
+    <fill_query>
+        INSERT INTO nullable_bulk_right_{fanout}
+        SELECT number, number + 42, repeat('x', 64)
+        FROM numbers(intDiv(262144, {fanout}))
+    </fill_query>
 
     <query>
-        SELECT sum(length(r.value))
-        FROM nullable_bulk_left AS l
-        ALL LEFT JOIN nullable_bulk_right AS r ON l.k = r.k
+        SELECT r.value_number
+        FROM nullable_bulk_left_{fanout} AS l
+        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT r.value_string
+        FROM nullable_bulk_left_{fanout} AS l
+        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
         FORMAT Null
     </query>
 
-    <drop_query>DROP TABLE IF EXISTS nullable_bulk_left</drop_query>
-    <drop_query>DROP TABLE IF EXISTS nullable_bulk_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_left_{fanout}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_right_{fanout}</drop_query>
 </test>
