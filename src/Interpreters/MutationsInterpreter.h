@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
@@ -50,11 +49,11 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ContextPtr context
 );
 
-/// Re-run set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) on an AST that was re-parsed from a
-/// serialized mutation command, mirroring what `executeQuery` does for top-level queries. Re-parsing loses
-/// this normalization, so any consumer that feeds a re-parsed mutation predicate or `UPDATE` assignment
-/// into the analyzer (`buildQueryTree`) must call this first; otherwise the analyzer rejects such
-/// subqueries with "UNION mode UNION_DEFAULT must be normalized".
+/// Re-run the set-operation normalization (`UNION`/`INTERSECT`/`EXCEPT`) that `executeQuery` applies to
+/// top-level queries on an AST re-parsed from stored SQL text: a serialized mutation command, a table's
+/// stored `CREATE`. Parsing fills only the syntactic list of modes, so such an AST is un-normalized however
+/// explicit its text was, and every consumer that feeds it to the analyzer (`buildQueryTree`) must call this
+/// first; otherwise the analyzer rejects the set operation with "UNION mode UNION_DEFAULT must be normalized".
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
@@ -234,7 +233,6 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
-    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -250,7 +248,7 @@ private:
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
-    /// First stage is special: it can contain only filters and is executed using InterpreterSelectQuery
+    /// First stage is special: it can contain only filters and is executed as a plain read
     /// to take advantage of table indexes (if there are any). It's necessary because all mutations have
     /// `WHERE clause` part.
 
@@ -268,19 +266,12 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
-        /// --- Old analyzer path (populated when analyzer is not enabled) ---
-        std::unique_ptr<ExpressionAnalyzer> analyzer;
-
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
-        ExpressionActionsChain expressions_chain;
-
-        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 
-        /// --- Common ---
         Names filter_column_names;
 
         bool affects_all_columns = false;
@@ -294,6 +285,9 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    /// The columns this mutation writes into the new part. Assigned at the end of `execute` and
+    /// never earlier: a header taken while `stages` is still being built silently omits the
+    /// columns of the stages appended afterwards.
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.

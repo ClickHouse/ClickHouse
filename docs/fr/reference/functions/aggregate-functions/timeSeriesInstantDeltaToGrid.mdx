@@ -16,6 +16,8 @@ Introduit dans : v25.6.0
 Fonction d&#39;agrégation qui prend des données de séries temporelles sous forme de paires d&#39;horodatages et de valeurs, et calcule un [idelta de type PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) à partir de ces données sur une grille temporelle régulière définie par un horodatage de début, un horodatage de fin et un pas.
 Pour chaque point de la grille, les échantillons utilisés pour calculer `idelta` sont pris en compte dans la fenêtre temporelle spécifiée.
 
+Si plusieurs échantillons ont le même horodatage, un seul est utilisé : celui dont la valeur est la plus élevée. Une valeur NaN est écartée au profit de toute autre valeur. Ainsi, une valeur NaN n&#39;est utilisée que si tous les échantillons associés à cet horodatage sont NaN.
+
 <Warning>
   Cette fonction est expérimentale. Activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>

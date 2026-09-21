@@ -1,0 +1,7 @@
+ClickHouse <span class="accent">Reference</span>
+const entity = body.querySelector(`[id="${CSS.escape(id)}"]`)
+resolveDocEntity(id, href) || resolveDocEntity(candidateTerm(a, href), href)
+if (a.classList.contains('heading-anchor')) continue;
+1
+1
+1
