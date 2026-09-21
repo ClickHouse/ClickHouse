@@ -2789,7 +2789,13 @@ static String getNextPathForSplittingBySize(
         String new_path = numbered_paths.getName(sequence_number);
         ++sequence_number;
 
-        if (truncate_on_insert || !fs::exists(new_path))
+        /// A truncating insert overwrites the numbered names of the previous inserts into this path - but only when
+        /// the numbered sequence is unambiguously its own. `engine_file_allow_create_multiple_files` declares the
+        /// numbered names a shared namespace where an insert steps aside from the names taken by someone else, and
+        /// where nothing is deleted by number for the same reason (see `removeStaleSplitFilesByNumber`). The files
+        /// this table has written itself are deleted before the rewrite starts, so a name that is still taken when
+        /// the rewrite rolls over into it belongs to someone else, and is stepped over rather than overwritten.
+        if ((truncate_on_insert && !allow_create_multiple_files) || !fs::exists(new_path))
             return new_path;
 
         if (!allow_create_multiple_files)

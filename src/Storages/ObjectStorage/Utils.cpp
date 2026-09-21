@@ -85,7 +85,13 @@ String getNextKeyForSplittingBySize(
         String new_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
 
-        if (settings.truncate_on_insert || !object_storage.exists(StoredObject(new_key)))
+        /// A truncating insert overwrites the numbered keys of the previous inserts into this key - but only when
+        /// the numbered sequence is unambiguously its own. `*_create_new_file_on_insert` declares the numbered keys
+        /// a shared namespace where an insert steps aside from the keys taken by someone else, and where nothing is
+        /// removed by number for the same reason (see `removeStaleSplitObjectsByNumber`). The objects this table has
+        /// written itself are removed before the rewrite starts, so a key that is still taken when the rewrite rolls
+        /// over into it belongs to someone else, and is stepped over rather than overwritten.
+        if ((settings.truncate_on_insert && !settings.create_new_file_on_insert) || !object_storage.exists(StoredObject(new_key)))
             return new_key;
 
         /// The name is already taken: either skip it and try the next number, or refuse to write.
