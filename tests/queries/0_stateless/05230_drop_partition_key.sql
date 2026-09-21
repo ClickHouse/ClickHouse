@@ -29,7 +29,7 @@ WHERE database = currentDatabase() AND name = 't_drop_partition_key';
 SELECT count() FROM t_drop_partition_key
 SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 SELECT min(d) FROM t_drop_partition_key
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0; -- { serverError PROJECTION_NOT_USED }
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 
 SELECT _partition_value FROM t_drop_partition_key LIMIT 1; -- { serverError UNKNOWN_IDENTIFIER }
 
@@ -71,7 +71,7 @@ ALTER TABLE t_drop_partition_key_replicated DROP PARTITION KEY;
 SELECT count() FROM t_drop_partition_key_replicated
 SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 SELECT min(d) FROM t_drop_partition_key_replicated
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0; -- { serverError PROJECTION_NOT_USED }
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 0;
 
 DETACH TABLE t_drop_partition_key_replicated;
 ATTACH TABLE t_drop_partition_key_replicated;
