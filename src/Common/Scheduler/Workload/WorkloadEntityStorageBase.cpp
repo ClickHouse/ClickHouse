@@ -751,6 +751,29 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
+    // The config/Keeper path bypasses storeEntity, so validate the merged workload graph here as
+    // storeEntity does on the SQL path: every parent references an existing workload, and the
+    // parent graph has no cycles. Throwing before any change is applied keeps the previous entities.
+    for (const auto & [entity_name, entity] : merged_new_entities)
+    {
+        std::unordered_set<String> chain;
+        for (const auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(entity.get()); workload; )
+        {
+            if (!chain.insert(workload->getWorkloadName()).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
+            const String parent = workload->getWorkloadParent();
+            if (parent.empty())
+                break;
+            auto parent_it = merged_new_entities.find(parent);
+            if (parent_it == merged_new_entities.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Workload '{}' has parent '{}' that does not exist", workload->getWorkloadName(), parent);
+            workload = typeid_cast<ASTCreateWorkloadQuery *>(parent_it->second.get());
+            if (!workload)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload parent should reference a workload, not '{}'", parent);
+        }
+    }
+
     // Update local entities
     local_entities = std::move(local_new_entities);
 
