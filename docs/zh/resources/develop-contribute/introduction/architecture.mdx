@@ -119,9 +119,9 @@ Read/WriteBuffer 只处理字节。`ReadHelpers` 和 `WriteHelpers` 头文件中
 解释 `INSERT` 查询后得到的是一个“pushing” `QueryPipeline`，它带有一个输入端口，可用于写入待插入的数据。
 而解释 `INSERT SELECT` 查询后得到的是一个“已完成的” `QueryPipeline`，它既没有输入也没有输出，但会同时将数据从 `SELECT` 复制到 `INSERT`。
 
-`InterpreterSelectQuery` 使用 `ExpressionAnalyzer` 和 `ExpressionActions` 机制进行查询分析和转换。大多数基于规则的查询优化都在这里完成。`ExpressionAnalyzer` 相当混乱，应该重写：应将各种查询转换和优化提取到单独的类中，以支持对查询进行模块化转换。
+`InterpreterSelectQueryAnalyzer` 负责解释 `SELECT` 查询。它在 `AST` 和 `QueryPipeline` 之间引入了一个名为 `QueryTree` 的额外抽象层。自 `24.3` 版本起它成为默认实现；自 `26.9` 版本起，`enable_analyzer` 设置被废弃并固定为 `1`，它成为查询唯一可以选用的分析实现；自 `26.10` 版本起，另一种实现被移除，它成为唯一的查询分析实现。在此之前，`InterpreterSelectQuery` 借助 `ExpressionAnalyzer` 和 `ExpressionActions` 机制完成同样的工作，`enable_analyzer` 则用于在两者之间进行选择。
 
-为了解决解释器中现有的问题，开发了新的 `InterpreterSelectQueryAnalyzer`。这是 `InterpreterSelectQuery` 的新版本，不使用 `ExpressionAnalyzer`，并在 `AST` 和 `QueryPipeline` 之间引入了一个名为 `QueryTree` 的额外抽象层。自 `26.9` 版本起，它是唯一的查询分析实现；曾用于切换回 `ExpressionAnalyzer` 的 `enable_analyzer` 设置已废弃，无法再被禁用。
+`ExpressionAnalyzer` 和 `ExpressionActions` 仍用于独立表达式 —— 例如生存时间 (TTL) 表达式、sharding key、列默认值、PROJECTION —— 这些表达式在没有外层查询的情况下编译。
 
 ## 函数 {#functions}
 

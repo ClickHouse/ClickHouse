@@ -120,9 +120,9 @@ Por ejemplo, el resultado de interpretar la consulta `SELECT` es un `QueryPipeli
 El resultado de la consulta `INSERT` es un `QueryPipeline` de tipo &quot;pushing&quot;, con un puerto de entrada para escribir los datos que se van a insertar.
 Y el resultado de interpretar la consulta `INSERT SELECT` es un `QueryPipeline` &quot;completado&quot; que no tiene entradas ni salidas, pero copia datos de `SELECT` a `INSERT` simultáneamente.
 
-`InterpreterSelectQuery` utiliza la maquinaria de `ExpressionAnalyzer` y `ExpressionActions` para el análisis y las transformaciones de consultas. Aquí es donde se realiza la mayor parte de las optimizaciones de consultas basadas en reglas. `ExpressionAnalyzer` es bastante desordenado y debería reescribirse: varias transformaciones y optimizaciones de consultas deberían extraerse en clases separadas para permitir transformaciones modulares de la consulta.
+`InterpreterSelectQueryAnalyzer` interpreta una consulta `SELECT`. Introduce una capa adicional de abstracción entre `AST` y `QueryPipeline`, llamada `QueryTree`. Es el predeterminado desde la versión `24.3`, el único análisis que una consulta puede solicitar desde la `26.9`, cuando la configuración `enable_analyzer` quedó obsoleta y fijada en `1`, y el único análisis de consultas existente desde la `26.10`, cuando se eliminó el otro. Hasta entonces, `InterpreterSelectQuery` realizaba el mismo trabajo con la maquinaria de `ExpressionAnalyzer` y `ExpressionActions`, y `enable_analyzer` elegía entre ambos.
 
-Para resolver los problemas existentes en los intérpretes, se ha desarrollado un nuevo `InterpreterSelectQueryAnalyzer`. Esta es una nueva versión de `InterpreterSelectQuery` que no utiliza `ExpressionAnalyzer` e introduce una capa adicional de abstracción entre `AST` y `QueryPipeline`, llamada `QueryTree`. Es el único análisis de consultas desde la versión `26.9`; la configuración `enable_analyzer`, que antes permitía volver a `ExpressionAnalyzer`, está obsoleta y ya no puede desactivarse.
+`ExpressionAnalyzer` y `ExpressionActions` siguen utilizándose para expresiones independientes —una expresión `TTL`, una clave de segmentación, un valor predeterminado de columna, una proyección— que se compilan sin una consulta que las envuelva.
 
 ## Funciones {#functions}
 

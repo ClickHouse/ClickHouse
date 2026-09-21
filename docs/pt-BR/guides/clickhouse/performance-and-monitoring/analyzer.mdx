@@ -189,11 +189,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 O analisador altera significativamente o protocolo de comunicação entre os servidores do cluster. Portanto, é impossível executar consultas distribuídas em servidores que não concordam quanto ao uso do analisador — o que, para um cluster de servidores anteriores à versão `26.9`, significa servidores com valores diferentes para a configuração `enable_analyzer`.
 
-### As mutações são interpretadas pelo analisador anterior {#mutations-are-interpreted-by-previous-analyzer}
-
-As mutações ainda usam o analisador antigo.
-Isso significa que alguns recursos novos do ClickHouse SQL não podem ser usados em mutações. Por exemplo, a cláusula `QUALIFY`.
-O status pode ser consultado [aqui](https://github.com/ClickHouse/ClickHouse/issues/61563).
+Um servidor na versão `26.10` ou mais recente não conta com nenhuma outra análise de consulta, de modo que ignora o valor enviado por um initiator mais antigo e analisa a consulta com o analisador de qualquer forma. As duas análises não nomeiam as colunas do resultado da mesma maneira, e o initiator faz a correspondência do bloco retornado por um shard pelo nome da coluna, de modo que tal consulta pode falhar no initiator com `NOT_FOUND_COLUMN_IN_BLOCK` — por exemplo, quando ela seleciona uma função escrita em caixa não canônica (`hostname()`), que o analisador resolve para seu nome canônico (`hostName()`). Portanto, um cluster que ainda esteja operando com a análise de consulta antiga deve definir `enable_analyzer = 1` em todos os servidores antes que qualquer um deles receba upgrade para a versão `26.10`.
 
 ### Recursos sem suporte {#unsupported-features}
 

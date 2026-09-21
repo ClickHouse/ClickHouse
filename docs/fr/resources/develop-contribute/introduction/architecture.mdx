@@ -110,7 +110,7 @@ Une requête est analysée par un analyseur syntaxique récursif descendant, éc
 
 ## Interpreter {#interpreters}
 
-Les interpréteurs sont chargés de créer le pipeline d’exécution des requêtes à partir d’un AST. Il existe des interpréteurs simples, comme `InterpreterExistsQuery` et `InterpreterDropQuery`, ainsi que l’interpréteur plus sophistiqué `InterpreterSelectQuery`.
+Les Interpreter sont chargés de créer le pipeline d’exécution des requêtes à partir d’un AST. Il existe des Interpreter simples, comme `InterpreterExistsQuery` et `InterpreterDropQuery`, ainsi que l’Interpreter plus sophistiqué `InterpreterSelectQuery`.
 
 Le pipeline d’exécution des requêtes est un ensemble de processeurs capables de consommer et de produire des fragments (ensembles de colonnes de types spécifiques).
 Un processeur communique via des ports et peut avoir plusieurs ports d’entrée et plusieurs ports de sortie.
@@ -120,9 +120,9 @@ Par exemple, le résultat de l’interprétation de la requête `SELECT` est un 
 Le résultat de la requête `INSERT` est un `QueryPipeline` « pushing » avec un port d’entrée permettant d’écrire les données à insérer.
 Et le résultat de l’interprétation de la requête `INSERT SELECT` est un `QueryPipeline` « complété » qui n’a ni entrée ni sortie, mais copie simultanément les données de `SELECT` vers `INSERT`.
 
-`InterpreterSelectQuery` utilise les mécanismes `ExpressionAnalyzer` et `ExpressionActions` pour l’analyse et la transformation des requêtes. C’est à cet endroit qu’est effectuée la majorité des optimisations de requêtes fondées sur des règles. `ExpressionAnalyzer` est assez confus et devrait être réécrit : les différentes transformations et optimisations de requêtes devraient être extraites dans des classes distinctes afin de permettre des transformations modulaires de la requête.
+`InterpreterSelectQueryAnalyzer` interprète une requête `SELECT`. Il introduit une couche d’abstraction supplémentaire entre `AST` et `QueryPipeline`, appelée `QueryTree`. Il est utilisé par défaut depuis la version `24.3`, constitue la seule analyse qu’une requête puisse demander depuis la version `26.9`, lorsque le paramètre `enable_analyzer` est devenu obsolète et figé à `1`, et il est la seule analyse de requêtes existante depuis la version `26.10`, lorsque l’autre a été supprimée. Jusque-là, `InterpreterSelectQuery` remplissait le même rôle à l’aide des mécanismes `ExpressionAnalyzer` et `ExpressionActions`, et `enable_analyzer` permettait de choisir entre les deux.
 
-Pour remédier aux problèmes des interpréteurs, un nouvel `InterpreterSelectQueryAnalyzer` a été développé. Il s’agit d’une nouvelle version de `InterpreterSelectQuery`, qui n’utilise pas `ExpressionAnalyzer` et introduit une couche d’abstraction supplémentaire entre `AST` et `QueryPipeline`, appelée `QueryTree`. Il constitue la seule analyse de requêtes depuis la version `26.9` ; le paramètre `enable_analyzer`, qui permettait auparavant de revenir à `ExpressionAnalyzer`, est obsolète et ne peut plus être désactivé.
+`ExpressionAnalyzer` et `ExpressionActions` restent utilisés pour les expressions autonomes — une expression `TTL`, une clé de partitionnement, une valeur par défaut de colonne, une projection — qui sont compilées sans requête englobante.
 
 ## Fonctions {#functions}
 

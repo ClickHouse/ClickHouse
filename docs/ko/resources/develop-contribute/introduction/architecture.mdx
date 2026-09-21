@@ -119,9 +119,9 @@ Interpreters는 AST로부터 쿼리 실행 파이프라인을 생성하는 역�
 `INSERT` 쿼리를 해석한 결과는 삽입할 데이터를 기록하기 위한 입력 port를 갖는 &quot;pushing&quot; `QueryPipeline`입니다.
 또한 `INSERT SELECT` 쿼리를 해석한 결과는 입력이나 출력은 없지만 `SELECT`에서 `INSERT`로 데이터를 동시에 복사하는 &quot;completed&quot; `QueryPipeline`입니다.
 
-`InterpreterSelectQuery`는 쿼리 분석과 변환을 위해 `ExpressionAnalyzer`와 `ExpressionActions` 메커니즘을 사용합니다. 대부분의 규칙 기반 쿼리 최적화는 여기에서 수행됩니다. `ExpressionAnalyzer`는 구조가 상당히 복잡하므로 다시 작성할 필요가 있습니다. 다양한 쿼리 변환과 최적화는 별도의 클래스로 분리하여 쿼리를 모듈식으로 변환할 수 있어야 합니다.
+`InterpreterSelectQueryAnalyzer`는 `SELECT` 쿼리를 해석합니다. 이는 `AST`와 `QueryPipeline` 사이에 `QueryTree`라는 추가 추상화 계층을 도입합니다. 버전 `24.3`부터 기본값이 되었고, `enable_analyzer` 설정이 더 이상 사용되지 않고 `1`로 고정된 `26.9`부터는 쿼리가 요청할 수 있는 유일한 분석 방식이 되었으며, 다른 방식이 제거된 `26.10`부터는 유일한 쿼리 분석 방식입니다. 그 전까지는 `InterpreterSelectQuery`가 `ExpressionAnalyzer`와 `ExpressionActions` 메커니즘으로 동일한 역할을 수행했고, `enable_analyzer`가 둘 중 하나를 선택했습니다.
 
-인터프리터에 존재하는 문제를 해결하기 위해 새로운 `InterpreterSelectQueryAnalyzer`가 개발되었습니다. 이는 `ExpressionAnalyzer`를 사용하지 않는 `InterpreterSelectQuery`의 새 버전이며, `AST`와 `QueryPipeline` 사이에 `QueryTree`라는 추가 추상화 계층을 도입합니다. 버전 `26.9`부터는 이것이 유일한 쿼리 분석 방식이며, `ExpressionAnalyzer`로 되돌리는 데 사용되던 `enable_analyzer` 설정은 더 이상 사용되지 않으며 비활성화할 수 없습니다.
+`ExpressionAnalyzer`와 `ExpressionActions`는 주변 쿼리 없이 컴파일되는 독립형 표현식, 즉 `TTL` 표현식, 세그먼트 분할 키, 컬럼 기본값, 프로젝션 등에는 여전히 사용됩니다.
 
 ## 함수 {#functions}
 

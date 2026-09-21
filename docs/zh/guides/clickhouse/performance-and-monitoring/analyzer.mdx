@@ -189,11 +189,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 analyzer 显著改变了集群中服务器之间的通信协议。因此，无法在对是否使用 analyzer 未达成一致的服务器之间运行分布式查询——对于版本早于 `26.9` 的服务器集群而言，这意味着 `enable_analyzer` 设置值不同的服务器。
 
-### 变更仍由先前的 analyzer 解析 {#mutations-are-interpreted-by-previous-analyzer}
-
-变更仍在使用旧版 analyzer。
-这意味着一些新的 ClickHouse SQL 功能无法在变更中使用。例如，`QUALIFY` 子句。
-可在[这里](https://github.com/ClickHouse/ClickHouse/issues/61563)查看相关状态。
+版本为 `26.10` 或更新的服务器已不再保留其他查询分析方式，因此它会忽略较旧的发起服务器发送的值，一律使用 analyzer 来分析查询。两种分析方式对结果列的命名并不相同，而发起服务器是按列名来匹配 shard 返回的块的，因此此类查询可能在发起服务器上以 `NOT_FOUND_COLUMN_IN_BLOCK` 失败——例如查询中选择了以非规范大小写书写的函数 (`hostname()`) ，而 analyzer 会将其解析为规范名称 (`hostName()`) 。因此，仍在使用旧查询分析方式运行的集群，必须在其中任何一台服务器升级到 `26.10` 之前，在每台服务器上设置 `enable_analyzer = 1`。
 
 ### 不支持的功能 {#unsupported-features}
 

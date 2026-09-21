@@ -120,9 +120,9 @@ Por exemplo, o resultado da interpretação da consulta `SELECT` é um `QueryPip
 O resultado da consulta `INSERT` é um `QueryPipeline` &quot;pushing&quot;, com uma porta de entrada para gravar os dados a serem inseridos.
 E o resultado da interpretação da consulta `INSERT SELECT` é um `QueryPipeline` &quot;Completed&quot;, que não tem entradas nem saídas, mas copia dados de `SELECT` para `INSERT` simultaneamente.
 
-O `InterpreterSelectQuery` usa o mecanismo `ExpressionAnalyzer` e `ExpressionActions` para análise e transformações da consulta. É aqui que a maioria das otimizações de consulta baseadas em regras é realizada. O `ExpressionAnalyzer` é bastante confuso e deveria ser reescrito: várias transformações e otimizações da consulta deveriam ser extraídas para classes separadas, para permitir transformações modulares da consulta.
+O `InterpreterSelectQueryAnalyzer` interpreta uma consulta `SELECT`. Ele introduz uma camada adicional de abstração entre `AST` e `QueryPipeline`, chamada `QueryTree`. É o padrão desde a versão `24.3`, a única análise que uma consulta pode solicitar desde a `26.9`, quando a configuração `enable_analyzer` tornou-se obsoleta e ficou congelada em `1`, e a única análise de consulta existente desde a `26.10`, quando a outra foi removida. Até então, o `InterpreterSelectQuery` fazia o mesmo trabalho com o mecanismo `ExpressionAnalyzer` e `ExpressionActions`, e `enable_analyzer` escolhia entre os dois.
 
-Para resolver problemas existentes nos interpretadores, foi desenvolvido um novo `InterpreterSelectQueryAnalyzer`. Esta é uma nova versão do `InterpreterSelectQuery`, que não usa o `ExpressionAnalyzer` e introduz uma camada adicional de abstração entre `AST` e `QueryPipeline`, chamada `QueryTree`. É a única análise de consulta desde a versão `26.9`; a configuração `enable_analyzer`, que antes permitia voltar ao `ExpressionAnalyzer`, está obsoleta e não pode mais ser desabilitada.
+O `ExpressionAnalyzer` e o `ExpressionActions` continuam em uso para expressões independentes — uma expressão `TTL`, uma sharding key, um valor padrão de coluna, uma projection — que são compiladas sem uma consulta ao seu redor.
 
 ## Funções {#functions}
 

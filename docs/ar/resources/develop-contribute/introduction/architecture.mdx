@@ -119,9 +119,9 @@ ClickHouse هو بحق نظام إدارة قواعد بيانات موجّه ب
 وتكون نتيجة استعلام `INSERT` هي `QueryPipeline` من نوع &quot;pushing&quot;، مع منفذ إدخال لكتابة البيانات من أجل الإدراج.
 أما نتيجة تفسير استعلام `INSERT SELECT` فهي `QueryPipeline` من نوع &quot;completed&quot; لا يحتوي على أي مدخلات أو مخرجات، لكنه ينسخ البيانات من `SELECT` إلى `INSERT` في الوقت نفسه.
 
-يستخدم `InterpreterSelectQuery` آليات `ExpressionAnalyzer` و`ExpressionActions` لتحليل الاستعلام وإجراء التحويلات. وهنا تُنفَّذ معظم عمليات تحسين الاستعلام القائمة على القواعد. ويُعَد `ExpressionAnalyzer` غير منظم إلى حد كبير، وينبغي إعادة كتابته: إذ يجب استخراج مختلف تحويلات الاستعلام وعمليات تحسينه إلى فئات منفصلة للسماح بإجراء تحويلات معيارية على الاستعلام.
+يفسّر `InterpreterSelectQueryAnalyzer` استعلام `SELECT`، إذ يُدخل طبقة تجريد إضافية بين `AST` و`QueryPipeline` تُسمى `QueryTree`. وقد أصبح الخيار الافتراضي منذ الإصدار `24.3`، والتحليل الوحيد الذي يمكن للاستعلام طلبه منذ الإصدار `26.9`، حين أصبح الإعداد `enable_analyzer` obsolete ومثبتًا عند القيمة `1`، ثم صار آلية تحليل الاستعلام الوحيدة منذ الإصدار `26.10`، حين أُزيلت الآلية الأخرى. وحتى ذلك الحين، كان `InterpreterSelectQuery` يؤدي المهمة نفسها بالاعتماد على آليات `ExpressionAnalyzer` و`ExpressionActions`، وكان `enable_analyzer` يحدد الاختيار بينهما.
 
-ولمعالجة المشكلات الموجودة في المفسرات، جرى تطوير `InterpreterSelectQueryAnalyzer` جديد. وهو إصدار جديد من `InterpreterSelectQuery` لا يستخدم `ExpressionAnalyzer`، ويُدخل طبقة تجريد إضافية بين `AST` و`QueryPipeline` تُسمى `QueryTree`. وهو آلية تحليل الاستعلام الوحيدة منذ الإصدار `26.9`؛ أما الإعداد `enable_analyzer` الذي كان يُستخدم للعودة إلى `ExpressionAnalyzer` فقد أصبح obsolete ولم يعد من الممكن تعطيله.
+ولا يزال `ExpressionAnalyzer` و`ExpressionActions` مستخدمَين مع التعبيرات المستقلة - مثل تعبير `TTL`، ومفتاح التجزئة، والقيمة الافتراضية لعمود، وPROJECTION - وهي تعبيرات تُصرَّف من دون استعلام محيط بها.
 
 ## الدوال {#functions}
 

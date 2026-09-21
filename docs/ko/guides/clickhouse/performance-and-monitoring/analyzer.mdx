@@ -189,11 +189,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 분석기는 클러스터 내 서버 간 통신 프로토콜을 크게 변경합니다. 따라서 분석기 사용 여부가 서로 일치하지 않는 서버 간에는 분산 쿼리를 실행할 수 없으며, `26.9` 이전 버전의 서버로 구성된 클러스터에서 이는 `enable_analyzer` 설정값이 서로 다른 서버를 의미합니다.
 
-### 뮤테이션은 이전 분석기로 해석됩니다 {#mutations-are-interpreted-by-previous-analyzer}
-
-뮤테이션은 아직도 이전 분석기를 사용합니다.
-즉, 일부 새로운 ClickHouse SQL 기능은 뮤테이션에서 사용할 수 없습니다. 예를 들어 `QUALIFY` 절은 사용할 수 없습니다.
-현재 상태는 [여기](https://github.com/ClickHouse/ClickHouse/issues/61563)에서 확인할 수 있습니다.
+`26.10` 이상 버전의 서버에는 다른 쿼리 분석 방식이 남아 있지 않으므로, 이전 버전 initiator가 보낸 값을 무시하고 무조건 분석기로 쿼리를 분석합니다. 두 분석 방식은 결과 컬럼의 이름을 서로 다르게 지정하며, initiator는 세그먼트가 반환한 블록을 컬럼명으로 매칭하기 때문에 이러한 쿼리는 initiator에서 `NOT_FOUND_COLUMN_IN_BLOCK` 오류로 실패할 수 있습니다. 예를 들어 정규 표기가 아닌 대소문자로 작성된 FUNCTION(`hostname()`)을 조회하는 경우, 분석기는 이를 정규 이름(`hostName()`)으로 해석합니다. 따라서 이전 쿼리 분석 방식으로 동작 중인 클러스터는 서버 중 하나라도 `26.10`으로 업그레이드하기 전에 모든 서버에서 `enable_analyzer = 1`을 설정해야 합니다.
 
 ### 지원되지 않는 기능 {#unsupported-features}
 

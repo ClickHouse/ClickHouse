@@ -187,13 +187,9 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 ### Clústeres heterogéneos {#heterogeneous-clusters}
 
-El analizador cambia de forma significativa el protocolo de comunicación entre los servidores del clúster. Por lo tanto, es imposible ejecutar consultas distribuidas en servidores que no coincidan en si se usa el analizador, lo que, en un clúster de servidores anteriores a la versión `26.9`, significa servidores con valores distintos de la configuración `enable_analyzer`.
+El analizador cambia de forma significativa el protocolo de comunicación entre los servidores del clúster. Por lo tanto, es imposible ejecutar consultas distribuidas en servidores que no coincidan en si se usa el analizador, lo que, en un clúster de servidores anteriores a la versión `26.9`, significa servidores con valores distintos de la SETTING `enable_analyzer`.
 
-### Las mutaciones se interpretan con el analizador anterior {#mutations-are-interpreted-by-previous-analyzer}
-
-Las mutaciones siguen usando el analizador anterior.
-Esto significa que algunas funciones nuevas de ClickHouse SQL no se pueden usar en las mutaciones. Por ejemplo, la cláusula `QUALIFY`.
-Se puede consultar el estado [aquí](https://github.com/ClickHouse/ClickHouse/issues/61563).
+Un servidor de la versión `26.10` o posterior ya no dispone de ningún otro análisis de consultas, por lo que ignora el valor que envía un iniciador más antiguo y analiza la consulta con el analizador de todos modos. Ambos análisis no nombran igual las columnas del resultado, y el iniciador hace coincidir el bloque que devuelve un segmento por el nombre de la columna, de modo que una consulta así puede fallar en el iniciador con `NOT_FOUND_COLUMN_IN_BLOCK`; por ejemplo, cuando selecciona una función escrita con una grafía no canónica (`hostname()`), que el analizador resuelve a su nombre canónico (`hostName()`). Por consiguiente, un clúster que siga funcionando con el análisis de consultas antiguo debe establecer `enable_analyzer = 1` en todos los servidores antes de actualizar cualquiera de ellos a `26.10`.
 
 ### Funcionalidades no compatibles {#unsupported-features}
 

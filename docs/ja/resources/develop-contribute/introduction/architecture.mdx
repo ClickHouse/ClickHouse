@@ -119,9 +119,9 @@ Read/WriteBuffer が扱うのはバイトだけです。入力/出力のフォ�
 `INSERT` クエリを解釈した結果は、挿入するデータを書き込むための入力ポートを持つ「pushing」`QueryPipeline` です。
 また、`INSERT SELECT` クエリを解釈した結果は、入力も出力も持たない一方で、`SELECT` から `INSERT` へ同時にデータをコピーする「completed」`QueryPipeline` です。
 
-`InterpreterSelectQuery` は、クエリ分析と変換のために `ExpressionAnalyzer` と `ExpressionActions` の仕組みを使用します。ルールベースのクエリ最適化の大半はここで実行されます。`ExpressionAnalyzer` はかなり複雑で整理されておらず、書き直す必要があります。さまざまなクエリ変換や最適化は個別のクラスに切り出し、クエリをモジュール単位で変換できるようにすべきです。
+`InterpreterSelectQueryAnalyzer` は `SELECT` クエリを解釈します。これは `AST` と `QueryPipeline` の間に `QueryTree` と呼ばれる追加の抽象化レイヤーを導入します。バージョン `24.3` 以降はデフォルトとなり、`enable_analyzer` 設定が廃止されて `1` に固定された `26.9` 以降はクエリが要求できる唯一の分析方式となり、もう一方が削除された `26.10` 以降は唯一のクエリ分析方式となっています。それまでは、`InterpreterSelectQuery` が `ExpressionAnalyzer` と `ExpressionActions` の仕組みを使って同じ処理を行っており、`enable_analyzer` によって両者が切り替えられていました。
 
-インタープリタに存在する問題に対処するため、新しい `InterpreterSelectQueryAnalyzer` が開発されました。これは `InterpreterSelectQuery` の新しいバージョンで、`ExpressionAnalyzer` を使用せず、`AST` と `QueryPipeline` の間に `QueryTree` と呼ばれる追加の抽象化レイヤーを導入します。バージョン `26.9` 以降はこれが唯一のクエリ分析方式であり、`ExpressionAnalyzer` に戻すために使用されていた `enable_analyzer` 設定は廃止され、無効化できなくなりました。
+`ExpressionAnalyzer` と `ExpressionActions` は、クエリを伴わずにコンパイルされる単独の式 — 有効期限 (TTL) の式、sharding key、カラムのデフォルト値、PROJECTION — のために引き続き使用されています。
 
 ## 関数 {#functions}
 
