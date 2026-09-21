@@ -160,7 +160,6 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     TokenizerPtr token_extactor_,
     NameSet columns_shadowing_map_subcolumns_)
     : index_columns(index_sample_block.getNames())
-    , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
@@ -889,7 +888,6 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     RPNElement & out)
 {
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
-    DataTypes data_types;
 
     auto left_argument_function_node_optional = left_argument.toFunctionNodeOrNull();
 
@@ -901,22 +899,16 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
             if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
-            {
                 key_tuple_mapping.emplace_back(i, *key);
-                data_types.push_back(index_data_types[*key]);
-            }
         }
     }
     else if (const auto key = getKeyIndex(left_argument.getColumnName()))
-    {
         key_tuple_mapping.emplace_back(0, *key);
-        data_types.push_back(index_data_types[*key]);
-    }
 
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    auto future_set = right_argument.tryGetPreparedSet();
     if (!future_set)
         return false;
 

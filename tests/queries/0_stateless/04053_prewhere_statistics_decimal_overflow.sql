@@ -36,7 +36,7 @@ ALTER TABLE test_prewhere_decimal_overflow ADD STATISTICS ts TYPE basic;
 ALTER TABLE test_prewhere_decimal_overflow MATERIALIZE STATISTICS ts SETTINGS mutations_sync = 1;
 
 SET enable_analyzer = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 -- Correct result without statistics.
 SELECT sig

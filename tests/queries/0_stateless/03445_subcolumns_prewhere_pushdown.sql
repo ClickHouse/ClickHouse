@@ -2,7 +2,6 @@
 SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
-SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 0; -- CI may inject True, causing prewhere subcolumns to be kept in output positions, changing EXPLAIN plan
 
 drop table if exists test;

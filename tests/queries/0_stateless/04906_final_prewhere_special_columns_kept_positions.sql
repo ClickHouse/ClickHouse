@@ -160,10 +160,10 @@ WHERE database = currentDatabase() AND table = 't_optmoved_04906' AND active;
 SELECT '--- filter moved to prewhere by the optimizer';
 SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0 ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1, optimize_move_to_prewhere = 1,
-         optimize_move_to_prewhere_if_final = 1, query_plan_optimize_prewhere = 1;
+         optimize_move_to_prewhere_if_final = 1;
 SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0 ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0, optimize_move_to_prewhere = 1,
-         optimize_move_to_prewhere_if_final = 1, query_plan_optimize_prewhere = 1;
+         optimize_move_to_prewhere_if_final = 1;
 
 -- The move only happens with `optimize_move_to_prewhere_if_final`, whose default is false, so the
 -- second arm is the control showing this oracle can be false.
@@ -172,8 +172,7 @@ FROM (
     EXPLAIN PLAN actions = 1
     SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
-             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1,
-             query_plan_optimize_prewhere = 1
+             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1
 )
 WHERE explain LIKE '%Prewhere filter%';
 SELECT count() > 0 AS filter_moved_to_prewhere
@@ -181,8 +180,7 @@ FROM (
     EXPLAIN PLAN actions = 1
     SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
-             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 0,
-             query_plan_optimize_prewhere = 1
+             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 0
 )
 WHERE explain LIKE '%Prewhere filter%';
 

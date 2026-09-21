@@ -12,8 +12,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -29,7 +27,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool move_all_conditions_to_prewhere;
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
@@ -139,46 +136,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 
     if (estimator)
         total_rows = estimator->getTotalRows();
-}
-
-void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
-{
-    auto & select = select_query_info.query->as<ASTSelectQuery &>();
-    if (!select.where() || select.prewhere())
-        return;
-
-    auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.query->clone(),
-        select_query_info.syntax_analyzer_result,
-        context);
-
-    WhereOptimizerContext where_optimizer_context;
-    where_optimizer_context.context = context;
-    where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
-    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
-    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
-        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
-    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
-    where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-
-    RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
-    RPNBuilderTreeNode node(select.where().get(), tree_context);
-    auto optimize_result = optimizeImpl(node, where_optimizer_context);
-    if (!optimize_result)
-        return;
-
-    /// Rewrite the SELECT query.
-
-    auto where_filter_ast = reconstructAST(optimize_result->where_conditions);
-    auto prewhere_filter_ast = reconstructAST(optimize_result->prewhere_conditions);
-
-    select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter_ast));
-    select.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter_ast));
-
-    LOG_DEBUG(
-        log,
-        "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE",
-        select.prewhere()->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]));
 }
 
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
@@ -618,35 +575,6 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     return res;
 }
 
-/// Transform Conditions list to WHERE or PREWHERE expression.
-ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
-{
-    if (conditions.empty())
-        return {};
-
-    std::vector<const IAST *> all_nodes;
-    for (const auto & cond : conditions)
-        for (const auto & n : cond.nodes)
-            all_nodes.push_back(n.getASTNode());
-
-    if (all_nodes.empty())
-        return {};
-
-    if (all_nodes.size() == 1)
-        return all_nodes.front()->clone();
-
-    const auto function = make_intrusive<ASTFunction>();
-
-    function->name = "and";
-    function->arguments = make_intrusive<ASTExpressionList>();
-    function->children.push_back(function->arguments);
-
-    for (const auto * ast : all_nodes)
-        function->arguments->children.push_back(ast->clone());
-
-    return function;
-}
-
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,
     const WhereOptimizerContext & where_optimizer_context) const
 {
@@ -920,21 +848,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
     }
 
     return false;
-}
-
-NameSet MergeTreeWhereOptimizer::determineArrayJoinedNames(const ASTSelectQuery & select)
-{
-    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
-
-    /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
-    if (!array_join_expression_list)
-        return {};
-
-    NameSet array_joined_names;
-    for (const auto & ast : array_join_expression_list->children)
-        array_joined_names.emplace(ast->getAliasOrColumnName());
-
-    return array_joined_names;
 }
 
 }

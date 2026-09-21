@@ -27,7 +27,6 @@ INSERT INTO attributes SELECT number AS EventId, concat('Attribute_', toString(n
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
 -- PREWHERE on the direct-join right table, with column pruning enabled.

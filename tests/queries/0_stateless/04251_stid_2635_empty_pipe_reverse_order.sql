@@ -18,9 +18,9 @@
 -- must survive so the read stays on the reverse-order path (an aggregate wrapper would let
 -- `RemoveRedundantSorting` drop the sort and the plan would read in `ReadType::Default`), and checking
 -- the rows themselves catches a regression that silently loses or duplicates rows through
--- `read({}, ReadType::InReverseOrder)`, not just one that throws. `optimize_read_in_order` and
--- `query_plan_read_in_order` are pinned because the test runner randomizes the former: with either
--- off, `read_in_order` is not set and the guarded path is skipped.
+-- `read({}, ReadType::InReverseOrder)`, not just one that throws. `optimize_read_in_order` is
+-- pinned because the test runner randomizes it: with it off, `read_in_order` is not set and the
+-- guarded path is skipped.
 
 SET enable_analyzer = 1;
 
@@ -50,7 +50,6 @@ ORDER BY k DESC
 SETTINGS join_algorithm = 'full_sorting_merge',
          query_plan_join_shard_by_pk_ranges = 1,
          optimize_read_in_order = 1,
-         query_plan_read_in_order = 1,
          query_plan_read_in_order_through_join = 1,
          read_in_order_use_virtual_row = 1,
          enable_join_runtime_filters = 0,

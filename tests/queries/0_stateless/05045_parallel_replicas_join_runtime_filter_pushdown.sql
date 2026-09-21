@@ -29,7 +29,6 @@ SET parallel_replicas_filter_pushdown = 1;
 SET query_plan_join_swap_table = false;
 -- The plan below asserts that the filter reaches the read step as a `PREWHERE`, so pin the two
 -- optimizations that fold it in.
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 -- Pinned for a stable plan shape: the plan-based path sends a plan fragment rather than a query, so
 -- the remote side reads as a single `ReadFromParallelReplicas` instead of `ReadFromRemoteParallelReplicas`.

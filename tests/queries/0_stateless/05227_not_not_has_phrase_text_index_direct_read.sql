@@ -11,7 +11,6 @@ SET use_skip_indexes_on_data_read = 1;              -- randomized; the index mus
 SET query_plan_direct_read_from_text_index = 1;     -- randomized; the rewrite under test
 SET query_plan_text_index_add_hint = 1;             -- randomized; at 0 `hasPhrase` gets `None` mode, not `Hint`
 SET optimize_move_to_prewhere = 0;                  -- randomized; keep each predicate in the clause it is written in
-SET query_plan_optimize_prewhere = 1;               -- randomized; an explicitly written PREWHERE must stay PREWHERE
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab

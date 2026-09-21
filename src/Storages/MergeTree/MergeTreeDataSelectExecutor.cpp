@@ -21,7 +21,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>

@@ -31,7 +31,7 @@ set use_query_condition_cache=1;
 
 -- Pin the settings that the assertion depends on. The test runner injects
 -- random session settings; without these pins, the runner can flip
--- `optimize_move_to_prewhere` / `query_plan_optimize_prewhere` to `0` and the
+-- `optimize_move_to_prewhere` to `0` and the
 -- query condition cache then writes its verdict against the WHERE-side hash
 -- instead of the PREWHERE-side hash documented in the comment block at the
 -- top of this file. The assertion still holds for the WHERE-side path, but
@@ -39,7 +39,6 @@ set use_query_condition_cache=1;
 -- comment describes and removes a class of CI noise that is unrelated to
 -- the bug under test.
 set optimize_move_to_prewhere=1;
-set query_plan_optimize_prewhere=1;
 
 -- Pre-warm the query condition cache
 select avg(a) from t where s != 'xxx' format Null;

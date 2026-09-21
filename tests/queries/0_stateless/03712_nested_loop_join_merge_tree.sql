@@ -47,7 +47,6 @@ SET query_plan_join_swap_table = 0;
 SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
-SET query_plan_optimize_prewhere = 1;
 -- Pin optimize_move_to_prewhere: when disabled, the MergeTree range-splitting
 -- injection reads extra granules inflating JoinBuildTableRowCount beyond the
 -- assertion bounds without affecting query correctness.

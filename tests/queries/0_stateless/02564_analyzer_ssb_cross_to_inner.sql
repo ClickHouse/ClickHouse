@@ -1,6 +1,6 @@
 SET enable_analyzer = 1;
 SET optimize_time_filter_with_preimage = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET optimize_extract_common_expressions = 0;
 SET optimize_using_constraints = 0;
 SET enable_parallel_replicas = 0;

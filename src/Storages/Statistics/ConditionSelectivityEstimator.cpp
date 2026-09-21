@@ -365,10 +365,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             const bool is_in_operator = functionIsInOperator(func_name);
 
-            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
-            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
-            /// and extract constant value from it.
-            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
+            /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other
+            /// comparison takes the branches below, which read the constant of the other argument directly.
+            if (is_in_operator)
             {
                 const auto & rhs = func.getArgumentAt(1);
                 if (!rhs.isConstant())

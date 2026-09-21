@@ -32,7 +32,6 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -529,9 +528,6 @@ void StorageMaterializedView::readImpl(
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
-
-    if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
     if (!view_metadata->select.select_table_id.empty())
         context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id, column_names);

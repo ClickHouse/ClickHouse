@@ -27,7 +27,6 @@ SET query_plan_optimize_join_order_algorithm = 'greedy';
 -- The test pins full EXPLAIN outputs, so the randomized settings that shape these plans
 -- are pinned to their defaults.
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_remove_unused_columns = 1;

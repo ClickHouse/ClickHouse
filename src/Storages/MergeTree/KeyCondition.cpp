@@ -1669,14 +1669,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
-bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
-{
-    RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);
-    RPNBuilderTreeNode node(expr.get(), tree_context);
-
-    return node.tryGetConstant(out_value, out_type);
-}
-
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });

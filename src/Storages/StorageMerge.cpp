@@ -77,7 +77,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -1065,28 +1064,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     size_t remaining_streams = num_streams;
 
     if (order_info)
-    {
         query_info_.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
-        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-        {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
-            if (it == selected_tables.begin())
-                input_sorting_info = current_info;
-            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-                input_sorting_info.reset();
-
-            if (!input_sorting_info)
-                break;
-        }
-
-        query_info_.input_order_info = input_sorting_info;
-    }
 
     auto logger = getLogger("StorageMerge");
 

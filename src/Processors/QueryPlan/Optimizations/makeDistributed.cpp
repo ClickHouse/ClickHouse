@@ -184,8 +184,10 @@ std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQuery
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
 std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFromMergeTree * read)
 {
-    /// Only the old interpreter (query_plan_read_in_order = 0) sets the read order this early; it is
-    /// the read half of the FinishSorting rejected in getReasonNodeCannotBeDistributed.
+    /// The read-in-order optimization is skipped while a distributed plan is being made, so a read
+    /// that already carries an order was ordered before this pass (for example, a child plan that was
+    /// optimized on its own). It is the read half of the FinishSorting rejected in
+    /// getReasonNodeCannotBeDistributed.
     if (read->getQueryInfo().input_order_info)
         return std::make_optional(PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read"));
 
@@ -320,9 +322,9 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
             return reason;
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
-    /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
-    /// interpreter (query_plan_read_in_order = 0) puts one in the plan up front, unchecked, so a
-    /// scatter inserted below it would break the order it relies on.
+    /// only from a Full sorting, and only when no exchange separates the read from the sort. A
+    /// FinishSorting that is already in the plan was created without that check, so a scatter
+    /// inserted below it would break the order it relies on.
     if (const auto * sorting = typeid_cast<const SortingStep *>(&step);
         sorting && (sorting->getType() == SortingStep::Type::FinishSorting || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
         return PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read");
