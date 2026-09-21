@@ -118,6 +118,16 @@ FROM
 )
 ORDER BY a;
 
+SELECT 'mixed union result alias pruning';
+SELECT x
+FROM
+(
+    (SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a)
+    UNION ALL
+    SELECT 5 AS c, 6 AS d
+) AS t(x, y)
+ORDER BY x;
+
 SELECT 'position then name';
 SELECT *
 FROM
@@ -232,6 +242,15 @@ WITH RECURSIVE r AS
     SELECT a + 1 AS a FROM r WHERE a < 2
 )
 SELECT * FROM r; -- { serverError UNSUPPORTED_METHOD }
+
+SELECT 'recursive CTE with nested BY NAME';
+WITH RECURSIVE r AS
+(
+    (SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a)
+    UNION ALL
+    SELECT a + 1 AS a FROM r WHERE a < 2
+)
+SELECT min(a), max(a) FROM r;
 
 SELECT 'UNION BY NAME with INTERSECT';
 SELECT *
