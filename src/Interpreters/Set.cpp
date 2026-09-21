@@ -964,11 +964,12 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
                 return {false, true};
             }
 
-            const uint64_t upper = roaring_bitmap->rank(right_val);
-            const uint64_t lower = (left_val == 0) ? 0 : roaring_bitmap->rank(left_val - 1);
-            const uint64_t count = upper - lower;
+            /// Only whether the intersection is non-empty matters. `rank()` is linear in the
+            /// number of containers, so a rank pair costs far more than the binary search it
+            /// replaces; seeking to the first element >= left_val is logarithmic.
+            auto it = roaring_bitmap->begin();
+            const bool can_be_true = it.move_equalorlarger(left_val) && *it <= right_val;
 
-            bool can_be_true = count > 0;
             bool at_most_one = false;
             if (r.left.isNormal() && r.right.isNormal())
                 at_most_one = (left_val == right_val && r.left_included && r.right_included);
