@@ -103,6 +103,7 @@ using PostingListPtr = std::shared_ptr<PostingList>;
 struct PostingListBuildContext
 {
     const IPostingListCodec & codec;
+    /// Requested number of row ids per segment, passed to `IPostingListCodec::createEncoder`.
     size_t segment_size;
     bool enable_positions;
 };

@@ -32,8 +32,8 @@ public:
     virtual ~IPostingListEncoder() = default;
 
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
-    /// Each time the open segment reaches `segment_size` row ids, it is sealed and a new one is started.
-    virtual void append(std::span<const UInt32> row_ids, size_t segment_size) = 0;
+    /// Each time the open segment reaches the segment size fixed at creation, it is sealed and a new one is started.
+    virtual void append(std::span<const UInt32> row_ids) = 0;
 
     /// Seals the last segment and writes all accumulated segments to `out`.
     /// Fills per-segment metadata (offsets, ranges) and header flags in `info`.
@@ -64,16 +64,9 @@ public:
 
     Type getType() const { return type; }
 
-    /// Number of row ids in one block of an encoded segment, for codecs that split segments into fixed-size blocks.
-    /// Returns 0 for codecs that do not split segments into blocks.
-    virtual size_t getBlockSize() const { return 0; }
-
-    /// Returns the effective segment size for the requested `posting_list_block_size`.
-    /// Codecs may round the requested size, e.g. to a multiple of `getBlockSize`.
-    virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
-
-    /// Creates an accumulator that encodes segments of row ids into this codec's format.
-    virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
+    /// Creates an accumulator that encodes segments of `segment_size` row ids into this codec's format.
+    /// Codecs may round the requested size, e.g. up to a multiple of their physical block size.
+    virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const = 0;
 
     /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
     /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.

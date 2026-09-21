@@ -32,8 +32,9 @@ static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, Padde
     return buffer.data();
 }
 
-SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_)
-    : block_codec(createPostingListBlockCodec(block_codec_type_))
+SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_)
+    : segment_size((segment_size_ + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE)
+    , block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
     block_values.reserve(BLOCK_SIZE);
@@ -41,9 +42,10 @@ SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type blo
 
 /// Previous appends must not have left a partial block in the open segment.
 /// (see the contract in `IPostingListEncoder::append_granularity`).
-void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t segment_size)
+void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids)
 {
     chassert(!row_ids.empty());
+    chassert(segment_size != 0);
     chassert(row_ids_in_current_segment % BLOCK_SIZE == 0);
 
     total_row_ids += row_ids.size();
@@ -246,18 +248,12 @@ void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinali
     impl.decode(in, max_cardinality, row_ids, buffer);
 }
 
-size_t SegmentedPostingListCodecBase::getSegmentSize(size_t posting_list_block_size) const
+std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder(size_t segment_size) const
 {
-    const size_t block_size = getBlockSize();
-    return (posting_list_block_size + block_size - 1) / block_size * block_size;
+    return std::make_unique<SegmentedPostingListEncoder>(getType(), segment_size);
 }
 
-std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder() const
-{
-    return std::make_unique<SegmentedPostingListEncoder>(getType());
-}
-
-void PostingListEncoderNone::append(std::span<const UInt32> row_ids, size_t segment_size)
+void PostingListEncoderNone::append(std::span<const UInt32> row_ids)
 {
     chassert(!row_ids.empty());
     total_row_ids += row_ids.size();
@@ -312,9 +308,9 @@ void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & inf
         info.header |= SingleBlock;
 }
 
-std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const
+std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t segment_size) const
 {
-    return std::make_unique<PostingListEncoderNone>();
+    return std::make_unique<PostingListEncoderNone>(segment_size);
 }
 
 /// Upper bound of the portable serialization of a Roaring bitmap with at most `max_cardinality` values.

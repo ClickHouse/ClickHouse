@@ -1560,7 +1560,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     const PostingListBuildContext context
     {
         .codec = *codec,
-        .segment_size = codec->getSegmentSize(params.posting_list_block_size),
+        .segment_size = params.posting_list_block_size,
         .enable_positions = params.positions != 0,
     };
 
@@ -1611,9 +1611,9 @@ PostingListBuildContext MergeTreeIndexTextGranuleBuilder::buildContext() const
 
     return
     {
-        *posting_list_codec,
-        posting_list_codec->getSegmentSize(params.posting_list_block_size),
-        params.positions != 0,
+        .codec = *posting_list_codec,
+        .segment_size = params.posting_list_block_size,
+        .enable_positions = params.positions != 0,
     };
 }
 
@@ -1702,9 +1702,9 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
 
     /// Created lazily: tokens whose posting lists end up raw or embedded never need an encoder.
     if (!encoder)
-        encoder = context.codec.createEncoder();
+        encoder = context.codec.createEncoder(context.segment_size);
 
-    encoder->append({values.data(), values.size()}, context.segment_size);
+    encoder->append({values.data(), values.size()});
     values.clear();
 }
 

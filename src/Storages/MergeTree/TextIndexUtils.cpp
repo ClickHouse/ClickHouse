@@ -899,12 +899,11 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     const auto * codec = postings_serialization.getPostingListCodec();
-    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
-    auto encoder = codec->createEncoder();
+    auto encoder = codec->createEncoder(params.posting_list_block_size);
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
-        encoder->append(row_ids, segment_size);
+        encoder->append(row_ids);
     });
 
     /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
