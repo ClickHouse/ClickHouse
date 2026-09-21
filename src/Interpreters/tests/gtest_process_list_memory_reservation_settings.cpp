@@ -77,7 +77,7 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 
     auto query_context = Context::createCopy(global_context);
     query_context->makeQueryContext();
-    query_context->setSetting("workload", "process_list_test");
+    query_context->setSetting("workload", String{"process_list_test"});
     query_context->setSetting("reserve_memory", UInt64{0});
     query_context->setSetting("memory_reservation_protect_from_eviction", true);
     query_context->setSetting("memory_reservation_force_spill_before_eviction", true);
