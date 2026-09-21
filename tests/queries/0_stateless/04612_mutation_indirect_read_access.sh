@@ -143,7 +143,9 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE arr_tab SYNC"
 # a session temporary table answers is therefore not a grant-free name here - it is only readable
 # there as a permanent table of that name.
 echo "-- A session temporary table does not make a name grant-free in a mutation"
-$CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO $user_name"
+# The CI config sets `table_engines_require_grant`, under which the temporary table's `Memory` engine
+# needs a grant of its own, so it is granted too and the session's own statements below go through.
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.*, TABLE ENGINE ON Memory TO $user_name"
 # The session may create that temporary table and read it, so the denial below is the mutation's.
 check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); SELECT count() FROM secret_set"
 check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
