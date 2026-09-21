@@ -48,7 +48,7 @@ SET parallel_replicas_prefer_local_replica = 0;
 
 SELECT count() FROM t_pb_probe INNER JOIN t_pb_bcast ON t_pb_probe.key = t_pb_bcast.id
 WHERE t_pb_bcast.id < 5000
-FORMAT Null SETTINGS log_comment = '05099_plan_based';
+FORMAT Null SETTINGS log_comment = '05099_plan_based_prewhere';
 
 -- Again without moving the predicate into PREWHERE. The read step's own serialization carries the
 -- prewhere and the row-level filter and nothing else, so this is the shape where the broadcast read
@@ -56,7 +56,7 @@ FORMAT Null SETTINGS log_comment = '05099_plan_based';
 -- filter is a step of the shipped fragment, and the follower optimizes the plan it deserializes.
 SELECT count() FROM t_pb_probe INNER JOIN t_pb_bcast ON t_pb_probe.key = t_pb_bcast.id
 WHERE t_pb_bcast.id < 5000
-FORMAT Null SETTINGS optimize_move_to_prewhere = 0, log_comment = '05099_plan_based';
+FORMAT Null SETTINGS optimize_move_to_prewhere = 0, log_comment = '05099_plan_based_no_prewhere';
 
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_plan_based = 0;
@@ -67,20 +67,31 @@ SYSTEM FLUSH LOGS query_log;
 -- Follower queries are matched through `initial_query_id`: they are logged with `current_database` set
 -- to `default` rather than to this test's database, so they cannot be selected by database.
 --
--- `a_follower_executed` keeps the check honest: with no remote replica taking part there is nothing to
--- prune wrongly, and the row bound would hold for that reason alone.
-WITH initial_ids AS
-    (
-        SELECT query_id FROM system.query_log
-        WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
-          AND event_date >= yesterday() AND log_comment = '05099_plan_based'
-    )
+-- Reported per run rather than over both together, and on rows rather than on the existence of a
+-- follower. Pooling the two runs would let one run's followers vouch for the other's, and a follower
+-- that was started but read nothing - which happens when the local replica takes every range - would
+-- satisfy a check that only counted followers while proving nothing about pruning. The join is a LEFT
+-- one so a run with no follower at all still produces its row, with the first column false.
 SELECT
-    count() > 0 AS a_follower_executed,
-    max(ProfileEvents['SelectedRows']) < 500000 AS every_follower_pruned_the_broadcast_read
-FROM system.query_log
-WHERE type = 'QueryFinish' AND NOT is_initial_query AND event_date >= yesterday()
-  AND initial_query_id IN (SELECT query_id FROM initial_ids)
+    i.log_comment AS run,
+    ifNull(max(f.follower_rows), 0) > 0 AS a_follower_did_the_reading,
+    ifNull(max(f.follower_rows), 0) < 500000 AS every_follower_pruned_the_broadcast_read
+FROM
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+      AND event_date >= yesterday()
+      AND log_comment IN ('05099_plan_based_prewhere', '05099_plan_based_no_prewhere')
+) AS i
+LEFT JOIN
+(
+    SELECT initial_query_id, query_id AS follower_id,
+           ProfileEvents['SelectedRows'] AS follower_rows
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND NOT is_initial_query AND event_date >= yesterday()
+) AS f ON f.initial_query_id = i.query_id
+GROUP BY run
+ORDER BY run
 FORMAT TSVWithNames;
 
 DROP TABLE t_pb_probe;
