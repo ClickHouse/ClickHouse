@@ -4533,37 +4533,46 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
 void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
     /// RENAME target names behave like regular SELECT aliases. Matchers are expanded while resolving
-    /// the projection, so resolve top-level matchers with RENAME first and register their aliases
-    /// before resolving the other projection expressions. This keeps alias visibility independent
-    /// of the order of SELECT items without changing the resolution order of other matchers.
-    for (auto & projection_node : projection_node_list->as<ListNode &>().getNodes())
+    /// the projection, so resolve matchers with RENAME anywhere in each projection expression first
+    /// and register their aliases before resolving the other projection expressions. Do not cross
+    /// lambda or subquery boundaries because those nodes are resolved in their own scopes.
+    auto resolve_rename_matchers = [&](auto && self, QueryTreeNodePtr & node, bool is_top_level_projection) -> void
     {
-        const auto * matcher_node = projection_node->as<MatcherNode>();
-        bool has_rename_transformer = false;
-        if (matcher_node)
+        if (auto * matcher_node = node->as<MatcherNode>())
         {
             for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
             {
-                if (transformer->as<RenameColumnTransformerNode>())
-                {
-                    has_rename_transformer = true;
-                    break;
-                }
+                if (!transformer->as<RenameColumnTransformerNode>())
+                    continue;
+
+                resolveExpressionNode(
+                    node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    false /*ignore_alias*/,
+                    true /*allow_niladic_functions*/,
+                    is_top_level_projection);
+                break;
             }
+            return;
         }
 
-        if (has_rename_transformer)
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::LAMBDA
+            || node_type == QueryTreeNodeType::QUERY
+            || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        for (auto & child : node->getChildren())
         {
-            resolveExpressionNode(
-                projection_node,
-                scope,
-                false /*allow_lambda_expression*/,
-                false /*allow_table_expression*/,
-                false /*ignore_alias*/,
-                true /*allow_niladic_functions*/,
-                true /*is_top_level_projection*/);
+            if (child)
+                self(self, child, false);
         }
-    }
+    };
+
+    for (auto & projection_node : projection_node_list->as<ListNode &>().getNodes())
+        resolve_rename_matchers(resolve_rename_matchers, projection_node, true);
 }
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
