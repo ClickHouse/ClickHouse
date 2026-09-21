@@ -378,7 +378,7 @@ static bool writeMetadataFiles(
 
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     Int64 parent_snapshot = -1;
-    if (metadata->has(Iceberg::f_current_snapshot_id))
+    if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     auto sum_files = [](const DataFileWriteResultWithStats & set) -> std::tuple<Int64, Int64, Int64>
@@ -421,6 +421,7 @@ static bool writeMetadataFiles(
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
@@ -457,6 +458,7 @@ static bool writeMetadataFiles(
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
             manifest_entry_row_counts.push_back(data_file.total_rows);
+            manifest_entry_file_counts.push_back(1);
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
@@ -539,7 +541,8 @@ static bool writeMetadataFiles(
                 /* carry_forward_manifest_paths */ {},
                 /* entry_partition_spec_ids */ {},
                 entry_partition_summaries,
-                manifest_entry_row_counts);
+                manifest_entry_row_counts,
+                manifest_entry_file_counts);
             buffer_manifest_list->finalize();
         }
 
@@ -750,7 +753,7 @@ void mutate(
         current_iceberg_snapshot.metadata_file_path = metadata_path;
         current_iceberg_snapshot.metadata_version = last_version;
         current_iceberg_snapshot.schema_id = static_cast<Int32>(current_schema_id);
-        if (metadata->has(Iceberg::f_current_snapshot_id))
+        if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
         {
             Int64 snapshot_id_val = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
             if (snapshot_id_val >= 0)
