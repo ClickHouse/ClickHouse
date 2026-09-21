@@ -4,7 +4,7 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 DROP TABLE IF EXISTS test_exponential_time_decay_json_default;
 CREATE TABLE test_exponential_time_decay_json_default
 (
-    json JSON(value ExponentialTimeDecayingFloat64(10))
+    json JSON(value ExponentialTimeDecaying(10))
 )
 ENGINE = Memory;
 
