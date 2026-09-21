@@ -157,14 +157,6 @@ namespace
              |  static_cast<UInt32>(static_cast<UInt8>(value[3]));
     }
 
-    /// Encode one UInt64 key with the production encoder (8-byte BE).
-    String encodeOne(UInt64 k)
-    {
-        auto cols = makeUInt64Columns({k});
-        VectorWithMemoryTracking<String> encoded;
-        UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
-        return encoded.at(0);
-    }
 }
 
 /// Smoke: write 10K sorted UInt64 keys, read back via `SstFileReader`,
@@ -680,38 +672,6 @@ TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
 
     /// The destructor must have removed the abandoned partial SST file.
     EXPECT_FALSE(std::filesystem::exists(finalPath()));
-}
-
-/// The reader captures the SST's [min, max] encoded key range at open time.
-TEST_F(SSTFixture, KeyRangeCapturedAtOpen)
-{
-    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, makeUInt64Block({10, 20, 30}), Names{"k"}, /*permutation=*/nullptr,
-                  /*max_encoded_size=*/256, checksums, /*fsync=*/false, getContext().context),
-              3u);
-
-    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
-    const auto & range = reader->getKeyRange();
-    EXPECT_EQ(range.first, encodeOne(10));
-    EXPECT_EQ(range.second, encodeOne(30));
-}
-
-/// Inclusive, bytewise range intersection; an empty endpoint is unbounded.
-TEST_F(SSTFixture, KeyRangeIntersects)
-{
-    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, makeUInt64Block({10, 20, 30}), Names{"k"}, /*permutation=*/nullptr,
-                  /*max_encoded_size=*/256, checksums, /*fsync=*/false, getContext().context),
-              3u);
-    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
-
-    EXPECT_TRUE(reader->keyRangeIntersects({encodeOne(15), encodeOne(25)}));  /// inside
-    EXPECT_TRUE(reader->keyRangeIntersects({encodeOne(5), encodeOne(10)}));   /// touches min
-    EXPECT_TRUE(reader->keyRangeIntersects({encodeOne(30), encodeOne(40)}));  /// touches max
-    EXPECT_FALSE(reader->keyRangeIntersects({encodeOne(1), encodeOne(9)}));   /// below
-    EXPECT_FALSE(reader->keyRangeIntersects({encodeOne(31), encodeOne(40)})); /// above
-    EXPECT_TRUE(reader->keyRangeIntersects({"", ""}));                        /// unbounded
-    EXPECT_FALSE(reader->keyRangeIntersects({encodeOne(31), ""}));            /// open-ended, above
 }
 
 #endif  // USE_ROCKSDB

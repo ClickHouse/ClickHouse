@@ -54,12 +54,16 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
     VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, /*permutation=*/nullptr, max_encoded_size, encoded);
 
-    /// Sort the batch once by encoded key (contract of `findRowIndexBatch`);
-    /// `perm` maps a sorted position back to its input row.
+    /// Sort each `PROBE_BATCH_SIZE` window by encoded key (contract of
+    /// `findRowIndexBatch`); `perm` maps sorted positions back to input rows.
     std::vector<size_t> perm(n);
     std::iota(perm.begin(), perm.end(), 0);
-    std::sort(perm.begin(), perm.end(),
-        [&](size_t a, size_t b) { return encoded[a] < encoded[b]; });
+    for (size_t begin = 0; begin < n; begin += PROBE_BATCH_SIZE)
+    {
+        const size_t end = std::min(begin + PROBE_BATCH_SIZE, n);
+        std::sort(perm.begin() + begin, perm.begin() + end,
+            [&](size_t a, size_t b) { return encoded[a] < encoded[b]; });
+    }
 
     std::vector<std::string_view> views;
     views.reserve(n);

@@ -10,7 +10,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 /// This whole translation unit is RocksDB-only: the SST backend is unavailable
@@ -35,32 +34,21 @@ class DeleteBitmap;
 class SSTFileReader
 {
 public:
-    using MinMax = std::pair<std::string, std::string>;
-
     SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings);
 
-    std::unique_ptr<rocksdb::Iterator> newIterator(const rocksdb::ReadOptions & options) const;
-
-    /// Batch lookup, chunked internally to RocksDB's per-call limit. One
-    /// status per key: a miss is `NotFound`, other errors throw (fail closed).
-    std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & keys, std::vector<std::string> * values_out) const;
+    /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys. One status per
+    /// key: a miss is `NotFound`, other errors throw (fail closed).
+    std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const;
 
     std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
 
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
     rocksdb::Status verifyChecksum() const;
 
-    /// Min/max key captured at open time; both empty when the SST is empty.
-    const MinMax & getKeyRange() const { return key_range; }
-
-    /// Key-range intersection; an unknown (empty) range intersects everything.
-    bool keyRangeIntersects(const MinMax & other) const;
-
 private:
     /// Declared before `index_reader` so the Env outlives the reader.
     std::unique_ptr<rocksdb::Env> sst_env;
     std::unique_ptr<rocksdb::SstFileReader> index_reader;
-    MinMax key_range;
 };
 
 using SSTFileReaderPtr = std::shared_ptr<SSTFileReader>;
@@ -75,9 +63,7 @@ SSTFileReaderPtr openSSTReaderFromStorage(
     const ReadSettings & read_settings);
 
 /// `IProbeTargetPart` backed by `unique_key_index.sst`. Absent keys are
-/// short-circuited by the key range first, then by the bloom filter.
-///
-/// TODO(unique-key): part-level key-range skipping with the parallel driver.
+/// short-circuited by the bloom filter.
 class SSTProbeTargetPart : public IProbeTargetPart
 {
 public:
