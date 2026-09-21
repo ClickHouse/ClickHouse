@@ -13,8 +13,8 @@ SELECT
     uniqUpTo(1)(toUUID(concat('00000000-0000-0000-0000-00000000000', toString(number % 2)))) AS uuid_value,
     uniqUpTo(10)((toString(number % 10), number % 2)) AS tuple_value,
     uniqUpTo(1)((toString(number % 2), number % 2)) AS saturated_tuple_value,
-    uniqUpTo(1)([number % 2]) AS array_value,
-    uniqUpTo(1)(([number % 2], toString(number % 2))) AS tuple_array_value,
+    uniqUpTo(1)([toString(number % 2)]) AS array_value,
+    uniqUpTo(1)(([toString(number % 2)], toString(number % 2))) AS tuple_array_value,
     uniqUpTo(1)(toString(number % 2), number % 2) AS variadic_value
 FROM numbers(1000);
 
