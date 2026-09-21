@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-msan
+# ^ the Vortex format is not included in the fast test and MSan builds
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# `VortexExpressionConverter::convertIn` never executes an `IN` subquery itself - it only inspects a
+# set that is already built - so the reading step has to materialize the set before the scan starts.
+# `file()` and `url()` must do that for `Vortex` just like the object storage step does, otherwise
+# the `IN` pushdown is silently a no-op on those entrypoints while it works on the other one.
+# Result equivalence cannot show this, because ClickHouse reapplies the `WHERE` either way; the
+# `ProfileEvents` of the pushdown are what proves the set reached the scan.
+
+USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+WORKING_DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p "${WORKING_DIR}"
+DATA_FILE="${WORKING_DIR}/data.vortex"
+
+# Several splits (they hold at most 100 000 rows each), so that a selective filter provably drops
+# whole splits.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('$DATA_FILE', 'Vortex')
+    SELECT number AS n FROM numbers(300000)
+    SETTINGS engine_file_truncate_on_insert = 1"
+
+run_and_report_events() {
+    local label=$1
+    local query=$2
+    local query_id="${CLICKHOUSE_DATABASE}_vortex_in_pushdown_$RANDOM$RANDOM"
+    echo "$label"
+    $CLICKHOUSE_CLIENT --input_format_vortex_preserve_order 1 --query_id="$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT
+            ProfileEvents['VortexFilterPushdownConjunctsPushed'],
+            ProfileEvents['VortexScanEmptySplits'] >= 2
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish' AND current_database = currentDatabase()"
+}
+
+run_and_report_events "An IN over a subquery, pushed down (the set is built before the scan):" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (SELECT 42)"
+
+run_and_report_events "A NOT IN over a subquery, pushed down:" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n NOT IN (SELECT number FROM numbers(100000, 200000))"
+
+run_and_report_events "An IN over a literal tuple, for comparison (its set needs no eager pass):" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (42, 43)"
+
+rm -rf "${WORKING_DIR}"

@@ -81,8 +81,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!filter_actions_dag)
         return;
 
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC")
-        || boost::iequals(configuration->format, "Vortex"))
+    if (formatNeedsEagerKeyConditionSets(configuration->format))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
