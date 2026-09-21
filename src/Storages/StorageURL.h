@@ -245,6 +245,8 @@ public:
 
     String getName() const override { return name; }
 
+    Status prepare() override;
+
     Chunk generate() override;
 
     void onFinish() override;
@@ -270,6 +272,9 @@ public:
         ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
 
 private:
+    /// Release the reader, the format and the HTTP buffer - see the definition.
+    void releaseReader();
+
     void addNumRowsToCache(const String & uri, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
 
