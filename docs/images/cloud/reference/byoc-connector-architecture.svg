@@ -41,7 +41,7 @@
   <!-- Operators prepare the cloud account -->
   <line x1="96" y1="530" x2="96" y2="486" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
   <text x="212" y="502" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">prepare</text>
-  <text x="212" y="519" text-anchor="middle" font-size="11" fill="#7d7d7d">buckets, role, access grant</text>
+  <text x="212" y="519" text-anchor="middle" font-size="11" fill="#7d7d7d">buckets and IAM role</text>
 
   <!-- ===== Your operators ===== -->
   <rect x="80" y="530" width="220" height="80" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
@@ -104,9 +104,9 @@
   <text x="395" y="779" text-anchor="middle" font-size="10" fill="#7d7d7d">after approval</text>
 
   <!-- ===== Connector API endpoint ===== -->
-  <rect x="1045" y="190" width="210" height="310" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="1150" y="335" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
-  <text x="1150" y="358" text-anchor="middle" font-size="11" fill="#7d7d7d">your dedicated HTTPS endpoint</text>
+  <rect x="1045" y="190" width="210" height="620" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="1150" y="495" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
+  <text x="1150" y="518" text-anchor="middle" font-size="11" fill="#7d7d7d">your dedicated HTTPS endpoint</text>
 
   <!-- ===== Outbound arrows (accent) ===== -->
   <!-- Scraper -> API endpoint -->
@@ -114,13 +114,19 @@
   <text x="910" y="205" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">HTTPS</text>
   <text x="910" y="242" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
 
-  <!-- Troubleshooter and executor -> API endpoint over one outbound channel -->
-  <path d="M730 755 L780 755 L780 460" fill="none" stroke="#3b82f6" stroke-width="1.75"/>
+  <!-- Troubleshooter -> API endpoint, its own outbound channel -->
   <line x1="730" y1="460" x2="1039" y2="460" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
-  <text x="910" y="426" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">outbound WebSocket</text>
+  <text x="910" y="426" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">troubleshooter WebSocket</text>
   <text x="910" y="443" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
-  <text x="910" y="482" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">commands flow only</text>
-  <text x="910" y="498" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">over this channel</text>
+  <text x="910" y="482" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">diagnostics,</text>
+  <text x="910" y="498" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">support sessions only</text>
+
+  <!-- Executor -> API endpoint, a separate outbound channel -->
+  <line x1="730" y1="755" x2="1039" y2="755" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="910" y="721" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">executor WebSocket</text>
+  <text x="910" y="738" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
+  <text x="910" y="777" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">lifecycle commands,</text>
+  <text x="910" y="793" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">managed mode only</text>
 
   <!-- ===== Legend ===== -->
   <g>

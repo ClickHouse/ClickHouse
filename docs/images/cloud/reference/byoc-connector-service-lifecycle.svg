@@ -21,7 +21,7 @@
   <rect x="125" y="130" width="460" height="95" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
   <text x="355" y="163" text-anchor="middle" font-size="11" fill="#7d7d7d">You run</text>
   <text x="355" y="188" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">clicklink clctl executor prepare</text>
-  <text x="355" y="211" text-anchor="middle" font-size="11" fill="#7d7d7d">buckets, IAM role, access grant; password shown once</text>
+  <text x="355" y="211" text-anchor="middle" font-size="11" fill="#7d7d7d">buckets, IAM role, password shown once</text>
 
   <line x1="355" y1="225" x2="355" y2="265" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
 
