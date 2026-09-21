@@ -4,8 +4,8 @@
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
+#include <Common/scope_guard_safe.h>
 #include <algorithm>
-#include <exception>
 #include <future>
 #include <optional>
 #include <utility>
@@ -349,9 +349,17 @@ void FunctionBaseAI::embedTexts(
     /// Batches go out in waves of `concurrency` and each completed wave is applied before the next
     /// one starts, so at most that many of this call's requests are in flight at a time.
     VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
-    VectorWithMemoryTracking<std::optional<AIEmbeddingResponse>> responses;
     wave.reserve(concurrency);
-    responses.reserve(concurrency);
+
+    /// Any exit from here on - a scheduling failure, a failed batch, an exception while applying a
+    /// response - leaves the rest of the wave running. Wait for it, so the API-call and token usage
+    /// those requests report still reaches this query: they were dispatched and billed either way.
+    /// On the normal path every future has been consumed, so this is a no-op.
+    SCOPE_EXIT_SAFE({
+        for (auto & request : wave)
+            if (request.valid())
+                request.wait();
+    });
 
     auto batch_bounds = [&](size_t batch)
     {
@@ -387,37 +395,16 @@ void FunctionBaseAI::embedTexts(
             wave.push_back(ai_service.submitEmbedding(provider, std::move(ai_embedding_request), policy, quota));
         }
 
-        /// Wait for the whole wave before applying any of it, and keep draining past a failure:
-        /// every request the wave issued was dispatched and billed, and only a drained future has
-        /// reported its API-call and token usage.
-        responses.assign(wave.size(), std::nullopt);
-        std::exception_ptr error;
-        for (size_t k = 0; k < wave.size(); ++k)
-        {
-            if (!wave[k].valid())
-                continue;
-
-            try
-            {
-                responses[k] = wave[k].get();
-            }
-            catch (...)
-            {
-                if (!error)
-                    error = std::current_exception();
-            }
-        }
-
-        if (error)
-            std::rethrow_exception(error);
-
         for (size_t k = 0; k < wave.size(); ++k)
         {
             auto [begin, end] = batch_bounds(wave_begin + k);
 
             /// Nothing when no request was issued for this batch, or when it failed and
             /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
-            auto & ai_embedding_response = responses[k];
+            std::optional<AIEmbeddingResponse> ai_embedding_response;
+            if (wave[k].valid())
+                ai_embedding_response = wave[k].get();
+
             if (!ai_embedding_response)
             {
                 result.texts_skipped += end - begin;
@@ -496,9 +483,17 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// which gives up a little throughput next to a sliding window, but keeps row ordering, quota
     /// accounting and error propagation identical to issuing the requests one at a time.
     VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
-    VectorWithMemoryTracking<std::optional<AIResponse>> responses;
     wave.reserve(concurrency);
-    responses.reserve(concurrency);
+
+    /// Any exit from here on - a scheduling failure, a failed request, an exception while applying a
+    /// response - leaves the rest of the wave running. Wait for it, so the API-call and token usage
+    /// those requests report still reaches this query's `query_log` row: they were dispatched and
+    /// billed either way. On the normal path every future has been consumed, so this is a no-op.
+    SCOPE_EXIT_SAFE({
+        for (auto & request : wave)
+            if (request.valid())
+                request.wait();
+    });
 
     for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
     {
@@ -527,30 +522,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             wave.push_back(ai_service.submit(provider, std::move(ai_request), policy, quota_tracker));
         }
 
-        /// Wait for the whole wave before applying any of it, and keep draining past a failure:
-        /// every request the wave issued was dispatched and billed, and only a drained future has
-        /// reported its API-call and token usage.
-        responses.assign(wave.size(), std::nullopt);
-        std::exception_ptr error;
-        for (size_t k = 0; k < wave.size(); ++k)
-        {
-            if (!wave[k].valid())
-                continue;
-
-            try
-            {
-                responses[k] = wave[k].get();
-            }
-            catch (...)
-            {
-                if (!error)
-                    error = std::current_exception();
-            }
-        }
-
-        if (error)
-            std::rethrow_exception(error);
-
         for (size_t k = 0; k < wave.size(); ++k)
         {
             const size_t row = wave_begin + k;
@@ -566,7 +537,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             /// Nothing when no request was issued because the API-call quota was exhausted, or when
             /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
             /// keeps its default value.
-            const auto & ai_response = responses[k];
+            std::optional<AIResponse> ai_response;
+            if (wave[k].valid())
+                ai_response = wave[k].get();
+
             if (!ai_response)
             {
                 result_col->insertDefault();
