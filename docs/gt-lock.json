@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-21T11:12:37.169Z",
+          "updatedAt": "2026-09-21T23:02:11.278Z",
           "fileName": "docs.json",
           "postProcessHash": "56b7dc6bd5b3a0d44741ff71ed903092f335def96a122f23ffbaf560bccaff86"
         },
         "ja": {
-          "updatedAt": "2026-09-21T11:12:36.651Z",
+          "updatedAt": "2026-09-21T23:02:10.500Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-21T11:12:36.908Z",
+          "updatedAt": "2026-09-21T23:02:10.889Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-21T11:12:36.992Z",
+          "updatedAt": "2026-09-21T23:02:11.019Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-21T11:12:36.822Z",
+          "updatedAt": "2026-09-21T23:02:10.762Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-21T11:12:36.735Z",
+          "updatedAt": "2026-09-21T23:02:10.635Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-21T11:12:36.521Z",
+          "updatedAt": "2026-09-21T23:02:10.369Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-21T11:12:37.072Z",
+          "updatedAt": "2026-09-21T23:02:11.151Z",
           "fileName": "docs.json"
         }
       },
@@ -35069,51 +35069,50 @@
     },
     {
       "fileId": "ac7dc274bd41c64faa551e2ecc44b45ac6eed9f155c263287393cc7547b115d7",
-      "versionId": "0c7acd2d1b1c64b3633d64cc8de10e7b498f068007f5940b0d9afaaf691e4d77",
+      "versionId": "04237ff9c80a8e6771a0d094a87f2c95ab4c2c27382fd6452ef859b2d06a524e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.469Z",
-          "fileName": "es/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "c95a1f089fdbffad0e6f81512ba503d3696ef0f133bddb259fb962eee80dfe72"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.469Z",
-          "fileName": "ja/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "dd863114a3f51d938ed816df2fbc6990450f57d863b3759c8a47f7babe02f679"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.469Z",
-          "fileName": "ko/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "68152bcc033f0c9c28363766ff11f2c8b0d76066c23ba3e69661b6330a9550e6"
+        "ar": {
+          "updatedAt": "2026-09-21T23:02:14.578Z",
+          "fileName": "ar/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "fa5a70383208765687c959ad3f0b496b95312b384b661e05df570e9156a3b937"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.470Z",
+          "updatedAt": "2026-09-21T23:02:14.579Z",
           "fileName": "pt-BR/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "6f7da7726c3ca3aadcbeb277239404a30b85422207ae766e70410396827cf4e2"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.470Z",
-          "fileName": "ru/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "ab6d44337104ba6cec5016966aaab63520211ce2c92b80954bee0ae04187a036"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.470Z",
-          "fileName": "zh/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "46b75f2632835e7d3e15081e58c8641af4edfd1613a10228209ef6d22c263801"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.470Z",
-          "fileName": "ar/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "0fe6bc086a3e4182d05552c537a627b6f388370db0c468c98992a3be1774757b"
+          "postProcessHash": "cd603b90cd1f386d602097ca918cadb6abb29fcaf229d7641411c0bea88720bb"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.470Z",
+          "updatedAt": "2026-09-21T23:02:14.579Z",
           "fileName": "fr/guides/clickhouse/data-modelling/merge-table-function.mdx",
-          "postProcessHash": "621cd0123548c4b95c4f89b387fb92cbca9d6133888831df0ea02550667c4ea8"
+          "postProcessHash": "6fbd4c191d0667c8676e0b9b36f69154712bb8bcc5964af9966d0f6d03204d6e"
+        },
+        "ja": {
+          "updatedAt": "2026-09-21T23:02:14.579Z",
+          "fileName": "ja/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "6a15ba1ee139f4e7a42b21636683108386d3cd7e29b49bef77f1d269de9733a5"
+        },
+        "es": {
+          "updatedAt": "2026-09-21T23:02:14.580Z",
+          "fileName": "es/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "802e965cc92aa615903f19cb19166a557985d4cb7201f0fd930b6dbd763292bf"
+        },
+        "ru": {
+          "updatedAt": "2026-09-21T23:02:14.580Z",
+          "fileName": "ru/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "561175fdd3ab8471aa5c401a69ac3a4b1355216d4bb6198d4a4f0ece4ae8651b"
+        },
+        "zh": {
+          "updatedAt": "2026-09-21T23:02:14.580Z",
+          "fileName": "zh/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "f9109dbe50296907e4179823dd27cddfce114d0efcf8583bb39ebc6becbb3395"
+        },
+        "ko": {
+          "updatedAt": "2026-09-21T23:02:14.581Z",
+          "fileName": "ko/guides/clickhouse/data-modelling/merge-table-function.mdx",
+          "postProcessHash": "12461b6bc7a26c93643f0e70e214ddeeaf910ff0c0e9a031be1a361f13aa3838"
         }
       },
-      "fileName": "guides/clickhouse/data-modelling/merge-table-function.mdx",
-      "staged": false
+      "fileName": "guides/clickhouse/data-modelling/merge-table-function.mdx"
     },
     {
       "fileId": "9751210085d56d7711c016ab6e9df095ba942b297661e21a6912396620dd338f",
