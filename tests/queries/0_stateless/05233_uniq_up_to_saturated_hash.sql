@@ -5,6 +5,7 @@ SELECT
     uniqUpTo(10)(toString(number % 10)) AS threshold_10,
     uniqUpTo(10)(toString(number % 11)) AS threshold_10_plus_one,
     uniqUpTo(100)(toString(number % 100)) AS threshold_100,
+    uniqUpTo(1)(toUInt128(number % 2)) AS uint128_value,
     uniqUpTo(10)((toString(number % 10), number % 2)) AS tuple_value,
     uniqUpTo(1)(toString(number % 2), number % 2) AS variadic_value
 FROM numbers(1000);
