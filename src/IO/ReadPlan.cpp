@@ -151,12 +151,13 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
         {
             auto & held = tiers[i];
             chassert(resolved[i].tier == held.tier);
-            /// Skip cells before the held end - overhang the next `resolve` re-returns.
             size_t held_end = held.cells.empty() ? span_start : held.cells.back().range.end();
             for (auto & cell : resolved[i].cells)
             {
-                if (cell.range.offset < held_end)
+                if (cell.range.end() <= held_end)
                     continue;
+                if (cell.range.offset < held_end)
+                    cell.range = ByteRange{held_end, cell.range.end() - held_end};
                 held_end = cell.range.end();
                 held.cells.push_back(std::move(cell));
             }

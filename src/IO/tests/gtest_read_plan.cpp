@@ -194,6 +194,52 @@ TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
+TEST(ReadPlan, ExtendKeepsTheSuffixOfAStraddlingCell)
+{
+    /// A writer-less tier reports a segment from its own start at its live committed end, so a refill
+    /// re-returns it longer than the held copy. The grown suffix must stay covered.
+    ReadPlan plan;
+    plan.reset(0);
+    std::vector<CacheResolution> first;
+    first.push_back(hit({0, 2}));
+    plan.extend(2, tiers(tier(CacheTier::FilesystemCache, std::move(first))));
+
+    std::vector<CacheResolution> warmer;
+    warmer.push_back(hit({0, 4}));   /// same segment, now committed through 4
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(warmer))));
+
+    auto run = plan.runAt(2);
+    const auto * grown = as<ReadPlan::ServeFromReader>(run);
+    ASSERT_NE(grown, nullptr);
+    EXPECT_EQ(grown->range.end(), 4u);
+}
+
+TEST(ReadPlan, ExtendKeepsThePartialSegmentsWriter)
+{
+    /// A partial segment resolves as two cells from one start: the committed prefix as a hit, then the
+    /// whole extent as a miss carrying the writer. The miss must survive its own prefix hit.
+    ReadPlan plan;
+    plan.reset(0);
+    std::vector<CacheResolution> first;
+    first.push_back(hit({0, 2}));
+    plan.extend(2, tiers(tier(CacheTier::FilesystemCache, std::move(first))));
+
+    auto missed = miss({2, 4});                                /// segment [2,6)
+    static_cast<MockWriter *>(missed.writer.get())->commit({2, 2});   /// its frontier is at 4
+    std::vector<CacheResolution> partial;
+    partial.push_back(hit({2, 2}));                            /// committed prefix [2,4)
+    partial.push_back(std::move(missed));
+    plan.extend(6, tiers(tier(CacheTier::FilesystemCache, std::move(partial))));
+
+    EXPECT_EQ(plan.writersFor({4, 2}).size(), 1u);
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    /// The tail is a fetch that starts at the frontier, not below it.
+    auto tail = plan.runAt(4);
+    const auto * fetch = as<ReadPlan::Fetch>(tail);
+    ASSERT_NE(fetch, nullptr);
+    EXPECT_EQ(fetch->range.offset, 4u);
+}
+
 TEST(ReadPlan, DropAfterReleasesTheUnreachedTail)
 {
     std::vector<CacheResolution> c;
