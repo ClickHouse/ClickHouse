@@ -31,13 +31,22 @@ ${CLICKHOUSE_CLIENT} -q "SET query_rules = 'rule_04872_copy_to'; SELECT * FROM t
 
 # The COPY statements must succeed even though the session activates the rules matching their
 # synthesized implementation SQL.
+#
+# `COPY ... FROM STDIN` gets an invocation of its own, so that end of input terminates the data.
+# The `\.` marker would do the same, but it is a psql-side convention rather than part of the
+# wire protocol - psql is supposed to consume the line and send `CopyDone` - and a client that
+# instead forwards it hands the server a row that is not data. Ending the input says the same
+# thing with nothing to get wrong, and this test is about the rules, not about that marker.
 psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only 2>&1 <<'EOF'
 SET query_rules = 'rule_04872_copy_from, rule_04872_copy_to';
 COPY tbl_04872 FROM STDIN;
 1
 2
 3
-\.
+EOF
+
+psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only 2>&1 <<'EOF'
+SET query_rules = 'rule_04872_copy_from, rule_04872_copy_to';
 COPY tbl_04872 TO STDOUT;
 SELECT count() AS copied_rows FROM tbl_04872;
 EOF
