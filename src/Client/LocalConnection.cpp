@@ -153,6 +153,11 @@ void LocalConnection::sendProfileEvents()
 
 void LocalConnection::captureCurrentException()
 {
+    /// Stop the executors before `onException`, as `finishQuery` does before `onFinish`:
+    /// `onException` logs the processors' profile counters, which the executor threads write.
+    state->executor.reset();
+    state->pushing_async_executor.reset();
+    state->pushing_executor.reset();
     state->io.onException();
     try
     {
