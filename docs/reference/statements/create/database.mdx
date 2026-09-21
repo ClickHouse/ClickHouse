@@ -57,6 +57,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 
 ### SETTINGS {#settings}
 
+The `SETTINGS` clause may be used without an `ENGINE` clause, in which case the default database engine
+(`Atomic`) is used. It may hold both settings of the database engine and ordinary query settings; each
+name is dispatched to whichever of the two it belongs to.
+
+#### disk {#disk}
+
+The disk used to store the table metadata files of the database. It can name a disk from the server
+configuration, or define one inline with the `disk` function, the same way a single table does:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Applies to database engines that store table metadata on disk (`Atomic`, `Ordinary`). If unspecified,
+the disk defined in the `database_disk.disk` server setting is used.
+
 #### lazy_load_tables {#lazy-load-tables}
 
 When enabled, tables are not fully loaded during database startup. Instead, a lightweight proxy is created for each table and the real table engine is materialized on first access. This reduces startup time and memory usage for databases with many tables where only a subset is actively queried.
