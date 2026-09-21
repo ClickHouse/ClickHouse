@@ -19,12 +19,12 @@
     <fill_query>
         INSERT INTO object_bulk VALUES
         (
-            '{"n":42,"s":"repeated"}',
-            '{"n":42,"s":"repeated"}',
-            '{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":"one","j":"two","k":"three","l":"four","m":"five","n":"six","o":"seven","p":"eight"}',
-            '{"s":"repeated"}',
-            '{"a":1,"b":2,"c":"three","d":"four"}',
-            '{"n":42,"a":"dynamic","b":"shared"}'
+            '{{"n":42,"s":"repeated"}}',
+            '{{"n":42,"s":"repeated"}}',
+            '{{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":"one","j":"two","k":"three","l":"four","m":"five","n":"six","o":"seven","p":"eight"}}',
+            '{{"s":"repeated"}}',
+            '{{"a":1,"b":2,"c":"three","d":"four"}}',
+            '{{"n":42,"a":"dynamic","b":"shared"}}'
         )
     </fill_query>
 
@@ -38,7 +38,7 @@
     <create_query>CREATE TABLE object_bulk_arrays (a Array(JSON)) ENGINE = Memory</create_query>
     <fill_query>
         INSERT INTO object_bulk_arrays
-        SELECT arrayMap(x -&gt; ('{"n":' || toString(x) || ',"s":"repeated"}')::JSON, range(1024))
+        SELECT arrayMap(x -&gt; ('{{"n":' || toString(x) || ',"s":"repeated"}}')::JSON, range(1024))
         FROM numbers(1024)
     </fill_query>
     <query>SELECT arrayFill(x -&gt; 0, a) FROM object_bulk_arrays FORMAT Null</query>
