@@ -9,7 +9,7 @@ GIT_ROOT_DIR=$(git -C "$currentDir" rev-parse --show-toplevel)
 TESTS_LIB_DIR="${GIT_ROOT_DIR}/ci/tmp/docker-library/official-images/test"
 
 CLICKHOUSE_TEST_SLEEP=3
-CLICKHOUSE_TEST_TRIES=5
+CLICKHOUSE_TEST_TRIES=${CLICKHOUSE_TEST_TRIES:-5}
 CLICKHOUSE_TEST_LOG_LINES=50
 
 function cname {
