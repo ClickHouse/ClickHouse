@@ -586,6 +586,7 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
 
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
+    /// TODO: Change to READ_WRITE. (Be careful to not break any existing users with READ but not READ_WRITE permissions.)
     request_body.set("operation", "READ");
 
     auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
