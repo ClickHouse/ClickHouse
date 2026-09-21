@@ -187,6 +187,14 @@ common_ft_job_config = Job.Config(
             # takes effect when the digest keeps the job alive.
             "./ci/jobs/scripts/find_tests.py",
             "./ci/praktika/result.py",
+            # `find_tests.py` selects the targeted and selected arms from CIDB
+            # (`get_all_relevant_tests_with_info` queries `CIDB` and reads
+            # `Info`), so both modules decide which tests this job runs and
+            # belong here for the same reason. The other CI-level entries of
+            # `_STATELESS_HARNESS_PATHS` stay out: they drive job orchestration
+            # and the job itself never reads them.
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
