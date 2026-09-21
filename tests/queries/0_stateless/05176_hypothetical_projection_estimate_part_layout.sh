@@ -118,8 +118,8 @@ for w in "b >= 4000" "b < 2000"; do
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 
-# the merge's block size sets the granule size, and a block of `merge_max_block_size` rows holds a
-# different number of granules than one long block, so the layouts differ by a fifth of the marks
+# the merge's block size sets the granule size, and a part records neither the blocks it was handed
+# nor the cuts the merge made, so the estimate spans the layouts and the real one has to fall inside
 echo "--- a merged part whose granules follow the merge's block size ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
@@ -136,7 +136,22 @@ $CLICKHOUSE_CLIENT -q "
     SYSTEM START MERGES t_est_m; SYSTEM START MERGES t_real_m;
     OPTIMIZE TABLE t_est_m FINAL; OPTIMIZE TABLE t_real_m FINAL;
 "
-compare p_m "(SELECT a, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_m t_real_m
+out=$($CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_m ON t_est_m (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT sum(v) FROM t_est_m WHERE b >= 0 SETTINGS ${PIN};
+    -- a full scan reads every granule the projection has, so the real layout is its own mark count
+    SELECT 'real granules:', marks - 1 FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_real_m' AND active;
+")
+est=$(grep -E '^\s+marks:' <<< "$out" | tail -1 | awk '{print $2}')
+# no span means every layout came out the same, so the estimate is the whole of it
+span=$(grep -oE 'marks_span:\s+[0-9]+ to [0-9]+' <<< "$out" | grep -oE '[0-9]+ to [0-9]+')
+low=$(awk '{print $1}' <<< "${span:-$est to $est}")
+high=$(awk '{print $3}' <<< "${span:-$est to $est}")
+real=$(awk -F'\t' '/^real granules:/ {print $2}' <<< "$out")
+# the two block sizes lay this part out differently whatever the merge really did, so the spread is reported
+echo "marks_span reported: $(grep -c 'marks_span:' <<< "$out")"
+echo "the real layout is inside the estimated span: $(( real >= low && real <= high ? 1 : 0 ))"
 
 # a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
 

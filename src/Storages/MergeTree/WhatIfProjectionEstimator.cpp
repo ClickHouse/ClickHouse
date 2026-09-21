@@ -607,6 +607,8 @@ bool tryEstimateProjection(
 
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
+    result.estimated_marks_low = marks_low;
+    result.estimated_marks_high = marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
     /// fewer marks never loses, so the estimate decides only when both layouts agree
     auto would_win = [&](UInt64 marks)
@@ -626,12 +628,10 @@ bool tryEstimateProjection(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, and the projection would read {} to {} marks depending on the blocks the "
-            "writer is handed, which a part does not record",
+            "{} against {} from the base table, and the layout a merge would leave is not recorded in a part, so the "
+            "comparison comes out both ways over `marks_span`",
             marks_text(projection_marks),
-            baseline_marks,
-            marks_low,
-            marks_high);
+            baseline_marks);
     }
     else if (projection_marks != baseline_marks)
     {

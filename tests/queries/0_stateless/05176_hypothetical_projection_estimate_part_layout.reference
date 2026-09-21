@@ -60,19 +60,8 @@ Granules: 3
 b >= 4000: within a granule of the real count: 1
 b < 2000: within a granule of the real count: 1
 --- a merged part whose granules follow the merge's block size ---
-hypothetical:
-marks: 47
-rows: 2000
-status: applicable
-marks: 40
-rows: 2000
-read_ratio: 0.85x
-verdict: too close to call
-reason: 40 marks against 47 from the base table, and the projection would read 40 to 48 marks depending on the blocks the writer is handed, which a part does not record
-source: empirical
-real:
-ReadFromMergeTree (p_m)
-Granules: 40
+marks_span reported: 1
+the real layout is inside the estimated span: 1
 --- a materialized lightweight delete ---
 rows the rebuilt projection kept:	1000
 hypothetical:

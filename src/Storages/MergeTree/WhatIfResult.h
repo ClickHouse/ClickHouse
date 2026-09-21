@@ -31,6 +31,9 @@ struct WhatIfCandidateResult
 
     /// projections only, what the projection read would touch and whether the optimizer would switch to it
     std::optional<UInt64> estimated_rows;
+    /// the marks the projection would read under each layout the writer could have produced, set when they differ
+    UInt64 estimated_marks_low = 0;
+    UInt64 estimated_marks_high = 0;
     String verdict;
     String verdict_reason;
 

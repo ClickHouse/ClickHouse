@@ -39,6 +39,10 @@ void WhatIfResult::format(WriteBuffer & out) const
             writeString(fmt::format("  marks:        {}\n", *idx.estimated_marks), out);
         if (idx.estimated_rows)
             writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
+        /// the layout a projection part would get is not recorded in a part, so the estimate can only span them
+        if (idx.estimated_marks_high > idx.estimated_marks_low)
+            writeString(
+                fmt::format("  marks_span:   {} to {}\n", idx.estimated_marks_low, idx.estimated_marks_high), out);
 
         /// only for indexes
         if (idx.kind == WhatIfCandidateResult::Index && idx.estimated_marks && baseline_marks > 0 && baseline_est_bytes > 0)
