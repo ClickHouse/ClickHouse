@@ -179,7 +179,7 @@ As in a plain query, a reference from a nested subquery or from another CTE to a
 The query of a materialized view is always analyzed and executed with this setting enabled.
 A new materialized view definition therefore cannot set it: it is rejected whenever the setting is changed or reset by any `SETTINGS` clause inside it, including one on a nested subquery.
 The check looks at the effective value, so `compatibility` and `profile` clauses that turn the setting off are rejected too.
-A `VIEW` or parameterized view definition may turn the setting off in a `SETTINGS` clause of its own; it then stores a nested reference as a table name of the definition's database, exactly as the same query resolves that name when it is run directly.
+A `VIEW` or parameterized view definition may turn the setting off in a `SETTINGS` clause of its own; it then stores a nested reference as a table name in the current database of the `CREATE`, exactly as the same query resolves that name when it is run directly.
 This applies to a plain CTE as well as to a `MATERIALIZED` one.
 A materialized view created before this rule that turns the setting off keeps loading from disk, replaying from a `Replicated` database log and attaching.
 The server log gets a warning when the definition names the setting, but not when it turns it off through `compatibility` or `profile`.
