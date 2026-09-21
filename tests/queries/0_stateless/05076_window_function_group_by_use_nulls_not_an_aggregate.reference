@@ -25,6 +25,10 @@ b	3	String	Nullable(String)
 a	1	1	1	\N
 b	1	1	1	\N
 \N	1	1	1	\N
+-- through the `*` matcher and an APPLY transformer, which carries its own aggregate-name guard
+('a','Nullable(String)')
+('a','Nullable(String)')
+('a','Nullable(String)')
 -- HAVING beside the window
 a	1
 b	1

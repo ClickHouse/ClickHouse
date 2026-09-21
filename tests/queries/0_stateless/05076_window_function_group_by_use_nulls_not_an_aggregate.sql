@@ -46,6 +46,10 @@ SELECT k,
     lagInFrame(k) OVER (PARTITION BY k ORDER BY k) AS d
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
 
+SELECT '-- through the `*` matcher and an APPLY transformer, which carries its own aggregate-name guard';
+SELECT * APPLY (x -> (min(x) OVER (), any(toTypeName(x)) OVER ()))
+FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
+
 SELECT '-- HAVING beside the window';
 SELECT k, rank() OVER (PARTITION BY k) AS r
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP HAVING k IS NOT NULL ORDER BY ALL;
