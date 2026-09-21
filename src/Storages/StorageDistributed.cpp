@@ -1620,9 +1620,12 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem:
     const auto new_name = fmt::format(
         "{}{}", unrecognized_directory_queue_prefix, sipHash128String(dir_path.filename().string()));
     std::filesystem::rename(dir_path, parent_path / new_name);
-    LOG_ERROR(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
-                   "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'",
-                   parent_path.string(), new_name);
+    /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
+    /// the old directory names meets this on the first start of every table with a non-empty
+    /// queue, and it is the expected handling of it, not a failure of the server.
+    LOG_WARNING(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
+                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'",
+                     parent_path.string(), new_name);
 }
 
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
