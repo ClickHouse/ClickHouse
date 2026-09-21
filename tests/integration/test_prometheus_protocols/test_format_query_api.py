@@ -142,8 +142,11 @@ def test_features_without_table():
     assert response_json["status"] == "success"
 
     features = response_json["data"]
-    assert set(features) == {"promql", "promql_functions", "promql_operators"}
+    assert set(features) == {"api", "promql", "promql_functions", "promql_operators"}
 
+    expected_api = {
+        "label_values_match", "query_warnings", "time_range_labels", "time_range_series",
+    }
     expected_promql = {
         "at_modifier", "bool", "by", "group_left", "group_right",
         "ignoring", "negative_offset", "offset", "on", "per_query_lookback_delta",
@@ -174,6 +177,7 @@ def test_features_without_table():
         "topk", "unless",
     }
 
+    assert set(features["api"]) == expected_api
     assert set(features["promql"]) == expected_promql
     assert set(features["promql_functions"]) == expected_functions
     assert set(features["promql_operators"]) == expected_operators
