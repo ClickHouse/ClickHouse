@@ -18,11 +18,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `enable_analyzer` has to be a session value, not a per-query one: a subquery may not change it
-# relative to the top level, and the plan assertions below read `EXPLAIN` from a subquery, so a
-# query-level pin fails outright wherever the session value is 0 (as in the `old analyzer` lane).
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer=1"
-
 DATA_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/03229_qcc_join_runtime_filter.parquet"
 
 # The row group size must be a table-level setting: the `File` sink writes with the format settings

@@ -4,7 +4,6 @@
 -- Tests that a join runtime filter sitting in a read step's PREWHERE does not populate the query
 -- condition cache, and that the two filters which legitimately may sit there still do.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 1;
