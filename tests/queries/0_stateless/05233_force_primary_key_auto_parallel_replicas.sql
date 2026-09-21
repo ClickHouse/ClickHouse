@@ -31,18 +31,19 @@ SETTINGS force_primary_key = 1, max_rows_to_read = 3; -- { serverError INDEX_NOT
 SELECT v FROM t_usable_pk WHERE k >= 10 ORDER BY v
 SETTINGS force_primary_key = 1, max_rows_to_read = 3; -- { serverError TOO_MANY_ROWS }
 
--- D. The row limit must still bite when parallel replicas really are used: mode 0 leaves
--- enable_parallel_replicas on the executed plan, which is the only case where the estimate replaces
--- an analysis the executed read would otherwise have reused.
-SET automatic_parallel_replicas_mode = 0;
-SELECT v FROM t_usable_pk WHERE k >= 10 ORDER BY v
-SETTINGS force_primary_key = 1, max_rows_to_read = 3; -- { serverError TOO_MANY_ROWS }
-
 -- C. Same as A without parallel replicas.
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 0;
 SELECT v FROM t_unusable_pk WHERE startsWith(CAST(s, 'FixedString(40)'), '11') ORDER BY v
 SETTINGS force_primary_key = 1, max_rows_to_read = 3; -- { serverError INDEX_NOT_USED }
+
+-- D. The row limit must still bite when parallel replicas really are used: mode 0 leaves
+-- enable_parallel_replicas on the executed plan, which is the only case where the estimate replaces
+-- an analysis the executed read would otherwise have reused.
+SET enable_parallel_replicas = 1;
+SET automatic_parallel_replicas_mode = 0;
+SELECT v FROM t_usable_pk WHERE k >= 10 ORDER BY v
+SETTINGS force_primary_key = 1, max_rows_to_read = 3; -- { serverError TOO_MANY_ROWS }
 
 -- E. Same as A through automatic_parallel_replicas_mode = 1.
 -- automatic_parallel_replicas_min_bytes_per_replica = 0 switches the pre-planning size gate off, so
