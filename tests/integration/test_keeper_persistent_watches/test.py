@@ -168,7 +168,7 @@ def test_persistent_recursive_watch(started_cluster):
     client.set(CHILD_NODE, b"3")
     event_lock.wait(5)
     assert len(events) == 2
-    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["path"] == CHILD_NODE
 
     event_lock.clear()
     client.set(FAKE_PATH, b"999")
@@ -279,7 +279,7 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     client.set(CHILD_NODE, b"3")
     event_lock.wait(5)
     assert len(events) == 2
-    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["path"] == CHILD_NODE
     assert events[-1]["type"] == "CHANGED"
     assert events[-1]["state"] == "CONNECTED"
 
