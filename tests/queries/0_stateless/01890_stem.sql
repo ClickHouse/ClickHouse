@@ -154,6 +154,17 @@ SELECT countIf(hex(s) != '756167C4B1')
 FROM (SELECT stem(materialize('uag'), 'tr') AS s FROM numbers(6800))
 SETTINGS max_block_size = 1700;
 
+SELECT '-- Turkish also lengthens via a multi-byte substitution (3 bytes to 4 bytes).';
+SELECT hex(stem('aac', 'tr'));
+
+SELECT '-- Estonian lengthens by appending ASCII letters (4 bytes to 5 bytes), a different mechanism.';
+SELECT hex(stem('keeb', 'et'));
+
+SELECT '-- Estonian over a multi-block scan must also stay correct past the input-sized estimate.';
+SELECT countIf(hex(s) != '6B65657369')
+FROM (SELECT stem(materialize('keeb'), 'et') AS s FROM numbers(6800))
+SETTINGS max_block_size = 1700;
+
 SELECT '- Negative tests.';
 
 SELECT '-- Whitespace in a String input raises BAD_ARGUMENTS.';
