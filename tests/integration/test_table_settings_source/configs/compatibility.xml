@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The server-level `MergeTree` baseline takes `compatibility` from the global context, which the
+                 default profile sets, so every table created here starts from an older release's defaults. -->
+            <compatibility>23.3</compatibility>
+        </default>
+    </profiles>
+</clickhouse>

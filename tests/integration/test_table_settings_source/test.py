@@ -13,6 +13,16 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/merge_tree_settings.xml"],
     with_zookeeper=True,
+    # `test_config_source_survives_a_restart` restarts it.
+    stay_alive=True,
+)
+
+# `compatibility` rolls the `MergeTree` baseline back to an older release's defaults. `05058` covers that through
+# `clickhouse-local`; a server is what has a default profile, which is where the baseline reads it from - the rule
+# this pull request states in `Context::getMergeTreeSettings`.
+node_compat = cluster.add_instance(
+    "node_compat",
+    user_configs=["configs/compatibility.xml"],
 )
 
 
@@ -84,3 +94,57 @@ def test_config_assignment_is_reported_for_replicated(started_cluster):
 
     node.query("DROP TABLE tr SYNC")
 
+
+
+def test_compatibility_is_reported(started_cluster):
+    # A setting `compatibility` rolled back is not the engine's compiled-in default and nothing in the table's
+    # own definition put it there, so neither `default` nor `definition` would be the truth about it.
+    node_compat.query("DROP TABLE IF EXISTS tc SYNC")
+    node_compat.query("CREATE TABLE tc (x UInt64) ENGINE = MergeTree ORDER BY x")
+
+    rolled_back = node_compat.query(
+        "SELECT name, value != `default` FROM system.table_settings WHERE database = currentDatabase() "
+        "AND table = 'tc' AND source = 'compatibility' ORDER BY name"
+    ).splitlines()
+    # The exact set is whatever `23.3` changed since, so the assertion is on the rule, not on the list: every
+    # such setting holds a value that is not the compiled-in default, and there is at least one of them.
+    assert rolled_back, "compatibility = 23.3 rolled nothing back"
+    assert all(line.endswith("\t1") for line in rolled_back), rolled_back
+
+    # And a server whose profile does not set it attributes none of its settings that way.
+    node.query("DROP TABLE IF EXISTS t_no_compat SYNC")
+    node.query("CREATE TABLE t_no_compat (x UInt64) ENGINE = MergeTree ORDER BY x")
+    assert (
+        node.query(
+            "SELECT count() FROM system.table_settings WHERE database = currentDatabase() "
+            "AND table = 't_no_compat' AND source = 'compatibility'"
+        ).strip()
+        == "0"
+    )
+    node.query("DROP TABLE t_no_compat SYNC")
+
+    node_compat.query("DROP TABLE tc SYNC")
+
+
+def test_config_source_survives_a_restart(started_cluster):
+    # A restart loads the table from what it stored, and the `SETTINGS` clause stored there says nothing about
+    # the config section - the server's baseline does, and the table has to take it from there again.
+    node.query("DROP TABLE IF EXISTS t_restart SYNC")
+    node.query("CREATE TABLE t_restart (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 4096")
+
+    assert source_of("max_suspicious_broken_parts", "t_restart") == "config"
+    assert source_of("index_granularity", "t_restart") == "definition"
+
+    node.restart_clickhouse()
+
+    assert source_of("max_suspicious_broken_parts", "t_restart") == "config"
+    assert source_of("index_granularity", "t_restart") == "definition"
+    assert (
+        node.query(
+            "SELECT value FROM system.table_settings WHERE database = currentDatabase() "
+            "AND table = 't_restart' AND name = 'max_suspicious_broken_parts'"
+        ).strip()
+        == "7"
+    )
+
+    node.query("DROP TABLE t_restart SYNC")
