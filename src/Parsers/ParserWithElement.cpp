@@ -171,7 +171,19 @@ Materializing ensures all references see the same data.
 If a materialized CTE is only referenced once, ClickHouse automatically inlines it back into a regular subquery to avoid unnecessary overhead.
 </Tip>
 
-Materialized CTEs can be used in the definitions of views, parameterized views and materialized views. The CTE is materialized when the view is read, or, for a materialized view, when its query runs on insert, `POPULATE` or refresh, as long as `enable_materialized_cte` is enabled where that query runs: in the reading or inserting session, or in the definition's own `SETTINGS` clause (a refresh runs with the server defaults, so a refreshable materialized view needs the clause). As in a plain query, a reference from a nested subquery or from another CTE to a CTE of an enclosing `SELECT` requires `enable_global_with_statement`, and the query of a materialized view is always analyzed and executed with this setting enabled. A new materialized view definition therefore cannot set it: the definition is rejected whenever the setting is changed or reset by any `SETTINGS` clause inside it, including one on a nested subquery. The check looks at the effective value, so `compatibility` and `profile` clauses that turn the setting off are rejected too. A definition of any view kind that turns the setting off in a `SETTINGS` clause of its own stores such a reference as a table name of the definition's database, for a plain CTE as well as for a `MATERIALIZED` one, exactly as the same query resolves that name when it is run directly. A materialized view created before this rule that turns the setting off keeps loading, with a warning in the server log when the definition names the setting instead of turning it off through `compatibility` or `profile`; its `MATERIALIZED` references are kept like everywhere else, so a nested reference to the CTE is resolved as a table name in that definition, as in a plain query.
+Materialized CTEs can be used in the definitions of views, parameterized views and materialized views.
+The CTE is materialized when the view is read, or, for a materialized view, when its query runs on insert, `POPULATE` or refresh.
+This requires `enable_materialized_cte` to be enabled where that query runs: in the reading or inserting session, or in the definition's own `SETTINGS` clause.
+A refresh runs with the server defaults, so a refreshable materialized view needs the clause.
+As in a plain query, a reference from a nested subquery or from another CTE to a CTE of an enclosing `SELECT` requires `enable_global_with_statement`.
+The query of a materialized view is always analyzed and executed with this setting enabled.
+A new materialized view definition therefore cannot set it: it is rejected whenever the setting is changed or reset by any `SETTINGS` clause inside it, including one on a nested subquery.
+The check looks at the effective value, so `compatibility` and `profile` clauses that turn the setting off are rejected too.
+A `VIEW` or parameterized view definition may turn the setting off in a `SETTINGS` clause of its own; it then stores a nested reference as a table name of the definition's database, exactly as the same query resolves that name when it is run directly.
+This applies to a plain CTE as well as to a `MATERIALIZED` one.
+A materialized view created before this rule that turns the setting off keeps loading from disk, replaying from a `Replicated` database log and attaching.
+The server log gets a warning when the definition names the setting, but not when it turns it off through `compatibility` or `profile`.
+Its `MATERIALIZED` references are kept like everywhere else, so a nested reference to the CTE resolves as a table name, as in a plain query.
 
 ### Examples {#materialized-common-table-expressions-examples}
 
