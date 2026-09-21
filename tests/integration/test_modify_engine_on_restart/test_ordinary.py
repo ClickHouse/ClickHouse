@@ -121,7 +121,7 @@ def test_modify_engine_on_restart_clears_transaction_metadata(started_cluster):
     # `ATTACH TABLE ... AS REPLICATED` does. Transactions refuse to touch a table of an `Ordinary` database,
     # so the parts are written in an `Atomic` one and the table is renamed afterwards, which keeps them.
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
-    ch1.query(f"DROP TABLE IF EXISTS default.mt_txn SYNC")
+    ch1.query("DROP TABLE IF EXISTS default.mt_txn SYNC")
     ch1.query(
         sql=f"CREATE DATABASE {database_name} ENGINE = Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
