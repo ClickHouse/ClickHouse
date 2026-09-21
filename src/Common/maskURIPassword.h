@@ -115,7 +115,6 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
-/// The credential-carrying parameter names of the expression documented below.
 inline bool matchesPresignedURLCredentialName(std::string_view name)
 {
     static constexpr std::array<std::string_view, 5> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId", "sig"};
@@ -141,22 +140,17 @@ inline bool matchesPresignedURLCredentialName(std::string_view name)
     return false;
 }
 
-/// The same question asked of the name the storage endpoint sees: it percent-decodes a parameter
-/// name before authenticating, so an Azure SAS spelled `?%73ig=` authenticates exactly like `?sig=`
-/// and its signature has to be hidden as well. The decoding is a single pass, as the endpoint's is,
-/// so a twice-encoded `?%2573ig=` is not `sig` here and is not a credential there either. `+` is
-/// left alone, unlike in `maskSensitiveQueryParameters`: reading it as a space is
-/// `HTMLForm::readQuery`'s rule for ClickHouse's own HTTP handler, not the storage client's.
+/// The storage endpoint percent-decodes a parameter name before authenticating, so `?%73ig=`
+/// authenticates exactly like `?sig=`; a single pass, as the endpoint's is, so `?%2573ig=` is not a
+/// credential there either. `+` is a space to `HTMLForm::readQuery`, not to the storage client.
 inline bool isPresignedURLSecretParameterName(std::string_view name)
 {
     if (matchesPresignedURLCredentialName(name))
         return true;
 
-    /// Most names carry no escape, so the common case must not allocate.
     if (!name.contains('%'))
         return false;
 
-    /// Spelled out rather than taken from `<cctype>`, as elsewhere in this header.
     auto hex_digit = [](char c)
     {
         if ('0' <= c && c <= '9')
@@ -206,9 +200,8 @@ inline bool isPresignedURLSecretParameterName(std::string_view name)
   * `src/Common/tests/gtest_mask_uri_password.cpp` checks both, against re2 and against a table.
   *
   * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,
-  * `sr`, ...) states what that signature grants and stays visible. Two sibling sets deliberately
-  * differ: `BackupInfo::removeCredentialsFromS3URL` REMOVES them from a backup locator that must stay
-  * openable on restore, and `S3::URI`'s set decides whether `?` opens a presigned query.
+  * `sr`, ...) states what that signature grants and stays visible. `BackupInfo::removeCredentialsFromS3URL`
+  * keeps the old set: it REMOVES parameters from a locator that must stay openable on restore.
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
