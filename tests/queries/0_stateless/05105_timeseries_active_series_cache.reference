@@ -24,6 +24,9 @@ after alter to re-enable cache (first insert caches):
 after alter ttl on live cache (second insert skips tags):
 3
 4
+after reset to defaults (cached series skips tags insert):
+3
+5
 bounds stored: both inserts write tags:
 2
 2

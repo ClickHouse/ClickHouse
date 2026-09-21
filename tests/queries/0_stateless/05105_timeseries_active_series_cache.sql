@@ -95,6 +95,17 @@ SELECT 'after alter ttl on live cache (second insert skips tags):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
+-- Reset setting restores defaults (1000000 entries, 1800s TTL)
+ALTER TABLE ts_cache RESET SETTING tags_cache_max_series;
+ALTER TABLE ts_cache RESET SETTING tags_cache_ttl_seconds;
+
+INSERT INTO ts_cache (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(2050, 3), 5.0)]);
+
+SELECT 'after reset to defaults (cached series skips tags insert):';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
+
 -- 5. A table that stores min_time / max_time gets no cache, whatever tags_cache_max_series says:
 -- skipping its tags inserts would freeze the bounds a query prunes series by.
 DROP TABLE IF EXISTS ts_bounds;

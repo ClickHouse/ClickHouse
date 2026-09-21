@@ -439,8 +439,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                         getStorageID().getNameForLogs());
     }
 
-    if (auto cache = active_series_cache.get())
-        cache->clear();
+    active_series_cache.set(nullptr);
 
     for (auto target_kind : getTargetKinds())
     {
@@ -457,8 +456,15 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         }
     }
 
-    if (auto cache = active_series_cache.get())
-        cache->clear();
+    const auto & current_settings = *storage_settings.get();
+    const auto * tags_target = tryGetTarget(ViewTarget::Kind::Tags);
+    bool tags_is_inner = tags_target && tags_target->is_inner_table;
+    if (activeSeriesCacheAllowed(current_settings, tags_is_inner))
+    {
+        UInt64 max_series = current_settings[TimeSeriesSetting::tags_cache_max_series];
+        UInt64 ttl = current_settings[TimeSeriesSetting::tags_cache_ttl_seconds];
+        active_series_cache.set(std::make_unique<TimeSeriesActiveSeriesCache>(max_series, static_cast<UInt32>(ttl)));
+    }
 }
 
 
@@ -1355,10 +1361,11 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ALTER TABLE my_table MODIFY SETTING tags_cache_max_series = 500000;
 ALTER TABLE my_table MODIFY SETTING tags_cache_ttl_seconds = 7200;
-ALTER TABLE my_table RESET SETTING tags_cache_max_series;
+ALTER TABLE my_table MODIFY SETTING tags_cache_max_series = 0; -- Disables the cache
+ALTER TABLE my_table RESET SETTING tags_cache_max_series; -- Restores default (1000000)
 ```
 
-Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
+Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator. Modifying or truncating inner target tables directly is unsupported while the cache is active; use `TRUNCATE TABLE` on the outer `TimeSeries` table instead.
 
 The other settings can't be changed with `ALTER ... MODIFY SETTING`: most of them are baked into the schema of the inner tables at `CREATE` time,
 and the `version` setting is pinned automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).
@@ -1381,8 +1388,8 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `tags_cache_max_series` | UInt64 | 0 | Maximum number of active time series IDs cached in memory to skip redundant inserts into the inner `tags` table during ingest. The cache is active only for inner `tags` and when `store_min_time_and_max_time = 0`. Default is 0 (disabled). Can be altered after CREATE |
-| `tags_cache_ttl_seconds` | UInt64 | 3600 | Time-to-live in seconds for series IDs in the active series cache before they must be re-validated or written to the `tags` table again. Default is 3600 (1 hour). Can be altered after CREATE |
+| `tags_cache_max_series` | UInt64 | 1000000 | Maximum number of active time series IDs cached in memory to skip redundant inserts into the inner `tags` table during ingest. The cache is active only for inner `tags` and when `store_min_time_and_max_time = 0`. Default is 1000000 (1 million). Set to 0 to disable. Can be altered after CREATE |
+| `tags_cache_ttl_seconds` | UInt64 | 1800 | Time-to-live in seconds for series IDs in the active series cache before they must be re-validated or written to the `tags` table again. Default is 1800 (30 minutes). Can be altered after CREATE |
 | `version` | UInt64 | 5 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
