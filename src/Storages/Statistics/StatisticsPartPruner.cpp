@@ -307,9 +307,6 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
         for (const auto & [col_name, col_type] : nullable_only_columns)
             probe_columns.emplace_back(col_name, col_type);
 
-        /// Keep the probe side-effect-free: `getKeyConditionForEstimates` would otherwise put every
-        /// `KeyCondition`-used nullable-only column into `EXPLAIN` even when the sentinel check
-        /// below rejects them.
         if (KeyCondition * key_condition = getKeyConditionForEstimates(probe_columns, /*record_used_columns=*/ false))
         {
             DataTypes types;
@@ -344,35 +341,27 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     const auto column_names = columns.getNames();
 
     auto it = key_condition_cache.find(column_names);
-    KeyCondition * key_condition_ptr = nullptr;
     if (it != key_condition_cache.end())
+        return it->second.get();
+
+    ActionsDAG actions_dag(columns);
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
+
+    /// Pruning estimates must not run a query pipeline: only state that is already computed may be
+    /// read here.
+    auto new_key_condition = std::make_unique<KeyCondition>(
+        filter_dag, context, column_names, expression,
+        /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
+
+    if (new_key_condition->alwaysUnknownOrTrue())
     {
-        key_condition_ptr = it->second.get();
-    }
-    else
-    {
-        ActionsDAG actions_dag(columns);
-        auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
-
-        /// Pruning estimates must not run a query pipeline: only state that is already computed may be
-        /// read here.
-        auto new_key_condition = std::make_unique<KeyCondition>(
-            filter_dag, context, column_names, expression,
-            /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
-
-        if (new_key_condition->alwaysUnknownOrTrue())
-        {
-            key_condition_cache[column_names] = nullptr;
-            return nullptr;
-        }
-
-        auto & cached_key_condition = key_condition_cache[column_names];
-        cached_key_condition = std::move(new_key_condition);
-        key_condition_ptr = cached_key_condition.get();
-    }
-
-    if (!key_condition_ptr)
+        key_condition_cache[column_names] = nullptr;
         return nullptr;
+    }
+
+    auto & cached_key_condition = key_condition_cache[column_names];
+    cached_key_condition = std::move(new_key_condition);
+    auto * key_condition_ptr = cached_key_condition.get();
 
     if (record_used_columns)
     {

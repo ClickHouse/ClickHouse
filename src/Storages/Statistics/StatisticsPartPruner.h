@@ -30,10 +30,7 @@ public:
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
 private:
-    /// Get or create a `KeyCondition` for the given columns, using cache to avoid recreating for each part.
-    /// When `record_used_columns` is true, columns that the `KeyCondition` actually uses are merged
-    /// into `used_column_names` (reported by `EXPLAIN`). The constructor's nullable-only probe
-    /// passes false so rejected columns do not leak into the `Statistics` keys.
+    /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
     KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types, bool record_used_columns = true);
 
     /// Cache key_condition by column names to avoid recreating them for each part.

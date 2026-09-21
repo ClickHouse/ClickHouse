@@ -1,6 +1,4 @@
--- The nullable-only `KeyCondition` probe must not leak rejected columns into `EXPLAIN`.
--- A range predicate on `value_for_range` can prune parts; `!=` / OR-nested `IS NULL` on
--- nullable-only `basic` columns cannot, so they must not appear under `Statistics` `Keys`.
+-- `EXPLAIN` must not list nullable-only columns that the probe rejected.
 
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
@@ -21,16 +19,10 @@ CREATE TABLE test_explain_nullable_probe
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY tuple()
--- `nullable_serialization_version` is pinned: randomized `allow_sparse` enables the
--- sparsity-filter trivial count rewrite for `count()`, which replaces ReadFromMergeTree
--- in EXPLAIN and hides the `Statistics` index section.
 SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
 
--- Part 0: all NULL, pruned by `value_for_range > 150`.
 INSERT INTO test_explain_nullable_probe VALUES (0, NULL, NULL, NULL, NULL);
--- Part 1: below-range, pruned by `value_for_range > 150`.
 INSERT INTO test_explain_nullable_probe VALUES (1, 100, 'a', 'a', 'a');
--- Part 2: inside the range, kept.
 INSERT INTO test_explain_nullable_probe VALUES (2, 200, 'c', 'c', 'c');
 
 SELECT 'Rejected `!=` probe is not listed as a `Statistics` key';
