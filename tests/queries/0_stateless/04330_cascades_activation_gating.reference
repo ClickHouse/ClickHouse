@@ -19,7 +19,7 @@
 -- 6. Trivial count works under Cascades
 1000
 -- 7. A read without clone support is rejected (fail-close)
--- 8. A forced projection is ignored (still correct)
+-- 8. A forced projection falls back to local execution (still correct)
 0	99500
 1	99700
 2	99900
