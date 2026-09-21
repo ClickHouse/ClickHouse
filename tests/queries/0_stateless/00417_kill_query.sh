@@ -29,4 +29,4 @@ done
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 ASYNC SETTINGS kill_throw_if_noop = false"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 FORMAT TabSeparated SETTINGS kill_throw_if_noop = false"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 SYNC FORMAT TabSeparated SETTINGS kill_throw_if_noop = false"
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 1 TEST" &>/dev/null
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 1 TEST SETTINGS kill_throw_if_noop = false" &>/dev/null

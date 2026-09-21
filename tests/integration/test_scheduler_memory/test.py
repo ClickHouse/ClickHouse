@@ -366,7 +366,10 @@ def test_memory_reservation_concurrency():
 
     # Release reservations by killing all running queries.
     for qid in query_ids:
-        node.query(f"kill query where query_id = '{qid}' sync")
+        node.query(
+            f"kill query where query_id = '{qid}' sync "
+            "settings kill_throw_if_noop = false"
+        )
 
     for t in threads:
         t.join()
@@ -566,4 +569,3 @@ def test_admission_timeout_shared_budget_across_slot_and_memory():
         node.query("kill query where query_id = 'shared_budget_slot_holder' sync")
         mem.join()
         slot.join()
-
