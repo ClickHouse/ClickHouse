@@ -20,6 +20,17 @@ struct ASTTableExpression;
 class ApplyWithSubqueryVisitor
 {
 public:
+    using KeptCTEReferences = std::unordered_set<const IAST *>;
+
+    /// Replaces references to plain CTEs by copies of their bodies. References to `MATERIALIZED` CTEs stay
+    /// identifiers for the analyzer, which materializes the CTE once; they are returned so that
+    /// `AddDefaultDatabaseVisitor` leaves them unqualified. With a context, each subquery's own settings
+    /// decide which inherited names it sees.
+    static KeptCTEReferences visit(ASTPtr & ast, ContextPtr context = nullptr);
+    static KeptCTEReferences visit(ASTSelectQuery & select, ContextPtr context = nullptr);
+    static KeptCTEReferences visit(ASTSelectWithUnionQuery & select, ContextPtr context = nullptr);
+
+private:
     struct Data
     {
         std::map<String, ASTPtr> subqueries;
@@ -28,30 +39,15 @@ public:
         /// `subqueries` element is not substituted into a subquery whose settings hide it. Inherited
         /// `literals` are substituted either way.
         ContextPtr context;
-        /// Stored view definitions: `MATERIALIZED` CTEs are not expanded; their names are scoped like
-        /// `subqueries`, and the identifiers left in place are reported through `kept_cte_references` when set.
-        bool keep_materialized_cte = false;
         std::set<String> materialized_ctes;
-        std::unordered_set<const IAST *> * kept_cte_references = nullptr;
-        /// Keep mode: the scope each plain CTE's body was visited with, to classify its expansion copies.
+        /// Set during the second, read-only pass: the identifiers of the final tree that name a visible `MATERIALIZED` CTE.
+        KeptCTEReferences * kept_cte_references = nullptr;
+        /// The scope each plain CTE's body was visited with, to classify its expansion copies.
         std::map<String, std::shared_ptr<const Data>> cte_declaration_scopes;
     };
 
-    static void visit(ASTPtr & ast) { visit(ast, Data{}); }
-    static void visit(ASTPtr & ast, ContextPtr context)
-    {
-        Data data;
-        data.context = std::move(context);
-        visit(ast, data);
-    }
-    static void visit(ASTSelectQuery & select) { visit(select, {}); }
-    static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
-
-    /// Expands plain CTE references and leaves references to `MATERIALIZED` CTEs as identifiers for the
-    /// analyzer to resolve when the stored query runs. Returns the identifier nodes of the resulting AST.
-    static std::unordered_set<const IAST *> visitKeepingMaterializedCTEs(ASTSelectWithUnionQuery & select);
-
-private:
+    template <typename T>
+    static KeptCTEReferences visitTwice(T & ast, ContextPtr context);
     static void visit(ASTPtr & ast, const Data & data);
     static void visit(ASTSelectQuery & ast, const Data & data);
     static void visit(ASTSelectWithUnionQuery & ast, const Data & data);

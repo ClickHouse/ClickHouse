@@ -120,7 +120,7 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
-    /// Identifiers `ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs` left as CTE references.
+    /// Identifiers `ApplyWithSubqueryVisitor::visit` left as references to `MATERIALIZED` CTEs.
     void setKeptCTEReferences(std::unordered_set<const IAST *> references) { kept_cte_references = std::move(references); }
 
 private:

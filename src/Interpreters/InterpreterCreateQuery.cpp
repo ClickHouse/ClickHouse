@@ -1,6 +1,5 @@
 #include <array>
 #include <memory>
-#include <unordered_set>
 
 #include <filesystem>
 
@@ -2054,20 +2053,22 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         const bool is_fresh_definition = isFreshTableDefinition(mode, create.attach_short_syntax);
 
         /// Before the visitors and before the query is enqueued or forwarded, so an accepted definition is valid on
-        /// every replica; a replayed entry of an older initiator is not fresh and keeps the legacy expansion below.
+        /// every replica; a replayed entry of an older initiator is not fresh and is not checked.
         if (create.is_materialized_view && is_fresh_definition)
             SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
 
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
-        // A loaded or replayed materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
-        std::unordered_set<const IAST *> kept_cte_references;
-        if (create.is_materialized_view && !is_fresh_definition
-            && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
-            ApplyWithSubqueryVisitor::visit(*create.select);
-        else
-            kept_cte_references = ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*create.select);
+        // A fresh definition is classified with `enable_global_with_statement` on, so only the clauses written inside
+        // it hide an enclosing CTE name; a loaded or replayed definition is already qualified and gets no context.
+        ContextPtr definition_context;
+        if (is_fresh_definition)
+        {
+            auto context_copy = Context::createCopy(getContext());
+            context_copy->setSetting("enable_global_with_statement", Field{true});
+            definition_context = context_copy;
+        }
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
-        visitor.setKeptCTEReferences(std::move(kept_cte_references));
+        visitor.setKeptCTEReferences(ApplyWithSubqueryVisitor::visit(*create.select, definition_context));
         visitor.visit(*create.select);
     }
 

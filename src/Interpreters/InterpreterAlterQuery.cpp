@@ -2,11 +2,10 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
-#include <unordered_set>
-
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -458,8 +457,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
     }
 
-    /// Before the query is forwarded (ON CLUSTER, Replicated database), so an accepted command is valid on every
-    /// replica; a replayed command of an older initiator is not rejected here and keeps the legacy expansion below.
+    /// Before the query is forwarded (ON CLUSTER, Replicated database), so an accepted command is valid on every replica.
     if (modify_query)
         SelectQueryDescription::checkSettingsAllowedInMatView(*modify_query, getContext());
 
@@ -548,15 +546,15 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    std::unordered_set<const IAST *> kept_cte_references;
+    ApplyWithSubqueryVisitor::KeptCTEReferences kept_cte_references;
     if (modify_query)
     {
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
-        // Only a replayed command can still fix `enable_global_with_statement` here: it keeps the legacy full expansion.
-        if (SelectQueryDescription::fixesGlobalWithSetting(*modify_query))
-            ApplyWithSubqueryVisitor::visit(*modify_query);
-        else
-            kept_cte_references = ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*modify_query);
+        // The new definition is classified with `enable_global_with_statement` on, so only the clauses written inside
+        // it hide an enclosing CTE name.
+        auto definition_context = Context::createCopy(getContext());
+        definition_context->setSetting("enable_global_with_statement", Field{true});
+        kept_cte_references = ApplyWithSubqueryVisitor::visit(*modify_query, definition_context);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.

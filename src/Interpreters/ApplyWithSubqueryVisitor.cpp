@@ -108,7 +108,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         for (const auto & child : with->children)
         {
             const auto * ast_with_elem = child->as<ASTWithElement>();
-            if (!ast_with_elem || !scope.keep_materialized_cte || !ast_with_elem->is_materialized)
+            if (!ast_with_elem || !ast_with_elem->is_materialized)
                 continue;
             if (!new_data)
                 new_data = scope;
@@ -120,7 +120,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         for (auto & child : with->children)
         {
             auto * ast_with_elem = child->as<ASTWithElement>();
-            if (ast_with_elem && scope.keep_materialized_cte && ast_with_elem->is_materialized)
+            if (ast_with_elem && ast_with_elem->is_materialized)
             {
                 /// Inside its own body the name keeps the meaning it has in the enclosing scope.
                 chassert(new_data);
@@ -134,10 +134,9 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 continue;
             }
 
-            /// Keep mode: remember the scope a plain CTE's body is visited with, to classify its expansion copies.
-            const bool keep_plain = ast_with_elem && scope.keep_materialized_cte && !ast_with_elem->is_materialized;
+            /// Remember the scope a plain CTE's body is visited with, to classify its expansion copies.
             std::optional<Data> body_scope;
-            if (keep_plain)
+            if (ast_with_elem && !ast_with_elem->is_materialized)
                 body_scope = new_data ? *new_data : scope;
 
             visit(child, body_scope ? *body_scope : (new_data ? *new_data : scope));
@@ -176,6 +175,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 {
     if (table.database_and_table_name)
     {
+        chassert(table.database_and_table_name->as<ASTTableIdentifier>());
         auto table_id = table.database_and_table_name->as<ASTTableIdentifier>()->getTableId();
         if (table_id.database_name.empty())
         {
@@ -275,19 +275,37 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
     }
 }
 
-std::unordered_set<const IAST *> ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(ASTSelectWithUnionQuery & select)
+template <typename T>
+ApplyWithSubqueryVisitor::KeptCTEReferences ApplyWithSubqueryVisitor::visitTwice(T & ast, ContextPtr context)
 {
     Data data;
-    data.keep_materialized_cte = true;
+    data.context = context;
     /// Expanding a plain CTE clones its body, so classify the references only on the final tree.
-    visit(select, data);
+    visit(ast, data);
 
     /// The second pass only records the identifiers of the final tree; it transforms nothing, so the
     /// tree stays byte-for-byte what the first pass produced even when it descends into its clones.
-    std::unordered_set<const IAST *> kept_cte_references;
-    data.kept_cte_references = &kept_cte_references;
-    visit(select, data);
+    KeptCTEReferences kept_cte_references;
+    Data recording_data;
+    recording_data.context = std::move(context);
+    recording_data.kept_cte_references = &kept_cte_references;
+    visit(ast, recording_data);
     return kept_cte_references;
+}
+
+ApplyWithSubqueryVisitor::KeptCTEReferences ApplyWithSubqueryVisitor::visit(ASTPtr & ast, ContextPtr context)
+{
+    return visitTwice(ast, std::move(context));
+}
+
+ApplyWithSubqueryVisitor::KeptCTEReferences ApplyWithSubqueryVisitor::visit(ASTSelectQuery & select, ContextPtr context)
+{
+    return visitTwice(select, std::move(context));
+}
+
+ApplyWithSubqueryVisitor::KeptCTEReferences ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & select, ContextPtr context)
+{
+    return visitTwice(select, std::move(context));
 }
 
 }

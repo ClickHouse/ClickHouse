@@ -176,7 +176,7 @@ namespace
                     /// A name declared by a `WITH` list is not a table, so the dependencies of a view
                     /// are collected from a copy of its query with the CTE references expanded.
                     expanded_select = create.select->clone();
-                    ApplyWithSubqueryVisitor::visit(expanded_select);
+                    kept_cte_references = ApplyWithSubqueryVisitor::visit(expanded_select);
                     skip_asts.insert(create.select);
                     visitExpandedViewQuery(expanded_select, *this);
 

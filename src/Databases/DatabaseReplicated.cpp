@@ -46,7 +46,6 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
@@ -2342,13 +2341,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-    {
-        /// A materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
-        if (create.is_materialized_view && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
-            ApplyWithSubqueryVisitor::visit(*create.select);
-        else
-            ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*create.select);
-    }
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }

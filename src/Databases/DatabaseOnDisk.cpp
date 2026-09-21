@@ -28,7 +28,6 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -112,13 +111,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-    {
-        /// A materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
-        if (ast_create_query.is_materialized_view && SelectQueryDescription::fixesGlobalWithSetting(*ast_create_query.select))
-            ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
-        else
-            ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*ast_create_query.select);
-    }
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
