@@ -2662,11 +2662,6 @@ try
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
-
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);

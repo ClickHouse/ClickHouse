@@ -114,7 +114,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -1674,7 +1673,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
-            || !settings[Setting::allow_experimental_analyzer]
             /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
             /// by normal reads: those may exclude a granule whose only matching rows are deleted.
             || !settings[Setting::apply_deleted_mask]
