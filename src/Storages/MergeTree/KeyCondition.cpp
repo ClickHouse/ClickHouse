@@ -3068,10 +3068,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (indexes_mapping.empty())
         return false;
 
-    /// The sparse primary index intentionally stores ExponentialTimeDecaying
-    /// keys as a lossy UInt64 bucket. Set-index negation and exact membership
-    /// cannot use that bucket without additional collision handling, so leave
-    /// IN/NOT IN to the row-level predicate for now.
+    /// The sparse primary index stores the same UInt64 ordering key used by the
+    /// column comparator. Set indexes are not projected into that key domain yet,
+    /// so leave IN/NOT IN to the row-level predicate for now.
     if (std::ranges::any_of(
             data_types,
             [](const DataTypePtr & type)
@@ -4712,12 +4711,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
-        /// The sparse primary index stores ExponentialTimeDecaying as one UInt64
-        /// bucket per mark. A bucket collision is deliberately treated as "possibly equal":
-        /// weaken strict bounds to include the boundary bucket and mark the atom relaxed so
-        /// exact-count/projection optimizations still evaluate the row predicate. Negative
-        /// predicates are not safe under a lossy bucket because excluding one bucket could
-        /// exclude a different value that merely collided with the constant.
+        /// The sparse primary index stores the same UInt64 ordering key used by the
+        /// column comparator. Keep the row predicate active because index marks still
+        /// represent ranges of rows rather than complete values.
         const auto key_type_for_index = removeNullable(key_expr_type);
         if (isExponentialTimeDecayingFloat64(key_type_for_index))
         {
@@ -5863,7 +5859,7 @@ std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
         const Float64 time = tuple[1].safeGet<Float64>();
         if (!std::isfinite(value) || !std::isfinite(time))
             return std::nullopt;
-        return getExponentialTimeDecayingOrderingPrefix(
+        return getExponentialTimeDecayingOrderingKey(
             value, time, decay_type->getDecayLength());
     }
 
@@ -5952,8 +5948,8 @@ void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key
                     break;
                 }
 
-                /// One compact key represents two neighboring exact keys. Boundary
-                /// buckets are therefore inclusive and the atom is relaxed.
+                /// Keep boundary buckets inclusive and the atom relaxed so the row
+                /// predicate remains authoritative after sparse-index pruning.
                 element.range.left_included = true;
                 element.range.right_included = true;
                 element.relaxed = true;
@@ -5971,9 +5967,8 @@ void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key
             case RPNElement::FUNCTION_UNKNOWN:
                 break;
             default:
-                /// Excluding a lossy bucket (`!=`, `NOT IN`, etc.) can exclude a
-                /// colliding logical value. Sets and special predicates need their own
-                /// collision-aware projection before they can prune safely.
+                /// Sets and special predicates need their own projection into the
+                /// UInt64 ordering-key domain before they can prune safely.
                 element.function = RPNElement::FUNCTION_UNKNOWN;
                 element.range = Range::createWholeUniverse();
                 element.set_index.reset();
