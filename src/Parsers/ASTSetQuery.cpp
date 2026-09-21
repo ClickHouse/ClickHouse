@@ -63,8 +63,15 @@ static std::optional<String> renderSecretChangeValue(const SettingChange & chang
     for (const auto * settings_to_hide : engineSettingsToHide())
     {
         auto it = settings_to_hide->find(change.name);
-        if (it != settings_to_hide->end())
-            return it->second(change.value);
+        if (it == settings_to_hide->end())
+            continue;
+
+        /// A rule answers with the value to show in place of the secret - `[HIDDEN]`, or a URI with its password
+        /// taken out. This prints SQL, so the value becomes a literal here; `system.table_settings` prints the
+        /// value itself and takes it as it comes.
+        if (const auto masked = it->second(change.value))
+            return quoteString(*masked);
+        return {};
     }
 
     return {};
