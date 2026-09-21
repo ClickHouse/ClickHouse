@@ -66,19 +66,30 @@ String findDictionaryFunction(const IQueryPlanStep & step);
 
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
-/// `isSerializable` cannot tell, hence a DAG walk. The walk descends into lambda bodies, because
-/// `arrayMap(x -> dictGet(...), ...)` keeps the call in a DAG of its own (`findFunctionInSubtrees`).
+/// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
+/// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
 /// The check goes away once the workers receive the dictionaries a distributed plan reads.
 String findDictionaryFunction(const IQueryPlanStep & step)
 {
     auto find_in_dag = [](const ActionsDAG & dag) -> String
     {
-        std::vector<const ActionsDAG::Node *> roots;
+        String found;
+        auto is_dictionary_function = [&](const IFunctionBase & function)
+        {
+            if (!functionIsDictGet(function.getName()))
+                return false;
+            found = function.getName();
+            return true;
+        };
+
         for (const auto & node : dag.getNodes())
-            roots.push_back(&node);
-        const auto * function = findFunctionInSubtrees(
-            std::move(roots), [](const IFunctionBase & candidate) { return functionIsDictGet(candidate.getName()); });
-        return function ? function->getName() : String{};
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && is_dictionary_function(*node.function_base))
+                return found;
+            if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_dictionary_function))
+                return found;
+        }
+        return {};
     };
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
