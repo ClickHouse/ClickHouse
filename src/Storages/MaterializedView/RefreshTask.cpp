@@ -625,8 +625,7 @@ void RefreshTask::run()
     ContextPtr context;
     {
         std::lock_guard guard(mutex);
-        /// Not from a read-only replica: it never refreshes, so its request stays local and inert, as before.
-        if (coordination.coordinated && !coordination.unavailable && !coordination.read_only && view)
+        if (coordination.coordinated && !coordination.unavailable && view)
             context = view->getContext();
     }
     if (context)
@@ -1200,7 +1199,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
             for (auto & [znode, request] : coordination.other_replicas_requests)
             {
                 /// The requesting replica starts its refresh itself, unless a Keeper session timeout has passed since this replica
-                /// first saw the request pending with nothing running (e.g. it's stopped or gone): then any replica does. Wake up then.
+                /// first saw the request pending with nothing running (e.g. it's stopped, read-only or gone): then any replica does. Wake up then.
                 if (!request.pending_since)
                     request.pending_since = start_time;
                 auto deadline = *request.pending_since + std::chrono::milliseconds(zookeeper->getSessionTimeoutMS());
