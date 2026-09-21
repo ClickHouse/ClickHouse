@@ -4,13 +4,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISource.h>
@@ -25,7 +24,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
 {
@@ -36,7 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource final : public ISource
+class MergeTreeTextIndexSource : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -67,8 +65,6 @@ protected:
     Chunk generate() override
     {
         using enum PostingsSerialization::Flags;
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeTextIndexSource::generate");
 
         size_t total_rows = 0;
         size_t num_columns = header->columns();
@@ -104,12 +100,12 @@ protected:
                 else if (column_name == "part_name")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, current_part_name);
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "dictionary_compression")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, static_cast<Int8>(dict_block->tokens_format));
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "num_posting_blocks")
                 {
@@ -224,7 +220,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
+                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
 
                 if (sparse_index.empty())
                     continue;
@@ -259,8 +255,7 @@ private:
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
-        /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{sparse_index.tokens, string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -348,7 +343,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Build a KeyCondition for the `token` column to skip dictionary blocks
         /// whose token range does not match the filter.
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context);
 
         auto token_column = ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "token");
         auto key_expr = std::make_shared<ExpressionActions>(ActionsDAG({token_column}));
@@ -361,7 +356,10 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
+    /// Taken at read time: the storage outlives the query in a table created from the function before that was forbidden.
+    auto data_parts = dynamic_cast<const MergeTreeData &>(*storage->source_table).getDataPartsVectorForInternalUsage();
+    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(data_parts, virtual_columns_filter);
 
     if (filtered_parts.empty())
     {
@@ -403,32 +401,44 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StoragePtr & source_table_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
+    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
-
-    data_parts = merge_tree->getDataPartsVectorForInternalUsage();
-    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
+void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
+    const auto & client_info = context->getClientInfo();
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
+            "distributed query can execute it only when the cluster uses an interserver secret");
+
+    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+
+    /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
+    /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeTextIndex` because a row policy is applied on table {}. "
+            "The text index covers all rows of the table, so reading its tokens would violate the row policy",
+            source_storage_id.getNameForLogs());
 }
 
-void StorageMergeTreeTextIndex::readImpl(
+void StorageMergeTreeTextIndex::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -438,30 +448,7 @@ void StorageMergeTreeTextIndex::readImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto source_storage_id = source_table->getStorageID();
-    auto required_columns = text_index->getColumnsRequiredForIndexCalc();
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
-    /// If the row policy filter references any column required for building the index,
-    /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
-        NameSet row_policy_columns = columns_context.requiredColumns();
-
-        for (const auto & column_name : required_columns)
-        {
-            if (row_policy_columns.contains(column_name))
-            {
-                throw Exception(ErrorCodes::ACCESS_DENIED,
-                    "Cannot read from `mergeTreeTextIndex` because a row policy on column `{}` "
-                    "is applied on table {}. Reading text index tokens could violate the row policy",
-                    column_name, source_storage_id.getNameForLogs());
-            }
-        }
-    }
+    checkAccess(context, source_table->getStorageID(), *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

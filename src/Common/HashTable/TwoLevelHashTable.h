@@ -271,21 +271,8 @@ public:
     {
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
-        prefetchByHash(key_hash);
-        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
-        keyHolderDiscardKey(key_holder);
-    }
-
-    void ALWAYS_INLINE prefetchByHash(size_t key_hash) const
-    {
         const auto bucket = getBucketFromHash(key_hash);
         impls[bucket].prefetchByHash(key_hash);
-    }
-
-    bool ALWAYS_INLINE isEmptyCell(size_t key_hash) const
-    {
-        const auto bucket = getBucketFromHash(key_hash);
-        return impls[bucket].isEmptyCell(key_hash);
     }
 
     /** Insert the key,
@@ -376,16 +363,6 @@ public:
             res += impls[i].size();
 
         return res;
-    }
-
-    /// Walk the mapped values of every bucket. `TwoLevelHashMapTable` shadows this with its own; defined
-    /// here so that a two-level table over set buckets - which have no mapped values, so this visits
-    /// nothing - also satisfies generic code that iterates mapped values.
-    template <typename Func>
-    void ALWAYS_INLINE forEachMapped(Func && func)
-    {
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            impls[i].forEachMapped(func);
     }
 
     bool empty() const

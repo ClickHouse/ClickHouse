@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsIntersection final : public IFunction
+class FunctionPolygonsIntersection : public IFunction
 {
 public:
     static inline const char * name;
@@ -77,8 +77,6 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be LineString", getName());
             else if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
-            else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
                 auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());

@@ -5,7 +5,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
 builds_for_release_branch = [
-    job
+    job.unset_provides("unittest")
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
 ] + JobConfigs.release_build_jobs
@@ -28,12 +28,10 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
             if any(t in job.name for t in ("darwin",))
         ],
-        *JobConfigs.sign_macos_binary_jobs,
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
-        *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
         *[
             job
             for job in JobConfigs.integration_test_asan_master_jobs
@@ -52,10 +50,7 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_jobs,
     ],
     artifacts=[
-        *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
-        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
-        *ArtifactConfigs.clickhouse_darwin_signed_zips,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,

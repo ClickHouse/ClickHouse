@@ -2,6 +2,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
+#include <Access/resolveSetting.h>
 #include <Core/Settings.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -51,7 +52,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         if (id_mode)
             return parse<UUID>(name_);
-        chassert(access_control);
+        assert(access_control);
         return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
     };
 
@@ -300,9 +301,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-UUIDs SettingsProfileElements::toProfileIDs() const
+std::vector<UUID> SettingsProfileElements::toProfileIDs() const
 {
-    UUIDs res;
+    std::vector<UUID> res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)
@@ -369,7 +370,8 @@ void SettingsProfileElements::normalize()
         for (auto it = settings_begin; it != settings_end; ++it)
         {
             auto & element = *it;
-            auto first = setting_name_to_first_encounter.emplace(element.setting_name, it).first->second;
+            /// Under whichever name: both names of a `MergeTree` setting are one setting.
+            auto first = setting_name_to_first_encounter.emplace(canonicalSettingName(element.setting_name), it).first->second;
             if (it != first)
             {
                 auto & first_element = *first;
@@ -476,7 +478,7 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
     {
         for (auto & element : *this)
         {
-            if (element.setting_name == setting_name)
+            if (canonicalSettingName(element.setting_name) == canonicalSettingName(setting_name))
                 element.setting_name.clear();
         }
     };

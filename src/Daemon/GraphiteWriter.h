@@ -5,7 +5,6 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 
@@ -19,7 +18,7 @@ public:
     explicit GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
 
     template <typename T> using KeyValuePair = std::pair<std::string, T>;
-    template <typename T> using KeyValueVector = DB::VectorWithMemoryTracking<KeyValuePair<T>>;
+    template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;
 
     template <typename T> void write(const std::string & key, const T & value,
                                      time_t timestamp = 0, const std::string & custom_root_path = "")

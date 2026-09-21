@@ -36,7 +36,7 @@ CREATE DICTIONARY token_data_map
     is_blacklisted Bool
 )
 PRIMARY KEY token_address_hex, chain
-SOURCE(ClickHouse(table token_data))
+SOURCE(Clickhouse(table token_data))
 LIFETIME(MIN 200 MAX 300)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY());
 

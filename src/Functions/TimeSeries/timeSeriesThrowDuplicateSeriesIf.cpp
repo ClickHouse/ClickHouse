@@ -22,7 +22,7 @@ namespace ErrorCodes
 /// throws an exception with the following message "Multiple series have the same tags <tags>,
 /// duplicate series in the same result set are not allowed".
 /// If the `condition` is false the function returns 0.
-class FunctionTimeSeriesThrowDuplicateSeriesIf final : public IFunction
+class FunctionTimeSeriesThrowDuplicateSeriesIf : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesThrowDuplicateSeriesIf";
@@ -37,16 +37,6 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-
-    /// Function timeSeriesThrowDuplicateSeriesIf uses information stored in the query context, it's deterministic in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -175,13 +165,13 @@ REGISTER_FUNCTION(TimeSeriesThrowDuplicateSeriesIf)
 Checks the `condition` and if it's true throws an exception with the following message
 `Multiple series have the same tags <tags>, duplicate series in the same result set are not allowed`.
 If the `condition` is false the function returns `0`.
-This function is similar to [throwIf()](/reference/functions/regular-functions/other-functions#throwIf),
+This function is similar to [throwIf()](/sql-reference/functions/other-functions#throwIf),
 but uses a different error code and formats the error message differently.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesThrowDuplicateSeriesIf(condition, group)";
     FunctionDocumentation::Arguments arguments = {
         {"condition",
-         "Condition to check, usually contains function [count()](/reference/functions/aggregate-functions/count#count)",
+         "Condition to check, usually contains function [count()](/sql-reference/aggregate-functions/reference/count#count)",
          {"UInt8"}},
         {"group", "Group of tags.", {"UInt64"}},
     };

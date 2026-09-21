@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -69,14 +68,13 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the column with marks, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        /// TODO: make adaptive codec selection inside projections observable, e.g. by extending the `mergeTreeCodecBlockCounts` table function.
     }
     )
 {
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -85,7 +83,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
+    auto storage_metadata = info.storage->getInMemoryMetadataPtr();
     std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
     for (const auto & projection : storage_metadata->getProjections())
     {
@@ -110,7 +108,6 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
     {
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
-        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         chassert(parent_part);
 
         auto part_state = all_parts_state[part_number];
@@ -136,7 +133,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             size_t src_index = 0;
             size_t res_index = 0;
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
+                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -263,6 +260,3 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjectionPartsColumns) }

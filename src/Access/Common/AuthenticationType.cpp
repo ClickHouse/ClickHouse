@@ -1,7 +1,6 @@
-#include <algorithm>
-#include <Common/StringUtils.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Exception.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -17,7 +16,7 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
     static constexpr auto make_info = [](Keyword keyword_, bool is_password_ = false)
     {
         String init_name = String(toStringView(keyword_));
-        toLowerASCII(init_name);
+        boost::to_lower(init_name);
         return AuthenticationTypeInfo{keyword_, std::move(init_name), is_password_};
     };
 
