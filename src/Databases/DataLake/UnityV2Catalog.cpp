@@ -687,8 +687,9 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
 
     /// Built outside `token_mutex`: the `RestCatalog` ctor fetches `/v1/config` over the network,
     /// and holding the lock there would stall every Delta request waiting in `getBearerToken`.
-    /// With a token, the RestCatalog authenticates via the ready-made auth header, which puts it in header mode.
-    /// It never mints a token of its own, so every other auth parameter is left empty.
+    ///
+    /// UnityV2Catalog owns the token and the construction of the auth_header. Omit the other oauth settings --
+    /// they are only used to construct the oauth_header, so they don't need to be consumed by RestCatalog.
     auto catalog = std::make_shared<RestCatalog>(
         warehouse,
         iceberg_rest_url,
