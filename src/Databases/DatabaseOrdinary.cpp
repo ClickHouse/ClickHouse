@@ -525,8 +525,9 @@ void DatabaseOrdinary::loadTableLazy(
         return table;
     };
 
+    const bool is_alias = query.storage && query.storage->engine && query.storage->engine->name == "Alias";
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(columns), is_alias);
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

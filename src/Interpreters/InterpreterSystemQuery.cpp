@@ -75,6 +75,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -278,19 +279,31 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
 
+bool isAliasStorage(const IStorage & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(&storage))
+        return proxy->isAlias();
+    return storage.getName() == "Alias";
+}
+
+void checkSystemControlNotAlias(const IStorage & storage)
+{
+    if (isAliasStorage(storage))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SYSTEM controls are not supported for Alias tables");
+}
+
 }
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
 void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type, bool start)
 {
     auto manager = getContext()->getActionLocksManager();
-    manager->cleanExpired();
-
     auto access = getContext()->getAccess();
     auto required_access_type = getRequiredAccessType(action_type);
 
     if (volume_ptr && action_type == ActionLocks::PartsMerge)
     {
+        manager->cleanExpired();
         access->checkAccess(required_access_type);
         volume_ptr->setAvoidMergesUserOverride(!start);
     }
@@ -298,6 +311,9 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     {
         access->checkAccess(required_access_type, table_id.database_name, table_id.table_name);
         auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        if (table)
+            checkSystemControlNotAlias(*table);
+        manager->cleanExpired();
         if (table)
         {
             if (start)
@@ -311,6 +327,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
+        manager->cleanExpired();
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
@@ -337,6 +354,9 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
             LOG_INFO(log, "Access {} denied, skipping {}.{}", toString(required_access_type), database_name, iterator->name());
             continue;
         }
+
+        if (isAliasStorage(*table))
+            continue;
 
         if (start)
         {
@@ -2578,6 +2598,8 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS, table_id);
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, ctx))
+        checkSystemControlNotAlias(*table);
     auto tasks = ctx->getRefreshSet().findTasks(table_id);
     if (tasks.empty())
         throw Exception(
@@ -2610,8 +2632,8 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
         for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            if (table && table->isStreamingStorage()
-                && access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, database_name, iterator->name()))
+            if (table && access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, database_name, iterator->name())
+                && !isAliasStorage(*table) && table->isStreamingStorage())
                 result.push_back(table);
         }
     }
@@ -2628,7 +2650,8 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
 
     auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-    const bool is_streaming = storage && storage->isStreamingStorage();
+    const bool is_alias = storage && isAliasStorage(*storage);
+    const bool is_streaming = storage && !is_alias && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
 
@@ -2644,6 +2667,8 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
 
     if (!storage)
         storage = DatabaseCatalog::instance().getTable(table_id, getContext()); /// throws UNKNOWN_TABLE
+
+    checkSystemControlNotAlias(*storage);
 
     if (is_streaming)
     {
