@@ -60,46 +60,7 @@ struct PlusImpl
 };
 
 struct NamePlus { static constexpr auto name = "plus"; };
-using FunctionPlusDelegate = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
-
-class FunctionPlus final : public IFunctionOverloadResolver
-{
-public:
-    static constexpr auto name = NamePlus::name;
-
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<FunctionPlus>(context_);
-    }
-
-    explicit FunctionPlus(ContextPtr context_) : delegate(context_) {}
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isVariadic() const override { return false; }
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        if (arguments.size() == 2)
-            assertExponentialTimeDecayingFloat64TypesCompatible(arguments[0].type, arguments[1].type, "plus");
-        return delegate.buildImpl(arguments, return_type);
-    }
-
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
-    {
-        return delegate.isInjective(sample_columns);
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() == 2)
-            assertExponentialTimeDecayingFloat64TypesCompatible(arguments[0], arguments[1], "plus");
-        return delegate.getReturnTypeImpl(arguments);
-    }
-
-private:
-    FunctionPlusDelegate delegate;
-};
+using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
 REGISTER_FUNCTION(Plus)
 {
