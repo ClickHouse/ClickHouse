@@ -1,17 +1,28 @@
--- `system.engine_settings` reports the value a table created now would get, so for an engine that reads
--- the creating context's settings the rows have to follow that context.
+-- `system.engine_settings` reports what a table created now would get. A creator resolves what a definition
+-- leaves out from the global context - `StorageFactory::Arguments::getContext` is the global context - so these
+-- rows describe the server and a `SET` in this session must not move them.
 
--- `Join` reads six of its settings from the context that creates the table.
+-- `Join` reads six of its settings that way.
+CREATE TEMPORARY TABLE readings (engine String, name String, value String);
+
 SET join_use_nulls = 0;
-SELECT name, value FROM system.engine_settings WHERE engine = 'Join' AND name = 'join_use_nulls';
+INSERT INTO readings SELECT engine, name, value FROM system.engine_settings
+WHERE engine = 'Join' AND name = 'join_use_nulls';
 SET join_use_nulls = 1;
-SELECT name, value FROM system.engine_settings WHERE engine = 'Join' AND name = 'join_use_nulls';
+INSERT INTO readings SELECT engine, name, value FROM system.engine_settings
+WHERE engine = 'Join' AND name = 'join_use_nulls';
 
--- A `Distributed` table takes `background_insert_batch` from `distributed_background_insert_batch` where its
--- own `SETTINGS` clause states nothing, so the engine's row has to take it from there too.
+-- A `Distributed` table takes `background_insert_batch` from the server's `distributed_background_insert_batch`
+-- where its own `SETTINGS` clause states nothing, so the engine's row has to be filled the same way.
 SET distributed_background_insert_batch = 0;
-SELECT name, value, changed FROM system.engine_settings
+INSERT INTO readings SELECT engine, name, value FROM system.engine_settings
 WHERE engine = 'Distributed' AND name = 'background_insert_batch';
 SET distributed_background_insert_batch = 1;
-SELECT name, value, changed, source FROM system.engine_settings
+INSERT INTO readings SELECT engine, name, value FROM system.engine_settings
 WHERE engine = 'Distributed' AND name = 'background_insert_batch';
+
+SELECT engine, name, uniqExact(value) AS readings_agree, count() FROM readings GROUP BY engine, name ORDER BY engine;
+
+-- The four settings filled that way are reported at all, and as unchanged while the server leaves them alone.
+SELECT name, changed, source FROM system.engine_settings
+WHERE engine = 'Distributed' AND name LIKE 'background_insert_%' ORDER BY name;

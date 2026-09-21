@@ -138,7 +138,9 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
     /// The `distributed` config section is applied to these, so they can differ from the compiled
     /// defaults, and this is the instance a new table starts from.
     auto settings = context->getDistributedSettings();
-    settings.applyBackgroundInsertDefaults(context->getSettingsRef());
+    /// From the global context, because that is what `StorageDistributed` fills them from - the creator reads
+    /// `StorageFactory::Arguments::getContext`, which is the global context.
+    settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
 
     auto described = settings.enumerateSettings();
     /// Filling a setting marks it changed even where it assigned the value it already had, and nothing records
