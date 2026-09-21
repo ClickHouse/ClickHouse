@@ -1305,10 +1305,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these
+                "./ci/tools/get_previous_release_tag.py",
+                "./ci/tools/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -2143,6 +2142,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
