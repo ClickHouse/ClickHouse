@@ -21,20 +21,33 @@
         SETTINGS index_granularity = 5;
     </create_query>
 
-    <!-- Each merge widens a part's value range past the sought keys, so the queries below are only comparable while the part layout the fills build stays in place. -->
+    <!-- Each merge widens a part's value range past the sought keys, and with squashing off a part holds exactly one source block,
+         so the queries below are only comparable while merges are held and the source block size is pinned rather than left to the default. -->
     <fill_query>SYSTEM STOP MERGES test_set_index</fill_query>
     <fill_query>SYSTEM STOP MERGES test_minmax_index</fill_query>
 
     <fill_query>
         INSERT INTO test_set_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65409, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
     </fill_query>
 
     <fill_query>
         INSERT INTO test_minmax_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65409, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(count() != 16, 'index_bulk_filtering: expected 16 active parts in test_set_index; the merge pin or the block size is not in effect')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'test_set_index' AND active
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(count() != 16, 'index_bulk_filtering: expected 16 active parts in test_minmax_index; the merge pin or the block size is not in effect')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'test_minmax_index' AND active
     </fill_query>
 
     <query>SELECT * FROM test_set_index WHERE x IN (1, 100000, 500000)</query>
