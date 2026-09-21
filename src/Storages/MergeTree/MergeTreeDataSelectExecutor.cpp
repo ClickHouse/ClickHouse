@@ -48,6 +48,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -2289,8 +2290,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
-            chassert((*index_columns)[column].column);
-            (*index_columns)[column].column->get(row, field);
+            const auto & value = (*index_columns)[column];
+            chassert(value.column);
+
+            if (containsExponentialTimeDecayingFloat64(value.type))
+                field = {index_columns.get(), row, column};
+            else
+                value.column->get(row, field);
+
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;

@@ -10,6 +10,67 @@
 namespace DB
 {
 
+namespace
+{
+
+bool typeContainsExponentialTimeDecaying(const IDataType & type)
+{
+    if (type.getTypeId() == TypeIndex::ExponentialTimeDecayingFloat64)
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (!found)
+            found = typeContainsExponentialTimeDecaying(child);
+    });
+    return found;
+}
+
+const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
+{
+    if (field.isExplicit() || !field.columns || field.column_idx >= field.columns->size())
+        return nullptr;
+
+    return &(*field.columns)[field.column_idx];
+}
+
+std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef & rhs)
+{
+    const auto * lhs_value = getColumnBackedValue(lhs);
+    const auto * rhs_value = getColumnBackedValue(rhs);
+
+    const auto * typed_value = lhs_value ? lhs_value : rhs_value;
+    if (!typed_value || !typed_value->type || !typeContainsExponentialTimeDecaying(*typed_value->type))
+        return std::nullopt;
+
+    if (lhs_value && rhs_value)
+    {
+        if (!lhs_value->type || !rhs_value->type || !lhs_value->type->equals(*rhs_value->type))
+            return std::nullopt;
+
+        return lhs_value->column->compareAt(
+            lhs.row_idx,
+            rhs.row_idx,
+            *rhs_value->column,
+            1);
+    }
+
+    const FieldRef & explicit_value = lhs_value ? rhs : lhs;
+    if (explicit_value.isNull() || explicit_value.isNegativeInfinity() || explicit_value.isPositiveInfinity())
+        return std::nullopt;
+
+    auto materialized = typed_value->type->createColumn();
+    materialized->insert(static_cast<const Field &>(explicit_value));
+
+    if (lhs_value)
+        return lhs_value->column->compareAt(lhs.row_idx, 0, *materialized, 1);
+
+    return materialized->compareAt(0, rhs.row_idx, *rhs_value->column, 1);
+}
+
+}
+
 FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
     : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
 {
@@ -119,6 +180,27 @@ bool Range::equals(const Field & lhs, const Field & rhs)
 bool Range::less(const Field & lhs, const Field & rhs)
 {
     return accurateLess(lhs, rhs);
+}
+
+bool Range::hasColumnComparator(const FieldRef & lhs, const FieldRef & rhs)
+{
+    return compareFieldRefsByColumn(lhs, rhs).has_value();
+}
+
+bool Range::equals(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison == 0;
+
+    return equals(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
+}
+
+bool Range::less(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison < 0;
+
+    return less(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
 }
 
 bool Range::empty() const
