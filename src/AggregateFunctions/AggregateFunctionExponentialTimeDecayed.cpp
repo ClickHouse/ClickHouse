@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionExponentialTimeDecayed.h>
 
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
@@ -50,40 +51,24 @@ struct ExponentialTimeDecayedState
     /// Every state is evaluated at max_time:
     /// weighted_sum = sum(value_i * exp((time_i - max_time) / decay_length))
     /// weight = sum(exp((time_i - max_time) / decay_length))
-    /// This representation makes merging states the same operation as adding rows,
-    /// independent of row order, batch distribution, and batch count.
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
-    /// Runtime-only cache. It is deliberately not serialized: persisted aggregate
-    /// states and storage-engine merges always retain the exact representation.
-    mutable Float64 calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
-    bool empty() const { return weight == 0; }
 
-    Float64 getCalculationIndexTime(Float64 decay_length) const
-    {
-        if (std::isnan(calculation_index_time))
-            calculation_index_time = weighted_sum == 0
-                ? -std::numeric_limits<Float64>::infinity()
-                : max_time + decay_length * std::log(std::abs(weighted_sum));
-        return calculation_index_time;
-    }
+    bool empty() const { return weight == 0; }
 
     void add(
         Float64 value,
         Float64 time,
         Float64 decay_length,
         Float64 max_decay_distance,
-        std::optional<Float64> input_calculation_index_time)
+        bool input_has_calculation_index)
     {
         ExponentialTimeDecayedState rhs;
         rhs.weighted_sum = value;
         rhs.weight = 1;
         rhs.max_time = time;
-        if (input_calculation_index_time)
-            rhs.calculation_index_time = *input_calculation_index_time;
-
-        merge(rhs, decay_length, max_decay_distance, input_calculation_index_time.has_value());
+        merge(rhs, decay_length, max_decay_distance, input_has_calculation_index);
     }
 
     void merge(
@@ -92,24 +77,35 @@ struct ExponentialTimeDecayedState
         Float64 max_decay_distance,
         bool input_has_calculation_index)
     {
-        /// Approximation is only allowed when the input already carries its
-        /// calculation index. Query-local partial states preserve that index, so
-        /// parallel aggregation has the same cutoff semantics as adding rows to a
-        /// single state. Aggregate functions reconstructed for storage-engine
-        /// merges have an infinite budget and therefore always take the exact path.
+        /// The significance comparison is formed from a relative timestamp difference
+        /// plus a logarithmic magnitude difference. It deliberately avoids constructing
+        /// absolute unit timestamps, which can lose the magnitude term for large times.
         if (input_has_calculation_index && std::isfinite(max_decay_distance) && !empty() && !rhs.empty())
         {
-            const Float64 current_index_time = getCalculationIndexTime(decay_length);
-            const Float64 rhs_index_time = rhs.getCalculationIndexTime(decay_length);
-            if (rhs_index_time > current_index_time
-                && rhs_index_time - current_index_time > max_decay_distance)
+            if (weighted_sum == 0 && rhs.weighted_sum != 0)
             {
                 *this = rhs;
                 return;
             }
-            if (current_index_time > rhs_index_time
-                && current_index_time - rhs_index_time > max_decay_distance)
+            if (weighted_sum != 0 && rhs.weighted_sum == 0)
                 return;
+
+            if (weighted_sum != 0 && rhs.weighted_sum != 0)
+            {
+                const long double index_distance
+                    = static_cast<long double>(rhs.max_time) - static_cast<long double>(max_time)
+                    + static_cast<long double>(decay_length)
+                        * (std::log(std::abs(static_cast<long double>(rhs.weighted_sum)))
+                            - std::log(std::abs(static_cast<long double>(weighted_sum))));
+
+                if (index_distance > static_cast<long double>(max_decay_distance))
+                {
+                    *this = rhs;
+                    return;
+                }
+                if (-index_distance > static_cast<long double>(max_decay_distance))
+                    return;
+            }
         }
 
         mergeExact(rhs, decay_length);
@@ -126,7 +122,6 @@ struct ExponentialTimeDecayedState
             return;
         }
 
-        /// Re-anchor the older state at the shared greatest timestamp before adding them.
         if (rhs.max_time > max_time)
         {
             const Float64 distance = rhs.max_time - max_time;
@@ -147,8 +142,6 @@ struct ExponentialTimeDecayedState
             weighted_sum += rhs.weighted_sum;
             weight += rhs.weight;
         }
-
-        calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     }
 
     void write(WriteBuffer & buf) const
@@ -163,7 +156,6 @@ struct ExponentialTimeDecayedState
         readBinaryLittleEndian(weighted_sum, buf);
         readBinaryLittleEndian(weight, buf);
         readBinaryLittleEndian(max_time, buf);
-        calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     }
 };
 
@@ -174,12 +166,13 @@ class AggregateFunctionExponentialTimeDecayed final
           AggregateFunctionExponentialTimeDecayed<result_kind>>
 {
 public:
-    static DataTypePtr getResultDataType(Float64 decay_length)
+    static DataTypePtr getResultDataType(Float64 decay_length, bool legacy_result_name)
     {
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
 
-        return createDataTypeExponentialTimeDecayingFloat64(decay_length);
+        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(
+            decay_length, legacy_result_name);
     }
 
     AggregateFunctionExponentialTimeDecayed(
@@ -188,11 +181,12 @@ public:
         const Array & parameters_,
         Float64 decay_length_,
         Float64 max_decay_distance_,
-        bool input_is_decaying_value_ = false)
+        bool input_is_decaying_value_ = false,
+        bool legacy_result_name_ = false)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
-              argument_types_, parameters_, getResultDataType(decay_length_))
+              argument_types_, parameters_, getResultDataType(decay_length_, legacy_result_name_))
         , name(std::move(name_))
         , decay_length(decay_length_)
         , max_decay_distance(max_decay_distance_)
@@ -206,24 +200,14 @@ public:
     {
         Float64 value = 1;
         Float64 time = std::numeric_limits<Float64>::quiet_NaN();
-        std::optional<Float64> input_calculation_index_time;
-
         if (input_is_decaying_value)
         {
-            const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
-            const Float64 sign = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-            const Float64 signed_unit_time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
-            if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Input of aggregate function {} is not a canonical ExponentialTimeDecayingFloat64 value",
-                    getName());
-            if (sign == 0)
+            const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
+            const auto & tuple = decaying.getStorageTuple();
+            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
+            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(3)).getData()[row_num];
+            if (value == 0)
                 return;
-
-            value = sign;
-            time = getExponentialTimeDecayingUnitTime(sign, signed_unit_time);
-            input_calculation_index_time = time;
         }
         else
         {
@@ -238,7 +222,8 @@ public:
         if (!std::isfinite(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
-        this->data(place).add(value, time, decay_length, max_decay_distance, input_calculation_index_time);
+        this->data(place).add(
+            value, time, decay_length, max_decay_distance, input_is_decaying_value);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -282,12 +267,14 @@ public:
             if (!std::isfinite(normalized.signed_unit_time))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Result of aggregate function {} cannot be represented by ExponentialTimeDecayingFloat64",
+                    "Result of aggregate function {} cannot be represented by ExponentialTimeDecaying",
                     getName());
 
             Tuple decaying_value{
                 Field(normalized.sign),
-                Field(normalized.signed_unit_time)};
+                Field(normalized.signed_unit_time),
+                Field(normalized.value_at_anchor),
+                Field(normalized.anchor_time)};
             to.insert(Field(decaying_value));
         }
     }
@@ -431,7 +418,16 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
     const Array & parameters,
     const Settings * settings)
 {
-    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, settings);
+    assertValueAndTimeArguments(name, argument_types);
+    const Float64 decay_length = getDecayLength(name, parameters);
+    return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
+        name,
+        argument_types,
+        parameters,
+        decay_length,
+        getMaxDecayDistance(name, settings, decay_length),
+        false,
+        true);
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
