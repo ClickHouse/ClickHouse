@@ -34,6 +34,12 @@ SELECT 'deduplicated while the node is visible', count() FROM t_04955;
 
 SYSTEM ENABLE FAILPOINT rmt_dedup_conflict_node_missing;
 
+-- Bounds the query_log check below to this execution: some jobs run the suite in one fixed
+-- database, and a failed test is re-run in it, so an earlier execution's rows are still there.
+-- Not a temporary table: the failing insert below discards the session's temporary tables.
+DROP TABLE IF EXISTS started_04955;
+CREATE TABLE started_04955 ENGINE = Memory AS SELECT now64(6) AS at;
+
 -- The first resolution reports the node gone and retries the lock request, which the same node
 -- refuses again. The second resolution is the repeat the retry controller has to stop.
 INSERT INTO t_04955 VALUES (1); -- { serverError UNFINISHED }
@@ -46,9 +52,10 @@ SELECT 'rows after the bounded insert', count() FROM t_04955;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'bounded by the retry controller', count() > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
+WHERE event_date >= yesterday() AND event_time_microseconds >= (SELECT at FROM started_04955)
   AND current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
   AND exception LIKE '%keep being created and removed%'
 SETTINGS max_rows_to_read = 0;
 
 DROP TABLE t_04955 SYNC;
+DROP TABLE started_04955;
