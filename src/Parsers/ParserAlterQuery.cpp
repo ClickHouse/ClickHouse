@@ -1218,6 +1218,8 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     while (s_comma.ignore(pos, expected));
 
+    rewriteSettingsResetsInAlterCommands(*command_list);
+
     return true;
 }
 

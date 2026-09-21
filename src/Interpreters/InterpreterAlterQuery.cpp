@@ -154,11 +154,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }
         else if (auto alter_command = AlterCommand::parse(command_ast))
         {
-            auto reset_command = alter_command->extractSettingsResets();
-            auto & alter_commands = segments_holder.take<AlterCommands>();
-            alter_commands.push_back(std::move(alter_command.value()));
-            if (reset_command)
-                alter_commands.push_back(std::move(reset_command.value()));
+            segments_holder.take<AlterCommands>().push_back(std::move(alter_command.value()));
         }
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {

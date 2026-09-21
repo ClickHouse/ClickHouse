@@ -25,6 +25,9 @@
 #include <Common/quoteString.h>
 #include <base/EnumReflection.h>
 
+#include <algorithm>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -1486,6 +1489,7 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
     for (const auto & command : child->children)
         if (!command || !command->as<ASTAlterCommand>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must contain only alter commands during AST JSON deserialization");
+    rewriteSettingsResetsInAlterCommands(child->as<ASTExpressionList &>());
     set(command_list, child);
 
     /// Validate the target against the parser invariants: `ALTER TABLE` always has a table
@@ -1561,6 +1565,87 @@ void ASTAlterQuery::forEachPointerToChild(std::function<void(IAST **, boost::int
     for (const auto & child : command_list->children)
         child->as<ASTAlterCommand &>().forEachPointerToChild(f);
     f(reinterpret_cast<IAST **>(&command_list), nullptr);
+}
+
+namespace
+{
+
+ASTPtr makeSettingsResetsList(const std::vector<String> & setting_names)
+{
+    auto setting_names_list = make_intrusive<ASTExpressionList>();
+    for (const auto & setting_name : setting_names)
+        setting_names_list->children.push_back(make_intrusive<ASTIdentifier>(setting_name));
+    return setting_names_list;
+}
+
+/// A setting which is modified and reset in the same command, or reset twice, contradicts itself.
+/// The names are compared as written, because resolving the aliases of a setting needs the storage
+/// settings, which are out of reach here.
+bool settingsResetsContradict(const ASTSetQuery & set_query)
+{
+    std::unordered_set<std::string_view> reset_settings;
+    for (const auto & setting_name : set_query.default_settings)
+    {
+        auto same_setting = [&setting_name](const SettingChange & change) { return change.name == setting_name; };
+        if (std::ranges::any_of(set_query.changes, same_setting) || !reset_settings.emplace(setting_name).second)
+            return true;
+    }
+    return false;
+}
+
+}
+
+void rewriteSettingsResetsInAlterCommands(ASTExpressionList & command_list)
+{
+    ASTs rewritten_commands;
+    rewritten_commands.reserve(command_list.children.size());
+
+    for (const auto & child : command_list.children)
+    {
+        rewritten_commands.push_back(child);
+
+        auto & command = child->as<ASTAlterCommand &>();
+        const bool is_column_setting = command.type == ASTAlterCommand::MODIFY_COLUMN;
+        /// A database has no `RESET SETTING`, so `= DEFAULT` is rejected there instead of rewritten.
+        if (!is_column_setting && command.type != ASTAlterCommand::MODIFY_SETTING)
+            continue;
+
+        /// A `MODIFY COLUMN name type SETTINGS (...)` clause replaces the settings of the column as a
+        /// whole, so its `= DEFAULT` entries are not a command of their own and stay where they are.
+        if (!command.settings_changes)
+            continue;
+
+        auto & set_query = command.settings_changes->as<ASTSetQuery &>();
+        if (set_query.default_settings.empty())
+            continue;
+
+        /// A contradictory command stays as it is: `AlterCommand::parse` rejects it, and it resolves
+        /// the aliases of a setting on the way.
+        if (settingsResetsContradict(set_query))
+            continue;
+
+        auto reset_command = make_intrusive<ASTAlterCommand>();
+        reset_command->type = ASTAlterCommand::RESET_SETTING;
+        reset_command->settings_resets
+            = reset_command->children.emplace_back(makeSettingsResetsList(set_query.default_settings)).get();
+
+        if (is_column_setting)
+        {
+            reset_command->type = ASTAlterCommand::MODIFY_COLUMN;
+            reset_command->if_exists = command.if_exists;
+            reset_command->col_decl = reset_command->children.emplace_back(command.col_decl->clone()).get();
+        }
+
+        set_query.default_settings.clear();
+
+        /// A command which resets only is the reset command itself, there is nothing left to modify.
+        if (set_query.changes.empty())
+            rewritten_commands.back() = std::move(reset_command);
+        else
+            rewritten_commands.push_back(std::move(reset_command));
+    }
+
+    command_list.children = std::move(rewritten_commands);
 }
 
 }

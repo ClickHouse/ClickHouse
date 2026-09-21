@@ -1,0 +1,19 @@
+-- the SQL parser turns a pure reset into `RESET SETTING`
+ALTER TABLE t (RESET SETTING  y)
+ALTER TABLE t (MODIFY COLUMN `c` RESET SETTING  y)
+ALTER TABLE t (MODIFY COLUMN IF EXISTS `c` RESET SETTING  y)
+-- a command which also modifies is split in two
+ALTER TABLE t (MODIFY SETTING x = 1), (RESET SETTING  y)
+ALTER TABLE t (MODIFY COLUMN `c` MODIFY SETTING x = 1), (MODIFY COLUMN `c` RESET SETTING  y)
+ALTER TABLE t (ADD COLUMN `z` UInt64), (MODIFY SETTING x = 1), (RESET SETTING  y)
+-- the rewritten query parses back to itself
+ALTER TABLE t (MODIFY SETTING x = 1), (RESET SETTING  y)
+-- a contradictory command is not rewritten
+ALTER TABLE t (MODIFY SETTING x = 1, x = DEFAULT)
+ALTER TABLE t (MODIFY SETTING x = DEFAULT, x = DEFAULT)
+ALTER TABLE t (MODIFY COLUMN `c` MODIFY SETTING x = 1, x = DEFAULT)
+-- the JSON parser rewrites the same way
+ALTER TABLE t (MODIFY SETTING x = 1), (RESET SETTING  y)
+ALTER TABLE t (MODIFY SETTING x = 1, x = DEFAULT)
+-- a database has no reset, so the command keeps the modify syntax and is rejected on execution
+ALTER DATABASE d (MODIFY SETTING x = DEFAULT)
