@@ -203,7 +203,10 @@ private:
         auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline_builder.getHeader().getColumnsWithTypeAndName(),
             header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
+            recursive_query->as<UnionNode>()
+                && recursive_query->as<UnionNode &>().getColumnMatchMode() == SetOperationColumnMatchMode::Name
+                ? ActionsDAG::MatchColumnsMode::Name
+                : ActionsDAG::MatchColumnsMode::Position,
             interpreter->getContext());
         auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
         pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
