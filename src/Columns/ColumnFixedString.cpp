@@ -12,10 +12,6 @@
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 
-#if defined(__SSE2__)
-#    include <emmintrin.h>
-#endif
-
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
 #    include <llvm/IR/IRBuilder.h>
