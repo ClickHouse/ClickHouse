@@ -14,8 +14,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   prefer_localhost_replica = 0     -- a local replica ships no `_shard_num` over the wire at all
 #                                       (the last arm below is the control for this)
 #   parallel_replicas_plan_based = 0 -- the plan-based path builds locally and never applies a shard scope
-#   enable_analyzer, parallel_replicas_only_with_analyzer -- parallel replicas are off entirely unless
-#       the two agree
 # `serialize_query_plan` needs no pin here and was measured, not assumed: it does suppress parallel
 # replicas for a read of a plain table (see 02947/03562, which pin it for that reason), but each view
 # below carries `enable_parallel_replicas` in its own SETTINGS, which the shard re-applies, so the
@@ -60,7 +58,6 @@ echo '-- out-of-range foreign shard scope: declined, so no abort'
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_out_of_range_04727)
 SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
-         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
          log_comment = '04727_out_of_range_${CLICKHOUSE_DATABASE}';
 "
 
@@ -68,7 +65,6 @@ echo '-- in-range foreign shard scope: declined, so the wrong shard is never rea
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_in_range_04727)
 SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
-         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
          log_comment = '04727_in_range_${CLICKHOUSE_DATABASE}';
 "
 
@@ -76,7 +72,6 @@ echo '-- matching shard scope: still honoured, i.e. the feature is declined and 
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(a) FROM cluster('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), v_in_range_04727)
 SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
-         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
          log_comment = '04727_matching_${CLICKHOUSE_DATABASE}';
 "
 
@@ -88,7 +83,6 @@ echo '-- renumbered derived cluster: declined, so no abort and no wrong shard'
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(a) FROM clusterAllReplicas('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), v_in_range_04727)
 SETTINGS prefer_localhost_replica = 0, parallel_replicas_plan_based = 0,
-         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
          log_comment = '04727_derived_${CLICKHOUSE_DATABASE}';
 "
 
@@ -98,7 +92,6 @@ echo '-- local shard, no foreign scope shipped: read is correct'
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(a) FROM cluster('test_cluster_two_shards_localhost', currentDatabase(), v_out_of_range_04727)
 SETTINGS prefer_localhost_replica = 1, parallel_replicas_plan_based = 0,
-         enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0,
          log_comment = '04727_local_shard_${CLICKHOUSE_DATABASE}';
 "
 
