@@ -22,7 +22,7 @@
   <text x="1105" y="163" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">ClickHouse proposes</text>
   <text x="1105" y="181" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">a platform update</text>
   <text x="1105" y="203" text-anchor="middle" font-size="11" fill="#7d7d7d">snapshot controller, operator, monitoring</text>
-  <text x="1105" y="220" text-anchor="middle" font-size="11" fill="#7d7d7d">identified by a bundle digest</text>
+  <text x="1105" y="220" text-anchor="middle" font-size="11" fill="#7d7d7d">sent to the executor as a bundle</text>
 
   <!-- Proposal delivered over the outbound channel -->
   <line x1="969" y1="195" x2="591" y2="195" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ah-a)"/>
@@ -33,8 +33,8 @@
   <circle cx="90" cy="150" r="16" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
   <text x="90" y="155" text-anchor="middle" font-size="13" font-weight="700" fill="#7d7d7d">2</text>
   <rect x="125" y="130" width="460" height="95" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
-  <text x="355" y="167" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Executor reports: approval needed</text>
-  <text x="355" y="191" text-anchor="middle" font-size="11" fill="#7d7d7d">nothing is applied</text>
+  <text x="355" y="167" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Executor stages the bundle: approval needed</text>
+  <text x="355" y="191" text-anchor="middle" font-size="11" fill="#7d7d7d">nothing is applied until you approve the staged bundle</text>
 
   <line x1="355" y1="225" x2="355" y2="270" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
 
@@ -42,8 +42,8 @@
   <circle cx="90" cy="295" r="16" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
   <text x="90" y="300" text-anchor="middle" font-size="13" font-weight="700" fill="#7d7d7d">3</text>
   <rect x="125" y="275" width="460" height="120" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
-  <text x="355" y="308" text-anchor="middle" font-size="11" fill="#7d7d7d">You run</text>
-  <text x="355" y="333" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">clicklink clctl platform approve --bundle &lt;digest&gt;</text>
+  <text x="355" y="308" text-anchor="middle" font-size="11" fill="#7d7d7d">You inspect the staged bundle, then run</text>
+  <text x="355" y="333" text-anchor="middle" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, Consolas, monospace" fill="#7d7d7d">clicklink clctl platform approve</text>
   <text x="355" y="357" text-anchor="middle" font-size="11" fill="#7d7d7d">your credentials apply permissions, CRDs and roles</text>
   <text x="355" y="375" text-anchor="middle" font-size="11" fill="#7d7d7d">a 2-hour token is minted</text>
 

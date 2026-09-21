@@ -364,19 +364,18 @@ Prints the commands the executor has recorded, as JSON, newest first. A failed c
 
 ## clicklink clctl platform approve {#platform-approve}
 
-Authorizes one platform change with your own cluster credentials. It fetches the bundle named by its sha256 digest through your connector endpoint (refusing bytes whose digest differs) and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
 
 | Flag | Description |
 |------|-------------|
-| `--bundle <digest or path>` | The bundle: its sha256, fetched through your connector endpoint, or a file path for a copy handed over out of band (required). |
-| `--config <path>` | Connector configuration file (env `CLCTL_EXECUTOR_CONFIG`). Supplies the namespace prefix, the access root, and, for the fetch, the environment identity and the endpoint. |
+| `--config <path>` | Connector configuration file (env `CLCTL_EXECUTOR_CONFIG`). Supplies the namespace prefix; on a workstation, a copy of the connector configuration. |
 | `--context <name>` | Kubeconfig context of the managed cluster, with cluster-admin rights; a name or a pattern (env `CLCTL_CONTEXT`). Default: the only context, else a picker. |
 | `--ttl <dur>` | Platform token lifetime (default `2h`). The executor never renews it. |
-| `--output-dir <path>` | Access root the token is written under, in `_platform` (default `/etc/clicklink/access/executor`; env `CLCTL_EXECUTOR_OUTPUT_DIR`). |
-| `--secret-namespace <ns>` | Kubernetes installs: delivers the bundle as a Secret in this namespace (the connector namespace) instead of `<output-dir>/_platform`. |
+| `--output-dir <path>` | Access root: the staged bundle is read from it and the token is written under it, in `_platform` (default `/etc/clicklink/access/executor`; env `CLCTL_EXECUTOR_OUTPUT_DIR`). |
+| `--secret-namespace <ns>` | Kubernetes installs: reads the staged bundle from the executor's local API and delivers the token bundle as a Secret in this namespace (the connector namespace) instead of `<output-dir>/_platform`. |
 | `--secret-name <name>` | Secret name for `--secret-namespace` (default `clicklink-platform-bundle`); must match the chart's `executor.platformBundleSecret`. |
-| `--connector-namespace <ns>` | Kubernetes installs: the connector namespace whose Secrets supply the connector credentials for the fetch when the credential files the config names are not on this host (default `clicklink`). |
-| `--hmac-secret-name <name>`, `--mtls-secret-name <name>` | Names of the connector's HMAC and mTLS Secrets in that namespace (defaults `clicklink-hmac` and `clicklink-mtls`, the chart's `secrets.hmacSecretName` and `secrets.mtlsSecretName`). |
+| `--endpoint <url>` | Kubernetes installs: the executor's local API, reached over a `kubectl port-forward` (default `http://127.0.0.1:9999`; env `CLCTL_ENDPOINT`). |
+| `--bundle <path>` | Override: a rendered platform manifest handed over out of band, read instead of the staged bundle. Normally omitted. |
 | `--dry-run` | Renders and lists the permission half without applying or minting. |
 
 ## clicklink clctl platform reset {#platform-reset}

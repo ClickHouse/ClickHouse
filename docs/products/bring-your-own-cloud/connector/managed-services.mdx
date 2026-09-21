@@ -36,7 +36,7 @@ Creating a service takes two commands. `prepare` creates everything on your side
 Only `prepare` needs AWS credentials: it creates the S3 buckets and the IAM role. `instances create` needs the connector's configuration and credentials, and reaches the executor's local API only for `--wait`. On a VM, run both as root on the connector host. On Kubernetes, run both from a workstation with a kube context for the managed cluster:
 
 - `prepare` needs a copy of the connector configuration (`--config`), a `kubectl port-forward` to the executor's local API, and `--output-dir` pointing at a writable directory. It checks the service name against the executor and refuses to run when it cannot reach it.
-- `instances create` reads the credential files the configuration names from the `clicklink-hmac` and `clicklink-mtls` Secrets when this host lacks them, and announces each read. Add `--connector-namespace` when the connector namespace is not `clicklink`. Only `instances create` and `platform approve` have this fallback.
+- `instances create` reads the credential files the configuration names from the `clicklink-hmac` and `clicklink-mtls` Secrets when this host lacks them, and announces each read. Add `--connector-namespace` when the connector namespace is not `clicklink`. Only `instances create` has this fallback.
 
 <Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
 

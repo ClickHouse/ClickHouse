@@ -17,7 +17,7 @@ This page is the security reference for the ClickHouse Connector: its identities
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
 
-- **The connector's mTLS client certificate**, with your organization ID as its common name, authenticates every daemon to your connector endpoint. `clicklink clctl instances create` and `clicklink clctl platform approve` use the same certificate and HMAC key when they call the endpoint.
+- **The connector's mTLS client certificate**, with your organization ID as its common name, authenticates every daemon to your connector endpoint. `clicklink clctl instances create` uses the same certificate and HMAC key when it calls the endpoint.
 - **`pcm_scraper` and `pcm_troubleshooter`** are the read-only ClickHouse users the scraper and troubleshooter connect as. The executor has no ClickHouse user.
 - **Troubleshooter ServiceAccounts**, one per provisioned deployment, carry the read-only Kubernetes views a support session can use.
 - **`pcm-executor`** is the executor's Kubernetes ServiceAccount for the lifecycle of managed services. A ValidatingAdmissionPolicy confines its writes to service namespaces.
@@ -34,7 +34,7 @@ This is the complete list of connections the connector opens. All of them origin
 
 | Destination | Protocol | Purpose |
 |-------------|----------|---------|
-| Your connector endpoint | HTTPS with mTLS, every request HMAC-signed | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew`; from `clicklink clctl`, `POST /v1/pcm/instances` (submit a service definition) and `GET /v1/pcm/platform/bundles/{digest}` (fetch a proposed platform bundle) |
+| Your connector endpoint | HTTPS with mTLS, every request HMAC-signed | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew`; from `clicklink clctl`, `POST /v1/pcm/instances` (submit a service definition) |
 | Your connector endpoint | Outbound WebSocket, `/v1/commands/ws` | The troubleshooter's command channel, gated by support-session state |
 | Your connector endpoint | Outbound WebSocket, `/v1/commands/ws/executor` | The executor's command channel: lifecycle commands for managed services and their results |
 | Your enrollment endpoint | HTTPS (enrollment token or HMAC; no mTLS) | Token redemption and certificate signing (`/v1/pcm/cert/sign`) at install time |

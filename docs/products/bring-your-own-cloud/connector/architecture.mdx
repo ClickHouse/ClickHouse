@@ -30,7 +30,7 @@ Every connection the connector makes is outbound. The complete list:
 | Destination | Direction | Protocol | Authentication | Purpose |
 |---|---|---|---|---|
 | Your connector endpoint (API) | Outbound | HTTPS | mTLS client certificate plus HMAC-signed requests | Ships metrics, connector self-metrics, and status; syncs service, infrastructure, and backup metadata; renews the client certificate |
-| Your connector endpoint (API, from `clicklink clctl`) | Outbound | HTTPS | The connector's mTLS client certificate plus HMAC-signed requests | Submits a service definition when you run `clicklink clctl instances create` (`POST /v1/pcm/instances`); fetches a proposed platform bundle by digest when you run `clicklink clctl platform approve` (`GET /v1/pcm/platform/bundles/{digest}`) |
+| Your connector endpoint (API, from `clicklink clctl`) | Outbound | HTTPS | The connector's mTLS client certificate plus HMAC-signed requests | Submits a service definition when you run `clicklink clctl instances create` (`POST /v1/pcm/instances`) |
 | Your connector endpoint (troubleshooter command channel) | Outbound | WebSocket over TLS | mTLS client certificate plus HMAC-signed handshake | Carries diagnostic commands only while a support session is active |
 | Your connector endpoint (executor command channel) | Outbound | WebSocket over TLS | mTLS client certificate plus HMAC-signed handshake | Carries lifecycle commands for managed services and returns their progress and results; separate from the troubleshooter channel |
 | Your enrollment endpoint | Outbound | HTTPS | Single-use enrollment token (redeem) or HMAC (first certificate signing); no mTLS | Token redemption and first certificate issuance during setup |
