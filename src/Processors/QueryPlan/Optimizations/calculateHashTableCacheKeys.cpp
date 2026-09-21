@@ -40,14 +40,23 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
-    hash.update(read.getSerializationName());
+    /// `SipHash::update` of a string mixes in its bytes and nothing else, so a sequence of strings
+    /// hashed one after another is not self-delimiting: a header of `a UInt8` and one of `aU Int8`
+    /// both produce the bytes `aUInt8`. Mix in each length so that only the same split matches.
+    const auto update_with_size = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+
+    update_with_size(read.getSerializationName());
     if (const auto & snapshot = read.getStorageSnapshot())
     {
         StorageID storage_id = snapshot->storage.getStorageID();
         if (storage_id.hasUUID())
             hash.update(storage_id.uuid.toUnderType());
         else
-            hash.update(storage_id.getFullTableName());
+            update_with_size(storage_id.getFullTableName());
     }
     /// A storage created by a table function has no UUID, and its StorageID does not depend on
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
@@ -73,9 +82,16 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// plan builds agree on them.
     for (const auto & column : *read.getOutputHeader())
     {
-        hash.update(column.name);
-        hash.update(column.type->getName());
+        update_with_size(column.name);
+        update_with_size(column.type->getName());
     }
+    /// `SAMPLE`, `FINAL` and `OFFSET` change how much of the table the read touches while leaving the
+    /// storage, the header and the PREWHERE identical, so without this `SAMPLE 1` and `SAMPLE 0.1`
+    /// share an entry and the sampled query is priced at ten times what it reads. `SAMPLE` is the one
+    /// case the drift check would eventually catch, since it changes the row count too, but only
+    /// after a decision has already been made on the wrong estimate.
+    if (const auto & modifiers = read.getQueryInfo().table_expression_modifiers)
+        modifiers->updateTreeHash(hash);
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();

@@ -2,3 +2,8 @@ query	collected_own_statistics
 05234_query_0_narrow_first	1
 05234_query_1_narrow_again	0
 05234_query_2_wide	1
+05234_query_3_unsampled_first	1
+05234_query_4_unsampled_again	0
+05234_query_5_sampled	1
+05234_query_6_a_uint8	1
+05234_query_7_au_int8	1
