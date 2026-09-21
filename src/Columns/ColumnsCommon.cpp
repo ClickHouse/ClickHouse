@@ -7,6 +7,9 @@
 #include <cstring>
 #include <Columns/ColumnsCommon.h>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
@@ -466,11 +469,7 @@ namespace
                 {
                     size_t index = std::countr_zero(mask);
                     copy_array(offsets_pos + index);
-                #ifdef __BMI__
-                    mask = _blsr_u64(mask);
-                #else
-                    mask = mask & (mask-1);
-                #endif
+                    mask = mask & (mask - 1);
                 }
             }
 
@@ -560,11 +559,7 @@ void filterArraysImplInPlace(
             {
                 size_t index = std::countr_zero(mask);
                 copy_array_inplace(offsets_pos + index);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 

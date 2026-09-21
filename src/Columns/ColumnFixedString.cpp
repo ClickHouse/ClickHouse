@@ -351,11 +351,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
         data_pos += chars_per_simd_elements;
@@ -416,11 +412,7 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
                 size_t index = std::countr_zero(mask);
                 memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
         data_pos += chars_per_simd_elements;

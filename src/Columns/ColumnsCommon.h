@@ -2,9 +2,9 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
-#include <immintrin.h>
-#endif
+
+#include <bit>
+
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
 #endif
@@ -20,17 +20,12 @@ namespace DB
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    const __m512i vbytes = _mm512_loadu_si512(reinterpret_cast<const void *>(bytes64));
-    UInt64 res = _mm512_testn_epi8_mask(vbytes, vbytes);
-#elif defined(__AVX__) && defined(__AVX2__)
-    const __m256i zero32 = _mm256_setzero_si256();
-    UInt64 res =
-        (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
-        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
-        | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
-        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__aarch64__) && defined(__ARM_NEON)
+#if defined(__aarch64__) && defined(__ARM_NEON)
+    /// This one stays written by hand. The generic formulation used below reduces every 16-byte
+    /// group on its own, which costs four `addv` and four vector-to-general moves per 64 bytes,
+    /// 29 instructions in total. The pairwise-add tree here folds the four groups together and
+    /// needs a single move out of the vector unit, 19 instructions. Unrolling does not close the
+    /// gap, because each 64-byte block produces an independent result.
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     const auto * src = reinterpret_cast<const unsigned char *>(bytes64);
     const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
@@ -45,13 +40,34 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
     uint8x16_t sum1 = vpaddq_u8(t2, t3);
     sum0 = vpaddq_u8(sum0, sum1);
     sum0 = vpaddq_u8(sum0, sum0);
-    UInt64 res = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
+    return ~vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
 #else
-    UInt64 res = 0;
-    for (size_t i = 0; i < 64; ++i)
-        res |= static_cast<UInt64>(0 == bytes64[i]) << i;
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        /// Clang turns this into exactly the code the movemask intrinsics produce: `vpcmpeqb` plus
+        /// `vpmovmskb` at `x86-64-v3`, and a single `vptestmb` plus `kmovq` at `x86-64-v4`.
+        using ByteVector = UInt8 __attribute__((ext_vector_type(64)));
+        using BitMask = bool __attribute__((ext_vector_type(64)));
+
+        ByteVector bytes;
+        __builtin_memcpy(&bytes, bytes64, sizeof(bytes));
+
+        const BitMask mask = __builtin_convertvector(bytes != 0, BitMask);
+
+        UInt64 res;
+        __builtin_memcpy(&res, &mask, sizeof(res));
+        return res;
+    }
+    else
+    {
+        /// A bitcast of a vector of bits to an integer follows the endianness of the target, so on
+        /// a big-endian machine the branch above puts the first byte in the most significant bit.
+        UInt64 res = 0;
+        for (size_t i = 0; i < 64; ++i)
+            res |= static_cast<UInt64>(0 == bytes64[i]) << i;
+        return ~res;
+    }
 #endif
-    return ~res;
 }
 
 /// Counts how many bytes of `filt` are greater than zero.
