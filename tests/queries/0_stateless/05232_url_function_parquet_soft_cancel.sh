@@ -23,11 +23,15 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 $CLICKHOUSE_LOCAL --query "SELECT number AS x, toString(number) AS s FROM numbers(3000000) FORMAT Parquet" > "$DATA_FILE"
 
 # A server which reports the file as seekable and serves the positional reads of the reader. The
-# first requests - the footer and the metadata - are answered in full; every request after them is
-# accepted and then left hanging, so that a background task of the reader is inside a read of a
-# column chunk when the cancellation arrives. It binds to the port 0 and reports the port the
-# kernel gave it, so that it cannot collide with anything else running in parallel, and serves
-# requests in parallel: the test polls it while a range request is being held.
+# reads of the footer and of the metadata land in the last bytes of the file and are answered in
+# full; every read of the data itself - anything that begins before that tail - is accepted and
+# then left hanging, so that a background task of the reader is inside a read of a column chunk
+# when the cancellation arrives. Keying the decision on the offset rather than on the number of
+# requests already served is what makes it deterministic: how many requests the metadata takes,
+# and how the reader splits the data reads, both depend on the build and on the settings. It binds
+# to the port 0 and reports the port the kernel gave it, so that it cannot collide with anything
+# else running in parallel, and serves requests in parallel: the test asks it for the number of
+# reads it has held while the query is running.
 python3 -u -c "
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -36,8 +40,8 @@ with open('$DATA_FILE', 'rb') as f:
     DATA = f.read()
 FILE_SIZE = len(DATA)
 
-# The footer and the metadata of a Parquet file are read first, from its end.
-SERVED_IN_FULL = 3
+# The footer and the metadata of a Parquet file live in its last bytes and are read from there.
+METADATA_TAIL = 1024 * 1024
 
 release = threading.Event()
 requests = 0
@@ -86,9 +90,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 begin, end = header.split('=')[1].split('-')
                 begin, end = int(begin), min(int(end), FILE_SIZE - 1)
+            hold = begin < FILE_SIZE - METADATA_TAIL
             with lock:
                 requests += 1
-                hold = requests > SERVED_IN_FULL
                 if hold:
                     blocked += 1
             self.send_response(206 if header is not None else 200)
@@ -136,33 +140,30 @@ done
 QUERY_ID="${CLICKHOUSE_DATABASE}_parquet_soft_cancel"
 STDERR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.stderr")
 
-# The cancellation must arrive while a read of a column chunk is in flight, so the receive timeout
-# of that read is set above the execution time limit. `parallel_replicas_for_cluster_engines` would
-# rewrite url to urlCluster and read it in remote queries with their own query ids, leaving the log
-# the test waits for under a different query id.
+# The cancellation must arrive while a read of a column chunk is in flight. The execution time
+# limit is therefore above the time the metadata phase needs even on a loaded sanitizer runner, and
+# the budget of the retries of the held read - `http_max_tries` attempts of `http_receive_timeout`
+# each - is far above the limit, so that the read is still being retried when the limit fires.
+# `parallel_replicas_for_cluster_engines` would rewrite url to urlCluster and read it in remote
+# queries with their own query ids, leaving the log the test looks for under a different query id.
 $CLICKHOUSE_CLIENT \
-    --max_execution_time 3 \
+    --max_execution_time 10 \
     --timeout_overflow_mode 'break' \
     --http_receive_timeout 6 \
+    --http_max_tries 20 \
     --parallel_replicas_for_cluster_engines 0 \
     --query_id "$QUERY_ID" \
     --query "SELECT sum(x) FROM url('http://127.0.0.1:$HTTP_PORT/data', 'Parquet')" \
-    >/dev/null 2>"$STDERR_FILE" &
-CLIENT_PID=$!
-
-# Wait until a read of a column chunk is in flight.
-HELD=0
-for _ in {1..600}; do
-    [[ $(curl -sS "http://127.0.0.1:$HTTP_PORT/blocked") -ge 1 ]] && HELD=1 && break
-    sleep 0.1
-done
-
-wait $CLIENT_PID
+    >/dev/null 2>"$STDERR_FILE"
 CLIENT_STATUS=$?
+
+# The counter is cumulative, so it is read after the query: a read of the data which was held is
+# still counted when the query has already left it, and the test does not have to poll for it.
+HELD=$(curl -sS "http://127.0.0.1:$HTTP_PORT/blocked" || echo 0)
 
 curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
 
-if ((HELD == 1)); then
+if ((${HELD:-0} >= 1)); then
     echo "a read of the parquet data was in flight"
 else
     echo "FAIL: no read of the parquet data was in flight"
