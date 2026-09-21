@@ -12,7 +12,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -270,9 +269,8 @@ SerializationPtr DataTypeExponentialTimeDecayingFloat64::doGetSerialization(cons
 
 SerializationPtr DataTypeExponentialTimeDecayingFloat64::getSerialization(const SerializationInfo & info) const
 {
-    /// Before this type became first-class it was a customized DataTypeTuple.
-    /// Preserve DataTypeTuple's adaptive serialization path exactly.
-    return nested_type->getSerialization(info);
+    return std::make_shared<SerializationExponentialTimeDecayingFloat64>(
+        nested_type->getSerialization(info), decay_length);
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecayingFloat64::createSerializationInfo(
@@ -618,11 +616,11 @@ This layout makes ClickHouse's regular tuple comparison and sorting order match 
 of curves with the same decay length. Zero, including the implicit empty value, is represented as
 `(0, 0, decay_length)`.
 
-DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
-the type parameter when a value is combined or evaluated, so incompatible decay lengths are not
-silently mixed even in paths where ClickHouse treats custom tuple storage as layout-compatible.
-The type can be used with `SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an
-`AggregatingMergeTree`.
+DateTime and DateTime64 inputs are represented as seconds. The type has first-class logical
+identity while retaining the tuple-backed column and serialization layout. The marker is validated
+against the type parameter when a value is constructed, read, combined, or evaluated, so
+incompatible decay lengths are not silently mixed. The type can be used with
+`SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an `AggregatingMergeTree`.
 
 Addition uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
 results when their order or grouping changes. Users who require stronger numerical reproducibility
