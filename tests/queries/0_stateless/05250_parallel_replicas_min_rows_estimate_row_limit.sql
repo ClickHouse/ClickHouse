@@ -54,8 +54,10 @@ INSERT INTO t SELECT number FROM numbers(100);
 
 SELECT '--- read order bounds the rows the query needs ---';
 SET use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0, use_skip_indexes_for_top_k = 1, optimize_read_in_order = 1, max_threads = 1;
-SELECT a FROM t ORDER BY a LIMIT 5 SETTINGS max_rows_to_read = 12, log_comment = '05250_read_order_pr';
-SELECT a FROM t ORDER BY a LIMIT 20 FORMAT Null SETTINGS max_rows_to_read = 12; -- { serverError TOO_MANY_ROWS }
+-- Each contributing replica charges whole granules of its slice, so the rows charged here depend on
+-- the storage backend: the budget has to clear that, and stay below the whole table.
+SELECT a FROM t ORDER BY a LIMIT 5 SETTINGS max_rows_to_read = 60, log_comment = '05250_read_order_pr';
+SELECT a FROM t ORDER BY a LIMIT 80 FORMAT Null SETTINGS max_rows_to_read = 60; -- { serverError TOO_MANY_ROWS }
 
 -- Same witness for the read-order shape, which reaches the estimate through a different plan.
 SYSTEM FLUSH LOGS query_log;
