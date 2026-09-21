@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A bucketed distributed read is pinned to the coordinator's part list, but the worker re-runs its own
 -- index analysis. With `use_index_for_in_with_subqueries = 0` the coordinator cannot use the IN set while
 -- the worker receives it as shipped tuple values and can, so the worker prunes a part the coordinator

@@ -649,38 +649,23 @@ bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & 
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const FirstArraySlice & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, second.null_map);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const SecondArraySlice & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, nullptr);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, second.null_map);
 }
 
