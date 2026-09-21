@@ -135,7 +135,11 @@ SQLQueryPiece applyFunctionQuantileOverTime(
 
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
-        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = arguments[1].value_data_type;
+        return res;
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;

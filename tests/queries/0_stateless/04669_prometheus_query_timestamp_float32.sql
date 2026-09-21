@@ -154,6 +154,19 @@ FROM prometheusQuery(
     'predict_linear(clamp(timestamp(vector(1)), 2, 1)[10s:5s], 1)',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
+-- Subqueries with empty node_range keep Float64 override.
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'last_over_time(quantile_over_time(0.5, timestamp(vector(1))[10s:5s])[10s:15s])',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'last_over_time(predict_linear(timestamp(vector(1))[10s:5s], 1)[10s:15s])',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 -- Two histogram buckets of the same metric, sharing one sample timestamp with fractional seconds.
 INSERT INTO promql_timestamp_float32_tags VALUES
     (2, 'float32_histogram_bucket', map('le', '1000000000.5'),
