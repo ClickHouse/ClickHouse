@@ -12,4 +12,3 @@ CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt64\n)\nENGINE = TinyLog
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt8\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\', custom_x = 1
 CREATE TABLE default.t_unknown_setting\n(\n    `a` UInt8\n)\nENGINE = TinyLog\nSETTINGS disk = \'default\', custom_x = DEFAULT
 --- a bad value is still reported as a bad value, not as an unknown name ---
---- MergeTree is unchanged ---

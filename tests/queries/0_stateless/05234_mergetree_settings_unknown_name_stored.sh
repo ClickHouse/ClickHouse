@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# A `SETTINGS` name that is not a setting at all is refused when a MergeTree definition is stated, but
+# a table whose definition was stored before that check existed still has to load: refusing it while
+# the metadata is read fails the whole load rather than the one table. A full-definition
+# `ATTACH TABLE t UUID '...' (...)` states its settings itself, so it is checked the way `CREATE` is.
+#
+# `clickhouse-local` over a prepared data directory is how the stored metadata is obtained here: the
+# table is created with a real setting, its stored definition is then edited into the form a server
+# without this check would have written, and the next start loads it.
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+WORKING_DIR="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}"
+rm -rf "${WORKING_DIR}"
+mkdir -p "${WORKING_DIR}"
+
+echo '--- a full-definition ATTACH states its settings, so they are checked ---'
+# A literal UUID would collide between parallel runs, since it is server-global.
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+$CLICKHOUSE_CLIENT --send_logs_level fatal -q "
+ATTACH TABLE t_mt_stored_unknown UUID '${uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x
+SETTINGS not_a_setting_at_all = DEFAULT;" 2>&1 >/dev/null | grep -o -m 1 -F 'UNKNOWN_SETTING'
+
+echo '--- a stored definition naming a non-setting still loads ---'
+# `min_bytes_for_wide_part` is a setting of the engine, so its reset form stays in the clause and is
+# persisted verbatim - which is what gives a real stored clause to rename.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+CREATE DATABASE db;
+CREATE TABLE db.t (x UInt8) ENGINE = MergeTree ORDER BY x
+SETTINGS index_granularity = 4096, min_bytes_for_wide_part = DEFAULT;
+INSERT INTO db.t VALUES (7);
+"
+
+metadata_file=$(grep -rl 'min_bytes_for_wide_part' "${WORKING_DIR}" --include='*.sql')
+sed -i 's/min_bytes_for_wide_part/not_a_setting_at_all/' "${metadata_file}"
+# Without this the arm would pass on an unmodified definition, i.e. assert nothing.
+grep -c -m 1 -F 'not_a_setting_at_all' "${metadata_file}"
+
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+SELECT * FROM db.t;
+SELECT extract(create_table_query, 'not_a_setting_at_all') FROM system.tables WHERE database = 'db' AND name = 't';
+"
+
+echo '--- an unrelated ALTER on such a table still works ---'
+# The stale name has to survive the metadata round trip an ALTER performs, or the table would be
+# stranded at its first ALTER rather than at load.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
+ALTER TABLE db.t MODIFY SETTING merge_with_ttl_timeout = 100;
+SELECT extract(create_table_query, 'merge_with_ttl_timeout = 100') FROM system.tables WHERE database = 'db' AND name = 't';
+SELECT extract(create_table_query, 'not_a_setting_at_all') FROM system.tables WHERE database = 'db' AND name = 't';
+"
+
+echo '--- a stored non-setting is inherited by CREATE TABLE AS, which is fresh input ---'
+# The stored clause is copied wholesale into the new definition, so it is stated rather than loaded.
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" --send_logs_level fatal -q "
+CREATE TABLE db.t_copy AS db.t;" 2>&1 >/dev/null | grep -o -m 1 -F 'UNKNOWN_SETTING'
+
+rm -rf "${WORKING_DIR}"
