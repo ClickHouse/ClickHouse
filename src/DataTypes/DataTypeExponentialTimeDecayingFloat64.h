@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class DataTypeFactory;
 
 struct ExponentialTimeDecayingFloat64Value
