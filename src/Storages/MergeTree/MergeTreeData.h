@@ -150,8 +150,8 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
-    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock([[clang::lifetimebound]] const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock([[clang::lifetimebound]] const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
 };
 
 /// Data structure for *MergeTree engines.
