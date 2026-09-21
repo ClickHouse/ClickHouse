@@ -442,6 +442,17 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
         findSecretNamedArgument("datasource", 1);
         findSecretNamedArgument("connection_settings", 1);
         markNamedArgumentsWithUnreadableKeys(1);
+
+        /// After the collection name every argument must be a named override. A positional one is
+        /// invalid, and the statement is formatted for logging before validation rejects it, so it
+        /// can carry the connection string itself: hide it whole (fail closed).
+        for (size_t i = 1; i < function->arguments->size(); ++i)
+        {
+            const auto equals_func = function->arguments->at(i)->getFunction();
+            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+                || equals_func->arguments->size() != 2)
+                markSecretArgument(i, /* argument_is_named= */ false);
+        }
     }
     else
     {
@@ -840,6 +851,21 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
         findNATSTableEngineSecretArguments();
     }
+    else if (engine_name == "RabbitMQ")
+    {
+        /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
+        findRabbitMQTableEngineSecretArguments();
+    }
+    else if (engine_name == "Kafka")
+    {
+        /// Kafka(named_collection, kafka_sasl_password = '...') - `registerStorageKafka` reads named
+        /// overrides of the collection, so an override carries the secret the `SETTINGS` clause form
+        /// hides through `Kafka::SETTINGS_TO_HIDE`. The legacy positional form
+        /// (`Kafka('brokers', 'topics', 'group', 'format', ...)`) carries no secret and stays visible,
+        /// so this form does not fail closed on a positional argument.
+        findSecretNamedArgument("kafka_sasl_password", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
+    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
@@ -849,17 +875,21 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
 }
 
-void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
+    std::span<const std::string_view> secret_keys, std::string_view address_key)
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
     ///      [, nats_url = 'nats://user:password@host:4222']
     ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
-    /// The only positional argument the engine accepts is the name of a named collection, so the
+    /// RabbitMQ(named_collection [, rabbitmq_password = 'password']
+    ///          [, rabbitmq_address = 'amqp://user:password@host:5672/vhost'], ...)
+    /// The only positional argument these engines accept is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
-    /// the secrets are hidden whole, and so is a `nats_url` that carries an '@'.
-    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
+    /// separately by the engine's own `SETTINGS_TO_HIDE`, and this function masks the same keys the
+    /// same way: the secrets are hidden whole, and so is an address that carries an '@'.
+    /// A key list can hold a destination (`nats_server_list`), which is hidden whole because each
+    /// list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -881,13 +911,13 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
-        else if (key == "nats_url")
+        else if (key == address_key)
         {
             String url;
             if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
             {
                 /// An '@' is the only reliable sign of a credential here, and there is no extent to
-                /// keep visible; see the `nats_url` rule in `NATS_fwd.h` for why.
+                /// keep visible; see the address rule in the engine's `_fwd.h` for why.
                 if (url.contains('@'))
                     markSecretArgument(i, /* argument_is_named= */ true);
             }
@@ -898,11 +928,21 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
                 markSecretArgument(i, /* argument_is_named= */ true);
             }
         }
-        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
+        else if (std::find(secret_keys.begin(), secret_keys.end(), key) != secret_keys.end())
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
     }
+}
+
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+{
+    findBrokerTableEngineSecretArguments(nats_secret_keys, "nats_url");
+}
+
+void FunctionSecretArgumentsFinder::findRabbitMQTableEngineSecretArguments()
+{
+    findBrokerTableEngineSecretArguments(rabbitmq_secret_keys, "rabbitmq_address");
 }
 
 void FunctionSecretArgumentsFinder::findExternalDistributedTableEngineSecretArguments()

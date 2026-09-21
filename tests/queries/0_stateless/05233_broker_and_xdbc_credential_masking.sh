@@ -35,6 +35,15 @@ arm b2_amqp_control          "SET rabbitmq_address = 'amqp://h:5672/v'"
 arm c1_nats_engine_argument  "CREATE TABLE t05233 (x UInt8) ENGINE = NATS(nc05233, nats_url = 'nats://u:pa/leak05233arg@h:4222')"
 arm c2_nats_engine_control   "CREATE TABLE t05233 (x UInt8) ENGINE = NATS(nc05233, nats_url = 'localhost:4222')"
 
+# `Kafka`, `NATS` and `RabbitMQ` all read their settings as named overrides of the collection, so an
+# override of a secret setting needs the same masking as the `SETTINGS` clause. Kafka's legacy
+# positional form carries no secret, so its positional arguments stay visible.
+arm f1_rabbitmq_engine_argument  "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_address = 'amqp://u:leak05233rmqarg@h:5672/v')"
+arm f2_rabbitmq_engine_password  "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_password = 'leak05233rmqpw')"
+arm f3_rabbitmq_engine_control   "CREATE TABLE t05233 (x UInt8) ENGINE = RabbitMQ(nc05233, rabbitmq_address = 'amqp://h:5672/v')"
+arm f4_kafka_engine_password     "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka(nc05233, kafka_sasl_password = 'leak05233kafkapw')"
+arm f5_kafka_positional_control  "CREATE TABLE t05233 (x UInt8) ENGINE = Kafka('broker05233:9092', 'topic05233', 'group05233', 'JSONEachRow')"
+
 # An XDBC connection string is forwarded to the driver verbatim, so its grammar is the driver's: the
 # password can sit in a query parameter or in a `KEY=value;` list, and no URI scan bounds it. The
 # positional form is written against a database this test never creates, because a `jdbc(...)` table
@@ -48,6 +57,8 @@ arm d6_jdbc_computed_key     "SELECT * FROM jdbc(nc05233, concat('data', 'source
 arm d7_jdbc_both_aliases     "SELECT * FROM jdbc(nc05233, datasource = 'a://u:leak05233both1@h/1', connection_settings = 'b://u:leak05233both2@h/2')"
 # Control for the fail-closed unreadable-key scan the XDBC branch now shares with the TLS keys.
 arm d8_mysql_computed_key    "SELECT * FROM mysql(nc05233, concat('ssl_ca', '_pem') = 'leak05233mysql', table = 't')"
+# After the collection name every argument must be named, so a positional one is hidden whole.
+arm d9_jdbc_positional_after_collection "SELECT * FROM jdbc(nc05233, 'jdbc://u:leak05233pos@h/db')"
 
 # The query-level URL settings are read through `Poco::URI`, so host and path stay visible and only
 # the userinfo is hidden. A value with no scheme in front of it is hidden whole instead.
@@ -57,12 +68,13 @@ arm e3_url_base_no_userinfo  "SELECT 1 SETTINGS url_base = 'http://h:8080/d/?ema
 arm e4_url_base_no_scheme    "SELECT 1 SETTINGS url_base = ' http://u:leak05233space@h/d/'"
 arm e5_url_base_control      "SELECT 1 SETTINGS url_base = 'https://h/d/'"
 arm e6_s3_base_presigned     "SELECT 1 SETTINGS s3_base = 'https://b/f.csv?X-Amz-Signature=leak05233sig'"
-# `abfs`/`abfss` put a non-secret container in front of the '@', and only for `url_base`, the one of
-# the three settings that reaches the Azure URL parser.
+# All three URL settings follow the one rule, for every scheme: the userinfo is hidden and the rest
+# stays visible, and a value whose scheme is not at the start is hidden whole.
 arm e7_url_base_abfss        "SELECT 1 SETTINGS url_base = 'abfss://container@account.dfs.core.windows.net/d/'"
 arm e8_avro_abfss_control    "SELECT 1 SETTINGS format_avro_schema_registry_url = 'abfss://u:leak05233avroabfss@h/'"
 arm e9_url_base_az_control   "SELECT 1 SETTINGS url_base = 'az://u:leak05233az@account.blob.core.windows.net/c/'"
 arm e10_url_base_abfss_space "SELECT 1 SETTINGS url_base = ' abfss://c@a.dfs.core.windows.net/d/'"
+arm e12_url_base_abfss_password "SELECT 1 SETTINGS url_base = 'abfss://c:leak05233abfs@a.dfs.core.windows.net/d/'"
 # The same setting reached through an `ENGINE = ... SETTINGS` clause rather than through a query.
 arm e11_avro_in_engine       "CREATE TABLE t05233 (x UInt8) ENGINE = NATS(nc05233) SETTINGS format_avro_schema_registry_url = 'http://user:pa@leak05233engine@reg:8080/'"
 

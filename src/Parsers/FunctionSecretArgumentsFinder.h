@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 #include <sys/types.h>
@@ -119,6 +120,12 @@ protected:
     static constexpr std::string_view nats_secret_keys[]
         = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
 
+    /// Named arguments carrying RabbitMQ credentials, as the setting names, for the same reason as
+    /// `nats_secret_keys`. `rabbitmq_address` is not here because the documented form carries no
+    /// credential and stays visible; it is handled by the presence of an '@'.
+    /// Keep in sync with `RabbitMQ::SETTINGS_TO_HIDE`.
+    static constexpr std::string_view rabbitmq_secret_keys[] = {"rabbitmq_password"};
+
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
@@ -196,7 +203,17 @@ protected:
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
+    /// Masks the named-collection override form of a broker engine
+    /// (`NATS(collection, nats_token = '...')`, `RabbitMQ(collection, rabbitmq_address = '...')`).
+    /// `secret_keys` are hidden whole; `address_key` is hidden only when its value carries an '@',
+    /// because the documented address form carries no credential. Fails closed on a positional
+    /// argument and on a key this finder cannot read as a plain literal.
+    /// Keep the key lists in sync with the engine's own `SETTINGS_TO_HIDE`, which masks the same
+    /// settings in the `SETTINGS` clause.
+    void findBrokerTableEngineSecretArguments(
+        std::span<const std::string_view> secret_keys, std::string_view address_key);
     void findNATSTableEngineSecretArguments();
+    void findRabbitMQTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
