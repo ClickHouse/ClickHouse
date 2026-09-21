@@ -980,6 +980,9 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
     res->substreams_path.emplace_back(is_null_map_subcolumn ? ISerialization::Substream::VariantElementNullMap : ISerialization::Substream::VariantElement);
     res->substreams_path.back().variant_element_name = subcolumn_type->getName();
 
+    String nested_name_to_store(subcolumn_nested_name);
+    bool nested_selection_is_null_map = false;
+
     if (!is_null_map_subcolumn && !subcolumn_nested_name.empty())
     {
         auto nested_info = getSubcolumnInfo(subcolumn_nested_name, res->data, initial_array_level, throw_if_null);
@@ -993,21 +996,40 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
             return nullptr;
         }
 
+        /// SerializationDynamicElement resolves this name again against the element type alone to
+        /// extract the subcolumn from a value read from the shared variant.
+        nested_name_to_store = getSubcolumnNameForZeroArrayLevel(subcolumn_nested_name, nested_info->substreams_path);
+
+        nested_selection_is_null_map = !nested_info->substreams_path.empty()
+            && SerializationVariantElement::isNullMapSubstream(nested_info->substreams_path.back().type);
+
         res->data = std::move(nested_info->data);
         res->substreams_path.insert(
             res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());
     }
 
+    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
+    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
+    auto subcolumn_type_before_wrap = res->data.type;
+    if (!is_null_map_subcolumn && make_subcolumn_nullable)
+        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
+    /// res->data.serialization serializes the type before the wrap above, so it must know whether the
+    /// nullability it will be handed at read time is that wrapper or the requested type's own.
+    bool nullable_added_by_extraction
+        = !isNullableOrLowCardinalityNullable(subcolumn_type_before_wrap) && isNullableOrLowCardinalityNullable(res->data.type);
+    /// A bare `UInt8` null map read through the element is the one subcolumn whose absent value is not its
+    /// default: absence cannot be expressed as `NULL` here, so it must read 1. An element wrapped in
+    /// `Nullable` already expresses it, and an `Array` or `Map` below makes the map `Array(UInt8)`, whose [] is right.
+    const bool selected_subcolumn_is_null_map
+        = nested_selection_is_null_map && !make_subcolumn_nullable && isUInt8(subcolumn_type_before_wrap);
     res->data.serialization = SerializationDynamicElement::create(
         res->data.serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
-        String(subcolumn_nested_name),
-        is_null_map_subcolumn);
-    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
-    if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
+        nested_name_to_store,
+        is_null_map_subcolumn,
+        nullable_added_by_extraction,
+        selected_subcolumn_is_null_map);
 
     if (data.column)
     {
@@ -1032,7 +1054,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     variant_column.localDiscriminatorByGlobal(*discriminator),
                     make_subcolumn_nullable,
                     nullptr,
-                    variant_column.getNumVariants());
+                    variant_column.getNumVariants(),
+                    selected_subcolumn_is_null_map);
             res->data.column = creator->create(res->data.column);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use
@@ -1046,12 +1069,19 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
             else
             {
                 SerializationVariantElement::VariantSubcolumnCreator creator(
-                    null_map_for_variant_from_shared_variant, "", 0, 0, make_subcolumn_nullable, null_map_for_variant_from_shared_variant);
+                    null_map_for_variant_from_shared_variant,
+                    "",
+                    0,
+                    0,
+                    make_subcolumn_nullable,
+                    null_map_for_variant_from_shared_variant,
+                    0,
+                    selected_subcolumn_is_null_map);
                 res->data.column = creator.create(res->data.column);
             }
         }
         /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.
-        else if (is_null_map_subcolumn)
+        else if (is_null_map_subcolumn || selected_subcolumn_is_null_map)
         {
             /// Fill null map with 1 when there is no such Dynamic subcolumn.
             auto column = ColumnUInt8::create();

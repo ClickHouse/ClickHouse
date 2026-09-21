@@ -34,7 +34,8 @@ The external aggregation settings (`max_bytes_before_external_group_by`, `max_by
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
-Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
+`grace_hash` and the adaptive `hash` / `parallel_hash` path.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -63,6 +64,13 @@ Enables the `ALP` compression codec.
 
 If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+Floating-point key columns are excluded from this derivation. The `FINAL` comparator is coarser than value
+identity for `Float32`, `Float64` and `BFloat16`: `-0.0` compares equal to `0.0`, and every `NaN` bit pattern
+compares equal to every other. A partition expression can tell exactly those values apart, so rows the comparator treats as
+one key can land in different partitions, and skipping the cross-partition merge would return all of them.
+The exclusion also applies when a float is nested inside a key column, for example `Tuple(Float64, UInt8)`
+or `Array(Float64)`.
 
 ## enable_cascades_optimizer {#enable_cascades_optimizer}
 
@@ -131,6 +139,18 @@ If set to true, allow using the text index.
 
 Enable early short-circuit constant folding for `and` and `or` during query analysis.
 When enabled, eligible dead scalar-subquery branches are analyzed to preserve their types and validate query semantics, but they are not executed. The optimization falls back to normal analysis when scalar cardinality or runtime values are required.
+
+## enable_funnel_functions {#enable_funnel_functions}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_funnel_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_funnel_functions`."}]}]}/>
+
+Enable functions for funnel analysis.
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -229,6 +249,22 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
+## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_json_lazy_type_hints`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_json_lazy_type_hints`."}]}]}/>
+
+Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
+
+With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
+type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
+materialized during inserts and background merges instead of rewriting the historical data.
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -249,6 +285,18 @@ Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<sub
 When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
 When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 
+## enable_materialized_postgresql_table {#enable_materialized_postgresql_table}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_materialized_postgresql_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_materialized_postgresql_table`."}]}]}/>
+
+Allows to use the `MaterializedPostgreSQL` table engine.
+
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -268,6 +316,19 @@ Move more conditions from WHERE to PREWHERE and do reads from disk and filtering
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Disabled pending usability improvements"}]}]}/>
 
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
+
+## enable_nullable_tuple_type {#enable_nullable_tuple_type}
+
+**Aliases**: `allow_experimental_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}]}]}/>
+
+Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
+
+This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
+Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 
 ## enable_order_by_all {#enable_order_by_all}
 
@@ -412,7 +473,7 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumptio
+Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 
 ## enable_streaming_queries {#enable_streaming_queries}
 
@@ -473,11 +534,43 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 
 Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) data types.
 
+## enable_trino_dialect {#enable_trino_dialect}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}]}]}/>
+
+Enable the `trino` value of the `dialect` setting.
+
+When `dialect` is set to `trino`, queries are written in Trino SQL: Trino-specific
+syntax (`ARRAY[...]` literals, `TRY_CAST`, `UNNEST`, `ROW` types, `OFFSET` before `LIMIT`)
+is translated to ClickHouse SQL, and Trino function names are mapped to their
+ClickHouse equivalents. The `SET` query is still parsed as plain SQL so that the
+dialect can be switched back.
+
+The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
+on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
+An explicit `SETTINGS` clause in the query still takes precedence.
+
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
+
+## enable_unique_key {#enable_unique_key}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_unique_key`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_unique_key`."}]}]}/>
+
+Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 
 ## enable_url_encoding {#enable_url_encoding}
 

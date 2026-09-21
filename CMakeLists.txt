@@ -652,6 +652,15 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
+# Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
+# then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
+# Resolving everything at startup costs nothing here because we link dynamically only against libc
+# and we forbid dlopen (see programs/main.cpp).
+# Not on Darwin: ld64 does not accept '-z' options.
+if (NOT OS_DARWIN)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -779,6 +788,24 @@ add_subdirectory (programs)
 add_subdirectory (utils)
 
 if (FUZZER)
+    # The .options files reference all.dict. OSS-Fuzz builds fuzzer targets
+    # individually and copies tests/fuzz/*.dict, so the `fuzzers` POST_BUILD
+    # step below never runs for it: generate the source-derived fallback here,
+    # before any target is built. The nightly libFuzzer job overwrites it with
+    # the authoritative binary-derived one (tests/fuzz/update_dict.sh).
+    execute_process(
+        COMMAND "${CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict"
+        RESULT_VARIABLE FUZZER_SOURCE_DICT_RESULT
+        OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
+        ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
+    string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
+    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
+    # abort on an unmatched glob far from here.
+    if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
+        message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
+
     # Bundle fuzzers target
     add_custom_target(fuzzers)
     # Instrument all targets fuzzer and link with libfuzzer
