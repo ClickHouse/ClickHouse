@@ -1417,9 +1417,8 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
-/// A `GROUP BY ... SET` assignment whose `IN` needs a set built from a subquery or from a table read cannot
-/// run: `TTLTransform` collects the subqueries of the timestamp and `WHERE` expressions only, so `FunctionIn`
-/// meets an unbuilt set. `TTLValidationMode::Attach` stays permissive, as explained above `buildExpression`.
+/// A `GROUP BY ... SET` assignment whose `IN` needs a set built from a subquery or a table read cannot run:
+/// `TTLTransform` collects the subqueries of the timestamp and `WHERE` expressions only, so the set stays unbuilt.
 void TTLDescription::checkSetPartsAreExecutable() const
 {
     for (const auto & set_part : set_parts)
