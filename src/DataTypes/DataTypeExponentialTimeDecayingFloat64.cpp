@@ -458,14 +458,15 @@ bool isExponentialTimeDecayingFloat64(const DataTypePtr & type)
 
 bool containsExponentialTimeDecayingFloat64(const IDataType & type)
 {
-    bool contains = isExponentialTimeDecayingFloat64(type);
-    if (!contains)
+    if (isExponentialTimeDecayingFloat64(type))
+        return true;
+
+    bool contains = false;
+    type.forEachChild([&](const IDataType & child)
     {
-        type.forEachChild([&](const IDataType & child)
-        {
-            contains |= isExponentialTimeDecayingFloat64(child);
-        });
-    }
+        if (!contains)
+            contains = containsExponentialTimeDecayingFloat64(child);
+    });
     return contains;
 }
 
