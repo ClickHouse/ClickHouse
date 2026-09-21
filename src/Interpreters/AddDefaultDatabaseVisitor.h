@@ -368,9 +368,24 @@ private:
         {
             if (child->as<ASTWithElement>())
                 continue;
-            if (String alias = child->tryGetAlias(); !alias.empty())
-                with_expression_aliases.insert(std::move(alias));
+            collectWithExpressionAliases(child);
         }
+    }
+
+    /// `QueryExpressionsAliasVisitor` collects these at any depth, taking the alias of a lambda or a
+    /// nested query but not descending into one, so an alias deeper in a `WITH` expression is inherited.
+    void collectWithExpressionAliases(const ASTPtr & ast) const
+    {
+        if (String alias = ast->tryGetAlias(); !alias.empty())
+            with_expression_aliases.insert(std::move(alias));
+
+        if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+            return;
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            return;
+
+        for (const auto & child : ast->children)
+            collectWithExpressionAliases(child);
     }
 
     /// Hides the innermost declaration of `name` for as long as it lives.
