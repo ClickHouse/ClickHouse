@@ -98,6 +98,8 @@ public:
         return from_blob_task(blob);
     }
 
+    ColumnPtr convertToFullColumnIfDetached() const override { return convertFrom(); }
+
     /// Creates serialized and compressed blob from the source column.
     static void toBLOB(
         BLOB & blob,
