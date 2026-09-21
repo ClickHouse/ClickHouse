@@ -98,7 +98,7 @@ and grep for those — Rust-backed libraries export `ch_rust::*` (`ch_rust::wasm
 library can export several:
 
 ```bash
-ALIASES$(grep -ho 'add_library *( *[A-Za-z0-9_:.-]*::[A-Za-z0-9_.-]* *ALIAS' $INTEGRATION \
+ALIASES=$(grep -ho 'add_library *( *[A-Za-z0-9_:.-]*::[A-Za-z0-9_.-]* *ALIAS' $INTEGRATION \
           | sed -E 's/add_library *\( *//; s/ *ALIAS$//' | sort -u)
 echo "$ALIASES"
 for a in $ALIASES; do grep -rl --include=CMakeLists.txt -F "$a" src programs base rust; done | sort -u   # consumers
