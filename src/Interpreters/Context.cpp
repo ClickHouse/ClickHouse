@@ -8915,8 +8915,8 @@ ReadSettings Context::getReadSettings() const
     if (res.reader_executor.plan_look_ahead > max_reader_executor_plan_look_ahead)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at most {} bytes. "
-            "The read plan pins every cache cell it resolved until the cursor passes it, so this span bounds "
-            "the memory and the unevictable cache each concurrent reader holds",
+            "The read plan pins every cache cell it resolved until the cursor passes it, so this span drives "
+            "how much memory and how much unevictable cache each concurrent reader holds",
             res.reader_executor.plan_look_ahead, max_reader_executor_plan_look_ahead);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
