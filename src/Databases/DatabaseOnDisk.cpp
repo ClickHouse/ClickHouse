@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -86,6 +87,27 @@ namespace ErrorCodes
 }
 
 
+void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const String & database_name, ContextPtr context)
+{
+    /// Metadata written before the table names were qualified at CREATE time — in particular the
+    /// names introduced by SQL UDF expansion into a view SELECT, a column DEFAULT expression or a
+    /// constraint — can contain unqualified names. They have to resolve against the database owning
+    /// the table and not against the current database of the loading context, which is unrelated to
+    /// this table: the analysis of the constraints executes their scalar subqueries, and the view
+    /// SELECT and the column defaults are kept in the metadata of the storage and are later resolved
+    /// under the context of the reading or inserting query.
+    /// The dictionary definitions are left alone: the nested `QUERY` of their source deliberately
+    /// resolves against the default database of the server (see `DDLDependencyVisitor`).
+    if (ast_create_query.is_dictionary)
+        return;
+
+    AddDefaultDatabaseVisitor visitor(context, database_name);
+    if (ast_create_query.select && ast_create_query.isView())
+        visitor.visitTableExpressions(*ast_create_query.select);
+    if (ast_create_query.columns_list)
+        visitor.visitTableExpressions(*ast_create_query.columns_list);
+}
+
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -111,6 +133,10 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.select && ast_create_query.isView())
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+
+    /// The dependency graphs were built out of exactly the same repaired names, see
+    /// `TablesLoader::buildDependencyGraph`.
+    qualifyNamesFromLegacyMetadata(ast_create_query, database_name, context);
 
     if (ast_create_query.as_table_function)
     {
