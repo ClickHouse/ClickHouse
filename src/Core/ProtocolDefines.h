@@ -180,14 +180,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-/// Version 4 added forwarded worker text logs to the status reply.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
-/// The task status version spoken by a coordinator/worker that predates log forwarding: it has the
-/// failed-task error code but no logs field. Used as the negotiation fallback when the peer does not
-/// advertise a version (an old binary sends no `task_status_version` param / no echo header).
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITHOUT_LOGS = 3;
-/// The first task status version whose status reply carries forwarded worker text logs.
-static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_LOGS = 4;
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
@@ -297,6 +290,7 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 
 /// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
+
 
 /// Version of ClickHouse TCP protocol.
 ///

@@ -2,35 +2,34 @@
 
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Formats/NativeWriter.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 
 using namespace DB;
 
 namespace
 {
 
-/// Every progress field that can survive the status round trip. total_bytes_to_read is gated at
-/// DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS (54463), so whether it survives depends on
-/// the negotiated progress version.
 void fillProgress(Progress & p)
 {
     p.read_rows = 123;
     p.read_bytes = 456;
     p.total_rows_to_read = 789;
-    p.total_bytes_to_read = 5000;   /// carried only at progress version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS
     p.written_rows = 7;
     p.written_bytes = 88;
     p.elapsed_ns = 999999;
 }
 
-/// Assert every progress field carried by the status round trip survived (total_bytes_to_read is
-/// checked separately by each test since it is intentionally not carried).
-void expectProgressCarriedEq(const Progress & out, const Progress & in)
+void expectProgressEq(const Progress & out, const Progress & in)
 {
     EXPECT_EQ(out.read_rows.load(), in.read_rows.load());
     EXPECT_EQ(out.read_bytes.load(), in.read_bytes.load());
@@ -40,149 +39,256 @@ void expectProgressCarriedEq(const Progress & out, const Progress & in)
     EXPECT_EQ(out.elapsed_ns.load(), in.elapsed_ns.load());
 }
 
-/// Build a status carrying `num_log_rows` log lines in the standard InternalTextLogsQueue schema.
-DistributedQueryTaskStatus makeStatus(size_t num_log_rows)
+Block makeLogRows(size_t num_rows)
+{
+    MutableColumns cols = InternalTextLogsQueue::getSampleColumns();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        size_t c = 0;
+        cols[c++]->insert(Field(UInt64(1000 + row)));      // event_time
+        cols[c++]->insert(Field(UInt64(2000 + row)));      // event_time_microseconds
+        cols[c++]->insert(Field(String("worker-host")));   // host_name
+        cols[c++]->insert(Field(String("q::stage_0_0")));  // query_id
+        cols[c++]->insert(Field(UInt64(42)));              // thread_id
+        cols[c++]->insert(Field(Int64(3)));                // priority
+        cols[c++]->insert(Field(String("Executor")));      // source
+        cols[c++]->insert(Field(String("some log line"))); // text
+    }
+    Block b = InternalTextLogsQueue::getSampleBlock();
+    b.setColumns(std::move(cols));
+    return b;
+}
+
+DistributedQueryTaskStatus makeStatus()
 {
     DistributedQueryTaskStatus s;
     s.status = "Failed";
     s.error_message = "Code: 395. DB::Exception: boom on worker";
     s.error_code = 395;
-    s.num_dropped_logs = 17;
-    s.forwarded_log_count = 250;
     fillProgress(s.progress);
-
-    if (num_log_rows > 0)
-    {
-        MutableColumns cols = InternalTextLogsQueue::getSampleColumns();
-        for (size_t row = 0; row < num_log_rows; ++row)
-        {
-            size_t c = 0;
-            cols[c++]->insert(Field(UInt64(1000 + row)));      // event_time
-            cols[c++]->insert(Field(UInt64(2000 + row)));      // event_time_microseconds
-            cols[c++]->insert(Field(String("worker-host")));   // host_name
-            cols[c++]->insert(Field(String("q::stage_0_0")));  // query_id
-            cols[c++]->insert(Field(UInt64(42)));              // thread_id
-            cols[c++]->insert(Field(Int64(3)));                // priority
-            cols[c++]->insert(Field(String("Executor")));      // source
-            cols[c++]->insert(Field(String("some log line"))); // text
-        }
-        Block b = InternalTextLogsQueue::getSampleBlock();
-        b.setColumns(std::move(cols));
-        s.logs = std::move(b);
-    }
     return s;
 }
 
-/// task status version that introduced forwarded worker logs.
-constexpr UInt64 TASK_STATUS_VERSION_WITH_LOGS = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_LOGS;
-/// task status version spoken by a coordinator that predates log forwarding.
-constexpr UInt64 TASK_STATUS_VERSION_LEGACY = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITHOUT_LOGS;
+/// The reply body exactly as a worker from before log forwarding writes it, and exactly as a
+/// coordinator from before log forwarding reads it. Pinned here so a change to the fixed body
+/// shows up as a test failure.
+void writeFixedBodyAsOldWorker(const DistributedQueryTaskStatus & s, WriteBuffer & out)
+{
+    writeStringBinary(s.status, out);
+    writeStringBinary(s.error_message, out);
+    s.progress.write(out, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    writeIntBinary(s.error_code, out);
+}
 
-DistributedQueryTaskStatus roundTrip(const DistributedQueryTaskStatus & in, UInt64 task_version, UInt64 progress_version)
+void readFixedBodyAsOldCoordinator(DistributedQueryTaskStatus & s, ReadBuffer & in)
+{
+    readStringBinary(s.status, in);
+    readStringBinary(s.error_message, in);
+    s.progress.read(in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    readIntBinary(s.error_code, in);
+}
+
+String serialize(const DistributedQueryTaskStatus & s, const TaskCollectors & collectors)
 {
     WriteBufferFromOwnString wb;
-    in.write(wb, task_version, progress_version);
+    s.write(wb, collectors);
     wb.finalize();
+    return wb.str();
+}
 
+DistributedQueryTaskStatus deserialize(const String & bytes)
+{
+    ReadBufferFromString rb(bytes);
     DistributedQueryTaskStatus out;
-    ReadBufferFromString rb(wb.str());
-    out.read(rb, task_version, progress_version);
-    /// A write/read asymmetry (a byte written under a version gate but not read, or vice versa)
-    /// leaves the buffer partly consumed - the exact desync a mixed-version pair would hit.
-    EXPECT_TRUE(rb.eof()) << "reader did not consume the whole buffer at task version " << task_version
-                          << ", progress version " << progress_version;
+    out.read(rb);
+    EXPECT_TRUE(rb.eof()) << "reader left bytes unread";
     return out;
 }
 
+/// One-row block of UInt64 columns, used to hand-craft meta blocks of other schemas.
+Block makeMetaBlock(const std::vector<std::pair<String, UInt64>> & fields)
+{
+    Block b;
+    for (const auto & [name, value] : fields)
+    {
+        auto col = ColumnUInt64::create();
+        col->insertValue(value);
+        b.insert({std::move(col), std::make_shared<DataTypeUInt64>(), name});
+    }
+    return b;
 }
 
-/// Version 3 (legacy, pre-logs): status/error/error_code/progress survive, no logs field on the wire.
-TEST(TaskStatusSerialization, Version3NoLogs)
+void writeNative(WriteBuffer & out, const Block & block)
 {
-    auto in = makeStatus(/*num_log_rows=*/5);
-    auto out = roundTrip(in, TASK_STATUS_VERSION_LEGACY, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    NativeWriter writer(out, STATELESS_WORKER_PAYLOAD_NATIVE_REVISION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+}
 
+}
+
+TEST(TaskCollectors, ParseAndFormat)
+{
+    EXPECT_FALSE(TaskCollectors::parse("").any());
+    EXPECT_TRUE(TaskCollectors::parse("logs").logs);
+    /// Unknown collector names are what a newer coordinator sends; an older worker ignores them.
+    auto mixed = TaskCollectors::parse("logs,profile_events");
+    EXPECT_TRUE(mixed.logs);
+    EXPECT_TRUE(mixed.any());
+    EXPECT_FALSE(TaskCollectors::parse("profile_events").any());
+
+    TaskCollectors c;
+    EXPECT_EQ(c.toString(), "");
+    c.logs = true;
+    EXPECT_EQ(c.toString(), "logs");
+}
+
+/// A worker that was not asked to collect anything writes the fixed body and nothing else, byte for
+/// byte what a pre-logs worker writes. A pre-logs coordinator can read it.
+TEST(TaskStatusSerialization, NoCollectorsWritesOnlyTheFixedBody)
+{
+    auto in = makeStatus();
+    String bytes = serialize(in, TaskCollectors{});
+
+    WriteBufferFromOwnString expected;
+    writeFixedBodyAsOldWorker(in, expected);
+    expected.finalize();
+    EXPECT_EQ(bytes, expected.str());
+
+    ReadBufferFromString rb(bytes);
+    DistributedQueryTaskStatus out;
+    readFixedBodyAsOldCoordinator(out, rb);
+    EXPECT_TRUE(rb.eof());
+    EXPECT_EQ(out.status, in.status);
+    EXPECT_EQ(out.error_code, in.error_code);
+}
+
+/// A pre-logs worker never appends payloads. The new reader sees the body end and reports no logs.
+TEST(TaskStatusSerialization, OldWorkerReplyReadsAsNoLogs)
+{
+    auto in = makeStatus();
+    WriteBufferFromOwnString wb;
+    writeFixedBodyAsOldWorker(in, wb);
+    wb.finalize();
+
+    auto out = deserialize(wb.str());
     EXPECT_EQ(out.status, in.status);
     EXPECT_EQ(out.error_message, in.error_message);
     EXPECT_EQ(out.error_code, in.error_code);
-    EXPECT_EQ(out.logs.rows(), 0u); /// logs field does not exist below task status version 4
-    EXPECT_EQ(out.num_dropped_logs, 0u); /// loss counters are not on the wire below version 4
-    EXPECT_EQ(out.forwarded_log_count, 0u);
-    expectProgressCarriedEq(out.progress, in.progress);
+    expectProgressEq(out.progress, in.progress);
+    EXPECT_FALSE(out.logs.has_value());
 }
 
-/// Version 4 round-trips the logs block plus every carried status field.
-TEST(TaskStatusSerialization, Version4RoundTripsLogs)
+TEST(TaskStatusSerialization, LogsPayloadRoundTrip)
 {
-    auto in = makeStatus(/*num_log_rows=*/5);
-    auto out = roundTrip(in, TASK_STATUS_VERSION_WITH_LOGS, DBMS_TCP_PROTOCOL_VERSION);
+    auto in = makeStatus();
+    in.logs = TaskLogsPayload{.begin_offset = 250, .dropped_total = 17, .rows = makeLogRows(5)};
+    TaskCollectors collectors;
+    collectors.logs = true;
 
+    auto out = deserialize(serialize(in, collectors));
     EXPECT_EQ(out.status, in.status);
-    EXPECT_EQ(out.error_message, in.error_message);
     EXPECT_EQ(out.error_code, in.error_code);
-    expectProgressCarriedEq(out.progress, in.progress);
-    ASSERT_EQ(out.logs.rows(), 5u);
-    EXPECT_EQ(out.logs.getByName("text").column->getDataAt(4), std::string_view("some log line"));
-    EXPECT_EQ(out.logs.getByName("query_id").column->getDataAt(0), std::string_view("q::stage_0_0"));
-    EXPECT_EQ(out.num_dropped_logs, in.num_dropped_logs);
-    EXPECT_EQ(out.forwarded_log_count, in.forwarded_log_count);
+    expectProgressEq(out.progress, in.progress);
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 250u);
+    EXPECT_EQ(out.logs->dropped_total, 17u);
+    ASSERT_EQ(out.logs->rows.rows(), 5u);
+    EXPECT_EQ(out.logs->rows.getByName("text").column->getDataAt(4), std::string_view("some log line"));
+    EXPECT_EQ(out.logs->rows.getByName("query_id").column->getDataAt(0), std::string_view("q::stage_0_0"));
 }
 
-/// The "no logs" case at version 4: has_logs=false, nothing else emitted, still symmetric.
-TEST(TaskStatusSerialization, Version4EmptyLogs)
+/// While logs are collected the payload is on every reply, also when the worker has nothing to send.
+TEST(TaskStatusSerialization, EmptyLogsPayloadIsStillPresent)
 {
-    auto in = makeStatus(/*num_log_rows=*/0);
-    auto out = roundTrip(in, TASK_STATUS_VERSION_WITH_LOGS, DBMS_TCP_PROTOCOL_VERSION);
+    auto in = makeStatus();
+    TaskCollectors collectors;
+    collectors.logs = true;
 
-    EXPECT_EQ(out.status, in.status);
-    EXPECT_EQ(out.logs.rows(), 0u);
-    /// The loss counters ride outside the has_logs branch, so they survive even with no logs.
-    EXPECT_EQ(out.num_dropped_logs, in.num_dropped_logs);
-    EXPECT_EQ(out.forwarded_log_count, in.forwarded_log_count);
+    auto out = deserialize(serialize(in, collectors));
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 0u);
+    EXPECT_EQ(out.logs->dropped_total, 0u);
+    EXPECT_EQ(out.logs->rows.rows(), 0u);
 }
 
-/// The progress version gates total_bytes_to_read independently of the task status version: it is
-/// carried at DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS and above, dropped below it.
-TEST(TaskStatusSerialization, ProgressVersionGatesTotalBytes)
+/// A payload tag this reader does not know is skipped by its length; what follows is still read.
+TEST(TaskStatusSerialization, UnknownTagIsSkipped)
 {
-    auto in = makeStatus(/*num_log_rows=*/0);
+    auto in = makeStatus();
+    in.logs = TaskLogsPayload{.begin_offset = 3, .dropped_total = 0, .rows = makeLogRows(2)};
 
-    auto old_progress = roundTrip(in, TASK_STATUS_VERSION_WITH_LOGS, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
-    expectProgressCarriedEq(old_progress.progress, in.progress);
-    EXPECT_EQ(old_progress.progress.total_bytes_to_read.load(), 0u); /// below the 54463 gate
+    WriteBufferFromOwnString wb;
+    writeFixedBodyAsOldWorker(in, wb);
+    writeTaskStatusPayloadFrame(wb, /*tag=*/ 77, [](WriteBuffer & payload) { writeString("junk!", payload); });
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [&](WriteBuffer & payload) { writeTaskLogsPayload(*in.logs, payload); });
+    writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
+    wb.finalize();
 
-    auto new_progress = roundTrip(in, TASK_STATUS_VERSION_WITH_LOGS, DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS);
-    expectProgressCarriedEq(new_progress.progress, in.progress);
-    EXPECT_EQ(new_progress.progress.total_bytes_to_read.load(), in.progress.total_bytes_to_read.load());
+    auto out = deserialize(wb.str());
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 3u);
+    EXPECT_EQ(out.logs->rows.rows(), 2u);
 }
 
-/// The task status version the worker serializes the status with, negotiated from the
-/// coordinator's `task_status_version` request parameter.
-TEST(TaskStatusNegotiation, ClampAndLegacyDefault)
+/// A newer worker may add columns to the meta block. This reader takes the ones it knows by name.
+TEST(TaskStatusSerialization, MetaBlockWithExtraColumnIsRead)
 {
-    /// Old coordinator sends nothing -> legacy task status version 3 (no logs).
-    EXPECT_EQ(negotiateTaskStatusVersion(std::nullopt), TASK_STATUS_VERSION_LEGACY);
+    auto in = makeStatus();
+    WriteBufferFromOwnString wb;
+    writeFixedBodyAsOldWorker(in, wb);
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
+    {
+        writeNative(payload, makeMetaBlock({{"begin_offset", 11}, {"dropped_total", 5}, {"bytes_dropped", 9999}}));
+        writeNative(payload, makeLogRows(1));
+    });
+    writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
+    wb.finalize();
 
-    /// Same version on both sides -> used as-is.
-    EXPECT_EQ(negotiateTaskStatusVersion(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION),
-              DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION);
-
-    /// The only case that exercises the clamp: a newer coordinator must be pinned to what this
-    /// worker can serialize.
-    EXPECT_EQ(negotiateTaskStatusVersion(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION + 100),
-              DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION);
+    auto out = deserialize(wb.str());
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 11u);
+    EXPECT_EQ(out.logs->dropped_total, 5u);
+    EXPECT_EQ(out.logs->rows.rows(), 1u);
 }
 
-/// The native progress revision the worker serializes progress/logs with, negotiated from the
-/// coordinator's `progress_version` request parameter.
-TEST(TaskStatusNegotiation, ProgressVersionClampAndLegacyDefault)
+/// An older worker may lack columns this reader knows. They read as their defaults.
+TEST(TaskStatusSerialization, MetaBlockWithMissingColumnDefaults)
 {
-    /// Old coordinator sends nothing -> the revision master serializes status progress at.
-    EXPECT_EQ(negotiateProgressVersion(std::nullopt), DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    auto in = makeStatus();
+    WriteBufferFromOwnString wb;
+    writeFixedBodyAsOldWorker(in, wb);
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
+    {
+        writeNative(payload, makeMetaBlock({{"begin_offset", 11}}));
+        writeNative(payload, makeLogRows(0));
+    });
+    writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
+    wb.finalize();
 
-    /// Same version on both sides -> used as-is.
-    EXPECT_EQ(negotiateProgressVersion(DBMS_TCP_PROTOCOL_VERSION), DBMS_TCP_PROTOCOL_VERSION);
+    auto out = deserialize(wb.str());
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 11u);
+    EXPECT_EQ(out.logs->dropped_total, 0u);
+    EXPECT_EQ(out.logs->rows.rows(), 0u);
+}
 
-    /// A newer coordinator must be pinned to what this worker can serialize.
-    EXPECT_EQ(negotiateProgressVersion(DBMS_TCP_PROTOCOL_VERSION + 100), DBMS_TCP_PROTOCOL_VERSION);
+/// Bytes after the fields this reader knows inside a payload are skipped, so a payload can grow.
+TEST(TaskStatusSerialization, TrailingBytesInsidePayloadAreSkipped)
+{
+    auto in = makeStatus();
+    WriteBufferFromOwnString wb;
+    writeFixedBodyAsOldWorker(in, wb);
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
+    {
+        writeNative(payload, makeMetaBlock({{"begin_offset", 1}, {"dropped_total", 2}}));
+        writeNative(payload, makeLogRows(1));
+        writeString("future third block", payload);
+    });
+    writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
+    wb.finalize();
+
+    auto out = deserialize(wb.str());
+    ASSERT_TRUE(out.logs.has_value());
+    EXPECT_EQ(out.logs->begin_offset, 1u);
+    EXPECT_EQ(out.logs->rows.rows(), 1u);
 }

@@ -3,78 +3,185 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/LimitReadBuffer.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ProtocolDefines.h>
+
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
 
 namespace DB
 {
 
-void DistributedQueryTaskStatus::write(WriteBuffer & out, UInt64 task_version, UInt64 progress_version) const
+namespace
+{
+
+constexpr std::string_view COLLECTOR_LOGS = "logs";
+
+constexpr std::string_view META_BEGIN_OFFSET = "begin_offset";
+constexpr std::string_view META_DROPPED_TOTAL = "dropped_total";
+
+void writeNativeBlock(const Block & block, WriteBuffer & out)
+{
+    NativeWriter writer(out, STATELESS_WORKER_PAYLOAD_NATIVE_REVISION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+}
+
+Block readNativeBlock(ReadBuffer & in)
+{
+    NativeReader reader(in, STATELESS_WORKER_PAYLOAD_NATIVE_REVISION);
+    return reader.read();
+}
+
+void insertUInt64Column(Block & block, std::string_view name, UInt64 value)
+{
+    auto column = ColumnUInt64::create();
+    column->insertValue(value);
+    block.insert({std::move(column), std::make_shared<DataTypeUInt64>(), String(name)});
+}
+
+/// A one-row meta block is read by column name: absent means "the writer predates this field".
+UInt64 getUInt64OrDefault(const Block & meta, std::string_view name, UInt64 default_value)
+{
+    String column_name(name);
+    if (meta.rows() != 1 || !meta.has(column_name))
+        return default_value;
+    return meta.getByName(column_name).column->getUInt(0);
+}
+
+}
+
+TaskCollectors TaskCollectors::parse(std::string_view value)
+{
+    TaskCollectors result;
+    std::vector<std::string_view> names;
+    boost::split(names, value, boost::is_any_of(","));
+    for (auto name : names)
+    {
+        if (name == COLLECTOR_LOGS)
+            result.logs = true;
+        /// Any other name belongs to a collector this build does not have. A newer coordinator sent
+        /// it; it learns from the missing payload that we did not collect it.
+    }
+    return result;
+}
+
+String TaskCollectors::toString() const
+{
+    return logs ? String(COLLECTOR_LOGS) : String();
+}
+
+void DistributedQueryTaskStatus::write(WriteBuffer & out, const TaskCollectors & collectors) const
 {
     writeStringBinary(status, out);
     writeStringBinary(error_message, out);
-    progress.write(out, progress_version);
+    progress.write(out, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
     writeIntBinary(error_code, out);
 
-    if (task_version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_LOGS)
+    /// A coordinator that asked for nothing may predate payloads and reads the body up to here.
+    if (!collectors.any())
+        return;
+
+    if (collectors.logs)
     {
-        const bool has_logs = logs.rows() != 0;
-        writeBinary(has_logs, out);
-        if (has_logs)
-        {
-            NativeWriter writer(out, progress_version, std::make_shared<const Block>(InternalTextLogsQueue::getSampleBlock()));
-            writer.write(logs);
-        }
-        writeVarUInt(num_dropped_logs, out);
-        writeVarUInt(forwarded_log_count, out);
+        /// Present on every reply while logs are collected, also when the task has nothing to send.
+        const TaskLogsPayload payload = logs.value_or(TaskLogsPayload{});
+        writeTaskStatusPayload(out, payload);
     }
+
+    writeVarUInt(TASK_STATUS_PAYLOAD_END, out);
 }
 
-void DistributedQueryTaskStatus::read(ReadBuffer & in, UInt64 task_version, UInt64 progress_version)
+void DistributedQueryTaskStatus::read(ReadBuffer & in)
 {
     readStringBinary(status, in);
     readStringBinary(error_message, in);
-    progress.read(in, progress_version);
+    progress.read(in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
     readIntBinary(error_code, in);
 
-    if (task_version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_LOGS)
+    /// A worker that appended nothing: older than payloads, or not asked to collect anything.
+    if (in.eof())
+        return;
+
+    forEachTaskStatusPayload(in);
+}
+
+void DistributedQueryTaskStatus::readPayload(UInt64 tag, ReadBuffer & payload)
+{
+    if (tag == TASK_STATUS_PAYLOAD_LOGS)
+        logs = readTaskLogsPayload(payload);
+}
+
+void DistributedQueryTaskStatus::forEachTaskStatusPayload(ReadBuffer & in)
+{
+    while (true)
     {
-        bool has_logs = false;
-        readBinary(has_logs, in);
-        if (has_logs)
-        {
-            NativeReader reader(in, progress_version);
-            logs = reader.read();
-        }
-        readVarUInt(num_dropped_logs, in);
-        readVarUInt(forwarded_log_count, in);
+        UInt64 tag = 0;
+        readVarUInt(tag, in);
+        if (tag == TASK_STATUS_PAYLOAD_END)
+            break;
+
+        UInt64 length = 0;
+        readVarUInt(length, in);
+        /// Exactly `length` bytes belong to this payload; `read_no_less` makes a truncated body throw.
+        LimitReadBuffer payload(in, {.read_no_less = length, .read_no_more = length});
+
+        readPayload(tag, payload);
+
+        /// A tag the handler does not know, or bytes a newer worker appended inside a known payload.
+        payload.ignoreAll();
     }
 }
 
-UInt64 negotiateTaskStatusVersion(std::optional<UInt64> requested_version)
+void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, const std::function<void(WriteBuffer &)> & write_payload)
 {
-    /// An old coordinator does not send the parameter; it speaks the pre-logs task status version
-    /// (status/error/progress/error_code, no logs), so answer in that format.
-    if (!requested_version)
-        return getCommonTaskStatusVersion();
+    WriteBufferFromOwnString payload;
+    write_payload(payload);
+    payload.finalize();
 
-    /// The coordinator asked for `*requested_version`, but this worker can serialize at most
-    /// DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION (it may be older than the coordinator).
-    return std::min<UInt64>(*requested_version, DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION);
+    writeVarUInt(tag, out);
+    writeVarUInt(payload.str().size(), out);
+    out.write(payload.str().data(), payload.str().size());
 }
 
-UInt64 negotiateProgressVersion(std::optional<UInt64> requested_version)
+void writeTaskStatusPayload(WriteBuffer & out, const TaskLogsPayload & logs)
 {
-    /// An old coordinator does not send the parameter; master serializes status progress at the
-    /// common baseline revision, so answer in that revision.
-    if (!requested_version)
-        return getCommonProgressVersion();
+    writeTaskStatusPayloadFrame(out, TASK_STATUS_PAYLOAD_LOGS, [&logs](WriteBuffer & payload)
+    {
+        writeTaskLogsPayload(logs, payload);
+    });
+}
 
-    /// The coordinator asked for `*requested_version`, but this worker can serialize at most its own
-    /// native protocol version (it may be older than the coordinator).
-    return std::min<UInt64>(*requested_version, DBMS_TCP_PROTOCOL_VERSION);
+void writeTaskLogsPayload(const TaskLogsPayload & logs, WriteBuffer & out)
+{
+    Block meta;
+    insertUInt64Column(meta, META_BEGIN_OFFSET, logs.begin_offset);
+    insertUInt64Column(meta, META_DROPPED_TOTAL, logs.dropped_total);
+    writeNativeBlock(meta, out);
+
+    /// The rows block is always written, with its header even when there are no rows, so the reader
+    /// finds the two blocks it expects.
+    if (logs.rows.columns() != 0)
+        writeNativeBlock(logs.rows, out);
+    else
+        writeNativeBlock(InternalTextLogsQueue::getSampleBlock(), out);
+}
+
+TaskLogsPayload readTaskLogsPayload(ReadBuffer & in)
+{
+    TaskLogsPayload result;
+
+    Block meta = readNativeBlock(in);
+    result.begin_offset = getUInt64OrDefault(meta, META_BEGIN_OFFSET, 0);
+    result.dropped_total = getUInt64OrDefault(meta, META_DROPPED_TOTAL, 0);
+
+    result.rows = readNativeBlock(in);
+    return result;
 }
 
 }
