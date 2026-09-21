@@ -2516,7 +2516,9 @@ Streaming reads (`SELECT ... STREAM`) keep working: the background job that serv
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
 that a read-only table never started are started at that point, so merges, mutations, moves, TTL, and cleanup resume without a server restart.
-Outdated (inactive) parts are loaded before cleanup can remove empty parts that cover them. This setting is not supported for `ReplicatedMergeTree`.
+Outdated (inactive) parts are loaded before cleanup can remove empty parts that cover them. The table stays read-only for concurrent queries for
+the whole duration of that `ALTER`: it accepts writes again only once the statement returned, not already when its metadata was committed.
+This setting is not supported for `ReplicatedMergeTree`.
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.

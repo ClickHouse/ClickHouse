@@ -94,6 +94,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_settings_throw_before_metadata_commit[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
+    extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -522,6 +523,12 @@ void StorageMergeTree::alter(
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
 
+    /// Set for a settings `ALTER` of a read-only table, see the branch below. Declared here so that
+    /// the window it opens is closed only after the post-commit tail at the end of this method has
+    /// restored the background workers, not already when the settings branch exits.
+    bool commit_of_readonly_table = false;
+    SCOPE_EXIT({ if (commit_of_readonly_table) readonly_commit_in_flight = false; });
+
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
@@ -535,14 +542,21 @@ void StorageMergeTree::alter(
         /// by an earlier `ALTER`; this keeps the invariant for a table created with `table_readonly = 1`.
         /// The table is durably read-only until the commit succeeds, so foreground queries that
         /// modify data keep being rejected for the whole window, exactly like the background workers
-        /// disabled just below. Cleared at the end of this branch, before the post-commit tail.
-        const bool commit_of_readonly_table = (*old_storage_settings)[MergeTreeSetting::table_readonly];
+        /// disabled just below.
+        ///
+        /// The window does not end at the commit. A successful 1 -> 0 toggle leaves the table durably
+        /// writable while its workers are still disabled, until the post-commit tail at the end of
+        /// this method enables them and reschedules the part loaders. A command that ran in that gap
+        /// would see a writable table whose `waitForOutdatedPartsToBeLoaded` still takes the
+        /// "nothing is loading" fast path, and could therefore drop or replace a partition before the
+        /// deferred outdated parts were loaded. So the flag is cleared by the tail, once the workers
+        /// are back, or by the scope guard above on any path that does not reach it.
+        commit_of_readonly_table = (*old_storage_settings)[MergeTreeSetting::table_readonly];
         if (commit_of_readonly_table)
         {
             readonly_commit_in_flight = true;
             disableBackgroundWorkers();
         }
-        SCOPE_EXIT({ if (commit_of_readonly_table) readonly_commit_in_flight = false; });
 
         StartedBackgroundWorkers started_workers;
         try
@@ -951,10 +965,20 @@ void StorageMergeTree::alter(
         /// but that leaves the table in a consistent writable state with every worker running.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_alter_readonly_pause_after_metadata_commit);
+
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
             /// The loaders returned without loading while disabled; they re-arm themselves, this is faster.
             startOutdatedAndUnexpectedDataPartsLoadingTask();
+
+            /// The transition is complete: the table is durably writable and every worker that a
+            /// writable table runs is back, so the part loaders make progress again and the waits on
+            /// them block as they should. Open the table to the commands that `isTableReadonly` kept
+            /// out for the duration of the `ALTER`. The scope guard above would do it as well, but
+            /// only at the end of this method, after the disk cleanup below.
+            readonly_commit_in_flight = false;
+            commit_of_readonly_table = false;
 
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())
