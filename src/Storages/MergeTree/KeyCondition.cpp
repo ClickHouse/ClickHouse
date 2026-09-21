@@ -4712,8 +4712,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         }
 
         /// The sparse primary index stores the same UInt64 ordering key used by the
-        /// column comparator. Keep the row predicate active because index marks still
-        /// represent ranges of rows rather than complete values.
+        /// column comparator. Keep the row predicate active because sparse index marks
+        /// still describe ranges of rows rather than complete values.
         const auto key_type_for_index = removeNullable(key_expr_type);
         if (isExponentialTimeDecayingFloat64(key_type_for_index))
         {
