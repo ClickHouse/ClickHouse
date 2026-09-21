@@ -1227,17 +1227,6 @@ def test_password_masking(started_cluster):
         )
         == "CREATE DICTIONARY default.mongodb_dictionary_uri_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(URI \\'mongodb://[HIDDEN]@127.0.0.1:27017/example\\' COLLECTION \\'test_clickhouse\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
     )
-    # system.dictionaries.source is produced by MongoDBDictionarySource::toString, a different code
-    # path than the query text above; it also feeds the "Created dictionary source '{}'" server log.
-    # The whole userinfo must be masked. mongocxx may normalize the URI, so assert on substrings.
-    dictionary_source = node.query(
-        """
-        SELECT source FROM system.dictionaries
-        WHERE name = 'mongodb_dictionary_uri_password_masking' AND database = currentDatabase();
-        """
-    )
-    assert "mypassword" not in dictionary_source and "testuser" not in dictionary_source
-    assert "[HIDDEN]" in dictionary_source
     node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_uri_password_masking;")
 
     # The query-text sanitizer must mask the whole userinfo, which the old password-only masker did

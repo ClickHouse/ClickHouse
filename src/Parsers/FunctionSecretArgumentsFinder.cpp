@@ -372,10 +372,8 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     }
 
     chassert(result.count == 0);
-    /// Mask the whole userinfo (`user:password`), not just the password: a MongoDB URI can carry a
-    /// password that itself contains '@' or a bare credential token with no ':' separator, both of
-    /// which a password-only masker leaves partly visible. MongoDB URIs have no presigned parameters,
-    /// so `maskURIUserinfo` alone is enough (unlike the S3/url `maskURICredentials`).
+    /// Mask the whole userinfo, not just the password: an '@' in the password or a bare token would
+    /// otherwise leak. MongoDB URIs have no presigned parameters, so userinfo masking alone suffices.
     maskURIUserinfo(uri);
     result.count = 1;
     result.replacement = std::move(uri);
