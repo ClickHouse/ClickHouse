@@ -1,7 +1,7 @@
 <test>
     <!--
         arrayReverse falls back to a generic per-element insertFrom loop for element types that
-        executeNumber/executeString do not cover (Decimal*, Int128/256, Tuple, nested Array).
+        executeNumber/executeString do not cover (Int128/256, Tuple, nested Array).
         That loop used to reserve the row count rather than the nested element count, so an
         array of several elements paid repeated capacity growth.
     -->
