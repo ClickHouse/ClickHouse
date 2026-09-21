@@ -965,8 +965,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
                 /// Intersect with the original selector to keep only rows that
                 /// both belong to this partition and have a non-NULL ASOF key
-                /// A right-side column can carry the lazy replication wrapper, so nullness is read
-                /// through the column, which resolves the logical row.
+                /// A right-side column can carry the lazy replication wrapper, whose isNullAt() resolves the logical row.
                 for (size_t r : selector)
                     if (!asof_column.column->isNullAt(r))
                         new_selector_data.push_back(r);
