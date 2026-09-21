@@ -549,6 +549,8 @@ class RunTest:
         query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
         if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
             query += f" SETTINGS vector_search_use_quantized_codes = 1, vector_search_index_fetch_multiplier = {variant}"
+        if self._search_method == SEARCH_METHOD_QBIT:
+            query += f" SETTINGS qbit_one_bit_symmetric_distance=1"
         return query
 
     def load_data(self):
