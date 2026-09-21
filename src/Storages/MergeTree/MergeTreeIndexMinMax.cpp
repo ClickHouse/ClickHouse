@@ -211,11 +211,20 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
+    , disabled(std::ranges::any_of(
+          index_data_types,
+          [](const DataTypePtr & type)
+          {
+              return containsExponentialTimeDecayingFloat64(type);
+          }))
 {
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
+    if (disabled)
+        return true;
+
     return rpnEvaluatesAlwaysUnknownOrTrue(
         condition.getRPN(),
         {KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE,
@@ -231,6 +240,9 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
+    if (disabled)
+        return true;
+
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
