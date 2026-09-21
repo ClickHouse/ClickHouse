@@ -307,20 +307,31 @@ def test_compare_scalar_requires_unlabeled_row():
     assert "labels" in reason
 
 
-def test_compare_expect_fail():
-    case = loader.EvalCase(
-        eval_id="t:2",
-        file_name="t.test",
-        line=2,
-        kind="instant",
-        expr="bad()",
-        time_s=0,
-        expect_fail=True,
+def test_compare_expect_fail(tmp_path: Path):
+    path = tmp_path / "expect_fail.test"
+    path.write_text(
+        textwrap.dedent(
+            """
+            eval instant at 0 bad()
+                expect fail
+
+            eval_fail instant at 0 bad()
+            """
+        )
     )
-    status, _ = loader.compare_eval(case, "", "DB::Exception: boom")
-    assert status == "passed"
-    status, _ = loader.compare_eval(case, "[('__name__','x')]\t0\t1\n", None)
-    assert status == "failed"
+    cases = loader.parse_test_file(path)[0].evals
+    assert len(cases) == 2
+    assert all(case.expect_fail for case in cases)
+    errors = (
+        "Code: 48. DB::Exception: Function foo is unavailable",
+        "DB::Exception: Feature unavailable (NOT_IMPLEMENTED)",
+    )
+    for case in cases:
+        for error in errors:
+            status, _ = loader.compare_eval(case, "", error)
+            assert status == "passed"
+        status, _ = loader.compare_eval(case, "[('__name__','x')]\t0\t1\n", None)
+        assert status == "failed"
 
 
 def test_unsupported_not_implemented():

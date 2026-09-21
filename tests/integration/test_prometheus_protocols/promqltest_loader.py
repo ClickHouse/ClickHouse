@@ -794,6 +794,8 @@ def _sql_ts_to_seconds(ts: str) -> Optional[float]:
 def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, str]:
     """Return (status, reason) status in passed/failed/unsupported."""
     if error:
+        if case.expect_fail:
+            return "passed", ""
         err_l = error.lower()
         if (
             "not implemented" in err_l
@@ -803,8 +805,6 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
             or "501" in err_l
         ):
             return "unsupported", error
-        if case.expect_fail:
-            return "passed", ""
         return "failed", f"ClickHouse error: {error}"
     if case.expect_fail:
         return "failed", "expected failure but ClickHouse succeeded"
