@@ -3776,6 +3776,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                         "LATERAL JOIN only supports INNER and LEFT join kinds. "
                         "{} JOIN LATERAL is not supported", toString(lateral_kind));
 
+                /// Reject an explicit `GLOBAL` locality: the decorrelated plan is built by
+                /// `buildLogicalJoinForLateral`, which does not carry the locality over, so a
+                /// `GLOBAL ... JOIN LATERAL` would silently run as an ordinary local join.
+                if (join_node.getLocality() == JoinLocality::Global)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "GLOBAL is not supported with LATERAL JOIN");
+
                 /// Reject unsupported strictness: only ALL (default) is supported
                 auto lateral_strictness = join_node.getStrictness();
                 if (lateral_strictness != JoinStrictness::Unspecified && lateral_strictness != JoinStrictness::All)
