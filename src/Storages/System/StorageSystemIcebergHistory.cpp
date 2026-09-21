@@ -224,7 +224,7 @@ void StorageSystemIcebergHistory::fillData(
 
         StoragePtr storage;
 
-try
+        try
         {
             storage = database->tryGetTable(table_name, context_copy);
             if (!storage)
