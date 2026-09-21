@@ -3353,10 +3353,10 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 }
 
 /// Whether a numeric conversion `from` -> `to` can be JIT-compiled. Compiled code cannot raise, so only
-/// conversions whose interpreted form has no range check are compilable: a `Decimal` source to float, or
-/// to a signed integer at least as wide as its storage (the `convertToImpl` arms that never throw), and
-/// any source to `Bool`, lowered as a comparison of the raw value with zero. A `Decimal` destination
-/// range-checks `value * 10^scale`, and `fptosi` / `fptoui` are undefined outside the destination range.
+/// conversions whose interpreted form has no range check are compilable: number to number, which wraps
+/// interpreted too; `Decimal` to float, or to a signed integer at least as wide as its storage (the
+/// `convertToImpl` arms that never throw); and any source to `Bool`, a raw comparison with zero. A
+/// `Decimal` destination range-checks `value * 10^scale`; `fptosi` / `fptoui` are undefined out of range.
 static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
 {
     return castBothTypes(from, to, [](const auto & left, const auto & right)
@@ -3430,6 +3430,9 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)
@@ -3547,6 +3550,9 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)

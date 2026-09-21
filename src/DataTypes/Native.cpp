@@ -301,6 +301,9 @@ llvm::Value * nativeCastWithDecimalScale(
             {
                 /// Integer → `Decimal`: widen to `Decimal`'s underlying integer type,
                 /// then multiply by `10^to_scale` to lift the value into `Decimal` scale.
+                /// The lift is unchecked, so only a destination whose storage holds `value * 10^to_scale`
+                /// may be passed here. `FunctionIfBase`, the only caller, passes the branches' least
+                /// supertype, which reserves precision for the integer's digits plus `to_scale`.
                 auto * widened = (from_native_type == to_native_type)
                     ? value
                     : b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));

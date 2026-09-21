@@ -14,12 +14,14 @@ SELECT toDecimal32(materialize(7::Int32) + 0, 2),
 -- multiply leaves the destination's storage range, the `Decimal` whole part does not fit a narrower
 -- destination, and an unsigned destination cannot take a negative whole part. Each conversion needs a
 -- compilable neighbour to be compiled at all, which is what `+ 0` and the surrounding arithmetic are
--- for. The second and the last row go through `CAST`, which is the second compilability gate.
+-- for. The second and the last row go through `CAST`, which is the second compilability gate; the last
+-- one needs a `Nullable` destination, because a `CAST` from a `Nullable` source to a non-`Nullable` type
+-- is declined before this gate.
 SELECT toDecimal32(materialize(30000000::Int32) + 0, 2); -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(materialize(30000000::Int32) + 0 AS Decimal32(2)); -- { serverError DECIMAL_OVERFLOW }
 SELECT toInt8(materialize(300::Decimal64(0))) + 0; -- { serverError DECIMAL_OVERFLOW }
 SELECT toUInt32(materialize(-5::Decimal32(0))) + 0; -- { serverError DECIMAL_OVERFLOW }
-SELECT CAST(materialize(toNullable(300::Decimal64(0))) AS Int8) + 0; -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toNullable(300::Decimal64(0))) AS Nullable(Int8)) + 0; -- { serverError DECIMAL_OVERFLOW }
 
 -- Every row above is a value oracle, so all of them would still pass if the conversions that agree
 -- with the interpreter silently stopped being compiled. The shapes below pin which of them compiles.
