@@ -2939,6 +2939,24 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     else
     {
         constexpr size_t batch_size = 64;
+        constexpr size_t large_batch_size = 4 * batch_size;
+
+        while (new_value_idx + large_batch_size <= page.num_values)
+        {
+            const size_t rows_in_chunk
+                = std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + batch_size))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 2 * batch_size))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 3 * batch_size));
+            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
+
+            if (rows_in_chunk > rows_to_advance)
+                break;
+
+            page.next_row_idx += rows_in_chunk;
+            new_value_idx += large_batch_size;
+        }
+
         while (new_value_idx + batch_size <= page.num_values)
         {
             const size_t rows_in_chunk = std::popcount(
@@ -3103,7 +3121,11 @@ static size_t processRepDefLevelsForFlatArray(
     out_offsets.resize_assume_reserved(old_size + num_rows);
 
     size_t i = 0;
-    if (num_rows <= num_values / 4)
+    bool use_masks = num_rows <= num_values / 4;
+    if (!use_masks && num_rows <= num_values / 2 && memchr(def, 0, num_values) == nullptr)
+        use_masks = true;
+
+    if (use_masks)
     {
         constexpr size_t batch_size = 64;
         for (; i + batch_size <= num_values; i += batch_size)
@@ -3113,8 +3135,24 @@ static size_t processRepDefLevelsForFlatArray(
             /// values that contribute to the array offset.
             UInt64 boundaries = ~bytes64MaskToBits64Mask(rep + i);
             const UInt64 contributes = bytes64MaskToBits64Mask(def + i);
-            UInt64 processed = 0;
 
+            if (contributes == ~UInt64(0))
+            {
+                /// Every value contributes, so an offset at position N is simply
+                /// the block's starting offset plus N.
+                const UInt64 block_offset = offset;
+                while (boundaries)
+                {
+                    const unsigned boundary = std::countr_zero(boundaries);
+                    *out++ = block_offset + boundary;
+                    boundaries &= boundaries - 1;
+                }
+
+                offset += batch_size;
+                continue;
+            }
+
+            UInt64 processed = 0;
             while (boundaries)
             {
                 const unsigned boundary = std::countr_zero(boundaries);
