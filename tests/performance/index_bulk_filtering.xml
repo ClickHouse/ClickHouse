@@ -21,6 +21,10 @@
         SETTINGS index_granularity = 5;
     </create_query>
 
+    <!-- Each merge widens a part's value range past the sought keys, so the queries below are only comparable while the part layout the fills build stays in place. -->
+    <fill_query>SYSTEM STOP MERGES test_set_index</fill_query>
+    <fill_query>SYSTEM STOP MERGES test_minmax_index</fill_query>
+
     <fill_query>
         INSERT INTO test_set_index
         SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
@@ -37,5 +41,8 @@
     <query>SELECT * FROM test_set_index WHERE SHA256(x::String) = SHA256(999999::String)</query>
     <query>SELECT count() FROM test_minmax_index WHERE x BETWEEN 123456 AND 789012</query>
 
+    <drop_query>SYSTEM START MERGES test_set_index</drop_query>
+    <drop_query>SYSTEM START MERGES test_minmax_index</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_set_index;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_minmax_index;</drop_query>
 </test>
