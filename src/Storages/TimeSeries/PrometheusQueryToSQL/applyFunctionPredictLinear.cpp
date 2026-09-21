@@ -205,12 +205,20 @@ SQLQueryPiece applyFunctionPredictLinear(
     auto range_argument = std::move(arguments[0]);
 
     if (range_argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
+    {
+        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = range_argument.value_data_type;
+        return res;
+    }
 
     /// The horizon goes last: it may register a scalar subquery, which is left unused if the result is found empty above.
     PredictionOffset prediction_offset = getPredictionOffset(arguments[1], context);
     if (!prediction_offset.ast)
-        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = range_argument.value_data_type;
+        return res;
+    }
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 

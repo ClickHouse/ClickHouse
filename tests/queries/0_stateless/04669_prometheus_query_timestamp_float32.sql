@@ -141,6 +141,19 @@ FROM prometheusQuery(
     'sum(timestamp(clamp(vector(1), 2, 1))) + max(timestamp(clamp(vector(1), 2, 1)))',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
+-- Quantile and linear prediction over provably empty range keep Float64 override.
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'quantile_over_time(0.5, clamp(timestamp(vector(1)), 2, 1)[10s:5s])',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'predict_linear(clamp(timestamp(vector(1)), 2, 1)[10s:5s], 1)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 -- Two histogram buckets of the same metric, sharing one sample timestamp with fractional seconds.
 INSERT INTO promql_timestamp_float32_tags VALUES
     (2, 'float32_histogram_bucket', map('le', '1000000000.5'),
