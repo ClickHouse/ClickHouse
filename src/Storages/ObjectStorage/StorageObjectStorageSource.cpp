@@ -1476,6 +1476,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (filter_info)
             {
                 filter_info_with_row_numbers->current_schema_column_mapper = filter_info->current_schema_column_mapper;
+                filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
             }
             filter_info_with_row_numbers->need_row_numbers = true;

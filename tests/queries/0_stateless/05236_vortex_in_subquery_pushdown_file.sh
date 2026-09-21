@@ -25,6 +25,12 @@ $CLICKHOUSE_CLIENT -q "
     SELECT number AS n FROM numbers(300000)
     SETTINGS engine_file_truncate_on_insert = 1"
 
+# A real table, so that the `IN` operand stays a subquery set the reading step has to build, rather
+# than a constant the analyzer folds away.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE keys (k UInt64) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO keys SELECT number FROM numbers(3);"
+
 run_and_report_events() {
     local label=$1
     local query=$2
@@ -35,18 +41,22 @@ run_and_report_events() {
     $CLICKHOUSE_CLIENT -q "
         SELECT
             ProfileEvents['VortexFilterPushdownConjunctsPushed'],
+            ProfileEvents['VortexFilterPushdownConjunctsDropped'],
             ProfileEvents['VortexScanEmptySplits'] >= 2
         FROM system.query_log
         WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish' AND current_database = currentDatabase()"
 }
 
-run_and_report_events "An IN over a subquery, pushed down (the set is built before the scan):" \
-    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (SELECT 42)"
+run_and_report_events "An IN over a subquery set, pushed down (the other splits are dropped whole):" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (SELECT k FROM keys)"
 
-run_and_report_events "A NOT IN over a subquery, pushed down:" \
-    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n NOT IN (SELECT number FROM numbers(100000, 200000))"
+run_and_report_events "A NOT IN over the same subquery set, pushed down (it drops no whole split):" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n NOT IN (SELECT k FROM keys)"
 
 run_and_report_events "An IN over a literal tuple, for comparison (its set needs no eager pass):" \
-    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (42, 43)"
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (0, 1, 2)"
+
+run_and_report_events "A subquery set above the 64-element pushdown limit (left to ClickHouse):" \
+    "SELECT count() FROM file('$DATA_FILE', 'Vortex') WHERE n IN (SELECT number FROM numbers(100))"
 
 rm -rf "${WORKING_DIR}"
