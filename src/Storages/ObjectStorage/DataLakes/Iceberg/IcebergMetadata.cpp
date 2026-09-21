@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
@@ -7,7 +8,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -415,6 +415,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
     {
@@ -429,6 +430,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_refresh_cursor))
+            refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -443,7 +447,16 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_rows,
         total_bytes,
         total_position_deletes,
+        refresh_cursor,
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+}
+
+std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
+{
+    auto state = getRelevantState(local_context);
+    if (!state.first)
+        return std::nullopt;
+    return state.first->refresh_cursor;
 }
 
 IcebergDataSnapshotPtr
@@ -479,6 +492,26 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
+
+        /// `getHistory` fills `ancestors` only when the table has a current snapshot, so with none -
+        /// `current-snapshot-id` absent, `null` or negative alike - no record is a current ancestor.
+        /// Compaction does not check that: `getPlan` marks a rewrite as needed from any historical
+        /// position delete, and the rewrite republishes a snapshot chain built from append history.
+        /// The table that `SELECT` reads as empty would come back with its historical rows. Nothing
+        /// is expired here, so refuse the rewrite and leave the table as it is (fail-close).
+        ///
+        /// A `current-snapshot-id` that names a snapshot missing from `snapshots` lands here too:
+        /// that metadata is corrupt, and refusing the rewrite is the fail-close answer for it as
+        /// well, so the condition is stated as what was observed - no current ancestor - rather
+        /// than as a claim about `current-snapshot-id`.
+        const bool has_current_ancestor = std::ranges::any_of(
+            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; });
+        if (!has_current_ancestor)
+        {
+            LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
+            return true;
+        }
+
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -802,7 +835,8 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components);
+            args, context, object_storage_, data_lake_settings, persistent_components,
+            catalog_, storage_id.getTableName());
     }
     else
     {
@@ -997,8 +1031,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             parents_list[snapshot_id] = 0;
     }
 
-    /// For empty table we may have no snapshots
-    if (metadata_object->has(f_current_snapshot_id))
+    /// For empty table we may have no snapshots. `has` is true for a JSON null, and `getValue<Int64>`
+    /// throws on one; null means "no current snapshot" just like an absent key.
+    if (metadata_object->has(f_current_snapshot_id) && !metadata_object->isNull(f_current_snapshot_id))
     {
         auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         /// Add current snapshot-id to ancestors list
@@ -1398,7 +1433,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->info.position_deletes_objects.empty())
+    if (iceberg_object_info->info.hasPositionDeletes())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)

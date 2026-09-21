@@ -132,7 +132,8 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
     keys = std::move(new_keys);
 }
 
-QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool allow_suspicious_types)
+QueryTreeNodes unwrapInjectiveFunctionsInKeys(
+    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep)
 {
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());
@@ -147,7 +148,7 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool 
             nodes_to_process.pop();
 
             const auto * function_node = node_to_process->as<FunctionNode>();
-            if (!function_node)
+            if (!function_node || (keys_to_keep && keys_to_keep->contains(node_to_process)))
             {
                 // Constant aggregation keys are removed in PlannerExpressionAnalysis.cpp
                 new_keys.push_back(node_to_process);

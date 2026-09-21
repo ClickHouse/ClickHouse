@@ -155,7 +155,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
         return false;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
@@ -298,10 +298,13 @@ static Plan getPlan(
         if (partition_index >= plan.partitions.size())
             continue;
 
+        if (delete_file->parsed_entry->isDeletionVector())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compaction of Iceberg tables with deletion vectors is not supported");
+
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
-                data_file->data_object_info->addPositionDeleteObject(
+                data_file->data_object_info->addPositionDeleteFile(
                     delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
     }
@@ -339,11 +342,11 @@ static void writeDataFiles(
     {
         /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
         /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteObject`, but a data
+        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
         /// file without them (e.g. an ORC file newer than all position deletes) may be in any
         /// format, so the transform must be skipped for it.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
-        if (!data_file->data_object_info->info.position_deletes_objects.empty())
+        if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
                 sample_block,
                 data_file->data_object_info,
@@ -434,7 +437,7 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
@@ -1381,8 +1384,10 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
+            catalog,
+            table_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
@@ -1390,8 +1395,7 @@ void compactIcebergManifests(
             log.get(),
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method,
-            /* force_fetch_latest_metadata */ true,
-            /* ignore_explicit_metadata_file_path */ true);
+            /* ignore_metadata_pointer_overrides */ true);
 
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
