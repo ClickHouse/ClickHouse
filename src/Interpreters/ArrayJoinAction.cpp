@@ -47,7 +47,7 @@ static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
         return column;
     if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
         return map->getNestedColumnPtr();
-    /// A lazily replicated array stays lazy, a replicated map is unwrapped to its replicated arrays.
+    /// Keep replicated arrays lazy, only unwrap maps.
     if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
         const auto & nested = replicated->getNestedColumn();
@@ -205,7 +205,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
         for (const auto & name : columns)
         {
             const auto & src_col = block.getByName(name);
-            /// Not materialized: `emptyArrayToSingle` runs on the nested rows of a replicated column.
+            /// emptyArrayToSingle is fine with a replicated input, no need to materialize it.
             ColumnWithTypeAndName array_col{getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()), getArrayJoinDataType(src_col.type), src_col.name};
             ColumnsWithTypeAndName tmp_block{array_col};
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size(), /* dry_run = */ false);
@@ -222,7 +222,7 @@ void ArrayJoinResultIterator::initAnyArray()
     if (any_array)
         return;
 
-    /// A replicated array is not materialized here, only its row sizes are needed to cut the windows.
+    /// Replicated arrays are materialized per window, here we only need the row sizes.
     const auto * replicated = typeid_cast<const ColumnReplicated *>(any_array_map_ptr.get());
     const auto * nested_array = replicated ? getArrayJoinColumnRawPtr(replicated->getNestedColumn()) : nullptr;
     if (!nested_array)
@@ -249,7 +249,6 @@ ColumnPtr ArrayJoinResultIterator::cutAnyArray(size_t start, size_t length) cons
 {
     if (any_array)
         return any_array->cut(start, length);
-    /// Materializes just this window of the replicated array.
     return getArrayJoinColumn(any_array_map_ptr->cut(start, length)->convertToFullColumnIfReplicated());
 }
 
@@ -306,7 +305,6 @@ Block ArrayJoinResultIterator::next()
         {
             if (const auto & type = getArrayJoinDataType(current.type))
             {
-                /// Only this window is materialized, the source or the non-empty arrays may be replicated.
                 ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                                  : getArrayJoinColumn(current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
                 array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
