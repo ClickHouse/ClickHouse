@@ -113,8 +113,6 @@ CompressionCodecPtr CompressionCodecFactory::get(
                 if (only_generic && !expanded_codec->isGenericCompression() && !expanded_codec->isEncryption())
                     continue;
 
-                /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values.
-                /// When the data type is unknown we can not verify the column is floating-point
                 if (!column_type && expanded_codec->isLossyCompression())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
