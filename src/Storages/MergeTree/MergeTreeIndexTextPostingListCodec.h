@@ -125,8 +125,8 @@ public:
     /// Constructs a codec for decoding only: `append` requires the encoding constructor below.
     SegmentedPostingListCodec() = default;
 
-    /// Constructs a codec for encoding. The requested `segment_size_` is rounded up to a multiple of BLOCK_SIZE,
-    /// because the SIMD bit-packing expects block-aligned segments.
+    /// Constructs a codec for encoding.
+    /// The requested `segment_size_` is rounded up to a multiple of BLOCK_SIZE.
     SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_);
 
     /// Encode a batch of sorted unique row ids (increasing across calls), appending
@@ -179,7 +179,7 @@ private:
     /// Throws CORRUPTED_DATA if the header claims more than `max_cardinality` row ids or more payload bytes than they can take.
     SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer);
 
-    /// Number of row ids per segment. Set by the encoding constructor only.
+    /// Number of row ids per segment.
     size_t segment_size = 0;
     /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     PODArray<char> compressed_data;

@@ -32,7 +32,7 @@ public:
     virtual ~IPostingListEncoder() = default;
 
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
-    /// Each time the open segment reaches the segment size fixed at creation, it is sealed and a new one is started.
+    /// Each time the open segment reaches the segment size, it is sealed and a new one is started.
     virtual void append(std::span<const UInt32> row_ids) = 0;
 
     /// Seals the last segment and writes all accumulated segments to `out`.
