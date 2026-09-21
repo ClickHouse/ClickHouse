@@ -46,7 +46,7 @@ SELECT 'hidden prefix exempt:', count() FROM s3('$path/_root/*/*.parquet', 'test
 INSERT INTO FUNCTION s3('$path/t2/_temporary/0/staged.parquet', 'test', 'testtest', 'Parquet') SELECT 'x' AS a;
 INSERT INTO FUNCTION s3('$path/t2/dt=2026-01-01/ok.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(5) AS id;
 SELECT 'inference without skip:';
-DESCRIBE s3('$path/t2/**.parquet', 'test', 'testtest', 'Parquet');
+DESCRIBE s3('$path/t2/**.parquet', 'test', 'testtest', 'Parquet') SETTINGS describe_compact_output = 1;
 SELECT 'inference with skip:';
-DESCRIBE s3('$path/t2/**.parquet', 'test', 'testtest', 'Parquet') SETTINGS s3_skip_hidden_files = 1;
+DESCRIBE s3('$path/t2/**.parquet', 'test', 'testtest', 'Parquet') SETTINGS s3_skip_hidden_files = 1, describe_compact_output = 1;
 "
