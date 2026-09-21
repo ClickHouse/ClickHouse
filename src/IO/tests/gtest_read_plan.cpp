@@ -178,7 +178,7 @@ TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
     EXPECT_EQ(plan.writersFor({0, 2}).size(), 4u);
 }
 
-TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
+TEST(ReadPlan, DropBeforeReleasesConsumedPrefix)
 {
     std::vector<CacheResolution> c;
     c.push_back(hit({0, 1}));
@@ -189,8 +189,8 @@ TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
     plan.reset(0);
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
-    plan.retireBefore(2);
-    EXPECT_EQ(plan.spanStart(), 2u);
+    plan.dropBefore(2);
+    EXPECT_EQ(plan.begin(), 2u);
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
@@ -252,7 +252,7 @@ TEST(ReadPlan, DropAfterReleasesTheUnreachedTail)
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     plan.dropAfter(1);
-    EXPECT_EQ(plan.resolvedEnd(), 1u);
+    EXPECT_EQ(plan.end(), 1u);
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(0)), nullptr);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(1)));
 
@@ -260,7 +260,7 @@ TEST(ReadPlan, DropAfterReleasesTheUnreachedTail)
     again.push_back(hit({1, 1}));
     again.push_back(hit({2, 1}));
     plan.extend(3, tiers(tier(CacheTier::PageCache, std::move(again))));
-    EXPECT_EQ(plan.resolvedEnd(), 3u);
+    EXPECT_EQ(plan.end(), 3u);
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
 }
 
@@ -275,7 +275,7 @@ TEST(ReadPlan, DropAfterKeepsTheCellStraddlingTheCut)
     plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(c))));
 
     plan.dropAfter(3);
-    EXPECT_EQ(plan.resolvedEnd(), 3u);
+    EXPECT_EQ(plan.end(), 3u);
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(plan.runAt(3)));
 }
@@ -284,18 +284,18 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
 {
     ReadPlan plan;
     plan.reset(0);
-    /// First span [0,2): a miss segment overhangs to 3.
+    /// First range [0,2): a miss segment overhangs to 3.
     std::vector<CacheResolution> first;
     first.push_back(hit({0, 1}));
-    first.push_back(miss({1, 2}));   /// [1,3) overhangs the span end 2
+    first.push_back(miss({1, 2}));   /// [1,3) overhangs the range end 2
     plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(first))));
-    /// Next span [2,4): resolve re-returns the [1,3) segment; extend must drop the overlap.
+    /// Next range [2,4): resolve re-returns the [1,3) segment; extend must drop the overlap.
     std::vector<CacheResolution> second;
     second.push_back(miss({1, 2}));   /// duplicate of the held overhang -> dropped
     second.push_back(hit({3, 1}));
     plan.extend(4, tiers(tier(CacheTier::PageCache, std::move(second))));
 
-    EXPECT_EQ(plan.resolvedEnd(), 4u);
+    EXPECT_EQ(plan.end(), 4u);
     /// [1,3) is one coalesced miss (not doubled); the hit at 3 caps it.
     auto r = plan.runAt(1);
     const auto * fetch = as<ReadPlan::Fetch>(r);
@@ -328,7 +328,7 @@ TEST(ReadPlan, StackedSameTierLayersKeepTheirOwnCells)
     plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(fast_second)),
                          tier(CacheTier::FilesystemCache, std::move(slow_second))));
 
-    EXPECT_EQ(plan.resolvedEnd(), 4u);
+    EXPECT_EQ(plan.end(), 4u);
     /// The fast layer's cell serves 2 ...
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
     /// ... and the slow layer keeps its OWN cell, so 3 is served rather than re-fetched.
@@ -373,15 +373,15 @@ TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
 
 TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
 {
-    /// A whole-segment cell [0,4) that overhangs the resolved span (span_end = 2). The head fetch must
+    /// A whole-segment cell [0,4) that overhangs the resolved range (range_end = 2). The head fetch must
     /// still cover the ENTIRE cell - it is populated only by an all-or-nothing write - so the extent
-    /// reaches the true segment end past span_end, and neither the window caps it below the cell.
+    /// reaches the true segment end past range_end, and neither the window caps it below the cell.
     std::vector<CacheResolution> c;
     c.push_back(miss({0, 4}, /*with_writer=*/true, /*whole_segment=*/true));
 
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));   /// span_end = 2, cell to 4
+    plan.extend(2, tiers(tier(CacheTier::PageCache, std::move(c))));   /// range_end = 2, cell to 4
 
     auto r = plan.runAt(0, /*max_fetch_ahead=*/1);
     const auto * fetch = as<ReadPlan::Fetch>(r);
@@ -402,11 +402,11 @@ TEST(ReadPlan, ResetDiscardsAndReanchors)
 
     plan.reset(10);
     EXPECT_TRUE(plan.empty());
-    EXPECT_EQ(plan.spanStart(), 10u);
-    EXPECT_EQ(plan.resolvedEnd(), 10u);
+    EXPECT_EQ(plan.begin(), 10u);
+    EXPECT_EQ(plan.end(), 10u);
 }
 
-TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnRetire)
+TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnDrop)
 {
     /// Bytes a fetch pulled that no tier accepted are held in the plan, served before any tier, and
     /// freed as the cursor passes.
@@ -430,7 +430,7 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnRetire)
     EXPECT_EQ(mem->range.end(), 3u);
     EXPECT_EQ(mem->memory->slice(ByteRange{1, 2}).totalBytes(), 2u);
 
-    /// Retire past the hold frees it; the offset is then a plain miss again.
-    plan.retireBefore(3);
+    /// Drop past the hold frees it; the offset is then a plain miss again.
+    plan.dropBefore(3);
     EXPECT_EQ(as<ReadPlan::ServeFromMemory>(plan.runAt(3)), nullptr);
 }

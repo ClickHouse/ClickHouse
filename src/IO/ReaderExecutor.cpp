@@ -53,7 +53,7 @@ namespace
 using PressureReduction = std::array<size_t, static_cast<size_t>(MemoryPressureLevel::Count)>;
 
 /// A window is what one `readNextWindow` serves; a block is the unit it is read and stored in - one
-/// `ChainedBuffers` node; the look-ahead is the span the `ReadPlan` resolves, and so pins.
+/// `ChainedBuffers` node; the look-ahead is the range the `ReadPlan` resolves, and so pins.
 constexpr auto WINDOW_REDUCTION = std::to_array<size_t>({1, 4, 16, 64});
 constexpr auto BLOCK_REDUCTION = std::to_array<size_t>({1, 2, 2, 8});
 constexpr auto PLAN_LOOK_AHEAD_REDUCTION = std::to_array<size_t>({1, 2, 8, 32});
@@ -410,18 +410,18 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Block
 void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
 {
     /// Re-anchor on a discontinuity (first read, seek, backward jump, or past the resolved end),
-    /// else drop the consumed prefix. A forward seek inside the span keeps the resolved cells.
-    if (read_plan.empty() || pos < read_plan.spanStart() || pos >= read_plan.resolvedEnd())
+    /// else drop the consumed prefix. A forward seek inside the range keeps the resolved cells.
+    if (!read_plan.contains(pos))
         read_plan.reset(pos);
     else
-        read_plan.retireBefore(pos);
+        read_plan.dropBefore(pos);
 
-    /// Give the pins back now - the window shrinks too, so draining a `Normal` span takes many reads.
+    /// Give the pins back now - the window shrinks too, so draining a `Normal` range takes many reads.
     read_plan.dropAfter(pos + look_ahead);
 
     /// Refill lazily: grow only once less than half the look-ahead remains ahead of the cursor, and
     /// then resolve up to the full length. Batches the per-window top-ups into fewer, larger resolves.
-    if (read_plan.resolvedEnd() - pos > look_ahead / 2)
+    if (read_plan.end() - pos > look_ahead / 2)
         return;
 
     size_t target = pos + look_ahead;
@@ -430,9 +430,9 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
 
     /// Grow forward one object-piece per step: `resolve` is per-object, so cap each call at the object
     /// boundary. Cheap residency probes, not reads.
-    while (read_plan.resolvedEnd() < target)
+    while (read_plan.end() < target)
     {
-        const size_t lo = read_plan.resolvedEnd();
+        const size_t lo = read_plan.end();
         const auto pieces = offset_map.map(ByteRange{lo, target - lo});
         if (pieces.empty())
             break;
@@ -465,11 +465,11 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, B
         out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
     else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
         out = fetchFillServe(pos, f->range, max_serve, sizes);
-    /// std::monostate: offset outside the resolved span -> serve nothing.
+    /// std::monostate: offset outside the resolved range -> serve nothing.
 
-    /// Eagerly retire what we served, freeing its pins and memory hold now (`out` owns its bytes).
+    /// Eagerly drop what we served, freeing its pins and memory hold now (`out` owns its bytes).
     if (!out.empty())
-        read_plan.retireBefore(pos + out.totalBytes());
+        read_plan.dropBefore(pos + out.totalBytes());
     return out;
 }
 
@@ -761,7 +761,7 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     if (!needsDecryption() || cipher.empty())
         return std::move(cipher);
 
-    /// Rebase physical->logical: source reads span the `data_start_offset` encryption header,
+    /// Rebase physical->logical: source reads range the `data_start_offset` encryption header,
     /// the plaintext the caller and decryptor see starts at 0.
     cipher.shift(-static_cast<ssize_t>(data_start_offset));
 
@@ -787,7 +787,7 @@ void ReaderExecutor::seek(size_t new_position)
     position = new_position;
     reached_eof = false;
     /// The plan's memory hold is offset-keyed, so it stays correct; `ensureResolved` on the next read
-    /// frees or resets it (a discontinuity `reset`s the plan, a forward move `retireBefore`s it).
+    /// frees or resets it (a discontinuity `reset`s the plan, a forward move `dropBefore`s it).
 }
 
 }

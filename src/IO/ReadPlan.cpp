@@ -20,8 +20,8 @@ const CacheResolution * cellCovering(const PlanTier & tier, size_t off)
 }
 
 /// The smallest offset >= `from` this tier can serve (a hit, or a miss's committed prefix), else
-/// `span_end` - where a FETCH must stop so it never overruns bytes a tier already holds.
-size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_end)
+/// `range_end` - where a FETCH must stop so it never overruns bytes a tier already holds.
+size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t range_end)
 {
     for (const auto & cell : tier.cells)
     {
@@ -33,14 +33,14 @@ size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_en
         if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.writer->committed() > base)
             return base;   /// `base` is inside the committed prefix `[cell.offset, committed())`
     }
-    return span_end;
+    return range_end;
 }
 
 }
 
 ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
 {
-    if (offset < span_start || offset >= span_end)
+    if (offset < range_start || offset >= range_end)
         return std::monostate{};
 
     /// memory hold - serve to its first gap
@@ -69,10 +69,10 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     }
 
     /// FETCH extent. Right: coalesce to the nearest resident byte, capped at the window.
-    size_t fetch_end = span_end;
+    size_t fetch_end = range_end;
     for (const auto & tier : tiers)
-        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, span_end));
-    if (max_fetch_ahead < span_end - offset)
+        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, range_end));
+    if (max_fetch_ahead < range_end - offset)
         fetch_end = std::min(fetch_end, offset + max_fetch_ahead);
 
     /// Left: down to each covering segment's write frontier.
@@ -139,7 +139,7 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
 {
     if (tiers.empty())
     {
-        tiers = std::move(resolved);   /// first span after `reset`: adopt the tier list, fastest-first
+        tiers = std::move(resolved);   /// first range after `reset`: adopt the tier list, fastest-first
     }
     else
     {
@@ -151,7 +151,7 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
         {
             auto & held = tiers[i];
             chassert(resolved[i].tier == held.tier);
-            size_t held_end = held.cells.empty() ? span_start : held.cells.back().range.end();
+            size_t held_end = held.cells.empty() ? range_start : held.cells.back().range.end();
             for (auto & cell : resolved[i].cells)
             {
                 if (cell.range.end() <= held_end)
@@ -163,12 +163,12 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
             }
         }
     }
-    span_end = new_end;
+    range_end = new_end;
 }
 
-void ReadPlan::retireBefore(size_t offset)
+void ReadPlan::dropBefore(size_t offset)
 {
-    if (offset <= span_start)
+    if (offset <= range_start)
         return;
     for (auto & tier : tiers)
     {
@@ -184,14 +184,14 @@ void ReadPlan::retireBefore(size_t offset)
         const size_t mend = memory.range().end();
         memory = offset < mend ? memory.slice(ByteRange{offset, mend - offset}) : ChainedBuffers{};
     }
-    span_start = std::min(offset, span_end);
+    range_start = std::min(offset, range_end);
 }
 
 void ReadPlan::dropAfter(size_t offset)
 {
-    if (offset >= span_end)
+    if (offset >= range_end)
         return;
-    const size_t new_end = std::max(offset, span_start);
+    const size_t new_end = std::max(offset, range_start);
     for (auto & tier : tiers)
     {
         auto & cells = tier.cells;
@@ -199,21 +199,21 @@ void ReadPlan::dropAfter(size_t offset)
             [&](const CacheResolution & c) { return c.range.offset >= new_end; });
         cells.erase(first_dead, cells.end());
     }
-    /// `runAt` stops at `span_end`, so held bytes past it are unreachable.
+    /// `runAt` stops at `range_end`, so held bytes past it are unreachable.
     if (!memory.empty())
     {
         const size_t mstart = memory.range().offset;
         memory = new_end > mstart ? memory.slice(ByteRange{mstart, new_end - mstart}) : ChainedBuffers{};
     }
-    span_end = new_end;
+    range_end = new_end;
 }
 
 void ReadPlan::reset(size_t start_offset)
 {
     tiers.clear();
     memory = {};
-    span_start = start_offset;
-    span_end = start_offset;
+    range_start = start_offset;
+    range_end = start_offset;
 }
 
 }

@@ -250,7 +250,7 @@ private:
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
     size_t plan_look_ahead;
-    /// Cache residency of the look-ahead span, held across serves (see `ReadPlan`). Empty without caches.
+    /// Cache residency of the look-ahead range, held across serves (see `ReadPlan`). Empty without caches.
     /// Also owns the executor-local memory hold for fetched bytes no tier accepted.
     ReadPlan read_plan;
 
