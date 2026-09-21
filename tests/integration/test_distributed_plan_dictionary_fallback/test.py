@@ -126,6 +126,33 @@ def test_dict_get_in_filter_falls_back(started_cluster):
     assert "does not support the dictionary function dictHas" in _fallback_reasons(query_id)
 
 
+def test_dict_get_inside_lambda_falls_back(started_cluster):
+    """A lambda body is a DAG of its own, so the check has to descend into it; a lambda that captures nothing is
+    folded into a constant column and reachable only through that column."""
+    query_id = str(uuid.uuid4())
+    result = initiator.query(
+        f"SELECT k, arrayMap(x -> dictGet(d, 'name', x), [k]) AS names FROM t ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}",
+        query_id=query_id,
+    )
+    assert result == "0\t['n0']\n1\t['n1']\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert _worker_tasks(query_id) == 0
+    assert "does not support the dictionary function dictGet" in _fallback_reasons(query_id)
+
+    # The lambda captures `k`, so it stays a `FunctionCapture` node whose body holds the call.
+    query_id = str(uuid.uuid4())
+    result = initiator.query(
+        f"SELECT count() FROM t WHERE arrayExists(x -> dictHas(d, x + k), [0]) AND k < 10 SETTINGS {DISTRIBUTED_SETTINGS}",
+        query_id=query_id,
+    )
+    assert result == "10\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert _worker_tasks(query_id) == 0
+    assert "does not support the dictionary function dictHas" in _fallback_reasons(query_id)
+
+
 def test_strict_mode_throws(started_cluster):
     error = initiator.query_and_get_error(
         f"SELECT k, dictGet(d, 'name', k) FROM t ORDER BY k LIMIT 3 "
