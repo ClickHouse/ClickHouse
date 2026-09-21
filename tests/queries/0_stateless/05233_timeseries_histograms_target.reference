@@ -1,0 +1,39 @@
+--- a new table has version 7 and a generated histograms table ---
+7	1	1
+id	Tuple(UInt64, LowCardinality(UUID))	
+timestamp	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))
+is_float	Bool	CODEC(ZSTD(3))
+counter_reset_hint	UInt8	CODEC(ZSTD(3))
+schema	Int8	CODEC(ZSTD(3))
+zero_threshold	Float64	CODEC(ZSTD(3))
+sum	Float64	CODEC(ZSTD(3))
+positive_spans	Array(Tuple(offset Int32, length UInt32))	CODEC(ZSTD(3))
+negative_spans	Array(Tuple(offset Int32, length UInt32))	CODEC(ZSTD(3))
+custom_values	Array(Float64)	CODEC(ZSTD(3))
+count_int	UInt64	CODEC(DoubleDelta, ZSTD(3))
+zero_count_int	UInt64	CODEC(DoubleDelta, ZSTD(3))
+positive_values_int	Array(UInt64)	CODEC(T64, ZSTD(3))
+negative_values_int	Array(UInt64)	CODEC(T64, ZSTD(3))
+count_float	Float64	CODEC(ZSTD(3))
+zero_count_float	Float64	CODEC(ZSTD(3))
+positive_values_float	Array(Float64)	CODEC(Delta(8), ZSTD(3))
+negative_values_float	Array(Float64)	CODEC(Delta(8), ZSTD(3))
+MergeTree	id, timestamp
+0
+0
+--- the index granularity settings of the histograms table and of the samples table are independent ---
+histograms	4096
+samples	1024
+--- the samples still work: INSERT and PromQL ---
+1
+--- a table of version 5 has no histograms table ---
+0
+0
+--- the histograms table cannot be customized yet ---
+--- a copy of a table of version 5 gets the latest version and a histograms table ---
+7	1
+0
+--- TRUNCATE, RENAME and DROP handle the histograms table ---
+0
+1
+0

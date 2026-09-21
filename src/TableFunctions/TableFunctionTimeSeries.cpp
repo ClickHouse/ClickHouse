@@ -193,6 +193,25 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
+        {.description = R"DOCS_MD(
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
+The table stores native histogram samples and exists in tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 6 and later:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries HISTOGRAMS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesHistograms(db_name.time_series_table);
+SELECT * FROM timeSeriesHistograms('db_name.time_series_table');
+SELECT * FROM timeSeriesHistograms('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.

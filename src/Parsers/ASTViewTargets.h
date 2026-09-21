@@ -44,6 +44,9 @@ struct ViewTarget
         /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
         /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
         MetricFamilies,
+
+        /// The "histograms" table for a TimeSeries table, contains native histogram samples.
+        Histograms,
     };
 
     explicit ViewTarget(Kind kind_);

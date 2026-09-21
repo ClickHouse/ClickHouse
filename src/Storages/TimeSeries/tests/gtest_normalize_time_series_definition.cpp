@@ -11,6 +11,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <gtest/gtest.h>
 
@@ -31,6 +33,7 @@ namespace DB::ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
 }
 
@@ -138,7 +141,7 @@ namespace
     String extractInnerEngine(const String & definition, const String & target)
     {
         static const std::vector<String> target_clauses
-            = {" SAMPLES INNER ", " RECENT SAMPLES INNER ", " TAGS INNER ", " METRIC FAMILIES INNER ", " METRICS INNER "};
+            = {" SAMPLES INNER ", " RECENT SAMPLES INNER ", " TAGS INNER ", " METRIC FAMILIES INNER ", " METRICS INNER ", " HISTOGRAMS INNER "};
 
         String prefix = target + " INNER ENGINE = ";
         size_t start = definition.find(prefix);
@@ -181,6 +184,33 @@ namespace
     const String default_id_type = "Tuple(UInt64, LowCardinality(UUID))";
     const String default_tags_index = ", INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000";
     const String default_id_generator = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
+    const String default_timestamp_type = "DateTime64(3)";
+
+    /// The `version` setting as written in a normalized definition.
+    String versionSetting(UInt64 version)
+    {
+        return "version = " + std::to_string(version);
+    }
+
+    const String latest_version_setting = versionSetting(TimeSeriesVersion::LATEST);
+
+    /// The generated columns of the histograms table for the specified types of `id` and `timestamp`.
+    String histogramsColumns(const String & id_type, const String & timestamp_type)
+    {
+        String result = "`id` " + id_type + ", `timestamp` " + timestamp_type + " CODEC(Delta, T64, ZSTD(3))";
+        for (const auto & column : getTimeSeriesHistogramsColumns())
+        {
+            const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
+            result += fmt::format(", `{}` {} {}", definition.name, definition.type, definition.codec);
+        }
+        return result;
+    }
+
+    /// The generated engine of the histograms table with the specified `index_granularity`.
+    String histogramsEngine(UInt64 index_granularity = 8192)
+    {
+        return "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = " + std::to_string(index_granularity);
+    }
 }
 
 
@@ -200,7 +230,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains(latest_version_setting)) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -216,6 +246,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
         "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
         "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns(default_id_type, default_timestamp_type));
 
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"),
@@ -224,6 +255,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
         "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
     EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
+    EXPECT_EQ(extractInnerEngine(definition, "HISTOGRAMS"), histogramsEngine());
 }
 
 
@@ -237,6 +269,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultTableEngineChoosesInnerEngineFa
     EXPECT_TRUE(extractInnerEngine(definition, "RECENT SAMPLES").starts_with("ReplicatedMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("ReplicatedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "METRIC FAMILIES").starts_with("ReplicatedReplacingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "HISTOGRAMS").starts_with("ReplicatedMergeTree ")) << definition;
 
     query_settings[Setting::default_table_engine] = DefaultTableEngine::SharedMergeTree;
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings);
@@ -394,7 +427,12 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRIC FAMILIES db.ext_metric_families", params);
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float32))")) << definition;
     EXPECT_TRUE(definition.contains("id_type = 'UInt64'")) << definition;
-    EXPECT_FALSE(definition.contains("INNER")) << definition;
+    EXPECT_FALSE(definition.contains("SAMPLES INNER")) << definition;
+    EXPECT_FALSE(definition.contains("TAGS INNER")) << definition;
+    EXPECT_FALSE(definition.contains("METRIC FAMILIES INNER")) << definition;
+
+    /// The histograms table is always inner, and it takes the types of the external tables.
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns("UInt64", "DateTime64(6)"));
 
     /// The types of the external tables must match each other.
     params.external_target_columns[ViewTarget::Tags] = external_tags_columns("UUID");
@@ -580,19 +618,133 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
 TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 {
     /// An explicit supported version is accepted, an unknown one is rejected.
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5").contains("version = 5"));
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 4").contains("version = 4"));
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3").contains("version = 3"));
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2").contains("version = 2"));
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1").contains("version = 1"));
-    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 0").contains("version = 0"));
-    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 999"); }), ErrorCodes::INVALID_SETTING_VALUE);
+    for (UInt64 version = TimeSeriesVersion::MIN_SUPPORTED; version <= TimeSeriesVersion::LATEST; ++version)
+    {
+        auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version));
+        EXPECT_TRUE(definition.contains(versionSetting(version))) << definition;
+    }
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::LATEST + 1));
+    }), ErrorCodes::INVALID_SETTING_VALUE);
 
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains(latest_version_setting)) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetIsAbsentInEarlierVersions)
+{
+    for (UInt64 version = TimeSeriesVersion::MIN_SUPPORTED; version < TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET; ++version)
+    {
+        auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version));
+        EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
+        EXPECT_EQ(normalizeExistingTable(definition), definition);
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetIsMandatoryFromHistogramsVersion)
+{
+    for (UInt64 version = TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET; version <= TimeSeriesVersion::LATEST; ++version)
+    {
+        const String query = "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version);
+        EXPECT_TRUE(normalizeNewTable(query).contains("HISTOGRAMS INNER COLUMNS")) << version;
+        EXPECT_EQ(getExceptionCode([&] { normalizeExistingTable(query); }), ErrorCodes::INCORRECT_QUERY) << version;
+    }
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetCannotBeCustomizedYet)
+{
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS ENGINE = MergeTree ORDER BY id"); }), ErrorCodes::NOT_IMPLEMENTED);
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS ENGINE = MergeTree SETTINGS index_granularity = 1"); }), ErrorCodes::NOT_IMPLEMENTED);
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS INNER COLUMNS (extra UInt8)"); }), ErrorCodes::NOT_IMPLEMENTED);
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS INNER COLUMNS (sum Float64 CODEC(ZSTD(1)))"); }), ErrorCodes::NOT_IMPLEMENTED);
+
+    /// An external table is rejected even if its columns match the generated ones.
+    std::vector<ColumnDescription> external_columns{makeColumn("id", default_id_type), makeColumn("timestamp", default_timestamp_type)};
+    for (const auto & column : getTimeSeriesHistogramsColumns())
+    {
+        const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
+        external_columns.push_back(makeColumn(String{definition.name}, String{definition.type}));
+    }
+    NormalizeTimeSeriesDefinitionParams params;
+    params.external_target_columns[ViewTarget::Histograms] = makeColumns(external_columns);
+    EXPECT_EQ(getExceptionCode([&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS db.ext_histograms", params); }), ErrorCodes::NOT_IMPLEMENTED);
+
+    /// A declaration equal to the generated one is accepted: a normalized definition is replayed as a new table on other replicas.
+    const String stored = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
+    EXPECT_EQ(normalizeNewTable(stored), stored);
+
+    /// A declared engine without keys gets the generated ones (the declared target is written first, so the texts differ in order only).
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS ENGINE = MergeTree");
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns(default_id_type, default_timestamp_type));
+    EXPECT_EQ(extractInnerEngine(definition, "HISTOGRAMS"), histogramsEngine());
+
+    /// A stored definition with a customized histograms target can only come from edited metadata.
+    String edited = stored;
+    edited.replace(edited.find("`sum` Float64 CODEC(ZSTD(3))"), strlen("`sum` Float64 CODEC(ZSTD(3))"), "`sum` Float64 CODEC(ZSTD(1))");
+    EXPECT_EQ(getExceptionCode([&] { normalizeExistingTable(edited); }), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsIndexGranularitySetting)
+{
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096");
+    EXPECT_EQ(extractInnerEngine(definition, "HISTOGRAMS"), histogramsEngine(4096));
+    EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsIndexGranularitySettingRequiresHistogramsTarget)
+{
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096, "
+            + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1));
+    }), ErrorCodes::INVALID_SETTING_VALUE);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsColumnsUseResolvedTypes)
+{
+    auto definition = normalizeNewTable(
+        "CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6)) TAGS INNER COLUMNS (id UInt64)");
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns("UInt64", "DateTime64(6)"));
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithoutHistogramsTargetGeneratesIt)
+{
+    const String src = normalizeNewTable(
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1));
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", src);
+    EXPECT_TRUE(definition.contains(latest_version_setting)) << definition;
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns(default_id_type, default_timestamp_type));
+    EXPECT_EQ(extractInnerEngine(definition, "HISTOGRAMS"), histogramsEngine());
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithHistogramsTargetRegeneratesIt)
+{
+    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096");
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", src);
+    EXPECT_EQ(extractInnerColumns(definition, "HISTOGRAMS"), histogramsColumns(default_id_type, default_timestamp_type));
+    EXPECT_EQ(extractInnerEngine(definition, "HISTOGRAMS"), histogramsEngine(4096));
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHistogramsTarget)
+{
+    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096");
+    auto definition = normalizeNewTableAs(
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1), src);
+    EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
+    EXPECT_FALSE(definition.contains("histograms_index_granularity")) << definition;
 }
 
 
@@ -617,6 +769,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0, recent_samples_ttl_seconds = 0", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_partition_by = 'toStartOfHour(timestamp)' "
          "SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, ZSTD(1)), extra UInt8) TAGS INNER COLUMNS (id UInt64) "
          "TAGS ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS index_granularity = 1024", {}},

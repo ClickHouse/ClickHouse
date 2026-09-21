@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
-#include <array>
 
 
 namespace DB
@@ -55,15 +54,8 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
+    /// Whether this table has a target of the given kind (see isOptionalTimeSeriesTarget).
     bool hasTarget(ViewTarget::Kind target_kind) const;
-
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and MetricFamilies.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
-    {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
-    }
 
     void readImpl(
         QueryPlan & query_plan,

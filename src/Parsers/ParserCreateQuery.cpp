@@ -28,6 +28,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
+#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <Core/UUID.h>
 
 
@@ -926,7 +927,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
+            const auto & time_series_target_kinds = getTimeSeriesTargetKinds();
+            ParserViewTargets(std::vector<ViewTarget::Kind>(time_series_target_kinds.begin(), time_series_target_kinds.end()))
+                .parse(pos, targets, expected);
         }
 
         return true;

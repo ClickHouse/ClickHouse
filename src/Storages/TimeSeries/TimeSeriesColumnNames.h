@@ -35,6 +35,8 @@ struct TimeSeriesColumnNames
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
 
+    /// The columns of the "histograms" inner table besides `id` and `timestamp` are defined in TimeSeriesHistogramsColumns.h.
+
     /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`.
     /// It's named `time_series` in tables of versions before 3, see `getOuterSamples`.
     static constexpr const char * Samples = "samples";

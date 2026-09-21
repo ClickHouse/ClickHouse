@@ -31,6 +31,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -496,7 +497,7 @@ static size_t getNumberOfTablesToMove(const StoragePtr & table, const ContextPtr
         size_t result = 1;
         if (time_series->hasInnerTables())
         {
-            for (auto target_kind : StorageTimeSeries::getTargetKinds())
+            for (auto target_kind : getTimeSeriesTargetKinds())
                 if (time_series->isInnerTable(target_kind) && time_series->tryGetTargetTable(target_kind, local_context))
                     ++result;
         }
