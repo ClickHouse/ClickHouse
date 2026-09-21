@@ -15,7 +15,9 @@ binary is not available.
 Run directly:  python3 .claude/tools/test_fetch_perf_report.py
 """
 
+import contextlib
 import importlib.util
+import io
 import os
 import shutil
 import tempfile
@@ -567,6 +569,73 @@ def test_tsv_rows_carry_the_abstention_marker():
     assert col2.count(" OR ") == 1, col2
 
 
+def _load_perf_api():
+    """The perf-comparison skill helper, the documented consumer of --tsv output."""
+    path = os.path.join(_HERE, "..", "skills", "perf-comparison", "scripts", "perf_api.py")
+    spec = importlib.util.spec_from_file_location("perf_api", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_default_tsv_output_reaches_the_consumer_as_unjudged():
+    """End to end over the real output_tsv in its DEFAULT mode: an unjudged shard flags
+    nothing, so the flag-only filter would drop exactly the rows the marker labels, and
+    the consumer would count zero. Judged shards keep their normal filtering."""
+    if shutil.which("clickhouse") is None:
+        print("SKIP: clickhouse binary not available")
+        return
+
+    tmpdir = tempfile.mkdtemp(prefix="test_perf_wire_")
+    try:
+        data_path = os.path.join(tmpdir, "all.tsv")
+        with open(data_path, "w") as f:
+            for arch, shard, name, diff, c_thr, u_thr in [
+                ("arm", "1", "abstained_big", 1.0, "inf", "inf"),
+                ("arm", "1", "abstained_steady", 0.0, "inf", "inf"),
+                ("amd", "2", "judged_changed", 0.30, "0.20", "0.25"),
+                ("amd", "2", "judged_steady", 0.00, "0.20", "0.25"),
+            ]:
+                f.write("\t".join([
+                    arch, shard, "client_time", "1.0", f"{1.0 + diff}", f"{diff}",
+                    f"{abs(diff) + 1.0}", "0.05", "test_a", "0", name, c_thr, u_thr,
+                ]) + "\n")
+
+        def emitted(not_judged_keys):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                fpr.output_tsv(_args(show_all=False), data_path, True, not_judged_keys)
+            return buf.getvalue()
+
+        out = emitted({("arm", 1)})
+        rows = [line.split("\t") for line in out.strip().split("\n")]
+        header, data = rows[0], rows[1:]
+        marked = {r[header.index("query")]: r[header.index("not_judged")] for r in data}
+        assert marked.get("abstained_big") == "1", out
+        assert marked.get("abstained_steady") == "1", out
+        assert marked.get("judged_changed") == "0", out
+        # The judged shard's steady row is still filtered out, so the term did not
+        # turn the default mode into --all.
+        assert "judged_steady" not in marked, out
+
+        tsv_path = os.path.join(tmpdir, "emitted.tsv")
+        with open(tsv_path, "w") as f:
+            f.write(out)
+        perf_api = _load_perf_api()
+        buckets = {r["queryDisplayName"]: r["bucket"] for r in perf_api.parse_perf_tsv([tsv_path])}
+        assert buckets["abstained_big"] == "not-judged", buckets
+        assert buckets["abstained_steady"] == "not-judged", buckets
+        assert buckets["judged_changed"] == "changed", buckets
+
+        # Reversal control: with no abstaining shard discovered, both unjudged rows are
+        # absent from the default output, which is what the marker alone could not fix.
+        plain = emitted(None)
+        assert "abstained_big" not in plain and "not_judged" not in plain, plain
+        assert "judged_changed" in plain, plain
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_classification_matches_compare_sh()
     test_summary_counts()
@@ -580,4 +649,5 @@ if __name__ == "__main__":
     test_output_discloses_unjudged_shards()
     test_detail_rows_disclose_unjudged_shards()
     test_tsv_rows_carry_the_abstention_marker()
+    test_default_tsv_output_reaches_the_consumer_as_unjudged()
     print("All fetch_perf_report tests passed (or skipped).")

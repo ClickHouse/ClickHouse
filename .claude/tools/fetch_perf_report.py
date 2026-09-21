@@ -564,6 +564,10 @@ def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow",
             for a, n in sorted(not_judged_keys)
         )
         not_judged_col = f",\n        ({pairs}) AS not_judged"
+        # An unjudged shard flags nothing, so the default filter would drop every
+        # row the marker exists to label.
+        if not args.show_all:
+            display_filter = "WHERE is_changed OR is_unstable OR not_judged"
     else:
         not_judged_col = ""
 

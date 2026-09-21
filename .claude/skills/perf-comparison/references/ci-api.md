@@ -81,7 +81,9 @@ When available, raw `all-query-metrics.tsv` / `fetch_perf_report.py --tsv` outpu
 - `test`,
 - `query_index`,
 - query display text,
-- and, in `fetch_perf_report.py --tsv`, `arch`, `shard`, `is_changed`, `is_unstable`, `direction`, `not_judged`.
+- and, in `fetch_perf_report.py --tsv`, `arch`, `shard`, `is_changed`, `is_unstable`, `direction`, plus `not_judged` when some shard abstained.
+
+A shard that fetched no learned thresholds is judged against nothing: its rows carry `not_judged=1` here and infinite `changed_threshold`/`unstable_threshold` in raw `all-query-metrics.tsv`. `tsv-inventory` and `master-checks` count them separately, because `is_changed=0` on such a row is the absence of a verdict rather than a verdict of no change.
 
 Use this helper only when dashboard/API cannot provide required artifact-level data. It supports both named TSV output from `fetch_perf_report.py --tsv` and headerless raw `all-query-metrics.tsv` rows with the current CI column order.
 

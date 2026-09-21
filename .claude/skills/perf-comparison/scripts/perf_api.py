@@ -11,6 +11,7 @@ import csv
 import gzip
 import io
 import json
+import math
 import subprocess
 from datetime import datetime, timezone
 import urllib.parse
@@ -803,6 +804,12 @@ def parse_perf_tsv(paths: list[str], metric_filter: str = "client_time", arch_fi
                 continue
             changed_threshold = float_or(src.get("changed_threshold"), DEFAULT_CHANGED_THRESHOLD)
             unstable_threshold = float_or(src.get("unstable_threshold"), DEFAULT_UNSTABLE_THRESHOLD)
+            # A shard that fetched no learned thresholds publishes no verdict: named
+            # --tsv rows carry not_judged, raw artifact rows carry BOTH bars infinite.
+            # One infinite bar is a zero baseline in eqmed.sql, not an abstention.
+            not_judged = tsv_bool(src.get("not_judged")) or (
+                changed_threshold == math.inf and unstable_threshold == math.inf
+            )
             if "is_changed" in src:
                 is_changed = tsv_bool(src.get("is_changed"))
             else:
@@ -832,7 +839,7 @@ def parse_perf_tsv(paths: list[str], metric_filter: str = "client_time", arch_fi
                 query_index = src.get("query_index") or src.get("queryIndex") or "—"
             rows.append({
                 "source": path,
-                "bucket": "changed" if is_changed else ("unstable" if is_unstable else "unchanged"),
+                "bucket": "not-judged" if not_judged else ("changed" if is_changed else ("unstable" if is_unstable else "unchanged")),
                 "metric": metric,
                 "arch": arch,
                 "shard": src.get("shard") or src.get("shard_num") or "",
@@ -846,6 +853,7 @@ def parse_perf_tsv(paths: list[str], metric_filter: str = "client_time", arch_fi
                 "statThreshold": threshold,
                 "isChanged": is_changed,
                 "isUnstable": is_unstable,
+                "notJudged": not_judged,
                 "direction": direction,
             })
     return rows
@@ -1022,9 +1030,9 @@ def print_tsv_rows(title: str, rows: list[dict[str, Any]], limit: int | None) ->
 
 
 def cmd_tsv_inventory(args: argparse.Namespace) -> None:
-    rows = parse_perf_tsv(args.tsv, args.metric, args.arch)
-    if not args.show_all:
-        rows = [r for r in rows if r.get("isChanged") or r.get("isUnstable")]
+    all_rows = parse_perf_tsv(args.tsv, args.metric, args.arch)
+    not_judged = [r for r in all_rows if r.get("notJudged")]
+    rows = all_rows if args.show_all else [r for r in all_rows if r.get("isChanged") or r.get("isUnstable")]
     slow = [r for r in rows if r.get("isChanged") and r.get("direction") == "slowdown"]
     fast = [r for r in rows if r.get("isChanged") and r.get("direction") == "speedup"]
     unstable = [r for r in rows if r.get("isUnstable") and not r.get("isChanged")]
@@ -1032,14 +1040,21 @@ def cmd_tsv_inventory(args: argparse.Namespace) -> None:
     print("Input TSVs:")
     for path in args.tsv:
         print(f"- `{path}`")
+    if not_judged:
+        print(f"\n**{len(not_judged)} of {len(all_rows)} rows come from a shard CI did not judge**: no learned"
+              " thresholds were fetched, so those rows carry no verdict and an empty inventory below is not a"
+              " clean comparison.")
     print("\n## Counts\n")
     print(f"- Rows considered: **{len(rows)}**")
     print(f"- Changed slowdowns: **{len(slow)}**")
     print(f"- Changed improvements/speedups: **{len(fast)}**")
     print(f"- Unstable/non-changed rows: **{len(unstable)}**")
+    print(f"- Rows CI did not judge: **{len(not_judged)}**")
     print_tsv_rows("Changed slowdowns from TSV/raw artifacts", slow, args.limit)
     print_tsv_rows("Changed improvements / speedups from TSV/raw artifacts", fast, args.limit)
     print_tsv_rows("Unstable/non-changed rows from TSV/raw artifacts", unstable, args.limit)
+    if not_judged:
+        print_tsv_rows("Rows CI did not judge (no verdict, not classified above)", not_judged, args.limit)
 
 
 
@@ -1185,9 +1200,12 @@ def cmd_master_checks(args: argparse.Namespace) -> None:
     if not args.tsv and not args.pr:
         raise SystemExit("master-checks requires either --pr or --tsv")
     rows: list[dict[str, Any]] = []
+    not_judged: list[dict[str, Any]] = []
     source_note = ""
     if args.tsv:
-        rows = [r for r in parse_perf_tsv(args.tsv, args.metric, args.arch) if r.get("isChanged")]
+        tsv_rows = parse_perf_tsv(args.tsv, args.metric, args.arch)
+        not_judged = [r for r in tsv_rows if r.get("notJudged")]
+        rows = [r for r in tsv_rows if r.get("isChanged")]
         source_note = "TSV/raw artifact rows"
     else:
         items = fetch_pr_runs(args.base, args.pr, args.metrics)
@@ -1197,6 +1215,9 @@ def cmd_master_checks(args: argparse.Namespace) -> None:
         rows = collect_run_rows(args.base, items, args.metrics, args.metric, args.arch)
         rows = [r for r in rows if r.get("bucket") in {"slowdown", "speedup"}]
         source_note = "performance.ci API changed rows"
+    if not_judged:
+        print(f"{len(not_judged)} row(s) come from a shard CI did not judge: no learned thresholds were fetched, "
+              "so they carry no verdict and are not classified here.\n")
     if not rows:
         print("No changed rows found for master-check classification.")
         return
