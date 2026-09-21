@@ -21,28 +21,28 @@ insert into idx_str values (0, 'V0'), (1, 'V0\0'), (2, 'V0\0\0'), (3, 'X');
 
 select 'index must not change the result';
 select 'fs3 needle',
-    (select groupArray(id) from (select id from plain_str where has([toFixedString('V0', 3)], s) order by id))
-  = (select groupArray(id) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_str where has([toFixedString('V0', 3)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id));
 select 'fs5 needle',
-    (select groupArray(id) from (select id from plain_str where has([toFixedString('V0', 5)], s) order by id))
-  = (select groupArray(id) from (select id from idx_str where has([toFixedString('V0', 5)], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_str where has([toFixedString('V0', 5)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 5)], s) order by id));
 select 'str needle',
-    (select groupArray(id) from (select id from plain_str where has(['V0'], s) order by id))
-  = (select groupArray(id) from (select id from idx_str where has(['V0'], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_str where has(['V0'], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_str where has(['V0'], s) order by id));
 
 -- Skipping the index must not change the result either.
 select 'skip index setting must not change the result';
 select 'fs3 needle',
-    (select groupArray(id) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id))
-  = (select groupArray(id) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id) settings use_skip_indexes = 0);
+    (select arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id) settings use_skip_indexes = 0);
 
 -- The rows themselves, so a regression shows which rows were lost rather than only that a
 -- comparison failed. Under `equals` padding semantics ids 0, 1 and 2 all match a
 -- `FixedString` needle spelling 'V0', while a plain `String` needle 'V0' matches only id 0.
 select 'matching rows';
-select 'fs3 needle', groupArray(id) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id);
-select 'fs5 needle', groupArray(id) from (select id from idx_str where has([toFixedString('V0', 5)], s) order by id);
-select 'str needle', groupArray(id) from (select id from idx_str where has(['V0'], s) order by id);
+select 'fs3 needle', arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 3)], s) order by id);
+select 'fs5 needle', arraySort(groupArray(id)) from (select id from idx_str where has([toFixedString('V0', 5)], s) order by id);
+select 'str needle', arraySort(groupArray(id)) from (select id from idx_str where has(['V0'], s) order by id);
 
 drop table plain_str;
 drop table idx_str;
@@ -60,14 +60,14 @@ insert into idx_fs values (0, 'V0'), (1, 'X');
 
 select 'fixed string column';
 select 'wider needle',
-    (select groupArray(id) from (select id from plain_fs where has([toFixedString('V0', 5)], s) order by id))
-  = (select groupArray(id) from (select id from idx_fs where has([toFixedString('V0', 5)], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_fs where has([toFixedString('V0', 5)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_fs where has([toFixedString('V0', 5)], s) order by id));
 select 'narrower needle',
-    (select groupArray(id) from (select id from plain_fs where has([toFixedString('V0', 2)], s) order by id))
-  = (select groupArray(id) from (select id from idx_fs where has([toFixedString('V0', 2)], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_fs where has([toFixedString('V0', 2)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_fs where has([toFixedString('V0', 2)], s) order by id));
 select 'exact needle',
-    (select groupArray(id) from (select id from plain_fs where has([toFixedString('V0', 3)], s) order by id))
-  = (select groupArray(id) from (select id from idx_fs where has([toFixedString('V0', 3)], s) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_fs where has([toFixedString('V0', 3)], s) order by id))
+  = (select arraySort(groupArray(id)) from (select id from idx_fs where has([toFixedString('V0', 3)], s) order by id));
 
 drop table plain_fs;
 drop table idx_fs;
@@ -99,29 +99,29 @@ insert into tx_arr values (0, ['V0']), (1, ['V0\0']), (2, ['V0\0\0']), (3, ['X']
 
 select 'other skip indexes must not change the result';
 select 'ngrambf has',
-    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
-  = (select groupArray(id) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id));
 select 'ngrambf hasAny',
-    (select groupArray(id) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
-  = (select groupArray(id) from (select id from ng_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
 select 'ngrambf hasAll',
-    (select groupArray(id) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
-  = (select groupArray(id) from (select id from ng_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
 select 'tokenbf has',
-    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
-  = (select groupArray(id) from (select id from tk_arr where has(v, toFixedString('V0', 3)) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from tk_arr where has(v, toFixedString('V0', 3)) order by id));
 select 'text has',
-    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
-  = (select groupArray(id) from (select id from tx_arr where has(v, toFixedString('V0', 3)) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from tx_arr where has(v, toFixedString('V0', 3)) order by id));
 select 'text hasAny',
-    (select groupArray(id) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
-  = (select groupArray(id) from (select id from tx_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from tx_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
 select 'text hasAll',
-    (select groupArray(id) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
-  = (select groupArray(id) from (select id from tx_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from tx_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
 -- Pin the rows too: a keyed-vs-unkeyed comparison alone stays green if a change moves both sides.
 select 'matching rows are 0 1 2',
-    (select groupArray(id) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id)) = [0, 1, 2];
+    (select arraySort(groupArray(id)) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id)) = [0, 1, 2];
 
 -- An index over a Map subcolumn reaches the same functions through `mapContains`.
 create table ng_map (id UInt64, m Map(String, UInt8), index idx mapKeys(m) type ngrambf_v1(3, 512, 2, 0) granularity 1)
@@ -133,20 +133,20 @@ insert into tx_map values (0, map('V0', 1)), (1, map('V0\0', 1)), (2, map('V0\0\
 
 select 'map subcolumn indexes';
 select 'ngrambf mapContains',
-    (select groupArray(id) from (select id from ng_map where mapContains(m, toFixedString('V0', 3)) order by id))
+    (select arraySort(groupArray(id)) from (select id from ng_map where mapContains(m, toFixedString('V0', 3)) order by id))
   = [0, 1, 2];
 select 'text mapContains',
-    (select groupArray(id) from (select id from tx_map where mapContains(m, toFixedString('V0', 3)) order by id))
+    (select arraySort(groupArray(id)) from (select id from tx_map where mapContains(m, toFixedString('V0', 3)) order by id))
   = [0, 1, 2];
 
 -- A plain `String` needle involves no padding, so these indexes must still prune normally.
 select 'string needle still uses the index';
 select 'ngrambf has Str',
-    (select groupArray(id) from (select id from plain_arr where has(v, 'V0') order by id))
-  = (select groupArray(id) from (select id from ng_arr where has(v, 'V0') order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where has(v, 'V0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_arr where has(v, 'V0') order by id));
 select 'text has Str',
-    (select groupArray(id) from (select id from plain_arr where has(v, 'V0') order by id))
-  = (select groupArray(id) from (select id from tx_arr where has(v, 'V0') order by id));
+    (select arraySort(groupArray(id)) from (select id from plain_arr where has(v, 'V0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from tx_arr where has(v, 'V0') order by id));
 
 drop table plain_arr;
 drop table ng_arr;
