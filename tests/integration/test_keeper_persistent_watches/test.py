@@ -248,9 +248,10 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     client = get_fake_zk(node1)
     NODE_PATH = "/testEventFields2"
     CHILD_NODE = f"{NODE_PATH}/child"
+    GRANDCHILD_NODE = f"{CHILD_NODE}/grandchild"
     OTHER_PATH = "/testEventFieldsOther2"
 
-    for path in [CHILD_NODE, NODE_PATH, OTHER_PATH]:
+    for path in [GRANDCHILD_NODE, CHILD_NODE, NODE_PATH, OTHER_PATH]:
         if client.exists(path):
             client.delete(path)
 
@@ -284,15 +285,31 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     assert events[-1]["state"] == "CONNECTED"
 
     event_lock.clear()
+    client.create(GRANDCHILD_NODE, b"1")
+    event_lock.wait(5)
+    assert len(events) == 3
+    assert events[-1]["path"] == GRANDCHILD_NODE
+    assert events[-1]["type"] == "CREATED"
+    assert events[-1]["state"] == "CONNECTED"
+
+    event_lock.clear()
+    client.delete(GRANDCHILD_NODE)
+    event_lock.wait(5)
+    assert len(events) == 4
+    assert events[-1]["path"] == GRANDCHILD_NODE
+    assert events[-1]["type"] == "DELETED"
+    assert events[-1]["state"] == "CONNECTED"
+
+    event_lock.clear()
     client.set(OTHER_PATH, b"x")
     time.sleep(0.3)
-    assert len(events) == 2
+    assert len(events) == 4
 
     client.remove_all_watches(NODE_PATH, WatcherType.ANY)
     client.set(NODE_PATH, b"after")
     client.set(CHILD_NODE, b"after2")
     time.sleep(0.5)
-    assert len(events) == 2
+    assert len(events) == 4
 
     if client.exists(CHILD_NODE):
         client.delete(CHILD_NODE)
