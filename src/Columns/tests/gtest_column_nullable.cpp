@@ -82,3 +82,35 @@ TEST(ColumnNullable, InsertManyFromNotNullableWithZeroLengthIsNoOp)
     EXPECT_EQ(dst->getNullMapData()[0], 1);
     dst->checkConsistency();
 }
+
+TEST(ColumnNullable, InsertManyFromNullableSourceRepeatsRawNullMarker)
+{
+    auto src_nested = ColumnUInt64::create();
+    src_nested->insert(10);
+    src_nested->insert(20);
+
+    auto src_null_map = ColumnUInt8::create();
+    src_null_map->insert(0);
+    /// Non-zero bytes all represent NULL. Keep a non-canonical marker to verify exact repetition.
+    src_null_map->insert(2);
+
+    auto src = ColumnNullable::create(std::move(src_nested), std::move(src_null_map));
+    auto dst = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+
+    dst->insertManyFrom(*src, 0, 3);
+    dst->insertManyFrom(*src, 1, 2);
+    dst->insertManyFrom(*src, std::numeric_limits<size_t>::max(), 0);
+
+    ASSERT_EQ(dst->size(), 5);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(0), 10);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(1), 10);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(2), 10);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(3), 20);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(4), 20);
+    EXPECT_EQ(dst->getNullMapData()[0], 0);
+    EXPECT_EQ(dst->getNullMapData()[1], 0);
+    EXPECT_EQ(dst->getNullMapData()[2], 0);
+    EXPECT_EQ(dst->getNullMapData()[3], 2);
+    EXPECT_EQ(dst->getNullMapData()[4], 2);
+    dst->checkConsistency();
+}

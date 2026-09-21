@@ -1,9 +1,8 @@
 <test>
     <!--
         Compare unique keys and repeated right values with and without Nullable
-        output. The planner can make the right source Nullable before MergeJoin,
-        which then calls insertManyFrom rather than insertManyFromNotNullable.
-        This is an end-to-end control, not proof that the latter helper is used.
+        output. Explicit Nullable payloads exercise MergeJoin's repeated-row path
+        with an already-Nullable source, including both NULL and non-NULL rows.
         Select the payload directly so aggregation does not obscure insertion.
     -->
     <settings>
@@ -41,7 +40,9 @@
         (
             k UInt64,
             value_number UInt64,
-            value_string String
+            value_string String,
+            value_nullable_number Nullable(UInt64),
+            value_nullable_string Nullable(String)
         ) ENGINE = MergeTree ORDER BY k
     </create_query>
 
@@ -51,7 +52,12 @@
     </fill_query>
     <fill_query>
         INSERT INTO nullable_bulk_right_{fanout}
-        SELECT number, number + 42, repeat('x', 64)
+        SELECT
+            number,
+            number + 42,
+            repeat('x', 64),
+            if(number % 2 = 0, NULL, number + 42),
+            if(number % 2 = 0, NULL, repeat('y', 64))
         FROM numbers(intDiv(262144, {fanout}))
     </fill_query>
 
@@ -64,6 +70,13 @@
     </query>
     <query>
         SELECT r.value_string
+        FROM nullable_bulk_left_{fanout} AS l
+        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT r.value_nullable_number, r.value_nullable_string
         FROM nullable_bulk_left_{fanout} AS l
         ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
         SETTINGS join_use_nulls = {use_nulls}

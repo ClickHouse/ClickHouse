@@ -309,15 +309,57 @@ void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t
 void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
+    if (length == 0)
+        return;
+
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
-    getNullMapColumn().insertManyFrom(src_concrete.getNullMapColumn(), position, length);
+    const UInt8 null_value = src_concrete.getNullMapData()[position];
+
+    auto & null_map_data = getNullMapData();
+    const size_t old_size = null_map_data.size();
+    const size_t new_size = old_size + length;
+
+    /// Reserve the null map first. If the nested insertion makes partial progress before throwing,
+    /// mirror that progress into the already-reserved null map to keep ColumnNullable consistent.
+    null_map_data.reserve(new_size);
+    try
+    {
+        getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
+    }
+    catch (...)
+    {
+        const size_t nested_size = getNestedColumn().size();
+        chassert(nested_size >= old_size && nested_size <= new_size);
+        null_map_data.resize_assume_reserved(nested_size);
+        std::fill(null_map_data.begin() + old_size, null_map_data.end(), null_value);
+        throw;
+    }
+
+    null_map_data.resize_assume_reserved(new_size);
+    std::fill(null_map_data.begin() + old_size, null_map_data.end(), null_value);
 }
 
 void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 {
-    getNestedColumn().insertFrom(src, n);
-    getNullMapData().push_back(false);
+    auto & null_map_data = getNullMapData();
+    const size_t old_size = null_map_data.size();
+
+    /// Make appending the non-NULL marker non-throwing after the nested insertion starts.
+    null_map_data.reserve(old_size + 1);
+    try
+    {
+        getNestedColumn().insertFrom(src, n);
+    }
+    catch (...)
+    {
+        const size_t nested_size = getNestedColumn().size();
+        chassert(nested_size >= old_size && nested_size <= old_size + 1);
+        null_map_data.resize_assume_reserved(nested_size);
+        std::fill(null_map_data.begin() + old_size, null_map_data.end(), static_cast<UInt8>(0));
+        throw;
+    }
+
+    null_map_data.push_back(false);
 }
 
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
@@ -341,24 +383,24 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
     const size_t old_size = null_map_data.size();
     const size_t new_size = old_size + length;
 
-    /// Reserve before modifying the nested column so extending the null map cannot fail after a
-    /// successful nested insertion.
+    /// Reserve before modifying the nested column. This removes the per-call checkpoint allocation
+    /// while preserving the scalar path's partial-progress behavior if a nested insertion throws.
     null_map_data.reserve(new_size);
-
-    /// Some nested columns may partially insert rows before throwing. Keep both columns in sync
-    /// if that happens.
-    auto checkpoint = getNestedColumn().getCheckpoint();
     try
     {
         getNestedColumn().insertManyFrom(src, position, length);
-        null_map_data.resize_fill(new_size);
     }
     catch (...)
     {
-        null_map_data.resize_assume_reserved(old_size);
-        getNestedColumn().rollback(*checkpoint);
+        const size_t nested_size = getNestedColumn().size();
+        chassert(nested_size >= old_size && nested_size <= new_size);
+        null_map_data.resize_assume_reserved(nested_size);
+        std::fill(null_map_data.begin() + old_size, null_map_data.end(), static_cast<UInt8>(0));
         throw;
     }
+
+    null_map_data.resize_assume_reserved(new_size);
+    std::fill(null_map_data.begin() + old_size, null_map_data.end(), static_cast<UInt8>(0));
 }
 
 void ColumnNullable::popBack(size_t n)
