@@ -15,9 +15,9 @@ SYSTEM STOP MERGES x;
 INSERT INTO x SELECT number FROM numbers(10);
 
 SELECT '--- implicit projection serves the query within the budget ---';
--- A threshold the 10-row table cannot meet reaches the same block's silent decline, so this pair
--- is what shows the estimate ran at all: a regression that stopped reaching it would leave every
--- result and both counters below unchanged.
+-- A threshold the 10-row table cannot meet reaches the same block's silent decline, so this pair is
+-- what shows the estimate ran at all: skip the block and this query engages parallel replicas like
+-- any other, flipping the 0 below to 1 while every other line stays green.
 SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1,
     parallel_replicas_min_number_of_rows_per_replica = 1000, log_comment = '05250_declined_pr';
 SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1, log_comment = '05250_projection_pr';
@@ -27,11 +27,12 @@ SELECT max(i) FROM x SETTINGS max_rows_to_read_leaf = 2, optimize_use_implicit_p
 -- threshold, so both propositions are observed rather than assumed. The counter is incremented
 -- when the reading coordinator is destroyed.
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['ParallelReplicasQueryCount'] > 0 AS parallel_replicas_engaged
+SELECT log_comment, argMax(ProfileEvents['ParallelReplicasQueryCount'], event_time_microseconds) > 0 AS parallel_replicas_engaged
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND initial_query_id = query_id
   AND log_comment IN ('05250_projection_pr', '05250_declined_pr')
+GROUP BY log_comment
 ORDER BY log_comment
 SETTINGS enable_parallel_replicas = 0;
 
@@ -58,7 +59,7 @@ SELECT a FROM t ORDER BY a LIMIT 20 FORMAT Null SETTINGS max_rows_to_read = 12; 
 
 -- Same witness for the read-order shape, which reaches the estimate through a different plan.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ParallelReplicasQueryCount'] > 0 AS parallel_replicas_engaged
+SELECT argMax(ProfileEvents['ParallelReplicasQueryCount'], event_time_microseconds) > 0 AS parallel_replicas_engaged
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND initial_query_id = query_id
