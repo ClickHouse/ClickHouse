@@ -357,6 +357,40 @@ static void assertObjectColumnsEqual(const ColumnObject & actual, const ColumnOb
     }
 }
 
+TEST(ColumnObject, RollbackRestoresDynamicPathLimits)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=4)");
+    auto source = type->createColumn();
+    auto updated_source = type->createColumn();
+    auto destination = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    auto & updated_source_object = assert_cast<ColumnObject &>(*updated_source);
+    auto & destination_object = assert_cast<ColumnObject &>(*destination);
+
+    source_object.setMaxDynamicPathsUpperBound(2);
+    auto checkpoint = destination_object.getCheckpoint();
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(source_object);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 2);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 2);
+
+    destination_object.rollback(*checkpoint);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 4);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 4);
+
+    updated_source_object.setMaxDynamicPathsUpperBound(3);
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(updated_source_object);
+    destination_object.updateCheckpoint(*checkpoint);
+
+    source_object.setMaxDynamicPathsUpperBound(1);
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(source_object);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 1);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 1);
+
+    destination_object.rollback(*checkpoint);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 3);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 3);
+}
+
 TEST(ColumnObject, InsertManyFrom)
 {
     for (const String & type_name :
