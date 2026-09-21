@@ -784,22 +784,28 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
     for key, spec in expected_series.items():
         got = actual_series.get(key, [])
         got_by_offset = {}
+        actual_ts = []
         for row in got:
             sec = _sql_ts_to_seconds(str(row["timestamp"]))
             if sec is None:
                 return "failed", f"unparseable timestamp {row['timestamp']}"
-            got_by_offset[round(sec, 9)] = row["value"]
+            actual_ts.append(round(sec, 6))
+            got_by_offset[round(sec, 6)] = row["value"]
+        want_ts = [
+            round(case.start_s + sample.offset_index * case.step_s, 6)
+            for sample in spec.samples
+            if not sample.missing
+        ]
+        if sorted(actual_ts) != sorted(want_ts):
+            return (
+                "failed",
+                f"timestamp mismatch for {dict(key)}: {sorted(actual_ts)} vs {sorted(want_ts)}",
+            )
         for sample in spec.samples:
-            ts = case.start_s + sample.offset_index * case.step_s
-            have = any(abs(k - ts) < 1e-6 for k in got_by_offset)
             if sample.missing:
-                if have:
-                    return "failed", f"unexpected sample at {ts} for {dict(key)}"
                 continue
-            if not have:
-                return "failed", f"missing sample at {ts} for {dict(key)}"
-            actual_val = next(v for k, v in got_by_offset.items() if abs(k - ts) < 1e-6)
-            if not values_approx_equal(float(actual_val), float(sample.value)):
+            ts = round(case.start_s + sample.offset_index * case.step_s, 6)
+            if not values_approx_equal(float(got_by_offset[ts]), float(sample.value)):
                 return "failed", f"value mismatch at {ts} for {dict(key)}"
     return "passed", ""
 

@@ -155,6 +155,38 @@ def test_compare_ordered_pass_and_fail():
     assert status == "failed"
 
 
+def test_compare_range_timestamps():
+    def make_case(values: str) -> loader.EvalCase:
+        return loader.EvalCase(
+            eval_id="t:4",
+            file_name="t.test",
+            line=4,
+            kind="range",
+            expr="m",
+            time_s=60,
+            start_s=0,
+            end_s=60,
+            step_s=30,
+            expected_series=[loader.parse_series_line(f'm{{g="a"}} {values}')],
+        )
+
+    tsv = (
+        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:00.000\t1\n"
+        "[('__name__','m'),('g','a')]\t1970-01-01 00:00:30.000\t2\n"
+        "[('__name__','m'),('g','a')]\t1970-01-01 00:01:00.000\t3\n"
+    )
+    status, _ = loader.compare_eval(make_case("1 2 3"), tsv, None)
+    assert status == "passed"
+    extra = tsv + "[('__name__','m'),('g','a')]\t1970-01-01 00:01:30.000\t4\n"
+    status, _ = loader.compare_eval(make_case("1 2 3"), extra, None)
+    assert status == "failed"
+    duplicate = tsv + "[('__name__','m'),('g','a')]\t1970-01-01 00:01:00.000\t3\n"
+    status, _ = loader.compare_eval(make_case("1 2 3"), duplicate, None)
+    assert status == "failed"
+    status, _ = loader.compare_eval(make_case("1 _ 3"), tsv, None)
+    assert status == "failed"
+
+
 def test_compare_expect_fail():
     case = loader.EvalCase(
         eval_id="t:2",
