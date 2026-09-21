@@ -24,8 +24,15 @@ SELECT '-- group_left with empty left side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests{dc="nonexistent"} * on (dc) group_left (env) target_info', 110) ORDER BY tags;
 
 SELECT '-- explain plan verifies join_group filter pushdown';
-SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) > 0
+SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) >= 2
 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) target_info', 110));
+
+SELECT '-- group_left with subquery on right side';
+SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) last_over_time(target_info[5m:1m])', 110) ORDER BY tags;
+
+SELECT '-- explain plan verifies join_group filter pushdown with subquery on right side';
+SELECT countIf(explain LIKE '%Filter%' AND (explain LIKE '%timeSeriesRemoveAllTagsExcept%' OR explain LIKE '%join_group%')) >= 2
+FROM (EXPLAIN PLAN actions = 1 SELECT * FROM prometheusQuery('t_promql_dfp', 'requests * on (dc) group_left (env) last_over_time(target_info[5m:1m])', 110));
 
 SELECT '-- group_left with label_replace on right side';
 SELECT * FROM prometheusQuery('t_promql_dfp', 'label_replace(requests, "dc2", "$1", "dc", "(.*)") * on (dc2) group_left (env) label_replace(target_info, "dc2", "$1", "dc", "(.*)")', 110) ORDER BY tags;

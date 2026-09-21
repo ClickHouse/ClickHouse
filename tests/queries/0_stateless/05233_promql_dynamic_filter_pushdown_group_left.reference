@@ -4,6 +4,11 @@
 -- group_left with empty left side
 -- explain plan verifies join_group filter pushdown
 1
+-- group_left with subquery on right side
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- explain plan verifies join_group filter pushdown with subquery on right side
+1
 -- group_left with label_replace on right side
 [('dc','a'),('dc2','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
 [('dc','a'),('dc2','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40

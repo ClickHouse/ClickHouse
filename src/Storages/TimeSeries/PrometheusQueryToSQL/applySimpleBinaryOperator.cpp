@@ -63,6 +63,12 @@ namespace
         if (node->node_type == NodeType::Offset)
             return !node->children.empty() && isGroupPreservingNode(node->children[0]);
 
+        if (node->node_type == NodeType::Subquery)
+        {
+            const auto * subq = static_cast<const PrometheusQueryTree::Subquery *>(node);
+            return isGroupPreservingNode(subq->getExpression());
+        }
+
         if (node->node_type == NodeType::Function)
         {
             const auto * func = static_cast<const PrometheusQueryTree::Function *>(node);
