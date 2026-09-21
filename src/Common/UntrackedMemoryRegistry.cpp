@@ -18,11 +18,8 @@ UntrackedMemoryCounter::~UntrackedMemoryCounter()
 
 UntrackedMemoryRegistry & UntrackedMemoryRegistry::instance()
 {
-    /// Never destroyed. Counters live in ThreadStatus and unregister themselves in the
-    /// destructor, and a thread owning a ThreadStatus can outlive static destruction: the
-    /// libFuzzer entry points do not own main, so they cannot join the global thread pool
-    /// before it runs. A destroyed registry would then be written to by ~UntrackedMemoryCounter.
-    /// The object stays reachable through this pointer, so it is not reported as a leak.
+    /// Never destroyed: a thread owning a `ThreadStatus` can outlive static destruction, and
+    /// `~UntrackedMemoryCounter` would then write into a destroyed registry. Reachable, so not a leak.
     static UntrackedMemoryRegistry * registry = new UntrackedMemoryRegistry;
     return *registry;
 }
