@@ -155,7 +155,7 @@ public:
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecayingFloat64, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecaying, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -213,16 +213,17 @@ public:
         else if (const auto * input_type_as_decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
         {
             const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*input_type_as_decaying->getLogicalTupleType());
-            const auto & tuple_column = checkAndGetColumn<ColumnTuple>(*input_col);
+            const auto & decaying_column = checkAndGetColumn<ColumnExponentialTimeDecaying>(*input_col);
+            const auto & storage_tuple = decaying_column.getStorageTuple();
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, logical_tuple, arguments.size());
 
             if (!index.has_value())
                 return arguments[2].column;
 
-            if (*index < tuple_column.tupleSize())
-                res = tuple_column.getColumnPtr(*index);
+            if (*index < 2)
+                res = storage_tuple.getColumnPtr(*index);
             else
-                res = ColumnFloat64::create(tuple_column.size(), input_type_as_decaying->getDecayLength());
+                res = ColumnFloat64::create(decaying_column.size(), input_type_as_decaying->getDecayLength());
 
             if (null_map_column)
                 res = applyOuterNullMap(res, logical_tuple.getElements()[*index], null_map_column);
@@ -267,7 +268,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecayingFloat64, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), ExponentialTimeDecaying, QBit, JSON, Nullable(JSON) or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
