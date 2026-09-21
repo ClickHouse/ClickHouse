@@ -20,10 +20,8 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
             return {};
-        /// AMQP-CPP ends the login at the FIRST '@' after the scheme, unbounded by the `/?#` that
-        /// closes an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`, `Address`), so
-        /// its credential can run past anything a URI masker covers. An '@' is therefore the only
-        /// reliable sign that this address carries one, and there is no extent to keep visible.
+        /// AMQP-CPP ends the login at the FIRST '@' after the scheme, unbounded by the `/?#` that closes
+        /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds it.
         if (masked_value.contains('@'))
             masked_value = "[HIDDEN]";
         return fmt::format("'{}'", masked_value);
