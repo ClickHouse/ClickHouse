@@ -4,6 +4,10 @@
 
 #include <Core/Streaming/CursorTree.h>
 
+#include <Interpreters/Streaming/Utils.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -49,6 +53,9 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
+        hash_state.update(stream_settings->subscribe_for_updates);
+        hash_state.update(stream_settings->unordered);
+
         if (stream_settings->cursor)
         {
             for (const auto & entry : cursorTreeToMap(stream_settings->cursor))
@@ -110,6 +117,14 @@ String TableExpressionModifiers::formatForErrorMessage() const
     }
 
     return buffer.str();
+}
+
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers)
+{
+    if (!modifiers.hasStream())
+        return metadata;
+
+    return extendMetadataWithStream(metadata, *modifiers.getStreamSettings());
 }
 
 }

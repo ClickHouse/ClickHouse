@@ -45,9 +45,9 @@ SELECT
     formatReadableQuantity(98765432101234, 4) AS four_decimals
         )",
         R"(
-┌─no_decimals──┬─four_decimals─────┐
-│ 99 trillion  │ 98.7654 trillion  │
-└──────────────┴───────────────────┘
+┌─no_decimals─┬─four_decimals────┐
+│ 99 trillion │ 98.7654 trillion │
+└─────────────┴──────────────────┘
         )"
     }
     };

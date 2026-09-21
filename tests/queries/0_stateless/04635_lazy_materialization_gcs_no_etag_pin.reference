@@ -1,0 +1,4 @@
+-- GCS provider: the reread cannot be proven ETag-pinned, no lazy step
+0
+-- AWS provider: the reread is ETag-pinned, the lazy step is present (non-vacuous control)
+1

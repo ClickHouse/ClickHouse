@@ -248,19 +248,19 @@ The function supports both individual geometry types (Point, MultiPoint, Ring, P
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",
-         "(2.0, 1.0)"},
+         "(2,1)"},
         {"ring",
          "SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);",
-         "[(2.0, 1.0), (4.0, 3.0)]"},
+         "[(2,1),(4,3)]"},
         {"polygon",
          "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"},
+         "[[(2,1),(4,3)],[(6,5),(8,7)]]"},
         {"geometry_wkt",
          "SELECT flipCoordinates(readWkt('POINT(10 20)'));",
-         "(20, 10)"},
+         "(20,10)"},
         {"geometry_polygon_wkt",
          "SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));",
-         "[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]"}
+         "[[(0,0),(0,5),(5,5),(5,0),(0,0)]]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

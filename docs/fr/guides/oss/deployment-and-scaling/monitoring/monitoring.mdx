@@ -59,7 +59,7 @@ Ces données sont collectées dans la table `system.asynchronous_metric_log`.
 
 Le serveur ClickHouse dispose d’instruments intégrés pour surveiller son propre état.
 
-Pour suivre les événements du serveur, utilisez les journaux du serveur. Voir la section [logger](/fr/reference/settings/server-settings/settings#logger) du fichier de configuration.
+Pour suivre les événements du serveur, utilisez les journaux du serveur. Voir la section [logger](/fr/reference/settings/server-settings/settings/other#logger) du fichier de configuration.
 
 ClickHouse collecte :
 
@@ -68,10 +68,10 @@ ClickHouse collecte :
 
 Vous pouvez trouver ces métriques dans les tables [system.metrics](/fr/reference/system-tables/metrics), [system.events](/fr/reference/system-tables/events) et [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
 
-Vous pouvez configurer ClickHouse pour exporter les métriques vers [Graphite](https://github.com/graphite-project). Voir la [section Graphite](/fr/reference/settings/server-settings/settings#graphite) dans le fichier de configuration du serveur ClickHouse. Avant de configurer l’export des métriques, vous devez configurer Graphite en suivant son [guide](https://graphite.readthedocs.io/en/latest/install.html) officiel.
+Vous pouvez configurer ClickHouse pour exporter les métriques vers [Graphite](https://github.com/graphite-project). Voir la [section Graphite](/fr/reference/settings/server-settings/settings/graphite#graphite) dans le fichier de configuration du serveur ClickHouse. Avant de configurer l’export des métriques, vous devez configurer Graphite en suivant son [guide](https://graphite.readthedocs.io/en/latest/install.html) officiel.
 
-Vous pouvez configurer ClickHouse pour exporter les métriques vers [Prometheus](https://prometheus.io). Voir la [section Prometheus](/fr/reference/settings/server-settings/settings#prometheus) dans le fichier de configuration du serveur ClickHouse. Avant de configurer l’export des métriques, vous devez configurer Prometheus en suivant son [guide](https://prometheus.io/docs/prometheus/latest/installation/) officiel.
+Vous pouvez configurer ClickHouse pour exporter les métriques vers [Prometheus](https://prometheus.io). Voir la [section Prometheus](/fr/reference/settings/server-settings/settings/other#prometheus) dans le fichier de configuration du serveur ClickHouse. Avant de configurer l’export des métriques, vous devez configurer Prometheus en suivant son [guide](https://prometheus.io/docs/prometheus/latest/installation/) officiel.
 
 En outre, vous pouvez surveiller la disponibilité du serveur via l’API HTTP. Envoyez la requête `HTTP GET` à `/ping`. Si le serveur est disponible, il répond avec `200 OK`.
 
-Pour surveiller les serveurs d’un cluster, vous devez définir le paramètre [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings#max_replica_delay_for_distributed_queries) et utiliser la ressource HTTP `/replicas_status`. Une requête vers `/replicas_status` renvoie `200 OK` si la réplique est disponible et n’est pas en retard par rapport aux autres répliques. Si une réplique est en retard, elle renvoie `503 HTTP_SERVICE_UNAVAILABLE` avec des informations sur ce retard.
+Pour surveiller les serveurs d’un cluster, vous devez définir le paramètre [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/fr/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) et utiliser la ressource HTTP `/replicas_status`. Une requête vers `/replicas_status` renvoie `200 OK` si la réplique est disponible et n’est pas en retard par rapport aux autres répliques. Si une réplique est en retard, elle renvoie `503 HTTP_SERVICE_UNAVAILABLE` avec des informations sur ce retard.

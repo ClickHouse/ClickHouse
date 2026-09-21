@@ -43,9 +43,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 可选参数：
 
-* `poll_timeout_ms` - 从日志文件执行单次轮询的超时时间。默认值：[stream&#95;poll&#95;timeout&#95;ms](/zh/reference/settings/session-settings#stream_poll_timeout_ms)。
-* `poll_max_batch_size` — 单次轮询可拉取的最大记录数。默认值：[max&#95;block&#95;size](/zh/reference/settings/session-settings#max_block_size)。
-* `max_block_size` — 轮询的最大批次大小 (按记录数计) 。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings#max_insert_block_size)。
+* `poll_timeout_ms` - 从日志文件执行单次轮询的超时时间。默认值：[stream&#95;poll&#95;timeout&#95;ms](/zh/reference/settings/session-settings/stream#stream_poll_timeout_ms)。
+* `poll_max_batch_size` — 单次轮询可拉取的最大记录数。默认值：[max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size)。
+* `max_block_size` — 轮询的最大批次大小 (按记录数计) 。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `max_threads` - 用于解析文件的最大线程数，默认值为 0，这表示该值将为 max(1, physical&#95;cpu&#95;cores / 4)。
 * `poll_directory_watch_events_backoff_init` - 目录监视线程的初始休眠时间。默认值：`500`。
 * `poll_directory_watch_events_backoff_max` - 目录监视线程的最大休眠时间。默认值：`32000`。

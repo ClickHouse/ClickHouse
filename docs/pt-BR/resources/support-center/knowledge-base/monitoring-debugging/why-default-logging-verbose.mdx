@@ -24,7 +24,7 @@ Se o banco de dados estiver operando de forma estável, os usuários podem recon
   ## Altere o nível de log
 </div>
 
-Os diferentes níveis de log disponíveis estão documentados [aqui](/pt-BR/reference/settings/server-settings/settings#logger)
+Os diferentes níveis de log disponíveis estão documentados [aqui](/pt-BR/reference/settings/server-settings/settings/other#logger)
 
 Você precisará editar o arquivo de configuração do servidor ClickHouse (`/etc/clickhouse-server/config.xml`) para modificar o nível de log.
 
@@ -33,9 +33,9 @@ O valor padrão é `trace`, mas você pode alterá-lo para o nível desejado. Ve
 ```
 <clickhouse>
     <logger>
-        {/* Níveis possíveis [1]:
+        {/* Possible levels [1]:
 
-          - none (desativa o logging)
+          - none (turns off logging)
           - fatal
           - critical
           - error
@@ -44,10 +44,10 @@ O valor padrão é `trace`, mas você pode alterá-lo para o nível desejado. Ve
           - information
           - debug
           - trace
-          - test (não usar em produção)
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
         <level>trace</level>
-... Restante do arquivo de configuração
+... Rest of the configuration file
 </clickhouse>
 ```

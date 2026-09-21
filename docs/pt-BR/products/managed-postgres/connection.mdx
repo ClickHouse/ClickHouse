@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/connection
 sidebarTitle: 'Conexão'
-title: 'Conectando-se ao Managed Postgres'
-description: 'Strings de conexão, pool de conexões do PgBouncer e configuração de TLS para o ClickHouse Managed Postgres'
+title: 'Conectando-se ao ClickHouse Managed Postgres'
+description: 'Strings de conexão, pool de conexões com PgBouncer e configuração de TLS para o ClickHouse Managed Postgres'
 keywords: ['conexão postgres', 'string de conexão', 'pgbouncer', 'tls', 'ssl']
 doc_type: 'guide'
 ---
@@ -22,7 +22,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   ## Acessando os detalhes da conexão
 </div>
 
-Para conectar seus aplicativos ao Managed Postgres, acesse a tela **Connect** na barra lateral esquerda da sua instância.
+Para conectar seus aplicativos ao ClickHouse Managed Postgres, acesse a tela **Connect** na barra lateral esquerda da sua instância.
 
 <Image img="/images/managed-postgres/connect-button.webp" alt="Clique em Connect na barra lateral esquerda para ver os detalhes da conexão" size="md" border />
 
@@ -34,10 +34,10 @@ O modal de conexão exibe as seguintes informações:
 
 * **Nome de usuário**: O usuário do banco de dados (padrão: `postgres`)
 * **Senha**: A senha do seu banco de dados (mascarada por padrão; clique no ícone de olho para revelar)
-* **Servidor**: O hostname da sua instância do Managed Postgres
+* **Servidor**: O hostname da sua instância do ClickHouse Managed Postgres
 * **Porta**: A porta do PostgreSQL (padrão: `5432`)
 
-O Managed Postgres concede acesso de superusuário ao seu banco de dados. Use essas credenciais para se conectar como superusuário, o que permite criar usuários adicionais e gerenciar objetos do banco de dados.
+O ClickHouse Managed Postgres concede acesso de superusuário ao seu banco de dados. Use essas credenciais para se conectar como superusuário, o que permite criar usuários adicionais e gerenciar objetos do banco de dados.
 
 <div id="connection-string">
   ## Formatos da string de conexão
@@ -59,7 +59,7 @@ Por motivos de segurança, a senha nas strings de conexão fica mascarada por pa
   ## Pool de conexões com PgBouncer
 </div>
 
-O Managed Postgres inclui uma instância integrada do [PgBouncer](https://www.pgbouncer.org/) para pool de conexões no servidor. O PgBouncer ajuda a melhorar o gerenciamento de conexões, o desempenho e a utilização de recursos, especialmente para aplicações que:
+O ClickHouse Managed Postgres inclui uma instância integrada do [PgBouncer](https://www.pgbouncer.org/) para pool de conexões no servidor. O PgBouncer ajuda a melhorar o gerenciamento de conexões, o desempenho e a utilização de recursos, especialmente para aplicações que:
 
 * Abrem muitas conexões simultâneas
 * Criam e fecham conexões com frequência
@@ -79,7 +79,7 @@ Para usar o pool de conexões, clique na opção **via PgBouncer** na parte supe
   ## Configuração de TLS
 </div>
 
-Todas as instâncias do Managed Postgres são protegidas por TLS. A versão mínima compatível é **TLS 1.3**.
+Todas as instâncias do ClickHouse Managed Postgres são protegidas por TLS. A versão mínima compatível é **TLS 1.3**.
 
 <div id="quick-connection">
   ### Conexão rápida (criptografada com TLS)
@@ -99,7 +99,7 @@ Para cargas de trabalho de produção, recomendamos se conectar com TLS verifica
 
 <Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Baixar certificado da CA na aba Settings" size="md" border />
 
-O certificado da CA é exclusivo da sua instância do Managed Postgres e não funcionará com outras instâncias.
+O certificado da CA é exclusivo da sua instância do ClickHouse Managed Postgres e não funcionará com outras instâncias.
 
 Para se conectar com uma conexão TLS verificada, adicione `sslmode=verify-full` e o caminho para o certificado baixado:
 

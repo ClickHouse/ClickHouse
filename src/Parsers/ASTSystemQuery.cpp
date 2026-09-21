@@ -278,7 +278,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::RELOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARY:
-        case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
         case Type::WAIT_BLOBS_CLEANUP:
@@ -288,11 +287,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_database_table();
-            }
-            else if (!target_model.empty())
-            {
-                ostr << ' ';
-                print_identifier(target_model);
             }
             else if (!target_function.empty())
             {
@@ -648,7 +642,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_DICTIONARIES:
         case Type::UNLOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
-        case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
@@ -669,6 +662,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::DISABLE_ALL_FAILPOINTS:
             break;
         case Type::SYNC_FILESYSTEM_CACHE:
         {
@@ -698,8 +692,6 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
-    if (!target_model.empty())
-        w.writeString("target_model", target_model);
     if (!target_function.empty())
         w.writeString("target_function", target_function);
     if (!replica.empty())
@@ -837,7 +829,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
     String query_type_str = r.getString("query_type");
     auto query_type_opt = magic_enum::enum_cast<Type>(query_type_str);
-    if (!query_type_opt)
+    /// `UNKNOWN` and `END` bound the enumeration instead of naming a SYSTEM command; no parse produces them.
+    if (!query_type_opt || *query_type_opt == Type::UNKNOWN || *query_type_opt == Type::END)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
     type = *query_type_opt;
 #if USE_XRAY
@@ -858,7 +851,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
-    target_model = r.getString("target_model");
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");
@@ -1027,7 +1019,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
         String srv_type_str = srv_reader.getString("type");
         auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(srv_type_str);
-        if (!srv_type_opt)
+        /// `ServerType::Type::END` bounds the enumeration instead of naming a port; no parse produces it.
+        if (!srv_type_opt || *srv_type_opt == ServerType::Type::END)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: '{}'", srv_type_str);
         server_type.type = *srv_type_opt;
         server_type.custom_name = srv_reader.getString("custom_name");
@@ -1048,7 +1041,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                         "'server_type.exclude_types[{}]' must be a string during AST JSON deserialization", i);
                 String v = arr->getElement<std::string>(i);
                 auto opt = magic_enum::enum_cast<ServerType::Type>(v);
-                if (!opt)
+                if (!opt || *opt == ServerType::Type::END)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: '{}'", i, v);
                 server_type.exclude_types.insert(*opt);
             }
