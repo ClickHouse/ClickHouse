@@ -34,13 +34,7 @@
         {
           "group": "Features",
           "pages": [
-            {
-              "group": "Deployment",
-              "pages": [
-                "clickstack/managed/deployment/overview",
-                "clickstack/deployment/managed"
-              ]
-            },
+            "clickstack/deployment/managed",
             "clickstack/managed/features/search",
             {
               "group": "Dashboards",

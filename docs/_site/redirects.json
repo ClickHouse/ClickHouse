@@ -1,5 +1,9 @@
 [
   {
+    "destination": "/clickstack/deployment/managed",
+    "source": "/clickstack/managed/deployment/overview"
+  },
+  {
     "destination": "/clickstack/managing/isolating-read-write",
     "source": "/use-cases/observability/clickstack/isolating-read-write"
   },

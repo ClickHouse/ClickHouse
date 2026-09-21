@@ -1,5 +1,5 @@
 
-A table tile is often a **catalog**: one row per service, host, endpoint, or error group, with a few columns that score each one. Row-click actions turn that catalog into an inspection workflow. You scan the catalog to find the row that matters, click it, and ClickStack carries the clicked row's values through as filters. The destination then opens already scoped to that one item with no query to rebuild by hand.
+A table tile is often a **catalog**: one row per service, host, endpoint, or error group, with a few columns that score each one. Row-click actions turn that catalog into an inspection workflow. You scan the catalog to find the row that matters, click it, and the action carries the clicked row's values through as filters. The destination then opens already scoped to that one item with no query to rebuild by hand.
 
 A click can land in one of two places:
 
@@ -108,7 +108,7 @@ The drawer offers three actions:
 
 - **Default**: the built-in behavior. Clicking a row opens the Search page, filtered by the row's group-by column values and the selected time range. This is what you get when no custom action is set.
 - **Search**: send the click to the Search page for a source you choose.
-- **Dashboard**: send the click to another dashboard owned by your team.
+- **Dashboard**: send the click to another available dashboard.
 
 For **Search** and **Dashboard**, you choose where the click lands and template the filters carried into it:
 
@@ -122,13 +122,13 @@ For **Search** and **Dashboard**, you choose where the click lands and template 
 A `{{...}}` template resolves against the table tile's own columns: the group-by columns and each series by its name or alias, exactly as they appear in the table. It does not see columns of the underlying source that the table does not select. A value has to be a column in the table to be carried through a click, so `{{ServiceName}}` works because `ServiceName` is the table's group-by column, and an aliased column is referenced by its alias. Referencing a name the table does not have fails the click with `Row has no column '<name>'`.
 </Info>
 
-Click **Apply** to validate the templates (ClickStack reports any with invalid syntax), then save the dashboard to persist the action.
+Click **Apply** to validate the templates (invalid syntax is reported), then save the dashboard to persist the action.
 
 ## How the destination and filters resolve {#how-it-resolves}
 
-When a viewer clicks a row, ClickStack resolves the action against that row:
+When a viewer clicks a row, the action is resolved against that row:
 
-- **Destination.** Choosing a specific source or dashboard pins it by ID. A **Template** target renders against the clicked row and is then matched by name against your team's sources or dashboards. A name must be unique to resolve: if two sources or two dashboards share the rendered name, the link cannot resolve to one of them. An empty rendered name, or a name with no match, also fails to resolve.
+- **Destination.** Choosing a specific source or dashboard pins it by ID. A **Template** target renders against the clicked row and is then matched by name against the available sources or dashboards. A name must be unique to resolve: if two sources or two dashboards share the rendered name, the link cannot resolve to one of them. An empty rendered name, or a name with no match, also fails to resolve.
 - **Filters.** Each filter template renders against the row and becomes an `expression IN (value)` condition at the destination. A `Search` action opens `/search` scoped to the chosen source; a `Dashboard` action opens that dashboard. The clicked row's time range carries over in both cases.
 
 <Info>
