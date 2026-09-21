@@ -70,6 +70,9 @@ view result aliases
 4	3
 1
 4
+derived table result alias pruning
+2
+3
 view result aliases matching operand names
 1	2
 4	3

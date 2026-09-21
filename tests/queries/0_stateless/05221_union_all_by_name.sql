@@ -267,6 +267,16 @@ SELECT * FROM union_by_name_aliases ORDER BY x;
 SELECT x FROM union_by_name_aliases ORDER BY x;
 DROP TABLE union_by_name_aliases;
 
+SELECT 'derived table result alias pruning';
+SELECT y
+FROM
+(
+    SELECT 1 AS a, 2 AS b
+    UNION ALL BY NAME
+    SELECT 3 AS b, 4 AS a
+) AS union_by_name_aliases(x, y)
+ORDER BY y;
+
 SELECT 'view result aliases matching operand names';
 CREATE VIEW union_by_name_aliases(b, a) AS
 SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a;

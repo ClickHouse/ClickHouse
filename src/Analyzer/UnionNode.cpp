@@ -234,7 +234,9 @@ NamesAndTypes UnionNode::computeProjectionColumns(bool apply_projection_aliases)
 
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
-    if (recursive_cte_table)
+    /// Result aliases refer to the original UNION column order. Keep that shape until
+    /// pruning can also update the aliases consistently across every operand.
+    if (recursive_cte_table || !projection_aliases_to_override.empty())
         return;
 
     if (column_match_mode == SetOperationColumnMatchMode::Name)
