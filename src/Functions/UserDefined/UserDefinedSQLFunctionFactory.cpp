@@ -94,6 +94,11 @@ namespace
             if (!argument_identifier)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda argument must be identifier");
 
+            if (argument_identifier->name_parts.size() > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Lambda argument identifier must contain single part. Actual {}",
+                    argument_identifier->full_name);
+
             const auto & argument_name = argument_identifier->name();
             auto [_, inserted] = arguments.insert(argument_name);
             if (!inserted)
