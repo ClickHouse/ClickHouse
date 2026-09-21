@@ -197,9 +197,12 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
                             checkNoSSLPaths(config, replica_prefix);
+                            /// Resolve the port the same way mysqlxx::Pool does, so the checked port
+                            /// always matches the port the connection actually dials.
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
-                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                                toString(config.getInt(replica_prefix + ".port",
+                                    config.getInt(settings_config_prefix + ".port", 3306))));
                         }
                     }
                 }
