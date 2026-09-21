@@ -137,7 +137,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool share_nested_offsets;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -2596,11 +2595,6 @@ bool StorageMergeTree::optimize(
                         "to preserve DELETE correctness. Parts will not be compacted.");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    if (deduplicate && (*getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "OPTIMIZE DEDUPLICATE is not supported for tables with map_serialization_version = 'with_key_columns'");
-
     if (deduplicate && metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

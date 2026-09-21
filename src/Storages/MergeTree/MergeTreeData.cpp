@@ -41,7 +41,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -1040,21 +1039,13 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-static NameSet collectMapKeyColumnsNames(const ColumnsDescription & columns)
-{
-    NameSet names;
-    for (const auto & column : columns.getAllPhysical())
-    {
-        if (typeid_cast<const DataTypeMap *>(column.type.get()))
-            names.insert(column.name);
-    }
-    return names;
-}
-
 /// Rejects Maps nested inside Array/Tuple/LowCardinality of a column on a
-/// `with_key_columns` table. The per-key serialization assumes that the Map is
-/// the top-level column: inside an Array the per-key streams would collide with
-/// the `.sizeN` offsets streams of the enclosing array.
+/// `with_key_columns` table. The per-key state prefix writes the key list into the
+/// `m.keys` stream and the reader reads it back with `readMapKeys` until EOF; nested
+/// beneath `Substream::ArrayElements` the same stream also carries the per-element
+/// rows of later granules, so the prefix reader would run into the granule data
+/// ("Empty key in a with_key_columns Map keys stream"). Supporting nested Maps needs a
+/// self-delimiting keys prefix.
 static void checkNoNestedMapInMapKeyColumnsTable(const IDataType & type, const String & path)
 {
     if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
@@ -1084,66 +1075,6 @@ static void checkNoNestedMapInMapKeyColumnsTable(const IDataType & type, const S
     }
     if (which.isLowCardinality())
         checkNoNestedMapInMapKeyColumnsTable(*assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType(), path);
-}
-
-static bool nameRefersToMapKeyColumns(const String & name, const NameSet & key_columns_maps)
-{
-    if (key_columns_maps.contains(name))
-        return true;
-
-    if (auto parsed = tryParseMapSubcolumnName(name, {}); parsed && key_columns_maps.contains(parsed->first))
-        return true;
-
-    for (const auto & map_name : key_columns_maps)
-    {
-        if (name.starts_with(map_name + ".") || name.starts_with(map_name + "["))
-            return true;
-        if (name.find("arrayElement(" + map_name + ",") != String::npos
-            || name.find("arrayElement(" + map_name + " ") != String::npos)
-            return true;
-    }
-    return false;
-}
-
-static void checkMapKeyColumnsNotUsedInTableKeys(const StorageInMemoryMetadata & metadata, const NameSet & key_columns_maps)
-{
-    if (key_columns_maps.empty())
-        return;
-
-    auto reject = [&](const Names & names, const char * what)
-    {
-        for (const auto & name : names)
-        {
-            if (nameRefersToMapKeyColumns(name, key_columns_maps))
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "{} key cannot reference a Map column stored with map_serialization_version = 'with_key_columns'",
-                    what);
-            }
-        }
-    };
-
-    reject(metadata.getColumnsRequiredForSortingKey(), "Sorting");
-    reject(metadata.getColumnsRequiredForPrimaryKey(), "Primary");
-    reject(metadata.getColumnsRequiredForPartitionKey(), "Partition");
-    reject(metadata.getColumnsRequiredForSampling(), "Sampling");
-
-    /// Skip-index extraction cannot extract a key out of a `with_key_columns`
-    /// Map, so reject skip indices over it outright.
-    for (const auto & index : metadata.secondary_indices)
-    {
-        for (const auto & column_name : index.expression->getRequiredColumns())
-        {
-            if (nameRefersToMapKeyColumns(column_name, key_columns_maps))
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Skip index {} cannot reference a Map column stored with map_serialization_version = 'with_key_columns'",
-                    backQuoteIfNeed(index.name));
-            }
-        }
-    }
 }
 
 /// A function that opts out of constant folding may do context-dependent work (an access check, a remote
@@ -1606,26 +1537,17 @@ void MergeTreeData::checkProperties(
     const bool is_alter = &old_metadata != &new_metadata;
 
     const auto map_version = effective_settings[MergeTreeSetting::map_serialization_version];
-    const auto map_version_zero_level = effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    const bool new_uses_key_columns = map_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
-        || map_version_zero_level == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool new_uses_key_columns = map_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
     const bool live_uses_key_columns
-        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
-        || live_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
 
     if (new_uses_key_columns)
     {
-        /// The per-key layout is written for both zero-level and merged parts;
-        /// a part-level mix of layouts is not supported.
-        if (map_version != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
-            || map_version_zero_level != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Settings map_serialization_version and map_serialization_version_for_zero_level_parts must both be 'with_key_columns' "
-                "when either of them is 'with_key_columns'");
-        }
-
+        /// `with_key_columns` governs zero-level parts too: a part-level mix of layouts
+        /// is not supported, so `map_serialization_version_for_zero_level_parts` is
+        /// ignored (the write path and the part load both resolve it to
+        /// `with_key_columns`). It is not rejected outright so that a randomized or
+        /// inherited `with_buckets` override does not break DDL.
         /// Other merging modes rewrite whole rows (signs, versions, aggregates);
         /// the per-key layout is validated for ordinary merges only.
         if (merging_params.mode != MergingParams::Ordinary)
@@ -1633,13 +1555,6 @@ void MergeTreeData::checkProperties(
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "map_serialization_version = 'with_key_columns' is supported only for MergeTree and ReplicatedMergeTree");
-        }
-
-        if (!new_metadata.projections.empty())
-        {
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projections are not supported on tables with map_serialization_version = 'with_key_columns'");
         }
 
         for (const auto & column : new_metadata.columns.getAllPhysical())
@@ -1674,9 +1589,6 @@ void MergeTreeData::checkProperties(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Cannot change map_serialization_version to or from 'with_key_columns' while the table has data parts");
     }
-
-    if (new_uses_key_columns)
-        checkMapKeyColumnsNotUsedInTableKeys(new_metadata, collectMapKeyColumnsNames(new_metadata.columns));
 
     for (const auto & col : new_metadata.columns)
     {
@@ -6629,39 +6541,6 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
-    const bool uses_key_columns
-        = (*getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
-    if (uses_key_columns)
-    {
-        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        const auto key_columns_maps = collectMapKeyColumnsNames(metadata_snapshot->getColumns());
-        for (const auto & command : commands)
-        {
-            /// A row-rewriting mutation would have to restate the fixed part key
-            /// set; not supported.
-            if (command.type == MutationCommand::DELETE)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER DELETE is not supported on tables with map_serialization_version = 'with_key_columns'");
-            }
-
-            if (command.type == MutationCommand::UPDATE)
-            {
-                for (const ASTPtr & assignment_ast : command.ast()->update_assignments->children)
-                {
-                    const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                    if (nameRefersToMapKeyColumns(assignment.column_name, key_columns_maps))
-                    {
-                        throw Exception(
-                            ErrorCodes::SUPPORT_IS_DISABLED,
-                            "ALTER UPDATE cannot assign a Map column stored with map_serialization_version = 'with_key_columns'");
-                    }
-                }
-            }
-        }
-    }
-
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
     /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
@@ -6822,8 +6701,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     };
 
     auto part_type = PartType::Wide;
-    /// The per-key Map layout needs one stream pair per key, which the single-file
-    /// Compact layout cannot express.
+    /// The per-key Map streams are data-dependent and lazily opened (per granule); the
+    /// single-file Compact layout requires one compressed block per column per granule
+    /// and fixed marks, so `with_key_columns` tables always write Wide parts.
     if ((*settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
         && satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
