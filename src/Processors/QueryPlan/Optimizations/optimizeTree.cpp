@@ -90,6 +90,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.enable_parallel_replicas,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
@@ -601,11 +602,10 @@ void optimizeTreeSecondPass(
             /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
-            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
+            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
+            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {

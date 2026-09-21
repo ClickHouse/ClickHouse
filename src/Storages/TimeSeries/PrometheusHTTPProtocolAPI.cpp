@@ -249,8 +249,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
 
-    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    query_context->setSetting("allow_experimental_analyzer", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
@@ -612,9 +610,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
-
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try
@@ -692,7 +687,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
-    /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
+    /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
     {
@@ -702,7 +697,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             make_intrusive<ASTLiteral>(String{}));
     };
 
-    /// groupUniqArray() deduplicates the metadata entries of each metric family: the Metrics target table typically
+    /// groupUniqArray() deduplicates the metadata entries of each metric family: the metric families target table typically
     /// contains duplicate rows until they're merged. With `limit_per_metric` set it also caps the number of entries
     /// per family, choosing an arbitrary subset like Prometheus does. arraySort() and ORDER BY make the result deterministic.
     auto group_uniq_array = makeASTFunction(
@@ -721,17 +716,17 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     metadata_entries->setAlias("metadata");
 
     /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family_name = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
     builder.select_list.push_back(std::move(metadata_entries));
     builder.from_table_function = makeASTFunction(
-        "timeSeriesMetrics",
+        "timeSeriesMetricFamilies",
         make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
         make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
 
-    /// Filter on the raw column so the primary key of the Metrics target table can be used.
+    /// Filter on the raw column so the primary key of the metric families target table can be used.
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",
@@ -927,9 +922,6 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     auto sql_query = makeSelectFromSubquery({std::move(array_expression)}, std::move(series_ids_query), /* distinct = */ false, {});
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
