@@ -218,6 +218,62 @@ static Plan getPlan(
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
+    /// The same rebuild-from-scratch reason: `MetadataGenerator` recreates only `refs.main`, so any
+    /// other branch or tag of the source metadata would be gone from the rewritten table - metadata
+    /// the user can see, and a snapshot that ref used to protect could afterwards be expired.
+    /// Carrying the refs over instead is not a fix on its own: the rewrite does not retain every
+    /// source snapshot, so a ref can name one the new metadata no longer has. Refuse the rewrite
+    /// and leave the table as it is.
+    if (initial_metadata_object->has(Iceberg::f_refs) && !initial_metadata_object->isNull(Iceberg::f_refs))
+    {
+        const auto refs = initial_metadata_object->getObject(Iceberg::f_refs);
+        for (const auto & ref_name : refs->getNames())
+        {
+            if (ref_name != Iceberg::f_main)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Compaction is supported only for a table whose only reference is `{}`, but `{}` is also present. "
+                    "Drop that branch or tag first",
+                    Iceberg::f_main, ref_name);
+
+            /// `main` is recreated with a snapshot id and a type and nothing else, so a retention
+            /// override carried on it - `min-snapshots-to-keep`, `max-snapshot-age-ms` or
+            /// `max-ref-age-ms`, all of which `ALTER TABLE ... EXECUTE expire_snapshots` reads -
+            /// would be dropped by the rewrite, and history it protects today could be expired
+            /// afterwards. Refuse for the same reason rather than weaken retention silently.
+            for (const auto & field : refs->getObject(ref_name)->getNames())
+            {
+                if (field != Iceberg::f_metadata_snapshot_id && field != Iceberg::f_type)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Compaction is supported only for a `{}` reference holding nothing but `{}` and `{}`, but it "
+                        "also holds `{}`. Remove that retention override first",
+                        Iceberg::f_main, Iceberg::f_metadata_snapshot_id, Iceberg::f_type, field);
+            }
+        }
+    }
+
+    /// The rewrite carries no `properties` at all, and three of them are a retention floor that
+    /// `ALTER TABLE ... EXECUTE expire_snapshots` reads (`ExpireSnapshotsExecute.cpp`): losing them
+    /// lets a later expire remove history this table asked to keep. The rest of `properties` is
+    /// dropped by the rewrite too, which is a defect of its own and not something a guard here can
+    /// fix - refusing on any property would refuse every table ClickHouse writes, since it always
+    /// sets `write.*.mode` - so only the retention floor is refused.
+    if (initial_metadata_object->has(Iceberg::f_properties) && !initial_metadata_object->isNull(Iceberg::f_properties))
+    {
+        const auto properties = initial_metadata_object->getObject(Iceberg::f_properties);
+        for (const auto * retention :
+             {Iceberg::f_min_snapshots_to_keep, Iceberg::f_max_snapshot_age_ms, Iceberg::f_max_ref_age_ms})
+        {
+            if (properties->has(retention))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Compaction does not preserve the table property `{}`, which sets how much history to keep, so it "
+                    "is not supported for a table that sets it. Remove the property first",
+                    retention);
+        }
+    }
+
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
     Poco::JSON::Array::Ptr current_schema;
