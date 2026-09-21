@@ -50,6 +50,14 @@ SELECT count() FROM t_pb_probe INNER JOIN t_pb_bcast ON t_pb_probe.key = t_pb_bc
 WHERE t_pb_bcast.id < 5000
 FORMAT Null SETTINGS log_comment = '05099_plan_based';
 
+-- Again without moving the predicate into PREWHERE. The read step's own serialization carries the
+-- prewhere and the row-level filter and nothing else, so this is the shape where the broadcast read
+-- would arrive with nothing to prune by if the predicate travelled only that way. It does not: the
+-- filter is a step of the shipped fragment, and the follower optimizes the plan it deserializes.
+SELECT count() FROM t_pb_probe INNER JOIN t_pb_bcast ON t_pb_probe.key = t_pb_bcast.id
+WHERE t_pb_bcast.id < 5000
+FORMAT Null SETTINGS optimize_move_to_prewhere = 0, log_comment = '05099_plan_based';
+
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_plan_based = 0;
 SET serialize_query_plan = 0;
