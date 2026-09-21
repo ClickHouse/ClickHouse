@@ -1,0 +1,20 @@
+with every source resolved, the table is created in the first writable source
+0
+1
+0
+while the first source is unresolved, CREATE TABLE through the facade is rejected
+1
+including a name the unresolved source already owns, so no duplicate is created
+1
+nothing landed in the later source
+0
+0
+the underlying writable database still takes the table directly
+0
+once the source is back, the table is created in it again
+0
+1
+0
+a source that follows the creation target cannot change the placement, so it is not an obstacle
+0
+1
