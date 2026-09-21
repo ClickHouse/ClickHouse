@@ -286,10 +286,14 @@ defaults once the node is up.
 </Warning>
 
 Keeper deliberately refuses to start if a local log entry above the snapshot references the damaged
-region: a removed node, anything below it, or any parent of a removed subtree. A parent counts as a
-conflict because its set of children no longer matches the tree the log was written against, so even an
-entry that only touches the parent — including a create or remove of a *sibling* under it, which updates
-the parent's repaired child counters — could replay differently. The same applies to a session close
+region: a removed node, anything below it, or the direct parent of a removed subtree. The direct parent
+counts as a conflict because its set of children no longer matches the tree the log was written against,
+so even an entry that only touches it — including a create or remove of a *sibling* under it, which
+updates its repaired child counters — could replay differently. Nodes further up the chain are not
+affected: they keep exactly the data, version and children they have on a healthy peer, so an entry that
+only touches such a node replays identically and does not block recovery. The exception is an entry that
+walks the whole subtree below its path, such as a recursive removal or a recursive listing: those do
+observe the removed nodes and conflict at any height. The same applies to a session close
 (`Close`) in the log tail when that session owned a removed ephemeral node, or owns a surviving ephemeral
 node directly under such a parent: closing the session removes its ephemeral nodes and updates their
 parents' counters. Replaying any such entry against the

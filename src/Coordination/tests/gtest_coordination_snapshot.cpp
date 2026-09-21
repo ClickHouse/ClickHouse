@@ -2792,8 +2792,9 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingRemov
     EXPECT_EQ(conflict->subtree_root, "/missing");
 }
 
-/// A tail entry on a strict *ancestor* of the pruned region must conflict too: recreating the absent
-/// parent succeeds against our repaired tree but was `ZNODEEXISTS` against the real one.
+/// A tail entry on the absent parent that anchors the pruned region -- the recorded damage root
+/// itself -- must conflict too: recreating it succeeds against our repaired tree but was
+/// `ZNODEEXISTS` against the real one.
 TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingAncestorOfRemovedSubtree)
 {
     if (GetParam().use_lsmt_storage)
@@ -2894,6 +2895,89 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSiblingRemoveUnderRe
     EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Remove));
     EXPECT_EQ(conflict->request_path, "/a");
     EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// Removing a subtree changes only the removed nodes themselves and the stats of the removed root's
+/// *direct* parent. An ancestor further up the chain keeps exactly the data, version and children set
+/// it has on a replica that never lost anything, so an entry that observes only such a node -- a
+/// `Set` on it, or a create of a new child of it -- replays identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsHigherAncestorEntriesInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// The removed subtree root is the absent parent `/a/b/missing`, so the only repaired stats are
+    /// those of `/a/b`. `/a` is a strict ancestor two levels up and is untouched.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/b"}, {"/a/b/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/a", "ancestor_update"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/a/x", "ancestor_child"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a"), "ancestor_update");
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/x"));
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/b/missing/child"));
+}
+
+/// The opposite direction of the same rule: a request that walks the *whole* subtree below its path
+/// does observe descendants that were pruned, so it conflicts however far up the chain it sits.
+/// `RemoveRecursive` deletes every descendant and compares their number with `remove_nodes_limit`,
+/// so replaying it against the repaired tree can succeed where it returned `ZNOTEMPTY` before.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesRecursiveRemoveOfHigherAncestorInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/b"}, {"/a/b/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto remove_recursive = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
+    remove_recursive->path = "/a";
+    remove_recursive->remove_nodes_limit = 100;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_recursive));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::RemoveRecursive));
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/b/missing");
 }
 
 /// `Close` carries no path, but the storage removes every ephemeral node the session owns and updates

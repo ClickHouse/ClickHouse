@@ -248,13 +248,19 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 namespace
 {
 
-/// How a request touches an enumerated path; decides which conflict predicate applies.
+/// How much of the tree around an enumerated path a request observes; decides how far from a removed
+/// subtree the path may sit before the request would replay differently.
 enum class RequestPathKind
 {
-    /// The request resolves this path against the tree (reads it, creates it, removes it, ...).
-    Target,
-    /// The request mutates the stats of this node as the *parent* of its target: a create/remove
-    /// bumps the parent's `numChildren`, `cversion` and `pzxid`.
+    /// The node itself and its direct children: whether it exists, its data, version and ACL, and the
+    /// `Stat` it reports (which carries `numChildren` and `cversion`) or an explicit children listing.
+    /// Nothing below the children is observed.
+    NodeAndChildren,
+    /// The whole subtree rooted at this path: a recursive listing or a recursive removal walks every
+    /// descendant, so losing any of them changes the result.
+    Subtree,
+    /// Only the stats this node accumulates as the *parent* of a created or removed child: a
+    /// create/remove bumps the parent's `numChildren`, `cversion` and `pzxid`.
     ParentStats,
 };
 
@@ -330,17 +336,18 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         {
             const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
             for (const auto & path : set_watches.data_watches)
-                f(path, RequestPathKind::Target);
+                f(path, RequestPathKind::NodeAndChildren);
             for (const auto & path : set_watches.child_watches)
-                f(path, RequestPathKind::Target);
+                f(path, RequestPathKind::NodeAndChildren);
             for (const auto & path : set_watches.exist_watches)
-                f(path, RequestPathKind::Target);
+                f(path, RequestPathKind::NodeAndChildren);
             if (const auto * set_watches2 = dynamic_cast<const Coordination::SetWatches2Request *>(&request))
             {
                 for (const auto & path : set_watches2->persistent_watches)
-                    f(path, RequestPathKind::Target);
+                    f(path, RequestPathKind::NodeAndChildren);
+                /// A recursive watch covers the whole subtree, so it is checked against all of it.
                 for (const auto & path : set_watches2->persistent_recursive_watches)
-                    f(path, RequestPathKind::Target);
+                    f(path, RequestPathKind::Subtree);
             }
             return true;
         }
@@ -369,18 +376,27 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::CheckStat:
         {
             const auto path = request.getPath();
-            f(path, RequestPathKind::Target);
+
+            /// `RemoveRecursive` walks and deletes the whole subtree (and compares its size against
+            /// `remove_nodes_limit`), `ListRecursive` returns every descendant, and `Reconfig` rewrites
+            /// the configuration subtree: all three observe arbitrarily deep descendants, so a removed
+            /// subtree anywhere below them changes the outcome. Everything else in this group resolves
+            /// the node itself and at most its direct children.
+            const auto kind = request.getOpNum() == OpNum::RemoveRecursive || request.getOpNum() == OpNum::ListRecursive
+                    || request.getOpNum() == OpNum::Reconfig
+                ? RequestPathKind::Subtree
+                : RequestPathKind::NodeAndChildren;
+            f(path, kind);
 
             /// A sequential create does not touch the path it carries: the storage appends a zero-padded
             /// sequence number taken from the parent, so the node actually created is
             /// `<path><seq_num>` (`path_created` in KeeperStorageImpl.cpp). We cannot know the sequence
-            /// number here, but the created node is always a direct child of the same parent, so any
-            /// conflict involving it implies the parent lies on the same root-to-leaf chain as the
-            /// removed subtree. Checking the parent as a target is therefore sound; it is deliberately a
-            /// little broader than strictly necessary, which is the safe direction for this guard.
+            /// number here, but the created node is always a direct child of the same parent, and the
+            /// parent's children set and `seq_num`/`numChildren` are exactly what the create resolves
+            /// against, so checking the parent covers it.
             if (const auto * create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(&request);
                 create != nullptr && create->is_sequential)
-                f(Coordination::parentNodePath(path), RequestPathKind::Target);
+                f(Coordination::parentNodePath(path), RequestPathKind::NodeAndChildren);
 
             /// Creates and removes also mutate the stats of the target's parent (`numChildren`,
             /// `cversion`, `pzxid` -- see the create/remove handlers in KeeperStorageImpl.cpp), so a
@@ -408,33 +424,32 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
     return false;
 }
 
-/// A request path conflicts with a removed subtree root when the two lie on the same root-to-leaf
-/// chain:
-///  - the path is the root or below it: our tree lost those nodes, so the request resolves
-///    differently (`Create`/`Set` -> `ZNONODE`);
-///  - the path is a strict ancestor of the root: its children set and `numChildren` differ from the
-///    tree the log was written against, so e.g. `Remove` returns `ZOK` here but was `ZNOTEMPTY`, and
-///    `Create <root>` succeeds here but was `ZNODEEXISTS`.
-bool conflictsWithRemovedSubtree(std::string_view path, std::string_view subtree_root)
-{
-    return Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
-        || Coordination::matchPath(subtree_root, path) == Coordination::PathMatchResult::IS_CHILD;
-}
-
-/// Whether replaying an operation that mutates the stats of `parent` (as the parent of a created or
-/// removed node) diverges after the subtree rooted at `subtree_root` was removed. That is the case
-/// when the parent lies inside the removed region, or when it is the direct parent of the removed
-/// subtree root: its `numChildren` was repaired to exclude the lost children, so a replayed sibling
-/// create/remove updates it from a different base than on replicas that still hold them.
+/// Whether a request that observes `path` in the way described by `kind` would replay differently
+/// after the subtree rooted at `subtree_root` was removed.
 ///
-/// Deliberately narrower than `conflictsWithRemovedSubtree`: an ancestor further up the chain keeps
-/// identical stats on every replica (its direct children did not change), so a create/remove under it
-/// replays identically and must not block recovery -- otherwise any tail entry creating a node under
-/// `"/"` would conflict with every removed subtree.
-bool parentStatsDivergeWithRemovedSubtree(std::string_view parent, std::string_view subtree_root)
+/// Removing that subtree changes exactly two things: the root and its descendants are gone, and the
+/// root's direct parent lost a child (`numChildren`, `cversion`, `pzxid`, children set). Every other
+/// node in the tree -- including strict ancestors further up the chain -- is byte for byte what a
+/// replica that still holds the lost nodes has, so a request observing only such a node replays
+/// identically and must not block recovery. Hence:
+///  - the path is the removed root or below it: our tree lost those nodes, so the request resolves
+///    differently (`Create`/`Set` -> `ZNONODE`). Conflicts for every kind;
+///  - the path is the direct parent of the removed root: its children set and `numChildren` differ
+///    from the tree the log was written against, so e.g. `Remove` returns `ZOK` here but was
+///    `ZNOTEMPTY`, `Create <root>` succeeds here but was `ZNODEEXISTS`, and a sibling create/remove
+///    updates the parent's stats from a repaired base. Conflicts for every kind;
+///  - the path is a higher strict ancestor: only a request that walks the whole subtree
+///    (`RemoveRecursive`, `ListRecursive`) sees the difference. A `Set`, `Get`, `List` or sibling
+///    create on such an ancestor does not, and returns `false` here.
+bool conflictsWithRemovedSubtree(std::string_view path, RequestPathKind kind, std::string_view subtree_root)
 {
-    return Coordination::matchPath(parent, subtree_root) != Coordination::PathMatchResult::NOT_MATCH
-        || parent == Coordination::parentNodePath(subtree_root);
+    if (Coordination::matchPath(path, subtree_root) != Coordination::PathMatchResult::NOT_MATCH)
+        return true;
+
+    if (Coordination::matchPath(subtree_root, path) != Coordination::PathMatchResult::IS_CHILD)
+        return false;
+
+    return kind == RequestPathKind::Subtree || path == Coordination::parentNodePath(subtree_root);
 }
 
 }
@@ -577,8 +592,8 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
                     const auto parent = Coordination::parentNodePath(ephemeral_path);
                     for (const auto & subtree_root : removed_orphan_subtree_roots)
                     {
-                        if (conflictsWithRemovedSubtree(ephemeral_path, subtree_root)
-                            || parentStatsDivergeWithRemovedSubtree(parent, subtree_root))
+                        if (conflictsWithRemovedSubtree(ephemeral_path, RequestPathKind::NodeAndChildren, subtree_root)
+                            || conflictsWithRemovedSubtree(parent, RequestPathKind::ParentStats, subtree_root))
                         {
                             OrphanLogTailConflict found;
                             found.log_idx = log_idx;
@@ -620,20 +635,17 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
 
                     for (const auto & subtree_root : removed_orphan_subtree_roots)
                     {
-                        const bool conflicts = kind == RequestPathKind::Target
-                            ? conflictsWithRemovedSubtree(path, subtree_root)
-                            : parentStatsDivergeWithRemovedSubtree(path, subtree_root);
-                        if (conflicts)
+                        if (conflictsWithRemovedSubtree(path, kind, subtree_root))
                         {
                             OrphanLogTailConflict found;
                             found.log_idx = log_idx;
                             found.op_num = std::string{Coordination::opNumToString(request.getOpNum())};
                             found.request_path = std::string{path};
                             found.subtree_root = subtree_root;
-                            found.reason = kind == RequestPathKind::Target
-                                ? "the entry references a path that was removed from the snapshot, or a parent of one"
-                                : "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
-                                  "so the parent's stats would be updated from a repaired base";
+                            found.reason = kind == RequestPathKind::ParentStats
+                                ? "the entry creates or removes a node under a parent whose children were removed from the snapshot, "
+                                  "so the parent's stats would be updated from a repaired base"
+                                : "the entry references a path that was removed from the snapshot, or the parent of one";
                             conflict = std::move(found);
                             return;
                         }
