@@ -12,6 +12,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -2933,7 +2934,16 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
 
     if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        const bool contains_decay = std::ranges::any_of(
+            minmax_columns,
+            [](const NameAndTypePair & column)
+            {
+                return containsExponentialTimeDecayingFloat64(column.type);
+            });
+
+        if (!contains_decay)
+        {
+            auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
@@ -2943,7 +2953,13 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
                 require_ready_sets};
         };
-        indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+            indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(
+                filter_dag_ptr,
+                std::move(key_condition_factory),
+                metadata_snapshot,
+                query_context,
+                skip_constant_folding);
+        }
     }
 
     if (metadata_snapshot->hasPartitionKey())
