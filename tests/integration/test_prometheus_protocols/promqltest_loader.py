@@ -144,11 +144,18 @@ class LoadBlock:
 class Scenario:
     file_name: str
     line: int
-    loads: list[LoadBlock]
-    evals: list[EvalCase]
+    commands: list[LoadBlock | EvalCase]
     native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
     load_with_nhcb: bool = False
+
+    @property
+    def loads(self) -> list[LoadBlock]:
+        return [c for c in self.commands if isinstance(c, LoadBlock)]
+
+    @property
+    def evals(self) -> list[EvalCase]:
+        return [c for c in self.commands if isinstance(c, EvalCase)]
 
 
 def load_snapshot_meta(snapshot_dir: Path = SNAPSHOT_DIR) -> dict[str, Any]:
@@ -454,7 +461,7 @@ def parse_test_file(path: Path) -> list[Scenario]:
     lines = path.read_text().splitlines()
     file_name = path.name
     scenarios: list[Scenario] = []
-    current = Scenario(file_name=file_name, line=1, loads=[], evals=[])
+    current = Scenario(file_name=file_name, line=1, commands=[])
     pending_eval: Optional[EvalCase] = None
     eval_index = 0
 
@@ -477,15 +484,15 @@ def parse_test_file(path: Path) -> list[Scenario]:
             for series in pending_eval.expected_series
             for sample in series.samples
         )
-        current.evals.append(pending_eval)
+        current.commands.append(pending_eval)
         pending_eval = None
 
     def finish_scenario() -> None:
         nonlocal current
         finish_eval()
-        if current.loads or current.evals:
+        if current.commands:
             scenarios.append(current)
-        current = Scenario(file_name=file_name, line=1, loads=[], evals=[])
+        current = Scenario(file_name=file_name, line=1, commands=[])
 
     i = 0
     while i < len(lines):
@@ -531,7 +538,7 @@ def parse_test_file(path: Path) -> list[Scenario]:
                     if series.start_timestamp:
                         current.start_ts_metric_names.add(series.metric)
                     i += 1
-                current.loads.append(block)
+                current.commands.append(block)
                 if with_nhcb:
                     current.load_with_nhcb = True
                 continue

@@ -190,6 +190,32 @@ def test_clear_isolates_scenarios(tmp_path: Path):
     assert scenarios[1].evals[0].expr == "baz"
 
 
+def test_commands_follow_source_order(tmp_path: Path):
+    text = textwrap.dedent(
+        """
+        load 10s
+          m 1
+        eval instant at 0 m
+          m 1
+        load 10s
+          n 2
+        eval instant at 0 n
+          n 2
+        """
+    )
+    path = tmp_path / "order.test"
+    path.write_text(text)
+    (scenario,) = loader.parse_test_file(path)
+    assert [type(command) for command in scenario.commands] == [
+        loader.LoadBlock,
+        loader.EvalCase,
+        loader.LoadBlock,
+        loader.EvalCase,
+    ]
+    assert [block.series[0].metric for block in scenario.loads] == ["m", "n"]
+    assert [case.expr for case in scenario.evals] == ["m", "n"]
+
+
 def test_compare_ordered_pass_and_fail():
     case = loader.EvalCase(
         eval_id="t:1",

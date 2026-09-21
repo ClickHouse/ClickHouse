@@ -672,31 +672,34 @@ def test_promql_extended_support():
     try:
         for scenario in scenarios:
             node.query(f"TRUNCATE TABLE {table}")
-            insert_values = []
-            for block in scenario.loads:
-                for series in block.series:
-                    values = promqltest.series_insert_values(block.interval_s, series)
-                    if values is not None:
-                        insert_values.append(values)
-            if insert_values:
-                sql = (
-                    f"INSERT INTO {table} (metric_name, tags, samples) VALUES "
-                    + ", ".join(insert_values)
-                )
-                _, err = _run_promql_sql(sql)
-                if err:
-                    raise AssertionError(
-                        f"INSERT failed {scenario.file_name}:{scenario.line}: {err}"
-                    )
-            for case in scenario.evals:
-                seen.append(case.eval_id)
-                excluded = promqltest.classify_eval(case)
-                if excluded:
-                    promqltest.update_suite_record(record, excluded, case.exclusion_reason() or "")
+            for command in scenario.commands:
+                if isinstance(command, promqltest.LoadBlock):
+                    insert_values = []
+                    for series in command.series:
+                        values = promqltest.series_insert_values(command.interval_s, series)
+                        if values is not None:
+                            insert_values.append(values)
+                    if insert_values:
+                        sql = (
+                            f"INSERT INTO {table} (metric_name, tags, samples) VALUES "
+                            + ", ".join(insert_values)
+                        )
+                        _, err = _run_promql_sql(sql)
+                        if err:
+                            raise AssertionError(
+                                f"INSERT failed {scenario.file_name}:{command.line}: {err}"
+                            )
                     continue
-                sql = promqltest.eval_sql(table, case)
+                seen.append(command.eval_id)
+                excluded = promqltest.classify_eval(command)
+                if excluded:
+                    promqltest.update_suite_record(
+                        record, excluded, command.exclusion_reason() or ""
+                    )
+                    continue
+                sql = promqltest.eval_sql(table, command)
                 tsv, err = _run_promql_sql(sql)
-                status, reason = promqltest.compare_eval(case, tsv, err)
+                status, reason = promqltest.compare_eval(command, tsv, err)
                 promqltest.update_suite_record(record, status, reason)
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
