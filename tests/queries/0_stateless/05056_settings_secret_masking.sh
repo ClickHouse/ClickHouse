@@ -156,3 +156,23 @@ for _ in {1..60}; do
     sleep 0.5
 done
 echo "$SAS_LOGGED"
+
+# The storage endpoint percent-decodes a parameter name before it authenticates, so `%73ig` names the
+# same signature field as `sig` and its value is just as secret.
+SAS_ENC_CANARY="c05056azuresasencodedname"
+SAS_ENC_QUERY_ID="05056_sas_enc_$CLICKHOUSE_DATABASE"
+SAS_ENC="abfss://c@a.dfs.core.windows.net/d/?sp=r&%73ig=$SAS_ENC_CANARY"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$SAS_ENC_QUERY_ID&log_queries=1&log_formatted_queries=1" \
+    --data-binary "SELECT 1 SETTINGS url_base = '$SAS_ENC'"
+
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    SAS_ENC_LOGGED=$($CLICKHOUSE_CLIENT -q "SELECT
+            position(query, '%73ig=[HIDDEN]') > 0,
+            position(concat(query, formatted_query, Settings['url_base']), '$SAS_ENC_CANARY') = 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$SAS_ENC_QUERY_ID' AND type = 'QueryFinish'")
+    [ -n "$SAS_ENC_LOGGED" ] && break
+    sleep 0.5
+done
+echo "$SAS_ENC_LOGGED"

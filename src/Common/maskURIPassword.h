@@ -115,14 +115,95 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
+/// The credential-carrying parameter names of the expression documented below.
+inline bool matchesPresignedURLCredentialName(std::string_view name)
+{
+    static constexpr std::array<std::string_view, 5> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId", "sig"};
+    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
+
+    for (auto exact : exact_names)
+        if (name == exact)
+            return true;
+
+    for (auto prefix : prefixes)
+    {
+        if (!name.starts_with(prefix))
+            continue;
+        /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
+        bool rest_matches = true;
+        for (char c : name.substr(prefix.length()))
+            if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
+                rest_matches = false;
+        if (rest_matches)
+            return true;
+    }
+
+    return false;
+}
+
+/// The same question asked of the name the storage endpoint sees: it percent-decodes a parameter
+/// name before authenticating, so an Azure SAS spelled `?%73ig=` authenticates exactly like `?sig=`
+/// and its signature has to be hidden as well. The decoding is a single pass, as the endpoint's is,
+/// so a twice-encoded `?%2573ig=` is not `sig` here and is not a credential there either. `+` is
+/// left alone, unlike in `maskSensitiveQueryParameters`: reading it as a space is
+/// `HTMLForm::readQuery`'s rule for ClickHouse's own HTTP handler, not the storage client's.
+inline bool isPresignedURLSecretParameterName(std::string_view name)
+{
+    if (matchesPresignedURLCredentialName(name))
+        return true;
+
+    /// Most names carry no escape, so the common case must not allocate.
+    if (!name.contains('%'))
+        return false;
+
+    /// Spelled out rather than taken from `<cctype>`, as elsewhere in this header.
+    auto hex_digit = [](char c)
+    {
+        if ('0' <= c && c <= '9')
+            return c - '0';
+        if ('a' <= c && c <= 'f')
+            return c - 'a' + 10;
+        if ('A' <= c && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+
+    std::string decoded;
+    decoded.reserve(name.length());
+
+    for (size_t i = 0; i < name.length(); ++i)
+    {
+        int high = -1;
+        int low = -1;
+        if (name[i] == '%' && i + 2 < name.length())
+        {
+            high = hex_digit(name[i + 1]);
+            low = hex_digit(name[i + 2]);
+        }
+
+        /// A malformed escape is copied through: this feeds the decision below, never the output.
+        if (high < 0 || low < 0)
+        {
+            decoded.push_back(name[i]);
+            continue;
+        }
+
+        decoded.push_back(static_cast<char>(high * 16 + low));
+        i += 2;
+    }
+
+    return matchesPresignedURLCredentialName(decoded);
+}
+
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
   * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
   * is masked. Returns whether anything was masked.
   *
   * This used to be the regular expression
   * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. Matching is case-sensitive, as in the expression, and
-  * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
+  * rewritten to `\1[HIDDEN]` globally. Matching is case-sensitive, as in the expression, and equal
+  * to it for names with no percent escape; the scan also classifies the decoded name.
+  * `src/Common/tests/gtest_mask_uri_password.cpp` checks both, against re2 and against a table.
   *
   * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,
   * `sr`, ...) states what that signature grants and stays visible. Two sibling sets deliberately
@@ -131,31 +212,6 @@ inline bool maskURIUserinfo(std::string & url)
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
-    static constexpr std::array<std::string_view, 5> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId", "sig"};
-    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
-
-    auto is_secret_parameter = [](std::string_view name)
-    {
-        for (auto exact : exact_names)
-            if (name == exact)
-                return true;
-
-        for (auto prefix : prefixes)
-        {
-            if (!name.starts_with(prefix))
-                continue;
-            /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
-            bool rest_matches = true;
-            for (char c : name.substr(prefix.length()))
-                if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
-                    rest_matches = false;
-            if (rest_matches)
-                return true;
-        }
-
-        return false;
-    };
-
     static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
 
     /// Built in one pass rather than replacing in place: a replacement of a different length shifts
@@ -182,7 +238,7 @@ inline bool maskPresignedURLParameters(std::string & url)
             continue;
         }
 
-        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
+        if (!isPresignedURLSecretParameterName(std::string_view(url).substr(name_begin, name_end - name_begin)))
             continue;
 
         /// `[^&#]*` - the value.

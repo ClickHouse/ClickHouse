@@ -196,6 +196,8 @@ const std::vector<std::string> url_corpus = {
 
 TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
 {
+    size_t presigned_comparisons = 0;
+
     for (const auto & input : url_corpus)
     {
         std::string with_scan = input;
@@ -204,10 +206,19 @@ TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
         EXPECT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
         EXPECT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
 
-        EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
-            << "presign return value differs for: " << input;
-        EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+        /// The expression cannot decode percent escapes, so the equality is asserted on the names
+        /// where it is still claimed; `MasksPercentEncodedSecretParameterNames` covers the rest.
+        if (!input.contains('%'))
+        {
+            EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+                << "presign return value differs for: " << input;
+            EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+            ++presigned_comparisons;
+        }
     }
+
+    /// No input above carries an escape, so the skip must not have cost the differential any reach.
+    EXPECT_EQ(presigned_comparisons, url_corpus.size());
 }
 
 TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
@@ -237,9 +248,53 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
         ASSERT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
         ASSERT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
 
-        ASSERT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
-            << "presign return value differs for: " << input;
-        ASSERT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+        /// As above: the expression cannot decode, so no token spells a percent escape and the
+        /// comparison covers every generated string.
+        if (!input.contains('%'))
+        {
+            ASSERT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+                << "presign return value differs for: " << input;
+            ASSERT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+        }
+    }
+}
+
+TEST(MaskS3URLCredentials, MasksPercentEncodedSecretParameterNames)
+{
+    /// Which of these spellings authenticates was measured against Azurite 3.35 with one valid
+    /// shared access signature: the lower-case ones do, encoded or not, and the upper-case ones
+    /// do not. The name itself is never rewritten, only its value, so the expectations keep it.
+    struct Arm
+    {
+        std::string url;
+        std::string expected;
+    };
+
+    const std::vector<Arm> arms = {
+        {"https://h/f?%73ig=x", "https://h/f?%73ig=[HIDDEN]"},
+        {"https://h/f?s%69g=x", "https://h/f?s%69g=[HIDDEN]"},
+        {"https://h/f?%73%69%67=x", "https://h/f?%73%69%67=[HIDDEN]"},
+
+        /// The decoding serves every name in the set, and the prefixes too.
+        {"https://h/f?%53ignature=x", "https://h/f?%53ignature=[HIDDEN]"},
+        {"https://h/f?%58-Amz-Signature=x", "https://h/f?%58-Amz-Signature=[HIDDEN]"},
+
+        /// Decodes to `SIG`, which does not authenticate, so it stays readable like `?SIG=` itself.
+        {"https://h/f?%53IG=x", "https://h/f?%53IG=x"},
+        /// The endpoint decodes once as well, so to it this name is `%73ig` rather than `sig`.
+        {"https://h/f?%2573ig=x", "https://h/f?%2573ig=x"},
+        /// A malformed and a truncated escape are copied through rather than throwing.
+        {"https://h/f?%7Xig=x", "https://h/f?%7Xig=x"},
+        {"https://h/f?%7=x", "https://h/f?%7=x"},
+        /// `+` is not decoded at all, so this name stays as it reads.
+        {"https://h/f?s+ig=x", "https://h/f?s+ig=x"},
+    };
+
+    for (const auto & arm : arms)
+    {
+        std::string url = arm.url;
+        EXPECT_EQ(maskPresignedURLParameters(url), arm.url != arm.expected) << "return value differs for: " << arm.url;
+        EXPECT_EQ(url, arm.expected) << "result differs for: " << arm.url;
     }
 }
 
