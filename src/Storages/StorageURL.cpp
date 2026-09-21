@@ -609,7 +609,7 @@ Chunk StorageURLSource::generate()
     auto release_reader = [&]
     {
         if (pipeline)
-            pipeline->reset();
+            (*pipeline).reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
