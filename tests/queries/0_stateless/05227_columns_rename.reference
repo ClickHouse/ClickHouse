@@ -40,3 +40,4 @@ y	x	b	metric_cpu	metric_mem
 x	b	metric_cpu	metric_mem	y
 1	2	3	4	2
 2	1
+Nullable(UInt8)

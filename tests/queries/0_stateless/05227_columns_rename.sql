@@ -59,6 +59,16 @@ SELECT * RENAME a AS x, x + 1 AS y FROM t_columns_rename FORMAT TSVWithNames;
 -- Wrapped RENAME matchers must register aliases before sibling projection items and ORDER BY.
 SELECT x + 1 AS y, tuple(* RENAME a AS x) = (1, 2, 3, 4) AS ok FROM t_columns_rename ORDER BY x SETTINGS group_by_use_nulls = 1 FORMAT TSV;
 
+-- GROUP BY ALL must restore a projection that was not resolved by early RENAME alias collection.
+SELECT DISTINCT toTypeName(x)
+FROM
+(
+    SELECT COLUMNS('^a$') REPLACE((SELECT a) AS a) RENAME a AS x
+    FROM t_columns_rename
+    GROUP BY ALL WITH ROLLUP
+    SETTINGS group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1
+);
+
 SELECT * RENAME missing AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 SELECT * RENAME (a AS x, a AS y) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

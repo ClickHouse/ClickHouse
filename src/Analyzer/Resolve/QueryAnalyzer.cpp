@@ -7010,6 +7010,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
 
+    /// Keep a genuinely unresolved projection for the GROUP BY ALL restore path. RENAME alias
+    /// collection below resolves matcher subtrees early, including subqueries inside APPLY/REPLACE.
+    QueryTreeNodePtr unresolved_projection;
+    if (scope.group_by_use_nulls && query_node_typed.isGroupByAll())
+        unresolved_projection = query_node_typed.getProjectionNode()->clone();
+
     /// RENAME aliases must be visible to clauses resolved before the delayed projection when
     /// group_by_use_nulls is enabled. Full projection resolution stays in its original place so
     /// GROUP BY keys can still be converted to Nullable only where required.
@@ -7028,7 +7034,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
         /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
         /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
-        auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
         auto saved_subquery_counter = subquery_counter;
         resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         expandGroupByAll(query_node_typed);
