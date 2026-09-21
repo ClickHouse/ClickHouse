@@ -38,7 +38,6 @@ class IBackgroundOperation
 public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
-    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
@@ -55,8 +54,7 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving,
-        Streaming,
+        Moving
     };
     Type type{Type::DataProcessing};
 
@@ -85,8 +83,7 @@ public:
 
 private:
     IBackgroundOperation & data;
-    StorageID storage_id TSA_GUARDED_BY(storage_id_mutex);
-    mutable std::mutex storage_id_mutex;
+    StorageID storage_id;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
@@ -109,7 +106,5 @@ private:
     void threadFunc();
 
     BackgroundTaskSchedulingSettings getSettings() const;
-
-    StorageID getStorageID() const;
 };
 }
