@@ -148,10 +148,13 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 {
     Block res;
 
-    const auto & columns = metadata->getColumns();
+    /// Subcolumns resolve through the storage (which knows the Map serialization
+    /// version), not the plain columns description, so a `with_key_columns` Map's
+    /// `key_<k>` subcolumn gets its reader-side type.
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
     for (const auto & column_name : column_names)
     {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto column = tryGetColumn(options, column_name);
         if (column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
