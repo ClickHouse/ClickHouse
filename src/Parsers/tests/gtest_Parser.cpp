@@ -416,6 +416,25 @@ TEST(ParserCreateQuery, MaskXDBCTableEnginePositionalAfterCollection)
     EXPECT_NE(named_masked.find("external_table = 'mytable'"), String::npos);
 }
 
+TEST(ParserCreateQuery, MaskXDBCNamedArgumentsWithoutCollection)
+{
+    /// A named argument at index 0 is not a collection name, so this call is not the positional form:
+    /// the connection string can be under either alias at any index, and the statement is formatted
+    /// for logging before validation rejects it.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) ENGINE = JDBC(external_database = 'mydb', "
+        "datasource = 'DSN=mydb;Uid=user;Pwd=plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    EXPECT_NE(masked.find("datasource = '[HIDDEN]'"), String::npos);
+}
+
 TEST(ParserCreateQuery, MaskRabbitMQTableEngineCredentials)
 {
     /// `RabbitMQ` also takes its settings as overrides of a named collection, so the same credentials
@@ -486,6 +505,20 @@ TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
     EXPECT_NE(positional_masked.find("broker:9092"), String::npos);
     EXPECT_NE(positional_masked.find("group"), String::npos);
     EXPECT_EQ(positional_masked.find("[HIDDEN]"), String::npos);
+
+    /// The legacy positional form makes the collection name optional, so a named argument can be the
+    /// first one, and the statement is formatted for logging before it is rejected.
+    const String first_arg_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')";
+
+    DB::ASTPtr first_arg_ast = DB::parseQuery(parser, first_arg_query, 0, 0, 0);
+    const String first_arg_masked = first_arg_ast->formatForLogging();
+
+    EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
+    EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+    /// The positional argument beside it is not a secret and stays visible.
+    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
 
     /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
     const String settings_query =

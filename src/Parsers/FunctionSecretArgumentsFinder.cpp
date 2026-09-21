@@ -460,6 +460,13 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
         /// odbc('DSN', schema, table) / odbc('DSN', table)
         /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
         markSecretArgument(0, false);
+
+        /// A named argument means this is not the positional form at all, and the connection string
+        /// can then sit at any index under either alias. Validation rejects such a call only after the
+        /// statement has been formatted for logging, so hide those values too (fail closed).
+        findSecretNamedArgument("datasource", 1);
+        findSecretNamedArgument("connection_settings", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
     }
 }
 
@@ -862,9 +869,10 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// overrides of the collection, so an override carries the secret the `SETTINGS` clause form
         /// hides through `Kafka::SETTINGS_TO_HIDE`. The legacy positional form
         /// (`Kafka('brokers', 'topics', 'group', 'format', ...)`) carries no secret and stays visible,
-        /// so this form does not fail closed on a positional argument.
-        findSecretNamedArgument("kafka_sasl_password", 1);
-        markNamedArgumentsWithUnreadableKeys(1);
+        /// so this form does not fail closed on a positional argument. That form also makes the
+        /// collection name optional, so the scan starts at index 0: a named argument can be the first.
+        findSecretNamedArgument("kafka_sasl_password", 0);
+        markNamedArgumentsWithUnreadableKeys(0);
     }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
