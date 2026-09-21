@@ -40,6 +40,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/misc.h>
 #include <Storages/SelectQueryInfo.h>
 #include <fmt/ranges.h>
@@ -65,16 +66,19 @@ String findDictionaryFunction(const IQueryPlanStep & step);
 
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
-/// `isSerializable` cannot tell, hence a DAG walk.
-///  The check goes away once the workers receive the dictionaries a distributed plan reads.
+/// `isSerializable` cannot tell, hence a DAG walk. The walk descends into lambda bodies, because
+/// `arrayMap(x -> dictGet(...), ...)` keeps the call in a DAG of its own (`findFunctionInSubtrees`).
+/// The check goes away once the workers receive the dictionaries a distributed plan reads.
 String findDictionaryFunction(const IQueryPlanStep & step)
 {
     auto find_in_dag = [](const ActionsDAG & dag) -> String
     {
+        std::vector<const ActionsDAG::Node *> roots;
         for (const auto & node : dag.getNodes())
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && functionIsDictGet(node.function_base->getName()))
-                return node.function_base->getName();
-        return {};
+            roots.push_back(&node);
+        const auto * function = findFunctionInSubtrees(
+            std::move(roots), [](const IFunctionBase & candidate) { return functionIsDictGet(candidate.getName()); });
+        return function ? function->getName() : String{};
     };
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
