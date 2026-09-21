@@ -10,6 +10,8 @@
 #include <vector>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
@@ -540,6 +542,73 @@ TEST(AzureReadUntilPosition, SeekToNonZeroOffsetWithHonestEndpoint)
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(100 + i)) << "at position " << i;
+}
+
+namespace
+{
+
+/// An `AzureObjectStorage` whose every request is answered by `RangeResponseTransport`, which
+/// serves the blob from its beginning regardless of the requested range and reports
+/// `served_size` as the length of the body.
+std::unique_ptr<DB::AzureObjectStorage> makeObjectStorage(size_t claimed_size, size_t served_size)
+{
+    DB::AzureBlobStorage::ConnectionParams connection_params;
+    connection_params.endpoint.container_name = "container";
+    connection_params.client_options.Retry.MaxRetries = 0;
+    connection_params.client_options.Transport.Transport
+        = std::make_shared<RangeResponseTransport>(claimed_size, served_size);
+
+    auto container_client = std::make_unique<DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", connection_params.client_options),
+        /* blob_prefix */ "");
+
+    return std::make_unique<DB::AzureObjectStorage>(
+        "azure",
+        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
+        std::move(container_client),
+        std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
+        connection_params,
+        /* object_namespace */ "container",
+        /* description */ "azure",
+        /* common_key_prefix */ "");
+}
+
+}
+
+/// A whole-object read through `AzureObjectStorage::readObject` sets no right bound of its own, so
+/// before `StoredObject::bytes_size` was threaded through as the bound, the size of the read came
+/// from the length of the response. An endpoint answering a request for a 100-byte object with 128
+/// bytes then handed the caller 28 bytes past the end of the object. The size from the metadata is
+/// known locally, so it, and not the response, decides where the object ends.
+TEST(AzureReadObject, BoundedByTheObjectSizeFromTheMetadata)
+{
+    auto object_storage = makeObjectStorage(/* claimed_size */ 128, /* served_size */ 128);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// An object whose size was never determined carries the `UnknownSize` sentinel, which is not a
+/// bound: such a read must still run to the end of whatever the endpoint returns rather than
+/// stopping immediately or reading a sentinel-sized range.
+TEST(AzureReadObject, UnknownObjectSizeReadsToTheEnd)
+{
+    auto object_storage = makeObjectStorage(/* claimed_size */ 100, /* served_size */ 100);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ DB::StoredObject::UnknownSize);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
 }
 
 #endif

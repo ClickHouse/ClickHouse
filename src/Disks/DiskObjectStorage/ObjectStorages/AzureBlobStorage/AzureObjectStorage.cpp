@@ -257,7 +257,15 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /* read_until_position */ std::nullopt,
+        /// The size of the object recorded in the metadata is a locally known bound, so it is used
+        /// as the right bound of the read rather than trusting the length of whatever the endpoint
+        /// answers with. `UnknownSize` is a sentinel for "the size was never determined", and `0`
+        /// is treated as unknown as well, the same as in `S3ObjectStorage::readObject`, because
+        /// callers that do not know the size leave it at the default-constructed value; both map
+        /// to `std::nullopt`, which reads to the end of the object.
+        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize)
+            ? std::optional<size_t>(object.bytes_size)
+            : std::nullopt,
         std::move(blob_storage_log),
         connection_params.getContainer());
 }
