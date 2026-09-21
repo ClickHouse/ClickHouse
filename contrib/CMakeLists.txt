@@ -233,7 +233,7 @@ if (ENABLE_USEARCH)
     if (NOT ENABLE_SIMSIMD)
         add_contrib (SimSIMD-cmake SimSIMD)
     endif()
-    add_contrib (usearch-cmake usearch) # requires: FP16, SimSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()
