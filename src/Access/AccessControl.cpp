@@ -866,7 +866,9 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
 {
     auto user_id = find<User>(user_name);
     UserPtr user;
-    if (user_id && (user = tryRead<User>(*user_id)))
+    if (user_id)
+        user = tryRead<User>(*user_id);
+    if (user)
     {
         const auto new_current_roles = user->granted_roles.findGranted(user->default_roles);
         const auto roles_info = getEnabledRolesInfo(new_current_roles, {});

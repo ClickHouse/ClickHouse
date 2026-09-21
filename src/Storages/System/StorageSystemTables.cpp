@@ -755,46 +755,28 @@ protected:
                 if (columns_mask[src_index++])
                     fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
-                ASTPtr expression_ptr;
-                if (columns_mask[src_index++])
+                auto insert_expression_or_default = [&](const ASTPtr & expression_ptr)
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (expression_ptr)
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
-                }
+                };
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getPartitionKeyAST() : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getSortingKey().expression_list_ast : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getPrimaryKey().expression_list_ast : nullptr);
 
                 if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getSamplingKeyAST() : nullptr);
+
+                if (columns_mask[src_index++])
+                    insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getUniqueKeyAST() : nullptr);
 
                 if (columns_mask[src_index++])
                     fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);

@@ -15,6 +15,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <base/TypeList.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -117,11 +119,13 @@ public:
         size_t input_rows_count) const override
     {
         ColumnPtr res;
+        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
+        {
+            if (!res)
+                res = executeType<DataType>(arguments, result_type, input_rows_count);
+        });
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+        if (!res)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",

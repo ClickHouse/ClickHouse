@@ -654,7 +654,8 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
     ReadFromMergeTree * read_step = nullptr;
     while (child)
     {
-        if ((read_step = typeid_cast<ReadFromMergeTree *>(child->step.get())))
+        read_step = typeid_cast<ReadFromMergeTree *>(child->step.get());
+        if (read_step)
             break;
         const bool passthrough = child->children.size() == 1
             && (typeid_cast<ExpressionStep *>(child->step.get()) || typeid_cast<FilterStep *>(child->step.get()));

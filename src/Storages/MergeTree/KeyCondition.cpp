@@ -1216,6 +1216,32 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
+
+            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
+            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
+            {
+                if (need_inversion || !boolean_context)
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                return nullptr;
+            };
+
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
             /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
@@ -1304,20 +1330,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (!need_inversion
-                && boolean_context
-                && ((res = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+            else if (const auto * rewritten = try_rewrite_boolean_condition())
             {
-                handled_inversion = true;
-            }
-            else if (!need_inversion
-                && boolean_context
-                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
-                && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
-            {
+                res = rewritten;
                 handled_inversion = true;
             }
             else

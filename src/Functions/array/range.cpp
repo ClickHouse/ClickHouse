@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <base/TypeLists.h>
 #include <numeric>
 #include <vector>
 
@@ -49,6 +50,22 @@ public:
     explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block]) { }
 
 private:
+    using TypeListNativeUInt = TypeList<UInt8, UInt16, UInt32, UInt64>;
+    using TypeListNativeSInt = TypeList<Int8, Int16, Int32, Int64>;
+
+    /// Calls try_one<T> for each T in the list, in order, until one returns a non-null column.
+    template <typename... Ts, typename F>
+    static ColumnPtr tryEachType(TypeList<Ts...>, F && try_one)
+    {
+        ColumnPtr res;
+        TypeListUtils::forEach(TypeList<Ts...>{}, [&]<typename T>(TypeList<T>)
+        {
+            if (!res)
+                res = try_one.template operator()<T>();
+        });
+        return res;
+    }
+
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
@@ -439,12 +456,9 @@ private:
                 col = nullable.getNestedColumnPtr().get();
             }
 
-            if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
-                  || (res = executeInternal<UInt64>(col)) || (res = executeInternal<Int8>(col)) || (res = executeInternal<Int16>(col))
-                  || (res = executeInternal<Int32>(col)) || (res = executeInternal<Int64>(col))))
-            {
+            res = tryEachType(TypeListNativeInt{}, [&]<typename T>() { return executeInternal<T>(col); });
+            if (!res)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col->getName(), getName());
-            }
             return res;
         }
 
@@ -482,26 +496,20 @@ private:
                 UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
                 UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-                if ((res = executeConstStartStep<UInt8>(column_ptrs[1], static_cast<UInt8>(start), static_cast<UInt8>(step), input_rows_count))
-                    || (res = executeConstStartStep<UInt16>(column_ptrs[1], static_cast<UInt16>(start), static_cast<UInt16>(step), input_rows_count))
-                    || (res = executeConstStartStep<UInt32>(
-                            column_ptrs[1], static_cast<UInt32>(start), static_cast<UInt32>(step), input_rows_count))
-                    || (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
+                res = tryEachType(TypeListNativeUInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStartStep<T>(column_ptrs[1], static_cast<T>(start), static_cast<T>(step), input_rows_count);
+                });
             }
             else if (which.isNativeInt())
             {
                 Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
                 Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
 
-                if ((res = executeConstStartStep<Int8>(column_ptrs[1], static_cast<Int8>(start), static_cast<Int8>(step), input_rows_count))
-                    || (res = executeConstStartStep<Int16>(column_ptrs[1], static_cast<Int16>(start), static_cast<Int16>(step), input_rows_count))
-                    || (res = executeConstStartStep<Int32>(
-                            column_ptrs[1], static_cast<Int32>(start), static_cast<Int32>(step), input_rows_count))
-                    || (res = executeConstStartStep<Int64>(column_ptrs[1], start, step, input_rows_count)))
+                res = tryEachType(TypeListNativeSInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStartStep<T>(column_ptrs[1], static_cast<T>(start), static_cast<T>(step), input_rows_count);
+                });
             }
         }
         else if (is_start_const && !is_step_const)
@@ -510,23 +518,19 @@ private:
             {
                 UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
 
-                if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], static_cast<UInt8>(start), input_rows_count))
-                    || (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], static_cast<UInt16>(start), input_rows_count))
-                    || (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], static_cast<UInt32>(start), input_rows_count))
-                    || (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+                res = tryEachType(TypeListNativeUInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStart<T>(column_ptrs[1], column_ptrs[2], static_cast<T>(start), input_rows_count);
+                });
             }
             else if (which.isNativeInt())
             {
                 Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
 
-                if ((res = executeConstStart<Int8>(column_ptrs[1], column_ptrs[2], static_cast<Int8>(start), input_rows_count))
-                    || (res = executeConstStart<Int16>(column_ptrs[1], column_ptrs[2], static_cast<Int16>(start), input_rows_count))
-                    || (res = executeConstStart<Int32>(column_ptrs[1], column_ptrs[2], static_cast<Int32>(start), input_rows_count))
-                    || (res = executeConstStart<Int64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+                res = tryEachType(TypeListNativeSInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStart<T>(column_ptrs[1], column_ptrs[2], static_cast<T>(start), input_rows_count);
+                });
             }
         }
         else if (!is_start_const && is_step_const)
@@ -535,37 +539,27 @@ private:
             {
                 UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-                if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], static_cast<UInt8>(step), input_rows_count))
-                    || (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], static_cast<UInt16>(step), input_rows_count))
-                    || (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], static_cast<UInt32>(step), input_rows_count))
-                    || (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+                res = tryEachType(TypeListNativeUInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStep<T>(column_ptrs[0], column_ptrs[1], static_cast<T>(step), input_rows_count);
+                });
             }
             else if (which.isNativeInt())
             {
                 Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
 
-                if ((res = executeConstStep<Int8>(column_ptrs[0], column_ptrs[1], static_cast<Int8>(step), input_rows_count))
-                    || (res = executeConstStep<Int16>(column_ptrs[0], column_ptrs[1], static_cast<Int16>(step), input_rows_count))
-                    || (res = executeConstStep<Int32>(column_ptrs[0], column_ptrs[1], static_cast<Int32>(step), input_rows_count))
-                    || (res = executeConstStep<Int64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+                res = tryEachType(TypeListNativeSInt{}, [&]<typename T>()
                 {
-                }
+                    return executeConstStep<T>(column_ptrs[0], column_ptrs[1], static_cast<T>(step), input_rows_count);
+                });
             }
         }
         else
         {
-            if ((res = executeGeneric<UInt8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<UInt16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<UInt32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<Int8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<Int16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<Int32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
-                || (res = executeGeneric<Int64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)))
+            res = tryEachType(TypeListNativeInt{}, [&]<typename T>()
             {
-            }
+                return executeGeneric<T>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count);
+            });
         }
 
         if (!res)

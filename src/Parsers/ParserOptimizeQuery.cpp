@@ -109,9 +109,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     node = query;
 
     query->cluster = cluster_str;
-    if ((query->partition = partition))
+    query->partition = partition;
+    if (partition)
         query->children.push_back(partition);
-    if ((query->parts_list = parts_list))
+    query->parts_list = parts_list;
+    if (parts_list)
         query->children.push_back(parts_list);
     query->dry_run = dry_run;
     query->final = final;

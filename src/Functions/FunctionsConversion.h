@@ -2682,7 +2682,7 @@ struct ConvertImpl
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
                 if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
+                    if (time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()); time_zone_column)
                     {
                         auto non_null_args = createBlockWithNestedColumns(arguments);
                         time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);

@@ -700,7 +700,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 next.cols.insert(col.getColumnName());
             }
         }
-        if (!next.isDeterministic() && (next.is_refreshable = rg.nextBool()))
+        if (!next.isDeterministic())
+        {
+            next.is_refreshable = rg.nextBool();
+        }
+        if (next.is_refreshable)
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
@@ -881,7 +885,8 @@ void StatementGenerator::generateNextTablePartition(
         const String dname = t.getDatabaseName();
         const String tname = t.getBaseName();
 
-        if ((table_has_partitions = ((allow_parts == 2 || rg.nextMediumNumber() < 76) && fc.tableHasPartitions(detached, dname, tname))))
+        table_has_partitions = (allow_parts == 2 || rg.nextMediumNumber() < 76) && fc.tableHasPartitions(detached, dname, tname);
+        if (table_has_partitions)
         {
             String pval;
 
@@ -889,14 +894,21 @@ void StatementGenerator::generateNextTablePartition(
             {
                 pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, false, dname, tname));
             }
-            else if (!detached && rg.nextBool() && !(pval = fc.tableGetRandomPartitionValue(rg.nextInFullRange(), dname, tname)).empty())
-            {
-                /// Partition key value form, e.g. `DROP PARTITION 202101` / `DROP PARTITION (202101, 'x')`
-                pexpr->set_partition(pval);
-            }
             else
             {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, true, dname, tname));
+                if (!detached && rg.nextBool())
+                {
+                    pval = fc.tableGetRandomPartitionValue(rg.nextInFullRange(), dname, tname);
+                }
+                if (!pval.empty())
+                {
+                    /// Partition key value form, e.g. `DROP PARTITION 202101` / `DROP PARTITION (202101, 'x')`
+                    pexpr->set_partition(pval);
+                }
+                else
+                {
+                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, true, dname, tname));
+                }
             }
         }
     }
@@ -4066,10 +4078,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(cname);
-                        NestedType * ntp = nullptr;
+                        auto * ntp = dynamic_cast<NestedType *>(col.tp.get());
 
                         chassert(path.sub_cols_size() == 1);
-                        if ((ntp = dynamic_cast<NestedType *>(col.tp.get())) && ntp->subtypes.size() > 1)
+                        if (ntp && ntp->subtypes.size() > 1)
                         {
                             const String & ncname = path.sub_cols(0).column();
 
@@ -4108,10 +4120,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(old_cname);
-                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
-                        if ((ntp = dynamic_cast<NestedType *>(col.tp.get())))
+                        if (auto * ntp = dynamic_cast<NestedType *>(col.tp.get()))
                         {
                             const String & nocname = path.sub_cols(0).column();
 

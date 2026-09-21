@@ -21,8 +21,6 @@ Checks: [
 
   '-boost-use-ranges',
 
-  '-bugprone-assignment-in-if-condition',
-  '-bugprone-assignment-in-selection-statement', # generalization of `bugprone-assignment-in-if-condition`, same rationale
   '-bugprone-branch-clone',
   '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',

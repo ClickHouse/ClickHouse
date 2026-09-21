@@ -2827,9 +2827,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     std::optional<UInt64> num_rows;
+    if (processing_stage == QueryProcessingStage::FetchColumns)
+        num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas]);
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas])))
+    if (num_rows)
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;

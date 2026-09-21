@@ -1536,19 +1536,22 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected))
                 {
-                    if (!insertAlias(alias))
-                        return false;
+                    type_text = parseDataTypeAsText(pos, expected);
+                    if (type_text &&
+                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    {
+                        if (!insertAlias(alias))
+                            return false;
 
-                    if (!mergeElement())
-                        return false;
+                        if (!mergeElement())
+                            return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
-                    finished = true;
-                    return true;
+                        elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                        finished = true;
+                        return true;
+                    }
                 }
 
                 pos = old_pos;
@@ -1569,7 +1572,8 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
+                type_text = parseDataTypeAsText(pos, expected);
+                if (type_text &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
