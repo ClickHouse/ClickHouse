@@ -405,6 +405,9 @@ public:
         size_t object_shared_data_buckets = 1;
         /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
         size_t object_shared_data_target_chunk_rows = 8192;
+        /// Per-part `Object` typed path selection uses retained statistics before streams are created.
+        /// Same strict threshold as ordinary `Sparse` serialization; 1 disables it.
+        double object_paths_sparse_default_ratio = 1.0;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -480,6 +483,8 @@ public:
         size_t object_shared_data_buckets = 1;
         /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
         size_t object_shared_data_target_chunk_rows = 8192;
+        /// Same typed path selection as `EnumerateStreamsSettings`. Disabled outside `MergeTree`.
+        double object_paths_sparse_default_ratio = 1.0;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.

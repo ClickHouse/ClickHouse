@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationSubObjectSharedData.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
 
 namespace DB
 {
@@ -77,6 +78,11 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> dynamic_path_states;
     std::vector<String> dynamic_paths;
+    std::unordered_set<String> sparse_typed_paths;
+    /// Actual per-path serializations (sparse-wrapped for sparse typed paths), resolved
+    /// once in the prefix from the structure state, so that stream enumeration and reads
+    /// always use the same layout.
+    std::unordered_map<String, SerializationPtr> typed_path_serializations;
     VectorWithMemoryTracking<String> dynamic_sub_paths;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
@@ -84,6 +90,7 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObject>(*this);
+        /// Serializations are immutable; the shallow copy above already carries them.
 
         for (const auto & [path, state] : typed_path_states)
             new_state->typed_path_states[path] = state ? state->clone() : nullptr;
@@ -116,13 +123,21 @@ void SerializationSubObject::enumerateStreams(
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
-        auto path_data = SubstreamData(serialization)
+        /// Use the serialization resolved during prefix deserialization if available,
+        /// so enumeration reflects the actual on-disk layout of sparse typed paths.
+        SerializationPtr path_serialization = serialization;
+        if (deserialize_state)
+        {
+            if (auto it = deserialize_state->typed_path_serializations.find(path); it != deserialize_state->typed_path_serializations.end())
+                path_serialization = it->second;
+        }
+        auto path_data = SubstreamData(path_serialization)
                              .withType(type_object ? type_object->getTypedPaths().at(path.substr(paths_prefix.size())) : nullptr)
                              .withColumn(column_object ? column_object->getTypedPaths().at(path.substr(paths_prefix.size())) : nullptr)
                              .withSerializationInfo(data.serialization_info)
                              .withDeserializeState(deserialize_state ? deserialize_state->typed_path_states.at(path) : nullptr);
         settings.path.back().data = path_data;
-        serialization->enumerateStreams(settings, callback, path_data);
+        path_serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
     }
 
@@ -181,12 +196,15 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
 
     auto * structure_state_concrete = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(structure_state);
     auto sub_object_state = std::make_shared<DeserializeBinaryBulkStateSubObject>();
+    sub_object_state->sparse_typed_paths = structure_state_concrete->sparse_typed_paths;
     settings.path.push_back(Substream::ObjectData);
     for (const auto & [path, serialization] : typed_paths_serializations)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
-        serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->typed_path_states[path], cache);
+        auto path_serialization = sub_object_state->sparse_typed_paths.contains(path) ? SerializationSparse::create(serialization) : serialization;
+        sub_object_state->typed_path_serializations[path] = path_serialization;
+        path_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->typed_path_states[path], cache);
         settings.path.pop_back();
     }
 
@@ -250,7 +268,10 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
-        serialization->deserializeBinaryBulkWithMultipleStreams(*typed_paths[path.substr(paths_prefix.size())], limit, settings, sub_object_state->typed_path_states[path], cache);
+        if (sub_object_state->sparse_typed_paths.contains(path))
+            SerializationObject::deserializeSparsePath(SerializationSparse::create(serialization), *typed_paths[path.substr(paths_prefix.size())], limit, settings, sub_object_state->typed_path_states[path], cache);
+        else
+            serialization->deserializeBinaryBulkWithMultipleStreams(*typed_paths[path.substr(paths_prefix.size())], limit, settings, sub_object_state->typed_path_states[path], cache);
         settings.path.pop_back();
     }
 

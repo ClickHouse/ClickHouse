@@ -20,6 +20,16 @@ class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnO
 public:
     struct Statistics
     {
+        /// In-memory estimates used to select typed path serialization before creating streams.
+        /// Unlike `dynamic_paths_statistics` read from disk, both counts cover the same rows.
+        /// Retained by `cloneEmpty`/`takeOrCalculateStatisticsFrom` for the lifetime of a writer.
+        struct TypedPathSerializationStatistics
+        {
+            size_t num_rows = 0;
+            size_t num_defaults = 0;
+        };
+        UnorderedMapWithMemoryTracking<String, TypedPathSerializationStatistics> typed_path_serialization_statistics;
+
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
         UnorderedMapWithMemoryTracking<String, size_t> dynamic_paths_statistics;
         /// Statistics for paths in shared data: (path) -> (total number of not-null values).

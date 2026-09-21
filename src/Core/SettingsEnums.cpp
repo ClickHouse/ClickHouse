@@ -457,7 +457,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeObjectSerializationVersion::V1},
      {"v2", MergeTreeObjectSerializationVersion::V2},
-     {"v3", MergeTreeObjectSerializationVersion::V3}})
+     {"v3", MergeTreeObjectSerializationVersion::V3},
+     {"v4", MergeTreeObjectSerializationVersion::V4}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeMapSerializationVersion,

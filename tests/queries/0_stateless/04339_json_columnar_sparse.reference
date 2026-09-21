@@ -1,0 +1,17 @@
+Wide ratio=0.9375 OK
+Wide ratio=1 OK
+Wide ratio=0 OK
+Wide mixed V3/V4 OK
+Wide rewrite encoding OK
+Compact ratio=0.9375 OK
+Compact ratio=1 OK
+Compact ratio=0 OK
+Compact mixed V3/V4 OK
+Compact rewrite encoding OK
+v1 unchanged OK
+v2 unchanged OK
+v3 unchanged OK
+Wide nested and shared paths OK
+Wide Dynamic mixed types without sparse streams OK
+Compact nested and shared paths OK
+Compact Dynamic mixed types without sparse streams OK

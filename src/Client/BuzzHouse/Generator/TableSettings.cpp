@@ -463,10 +463,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'"};
+             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'", "'v4'"};
              return rg.pickRandomly(choices);
          },
-         {"'v1'", "'v2'", "'v3'"},
+         {"'v1'", "'v2'", "'v3'", "'v4'"},
          false)},
     {"object_shared_data_buckets_for_compact_part", bucketsRangeNonZeroSetting},
     {"object_shared_data_buckets_for_wide_part", bucketsRangeNonZeroSetting},

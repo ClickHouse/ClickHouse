@@ -29,6 +29,7 @@ enum class MergeTreeObjectSerializationVersion : uint8_t
     V1,
     V2,
     V3,
+    V4,
 };
 
 enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
