@@ -540,6 +540,17 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
+        return;
+    }
+
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
