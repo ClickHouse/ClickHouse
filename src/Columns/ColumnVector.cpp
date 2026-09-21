@@ -28,6 +28,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -791,6 +792,86 @@ static uint8_t suffixToCopy(UInt64 mask)
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
 }
 
+/// The compress kernel does a fixed number of table lookups per block of 64 rows, while the loop over set bits does work
+/// per selected row. The kernel wins once there are about 1.5 selected rows per lookup (AMD Zen 2, Intel Haswell, Intel Alder Lake).
+template <typename T>
+static constexpr size_t filter_compress_lookups = 64 / (sizeof(T) == 8 ? 4 : 8);
+
+template <typename T>
+static constexpr size_t filter_compress_min_rows = filter_compress_lookups<T> * 3 / 2;
+
+#if defined(__AVX2__)
+/// For each mask of `mask_bits` elements, a `pshufb` or `vpermd` control that packs the selected elements to the front.
+/// An element spans `units` units of the control. The unused tail selects unit 0, which is written past the result
+/// and overwritten by the next store.
+template <typename Index, size_t mask_bits, size_t units>
+alignas(64) static constexpr auto filter_compress_table = []
+{
+    std::array<std::array<Index, units * mask_bits>, (1 << mask_bits)> table{};
+    for (size_t mask = 0; mask < table.size(); ++mask)
+    {
+        size_t pos = 0;
+        for (size_t i = 0; i < mask_bits; ++i)
+            if ((mask >> i) & 1)
+                for (size_t unit = 0; unit < units; ++unit)
+                    table[mask][pos++] = static_cast<Index>(units * i + unit);
+    }
+    return table;
+}();
+
+/// Writes the selected elements of a block of 64 to `out`. Every store writes a whole vector of up to 32 bytes, of which
+/// only the selected elements are kept, so `out` needs room for the selected elements plus the padding of `PaddedPODArray`.
+/// It may run in place with `out <= data`.
+template <typename T>
+static inline void filterCompressBlock(const T * data, T * out, UInt64 mask)
+{
+    if constexpr (sizeof(T) == 1)
+    {
+        for (size_t i = 0; i < 64; i += 8, mask >>= 8)
+        {
+            const __m128i src = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(data + i));
+            const __m128i control
+                = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(filter_compress_table<UInt8, 8, 1>[mask & 0xFF].data()));
+            _mm_storel_epi64(reinterpret_cast<__m128i *>(out), _mm_shuffle_epi8(src, control));
+            out += std::popcount(mask & 0xFF);
+        }
+    }
+    else if constexpr (sizeof(T) == 2)
+    {
+        for (size_t i = 0; i < 64; i += 8, mask >>= 8)
+        {
+            const __m128i src = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
+            const __m128i control
+                = _mm_loadu_si128(reinterpret_cast<const __m128i *>(filter_compress_table<UInt8, 8, 2>[mask & 0xFF].data()));
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(out), _mm_shuffle_epi8(src, control));
+            out += std::popcount(mask & 0xFF);
+        }
+    }
+    else if constexpr (sizeof(T) == 4)
+    {
+        for (size_t i = 0; i < 64; i += 8, mask >>= 8)
+        {
+            const __m256i src = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+            const __m256i control = _mm256_cvtepu8_epi32(
+                _mm_loadl_epi64(reinterpret_cast<const __m128i *>(filter_compress_table<UInt8, 8, 1>[mask & 0xFF].data())));
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(out), _mm256_permutevar8x32_epi32(src, control));
+            out += std::popcount(mask & 0xFF);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < 64; i += 4, mask >>= 4)
+        {
+            const __m256i src = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+            const __m256i control
+                = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(filter_compress_table<UInt32, 4, 2>[mask & 0xF].data()));
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(out), _mm256_permutevar8x32_epi32(src, control));
+            out += std::popcount(mask & 0xF);
+        }
+    }
+}
+#endif
+
 template <typename T>
 class ResultInserter
 {
@@ -809,6 +890,15 @@ public:
     {
         container.insert(begin, end);
     }
+
+#if defined(__AVX2__)
+    void insertCompressed(const T * block, UInt64 mask, size_t count)
+    {
+        container.reserve(container.size() + count);
+        filterCompressBlock(block, container.end(), mask);
+        container.resize_assume_reserved(container.size() + count);
+    }
+#endif
 };
 
 template <typename T>
@@ -835,7 +925,38 @@ public:
         result_ptr += count;
         container_size += count;
     }
+
+#if defined(__AVX2__)
+    void insertCompressed(const T * block, UInt64 mask, size_t count)
+    {
+        filterCompressBlock(block, result_ptr, mask);
+        result_ptr += count;
+        container_size += count;
+    }
+#endif
 };
+
+template <typename T, typename Inserter>
+static inline void insertSelected(Inserter & inserter, const T * block, UInt64 mask)
+{
+#if defined(__AVX2__)
+    if constexpr (sizeof(T) <= 8)
+    {
+        const size_t count = std::popcount(mask);
+        if (count >= filter_compress_min_rows<T>)
+        {
+            inserter.insertCompressed(block, mask, count);
+            return;
+        }
+    }
+#endif
+    while (mask)
+    {
+        size_t index = std::countr_zero(mask);
+        inserter.insertSingle(block[index]);
+        mask = blsr(mask);
+    }
+}
 
 DECLARE_DEFAULT_CODE(
 template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
@@ -859,12 +980,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
             else
             {
-                while (mask)
-                {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
-                }
+                insertSelected(inserter, data_pos, mask);
             }
         }
 
