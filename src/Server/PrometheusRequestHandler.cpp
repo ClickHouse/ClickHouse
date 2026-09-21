@@ -423,8 +423,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query, metadata, and capability endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/features).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -489,6 +489,12 @@ public:
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
                 formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
+            if (uri_path.ends_with("/features"))
+            {
+                writeFeatures(getOutputStream(response));
                 return;
             }
 
@@ -638,6 +644,11 @@ private:
         writeChar('}', out);
     }
 
+    static void writeFeatures(WriteBuffer & out)
+    {
+        writeString(R"({"status":"success","data":{"promql":{"at_modifier":true,"subqueries":true}}})", out);
+    }
+
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
     Int64 getMetadataLimitParam(const String & name) const
     {
@@ -731,7 +742,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, features)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

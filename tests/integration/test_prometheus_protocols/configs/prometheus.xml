@@ -121,6 +121,13 @@
                 </handler>
             </my_rule_16>
 
+            <my_rule_17>
+                <url>/api/v1/features</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_17>
+
             <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
             <my_rule_12>
                 <url_prefix>/no_bounds</url_prefix>

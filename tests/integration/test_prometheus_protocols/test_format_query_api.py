@@ -1,4 +1,4 @@
-"""Tests for the Prometheus /api/v1/format_query endpoint."""
+"""Tests for the Prometheus /api/v1/format_query and /api/v1/features endpoints."""
 
 import time
 
@@ -132,3 +132,18 @@ def test_format_query_missing_query_parameter_is_rejected():
     response = requests.get(f"http://{node.ip_address}:9093/api/v1/format_query")
     assert response.status_code == 400, response.text
     assert response.json()["status"] == "error"
+
+
+def test_features_without_table():
+    response = requests.get(f"http://{node.ip_address}:9093/api/v1/features")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "status": "success",
+        "data": {
+            "promql": {
+                "at_modifier": True,
+                "subqueries": True,
+            }
+        },
+    }
