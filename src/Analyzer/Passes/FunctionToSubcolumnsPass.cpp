@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
