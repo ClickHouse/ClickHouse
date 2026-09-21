@@ -140,7 +140,7 @@ ORDER BY event_time DESC LIMIT 1;
 -- all of them. The `query_id` filter sits inside the `LIMIT` subquery, so other queries' samples are
 -- never symbolized either, and the `trace_type` filter keeps the oracle specific to this sub-test.
 -- Resolve the symbols here rather than reading the `symbols` column of `system.trace_log`: the
--- stateless harness turns in-flush symbolization off on sanitizer builds
+-- stateless harness turns in-flush symbolization off on sanitizer and coverage builds
 -- (`trace_log_no_symbolize.xml`), so that column is empty there. Only `addressToSymbol` is used -
 -- `addressToLine` walks DWARF and costs about a millisecond per row in CI.
 SELECT countIf(arrayExists(addr -> demangle(addressToSymbol(addr)) LIKE '%Source%', trace)) > 0
