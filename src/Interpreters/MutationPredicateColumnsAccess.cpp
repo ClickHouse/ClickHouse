@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -299,26 +300,48 @@ private:
         return StorageID{name.substr(0, dot), name.substr(dot + 1)};
     }
 
-    /// The dictionary or `Join` table a `dictGet` / `joinGet` first argument names. A one-part
-    /// identifier there may be a `WITH` alias, which the analyzer resolves to its value before the
-    /// object is looked up (`resolveFunction.cpp`, as in `WITH 'dict' AS d SELECT dictGet(d, ...)`):
-    /// an alias holding a string literal names that object, and an alias holding anything else
-    /// leaves the object unknown, which is reported in `unknown_object` so that the caller can
-    /// require the access on every object instead of skipping the read.
+    /// The dictionary or `Join` table a `dictGet` / `joinGet` first argument names. The runtime
+    /// takes that name from any constant `String` expression (`FunctionDictHelper::getDictionary`,
+    /// `getJoin`), and the analyzer resolves the argument as an expression identifier first
+    /// (`resolveFunction.cpp`), so a one-part identifier may be an alias standing for the name, as
+    /// in `WITH 'dict' AS d SELECT dictGet(d, ...)`. Only two shapes name one object provably: a
+    /// string literal, and an identifier that is not an in-scope alias. An alias is followed when
+    /// it holds a string literal; anything else - an alias holding another expression, `concat('db',
+    /// '.dict')`, a column reference - leaves the object unknown, which is reported in
+    /// `unknown_object` so that the caller requires the access on every object instead of skipping
+    /// the read. Skipping it is what would let a mutation with `validate_mutation_query = 0` read
+    /// the object in the background, under full access.
     std::optional<StorageID> tryGetFunctionObject(const IAST & argument, bool & unknown_object) const
     {
         unknown_object = false;
 
-        if (const auto * identifier = argument.as<ASTIdentifier>(); identifier && !identifier->compound())
+        if (const auto * literal = argument.as<ASTLiteral>())
         {
-            if (const auto * scalar = findWithScalar(identifier->name()))
+            if (literal->value.getType() != Field::Types::String)
             {
-                if (!scalar->string_value)
+                unknown_object = true;
+                return {};
+            }
+            return tryGetNamedTable(literal->value.safeGet<String>());
+        }
+
+        const auto * identifier = argument.as<ASTIdentifier>();
+        if (!identifier)
+        {
+            unknown_object = true;
+            return {};
+        }
+
+        if (!identifier->compound())
+        {
+            if (const auto * alias_value = findAliasValue(identifier->name()))
+            {
+                if (!*alias_value)
                 {
                     unknown_object = true;
                     return {};
                 }
-                return tryGetNamedTable(*scalar->string_value);
+                return tryGetNamedTable(**alias_value);
             }
         }
 
@@ -344,12 +367,19 @@ private:
         return columns;
     }
 
-    /// The innermost `WITH <expression> AS name` in scope with this name, if any.
-    const WithScalar * findWithScalar(const String & name) const
+    /// The value an in-scope alias of this name stands for: an expression alias of the `SELECT`
+    /// level being visited, or, failing that, the innermost scalar `WITH <expression> AS name`.
+    /// Nothing when the name is not an alias at all; an alias whose value is not a string literal
+    /// is an empty `optional`, the value it stands for being unknown here.
+    const std::optional<String> * findAliasValue(const String & name) const
     {
+        if (const auto it = expression_aliases.find(name); it != expression_aliases.end())
+            return &it->second;
+
         for (auto it = with_scalars.rbegin(); it != with_scalars.rend(); ++it)
             if (it->name == name)
-                return &*it;
+                return &it->string_value;
+
         return nullptr;
     }
 
@@ -726,7 +756,18 @@ private:
             return;
 
         if (const String alias = ast->tryGetAlias(); !alias.empty())
-            expression_aliases.insert(alias);
+        {
+            /// The value is kept when it is a string literal, because `dictGet` and `joinGet` may
+            /// name their object by such an alias - see `tryGetFunctionObject`. Two expressions of
+            /// the same alias do not tell which one a name stands for, so the value becomes unknown.
+            std::optional<String> string_value;
+            if (const auto * literal = ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                string_value = literal->value.safeGet<String>();
+
+            const auto [it, inserted] = expression_aliases.emplace(alias, string_value);
+            if (!inserted && it->second != string_value)
+                it->second.reset();
+        }
 
         for (const auto & child : ast->children)
             collectExpressionAliases(child);
@@ -794,8 +835,9 @@ private:
     std::vector<WithScalar> with_scalars;
     /// The column names visible at each enclosing subquery level, innermost last; see `visibleColumns`.
     std::vector<NameSet> subquery_levels;
-    /// The expression aliases of the `SELECT` level being visited; see `collectExpressionAliases`.
-    NameSet expression_aliases;
+    /// The expression aliases of the `SELECT` level being visited, each with the string literal it
+    /// stands for when it is one; see `collectExpressionAliases`.
+    std::unordered_map<String, std::optional<String>> expression_aliases;
     bool inside_subquery = false;
 };
 

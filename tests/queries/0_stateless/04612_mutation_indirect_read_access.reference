@@ -48,6 +48,12 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object
 ACCESS_DENIED
+-- An object named by an expression that is not one name is not one object either
+ACCESS_DENIED
+ACCESS_DENIED
+-- An object named through a query alias is read as well
+ACCESS_DENIED
+ACCESS_DENIED
 -- joinGet reads the key columns of the Join table too
 ACCESS_DENIED
 OK
@@ -59,6 +65,8 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 -- With the grants, the same mutations are allowed
+OK
+OK
 OK
 OK
 OK

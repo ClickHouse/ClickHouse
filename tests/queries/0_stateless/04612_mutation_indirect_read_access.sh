@@ -200,6 +200,17 @@ check_access "ALTER TABLE tab UPDATE name = (WITH '$CLICKHOUSE_DATABASE.join_tab
 echo "-- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object"
 check_access "ALTER TABLE tab UPDATE name = (WITH materialize('$CLICKHOUSE_DATABASE.dict') AS d SELECT dictGet(d, 'payload', toUInt64(1))) WHERE 0 SETTINGS $off"
 
+# The name of the object is taken from any constant `String` expression when the function is built,
+# so an argument that names no one object here has to be treated as naming every one of them.
+echo "-- An object named by an expression that is not one name is not one object either"
+check_access "ALTER TABLE tab UPDATE name = dictGet(concat('$CLICKHOUSE_DATABASE', '.dict'), 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = joinGet(concat('$CLICKHOUSE_DATABASE', '.join_tab'), 'payload', id) WHERE 0 SETTINGS $off"
+
+# An ordinary query alias carries the name as well as a `WITH` one does.
+echo "-- An object named through a query alias is read as well"
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(d, 'payload', toUInt64(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.dict' AS d) != '') WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(j, 'payload', toUInt32(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.join_tab' AS j) != '') WHERE 0 SETTINGS $off"
+
 # `joinGet` probes the key columns of the `Join` table, not only the attribute it names, and
 # `FunctionJoinGet::prepare` requires `SELECT` on both.
 echo "-- joinGet reads the key columns of the Join table too"
@@ -233,6 +244,10 @@ check_access "DELETE FROM tab WHERE id IN (SELECT secret FROM secret_tab) AND 0 
 check_access "ALTER TABLE tab DELETE WHERE id IN secret_set AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
+# The grants are on the objects the aliases name, and never on an object of the alias' own name, so
+# these pass only because the alias is followed to the object it stands for.
+check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(d, 'payload', toUInt64(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.dict' AS d) != '') WHERE 0 SETTINGS $off"
+check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(j, 'payload', toUInt32(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.join_tab' AS j) != '') WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE id IN secret_set) AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() AND 0 SETTINGS $off"
