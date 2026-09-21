@@ -120,14 +120,18 @@ inline bool maskURIUserinfo(std::string & url)
   * is masked. Returns whether anything was masked.
   *
   * This used to be the regular expression
-  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
-  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
+  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
+  * rewritten to `\1[HIDDEN]` globally. Matching is case-sensitive, as in the expression, and
   * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
+  *
+  * `sig` is the signature of an Azure shared access signature; the rest of a SAS (`sv`, `sp`, `se`,
+  * `sr`, ...) states what that signature grants and stays visible. Two sibling sets deliberately
+  * differ: `BackupInfo::removeCredentialsFromS3URL` REMOVES them from a backup locator that must stay
+  * openable on restore, and `S3::URI`'s set decides whether `?` opens a presigned query.
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
-    static constexpr std::array<std::string_view, 4> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
+    static constexpr std::array<std::string_view, 5> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId", "sig"};
     static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
 
     auto is_secret_parameter = [](std::string_view name)

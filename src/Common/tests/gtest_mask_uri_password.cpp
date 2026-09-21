@@ -132,7 +132,7 @@ bool maskPresignedURLParametersWithRE2(std::string & url)
 {
     return RE2::GlobalReplace(
         &url,
-        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
         "\\1[HIDDEN]");
 }
 
@@ -173,6 +173,18 @@ const std::vector<std::string> url_corpus = {
     "https://bucket/key?Expires=1&Expires=2&Expires=3",
     "https://bucket/key?Signature=a=b&next=1",
 
+    /// An Azure shared access signature: `sig` is the signature, the other fields say what it grants.
+    "https://acct.blob.core.windows.net/c/b?sp=r&sig=abc",
+    "abfss://c@a.dfs.core.windows.net/d/?sp=r&sig=abc",
+    "https://h/f?X-Amz-Signature=a&sig=b",
+    "https://h/f?SIG=abc",
+    "https://h/f?Sig=abc",
+    "https://h/f?design=visible",
+    "https://h/f?signed=visible",
+    "https://h/f?sig",
+    "https://h/f?sig=",
+    "https://h/f?sig=a&sig=b",
+
     /// Both at once, and neither.
     "https://user:password@bucket/key?X-Amz-Signature=abc&format=CSV",
     "",
@@ -205,6 +217,7 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     const std::vector<std::string> tokens = {
         "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
         "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
+        "sig", "SIG", "design",
     };
     std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> count_dist(0, 12);
@@ -232,8 +245,8 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
 
 TEST(MaskS3URLCredentials, MasksUserinfoAndPresignedParameters)
 {
-    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV";
+    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&sig=ghijkl&format=CSV";
     EXPECT_TRUE(maskURIUserinfo(url));
     EXPECT_TRUE(maskPresignedURLParameters(url));
-    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&format=CSV");
+    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&sig=[HIDDEN]&format=CSV");
 }
