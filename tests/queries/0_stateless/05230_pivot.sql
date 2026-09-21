@@ -63,11 +63,23 @@ SELECT *
 FROM values('k String, v UInt64', ('a', 2))
 PIVOT (sum(v) FOR k IN ('a' AS a));
 
--- Query-scoped aliases that are not source columns remain usable in aggregate expressions.
+-- Aggregate identifiers always resolve against the PIVOT source. Query-scoped aliases are
+-- rejected instead of leaking into the generated subquery through enable_global_with_statement.
 WITH 2 AS scale
 SELECT *
 FROM values('k String, v UInt64', ('a', 3))
-PIVOT (sum(v * scale) FOR k IN ('a' AS a));
+PIVOT (sum(v * scale) FOR k IN ('a' AS a)); -- { serverError UNKNOWN_IDENTIFIER }
+
+WITH v + 1 AS m
+SELECT *
+FROM values('k String, v UInt64', ('a', 1), ('a', 2))
+PIVOT (sum(m) FOR k IN ('a' AS a)); -- { serverError UNKNOWN_IDENTIFIER }
+
+WITH 2 AS scale
+SELECT *
+FROM values('k String, v UInt64', ('a', 3))
+PIVOT (sum(v * scale) FOR k IN ('a' AS a))
+SETTINGS enable_global_with_statement = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- Query parameters inside the generated source remain visible to AST visitors.
 SET param_pivot_n = 2;
