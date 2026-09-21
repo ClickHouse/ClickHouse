@@ -42,6 +42,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -2712,6 +2713,11 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
 
             const auto & value_type = map_type.getValueType();
             return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message));
+        }
+        case TypeIndex::ExponentialTimeDecayingFloat64:
+        {
+            const auto & decaying_type = assert_cast<const DataTypeExponentialTimeDecayingFloat64 &>(*type);
+            return buildJSONExtractTree<JSONParser>(decaying_type.getNestedType(), source_for_exception_message);
         }
         case TypeIndex::Variant:
         {

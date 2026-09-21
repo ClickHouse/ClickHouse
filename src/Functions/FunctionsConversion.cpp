@@ -1031,9 +1031,15 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         };
     }
 
-    const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
+    const DataTypeTuple * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
     if (!from_type)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types or from String.\n"
+    {
+        if (const auto * decaying_type = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(from_type_untyped.get()))
+            from_type = assert_cast<const DataTypeTuple *>(decaying_type->getNestedType().get());
+    }
+
+    if (!from_type)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple-backed types or from String.\n"
                         "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
 
     const auto & from_element_types = from_type->getElements();
