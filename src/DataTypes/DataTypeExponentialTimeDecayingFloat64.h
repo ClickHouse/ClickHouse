@@ -19,6 +19,8 @@ struct ExponentialTimeDecayingFloat64Value
 {
     Float64 sign;
     Float64 signed_unit_time;
+    Float64 value_at_anchor;
+    Float64 anchor_time;
 };
 
 /// This is also the native lexicographic sort key for a fixed decay length.
@@ -30,11 +32,11 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (value == 0)
-        return {0, 0};
+        return {0, 0, 0, 0};
 
     const Float64 sign = std::copysign(1.0, value);
     const Float64 unit_time = time + decay_length * std::log(std::abs(value));
-    return {sign, sign * unit_time};
+    return {sign, sign * unit_time, value, time};
 }
 
 inline bool isCanonicalExponentialTimeDecayingFloat64Value(Float64 sign, Float64 signed_unit_time)
@@ -53,12 +55,12 @@ inline Float64 getExponentialTimeDecayingUnitTime(Float64 sign, Float64 signed_u
 class DataTypeExponentialTimeDecayingFloat64 final : public IDataType
 {
 public:
-    explicit DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_);
+    explicit DataTypeExponentialTimeDecayingFloat64(Float64 decay_length_, bool legacy_name_ = false);
 
     TypeIndex getTypeId() const override { return TypeIndex::ExponentialTimeDecayingFloat64; }
     TypeIndex getColumnType() const override { return TypeIndex::Tuple; }
     String doGetName() const override;
-    const char * getFamilyName() const override { return "ExponentialTimeDecayingFloat64"; }
+    const char * getFamilyName() const override { return "ExponentialTimeDecaying"; }
 
     MutableColumnPtr createColumn() const override;
     Field getDefault() const override;
@@ -90,6 +92,7 @@ public:
 
 private:
     const Float64 decay_length;
+    const bool legacy_name;
     const DataTypePtr storage_type;
     const DataTypePtr logical_type;
 };
