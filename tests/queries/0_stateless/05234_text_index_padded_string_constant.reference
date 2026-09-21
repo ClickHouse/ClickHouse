@@ -58,3 +58,4 @@ declined index absent, LowCardinality	1
 declined index absent, sparse_grams	1
 reversed has unchanged	1
 map element redirect	1
+ipv6 map key subcolumn	1	1

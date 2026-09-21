@@ -40,7 +40,7 @@ bool tokensSurviveTrailingNuls(ITokenizer::Type type, std::string_view value)
 {
     switch (type)
     {
-        /// Advances one byte at a time and never consults `seqLength`.
+        /// `nextInString` advances one byte at a time and never consults `seqLength`.
         case ITokenizer::Type::SplitByNonAlpha:
             return true;
         case ITokenizer::Type::Ngrams:

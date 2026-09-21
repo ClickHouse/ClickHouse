@@ -195,6 +195,20 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO r_mk SELECT number, if(number = 7, map(concat('VALUE', unhex('C2')), toFixedString('V', 3)), map('FILLER' || toString(number), toFixedString('F', 3))) FROM numbers(64);
 SELECT 'map element redirect', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM r_mk WHERE mk[concat('VALUE', unhex('C2'))] = toFixedString('V', 3)) WHERE explain ILIKE '%Granules: 1/64%';
 
+-- A map subcolumn read carries the key as its text, while a key type can store other bytes than that text.
+DROP TABLE IF EXISTS ip_mk_idx;
+DROP TABLE IF EXISTS ip_mk_log;
+CREATE TABLE ip_mk_idx (id UInt64, m Map(IPv6, String), INDEX idx_mk mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE ip_mk_log (id UInt64, m Map(IPv6, String)) ENGINE = Log;
+INSERT INTO ip_mk_idx SELECT number, map(if(number = 7, toIPv6('2001:db8::'), toIPv6('::' || toString(number + 100))), 'x') FROM numbers(64);
+INSERT INTO ip_mk_log SELECT number, map(if(number = 7, toIPv6('2001:db8::'), toIPv6('::' || toString(number + 100))), 'x') FROM numbers(64);
+SET optimize_functions_to_subcolumns = 1;
+SELECT 'ipv6 map key subcolumn', (SELECT count() FROM ip_mk_log WHERE m[toIPv6('2001:db8::')] = 'x'), (SELECT count() FROM ip_mk_idx WHERE m[toIPv6('2001:db8::')] = 'x');
+SET optimize_functions_to_subcolumns = 0;
+DROP TABLE ip_mk_idx;
+DROP TABLE ip_mk_log;
+
 DROP TABLE fs_idx;
 DROP TABLE fs_log;
 DROP TABLE u_idx;

@@ -480,18 +480,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
-namespace
-{
-
-bool isLikePatternFunction(const String & function_name)
-{
-    return function_name == "like"
-        || function_name == "notLike"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike";
-}
-
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
 Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
     auto inner_type = removeNullable(removeLowCardinality(type));
@@ -517,10 +505,20 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     return field;
 }
 
-/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
 bool functionIgnoresFixedStringPadding(const String & function_name)
 {
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
+namespace
+{
+
+bool isLikePatternFunction(const String & function_name)
+{
+    return function_name == "like"
+        || function_name == "notLike"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike";
 }
 
 /// The fixed-size byte domain the index stores its values in, if any. `IPv6` has one: exactly 16 raw bytes.
@@ -843,8 +841,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         auto value = const_value.safeGet<String>();
-        if (!const_value_is_redirected_map_key
-            && !normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*key_index], value_data_type, value))
+        if (const_value_is_redirected_map_key)
+        {
+            /// The key arrives as its own text while `value_type` describes the map value, so it cannot be
+            /// re-encoded here. A key type storing something other than that text needs to be.
+            if (!WhichDataType(BloomFilter::getPrimitiveType(index_data_types[*key_index])).isStringOrFixedString())
+                return false;
+        }
+        else if (!normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*key_index], value_data_type, value))
             return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
