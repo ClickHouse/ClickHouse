@@ -37,7 +37,7 @@ Checks: [
   '-bugprone-signed-bitwise', # formerly `hicpp-signed-bitwise`; too noisy
   '-bugprone-sizeof-expression', # too aggressive
   '-bugprone-throwing-static-initialization',
-  '-bugprone-unhandled-code-paths', # superset of the enabled `bugprone-switch-missing-default-case` (also flags `if`/`else if` chains without `else`); `NOLINT`s in the code use that name
+  '-bugprone-unhandled-code-paths', # superset of the enabled `bugprone-switch-missing-default-case` (also flags `if`/`else if` chains without `else`)
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
