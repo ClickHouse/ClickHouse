@@ -29,10 +29,10 @@ REGISTER_FUNCTION(HasTokenCaseInsensitive)
             .description = R"(
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             )",
             .syntax = "hasTokenCaseInsensitive(haystack, needle)",
             .introduced_in = {20, 1},
@@ -44,10 +44,10 @@ We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllT
             .description = R"(
 Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed.
 
-:::note
+<Note>
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
-:::
+</Note>
             )",
             .syntax = "hasTokenCaseInsensitiveOrNull(haystack, needle)",
             .introduced_in = {23, 1},
