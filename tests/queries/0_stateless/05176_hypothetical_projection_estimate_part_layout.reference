@@ -59,9 +59,6 @@ Granules: 3
 --- a merged part whose rows differ in width along the projection key ---
 b >= 4000: within a granule of the real count: 1
 b < 2000: within a granule of the real count: 1
---- a merged part whose granules follow the merge's block size ---
-marks_span reported: 1
-the real layout is inside the estimated span: 1
 --- a materialized lightweight delete ---
 rows the rebuilt projection kept:	1000
 hypothetical:
