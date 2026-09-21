@@ -166,6 +166,10 @@ private:
     /// taken for a directory queue. The files in it are left untouched.
     void renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const;
 
+    /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
+    /// directory queue, so `TRUNCATE TABLE` has to drop them separately.
+    void removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const;
+
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.

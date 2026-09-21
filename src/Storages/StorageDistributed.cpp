@@ -1544,6 +1544,9 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
+/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
+static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
@@ -1565,15 +1568,39 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    /// A directory quarantined by initializeDirectoryQueuesForDisk() has no directory queue, so it
+    /// is not in `cluster_nodes_data`, but its files are still part of the on-disk spool this
+    /// statement drops. Removing them here is the only way to get rid of them from SQL.
+    if (!relative_data_path.empty())
+        for (const DiskPtr & disk : data_volume->getDisks())
+            removeUnrecognizedDirectoryQueues(disk);
+}
+
+void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const
+{
+    const std::filesystem::path path(disk->getPath() + relative_data_path);
+    if (!std::filesystem::exists(path))
+        return;
+
+    /// Taken before the loop below removes an entry of `path`, which would let the iterator skip
+    /// or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (it->is_directory() && it->path().filename().string().starts_with(unrecognized_directory_queue_prefix))
+            dir_paths.push_back(it->path());
+
+    for (const auto & dir_path : dir_paths)
+    {
+        LOG_DEBUG(log, "Removing {}, which holds files of an async INSERT that cannot be sent", dir_path.string());
+        std::filesystem::remove_all(dir_path);
+    }
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 {
     return storage_policy;
 }
-
-/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
-static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
 
 /// A queue directory is named after its destinations, comma separated
 static bool isDirectoryQueueName(const std::string & name)

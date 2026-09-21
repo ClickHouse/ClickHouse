@@ -162,6 +162,7 @@ def test_remove_replica(started_cluster):
         ]
     )
 
+
 def test_invalid_shard_directory_format(started_cluster):
     """
     A subdirectory whose name is not one the sink writes names no destination, so its files can
@@ -248,6 +249,14 @@ def test_invalid_shard_directory_format(started_cluster):
     assert sorted(node.exec_in_container(["ls", "-1", data_path]).split()) == sorted(
         listing
     ), node.exec_in_container(["ls", "-1", data_path])
+
+    # The renamed directories have no directory queue, but they are still part of the on-disk
+    # spool, so `TRUNCATE TABLE` removes them along with the well-formed one. Otherwise they would
+    # occupy disk with no way to get rid of them from SQL.
+    node.query("truncate table test.dist_invalid")
+    assert (
+        node.exec_in_container(["ls", "-1", data_path]).split() == []
+    ), node.exec_in_container(["ls", "-1R", data_path])
 
     # Clean up
     node.query("drop table test.dist_invalid sync")
