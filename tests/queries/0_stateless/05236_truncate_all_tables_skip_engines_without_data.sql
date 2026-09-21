@@ -17,7 +17,6 @@ CREATE TABLE e_executable_pool (x UInt64) ENGINE = ExecutablePool('05236_no_such
 CREATE TABLE e_fuzz_query (q String) ENGINE = FuzzQuery('SELECT 1');
 CREATE TABLE e_fuzz_json (j String) ENGINE = FuzzJSON('{"a": 1}');
 CREATE TABLE e_url (x UInt64) ENGINE = URL('http://127.0.0.1:1/05236', TSV);
-CREATE TABLE e_query_runner (query String) ENGINE = QueryRunner;
 
 CREATE TABLE t_log ENGINE = Log AS SELECT 1 AS x;
 CREATE TABLE t_tiny_log ENGINE = TinyLog AS SELECT 1 AS x;
