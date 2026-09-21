@@ -1,0 +1,26 @@
+a WHERE that does not reference the correlated column
+5	20
+a WHERE on the correlated column itself
+0	20
+5	20
+10	20
+the correlated column in the SELECT list as well
+5	0	20
+no WHERE at all
+100
+a correlated EXISTS in the SELECT list
+5	1
+PREWHERE
+5	20
+GROUP BY and HAVING above the filter
+0	6	20
+1	6	20
+2	6	20
+3	6	20
+4	6	20
+the subquery in the WHERE itself
+5
+an aggregate of the correlated column
+0	95
+1	96
+2	97
