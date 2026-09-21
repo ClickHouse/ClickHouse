@@ -25,6 +25,33 @@ def test_expand_missing_and_stale():
     assert loader.expand_sample_token("stale")[0].stale is True
 
 
+def test_stale_marker_scenario_exclusion(tmp_path: Path):
+    path = tmp_path / "stale.test"
+    path.write_text(
+        textwrap.dedent(
+            """
+            load 10s
+              metric 0 stale 1
+
+            eval instant at 20s metric
+              metric 1
+
+            clear
+            load 10s
+              metric 1
+
+            eval instant at 0s metric
+              metric stale
+            """
+        )
+    )
+    cases = [scenario.evals[0] for scenario in loader.parse_test_file(path)]
+    assert len(cases) == 2
+    for case in cases:
+        assert case.exclusion_reason() == "stale_marker"
+        assert loader.classify_eval(case) == "excluded_assertion"
+
+
 def test_native_histogram_token():
     samples = loader.expand_sample_token("{{schema:0 sum:1 count:1}}x9")
     assert len(samples) == 10

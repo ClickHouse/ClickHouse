@@ -100,12 +100,15 @@ class EvalCase:
     native_hist_series: list[dict[str, str]] = field(default_factory=list)
     start_ts_metric_names: set[str] = field(default_factory=set)
     unparsed_expected: bool = False
+    stale_markers: bool = False
 
     def exclusion_reason(self) -> Optional[str]:
         if self.load_with_nhcb:
             return "load_with_nhcb"
         if self.native_histogram:
             return "native_histogram_expected_or_loaded"
+        if self.stale_markers:
+            return "stale_marker"
         if self.expect_string is not None:
             return "string_literal"
         if self.expect_range_vector:
@@ -464,6 +467,16 @@ def parse_test_file(path: Path) -> list[Scenario]:
         pending_eval.load_with_nhcb = current.load_with_nhcb
         if any(s.native_histogram for s in pending_eval.expected_series):
             pending_eval.native_histogram = True
+        pending_eval.stale_markers = any(
+            sample.stale
+            for block in current.loads
+            for series in block.series
+            for sample in series.samples
+        ) or any(
+            sample.stale
+            for series in pending_eval.expected_series
+            for sample in series.samples
+        )
         current.evals.append(pending_eval)
         pending_eval = None
 
@@ -920,6 +933,7 @@ def classify_eval(case: EvalCase) -> Optional[str]:
         "expect_fail_diagnostic",
         "annotation_assertion",
         "start_timestamp",
+        "stale_marker",
     }:
         return "excluded_assertion"
     return None
