@@ -281,6 +281,292 @@ def test_download_shard_isolates_failures():
         fpr.download_url = original
 
 
+def test_shard_partition_distinguishes_abstained_from_never_run():
+    import json as _json
+
+    base = "https://s3.amazonaws.com/clickhouse-test-reports"
+    metrics = (
+        f"{base}/PRs/1/deadbeef/pr/"
+        "performance_comparison_arm_release_master_head_1_6/all-query-metrics.tsv"
+    )
+
+    def shard_row(n, status, links):
+        return {
+            "name": f"Performance Comparison (arm_release, master_head, {n}/6)",
+            "status": status,
+            "info": "",
+            "links": links,
+        }
+
+    body = _json.dumps({
+        "results": [
+            shard_row(1, "SKIPPED", [metrics]),   # abstained: measured, no verdict
+            shard_row(2, "SKIPPED", []),          # never ran: no artifacts at all
+            shard_row(3, "OK", [metrics]),        # judged normally
+        ]
+    })
+
+    saved = fpr.fetch_url
+    try:
+        fpr.fetch_url = lambda url: body
+        shards = fpr.get_performance_shards(base, 1, "deadbeef")
+    finally:
+        fpr.fetch_url = saved
+
+    assert len(shards) == 3, shards
+    a, b, c = shards
+    assert [s["has_metrics_artifact"] for s in shards] == [True, False, True], shards
+    # The published link is used as is; only the shard with no artifact gets the
+    # synthesized fallback URL.
+    assert a["tsv_url"] == metrics, a
+    assert b["tsv_url"].endswith("/all-query-metrics.tsv") and b["tsv_url"] != metrics, b
+
+    assert fpr.shard_abstained(a) and not fpr.shard_never_ran(a)
+    assert fpr.shard_never_ran(b) and not fpr.shard_abstained(b)
+    assert not fpr.shard_abstained(c) and not fpr.shard_never_ran(c)
+
+    # Mutation control: with the pre-fix predicate (status alone), the abstaining
+    # shard is classified as never-run and dropped before download. This arm
+    # reddens if the artifact term is ever removed.
+    def never_ran_pre_fix(shard):
+        return str(shard.get("status", "")).upper() == "SKIPPED"
+
+    assert never_ran_pre_fix(a), a
+    assert [s["name"] for s in shards if not never_ran_pre_fix(s)] == [c["name"]]
+    assert [s["name"] for s in shards if not fpr.shard_never_ran(s)] == [
+        a["name"], c["name"]
+    ]
+
+
+def test_output_discloses_unjudged_shards():
+    # An abstaining shard scores zero on every count, so both output paths would
+    # otherwise render it exactly like a shard that measured and found nothing.
+    import contextlib as _cl
+    import io as _io
+    import json as _json
+
+    rows = [
+        {"name": "Performance Comparison (arm_release, master_head, 1/6)",
+         "faster": 0, "slower": 0, "unstable": 0, "total": 137},
+        {"name": "Performance Comparison (arm_release, master_head, 2/6)",
+         "faster": 0, "slower": 0, "unstable": 0, "total": 141},
+    ]
+    abstained, judged = rows[0]["name"], rows[1]["name"]
+    # The icon assertions below are only about the icon if no name carries "OK".
+    assert "OK" not in abstained and "OK" not in judged
+
+    def capture(fn, *args):
+        buf = _io.StringIO()
+        with _cl.redirect_stdout(buf):
+            fn(*args)
+        return buf.getvalue()
+
+    def line_for(text, name):
+        hits = [ln for ln in text.splitlines() if name in ln]
+        assert len(hits) == 1, (name, hits)
+        return hits[0]
+
+    human = capture(fpr.output_human, rows, [], 121189, "client_time", True,
+                    {abstained}, set())
+    assert "not judged" in line_for(human, abstained)
+    assert "OK" not in line_for(human, abstained)
+    assert "OK" in line_for(human, judged), line_for(human, judged)
+    assert "no changes" in line_for(human, judged)
+    assert "No significant performance changes detected." not in human
+    assert "not a clean comparison" in human
+
+    # Mutation control: an empty not_judged set is the pre-fix state, and it must
+    # bring every claim the fix removed back, so dropping any one of the three
+    # output changes reddens this arm.
+    pre_human = capture(fpr.output_human, rows, [], 121189, "client_time", True,
+                        set(), set())
+    assert "OK" in line_for(pre_human, abstained)
+    assert "no changes" in line_for(pre_human, abstained)
+    assert "No significant performance changes detected." in pre_human
+    assert human != pre_human
+
+    js = _json.loads(capture(fpr.output_json, rows, [], 121189, "deadbeef",
+                             "client_time", {abstained}, set()))
+    pre_js = _json.loads(capture(fpr.output_json, rows, [], 121189, "deadbeef",
+                                 "client_time", set(), set()))
+    assert [s["not_judged"] for s in js["shards"]] == [True, False], js
+    assert [s["not_judged"] for s in pre_js["shards"]] == [False, False], pre_js
+    assert js != pre_js
+
+
+def test_detail_rows_disclose_unjudged_shards():
+    # Under --all the display filter is empty, so an abstaining shard's own rows
+    # reach the detail list. Its inf bars leave is_changed and is_unstable false,
+    # which is the shape that used to be filed under "unchanged" -- a verdict
+    # those rows never got -- directly below that shard's own "not judged" line.
+    import contextlib as _cl
+    import io as _io
+    import json as _json
+
+    SEP = "-" * 90
+
+    def detail_row(shard_num, test):
+        # diff is large while both flags are false: exactly what inf bars produce
+        # (the bars, not stat_threshold, are what abstention sets to inf).
+        return {
+            "test": test, "query_index": 0,
+            "arch": "arm", "shard": shard_num,
+            "old": 1.0, "new": 2.0, "diff": 1.0,
+            "times_change": 2.0, "stat_threshold": 0.05,
+            "is_changed": 0, "is_unstable": 0,
+            "direction": "slower", "query": f"SELECT {test}",
+        }
+
+    abstaining_row = detail_row(1, "test_abstained")
+    detail_rows = [abstaining_row, detail_row(2, "test_judged")]
+    summary = [
+        {"name": "Performance Comparison (arm_release, master_head, 1/6)",
+         "faster": 0, "slower": 0, "unstable": 0, "total": 1},
+        {"name": "Performance Comparison (arm_release, master_head, 2/6)",
+         "faster": 0, "slower": 0, "unstable": 0, "total": 1},
+    ]
+    abstained_name = summary[0]["name"]
+    keys = {("arm", 1)}
+
+    def capture(fn, *args):
+        buf = _io.StringIO()
+        with _cl.redirect_stdout(buf):
+            fn(*args)
+        return buf.getvalue()
+
+    def section_of(text, needle):
+        """Heading of the section the one line containing `needle` sits in.
+
+        Every section heading is printed sandwiched between two dashed rules,
+        which no other line is.
+        """
+        lines = text.splitlines()
+        heading, found = "(preamble)", None
+        for i, ln in enumerate(lines):
+            if 0 < i < len(lines) - 1 and lines[i - 1] == SEP and lines[i + 1] == SEP:
+                heading = ln
+            if needle in ln:
+                assert found is None, (needle, found, ln)
+                found = heading
+        assert found is not None, (needle, text)
+        return found
+
+    # A1 -- mixed run: the unjudged row is quarantined and, with detail rows
+    # present, the disclosure sentence still prints.
+    assert detail_rows, "the bug needs a non-empty detail list"
+    human = capture(fpr.output_human, summary, detail_rows, 121189, "client_time",
+                    True, {abstained_name}, keys)
+    assert section_of(human, "test_abstained").startswith("NOT JUDGED"), human
+    assert section_of(human, "test_judged").startswith("ALL QUERIES"), human
+    assert "ALL QUERIES (1 unchanged)" in human, human
+    assert "not a clean comparison" in human, human
+
+    # A2 -- reversal control: without the key set both rows are labelled
+    # "unchanged" and the sentence is gone, so dropping either fix reddens here.
+    pre_human = capture(fpr.output_human, summary, detail_rows, 121189,
+                        "client_time", True, set(), set())
+    assert "NOT JUDGED" not in pre_human, pre_human
+    assert "ALL QUERIES (2 unchanged)" in pre_human, pre_human
+    assert section_of(pre_human, "test_abstained").startswith("ALL QUERIES"), pre_human
+    assert "not a clean comparison" not in pre_human, pre_human
+    assert human != pre_human
+
+    # A3 -- the key built from a real shard dict must equal the key built from a
+    # detail row for that shard: a silent str/int mismatch would make the
+    # partition inert while A1/A2 still passed on hand-made data.
+    base = "https://s3.amazonaws.com/clickhouse-test-reports"
+    metrics = (
+        f"{base}/PRs/1/deadbeef/pr/"
+        "performance_comparison_arm_release_master_head_1_6/all-query-metrics.tsv"
+    )
+    body = _json.dumps({"results": [{
+        "name": abstained_name, "status": "SKIPPED", "info": "",
+        "links": [metrics],
+    }]})
+    saved = fpr.fetch_url
+    try:
+        fpr.fetch_url = lambda url: body
+        shard = fpr.get_performance_shards(base, 1, "deadbeef")[0]
+    finally:
+        fpr.fetch_url = saved
+    assert fpr.shard_abstained(shard), shard
+    assert isinstance(shard["arch"], str) and isinstance(shard["shard_num"], int), shard
+    assert (shard["arch"], shard["shard_num"]) == (
+        abstaining_row["arch"], abstaining_row["shard"]
+    ), (shard, abstaining_row)
+    assert (abstaining_row["arch"], abstaining_row["shard"]) in keys
+
+    # A4 -- json: the marker follows the same key set, and the row's own fields
+    # survive the rewrite.
+    js = _json.loads(capture(fpr.output_json, summary, detail_rows, 121189,
+                             "deadbeef", "client_time", {abstained_name}, keys))
+    pre_js = _json.loads(capture(fpr.output_json, summary, detail_rows, 121189,
+                                 "deadbeef", "client_time", set(), set()))
+    by_test = {q["test"]: q for q in js["queries"]}
+    assert by_test["test_abstained"]["not_judged"] is True, js
+    assert by_test["test_judged"]["not_judged"] is False, js
+    assert by_test["test_abstained"]["diff"] == 1.0, js
+    assert [q["not_judged"] for q in pre_js["queries"]] == [False, False], pre_js
+    assert js != pre_js
+
+    # A5 -- a genuinely clean run keeps its own sentence.
+    clean = capture(fpr.output_human, summary, [], 121189, "client_time", True,
+                    set(), set())
+    assert "No significant performance changes detected." in clean, clean
+    assert "NOT JUDGED" not in clean and "not a clean comparison" not in clean, clean
+
+
+def test_tsv_rows_carry_the_abstention_marker():
+    # --tsv has no shard-level summary line, so an abstaining shard's rows shipped
+    # is_changed=0 and is_unstable=0 and nothing else: each row asserting a verdict
+    # it never got. The marker column is what lets the row say otherwise. This arm
+    # asserts on the SQL text, so it needs no clickhouse binary.
+    args = _args()
+    data_path = "/tmp/never-read-only-interpolated.tsv"
+
+    def column_of(sql):
+        """Text between the last stable column and FROM: the new column alone."""
+        assert "query_display_name AS query" in sql, sql
+        tail = sql.split("query_display_name AS query", 1)[1]
+        assert "FROM filtered" in tail, sql
+        return tail.split("FROM filtered", 1)[0]
+
+    tsv = fpr.build_detail_sql(args, data_path, has_thresholds=True,
+                               fmt="TabSeparatedWithNames",
+                               not_judged_keys={("arm", 1)})
+    assert tsv.count("AS not_judged") == 1, tsv
+    assert "FORMAT TabSeparatedWithNames" in tsv, tsv
+    # The marker follows query_display_name, so the published column order is
+    # unchanged and a positional reader of the older columns keeps working.
+    col = column_of(tsv)
+    assert "AS not_judged" in col, tsv
+    assert "arch = 'arm'" in col and "shard_num = 1" in col, col
+
+    # Reversal control: the marker is absent when no shard abstained, so this arm
+    # cannot pass vacuously on a build that always projects the column.
+    plain_tsv = fpr.build_detail_sql(args, data_path, has_thresholds=True,
+                                     fmt="TabSeparatedWithNames",
+                                     not_judged_keys=None)
+    assert "not_judged" not in plain_tsv, plain_tsv
+    assert plain_tsv != tsv
+
+    # The JSON and human paths call the three-argument form and must stay
+    # byte-identical: they carry the abstention on the key set instead.
+    js = fpr.build_detail_sql(args, data_path, has_thresholds=True)
+    assert "not_judged" not in js, js
+    assert "FORMAT JSONEachRow" in js, js
+
+    # Two abstaining shards must both be matched. With AND between the disjuncts
+    # the predicate is unsatisfiable and every row reads "judged" again.
+    two = fpr.build_detail_sql(args, data_path, has_thresholds=True,
+                               fmt="TabSeparatedWithNames",
+                               not_judged_keys={("arm", 1), ("amd", 2)})
+    col2 = column_of(two)
+    assert "(arch = 'arm' AND shard_num = 1)" in col2, col2
+    assert "(arch = 'amd' AND shard_num = 2)" in col2, col2
+    assert col2.count(" OR ") == 1, col2
+
+
 if __name__ == "__main__":
     test_classification_matches_compare_sh()
     test_summary_counts()
@@ -290,4 +576,8 @@ if __name__ == "__main__":
     test_stream_to_file_zstd_cli_times_out()
     test_prefixed_reader_reassembles_stream()
     test_download_shard_isolates_failures()
+    test_shard_partition_distinguishes_abstained_from_never_run()
+    test_output_discloses_unjudged_shards()
+    test_detail_rows_disclose_unjudged_shards()
+    test_tsv_rows_carry_the_abstention_marker()
     print("All fetch_perf_report tests passed (or skipped).")

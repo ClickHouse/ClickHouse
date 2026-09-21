@@ -14,9 +14,12 @@ skill:
 
 1. Looks up the PR for the commit (via `gh api`).
 2. Detects the local machine's architecture (`amd` / `arm`).
-3. Discards shards CI did not run (`SKIPPED`, `PENDING`, `RUNNING`,
-   `DROPPED`) — they publish no artifacts, so a synthesized report URL only
-   returns HTTP 403. If *no* shard ran, the skill stops with an error rather
+3. Discards shards CI did not run (`PENDING`, `RUNNING`, `DROPPED`, and
+   `SKIPPED` with no published artifacts) — they publish no artifacts, so a
+   synthesized report URL only returns HTTP 403. A `SKIPPED` shard that did
+   publish its metrics abstained: it measured every query and judged none, so
+   it is counted apart and the comparison is never called clean while one is
+   present. If *no* shard ran, the skill stops with an error rather
    than reporting "no changes": "CI never ran the comparison" and "CI ran it
    and found nothing" are different answers, and only the second is a
    verdict. It stops the same way when shards ran but none of their reports
@@ -24,8 +27,8 @@ skill:
    the readable ones happened to be clean: a missing report contributes no
    changed queries, exactly like a shard that had none, so "clean" would be a
    claim about a part of the comparison nobody looked at. When there are
-   changes to rerun, an unreadable shard instead marks the run `INCOMPLETE`
-   in the report and makes the exit code non-zero.
+   changes to rerun, an unreadable or unjudged shard instead marks the run
+   `INCOMPLETE` in the report and makes the exit code non-zero.
    It also stops when any shard carries a baseline other than `master_head`
    — see the `release_base` limitation below.
 4. For each remaining perf shard, fetches `report.html` and extracts the rows in the

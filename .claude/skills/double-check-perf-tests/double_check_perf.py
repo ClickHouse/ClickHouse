@@ -275,6 +275,7 @@ class PerfShard:
     tsv_url: str
     base_dir_url: str  # URL prefix where report.html, all-queries.html live
     status: str
+    has_metrics_artifact: bool
 
 
 def normalize_job_name(name: str) -> str:
@@ -286,8 +287,21 @@ def normalize_job_name(name: str) -> str:
 
 # praktika statuses (ci/praktika/result.py) that mean the shard published no
 # artifacts. Everything else -- including FAIL and ERROR -- normally still
-# uploads a report, so those shards are kept and simply read.
+# uploads a report, so those shards are kept and simply read. SKIPPED is decided
+# per shard by its artifacts: the perf job also reports it when it abstained.
 NOT_RUN_STATUSES = {"SKIPPED", "PENDING", "RUNNING", "DROPPED"}
+
+
+def shard_abstained(shard: "PerfShard") -> bool:
+    """A shard that measured every query and judged none of them: the perf job
+    reports SKIPPED when it obtained no learned per-query thresholds at all, and
+    it still publishes its metrics artifact."""
+    return shard.status.upper() == "SKIPPED" and shard.has_metrics_artifact
+
+
+def shard_never_ran(shard: "PerfShard") -> bool:
+    return shard.status.upper() in NOT_RUN_STATUSES and not shard_abstained(shard)
+
 
 # The only baseline this tool can reproduce. CI runs a second flavour of the
 # comparison, `release_base`, which measures against the latest release build
@@ -331,6 +345,10 @@ def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
                         if isinstance(link, str) and "all-query-metrics.tsv" in link:
                             tsv_link = link
                             break
+                    # praktika uploads a job's attached files and records their
+                    # links whatever its status, so a published metrics artifact
+                    # means this shard measured the commit.
+                    has_metrics_artifact = tsv_link is not None
                     if not tsv_link:
                         tsv_link = f"{base_dir}/all-query-metrics.tsv"
 
@@ -344,6 +362,7 @@ def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
                             tsv_url=tsv_link,
                             base_dir_url=base_dir,
                             status=r.get("status", "unknown"),
+                            has_metrics_artifact=has_metrics_artifact,
                         )
                     )
             if r.get("results"):
@@ -2129,6 +2148,7 @@ def print_report(
     local_arch: str,
     failed_tests: Optional[dict[str, int]] = None,
     unreadable: Optional[list[tuple[str, int, int, str]]] = None,
+    abstained_shards: int = 0,
     local_arch_measured: bool = True,
     errored_tests: Optional[set[str]] = None,
 ) -> None:
@@ -2288,6 +2308,12 @@ def print_report(
             f"INCOMPLETE: {len(unreadable)} shard report(s) could not be read "
             f"({describe_unreadable(unreadable)}). Queries those shards flagged "
             "are missing from this table, so it is not the whole comparison."
+        )
+    if abstained_shards:
+        print(
+            f"INCOMPLETE: {abstained_shards} shard(s) measured every query but "
+            "judged none (the gate abstained), so whatever they would have "
+            "flagged is missing from this table."
         )
     if split_arch:
         print(
@@ -2471,9 +2497,19 @@ def main() -> int:
     # just 403. Treating that as "CI found no changes" is the difference
     # between "the comparison ran and was clean" and "the comparison never
     # ran" — the tool exists to tell CI's verdict, so it must not invent one.
-    not_run = [s for s in shards if s.status.upper() in NOT_RUN_STATUSES]
-    shards = [s for s in shards if s.status.upper() not in NOT_RUN_STATUSES]
+    not_run = [s for s in shards if shard_never_ran(s)]
+    abstained = [s for s in shards if shard_abstained(s)]
+    shards = [s for s in shards if not shard_never_ran(s) and not shard_abstained(s)]
     if not shards:
+        if abstained:
+            die(
+                f"all {len(abstained) + len(not_run)} Performance Comparison "
+                f"shard(s) for {pr_sha[:12]} published no verdict: "
+                f"{len(abstained)} measured every query and judged none of them "
+                "(the learned per-query thresholds were missing, so the gate "
+                "abstained), so CI has no verdict to double-check. The "
+                "measurements are in each shard's all-query-metrics.tsv."
+            )
         statuses = ", ".join(
             f"{st} x{n}" for st, n in sorted(
                 Counter(s.status for s in not_run).items()
@@ -2488,6 +2524,11 @@ def main() -> int:
         )
     if not_run:
         log(f"ignoring {len(not_run)} shard(s) that did not run")
+    if abstained:
+        log(
+            f"ignoring {len(abstained)} shard(s) that measured every query but "
+            "judged none (the gate abstained)"
+        )
 
     # See SUPPORTED_BASELINE: a `release_base` shard compares a different pair
     # of binaries over a different tests tree, and merging its rows into the
@@ -2641,6 +2682,17 @@ def main() -> int:
                 "contributes no changed queries, exactly like a shard that had "
                 "none, so calling the comparison clean here would be a claim "
                 "about the part of it that was never inspected."
+            )
+        if abstained:
+            die(
+                f"CI flagged no 'Changes in Performance' in the "
+                f"{local_read + other_read} shard report(s) that could be read, "
+                f"but {len(abstained)} shard(s) measured every query and judged "
+                "none of them (the learned per-query thresholds were missing, so "
+                "the gate abstained). It is dropped here because it produced no "
+                "verdict to check, not because it measured nothing, so calling "
+                "the comparison clean here would be a claim about the part of "
+                "it that CI never judged."
             )
         log(
             f"CI flagged no 'Changes in Performance' in the "
@@ -2958,7 +3010,8 @@ def main() -> int:
                 local_results[(test, qi)] = d
 
         print_report(changed, local_results, perf_arch, failed_tests,
-                     unreadable, local_arch_measured=bool(arch_shards),
+                     unreadable, abstained_shards=len(abstained),
+                     local_arch_measured=bool(arch_shards),
                      errored_tests=errored_tests)
         # JSON dump for downstream use
         json_path = work_dir / "result.json"
@@ -2977,6 +3030,10 @@ def main() -> int:
                         {"arch": a, "shard": n, "of": t, "error": e}
                         for a, n, t, e in unreadable
                     ],
+                    "abstained_shards": [
+                        {"arch": s.arch, "shard": s.shard_num, "of": s.total_shards}
+                        for s in abstained
+                    ],
                     "local": {
                         f"{k[0]}#{k[1]}": v for k, v in local_results.items()
                     },
@@ -2985,9 +3042,10 @@ def main() -> int:
             )
         )
         log(f"wrote {json_path}")
-        if failed_tests or errored_tests or unreadable:
-            # An unreadable shard leaves part of the comparison uninspected;
-            # a zero exit would read as "all of CI's findings were checked".
+        if failed_tests or errored_tests or unreadable or abstained:
+            # An unreadable shard leaves part of the comparison uninspected, an
+            # abstaining one leaves it unjudged; a zero exit would read as
+            # "all of CI's findings were checked".
             exit_code = 1
     finally:
         stop_server(right_h)

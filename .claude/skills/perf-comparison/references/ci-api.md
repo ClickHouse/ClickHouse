@@ -81,7 +81,7 @@ When available, raw `all-query-metrics.tsv` / `fetch_perf_report.py --tsv` outpu
 - `test`,
 - `query_index`,
 - query display text,
-- and, in `fetch_perf_report.py --tsv`, `arch`, `shard`, `is_changed`, `is_unstable`, `direction`.
+- and, in `fetch_perf_report.py --tsv`, `arch`, `shard`, `is_changed`, `is_unstable`, `direction`, `not_judged`.
 
 Use this helper only when dashboard/API cannot provide required artifact-level data. It supports both named TSV output from `fetch_perf_report.py --tsv` and headerless raw `all-query-metrics.tsv` rows with the current CI column order.
 

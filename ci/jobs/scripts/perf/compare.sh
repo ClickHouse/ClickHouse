@@ -11,6 +11,15 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # The server resolves a relative user_files_path against the resolved --path, not against the cwd.
 perf_wd="$(pwd -P)"
 
+# performance_tests.py writes this when it obtained no learned per-query
+# thresholds at all, so no query in this shard has a bar of its own.
+# Normally absent.
+abstain_all=0
+if [ -e historical-thresholds-missing.flag ]
+then
+    abstain_all=1
+fi
+
 # upstream/master
 LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
@@ -931,6 +940,7 @@ create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.t
         and abs(diff) > ceil(greatest(0.15, historical_thresholds.max_diff,
             test_thresholds.report_threshold), 2)
         and abs(diff) >= stat_threshold
+        and $abstain_all = 0
     order by test, query_index
     ;
 " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
@@ -1169,6 +1179,13 @@ function report
 rm -r report ||:
 mkdir report report/tmp ||:
 
+# A later stage may read this report without rebuilding it, so whether anything
+# was judged has to be recorded in the report itself.
+if [ "$abstain_all" = 1 ]
+then
+    touch report/not-judged
+fi
+
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv all-queries.tsv run-errors.tsv ||:
 
 cat analyze/errors.log >> report/errors.log ||:
@@ -1264,13 +1281,15 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         -- it stays visible) when the confirmation rerun after a server restart
         -- did not reproduce it.
         abs(diff) > changed_threshold        and abs(diff) >= stat_threshold
+            and $abstain_all = 0
             and ((query_metric_stats.test, query_metric_stats.query_index) not in
                 (select test, query_index from unconfirmed_queries)) as changed_fail,
         abs(diff) > changed_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
-        -- Demoted queries are excluded here too: a demotion must not resurface
-        -- as an 'unstable' failure through the flipped changed_fail.
+        -- Demoted and unjudged queries are excluded here too: a demotion must not
+        -- resurface as an 'unstable' failure through the flipped changed_fail.
         not changed_fail and stat_threshold > unstable_threshold
+            and $abstain_all = 0
             and ((query_metric_stats.test, query_metric_stats.query_index) not in
                 (select test, query_index from unconfirmed_queries)) as unstable_fail,
         not changed_show and stat_threshold > unstable_threshold - 0.05 as unstable_show,
@@ -1348,9 +1367,11 @@ create view test_speedup as
                 (select test, query_index from unconfirmed_queries)), 0)) times_speedup,
         count(*) queries,
         unstable + changed bad,
-        sum(changed_show and ((queries.test, queries.query_index) not in
+        sum(changed_show and $abstain_all = 0
+            and ((queries.test, queries.query_index) not in
             (select test, query_index from unconfirmed_queries))) changed,
-        sum(unstable_show and ((queries.test, queries.query_index) not in
+        sum(unstable_show and $abstain_all = 0
+            and ((queries.test, queries.query_index) not in
             (select test, query_index from unconfirmed_queries))) unstable
     from queries
     group by test
@@ -1547,9 +1568,9 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     ;
 
 -- new report for all queries with all metrics (no page yet)
--- The trailing changed_threshold/unstable_threshold columns are the per-query
--- thresholds computed in report_thresholds above (the 0.15/0.25 floors raised
--- by historical and per-test thresholds). They are exported so downstream
+-- The trailing changed_threshold/unstable_threshold columns are the effective
+-- per-query bars the gate applied: the floors raised by historical and per-test
+-- thresholds, or inf where it applied none. They are exported so downstream
 -- consumers (e.g. .claude/tools/fetch_perf_report.py) can classify queries
 -- with the same effective thresholds as the CI gate instead of only the floor
 -- constants. They are appended at the end to keep the existing column
@@ -1560,8 +1581,8 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
         stat_threshold,
         query_metric_stats.test test, query_metric_stats.query_index query_index,
         query_display_names.query_display_name query_display_name,
-        report_thresholds.changed_threshold changed_threshold,
-        report_thresholds.unstable_threshold unstable_threshold
+        $abstain_all = 1 ? inf : report_thresholds.changed_threshold changed_threshold,
+        $abstain_all = 1 ? inf : report_thresholds.unstable_threshold unstable_threshold
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
@@ -1951,6 +1972,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv.tmp')
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
                 multiIf(
+                    $abstain_all = 1, 'SKIPPED',
                     changed_fail != 0 and diff > 0, 'slower',
                     unstable_fail != 0, 'unstable',
                     'success'

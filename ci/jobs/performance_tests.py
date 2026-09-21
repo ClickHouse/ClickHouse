@@ -1806,12 +1806,12 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
 
     The walk stops - rather than skipping to an older commit - as soon as a
     predecessor is found whose result cannot be used as a baseline: a
-    transport failure, a malformed body, a non-summary message (errors,
-    sentinels like "No status in report."), a run measured against a different
-    release baseline, or a run that was scheduled but has no result yet
-    (`MASTER_RUN_INCOMPLETE`). Skipping such a commit would silently compare
-    the current run against an older one, so red would no longer blame the
-    commit that introduced the regression.
+    transport failure, a malformed body, a run that judged nothing (`SKIPPED`),
+    a non-summary message (errors, sentinels like "No status in report."), a run
+    measured against a different release baseline, or a run that was scheduled
+    but has no result yet (`MASTER_RUN_INCOMPLETE`). Skipping such a commit
+    would silently compare the current run against an older one, so red would no
+    longer blame the commit that introduced the regression.
 
     `commits` on master runs is `master_track_commits_sha`, the first-parent
     chain of master recorded by the `store_data` hook. A missing result on that
@@ -1831,9 +1831,16 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
         if state == FETCH_ERROR:
             return None, None
         try:
-            prev_message = json.loads(out).get("info", "")
+            prev_result = json.loads(out)
+            prev_status = prev_result.get("status")
+            prev_message = prev_result.get("info", "") or ""
         except Exception:
             print(f"WARNING: failed to parse previous run result [{link}]")
+            return None, None
+        # A shard that abstained measured everything and judged nothing, so its
+        # zero is not a count a delta can be taken against.
+        if prev_status == Result.Status.SKIPPED:
+            print(f"WARNING: previous run {sha} was not judged, no usable baseline")
             return None, None
         prev_message = prev_message.lower()
         if not prev_message or not is_perf_summary_message(prev_message):
@@ -2243,6 +2250,10 @@ def main():
                 f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
 
+    # The marker belongs to one fetch attempt, and the block below is not stage
+    # guarded, so a re-entry that succeeds must not inherit an earlier abstention.
+    Shell.check(f"rm -f {perf_wd}/historical-thresholds-missing.flag", verbose=True)
+
     if res and not info.is_local_run:
 
         def prepare_historical_data():
@@ -2255,12 +2266,14 @@ def main():
                 )
                 info.add_workflow_warning(
                     "Performance comparison: CIDB was not reachable, so the learned "
-                    "per-query thresholds are missing. Every query is judged against the "
-                    "0.15/0.25 floors instead, so historically noisy queries can be "
-                    "reported as changed."
+                    "per-query thresholds are missing. No query in this shard is judged "
+                    "against a threshold of its own, so the check reports SKIPPED "
+                    "unless something else fails it."
                 )
                 Shell.check(
-                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                    f"touch {perf_wd}/historical-thresholds.tsv "
+                    f"{perf_wd}/historical-thresholds-missing.flag",
+                    verbose=True,
                 )
                 return True
             result = cidb.do_select_query(
@@ -2274,11 +2287,14 @@ def main():
                 )
                 info.add_workflow_warning(
                     "Performance comparison: failed to fetch the learned per-query "
-                    "thresholds. Every query is judged against the 0.15/0.25 floors "
-                    "instead, so historically noisy queries can be reported as changed."
+                    "thresholds. No query in this shard is judged against a threshold "
+                    "of its own, so the check reports SKIPPED unless something else "
+                    "fails it."
                 )
                 Shell.check(
-                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                    f"touch {perf_wd}/historical-thresholds.tsv "
+                    f"{perf_wd}/historical-thresholds-missing.flag",
+                    verbose=True,
                 )
                 return True
             with open(
@@ -2724,6 +2740,10 @@ def main():
             )
         )
 
+    # REPORT and CHECK_RESULTS are separate stages and the fetch above is not
+    # stage guarded, so only the report itself can say whether it judged anything.
+    report_not_judged = Path(f"{perf_wd}/report/not-judged").is_file()
+
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
@@ -2819,6 +2839,9 @@ def main():
         elif not message:
             status = Result.Status.FAIL
             message = "No message in report."
+        if report_not_judged and status == Result.Status.OK:
+            status = Result.Status.SKIPPED
+            message += "; not judged: the learned per-query thresholds are missing"
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
         check_sub_results = build_dashboard_results_children(dashboard_regressions)
@@ -2874,6 +2897,8 @@ def main():
         files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
         info=message,
     )
+    if report_not_judged and result.status == Result.Status.OK:
+        result.set_status(Result.Status.SKIPPED)
     if info.pr_number:
         dashboard_link = f"{PERF_DASHBOARD_URL}/runs?q={info.pr_number}"
     else:
@@ -2885,7 +2910,7 @@ def main():
         link=dashboard_link,
         hint="Combined performance dashboard for this run (all shards, amd + arm)",
     )
-    result.complete_job()
+    result.complete_job(do_not_cache=report_not_judged)
 
 
 if __name__ == "__main__":

@@ -332,6 +332,10 @@ def get_performance_shards(base_url, pr_number, sha):
                             tsv_link = link
                             break
 
+                    # praktika uploads a job's attached files and records their
+                    # links whatever its status, so a published metrics artifact
+                    # means this shard measured the commit.
+                    has_metrics_artifact = tsv_link is not None
                     if not tsv_link:
                         # Fallback only: sub-result artifacts are uploaded under the workflow
                         # segment plus the normalized sub-result row name (see
@@ -349,12 +353,29 @@ def get_performance_shards(base_url, pr_number, sha):
                         "status": r.get("status", "unknown"),
                         "info": r.get("info", ""),
                         "tsv_url": tsv_link,
+                        "has_metrics_artifact": has_metrics_artifact,
                     })
             if r.get("results"):
                 walk(r["results"])
 
     walk(pr_json.get("results"))
     return shards
+
+
+def shard_abstained(shard):
+    """SKIPPED with a published metrics artifact: the perf gate measured every
+    query and judged none (no learned per-query thresholds were fetched)."""
+    return (
+        str(shard.get("status", "")).upper() == "SKIPPED"
+        and bool(shard.get("has_metrics_artifact"))
+    )
+
+
+def shard_never_ran(shard):
+    return (
+        str(shard.get("status", "")).upper() == "SKIPPED"
+        and not shard.get("has_metrics_artifact")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +541,8 @@ def build_summary_sql(args, shard_meta, data_path, has_thresholds):
     """
 
 
-def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow"):
+def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow",
+                     not_judged_keys=None):
     """Build SQL for per-query detail rows."""
     base_cte = _build_base_cte(args, data_path, has_thresholds)
 
@@ -533,6 +555,17 @@ def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow"):
     sort_clause = sort_map.get(args.sort, "abs(diff) DESC")
 
     display_filter = "" if args.show_all else "WHERE is_changed OR is_unstable"
+
+    # --tsv has no shard-level line to carry the abstention, so the marker rides
+    # on the row. Absent for the JSON and human paths, which key on the set.
+    if not_judged_keys:
+        pairs = " OR ".join(
+            f"(arch = '{_sql_escape(a)}' AND shard_num = {int(n)})"
+            for a, n in sorted(not_judged_keys)
+        )
+        not_judged_col = f",\n        ({pairs}) AS not_judged"
+    else:
+        not_judged_col = ""
 
     return f"""
     WITH {base_cte}
@@ -549,7 +582,7 @@ def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow"):
         is_changed,
         is_unstable,
         direction,
-        query_display_name AS query
+        query_display_name AS query{not_judged_col}
     FROM filtered
     {display_filter}
     ORDER BY {sort_clause}
@@ -614,7 +647,8 @@ def parse_jsonl(text):
     return rows
 
 
-def output_json(summary_rows, detail_rows, pr_number, sha, metric):
+def output_json(summary_rows, detail_rows, pr_number, sha, metric, not_judged,
+                not_judged_keys):
     """Assemble and print the JSON output."""
     output = {
         "pr": pr_number,
@@ -627,21 +661,28 @@ def output_json(summary_rows, detail_rows, pr_number, sha, metric):
                 "slower": s["slower"],
                 "unstable": s["unstable"],
                 "total": s["total"],
+                "not_judged": s["name"] in not_judged,
             }
             for s in summary_rows
         ],
-        "queries": detail_rows,
+        "queries": [
+            {**q, "not_judged": (q["arch"], q["shard"]) in not_judged_keys}
+            for q in detail_rows
+        ],
     }
     print(json.dumps(output, indent=2))
 
 
-def output_tsv(args, data_path, has_thresholds):
+def output_tsv(args, data_path, has_thresholds, not_judged_keys):
     """Run the detail query with TabSeparatedWithNames format and print."""
-    sql = build_detail_sql(args, data_path, has_thresholds, fmt="TabSeparatedWithNames")
+    sql = build_detail_sql(args, data_path, has_thresholds,
+                           fmt="TabSeparatedWithNames",
+                           not_judged_keys=not_judged_keys)
     print(run_ch(sql), end="")
 
 
-def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard):
+def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard,
+                 not_judged, not_judged_keys):
     """Print human-readable output."""
     print("=" * 90)
     print(f"PERFORMANCE COMPARISON  PR #{pr_number}  (metric: {metric})")
@@ -653,7 +694,10 @@ def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard):
     for s in summary_rows:
         faster, slower, unstable, total = s["faster"], s["slower"], s["unstable"], s["total"]
 
-        status_icon = "WARN" if slower > 0 else "OK"
+        # Zero counts here mean "nothing was flagged", which for an abstaining
+        # shard is not the same as "nothing changed".
+        unjudged = s["name"] in not_judged
+        status_icon = "n/j" if unjudged else ("WARN" if slower > 0 else "OK")
         info_parts = []
         if faster > 0:
             info_parts.append(f"{faster} faster")
@@ -661,7 +705,9 @@ def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard):
             info_parts.append(f"{slower} slower")
         if unstable > 0:
             info_parts.append(f"{unstable} unstable")
-        if not info_parts:
+        if unjudged:
+            info_parts = ["not judged (no learned thresholds, so no query got a bar)"]
+        elif not info_parts:
             info_parts.append("no changes")
 
         print(f"[{status_icon:>4}] {s['name']}  -- {', '.join(info_parts)} ({total} queries)")
@@ -679,13 +725,24 @@ def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard):
     )
     print()
 
+    if not_judged:
+        print(
+            f"{len(not_judged)} shard(s) were not judged, so this is not a "
+            "clean comparison: no query in them was given a threshold."
+        )
+        print()
     if not detail_rows:
-        print("No significant performance changes detected.")
+        if not not_judged:
+            print("No significant performance changes detected.")
         return
 
-    changed = [r for r in detail_rows if r["is_changed"]]
-    unstable = [r for r in detail_rows if r["is_unstable"] and not r["is_changed"]]
-    unchanged = [r for r in detail_rows if not r["is_changed"] and not r["is_unstable"]]
+    unjudged_rows = [r for r in detail_rows
+                     if (r["arch"], r["shard"]) in not_judged_keys]
+    judged = [r for r in detail_rows
+              if (r["arch"], r["shard"]) not in not_judged_keys]
+    changed = [r for r in judged if r["is_changed"]]
+    unstable = [r for r in judged if r["is_unstable"] and not r["is_changed"]]
+    unchanged = [r for r in judged if not r["is_changed"] and not r["is_unstable"]]
 
     if changed:
         print("-" * 90)
@@ -740,6 +797,20 @@ def output_human(summary_rows, detail_rows, pr_number, metric, multi_shard):
         print("-" * 90)
         print()
         for q in unchanged:
+            diff = fmt_diff(q["diff"])
+            arch_tag = f" [{q['arch']}/{q['shard']}]" if multi_shard else ""
+            print(
+                f"    {diff:>8}  {fmt_seconds(q['old']):>8} -> {fmt_seconds(q['new']):>8}  "
+                f"{q['test']} #{q['query_index']}{arch_tag}"
+            )
+        print()
+
+    if unjudged_rows:
+        print("-" * 90)
+        print(f"NOT JUDGED ({len(unjudged_rows)} queries, no threshold was applied)")
+        print("-" * 90)
+        print()
+        for q in unjudged_rows:
             diff = fmt_diff(q["diff"])
             arch_tag = f" [{q['arch']}/{q['shard']}]" if multi_shard else ""
             print(
@@ -830,11 +901,13 @@ def main():
         sys.exit(1)
 
     # Jobs that didn't run (e.g. the amd perf comparison only runs on 'pr-performance' PRs) have no
-    # artifacts, so report them cleanly instead of attempting a download that 403s.
-    skipped = [s for s in shards if str(s.get("status", "")).upper() == "SKIPPED"]
-    for s in skipped:
+    # artifacts, so report them cleanly instead of attempting a download that 403s. A shard that
+    # abstained published its measurements and only withheld a verdict, so it is fetched and labelled.
+    for s in filter(shard_never_ran, shards):
         print(f"  Skipped: {s['name']} ({s.get('info') or 'not run'})", file=sys.stderr)
-    shards = [s for s in shards if str(s.get("status", "")).upper() != "SKIPPED"]
+    for s in filter(shard_abstained, shards):
+        print(f"  Not judged: {s['name']} ({s.get('info') or 'no verdict'})", file=sys.stderr)
+    shards = [s for s in shards if not shard_never_ran(s)]
 
     if not shards:
         # All matching jobs were intentionally skipped: no perf data to analyze, but not a
@@ -884,6 +957,12 @@ def main():
             {"name": s["name"], "arch": s["arch"], "shard_num": s["shard_num"]}
             for s, _ in downloaded
         ]
+        # An abstaining shard exports inf bars, so every count below is zero for
+        # it -- indistinguishable from a shard that measured and found nothing.
+        not_judged = {s["name"] for s, _ in downloaded if shard_abstained(s)}
+        not_judged_keys = {
+            (s["arch"], s["shard_num"]) for s, _ in downloaded if shard_abstained(s)
+        }
         multi_shard = len(downloaded) > 1
 
         # Detect whether the report carries the per-query threshold columns.
@@ -905,17 +984,20 @@ def main():
         summary_rows = parse_jsonl(run_ch(summary_sql))
 
         if args.tsv:
-            output_tsv(args, merged_path, has_thresholds)
+            output_tsv(args, merged_path, has_thresholds, not_judged_keys)
         elif args.json:
             detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
-            output_json(summary_rows, detail_rows, pr_number, sha, args.metric)
+            output_json(summary_rows, detail_rows, pr_number, sha, args.metric,
+                        not_judged, not_judged_keys)
         elif args.summary:
-            output_human(summary_rows, [], pr_number, args.metric, multi_shard)
+            output_human(summary_rows, [], pr_number, args.metric, multi_shard,
+                         not_judged, not_judged_keys)
         else:
             detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
-            output_human(summary_rows, detail_rows, pr_number, args.metric, multi_shard)
+            output_human(summary_rows, detail_rows, pr_number, args.metric,
+                         multi_shard, not_judged, not_judged_keys)
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
