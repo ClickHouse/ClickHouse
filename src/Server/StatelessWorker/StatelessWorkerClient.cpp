@@ -8,11 +8,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
-#include <Core/Field.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -25,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -50,6 +46,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("temp_path",   unique_temp_file_path);
+    /// Absent when nothing is collected, so an older worker sees the request it has always seen.
+    if (collectors.any())
+        uri.addQueryParameter("collect", collectors.toString());
 
     auto write_body_callback = [&task_serializer] (std::ostream & os)
     {
@@ -78,27 +77,14 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 
 
-String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto task_serializer = [task_description] (WriteBuffer & buf)
     {
         serializeTask(task_description, buf);
     };
 
-    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);
-}
-
-static UInt64 extractResponseVersion(ReadWriteBufferFromHTTP * in, const String & header_name, UInt64 fallback)
-{
-    for (const auto & header : in->getResponseHeaders())
-    {
-        const auto & name_and_value = header.safeGet<Tuple>();
-        /// HTTP header names are case-insensitive, so compare accordingly.
-        if (boost::iequals(name_and_value.at(0).safeGet<String>(), header_name))
-            return parse<UInt64>(name_and_value.at(1).safeGet<String>());
-    }
-    /// An old worker sends no header; fall back to what master serialized with.
-    return fallback;
+    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
 }
 
 /// Get task status by its id.
@@ -139,8 +125,6 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
-    uri.addQueryParameter("task_status_version", toString(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION));
-    uri.addQueryParameter("progress_version", toString(DBMS_TCP_PROTOCOL_VERSION));
 
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -150,14 +134,10 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         .withDelayInit(false)
         .create(creds);
 
-    /// The worker echoes the versions it serialized the status with (or none, if old worker).
-    auto task_version = extractResponseVersion(in.get(), "X-ClickHouse-Task-Status-Version",
-        getCommonTaskStatusVersion());
-    auto progress_version = extractResponseVersion(in.get(), "X-ClickHouse-Progress-Version",
-        getCommonProgressVersion());
-
     DistributedQueryTaskStatus result;
-    result.read(*in, task_version, progress_version);
+    result.read(*in);
+    /// Extensibility lives inside the payload list (unknown tags are skipped by length), so any
+    /// bytes after the end tag are a protocol violation, not a newer worker.
     if (!in->eof())
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Unexpected trailing data in stateless worker task status response for task {} ", task_id);
