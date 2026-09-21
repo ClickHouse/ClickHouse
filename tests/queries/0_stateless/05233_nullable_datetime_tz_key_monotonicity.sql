@@ -41,6 +41,24 @@ SELECT (SELECT count() FROM t_dt_lc_nullable WHERE toDayOfMonth(dt) = 31), (SELE
 SELECT (SELECT count() FROM t_dt64_nullable WHERE toDayOfMonth(dt) = 31), (SELECT countIf(toDayOfMonth(dt) = 31) FROM t_dt64_nullable);
 SELECT (SELECT count() FROM t_dt_plain WHERE toDayOfMonth(dt) = 31), (SELECT countIf(toDayOfMonth(dt) = 31) FROM t_dt_plain);
 
+-- `toDayOfWeek` goes through `IFunctionCustomWeek::getMonotonicityForRange` instead, whose factor
+-- transform is `toMonday` -- fine enough to misprune. These timestamps sit in one Monday-based week
+-- in UTC but in two different weeks in New York.
+INSERT INTO t_dt_nullable VALUES ('2024-01-07 23:30:00'), ('2024-01-08 00:30:00');
+INSERT INTO t_dt_lc_nullable VALUES ('2024-01-07 23:30:00'), ('2024-01-08 00:30:00');
+INSERT INTO t_dt64_nullable VALUES ('2024-01-07 23:30:00.000'), ('2024-01-08 00:30:00.000');
+INSERT INTO t_dt_plain VALUES ('2024-01-07 23:30:00'), ('2024-01-08 00:30:00');
+
+SELECT (SELECT count() FROM t_dt_nullable WHERE toDayOfWeek(dt) = 7), (SELECT countIf(toDayOfWeek(dt) = 7) FROM t_dt_nullable);
+SELECT (SELECT count() FROM t_dt_lc_nullable WHERE toDayOfWeek(dt) = 7), (SELECT countIf(toDayOfWeek(dt) = 7) FROM t_dt_lc_nullable);
+SELECT (SELECT count() FROM t_dt64_nullable WHERE toDayOfWeek(dt) = 7), (SELECT countIf(toDayOfWeek(dt) = 7) FROM t_dt64_nullable);
+SELECT (SELECT count() FROM t_dt_plain WHERE toDayOfWeek(dt) = 7), (SELECT countIf(toDayOfWeek(dt) = 7) FROM t_dt_plain);
+
+SELECT (SELECT count() FROM t_dt_nullable WHERE toDayOfWeek(dt) = 1), (SELECT countIf(toDayOfWeek(dt) = 1) FROM t_dt_nullable);
+SELECT (SELECT count() FROM t_dt_lc_nullable WHERE toDayOfWeek(dt) = 1), (SELECT countIf(toDayOfWeek(dt) = 1) FROM t_dt_lc_nullable);
+SELECT (SELECT count() FROM t_dt64_nullable WHERE toDayOfWeek(dt) = 1), (SELECT countIf(toDayOfWeek(dt) = 1) FROM t_dt64_nullable);
+SELECT (SELECT count() FROM t_dt_plain WHERE toDayOfWeek(dt) = 1), (SELECT countIf(toDayOfWeek(dt) = 1) FROM t_dt_plain);
+
 -- Pruning must still happen on a Nullable key. These timestamps are midday in New York, so UTC and
 -- New York agree on the day: the time zone the pruner picks cannot change the answer, which makes
 -- this arm a pure guard against a future "fix" that simply reports wrapped types as non-monotonic.

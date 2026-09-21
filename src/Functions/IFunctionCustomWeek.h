@@ -66,8 +66,16 @@ public:
 
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
 
-        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        /// This method is called only if the function has one argument, so there is no explicit time zone
+        /// argument to look at -- but the argument type itself may carry one. The time zone must be taken
+        /// from the unwrapped type: neither `DataTypeNullable` nor `DataTypeLowCardinality` is a
+        /// `TimezoneMixin`, so looking at the outer type would silently fall back to the session time zone
+        /// while execution uses the nested type's one (see `extractTimeZoneFromFunctionArguments`),
+        /// producing an inverted key range.
+        const DateLUTImpl * date_lut_ptr = &DateLUT::instance();
+        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
+            date_lut_ptr = &timezone->getTimeZone();
+        const DateLUTImpl & date_lut = *date_lut_ptr;
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
