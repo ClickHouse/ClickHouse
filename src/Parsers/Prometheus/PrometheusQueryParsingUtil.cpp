@@ -765,7 +765,7 @@ namespace
                 }
                 else
                 {
-                    *res_duration_ms = *parsed_ms;
+                    *res_duration_ms = parsed_ms;
                 }
             }
         }
