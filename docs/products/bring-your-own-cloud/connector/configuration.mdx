@@ -288,7 +288,7 @@ networkPolicy:
 
 The two CIDR lists come from different places:
 
-- **`allowEgressCIDRs`** is yours to supply: the ranges behind your connector endpoint, given at install with `--egress-cidrs` or at the prompt. Every component needs them to reach your connector endpoint.
+- **`allowEgressCIDRs`** is yours to supply: the ranges behind your connector endpoint, given at install with `--egress-cidrs` or at the prompt. Every component needs them to reach your connector endpoint. In managed mode, when the platform charts live in Amazon ECR, add the ECR and STS ranges for your region (or your mirror's range) as well; without them the executor's chart pulls fail under the policy.
 - **`apiserverCIDRs`** is derived by `init` in managed mode from the EKS cluster's VPC (`eks:DescribeCluster` and `ec2:DescribeVpcs`). Every component issues Kubernetes token requests and the executor drives services through the API, so under an enforcing CNI they are all blocked until it is set. When the lookup fails, `init` warns and leaves the list empty for you to fill in with your VPC's CIDR blocks.
 
 Service namespaces are selected two ways. Namespaces the executor creates carry the label `clicklink.clickhouse.com/managed-by: executor`, and the policy admits them by that label, so a managed install can leave `clickhouseNamespaces` empty. Only namespaces created outside the executor, for ClickHouse you run yourself, need listing by name.

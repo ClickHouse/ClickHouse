@@ -14,7 +14,7 @@ This page lists every configuration key you might need to touch, with its defaul
 
 ## VM configuration file {#vm-configuration-file}
 
-On a Linux VM the connector reads `/etc/clicklink/config.yaml`. `clicklink clctl init` writes it and keeps it across re-runs unless you pass `--force`. Keys omitted from the file fall back to the compiled defaults below. Credentials never live in this file.
+On a Linux VM the connector reads `/etc/clicklink/config.yaml`. `clicklink clctl init` writes it and keeps it across re-runs unless you pass `--force`. Keys omitted from the file fall back to the compiled defaults below. `init` writes no credentials into it: the HMAC keys live in the `*_file` paths and the client certificate under `/etc/clicklink/tls`.
 
 ### Top-level keys {#vm-top-level}
 
@@ -42,7 +42,7 @@ The daemons ignore an `instances:` section in this file. Instances live in the [
 | `api.endpoint` | from the enrollment bundle | Your connector endpoint, `https://<subdomain>.<connector-domain>`. |
 | `api.access_key_file` | `/etc/clicklink/access-key` (written by `init`) | File holding the HMAC access key (mode 0600). |
 | `api.secret_key_file` | `/etc/clicklink/secret-key` (written by `init`) | File holding the HMAC secret key (mode 0600). |
-| `api.access_key`, `api.secret_key` | unset | Inline HMAC keys, the alternative to the `*_file` keys. The daemons refuse a file with both shapes set. |
+| `api.access_key`, `api.secret_key` | unset | Inline HMAC keys, for development only. `init` never writes them; a file that holds them needs the same `0600` protection as the key files. The daemons refuse a file with both shapes set. |
 | `api.tls.enabled` | `true` | Present the mTLS client certificate on API connections. |
 | `api.tls.cert_file` | `/etc/clicklink/tls/client.crt` | mTLS client certificate leaf; the daemons rewrite it on renewal. |
 | `api.tls.key_file` | `/etc/clicklink/tls/client.key` | mTLS client private key. |
