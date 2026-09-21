@@ -62,50 +62,38 @@ struct ExponentialTimeDecayedState
         Float64 time,
         Float64 decay_length,
         Float64 max_decay_distance,
-        bool input_has_calculation_index)
+        std::optional<UInt64> input_ordering_key)
     {
         ExponentialTimeDecayedState rhs;
         rhs.weighted_sum = value;
         rhs.weight = 1;
         rhs.max_time = time;
-        merge(rhs, decay_length, max_decay_distance, input_has_calculation_index);
-    }
 
-    void merge(
-        const ExponentialTimeDecayedState & rhs,
-        Float64 decay_length,
-        Float64 max_decay_distance,
-        bool input_has_calculation_index)
-    {
-        /// The significance comparison is formed from a relative timestamp difference
-        /// plus a logarithmic magnitude difference. It deliberately avoids constructing
-        /// absolute unit timestamps, which can lose the magnitude term for large times.
-        if (input_has_calculation_index && std::isfinite(max_decay_distance) && !empty() && !rhs.empty())
+        /// The significance cutoff is an input-row optimization for finalized
+        /// `ExponentialTimeDecaying` values only. It must never affect state merges.
+        if (input_ordering_key && std::isfinite(max_decay_distance) && !empty())
         {
-            if (weighted_sum == 0 && rhs.weighted_sum != 0)
+            if (weighted_sum == 0)
             {
                 *this = rhs;
                 return;
             }
-            if (weighted_sum != 0 && rhs.weighted_sum == 0)
-                return;
 
-            if (weighted_sum != 0 && rhs.weighted_sum != 0)
+            const UInt64 current_ordering_key
+                = getExponentialTimeDecayingOrderingKey(weighted_sum, max_time, decay_length);
+            const Float64 current_index_time
+                = getExponentialTimeDecayingCanonicalDirectValue(current_ordering_key).anchor_time;
+            const Float64 input_index_time
+                = getExponentialTimeDecayingCanonicalDirectValue(*input_ordering_key).anchor_time;
+            const Float64 index_distance = input_index_time - current_index_time;
+
+            if (index_distance > max_decay_distance)
             {
-                const long double index_distance
-                    = static_cast<long double>(rhs.max_time) - static_cast<long double>(max_time)
-                    + static_cast<long double>(decay_length)
-                        * (std::log(std::abs(static_cast<long double>(rhs.weighted_sum)))
-                            - std::log(std::abs(static_cast<long double>(weighted_sum))));
-
-                if (index_distance > static_cast<long double>(max_decay_distance))
-                {
-                    *this = rhs;
-                    return;
-                }
-                if (-index_distance > static_cast<long double>(max_decay_distance))
-                    return;
+                *this = rhs;
+                return;
             }
+            if (-index_distance > max_decay_distance)
+                return;
         }
 
         mergeExact(rhs, decay_length);
@@ -198,6 +186,7 @@ public:
     {
         Float64 value = 1;
         Float64 time = std::numeric_limits<Float64>::quiet_NaN();
+        std::optional<UInt64> input_ordering_key;
         if (input_is_decaying_value)
         {
             const auto & decaying = assert_cast<const ColumnExponentialTimeDecaying &>(*columns[0]);
@@ -206,6 +195,10 @@ public:
             time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
             if (value == 0)
                 return;
+
+            const auto & ordering_keys
+                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn()).getData();
+            input_ordering_key = ordering_keys[row_num];
         }
         else
         {
@@ -221,16 +214,12 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
         this->data(place).add(
-            value, time, decay_length, max_decay_distance, input_is_decaying_value);
+            value, time, decay_length, max_decay_distance, input_ordering_key);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(
-            this->data(rhs),
-            decay_length,
-            max_decay_distance,
-            input_is_decaying_value);
+        this->data(place).mergeExact(this->data(rhs), decay_length);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
