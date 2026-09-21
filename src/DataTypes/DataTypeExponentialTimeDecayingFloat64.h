@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <bit>
 #include <cmath>
 #include <optional>
 
@@ -15,41 +16,76 @@ namespace ErrorCodes
 
 class DataTypeFactory;
 
+struct ExponentialTimeDecayingOrderingScore
+{
+    Float64 high;
+    Float64 low;
+};
+
+inline ExponentialTimeDecayingOrderingScore getExponentialTimeDecayingOrderingScore(
+    Float64 value, Float64 time, Float64 decay_length)
+{
+    if (value == 0)
+        return {0, 0};
+
+    const Float64 logarithmic_time = decay_length * std::log(std::abs(value));
+    const Float64 high = time + logarithmic_time;
+    const Float64 time_virtual = high - logarithmic_time;
+    const Float64 logarithmic_virtual = high - time_virtual;
+    const Float64 time_error = time - time_virtual;
+    const Float64 logarithmic_error = logarithmic_time - logarithmic_virtual;
+    return {high, time_error + logarithmic_error};
+}
+
+inline UInt64 getExponentialTimeDecayingSortableFloatKey(Float64 value)
+{
+    UInt64 bits = std::bit_cast<UInt64>(value == 0.0 ? 0.0 : value);
+    return bits & (UInt64(1) << 63) ? ~bits : bits | (UInt64(1) << 63);
+}
+
+/// Compact ordered prefix. One low-order bit of the sortable unit-timestamp key is
+/// discarded and the recovered bit capacity separates negative, zero, and positive curves.
+/// Unequal keys preserve curve order; equal keys fall back to the direct payload.
+inline UInt64 shiftOneBitAndSign(
+    Float64 unit_timestamp, Float64 value_at_anchor)
+{
+    if (value_at_anchor == 0)
+        return UInt64(1) << 63;
+
+    const UInt64 shifted = getExponentialTimeDecayingSortableFloatKey(unit_timestamp) >> 1;
+    if (std::signbit(value_at_anchor))
+        return std::numeric_limits<UInt64>::max() / 2 - shifted;
+
+    return (UInt64(1) << 63) | shifted;
+}
+
 struct ExponentialTimeDecayingFloat64Value
 {
-    Float64 sign;
-    Float64 signed_unit_time;
+    UInt64 ordering_prefix;
     Float64 value_at_anchor;
     Float64 anchor_time;
 };
 
-/// This is also the native lexicographic sort key for a fixed decay length.
-/// `sign` orders negative, zero, and positive curves. For positive curves the
-/// value grows with unit_time; for negative curves it decreases, so storing
-/// `-unit_time` gives the same ascending order as the curve value. The order is
-/// therefore identical at every common evaluation time.
 inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat64(
     Float64 value, Float64 time, Float64 decay_length)
 {
     if (value == 0)
-        return {0, 0, 0, 0};
+        return {shiftOneBitAndSign(0, 0), 0, 0};
 
-    const Float64 sign = std::copysign(1.0, value);
-    const Float64 unit_time = time + decay_length * std::log(std::abs(value));
-    return {sign, sign * unit_time, value, time};
+    const auto score = getExponentialTimeDecayingOrderingScore(value, time, decay_length);
+    return {shiftOneBitAndSign(score.high, value), value, time};
 }
 
-inline bool isCanonicalExponentialTimeDecayingFloat64Value(Float64 sign, Float64 signed_unit_time)
+inline bool isCanonicalExponentialTimeDecayingFloat64Value(
+    UInt64 ordering_prefix, Float64 value, Float64 time, Float64 decay_length)
 {
-    if (sign == 0)
-        return signed_unit_time == 0;
+    if (!std::isfinite(value) || !std::isfinite(time))
+        return false;
 
-    return (sign == -1 || sign == 1) && std::isfinite(signed_unit_time);
-}
-
-inline Float64 getExponentialTimeDecayingUnitTime(Float64 sign, Float64 signed_unit_time)
-{
-    return sign * signed_unit_time;
+    const auto normalized = normalizeExponentialTimeDecayingFloat64(value, time, decay_length);
+    return normalized.ordering_prefix == ordering_prefix
+        && normalized.value_at_anchor == value
+        && normalized.anchor_time == time;
 }
 
 class DataTypeExponentialTimeDecayingFloat64 final : public IDataType
