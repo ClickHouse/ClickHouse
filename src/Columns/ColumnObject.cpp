@@ -65,17 +65,27 @@ struct ColumnObjectCheckpoint : public ColumnCheckpoint
 {
     using CheckpointsMap = UnorderedMapWithMemoryTracking<std::string_view, ColumnCheckpointPtr>;
 
-    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
+    ColumnObjectCheckpoint(
+        size_t size_,
+        CheckpointsMap typed_paths_,
+        CheckpointsMap dynamic_paths_,
+        ColumnCheckpointPtr shared_data_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_paths_upper_bound_)
         : ColumnCheckpoint(size_)
         , typed_paths(std::move(typed_paths_))
         , dynamic_paths(std::move(dynamic_paths_))
         , shared_data(std::move(shared_data_))
+        , max_dynamic_paths(max_dynamic_paths_)
+        , max_dynamic_paths_upper_bound(max_dynamic_paths_upper_bound_)
     {
     }
 
     CheckpointsMap typed_paths;
     CheckpointsMap dynamic_paths;
     ColumnCheckpointPtr shared_data;
+    size_t max_dynamic_paths;
+    size_t max_dynamic_paths_upper_bound;
 };
 
 }
@@ -1134,7 +1144,13 @@ ColumnCheckpointPtr ColumnObject::getCheckpoint() const
         return checkpoints;
     };
 
-    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
+    return std::make_shared<ColumnObjectCheckpoint>(
+        size(),
+        get_checkpoints(typed_paths),
+        get_checkpoints(dynamic_paths_ptrs),
+        shared_data->getCheckpoint(),
+        max_dynamic_paths,
+        max_dynamic_paths_upper_bound);
 }
 
 void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
@@ -1154,6 +1170,8 @@ void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
     };
 
     checkpoint.size = size();
+    object_checkpoint.max_dynamic_paths = max_dynamic_paths;
+    object_checkpoint.max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound;
     update_checkpoints(typed_paths, object_checkpoint.typed_paths);
     update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
     shared_data->updateCheckpoint(*object_checkpoint.shared_data);
@@ -1162,6 +1180,9 @@ void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
+
+    max_dynamic_paths = object_checkpoint.max_dynamic_paths;
+    max_dynamic_paths_upper_bound = object_checkpoint.max_dynamic_paths_upper_bound;
 
     auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
     {
