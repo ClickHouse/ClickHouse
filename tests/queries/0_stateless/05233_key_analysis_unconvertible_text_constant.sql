@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS t_unconvertible_monotonic;
 DROP TABLE IF EXISTS t_unconvertible_hash;
 SET session_timezone = 'UTC';
 SET cast_string_to_date_time_mode = 'best_effort';
+SET explain_query_plan_default = 'legacy';   -- for the Condition/Granules assertions
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS t_unconvertible_monotonic;
