@@ -70,6 +70,25 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
+/// Run an existence probe built on the throwing `std::filesystem` overloads. A path the filesystem
+/// refuses outright, because a component exceeds its NAME_MAX, is a path no file has. For an
+/// existence probe, that is a normal "not found under this name" outcome, so report it as such
+/// instead of letting it escape as an exception. Any other stat() failure (EACCES, EIO, ESTALE, ...)
+/// is a genuine problem and must keep throwing, because callers rely on that to distinguish
+/// "missing" from "broken" (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
+template <typename Func>
+bool existsOrFileNameTooLong(Func && func)
+try
+{
+    return func();
+}
+catch (const fs::filesystem_error & e)
+{
+    if (e.code() == std::errc::filename_too_long)
+        return false;
+    throw;
+}
+
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
 Int64 getINodeNumberFromPath(const String & path);
