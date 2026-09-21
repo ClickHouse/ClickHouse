@@ -844,7 +844,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 {
     chassert(!postings_queue->isValid());
 
-    for (const auto & source : output_sources)
+    for (const auto & source : current_token_sources)
     {
         if (source.info.cardinality != 0)
             postings_queue->push(source);
@@ -960,14 +960,14 @@ void MergeTextIndexesTask::readAndAppendPositions(const TokenSource & source, st
 
 void MergeTextIndexesTask::flushPostingList()
 {
-    chassert(!output_sources.empty());
+    chassert(!current_token_sources.empty());
 
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     TokenPostingsInfo token_info;
 
     /// Sources own disjoint row sets, so the cardinality of the merged posting is sum of source cardinalities.
     size_t total_cardinality = 0;
-    for (const auto & source : output_sources)
+    for (const auto & source : current_token_sources)
         total_cardinality += source.info.cardinality;
 
     if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -980,7 +980,7 @@ void MergeTextIndexesTask::flushPostingList()
         flushPositions(token_info);
 
     output_infos.push_back(token_info);
-    output_sources.clear();
+    current_token_sources.clear();
     output_positions.clear();
 }
 
@@ -1098,7 +1098,7 @@ bool MergeTextIndexesTask::executeStep()
         {
             if (i > 0 || first_row_is_new_token)
             {
-                if (!output_sources.empty())
+                if (!current_token_sources.empty())
                     flushPostingList();
 
                 if (output_tokens->size() >= params.dictionary_block_size)
@@ -1110,7 +1110,7 @@ bool MergeTextIndexesTask::executeStep()
 
             /// Postings and positions are decoded lazily on flush.
             /// Copy the info because the dictionary block it points into may be replaced before that.
-            output_sources.push_back({source_num, source_block.token_infos[row]});
+            current_token_sources.push_back({source_num, source_block.token_infos[row]});
         }
 
         if (!current->isLast(batch_size))
@@ -1129,7 +1129,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_sources.empty())
+    if (!current_token_sources.empty())
         flushPostingList();
 
     if (!output_tokens->empty())

@@ -140,7 +140,7 @@ private:
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
-    /// Merges the postings of output_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
+    /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
     /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
     template <typename Sink> void mergePostings(Sink && sink);
 
@@ -186,7 +186,7 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
 
     /// Sources of the current token's postings, one per input part or segment.
-    std::vector<TokenSource> output_sources;
+    std::vector<TokenSource> current_token_sources;
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
 

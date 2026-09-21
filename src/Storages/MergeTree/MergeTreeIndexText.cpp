@@ -1050,7 +1050,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     TokenPostingsInfo info;
     std::span<const UInt32> raw_values;
 
-    if (postings.hasInline())
+    if (postings.isInline())
     {
         const auto & inline_state = postings.getInline();
         info.cardinality = inline_state.size;
@@ -1120,7 +1120,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     }
 
     /// The flush above put everything into the encoder (the cardinality is above the raw threshold).
-    chassert(postings.hasLarge());
+    chassert(postings.isLarge());
     auto & large = postings.getLarge();
     chassert(large.values.empty() && large.encoder);
     large.encoder->finalize(postings_stream.plain_hashing, info);

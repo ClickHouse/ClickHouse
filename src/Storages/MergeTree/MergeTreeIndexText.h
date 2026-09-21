@@ -163,8 +163,8 @@ public:
     /// When positions are enabled, records the position of the token within the row.
     void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
 
-    bool hasLarge() const { return std::holds_alternative<Large>(state); }
-    bool hasInline() const { return std::holds_alternative<Inline>(state); }
+    bool isLarge() const { return std::holds_alternative<Large>(state); }
+    bool isInline() const { return std::holds_alternative<Inline>(state); }
     bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
 
     Large & getLarge() { return std::get<Large>(state); }
