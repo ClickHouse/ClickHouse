@@ -115,7 +115,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     /// existing definition's meaning.
     if (ast_create_query.select && ast_create_query.isView())
     {
-        SelectQueryDescription::warnIfLegacyGlobalWithDefinition(ast_create_query, getLogger("createTableFromAST"));
+        SelectQueryDescription::warnIfLegacyGlobalWithDefinition(ast_create_query, getLogger("DatabaseOnDisk"));
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
     }
 

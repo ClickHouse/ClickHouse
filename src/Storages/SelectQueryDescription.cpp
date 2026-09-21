@@ -12,6 +12,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/MaterializedCTEUtils.h>
 #include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
@@ -159,16 +160,25 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select, const VisibleCT
 }
 
 /// True when applying this `SETTINGS` clause to a context where the setting is on turns it off, directly or
-/// through `compatibility` or `profile`. The setting is reset rather than set on the scratch copy: applying a
-/// `compatibility` value skips every setting that was changed by hand, which is exactly the clause looked for.
+/// through `compatibility` or `profile`.
 bool turnsGlobalWithOff(const ASTSetQuery & set_query, const ContextPtr & context)
 {
+    /// Only these two can change the setting without naming it; the literal predicate covers the name itself.
+    SettingsChanges relevant;
+    for (const auto & change : set_query.changes)
+        if (change.name == "compatibility" || change.name == "profile")
+            relevant.push_back(change);
+    if (relevant.empty())
+        return false;
+
     auto scratch = Context::createCopy(context);
+    /// `setSetting` would mark the setting changed, and `compatibility` skips changed settings.
     scratch->resetSettingsToDefaultValue({"enable_global_with_statement"});
-    const bool on_before = scratch->getSettingsRef()[Setting::enable_global_with_statement];
-    scratch->checkSettingsConstraints(set_query.changes, SettingSource::QUERY);
-    scratch->applySettingsChanges(set_query.changes);
-    return on_before && !scratch->getSettingsRef()[Setting::enable_global_with_statement];
+    /// Clamped, not checked: a nested clause is clamped at run time too, so checking would reject a
+    /// definition that master accepts.
+    scratch->clampToSettingsConstraints(relevant, SettingSource::QUERY);
+    scratch->applySettingsChanges(relevant);
+    return !scratch->getSettingsRef()[Setting::enable_global_with_statement];
 }
 
 /// The recursion of `fixesGlobalWithSetting`, on the effective value instead of the setting name.
