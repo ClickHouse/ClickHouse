@@ -952,6 +952,8 @@ bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
     screenLoadedRules(rules);
     /// `add` is non-const but only mutates `mutable` `loaded_rewrite_rules`.
     const_cast<RewriteRules *>(this)->add(std::move(rules), lock);
+    /// The snapshot is in memory now, so the storage may stop reporting it as outstanding.
+    storage->commitUpdate();
 
     if (storage->isReplicated())
     {
@@ -997,6 +999,11 @@ void RewriteRules::reloadImpl(std::lock_guard<std::mutex> & lock)
     screenLoadedRules(rules);
     loaded_rewrite_rules.clear();
     add(std::move(rules), lock);
+    /// Only now has this replica actually taken the snapshot `getAll` listed. Anything that
+    /// threw above leaves the storage reporting the update as still outstanding, so the next
+    /// `waitUpdate` returns true and the reload is retried instead of the stale rule set
+    /// being served until some later rule mutation moves Keeper again.
+    storage->commitUpdate();
 }
 
 void RewriteRules::updateFunc()

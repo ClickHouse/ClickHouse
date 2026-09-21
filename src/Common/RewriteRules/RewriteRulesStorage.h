@@ -31,6 +31,11 @@ public:
     /// Return true if update was made
     bool waitUpdate();
 
+    /// Acknowledge that the snapshot the last `getAll` returned is now the rule set this
+    /// replica serves. Until it is called, `waitUpdate` keeps reporting the update, so a
+    /// reload that failed after listing is retried rather than taken for done.
+    void commitUpdate();
+
     bool isReplicated() const;
 
 private:

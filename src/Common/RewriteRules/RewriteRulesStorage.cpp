@@ -75,6 +75,11 @@ public:
     virtual bool isReplicated() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
+
+    /// Called once the snapshot the last `list` returned has actually been read and published
+    /// in memory. Until then `waitUpdate` must keep reporting the update as outstanding, so
+    /// that a reload which failed halfway is retried instead of being taken for done.
+    virtual void commitUpdate() {}
 };
 
 
@@ -233,11 +238,21 @@ private:
     mutable std::mutex zk_mutex;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
     mutable Coordination::EventPtr wait_event;
-    mutable Int32 collections_node_cversion = 0;
+    /// The Keeper state of the rule set this replica currently serves, and the state of the
+    /// snapshot the last `list` observed. They are separate because `list` only starts a
+    /// reload: the rules are read one znode at a time afterwards, and that can fail. Were
+    /// `list` to advance the served state directly, a reload that threw halfway would leave
+    /// `waitUpdate` comparing against a state this replica never loaded, see no delta, and
+    /// stop retrying - so the replica would keep applying the stale rule set until the next
+    /// `CREATE`/`ALTER`/`DROP RULE` moved Keeper again. `commitUpdate` promotes `armed_*`
+    /// into `loaded_*`, and is called only once the new rules are published in memory.
+    mutable Int32 loaded_node_cversion = 0;
+    mutable Int32 armed_node_cversion = 0;
     /// zxid of the most recent data modification across rule znodes, as observed by
     /// the last `list`. `ALTER RULE` changes only the data of a child znode, which
     /// does not affect the parent's `cversion`, so it has to be tracked separately.
-    mutable Int64 max_child_mzxid = 0;
+    mutable Int64 loaded_max_child_mzxid = 0;
+    mutable Int64 armed_max_child_mzxid = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -304,7 +319,7 @@ public:
             return false;
         }
 
-        if (stat.cversion != collections_node_cversion)
+        if (stat.cversion != loaded_node_cversion)
             return true;
 
         /// The child list is unchanged, but `ALTER RULE` on another replica modifies
@@ -318,7 +333,14 @@ public:
             if (client->exists(getPath(child), &child_stat))
                 current_max_mzxid = std::max(current_max_mzxid, child_stat.mzxid);
         }
-        return current_max_mzxid != max_child_mzxid;
+        return current_max_mzxid != loaded_max_child_mzxid;
+    }
+
+    void commitUpdate() override
+    {
+        std::lock_guard lock(zk_mutex);
+        loaded_node_cversion = armed_node_cversion;
+        loaded_max_child_mzxid = armed_max_child_mzxid;
     }
 
     std::vector<std::string> list() const override
@@ -331,7 +353,7 @@ public:
         Coordination::Stat stat;
         auto client = getClient(lock);
         auto children = client->getChildren(root_path, &stat, wait_event);
-        collections_node_cversion = stat.cversion;
+        armed_node_cversion = stat.cversion;
 
         Int64 current_max_mzxid = 0;
         std::vector<std::string> result;
@@ -347,7 +369,7 @@ public:
                 current_max_mzxid = std::max(current_max_mzxid, child_stat.mzxid);
             }
         }
-        max_child_mzxid = current_max_mzxid;
+        armed_max_child_mzxid = current_max_mzxid;
 
         /// The application order of rules is determined by the `query_rules` setting, not by
         /// the order in which the rules were created, so do not order by the znode `czxid`.
@@ -592,6 +614,11 @@ void RewriteRulesStorage::writeCreateQuery(const String & rule_name, const Strin
 bool RewriteRulesStorage::isReplicated() const
 {
     return impl_storage->isReplicated();
+}
+
+void RewriteRulesStorage::commitUpdate()
+{
+    impl_storage->commitUpdate();
 }
 
 bool RewriteRulesStorage::waitUpdate()
