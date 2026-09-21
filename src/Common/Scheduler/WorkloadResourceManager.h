@@ -45,8 +45,7 @@ namespace DB
  * attached to the scheduler directly; instead each resource has one implicit anonymous root workload
  * that is the scheduler's single child, and every parentless workload is attached as a child of it.
  * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
- * fairness/priorities via the normal workload policy machinery. The implicit root has default
- * (unlimited) settings, so a single-root hierarchy behaves exactly as before.
+ * fairness/priorities via the normal workload policy machinery.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -242,8 +241,7 @@ private:
             // Create the implicit anonymous root workload as the scheduler's single child. Every
             // workload without an explicit parent becomes a child of it (see createNode()), so the
             // scheduler always has exactly one child and the otherwise-root workloads are scheduled
-            // with fairness/priorities by the normal workload policy machinery. Default (unlimited)
-            // settings make the implicit root transparent when there is a single root workload.
+            // with fairness/priorities by the normal workload policy machinery.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
             // Anonymous root: an empty basename, which getPath() skips, so a workload directly under
             // the implicit root renders as "/all".
@@ -272,7 +270,7 @@ private:
         /// Implicit anonymous root workload (empty basename): the scheduler's single child. Every workload without an
         /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
         /// workloads form one hierarchy under it, scheduled with fairness/priorities by the normal
-        /// policy machinery. Default (unlimited) settings make it transparent for a single root.
+        /// policy machinery.
         WorkloadNodePtr implicit_root;
         VersionPtr current_version;
     };
