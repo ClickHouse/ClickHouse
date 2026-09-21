@@ -73,6 +73,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -3192,12 +3193,32 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    /// Each stream drops its own duplicates before the join hashes them, and the duplicates of different streams
+    /// are left to the join. Hashing a row here costs more than the join spares on it, so the step gives up on a
+    /// stream as soon as its first chunk turns out to be mostly unique.
+    if (join_node.isSetOperation() && preliminaryDistinctIsUseful(settings[Setting::max_threads]))
+    {
+        for (auto * query_plan : {&left_join_tree_query_plan.query_plan, &right_join_tree_query_plan.query_plan})
+        {
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan->getCurrentHeader(),
+                DistinctStep::Settings(settings),
+                0 /*limit_hint*/,
+                query_plan->getCurrentHeader()->getNames(),
+                true /*pre_distinct*/);
+            distinct_step->setStepDescription("Preliminary DISTINCT of a set operation input");
+            distinct_step->abandonAfterFirstChunk();
+            query_plan->addStep(std::move(distinct_step));
+        }
+    }
+
     auto join_step_logical = buildJoinStepLogical(
         left_join_tree_query_plan.query_plan.getCurrentHeader(),
         right_join_tree_query_plan.query_plan.getCurrentHeader(),
         outer_scope_columns,
         join_node,
         planner_context);
+    join_step_logical->setIsSetOperation(join_node.isSetOperation());
 
     PreparedJoinStorage prepared_join;
     bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()

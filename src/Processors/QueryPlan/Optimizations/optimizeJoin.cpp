@@ -937,7 +937,7 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness, bool is_set_operation)
 {
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
@@ -1069,6 +1069,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     for (const auto * seq_entry : sequence)
         if (!seq_entry->isLeaf() && seq_entry->join_operator.strictness != JoinStrictness::All)
             graph_has_mixed_strictness = true;
+
+    /// The mark of the top join says nothing about the other joins of a graph, so it is only kept for a join
+    /// that is rebuilt alone, which is the case unless semi and anti joins are reordered.
+    const bool graph_is_single_join = std::ranges::count_if(sequence, [](const auto * seq_entry) { return !seq_entry->isLeaf(); }) == 1;
 
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
@@ -1303,6 +1307,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 if (entry->relations.test(i))
                     imprecise_estimate |= leaf_imprecise[i];
 
+            join_step->setIsSetOperation(is_set_operation && graph_is_single_join);
             join_step->setInputRelations(relation_infos[left_rels], relation_infos[right_rels]);
             relation_infos[entry->relations] = RelationEstimateInfo{
                 .name = join_step->getReadableRelationName(),
@@ -1483,6 +1488,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
+    const bool is_set_operation = join_step->isSetOperation();
     if (!optimization_settings.query_plan_optimize_join_order_limit
         || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
         || join_operator.multiset
@@ -1522,7 +1528,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, is_set_operation);
 }
 
 }
