@@ -158,9 +158,16 @@ public:
         std::string write_if_match;
     };
 
-    explicit ExistingVersionHintObjectStorage(std::string hint_etag_) : hint_etag(std::move(hint_etag_)) { }
+    /// With `hint_created_concurrently` the hint is absent when the commit looks for it, and the
+    /// exclusive write that would create it loses the race to another writer - which is exactly how
+    /// a hint appearing in the middle of this commit looks from here.
+    explicit ExistingVersionHintObjectStorage(std::string hint_etag_, bool hint_created_concurrently = false)
+        : hint_etag(std::move(hint_etag_)), hint_present(!hint_created_concurrently)
+    {
+    }
 
     std::vector<Write> writes;
+    std::vector<std::string> removed;
 
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -173,11 +180,23 @@ public:
             object.remote_path,
             write_settings.object_storage_write_if_none_match,
             write_settings.object_storage_write_if_match});
+
+        if (object.remote_path.ends_with(version_hint_name) && !hint_present)
+        {
+            /// The other writer got there first: the exclusive create fails and from now on the
+            /// hint is there, with whatever tag this backend reports for it.
+            hint_present = true;
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Another writer created {} first", object.remote_path);
+        }
+
         return std::make_unique<DiscardingWriteBuffer>(object.remote_path);
     }
 
     /// The metadata file of the commit is new; the version hint is already there.
-    bool exists(const StoredObject & object) const override { return object.remote_path.ends_with(version_hint_name); }
+    bool exists(const StoredObject & object) const override
+    {
+        return object.remote_path.ends_with(version_hint_name) && hint_present;
+    }
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -216,7 +235,7 @@ public:
     {
         unexpected("readObject");
     }
-    void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
+    void removeObjectIfExists(const StoredObject & object) override { removed.push_back(object.remote_path); }
     void removeObjectsIfExist(const StoredObjects &, StoredObjects *) override { unexpected("removeObjectsIfExist"); }
     void copyObject( /// NOLINT
         const StoredObject &,
@@ -238,6 +257,7 @@ private:
     static constexpr std::string_view version_hint_name = "version-hint.text";
 
     std::string hint_etag;
+    bool hint_present;
 };
 
 /// Drives the real commit against a backend whose existing version hint carries `hint_etag`. The
@@ -245,8 +265,8 @@ private:
 /// the writes recorded up to that point are what the test is about.
 struct CommitOverExistingVersionHint
 {
-    explicit CommitOverExistingVersionHint(const std::string & hint_etag)
-        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag))
+    explicit CommitOverExistingVersionHint(const std::string & hint_etag, bool hint_created_concurrently = false)
+        : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, hint_created_concurrently))
     {
     }
 
@@ -273,6 +293,7 @@ struct CommitOverExistingVersionHint
     }
 
     const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
+    const std::vector<std::string> & removed() const { return object_storage->removed; }
 
     std::shared_ptr<ExistingVersionHintObjectStorage> object_storage;
 };
@@ -294,15 +315,17 @@ TEST(IcebergCommitPropagation, VersionHintIsRewrittenUnderItsETag)
     EXPECT_TRUE(writes[1].write_if_none_match.empty());
 }
 
-TEST(IcebergCommitPropagation, VersionHintWithoutETagFailsTheCommit)
+TEST(IcebergCommitPropagation, VersionHintWithoutETagFailsTheCommitBeforeAnythingIsPublished)
 {
     /// `ETag` is an optional response header. Without it there is no compare-and-swap to put on the
     /// rewrite, so the update would degrade into an unconditional overwrite and two concurrent
     /// writers could move the hint backwards. Skipping the rewrite is no better: the commit would
     /// report success while every reader with `iceberg_use_version_hint = 1` keeps resolving the
     /// previous snapshot, because the hint is trusted without cross-checking the listing. The commit
-    /// has to fail instead, and the hint must stay untouched - only the metadata file, which has its
-    /// own `IfNoneMatch` condition, is written before the refusal.
+    /// has to fail instead - and it has to fail before it writes anything, because `expireSnapshots`
+    /// and the schema-alter path in `Mutations.cpp` do not remove the new metadata file when the
+    /// commit throws, and a published file that no command committed is picked up by every reader
+    /// that resolves the table by listing.
     CommitOverExistingVersionHint commit("");
 
     try
@@ -315,10 +338,39 @@ TEST(IcebergCommitPropagation, VersionHintWithoutETagFailsTheCommit)
         EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
     }
 
+    EXPECT_TRUE(commit.writes().empty()) << commit.writes().size() << " objects were written";
+}
+
+TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitTakesTheMetadataFileBack)
+{
+    /// The hint is absent when the commit checks for it, and by the time the commit tries to create
+    /// it another writer has, so the exclusive create loses and the retry reads a hint that carries
+    /// no tag. The metadata file is published by then, so the commit removes it again before
+    /// refusing - otherwise a snapshot no command committed would stay visible to listing-based
+    /// readers.
+    CommitOverExistingVersionHint commit("", /*hint_created_concurrently=*/ true);
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to refuse to advance the version hint, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
+
+    /// The metadata file, then the exclusive create of the hint that lost the race.
     const auto & writes = commit.writes();
-    ASSERT_EQ(writes.size(), 1u);
+    ASSERT_EQ(writes.size(), 2u);
     EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
     EXPECT_EQ(writes[0].write_if_none_match, "*");
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+    EXPECT_EQ(writes[1].write_if_none_match, "*");
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 1u);
+    EXPECT_EQ(removed[0], writes[0].path);
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)

@@ -34,8 +34,11 @@ public:
 
     /// The per-chunk deduplication token: the `ETag` of the file (unquoted) and the offset of the
     /// chunk in it. `ETag` is an optional response header, and when the endpoint omits it the path
-    /// of the object takes its place, because the token has to stay distinct per file.
-    static std::string makeDeduplicationToken(const std::string & etag, const std::string & path, size_t row_offset);
+    /// of the object plus its size and modification time take its place, because the token has to
+    /// stay distinct per file and per generation of that file. Throws when the object storage
+    /// reports none of them.
+    static std::string makeDeduplicationToken(
+        const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset);
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {

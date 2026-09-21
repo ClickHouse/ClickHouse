@@ -90,15 +90,20 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 std::string ObjectStorageQueueSource::makeDeduplicationToken(
-    const std::string & etag_from_metadata, const std::string & path, size_t row_offset)
+    const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset)
 {
     /// Etag is quoted for some reason.
-    std::string etag = etag_from_metadata;
+    std::string etag = object_metadata ? object_metadata->etag : std::string{};
     if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
         etag = etag.substr(1, etag.size() - 2);
+
+    /// Create unique token per chunk: etag + row offset
+    if (!etag.empty())
+        return fmt::format("{}:{}", etag, row_offset);
 
     /// `ETag` is an optional response header. Against an endpoint that omits it, a token built all
     /// the same would give the first chunk of every file `:0`, the second `:<rows in the first
@@ -106,13 +111,24 @@ std::string ObjectStorageQueueSource::makeDeduplicationToken(
     /// verbatim - distinct files would deduplicate against each other and their rows would disappear
     /// from the dependent materialized views. An empty token is no better: it makes the unified hash
     /// come from the data, so two different files holding an identical chunk would deduplicate
-    /// against each other just the same. Fall back to the path of the object, which is what the
-    /// queue itself identifies a file by.
-    if (etag.empty())
-        return fmt::format("{}:{}", path, row_offset);
+    /// against each other just the same.
+    ///
+    /// The path alone does not identify a file either: `tracked_file_ttl_sec` and
+    /// `tracked_files_limit` let the queue re-import the same path later, and by then it can point
+    /// at a different blob, whose rows the token would then deduplicate away. Take the generation of
+    /// the object into the token as well - its size and its modification time, the only identifiers
+    /// left once the tag is gone.
+    if (!object_metadata || !object_metadata->is_fetched || !object_metadata->is_size_known
+        || !object_metadata->is_last_modified_known)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "The object storage reported neither an ETag nor both the size and the modification time of {}, "
+            "so a deduplication token that tells one generation of this path from another cannot be built. "
+            "Disable deduplication for this table to read it all the same.",
+            path);
 
-    /// Create unique token per chunk: etag + row offset
-    return fmt::format("{}:{}", etag, row_offset);
+    return fmt::format(
+        "{}:{}:{}:{}", path, object_metadata->size_bytes, object_metadata->last_modified.epochMicroseconds(), row_offset);
 }
 
 
@@ -1442,7 +1458,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                dedup_token = makeDeduplicationToken(object_metadata->etag, path, row_offset);
+                dedup_token = makeDeduplicationToken(object_metadata, path, row_offset);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
