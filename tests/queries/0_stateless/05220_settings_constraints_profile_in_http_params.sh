@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # HTTP URL parameters are a settings change list like any other, so a `profile` parameter must
-# constrain the parameters that follow it.
+# constrain the other parameters, wherever they sit relative to it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +20,7 @@ ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&profile=$PROF
 MEMORY_PROFILE="profile_http_memory_$CLICKHOUSE_DATABASE"
 
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE IF EXISTS $MEMORY_PROFILE"
-$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $MEMORY_PROFILE SETTINGS max_memory_usage MAX 1000000"
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $MEMORY_PROFILE SETTINGS max_memory_usage MAX 10000000000"
 
 echo '-- a value passed before the profile parameter is rejected too'
 ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&max_memory_usage=1099511627776&profile=$MEMORY_PROFILE" <<< "SELECT 1" | grep -o -m1 SETTING_CONSTRAINT_VIOLATION
@@ -29,7 +29,7 @@ echo '-- a parameter repeated around the profile is rejected on its last value'
 ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&max_memory_usage=7&profile=$MEMORY_PROFILE&max_memory_usage=1099511627776" <<< "SELECT 1" | grep -o -m1 SETTING_CONSTRAINT_VIOLATION
 
 echo '-- a value within the constraint is still accepted'
-${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&profile=$MEMORY_PROFILE&max_memory_usage=999" <<< "SELECT getSetting('max_memory_usage')"
+${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&profile=$MEMORY_PROFILE&max_memory_usage=1000000000" <<< "SELECT getSetting('max_memory_usage')"
 
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $PROFILE"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $MEMORY_PROFILE"

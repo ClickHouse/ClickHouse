@@ -116,9 +116,4 @@ String SettingsChanges::namesToString() const
     return result;
 }
 
-void moveProfileChangesToFront(SettingsChanges & changes)
-{
-    std::stable_partition(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
-}
-
 }

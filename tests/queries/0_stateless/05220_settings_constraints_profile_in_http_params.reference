@@ -7,4 +7,4 @@ SETTING_CONSTRAINT_VIOLATION
 -- a parameter repeated around the profile is rejected on its last value
 SETTING_CONSTRAINT_VIOLATION
 -- a value within the constraint is still accepted
-999
+1000000000

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# A `SET` statement that changes `profile` installs a new constraint set halfway through itself.
-# Everything assigned or reset after that change must be checked against the new constraints, so
-# that one statement cannot do what the same two statements in sequence are not allowed to do.
+# A `SET` statement that changes `profile` installs a new constraint set for the whole statement.
+# Everything else assigned or reset in it must be checked against the new constraints, so that one
+# statement cannot do what the same two statements in sequence are not allowed to do.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,16 +35,17 @@ SET profile = '$PROFILE', max_execution_time = 999; -- { serverError SETTING_CON
 SELECT getSetting('SQL_tenant_id');
 " 2>&1 | grep -o -m1 'UNKNOWN_SETTING'
 
-# An assignment placed *before* the profile change is not checked against the profile's constraints,
-# because it takes effect before them. A custom setting on purpose: `clickhouse-client` keeps the
-# settings a successful `SET` established and re-sends them with every later query, so a built-in
-# setting assigned here and then overridden by the profile would be rejected while the next query's
-# settings packet is received.
-echo '-- an assignment before the profile change is not checked against the new constraints'
+# A custom setting on purpose: `clickhouse-client` keeps the settings a successful `SET` established
+# and re-sends them with every later query, so a built-in setting assigned here and then overridden
+# by the profile would be rejected while the next query's settings packet is received.
+echo '-- an unconstrained assignment before the profile change still applies'
 $CLICKHOUSE_CLIENT -m -q "
 SET SQL_before_05218 = 7, profile = '$PROFILE';
 SELECT getSetting('SQL_before_05218');
 "
+
+echo '-- a constrained assignment before the profile change is rejected'
+$CLICKHOUSE_CLIENT -q "SET max_execution_time = 999, profile = '$PROFILE'" 2>&1 | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
 
 echo '-- the constraints the profile installed are in force afterwards'
 $CLICKHOUSE_CLIENT -m -q "SET profile = '$PROFILE'; SET max_execution_time = 999" 2>&1 | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
