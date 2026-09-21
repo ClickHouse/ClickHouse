@@ -5819,6 +5819,142 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // Returns whether the condition is one continuous range of the primary key,
 // where every field is matched by range or a single element set.
 // This allows to use a more efficient lookup with no extra reads.
+
+namespace
+{
+
+std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
+    const Field & field,
+    const DataTypePtr & type)
+{
+    auto nested_type = removeNullable(type);
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+        nested_type = low_cardinality->getDictionaryType();
+
+    const auto * decay_type
+        = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(nested_type.get());
+    if (!decay_type)
+        return std::nullopt;
+
+    if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
+        return std::nullopt;
+
+    if (field.getType() != Field::Types::Tuple)
+        return std::nullopt;
+
+    const auto & tuple = field.safeGet<Tuple>();
+    if (tuple.size() == 2)
+    {
+        const Float64 value = tuple[0].safeGet<Float64>();
+        const Float64 time = tuple[1].safeGet<Float64>();
+        if (!std::isfinite(value) || !std::isfinite(time))
+            return std::nullopt;
+        return getExponentialTimeDecayingOrderingPrefix(
+            value, time, decay_type->getDecayLength());
+    }
+
+    /// Keep accepting the earlier experimental SQL/text carrier while the tests
+    /// still exercise it. It is not the physical row representation.
+    if (tuple.size() == 3)
+    {
+        const Float64 sign = tuple[0].safeGet<Float64>();
+        const Float64 signed_unit_time = tuple[1].safeGet<Float64>();
+        const Float64 decay_length = tuple[2].safeGet<Float64>();
+        if (decay_length != decay_type->getDecayLength())
+            return std::nullopt;
+        if (sign == 0)
+            return shiftOneBitAndSign(0, 0);
+        if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+            return std::nullopt;
+        return shiftOneBitAndSign(sign * signed_unit_time, sign);
+    }
+
+    return std::nullopt;
+}
+
+bool projectExponentialTimeDecayingRange(
+    Range & range,
+    const DataTypePtr & type)
+{
+    auto project_endpoint = [&](FieldRef & endpoint) -> bool
+    {
+        if (endpoint.isNegativeInfinity() || endpoint.isPositiveInfinity() || endpoint.isNull())
+            return true;
+
+        const auto key = getProjectedExponentialTimeDecayingKey(endpoint, type);
+        if (!key)
+            return false;
+
+        endpoint = FieldRef(*key);
+        return true;
+    };
+
+    return project_endpoint(range.left) && project_endpoint(range.right);
+}
+
+}
+
+void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key_types)
+{
+    for (auto & element : rpn)
+    {
+        if (element.key_columns.size() != 1)
+            continue;
+
+        const size_t key_column = element.key_columns.front();
+        if (key_column >= key_types.size())
+            continue;
+
+        auto nested_type = removeNullable(key_types[key_column]);
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            nested_type = low_cardinality->getDictionaryType();
+
+        if (!isExponentialTimeDecayingFloat64(nested_type))
+            continue;
+
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            {
+                if (!projectExponentialTimeDecayingRange(element.range, key_types[key_column]))
+                {
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                    element.range = Range::createWholeUniverse();
+                    element.relaxed = true;
+                    break;
+                }
+
+                /// One compact key represents two neighboring exact keys. Boundary
+                /// buckets are therefore inclusive and the atom is relaxed.
+                element.range.left_included = true;
+                element.range.right_included = true;
+                element.relaxed = true;
+                break;
+            }
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+                /// Nullability is preserved by the projected index type.
+                break;
+            case RPNElement::ALWAYS_FALSE:
+            case RPNElement::ALWAYS_TRUE:
+            case RPNElement::FUNCTION_AND:
+            case RPNElement::FUNCTION_OR:
+            case RPNElement::FUNCTION_NOT:
+            case RPNElement::FUNCTION_UNKNOWN:
+                break;
+            default:
+                /// Excluding a lossy bucket (`!=`, `NOT IN`, etc.) can exclude a
+                /// colliding logical value. Sets and special predicates need their own
+                /// collision-aware projection before they can prune safely.
+                element.function = RPNElement::FUNCTION_UNKNOWN;
+                element.range = Range::createWholeUniverse();
+                element.set_index.reset();
+                element.relaxed = true;
+                break;
+        }
+    }
+}
+
 bool KeyCondition::matchesExactContinuousRange() const
 {
     const Field field{};
