@@ -142,6 +142,20 @@ FROM
     SELECT exponentialTimeDecaying(10)(2, toFloat64(100)) AS decaying_value
 );
 
+-- The cutoff applies while finalized rows are added, not while aggregate states
+-- are merged. Each one-row state is exact and their later merge must remain exact.
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSumMerge(state),
+        toFloat64(100)),
+    6)
+FROM
+(
+    SELECT exponentialTimeDecayedSumState(exponentialTimeDecaying(10)(1, toFloat64(0))) AS state
+    UNION ALL
+    SELECT exponentialTimeDecayedSumState(exponentialTimeDecaying(10)(2, toFloat64(100))) AS state
+);
+
 -- The same setting must never approximate persisted SimpleAggregateFunction
 -- values during an AggregatingMergeTree background merge.
 DROP TABLE IF EXISTS time_decay_budget_engine_exact;
