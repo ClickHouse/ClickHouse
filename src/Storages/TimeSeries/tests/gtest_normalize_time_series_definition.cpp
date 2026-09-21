@@ -549,6 +549,35 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5"));
     EXPECT_TRUE(copy.contains("version = 6")) << copy;
     EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
+
+    static constexpr std::string_view legacy_replicated_engine
+        = "ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+          "PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+    static constexpr std::string_view pinned_replicated_engine
+        = "ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+          "PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) "
+          "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1";
+
+    /// The engine and its arguments are preserved on copy, while the generated partition
+    /// key is recognized, stripped, and regenerated with UTC on the new table.
+    auto replicated_src = normalizeNewTable(
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 "
+        "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}')");
+    EXPECT_EQ(extractInnerEngine(replicated_src, "RECENT SAMPLES"), legacy_replicated_engine);
+
+    auto replicated_copy = normalizeNewTableAs(
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", replicated_src);
+    EXPECT_TRUE(replicated_copy.contains("version = 6")) << replicated_copy;
+    EXPECT_EQ(extractInnerEngine(replicated_copy, "RECENT SAMPLES"), pinned_replicated_engine);
+
+    /// An explicit custom partition key is preserved on copy even when the engine has arguments.
+    auto custom_partition_copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 "
+            "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
+            "PARTITION BY toYYYYMM(timestamp)"));
+    EXPECT_TRUE(extractInnerEngine(custom_partition_copy, "RECENT SAMPLES").contains("PARTITION BY toYYYYMM(timestamp)"))
+        << custom_partition_copy;
 }
 
 
