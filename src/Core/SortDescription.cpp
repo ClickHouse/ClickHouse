@@ -5,9 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Common/SipHash.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -30,40 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-}
-
-String checkFillDescription(const FillColumnDescription & fill, int direction)
-{
-    if (accurateEquals(fill.fill_step, Field{0}))
-        return "WITH FILL STEP value cannot be zero";
-
-    if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
-        return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
-
-    if (direction > 0)
-    {
-        if (accurateLess(fill.fill_step, Field{0}))
-            return "WITH FILL STEP value cannot be negative for sorting in ascending direction";
-
-        if (accurateLess(fill.fill_staleness, Field{0}))
-            return "WITH FILL STALENESS value cannot be negative for sorting in ascending direction";
-
-        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_to, fill.fill_from))
-            return "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction";
-    }
-    else
-    {
-        if (accurateLess(Field{0}, fill.fill_step))
-            return "WITH FILL STEP value cannot be positive for sorting in descending direction";
-
-        if (accurateLess(Field{0}, fill.fill_staleness))
-            return "WITH FILL STALENESS value cannot be positive for sorting in descending direction";
-
-        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_from, fill.fill_to))
-            return "WITH FILL FROM value cannot be less than TO value for sorting in descending direction";
-    }
-
-    return {};
 }
 
 void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
@@ -223,7 +187,7 @@ static LoggerPtr getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
 {
-    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())

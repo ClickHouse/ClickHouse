@@ -6,13 +6,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 
-#include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
-#include <thread>
-#include <unordered_set>
-
 
 /// General functionality for several different database engines.
 
@@ -22,10 +15,6 @@ namespace DB
 class IDisk;
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
-
-/// Throws QUERY_IS_TOO_LARGE if the resulting CREATE query for `metadata` exceeds max_query_size.
-/// `table_id` is used to fetch the current CREATE query AST and for the error message.
-void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
 
@@ -72,13 +61,7 @@ public:
 
     ~DatabaseWithOwnTablesBase() override;
 
-    void setDeferredPopulation(std::function<void(IDatabase &)> populate);
-
-    void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
-
 protected:
-    bool mayShadowDeferredTable(const String & table_name) const;
-
     Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
@@ -86,20 +69,9 @@ protected:
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
-    virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
+    StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
-
-private:
-    mutable std::atomic<bool> has_deferred_population{false};
-    mutable std::mutex populate_mutex;
-    mutable std::condition_variable populated;
-    mutable std::function<void(IDatabase &)> deferred_populate TSA_GUARDED_BY(populate_mutex);
-    mutable bool populating TSA_GUARDED_BY(populate_mutex) = false;
-    mutable std::thread::id populating_thread TSA_GUARDED_BY(populate_mutex);
-    mutable std::exception_ptr deferred_populate_error TSA_GUARDED_BY(populate_mutex);
-    mutable std::atomic<bool> deferred_populate_failed{false};
-    std::unordered_set<String> deferred_shadowing_candidates;
 };
 
 }

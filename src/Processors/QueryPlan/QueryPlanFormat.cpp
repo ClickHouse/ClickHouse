@@ -15,7 +15,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -33,7 +32,6 @@
 #include <fmt/ranges.h>
 #include <optional>
 #include <string_view>
-#include <variant>
 
 namespace DB
 {
@@ -57,7 +55,7 @@ namespace QueryPlanFormat
 
     String trimColumnIdentifier(std::string_view name)
     {
-        if (!name.contains(TABLE_PREFIX))
+        if (name.find(TABLE_PREFIX) == std::string_view::npos)
             return String(name);
 
         String result;
@@ -80,43 +78,49 @@ namespace QueryPlanFormat
         return result;
     }
 
-    std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step)
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
     {
         const auto & input_headers = step.getInputHeaders();
         if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
-            return {};
+            return;
 
-        auto side_group = [](MetricGroupKey key, const Block & input_header) -> MetricGroup
+        out << prefix << "Output:\n";
+
+        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
         {
-            std::vector<String> columns;
-            columns.reserve(input_header.columns());
-            for (const auto & column : input_header)
-                columns.push_back(trimColumnIdentifier(column.name));
-
-            String joined = columns.empty() ? String("Empty") : fmt::format("{}", fmt::join(columns, ", "));
-
-            MetricGroup group;
-            group.key = key;
-            group.metrics.emplace_back(MetricKey::Unnamed, std::move(joined));
-            return group;
-        };
-
-        std::vector<MetricGroup> groups;
-        groups.emplace_back(side_group(MetricGroupKey::InputLeft, *input_headers[0]));
-        groups.emplace_back(side_group(MetricGroupKey::InputRight, *input_headers[1]));
-        return groups;
-    }
-
-    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix)
-    {
-        for (const auto & group : collectJoinInputColumns(step))
-        {
-            out << prefix << toString(group.key) << ": ";
-            for (const auto & metric : group.metrics)
-                if (const auto * text = std::get_if<String>(&metric.value))
-                    out << *text;
-            out << '\n';
+            out << prefix << "  Left:  Empty\n";
+            out << prefix << "  Right: Empty\n";
+            return;
         }
+
+        const auto & output = *step.getOutputHeader();
+        const auto & left_input = *input_headers[0];
+        const auto & right_input = *input_headers[1];
+
+        std::vector<String> left_columns;
+        std::vector<String> right_columns;
+
+        for (const auto & col : output)
+        {
+            if (left_input.has(col.name))
+                left_columns.push_back(trimColumnIdentifier(col.name));
+            else if (right_input.has(col.name))
+                right_columns.push_back(trimColumnIdentifier(col.name));
+        }
+
+        out << prefix << "  Left:  ";
+        if (left_columns.empty())
+            out << "Empty";
+        else
+            out << fmt::format("{}", fmt::join(left_columns, ", "));
+        out << "\n";
+
+        out << prefix << "  Right: ";
+        if (right_columns.empty())
+            out << "Empty";
+        else
+            out << fmt::format("{}", fmt::join(right_columns, ", "));
+        out << "\n";
     }
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
@@ -598,31 +602,14 @@ namespace QueryPlanFormat
         return {};
     }
 
-    using PerPlanColumnMaps = std::unordered_map<const QueryPlan *, PrettyColumnNameMap>;
-
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * node,
-        PrettyColumnNameMap & pretty_names,
-        PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        std::unordered_map<String, PrettyColumnName> & pretty_names,
+        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
-
-        for (auto * child_plan : node->step->getChildPlans())
-        {
-            if (child_plan && child_plan->getRootNode())
-            {
-                /// A child plan is a separate naming scope. Build its column names into their own map so
-                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
-                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
-                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
-                /// so they stay shared across the whole tree.
-                auto & child_columns = per_plan_columns[child_plan];
-                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
-            }
-        }
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names);
 
         const auto & step = node->step;
         const auto & step_name = step->getName();
@@ -641,13 +628,9 @@ namespace QueryPlanFormat
                 if (output->type != ActionsDAG::ActionType::INPUT)
                     pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
         }
-        else if (step_name == "Aggregating")
+        else if (step_name == "Aggregating" || step_name == "AggregatingProjection")
         {
             addAggregatesPrettyNames(static_cast<const AggregatingStep *>(step.get())->getParams(), pretty_names);
-        }
-        else if (step_name == "AggregatingProjection")
-        {
-            addAggregatesPrettyNames(static_cast<const AggregatingProjectionStep *>(step.get())->getParams(), pretty_names);
         }
         else if (step_name == "MergingAggregated")
         {
@@ -731,29 +714,14 @@ namespace QueryPlanFormat
         }
     }
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
+    void buildPrettyNamesMap(
+        const QueryPlan & plan,
+        std::unordered_map<String, PrettyColumnName> & pretty_names,
+        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
     {
-        /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
-        /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
-        PrettyRuntimeFilterNameMap runtime_filter_names;
-        PrettySetNameMap subquery_set_names;
-        PerPlanColumnMaps per_plan_columns;
-
-        /// Reserve the top plan's slot first so it is keyed even if it has no expression columns.
-        auto & top_columns = per_plan_columns[&plan];
-        auto * root = plan.getRootNode();
-        if (root)
-            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
-
-        PrettyNamesPerPlan result;
-        for (auto & [plan_ptr, columns] : per_plan_columns)
-        {
-            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
-            for (const auto & [hash, name] : subquery_set_names)
-                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
-        }
-        return result;
+        if (plan.getRootNode())
+            buildPrettyNamesForNode(plan.getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
     }
 
 }

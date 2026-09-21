@@ -9,17 +9,8 @@ namespace DB
 /// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 String likePatternToRegexp(std::string_view pattern);
 
-/// Is the [I]LIKE pattern equivalent to a substring search?
-/// Returns true if the pattern is of the form '%substring%' (with no other wildcards),
-/// and writes the extracted substring to 'res'.
-bool likePatternIsSubstring(std::string_view pattern, String & res);
-
 /// Rewrites a LIKE pattern with custom escape character into a LIKE pattern with standard escape character (backslash).
 /// Example: with escape_char='#': "50#%off" -> "50\%off"
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char);
-
-/// Checks if a LIKE pattern contains a backslash which does not form a valid escape sequence,
-/// i.e. a backslash followed by a byte other than '%', '_' or '\', or a trailing backslash.
-bool likePatternHasUnknownBackslashEscape(std::string_view pattern);
 
 }

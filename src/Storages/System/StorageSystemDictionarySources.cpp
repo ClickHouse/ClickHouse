@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDictionarySources.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -15,10 +14,7 @@ ColumnsDescription StorageSystemDictionarySources::getColumnsDescription()
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the dictionary source, as specified in the SOURCE clause."},
-        {"description", std::make_shared<DataTypeString>(),
-            "A description of what the dictionary source does. "
-            "For sources that have a dedicated documentation page, this contains the full Markdown body of that page; "
-            "for the remaining sources it is a concise summary."},
+        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the dictionary source does."},
         {"syntax", std::make_shared<DataTypeString>(), "The structure of the SOURCE clause used to specify the source. Note that some sources are subject to access control when a dictionary is created from a DDL query (as opposed to a server configuration file); see the `description` of the individual source for details."},
         {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
         {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the source was first introduced, in the form major.minor."},
@@ -48,6 +44,3 @@ void StorageSystemDictionarySources::fillData(MutableColumns & res_columns, Cont
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionarySources) }

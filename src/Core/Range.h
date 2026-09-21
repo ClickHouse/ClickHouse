@@ -2,7 +2,6 @@
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -40,7 +39,7 @@ struct FieldRef : public Field
 struct Range;
 
 /// A series of ranges which may overlap.
-using Ranges = VectorWithMemoryTracking<Range>;
+using Ranges = std::vector<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -63,10 +62,6 @@ public:
     static Range createWholeUniverseTypeAware(const DataTypePtr & type);
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
-    /// Same, but bounded within the given universe instead of (-inf, +inf): the unconstrained side takes
-    /// arbitrary universe's bound (e.g. a column's partition minmax) rather than -/+ infinity.
-    static Range createRightBounded(const FieldRef & right_point, bool right_included, const Range & universe);
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included, const Range & universe);
 
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
@@ -126,7 +121,7 @@ Range intersect(const Range & a, const Range & b);
 
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
-using Hyperrectangle = VectorWithMemoryTracking<Range>;
+using Hyperrectangle = std::vector<Range>;
 
 Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
 String toString(const Hyperrectangle & x);

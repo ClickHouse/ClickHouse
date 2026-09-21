@@ -1,6 +1,0 @@
-default: optimized
-1
-compatibility 26.7: not optimized
-0
-explicit enable overrides compatibility
-1

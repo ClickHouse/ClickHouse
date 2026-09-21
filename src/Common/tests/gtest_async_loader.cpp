@@ -40,7 +40,9 @@ UInt64 spawnFailures()
         return ProfileEvents::end();
     }();
 
-    return event == ProfileEvents::end() ? 0 : ProfileEvents::global_counters[event];
+    if (event == ProfileEvents::end())
+        return 0;
+    return ProfileEvents::global_counters[event].load();
 }
 
 }
@@ -260,7 +262,7 @@ TEST(AsyncLoader, CycleDetection)
     {
         int present[] = { 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
         for (int i = 0; i < std::size(present); i++)
-            ASSERT_EQ(e.message().contains(fmt::format("job{}", i)), present[i]);
+            ASSERT_EQ(e.message().find(fmt::format("job{}", i)) != String::npos, present[i]);
     }
 
     const_cast<LoadJobSet &>(cycle_breaker->dependencies).clear();

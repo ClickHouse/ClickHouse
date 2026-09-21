@@ -36,9 +36,6 @@ public:
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
-    /// PartialMergeJoin re-sorts left blocks by the join key (once per right block), so it does not
-    /// preserve the left stream's original order. See issues #109216 and #110662.
-    bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -47,17 +44,12 @@ public:
 
     void setTotals(const Block &) override;
 
-    bool hasPostBuildPhase() const override { return true; }
-    void runPostBuildPhase() override;
-
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
-    /// Has to be called only after `runPostBuildPhase`
+    /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
-
-    StepAnalysisReport getAnalysisReport() const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
     static bool isSupported(JoinKind kind, JoinStrictness strictness);
@@ -130,13 +122,6 @@ private:
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
 
-    /// Build side is single threaded that is why these variables are non-atomic
-    UInt64 build_sort_time_ns = 0;
-    UInt64 right_spilled_compressed_bytes = 0;
-    std::atomic<UInt64> probe_sort_time_ns{0};
-    std::atomic<UInt64> total_left_rows{0};
-    std::atomic<UInt64> matched_left_rows{0};
-
     Names lowcard_right_keys;
 
     LoggerPtr log;
@@ -174,11 +159,11 @@ private:
 
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
-    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
+                  MutableColumns & left_columns, MutableColumns & right_columns);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
 
     Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);

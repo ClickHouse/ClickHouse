@@ -25,8 +25,10 @@ SELECT count() FROM t_in_lc_type WHERE s NOT IN (SELECT 'a');
 SELECT '-- the analyzer';
 SET enable_analyzer = 1;
 
-SELECT DISTINCT toTypeName(s IN ('a')) AS literal_set, toTypeName(s IN (SELECT 'a')) AS subquery_set FROM t_in_lc_type;
-SELECT DISTINCT toTypeName(f) FROM (SELECT s IN (SELECT 'a') AS f FROM t_in_lc_type);
+-- The two `toTypeName` controls of the old-analyzer block above are not repeated here: making the
+-- analyzer type `s IN (SELECT 'a')` as `LowCardinality(UInt8)` like `s IN ('a')` is an improvement
+-- (#114229) that is not in this branch, where the subquery form still types as plain `UInt8`.
+-- The queries below are the ones the fix is about - they return values, not type names.
 SELECT tuple(*) AS t FROM (SELECT s, s IN (SELECT 'a') AS f FROM t_in_lc_type) ORDER BY t;
 SELECT arrayFilter(x -> (x IN (SELECT 'a')), [s, 'b']) FROM t_in_lc_type ORDER BY s;
 SELECT count() FROM t_in_lc_type WHERE s IN (SELECT 'a');
