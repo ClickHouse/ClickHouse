@@ -1,0 +1,18 @@
+-- compatibility turning the setting off is rejected
+NOT_IMPLEMENTED
+0
+-- a profile turning the setting off is rejected
+NOT_IMPLEMENTED
+0
+-- the same through MODIFY QUERY
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+-- the definition of the view is unchanged
+1
+-- ON CLUSTER with the legacy DDL entry format is rejected on the initiator
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+0
+-- a clause that leaves the setting on is accepted
+1
+2

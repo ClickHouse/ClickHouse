@@ -1,0 +1,25 @@
+-- EXPLAIN SYNTAX of a non-SELECT statement
+INSERT INTO t_old_113711b WITH\n    c_old_113711b AS\n    (\n        SELECT 1 AS x\n    )\nSELECT x\nFROM\nc_old_113711b
+-- EXPLAIN AST with optimize = 1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    WithElement (children 1)
+     Subquery (alias _subqueryN) (children 1)
+      SelectWithUnionQuery (children 1)
+       ExpressionList (children 1)
+        SelectQuery (children 1)
+         ExpressionList (children 1)
+          Literal UInt64_1 (alias x)
+   ExpressionList (children 1)
+    Identifier x
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Subquery (alias c_old_113711b) (children 1)
+       SelectWithUnionQuery (children 1)
+        ExpressionList (children 1)
+         SelectQuery (children 1)
+          ExpressionList (children 1)
+           Literal UInt64_1 (alias x)

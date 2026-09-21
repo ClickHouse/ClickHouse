@@ -1,0 +1,11 @@
+-- the nested reference is stored qualified
+WITH r_nested_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.r_nested_113711b SETTINGS enable_global_with_statement = 0)
+-- and reads the table, as in a plain query with the setting off
+7
+-- a reference the definition does not hide stays bare, in the same definition
+WITH r_nested_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT a.x AS from_cte, b.x AS from_table FROM r_nested_113711b AS a, (SELECT * FROM db.r_nested_113711b SETTINGS enable_global_with_statement = 0) AS b
+1	7
+-- the same for a plain CTE
+WITH r_plain_113711b AS (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.r_plain_113711b SETTINGS enable_global_with_statement = 0)
+9
+9

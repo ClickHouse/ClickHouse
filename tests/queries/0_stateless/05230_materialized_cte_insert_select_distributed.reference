@@ -1,0 +1,6 @@
+-- the CTE name belongs to a local table
+3	3
+-- the CTE name belongs to a Distributed table
+3	3
+-- no table of the CTE name exists
+3	3

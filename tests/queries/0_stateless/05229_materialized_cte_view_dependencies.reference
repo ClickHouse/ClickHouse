@@ -1,0 +1,18 @@
+-- every view reads the CTE, not the same-named table
+1
+2
+3
+1
+2
+3
+1
+2
+3
+-- the CTE name is not a dependency of any of the three views
+1
+2
+3
+-- the table the CTE body reads is a dependency
+-- the same for a materialized view writing to a target table
+1
+2

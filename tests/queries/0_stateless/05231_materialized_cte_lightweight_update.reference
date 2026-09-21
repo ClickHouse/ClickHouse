@@ -1,0 +1,6 @@
+-- two references in an assignment read one materialization
+1
+-- a table of the CTE name does not capture the reference in an IN subquery
+0	2
+1	2
+2	1
