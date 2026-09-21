@@ -1,0 +1,9 @@
+rows	100
+persisted: 1.bin 2.bin 
+the mutation is committed and not finished, and applied in memory	50	50	99
+after the insert	75	50	124
+persisted: 4.bin 
+staged: mut.bin mut.commit 
+after a reload, the rows of the mutation and of the insert	75	50	124
+persisted: 3.bin 4.bin 
+staged: 
