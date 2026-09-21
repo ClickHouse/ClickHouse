@@ -166,13 +166,12 @@ class AggregateFunctionExponentialTimeDecayed final
           AggregateFunctionExponentialTimeDecayed<result_kind>>
 {
 public:
-    static DataTypePtr getResultDataType(Float64 decay_length, bool legacy_result_name)
+    static DataTypePtr getResultDataType(Float64 decay_length)
     {
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
 
-        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(
-            decay_length, legacy_result_name);
+        return std::make_shared<DataTypeExponentialTimeDecayingFloat64>(decay_length);
     }
 
     AggregateFunctionExponentialTimeDecayed(
@@ -181,12 +180,11 @@ public:
         const Array & parameters_,
         Float64 decay_length_,
         Float64 max_decay_distance_,
-        bool input_is_decaying_value_ = false,
-        bool legacy_result_name_ = false)
+        bool input_is_decaying_value_ = false)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
-              argument_types_, parameters_, getResultDataType(decay_length_, legacy_result_name_))
+              argument_types_, parameters_, getResultDataType(decay_length_))
         , name(std::move(name_))
         , decay_length(decay_length_)
         , max_decay_distance(max_decay_distance_)
@@ -404,7 +402,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
         getMaxDecayDistance(name, settings, decay_length));
 }
 
-AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecaying(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
@@ -417,9 +415,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
         argument_types,
         parameters,
         decay_length,
-        getMaxDecayDistance(name, settings, decay_length),
-        false,
-        true);
+        getMaxDecayDistance(name, settings, decay_length));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
