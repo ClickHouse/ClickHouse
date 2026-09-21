@@ -66,7 +66,7 @@ REGISTER_FUNCTION(BitRotateRight)
     FunctionDocumentation::Syntax syntax = "bitRotateRight(a, N)";
     FunctionDocumentation::Arguments arguments = {
         {"a", "A value to rotate.", {"(U)Int8/16/32/64"}},
-        {"N", "The number of positions to rotate right.", {"UInt8/16/32/64"}}
+        {"N", "The number of positions to rotate right.", {"(U)Int8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the rotated value, with as many bits as the wider of the two arguments and signed if either of them is signed.", {"(U)Int8/16/32/64"}};
     FunctionDocumentation::Examples examples = {{"Usage example",
