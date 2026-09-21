@@ -59,16 +59,18 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 String findDictionaryFunction(const IQueryPlanStep & step);
 
-/// The name of the first dictionary function (`dictGet` and its variations, `dictHas`, `dictIsIn`) in the
-/// expressions the step would carry to a worker, or an empty string. A dictionary is an object of the
-/// initiator: a worker task resolves the name in its own catalog and fails with `Dictionary (...) not found`
-/// when the dictionary is not there, so a plan that calls one is executed locally until dictionaries can be
-/// shipped. Besides expression and filter steps, the join expression and the filters pushed into a source
-/// read (prewhere, row-level filter, the pushed-down filter) carry expressions.
+/// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
+/// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
+/// `isSerializable` cannot tell, and no function attribute marks "needs an object of the initiator"; the only
+/// place the dependency is visible is the function node inside the step's expressions, hence a DAG walk. It
+/// has to look beyond `ExpressionStep`/`FilterStep`: by the time the decision runs the optimizer has moved
+/// filters into the read (prewhere, row-level filter, pushed-down filter) and into the join expression, and a
+/// dictionary call left there would slip through. Temporary: the check goes away once the workers receive the
+/// dictionaries a distributed plan reads (tracked internally).
 String findDictionaryFunction(const IQueryPlanStep & step)
 {
     auto find_in_dag = [](const ActionsDAG & dag) -> String
@@ -109,7 +111,7 @@ String findDictionaryFunction(const IQueryPlanStep & step)
     return {};
 }
 
-/// True if the step cannot be shipped to a worker as part of a serialized fragment.
+/// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
 /// connection: its callback holds the connection's protocol version and codec. A step that calls a
@@ -117,32 +119,37 @@ String findDictionaryFunction(const IQueryPlanStep & step)
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    if (typeid_cast<const BlocksMarshallingStep *>(&step))
-        return true;
-    if (!findDictionaryFunction(step).empty())
-        return true;
+    if (auto dictionary_function = findDictionaryFunction(step); !dictionary_function.empty())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support the dictionary function {}", dictionary_function);
+
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
-        return false;
-    return !step.isSerializable();
+        return std::nullopt;
+
+    if (typeid_cast<const BlocksMarshallingStep *>(&step) || !step.isSerializable())
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
+            step.getName());
+
+    return std::nullopt;
 }
 
-/// The first step of an optimized plan that cannot execute remotely, or nullptr. Nothing is
-/// tolerated here: the placeholders the decision skips have been materialized away by now.
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root)
+/// The reason the first step of an optimized plan cannot execute remotely, or nullopt.
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (isStepUnsupportedForRemoteExecution(*node->step))
-            return node->step.get();
+        if (auto reason = getReasonStepUnsupportedForRemoteExecution(*node->step); reason.has_value())
+            return reason;
         for (const auto * child : node->children)
             stack.push_back(child);
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -355,14 +362,8 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const CommonSubplanReferenceStep *>(&step))
         return std::nullopt;
 
-    if (auto dictionary_function = findDictionaryFunction(step); !dictionary_function.empty())
-        return PreformattedMessage::create(
-            "make_distributed_plan does not support the dictionary function {}", dictionary_function);
-
-    if (isStepUnsupportedForRemoteExecution(step))
-        return PreformattedMessage::create(
-            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
-            step.getName());
+    if (auto reason = getReasonStepUnsupportedForRemoteExecution(step); reason.has_value())
+        return reason;
 
     /// Sets backed by an external table cannot be shipped with the worker tasks.
     if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(&step))

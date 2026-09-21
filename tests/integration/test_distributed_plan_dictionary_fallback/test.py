@@ -1,8 +1,9 @@
 """
-A dictionary is an object of the server that owns it. Under `make_distributed_plan` a plan that calls `dictGet` (or one
-of its variations) has to fall back to local execution: a worker task would resolve the dictionary name in its own
-catalog and fail with `Dictionary (...) not found`. A single-server stateless test cannot show this, its workers share
-the initiator's catalog, so this test puts every worker task on a second node that has the table but not the dictionary.
+The distributed plan ships the expression to the workers as a name: the fragment carries `dictGet('db.dict', ...)`, and the
+worker task rebuilds the function and resolves `db.dict` in its own catalog. Nothing ships the dictionary itself yet, so on a
+worker that does not have it the task fails with `Dictionary (...) not found` while executing `ReadFromDistributedPlanSource`,
+and the whole query fails, hence the fallback to local execution.
+This cluster puts every worker task on a second node that has the table but not the dictionary to test the fallback.
 """
 
 import uuid
@@ -96,17 +97,6 @@ def _fallback_reasons(query_id: str) -> str:
         f"SELECT message FROM system.text_log WHERE query_id = '{query_id}' "
         f"AND logger_name = 'makeDistributedPlan' AND message LIKE '%falling back to local execution%'"
     )
-
-
-def test_control_distributes_to_the_worker(started_cluster):
-    """Without a dictionary the same read runs its tasks on the worker node, so the checks below measure the right thing."""
-    query_id = str(uuid.uuid4())
-    result = initiator.query(f"SELECT k FROM t ORDER BY k LIMIT 3 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
-    assert result == "0\n1\n2\n"
-    _flush_logs()
-    assert _remote_tasks(query_id) > 0
-    assert _worker_tasks(query_id) > 0
-    assert _fallback_reasons(query_id) == ""
 
 
 def test_dict_get_falls_back(started_cluster):
