@@ -93,6 +93,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char object_storage_source_pause_before_virtual_columns[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -594,6 +599,8 @@ Chunk StorageObjectStorageSource::generate()
                 object_size = object_info->fileSizeInArchive();
             else if (object_metadata->is_size_known)
                 object_size = object_metadata->size_bytes;
+
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
