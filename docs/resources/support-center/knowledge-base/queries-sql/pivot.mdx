@@ -1,15 +1,15 @@
 ---
 title: Can you PIVOT in ClickHouse?
-description: "ClickHouse doesn't have a PIVOT clause, but we can get close to this functionality using aggregate function combinators. Let's see how to do this using the UK housing prices dataset."
+description: "ClickHouse supports static PIVOT clauses, and aggregate function combinators remain useful for dynamic or map-shaped pivots. This article shows the combinator approach using the UK housing prices dataset."
 date: 2024-12-11
 tags: ['Data Modelling', 'Core Data Concepts']
 keywords: ['PIVOT', 'Aggregate Function Combinators']
 ---
 
 ## Introduction {#introduction}
-ClickHouse has no pivot operator, but we can achieve similar behavior using [aggregate function combinators](/reference/functions/aggregate-functions/combinators) and, in particular, the ones with the [`-Map` suffix](/reference/functions/aggregate-functions/combinators#-map).
+ClickHouse supports a static `PIVOT` clause when the pivot values are known in advance. For dynamic pivots, or when a map result is more convenient, you can also use [aggregate function combinators](/reference/functions/aggregate-functions/combinators) and, in particular, the ones with the [`-Map` suffix](/reference/functions/aggregate-functions/combinators#-map).
 
-In this article, we're going to learn how to do that. 
+In this article, we're going to learn the combinator approach. 
 There is also a video covering the same material, which you can see below:
 
 <Frame>
