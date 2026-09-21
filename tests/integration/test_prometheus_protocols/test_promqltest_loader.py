@@ -280,6 +280,26 @@ def test_compare_range_timestamps():
     assert status == "failed"
 
 
+def test_compare_scalar_requires_unlabeled_row():
+    case = loader.EvalCase(
+        eval_id="t:5",
+        file_name="t.test",
+        line=5,
+        kind="instant",
+        expr="scalar(m)",
+        time_s=0,
+        expected_scalar=1.0,
+        has_scalar=True,
+    )
+    status, _ = loader.compare_eval(case, "[]\t1970-01-01 00:00:00.000\t1\n", None)
+    assert status == "passed"
+    status, reason = loader.compare_eval(
+        case, "[('__name__','m')]\t1970-01-01 00:00:00.000\t1\n", None
+    )
+    assert status == "failed"
+    assert "labels" in reason
+
+
 def test_compare_expect_fail():
     case = loader.EvalCase(
         eval_id="t:2",

@@ -811,11 +811,10 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
 
     rows = parse_sql_result(tsv)
     if case.has_scalar:
-        scalars = [r for r in rows if not r["metric"] or r["metric"] == {}]
-        if not scalars and len(rows) == 1:
-            scalars = rows
         if len(rows) != 1:
             return "failed", f"scalar expected, got {len(rows)} rows"
+        if rows[0]["metric"]:
+            return "failed", f"scalar expected, got labels {rows[0]['metric']}"
         if not values_approx_equal(float(rows[0]["value"]), float(case.expected_scalar)):
             return "failed", f"scalar mismatch: {rows[0]['value']} vs {case.expected_scalar}"
         return "passed", ""
