@@ -1927,9 +1927,9 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     if (value.empty())
         return false;
 
-    /// `m['key']` is the key's first occurrence: is_rest = 0.
+    /// `m['key']` is the key's first occurrence: is_duplicate = 0.
     VectorWithMemoryTracking<String> tokens;
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_duplicate=*/ false));
 
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(

@@ -2008,7 +2008,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     /// addToken hashes through StringHashTable, which reads past both ends of the key, so the scratch
     /// buffer must be padded: PaddedPODArray is, std::string is not.
     PaddedPODArray<UInt8> token;
-    /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
+    /// Keys already seen in this row; drives `is_duplicate`. See ITokenizer.h.
     absl::flat_hash_set<std::string_view> keys_in_row;
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
@@ -2020,9 +2020,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
         for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
-            const bool is_rest = !keys_in_row.insert(key).second;
+            const bool is_duplicate = !keys_in_row.insert(key).second;
 
-            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_duplicate, token);
             granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
         }
 

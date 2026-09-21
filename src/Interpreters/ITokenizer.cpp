@@ -525,9 +525,9 @@ void appendToToken(String & out, UInt8 byte) { out.push_back(static_cast<char>(b
 void appendToToken(PaddedPODArray<UInt8> & out, UInt8 byte) { out.push_back(byte); }
 
 template <typename Out>
-void encodeTokenImpl(std::string_view key, std::string_view value, bool is_rest, Out & out)
+void encodeTokenImpl(std::string_view key, std::string_view value, bool is_duplicate, Out & out)
 {
-    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_rest ? 1ULL : 0ULL);
+    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_duplicate ? 1ULL : 0ULL);
 
     out.clear();
     out.reserve(key.size() + value.size() + getLengthOfVarUInt(packed));
@@ -549,20 +549,20 @@ void encodeTokenImpl(std::string_view key, std::string_view value, bool is_rest,
 
 }
 
-void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out)
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, String & out)
 {
-    encodeTokenImpl(key, value, is_rest, out);
+    encodeTokenImpl(key, value, is_duplicate, out);
 }
 
-void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out)
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, PaddedPODArray<UInt8> & out)
 {
-    encodeTokenImpl(key, value, is_rest, out);
+    encodeTokenImpl(key, value, is_duplicate, out);
 }
 
-String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest)
+String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate)
 {
     String out;
-    encodeToken(key, value, is_rest, out);
+    encodeToken(key, value, is_duplicate, out);
     return out;
 }
 
@@ -600,7 +600,7 @@ KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::st
     {
         .key = token.substr(0, key_size),
         .value = token.substr(key_size, trailer_start - key_size),
-        .is_rest = (packed & 1) != 0,
+        .is_duplicate = (packed & 1) != 0,
     };
 }
 
