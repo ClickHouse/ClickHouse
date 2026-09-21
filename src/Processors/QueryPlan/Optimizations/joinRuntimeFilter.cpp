@@ -304,6 +304,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// A multiset ANTI join (see `JoinOperator::multiset`) keeps the left rows of a key that outnumber its
+    /// right rows, while the `NOT IN` runtime filter of an ANTI join would drop every left row of that key.
+    if (join_operator.multiset && join_operator.strictness == JoinStrictness::Anti)
+        return false;
+
     /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
