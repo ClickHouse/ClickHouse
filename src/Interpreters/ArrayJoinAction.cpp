@@ -294,7 +294,7 @@ Block ArrayJoinResultIterator::next()
         }
         else if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
         {
-            /// The indexes point into the whole block, so the window needs no copy of the column.
+            /// Indexes point into the whole block, no need to cut.
             if (!indexes_for_lazy_replication)
                 indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets(), current_row);
             current.column = ColumnReplicated::create(current.column, indexes_for_lazy_replication);

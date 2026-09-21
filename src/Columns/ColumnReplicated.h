@@ -216,7 +216,7 @@ private:
     static std::atomic<UInt64> global_id_counter;
 };
 
-/// Index `first_index + i` for every element of row `i`.
+/// Elements of row i get index first_index + i.
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets, size_t first_index = 0);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
