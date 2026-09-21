@@ -7,6 +7,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Transforms/ChunkRowRange.h>
+#include <base/defines.h>
 #include <Common/PODArray.h>
 
 
@@ -47,7 +48,18 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
+    /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
+    /// call site: the call costs more than the work.
+    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+    {
+        chassert(group_idx < group_counts.size());
+        const UInt64 group_rows_seen_before_run = group_counts[group_idx];
+        if (group_rows_seen_before_run < group_limit_end)
+            processRunInsideWindow(run_start_row, run_row_count, group_idx, group_rows_seen_before_run);
+    }
+
+    NO_INLINE void
+    processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
 
     template <typename Method>
     requires MapAggregationMethod<Method>
