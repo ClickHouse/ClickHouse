@@ -9,6 +9,14 @@ DOCKERFILE_PATH = "ci/docker/binary-builder/Dockerfile"
 S3_BUCKET = "clickhouse-builds.s3.amazonaws.com"
 
 
+def toolchain_s3_dir(sha):
+    """S3 directory holding the toolchain artifacts of master commit `sha`.
+    Praktika owns the prefix layout, so ask it rather than restating it."""
+    return _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="OptimizeToolchain"
+    )
+
+
 def update_dockerfile(sha):
     with open(DOCKERFILE_PATH, "r") as f:
         content = f.read()
@@ -19,9 +27,21 @@ def update_dockerfile(sha):
         content,
         flags=re.MULTILINE,
     )
+    # The artifact location is pinned as a whole, so a Dockerfile built before a
+    # prefix change keeps pointing at the artifacts of its own vintage.
+    new_content, dir_updates = re.subn(
+        r"^(ARG TOOLCHAIN_S3_DIR=).*$",
+        rf"\g<1>{toolchain_s3_dir(sha)}",
+        new_content,
+        flags=re.MULTILINE,
+    )
 
     if new_content == content:
         print("TOOLCHAIN_COMMIT ARG not found in the Dockerfile")
+        return False
+
+    if not dir_updates:
+        print("TOOLCHAIN_S3_DIR ARG not found in the Dockerfile")
         return False
 
     with open(DOCKERFILE_PATH, "w") as f:
@@ -33,8 +53,9 @@ def update_dockerfile(sha):
 def create_pr(sha):
     short_sha = sha[:8]
     branch = f"update-toolchain-{short_sha}"
-    amd_url = f"https://{S3_BUCKET}/REFs/master/{sha}/build_toolchain_pgo_bolt_amd64/clang-pgo-bolt.tar.zst"
-    arm_url = f"https://{S3_BUCKET}/REFs/master/{sha}/build_toolchain_pgo_bolt_aarch64/clang-pgo-bolt.tar.zst"
+    s3_dir = toolchain_s3_dir(sha)
+    amd_url = f"https://{S3_BUCKET}/{s3_dir}/build_toolchain_pgo_bolt_amd64/clang-pgo-bolt.tar.zst"
+    arm_url = f"https://{S3_BUCKET}/{s3_dir}/build_toolchain_pgo_bolt_aarch64/clang-pgo-bolt.tar.zst"
 
     body = f"""\
 ## Summary

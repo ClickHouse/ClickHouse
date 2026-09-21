@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Common/config_version.h>
@@ -34,13 +35,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
-}
-
 namespace ArrowFlight
 {
+
+CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
+{
+    /// Arrow Flight pins the canonical Arrow mapping and follows exactly one output setting: what to do
+    /// with a type that has no canonical mapping. The other `output_format_arrow_*` settings are
+    /// deliberately not read from the context, so a Flight schema does not track `FORMAT Arrow` for the
+    /// same query.
+    ///
+    /// That is a conformance requirement rather than a simplification. This same conversion builds the
+    /// Flight SQL metadata responses, whose schemas the specification fixes - `CommandGetTables` is
+    /// `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null,
+    /// table_schema: bytes not null` - so honoring `output_format_arrow_string_as_string = 0` would answer
+    /// a driver with `binary` where the specification requires `utf8`, and would change the per-table
+    /// schema ClickHouse advertises inside `table_schema`. `output_format_arrow_date_as_uint16` is a
+    /// ClickHouse backward-compatibility knob in the same way: a client handed `uint16` for a `Date` has no
+    /// way to tell it is a date. The schema also travels separately from the data - `GetFlightInfo`,
+    /// `GetSchema` and `DoGet` are distinct calls, each building its own query context from the session -
+    /// so every setting that can move the schema is another way for the advertised schema and the
+    /// delivered stream to disagree.
+    ///
+    /// `output_format_arrow_unsupported_types` is the exception because `JSON`, `Dynamic`, `QBit` and
+    /// `AggregateFunction` have no canonical Arrow mapping at all. ClickHouse has to invent one, only the
+    /// user can say whether they want text or bytes, and the `clickhouse.opaque` field metadata tells the
+    /// client that the column is an invention rather than a native Arrow type.
+    return {
+        .output_string_as_string = true,
+        .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
+        .format_settings = getFormatSettings(context)};
+}
 
 static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)
 {
@@ -701,6 +726,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
         const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
         const auto & type_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(1));
+        const auto conversion_settings = arrowConversionSettings(query_context);
         for (size_t i = 0; i < col->size(); ++i)
         {
             ColumnsWithTypeAndName table_columns;
@@ -714,9 +740,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
                 auto data_type = DataTypeFactory::instance().get(String(type));
                 table_columns.emplace_back(nullptr, data_type, String(name));
             }
-            auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
-                table_columns, "Arrow", nullptr,
-                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, conversion_settings);
             auto schema_with_metadata = addFlightSQLTypeMetadata(std::move(table_schema), table_columns);
             if (!schema_with_metadata.ok())
                 throw Exception(

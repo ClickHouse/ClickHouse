@@ -877,19 +877,6 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     variants[local_discr]->deserializeAndInsertFromArena(in, settings);
 }
 
-void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
-{
-    Discriminator global_discr = 0;
-    readBinaryLittleEndian<Discriminator>(global_discr, in);
-
-    if (global_discr == NULL_DISCRIMINATOR)
-        return;
-
-    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ true);
-
-    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
-}
-
 char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -1890,7 +1877,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         auto & discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            if (null_map[i] ^ inverted)
+            if (!!null_map[i] != inverted)
             {
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.

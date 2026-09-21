@@ -1,0 +1,103 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <max_block_size>65536</max_block_size>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>function</name>
+            <values>
+                <value>lowerUTF8</value>
+                <value>upperUTF8</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>column</name>
+            <values>
+                <value>ascii</value>
+                <value>mixed_01</value>
+                <value>mixed_01_clustered</value>
+                <value>mixed_10</value>
+                <value>mixed_50</value>
+                <value>unicode</value>
+                <value>ascii_short</value>
+                <value>mixed_01_short</value>
+                <value>mixed_50_short</value>
+                <value>mixed_50_short_hashed</value>
+                <value>unicode_short</value>
+                <value>mixed_50_16</value>
+                <value>unicode_16</value>
+                <value>unicode_16_late</value>
+                <value>mixed_50_16_late</value>
+                <value>mixed_01_block_tail</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE lower_upper_utf8_mixed_ascii
+        (
+            ascii String,
+            mixed_01 String,
+            mixed_01_clustered String,
+            mixed_10 String,
+            mixed_50 String,
+            unicode String,
+            ascii_short String,
+            mixed_01_short String,
+            mixed_50_short String,
+            mixed_50_short_hashed String,
+            unicode_short String,
+            mixed_50_16 String,
+            unicode_16 String,
+            unicode_16_late String,
+            mixed_50_16_late String,
+            mixed_01_block_tail String
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lower_upper_utf8_mixed_ascii
+        SELECT
+            ascii,
+            if(number % 1000 = 0, unicode, ascii),
+            if(number &lt; 500, unicode, ascii),
+            if(number % 10 = 0, unicode, ascii),
+            if(number % 2 = 0, unicode, ascii),
+            unicode,
+            ascii_short,
+            if(number % 1000 = 0, unicode_short, ascii_short),
+            if(number % 2 = 0, unicode_short, ascii_short),
+            if(cityHash64(number) % 2 = 0, unicode_short, ascii_short),
+            unicode_short,
+            if(number % 2 = 0, unicode_16, ascii_16),
+            unicode_16,
+            unicode_16_late,
+            if(number % 2 = 0, unicode_16_late, ascii_16),
+            if(number % 65536 >= 65472, unicode, ascii)
+        FROM
+        (
+            SELECT
+                number,
+                concat(
+                    repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
+                    rightPad(toString(number), 20, 'x')) AS ascii,
+                concat(
+                    repeat('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', 3),
+                    'é',
+                    rightPad(toString(number), 18, 'x')) AS unicode,
+                'Ab' AS ascii_short,
+                'AbCdEfGhIjKlMnOp' AS ascii_16,
+                'é' AS unicode_short,
+                repeat('é', 8) AS unicode_16,
+                concat(repeat('A', 14), 'é') AS unicode_16_late
+            FROM numbers(500000)
+        )
+    </fill_query>
+
+    <query>SELECT {function}({column}) FROM lower_upper_utf8_mixed_ascii FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lower_upper_utf8_mixed_ascii</drop_query>
+</test>

@@ -23,9 +23,9 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -54,7 +54,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
-    extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool enable_nullable_tuple_type;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool format_geojson_validate_geometry;
@@ -104,6 +104,17 @@ FormatSettings getFormatSettings(const ContextPtr & context)
     const auto & settings = context->getSettingsRef();
 
     return getFormatSettings(context, settings);
+}
+
+FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Settings & settings)
+{
+    if (settings[Setting::output_format_arrow_unsupported_types].changed
+        || !settings[Setting::output_format_arrow_unsupported_types_as_binary].changed)
+        return settings[Setting::output_format_arrow_unsupported_types];
+
+    return settings[Setting::output_format_arrow_unsupported_types_as_binary]
+        ? FormatSettings::ArrowUnsupportedTypes::BINARY
+        : FormatSettings::ArrowUnsupportedTypes::THROW;
 }
 
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
@@ -213,6 +224,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
@@ -356,7 +368,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
-    format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
+    format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
+    format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
+    format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -384,7 +398,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
-    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::enable_nullable_tuple_type];
     format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
