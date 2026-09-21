@@ -69,9 +69,8 @@ TEST(ObjectStorageQueueDeduplicationToken, NoETagFailsClosed)
 }
 
 /// A `(size, modification time)` pair is not a substitute for the tag either. Listings report the
-/// modification time with a one-second resolution - `AzureObjectStorage::iterate` truncates it and
-/// `StorageObjectStorageSource` keeps the listing metadata instead of re-fetching it - so two
-/// generations of one path that have the same length and are written within one second look
+/// modification time with a one-second resolution (`AzureObjectStorage::iterate` truncates it), so
+/// two generations of one path that have the same length and are written within one second look
 /// identical, and the rows of the newer one would be deduplicated away against the older one.
 /// A storage that only derives such a weak tag itself (HDFS) is refused for the same reason.
 TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
@@ -88,4 +87,42 @@ TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
     /// The same tag, reported as strong, is accepted - it is the strength that decides.
     auto strong = makeMetadata("1700000000_1024", 1024, 1700000000000000);
     EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "1700000000_1024:0");
+}
+
+/// `hasStrongETag` is the predicate the source asks before it reaches for a token: a listing that
+/// came back without a usable tag makes it refresh the metadata with a per-object request, so an
+/// endpoint that omits `ETag` in the listing but reports it on `GetProperties` is not refused.
+/// It has to agree with `makeDeduplicationToken` on what "usable" means, tag by tag.
+TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheRefresh)
+{
+    EXPECT_TRUE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("\"abc\"", 1024, 1700000000000000)));
+    EXPECT_TRUE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("abc", 1024, 1700000000000000)));
+
+    /// No tag at all, and a tag of nothing but the quotes, both need the refresh.
+    EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("", 1024, 1700000000000000)));
+    EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(makeMetadata("\"\"", 1024, 1700000000000000)));
+
+    /// So does a present but weak one: it would be refused by the token as well.
+    auto weak = makeMetadata("1700000000_1024", 1024, 1700000000000000);
+    weak.etag_is_strong = false;
+    EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(weak));
+
+    /// No metadata at all - the iterator left it out - needs the refresh too.
+    EXPECT_FALSE(ObjectStorageQueueSource::hasStrongETag(std::nullopt));
+
+    /// Exactly the tags a token can be built from, and no others.
+    for (const auto & etag : {std::string{"\"abc\""}, std::string{"abc"}, std::string{""}, std::string{"\"\""}})
+    {
+        const auto metadata = makeMetadata(etag, 1024, 1700000000000000);
+        bool token_built = true;
+        try
+        {
+            ObjectStorageQueueSource::makeDeduplicationToken(metadata, "data/one.csv", 0);
+        }
+        catch (...)
+        {
+            token_built = false;
+        }
+        EXPECT_EQ(ObjectStorageQueueSource::hasStrongETag(metadata), token_built) << "etag: " << etag;
+    }
 }

@@ -40,6 +40,10 @@ public:
     static std::string makeDeduplicationToken(
         const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset);
 
+    /// Whether the metadata carries an `ETag` that `makeDeduplicationToken` can use: present
+    /// (an `ETag` of just `""` counts as absent) and a strong content identifier.
+    static bool hasStrongETag(const std::optional<ObjectMetadata> & object_metadata);
+
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
         ObjectStorageQueueObjectInfo(

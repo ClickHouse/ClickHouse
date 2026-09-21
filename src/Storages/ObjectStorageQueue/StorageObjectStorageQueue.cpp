@@ -2,6 +2,7 @@
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -793,18 +794,27 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
-    bool add_deduplication_info = false;
+    bool deduplication_v2_is_set = false;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
         after_processing_settings_copy = after_processing_settings;
-        add_deduplication_info = deduplication_v2;
+        deduplication_v2_is_set = deduplication_v2;
     }
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
     /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
-    const bool is_deduplication_v2 = add_deduplication_info
+    const bool is_deduplication_v2 = deduplication_v2_is_set
         && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+    /// The per-chunk deduplication token is only ever consumed by the insert into the dependent
+    /// materialized views, and only when that insert deduplicates. A direct `SELECT` inserts
+    /// nowhere (`is_direct_select`), and `streamToViews` enables deduplication for the insert by
+    /// setting `async_insert_deduplicate` on the context it passes here, so ask the same question
+    /// the insert itself will ask. The table setting alone is not the answer: attaching a token to
+    /// a pipeline that never deduplicates would only make the token's own requirements - a strong
+    /// `ETag` - fail reads that are perfectly safe.
+    const bool add_deduplication_info = deduplication_v2_is_set && !is_direct_select
+        && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef());
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
