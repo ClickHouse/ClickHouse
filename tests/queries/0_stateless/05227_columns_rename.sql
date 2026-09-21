@@ -63,24 +63,7 @@ SELECT x + 1 AS y, tuple(* RENAME a AS x) = (1, 2, 3, 4) AS ok FROM t_columns_re
 SELECT DISTINCT toTypeName(x)
 FROM
 (
-    SELECT COLUMNS('^a
-    FROM t_columns_rename
-    GROUP BY ALL WITH ROLLUP
-    SETTINGS group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1
-);
-
-SELECT * RENAME missing AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT * RENAME (a AS x, a AS y) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT * EXCEPT(a) RENAME a AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT * RENAME () FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
-SELECT * RENAME a x FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
-SELECT * RENAME a AS x APPLY(toString) FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
-SELECT * RENAME a AS x RENAME x AS y FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
-INSERT INTO t_columns_rename (* RENAME a AS x) SELECT 1, 2, 3, 4; -- { clientError SYNTAX_ERROR }
-
-DROP TABLE t_columns_rename;
-) REPLACE(if(a > 0, (SELECT a), a) AS a) RENAME a AS x
+    SELECT COLUMNS('^a$') REPLACE(if(a > 0, (SELECT a), a) AS a) RENAME a AS x
     FROM t_columns_rename
     GROUP BY ALL WITH ROLLUP
     SETTINGS group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1
