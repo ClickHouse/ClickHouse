@@ -127,9 +127,10 @@ public:
 
     T operator() (const NumberLiteral & x) const
     {
-        /// Resolve via Float64 (strtod handles scientific notation, decimals, and big integers).
-        Float64 d = std::strtod(x.value.c_str(), nullptr);
-        return operator()(d);
+        /// Resolve to a concrete numeric type first: an integer literal wider than 2^53 would lose
+        /// precision if it went through Float64.
+        const Field resolved = Field(x).resolveNumberLiteral();
+        return applyVisitor(*this, resolved);
     }
 
     template <typename U>
