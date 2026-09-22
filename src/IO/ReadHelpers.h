@@ -178,14 +178,14 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 }
 
 template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
+    if (size > max_size)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                        "Too large array size (maximum: {})", max_size);
 
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
