@@ -525,53 +525,24 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
-                /// Replicas are worth it, so the probe is about to become the plan that runs. If it was
-                /// built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty, build it again
-                /// and materialize them this time - only now is it known that the rows will be used. If
-                /// that build does not come back, decline rather than execute a plan whose temporary
-                /// tables are empty, which would silently return wrong results.
+                /// Replicas are worth it, so the probe is about to become the plan that runs - but a
+                /// probe built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty cannot
+                /// be run: it describes the query correctly and would return wrong results. Decline.
+                ///
+                /// No query reaches here today. A `GLOBAL IN` names its set after the subquery, the
+                /// shipped plan names it after the temporary table that replaced it, so the two plans
+                /// hash differently and the match above always fails for exactly the queries that defer.
+                /// Declining is therefore free, and it stays correct if that ever changes: the cost is
+                /// losing the optimization for these queries, not a wrong answer. Filling the deferred
+                /// tables in place and keeping the plan is the better answer, but it is only worth
+                /// building once the match works.
                 if (probe_build.materialization_deferred)
                 {
-                    auto materialized = optimization_settings.query_plan_with_parallel_replicas_builder(
-                        built_sets, /*defer_materialization*/ false);
-                    /// `materialization_deferred` must be false here - this build was asked to
-                    /// materialize. Check it anyway: a plan that still holds empty temporary tables
-                    /// would run and return wrong results rather than fail, so decline instead.
-                    if (!materialized.plan || materialized.materialization_deferred)
-                    {
-                        LOG_DEBUG(
-                            getLogger("optimizeTree"),
-                            "Could not rebuild the parallel replicas plan with its subqueries materialized "
-                            "(plan built: {}, still deferred: {}). Not enabling parallel replicas reading",
-                            materialized.plan != nullptr,
-                            materialized.materialization_deferred);
-                        return;
-                    }
-                    plan_with_parallel_replicas = std::move(materialized.plan);
-                    final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
-                    if (!final_node_in_replica_plan)
-                        return;
-
-                    /// Everything below - `source_reading_step`, `analysis`, the cost the decision was
-                    /// made on - hangs off the match against the probe, and the probe saw its `GLOBAL IN`
-                    /// / `GLOBAL JOIN` temporary tables empty. Join order is chosen from row counts, so
-                    /// filling them can legitimately reorder the rebuilt plan, and `findReadingStep`
-                    /// descends by position: a reordered join hands back a different read. Re-match and
-                    /// decline unless the rebuilt plan lands on the same node, rather than carry a match
-                    /// that describes a plan that no longer exists.
-                    const auto [rematched_node, rematched_hash] = findCorrespondingNodeInSingleNodePlan(
-                        *final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
-                    if (rematched_node != corresponding_node_in_single_replica_plan
-                        || rematched_hash != single_replica_plan_node_hash)
-                    {
-                        LOG_DEBUG(
-                            getLogger("optimizeTree"),
-                            "Materializing the subqueries changed which node the parallel replicas plan matches "
-                            "(hash {} against {}). Not enabling parallel replicas reading",
-                            rematched_hash,
-                            single_replica_plan_node_hash);
-                        return;
-                    }
+                    LOG_DEBUG(
+                        getLogger("optimizeTree"),
+                        "The plan was built without materializing its subqueries, so it cannot be executed. "
+                        "Not enabling parallel replicas reading");
+                    return;
                 }
 
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
