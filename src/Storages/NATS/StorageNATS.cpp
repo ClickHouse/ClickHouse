@@ -1701,21 +1701,20 @@ SettingDescriptions StorageNATS::getTableSettings(ContextPtr /* query_context */
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
     /// authentication of its own, takes it from the `nats` server config section.
-    setEffectiveValue(settings, "nats_subjects", boost::algorithm::join(subjects, ","));
-    setEffectiveValue(settings, "nats_format", format_name);
-    setEffectiveValue(settings, "nats_schema", schema_name);
-    setEffectiveValue(settings, "nats_url", configuration.url);
-    setEffectiveValue(settings, "nats_server_list", boost::algorithm::join(configuration.servers, ","));
-    setEffectiveValue(settings, "nats_credentials", configuration.credentials);
-    setEffectiveValue(settings, "nats_ca_file", configuration.ca_file);
-    setEffectiveValue(settings, "nats_client_cert_file", configuration.client_cert_file);
-    setEffectiveValue(settings, "nats_client_key_file", configuration.client_key_file);
+    setEffectiveValue(settings, NATSSetting::nats_subjects, boost::algorithm::join(subjects, ","));
+    setEffectiveValue(settings, NATSSetting::nats_format, format_name);
+    setEffectiveValue(settings, NATSSetting::nats_schema, schema_name);
+    setEffectiveValue(settings, NATSSetting::nats_url, configuration.url);
+    setEffectiveValue(settings, NATSSetting::nats_server_list, boost::algorithm::join(configuration.servers, ","));
+    setEffectiveValue(settings, NATSSetting::nats_credentials, configuration.credentials);
+    setEffectiveValue(settings, NATSSetting::nats_ca_file, configuration.ca_file);
+    setEffectiveValue(settings, NATSSetting::nats_client_cert_file, configuration.client_cert_file);
+    setEffectiveValue(settings, NATSSetting::nats_client_key_file, configuration.client_key_file);
 
-    setEffectiveValueWithConfigFallback(settings, "nats_username", (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
-    setEffectiveValueWithConfigFallback(settings, "nats_password", (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
-    setEffectiveValueWithConfigFallback(settings, "nats_token", (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
-    setEffectiveValueWithConfigFallback(
-        settings, "nats_credential_file", (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
+    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_username, (*nats_settings)[NATSSetting::nats_username].value, configuration.username);
+    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_password, (*nats_settings)[NATSSetting::nats_password].value, configuration.password);
+    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_token, (*nats_settings)[NATSSetting::nats_token].value, configuration.token);
+    setEffectiveValueWithConfigFallback(settings, NATSSetting::nats_credential_file, (*nats_settings)[NATSSetting::nats_credential_file].value, configuration.credential_file);
     return settings;
 }
 

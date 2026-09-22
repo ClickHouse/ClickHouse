@@ -91,6 +91,18 @@ struct MergeTreeSettings
 
     void set(std::string_view name, const Field & value);
 
+    /// The same by the setting's typed index, so that a misspelled or renamed setting does not compile. Like
+    /// the by-name form it counts as an assignment, which is what clears the source the server's baseline
+    /// recorded - the value is this engine argument's, not the config's.
+    template <typename FieldType>
+    void set(SettingIndex<MergeTreeSettings, FieldType> setting, const Field & value)
+    {
+        setAtOffset(setting.offset, value);
+    }
+
+    /// For the typed `set` above, which holds `Impl` behind an incomplete type and so can pass only the offset.
+    void setAtOffset(size_t offset, const Field & value);
+
     SettingsChanges changes() const;
     /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
     SettingsChanges changesFrom(const MergeTreeSettings & base) const;

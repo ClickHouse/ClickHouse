@@ -1200,7 +1200,8 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_EXTERN_ENTRY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     SettingIndex<Owner_, SettingField##TYPE> NAME{  \
         offsetof(Traits_::Data, TYPE##_) \
-        + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+        #NAME \
         }; /* NOLINT(misc-use-internal-linkage) */
 
 /// Generate traits for a basic settings collection (no custom settings, no paths)

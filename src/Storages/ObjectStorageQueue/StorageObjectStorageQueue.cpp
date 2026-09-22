@@ -2221,9 +2221,15 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     bool rebuilt_from_shared_metadata = false;
     auto settings = getSettings(&rebuilt_from_shared_metadata).enumerateSettings();
 
-    /// The fields `getSettings` reads from the table metadata serialized to Keeper, which is what serialization
-    /// writes rather than what the `isStoredInKeeper` name list claims: not `keeper_path`, which the storage
-    /// keeps itself, and not `parallel_inserts`, which the metadata declares but never writes or reads.
+    /// The fields `getSettings` reads from the table metadata serialized to Keeper, which is what
+    /// `ObjectStorageQueueTableMetadata`'s serialization writes rather than what its own
+    /// `isStoredInKeeper` name list claims: not `keeper_path`, which the storage keeps itself, and not
+    /// `parallel_inserts`, which the metadata declares but never writes or reads.
+    ///
+    /// Both lists name their settings as strings, and this one stays that way so the two can be read against
+    /// each other - which is what has to happen whenever that serialization gains or loses a field. A setting
+    /// named here that the metadata stops writing would be reported as coming from Keeper when it no longer
+    /// does; one it starts writing and this list misses would be reported as the definition's.
     static const NameSet held_in_shared_metadata{
         "mode", "after_processing", "loading_retries", "processing_threads_num",
         "last_processed_path", "bucketing_mode", "partitioning_mode",
@@ -2272,8 +2278,11 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built, so the
     /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
     /// setting's final origin - even when the value is the default, since after the fold they are one setting.
-    if (const auto mode = std::ranges::find(settings, "partitioning_mode", &SettingDescription::name); mode != settings.end())
-        setEffectiveValue(settings, "use_hive_partitioning", mode->value == "hive" ? "1" : "0", mode->origin);
+    const auto mode = std::ranges::find(
+        settings, ObjectStorageQueueSetting::partitioning_mode.name, &SettingDescription::name);
+    if (mode != settings.end())
+        setEffectiveValue(
+            settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);
 
     return settings;
 }

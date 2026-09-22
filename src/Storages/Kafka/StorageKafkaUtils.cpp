@@ -1195,13 +1195,12 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr /*
 
     /// What the table works with: the constructor expands macros in these, and generates a client id when none is
     /// given - a value nothing but the engine set.
-    setEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(storage.topics, ","));
-    setEffectiveValue(settings, "kafka_broker_list", storage.brokers);
-    setEffectiveValue(settings, "kafka_group_name", storage.group);
-    setEffectiveValue(settings, "kafka_format", storage.format_name);
-    setEffectiveValue(settings, "kafka_schema", storage.schema_name);
-    setEffectiveValue(
-        settings, "kafka_client_id", storage.client_id,
+    setEffectiveValue(settings, KafkaSetting::kafka_topic_list, boost::algorithm::join(storage.topics, ","));
+    setEffectiveValue(settings, KafkaSetting::kafka_broker_list, storage.brokers);
+    setEffectiveValue(settings, KafkaSetting::kafka_group_name, storage.group);
+    setEffectiveValue(settings, KafkaSetting::kafka_format, storage.format_name);
+    setEffectiveValue(settings, KafkaSetting::kafka_schema, storage.schema_name);
+    setEffectiveValue(settings, KafkaSetting::kafka_client_id, storage.client_id,
         (*storage.kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
     return settings;
 }

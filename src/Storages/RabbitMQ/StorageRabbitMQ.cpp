@@ -1835,25 +1835,22 @@ SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_contex
 
     /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config
     /// section's `vhost` override the table's.
-    setEffectiveValue(settings, "rabbitmq_exchange_name", exchange_name);
-    setEffectiveValue(settings, "rabbitmq_format", format_name);
-    setEffectiveValue(settings, "rabbitmq_routing_key_list", boost::algorithm::join(routing_keys, ","));
-    setEffectiveValue(settings, "rabbitmq_schema", schema_name);
-    setEffectiveValue(settings, "rabbitmq_queue_base", queue_base);
-    setEffectiveValue(settings, "rabbitmq_queue_settings_list", boost::algorithm::join(queue_settings_list, ","));
-    setEffectiveValue(settings, "rabbitmq_address", configuration.connection_string);
-    setEffectiveValue(
-        settings, "rabbitmq_vhost", configuration.vhost,
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_exchange_name, exchange_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_format, format_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_routing_key_list, boost::algorithm::join(routing_keys, ","));
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_schema, schema_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_base, queue_base);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_settings_list, boost::algorithm::join(queue_settings_list, ","));
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_address, configuration.connection_string);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_vhost, configuration.vhost,
         getContext()->getConfigRef().has("rabbitmq.vhost") ? std::optional(SettingOrigin::Config) : std::nullopt);
 
     /// A `rabbitmq_host_port` table takes the username and password from the server config section when it gives
     /// none. A `rabbitmq_address` table takes them from the address, and these two settings are not used.
     if (!configuration.host.empty())
     {
-        setEffectiveValueWithConfigFallback(
-            settings, "rabbitmq_username", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
-        setEffectiveValueWithConfigFallback(
-            settings, "rabbitmq_password", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
+        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_username, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
+        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
     }
     return settings;
 }

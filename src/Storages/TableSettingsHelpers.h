@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Core/SettingIndex.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Core/Names.h>
 #include <Storages/SettingDescription.h>
@@ -83,5 +84,25 @@ void setEffectiveValue(
 /// as coming from the config when `stated` is empty and `value` is not.
 void setEffectiveValueWithConfigFallback(
     SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
+
+/// The same two, taking the setting's typed index rather than its name - which is how an engine should name
+/// one of its own settings. A name that is misspelled, or that a later release renames, then fails to compile
+/// rather than matching no row and leaving the value the engine does not use in the table.
+template <typename Owner, typename FieldType>
+void setEffectiveValue(
+    SettingDescriptions & settings,
+    SettingIndex<Owner, FieldType> setting,
+    const String & value,
+    std::optional<SettingOrigin> origin = {})
+{
+    setEffectiveValue(settings, setting.name, value, origin);
+}
+
+template <typename Owner, typename FieldType>
+void setEffectiveValueWithConfigFallback(
+    SettingDescriptions & settings, SettingIndex<Owner, FieldType> setting, const String & stated, const String & value)
+{
+    setEffectiveValueWithConfigFallback(settings, setting.name, stated, value);
+}
 
 }
