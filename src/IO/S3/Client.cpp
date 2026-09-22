@@ -66,6 +66,9 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
 }
 
 namespace CurrentMetrics
@@ -161,10 +164,10 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
-                "Attempt {}/{} failed with retryable error: {}, {}",
+                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
-                static_cast<size_t>(error.GetResponseCode()),
+                error.GetResponseCode(),
                 error.GetMessage());
     }
 }
@@ -175,11 +178,11 @@ void Client::RetryStrategy::RequestBookkeeping(
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
             log,
-            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),
-            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
-            static_cast<size_t>(lastError.GetResponseCode()),
+            httpResponseOutcome.GetResult()->GetResponseCode(),
+            lastError.GetResponseCode(),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
 }
@@ -197,7 +200,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
+    const NormalizedHTTPHeaderEntries & extra_headers
 )
 {
     for (const auto & [name, value] : extra_headers)
@@ -549,6 +552,46 @@ Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipar
         request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
+bool Client::isObjectWrittenWithIdempotencyId(
+    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id, bool warn_if_unproven) const
+{
+    if (idempotency_id.empty())
+        return false;
+
+    Expect404ResponseScope scope; /// The object is absent whenever the write did not land.
+
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    if (isClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
+    /// Not `HeadObjectRequest().WithBucket(...)`: that returns the SDK's base, so `auto` drops our wrapper.
+    HeadObjectRequest head_request;
+    head_request.SetBucket(bucket);
+    head_request.SetKey(key);
+
+    auto head_outcome = HeadObject(head_request);
+
+    const auto logs_level = warn_if_unproven ? LogsLevel::warning : LogsLevel::information;
+    const auto priority = warn_if_unproven ? Poco::Message::PRIO_WARNING : Poco::Message::PRIO_INFORMATION;
+
+    if (!head_outcome.IsSuccess())
+    {
+        LOG_IMPL(
+            log, logs_level, priority,
+            "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
+            key, bucket, head_outcome.GetError().GetMessage());
+        return false;
+    }
+
+    const auto & metadata = head_outcome.GetResult().GetMetadata();
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    if (it != metadata.end() && it->second == idempotency_id)
+        return true;
+
+    LOG_IMPL(log, logs_level, priority, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
+    return false;
+}
+
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -557,23 +600,25 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// For a conditional completion mere existence proves nothing: the object may be the one the
-    /// condition was meant to reject. Leave the error for the caller, which can verify authorship.
-    const bool is_conditional = request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
+    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
+    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
+    const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
+        && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
+            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
 
-    if (!outcome.IsSuccess()
-        && !is_conditional
-        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+    if (may_be_replay_of_a_landed_completion)
     {
-        auto check_request = HeadObjectRequest()
-                                 .WithBucket(bucket)
-                                 .WithKey(key);
-        auto check_outcome = HeadObject(check_request);
+        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
+        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), warn_if_unproven))
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
+                outcome.GetError().GetExceptionName(), key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
@@ -609,8 +654,23 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
+
+    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
+    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
+    {
+        const auto & key = request.GetKey();
+        const auto & bucket = request.GetBucket();
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), /* warn_if_unproven= */ false))
+        {
+            LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
+            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        }
+    }
+
+    return outcome;
 }
 
 Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
@@ -917,7 +977,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }
@@ -1289,7 +1349,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
-    HTTPHeaderEntries headers,
+    NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
     const String & session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
@@ -1314,7 +1374,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     }
 
     // These will be added after request signing
-    normalizeHeaderNames(headers);
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);

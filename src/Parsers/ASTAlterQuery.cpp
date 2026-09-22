@@ -216,7 +216,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
     String command_type_str = r.getString("command_type");
     auto command_type_opt = magic_enum::enum_cast<Type>(command_type_str);
-    if (!command_type_opt)
+    /// `NO_TYPE` is the unset default rather than a command name; every accepted parse assigns a real type.
+    if (!command_type_opt || *command_type_opt == ASTAlterCommand::NO_TYPE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: '{}'", command_type_str);
     type = *command_type_opt;
 
