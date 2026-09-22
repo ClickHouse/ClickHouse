@@ -6858,13 +6858,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             for (size_t i = 0; i < projection_columns.size(); ++i)
             {
                 const auto & projection_node = query_node_typed.getProjection().getNodes()[i];
-                LOG_WARNING(getLogger("QueryAnalyzer"),
-                    "PIVOT collision debug: node={}, alias={}, projection_name={}, column_name={}",
-                    projection_node->formatASTForErrorMessage(),
-                    projection_node->getAlias(),
-                    projection_columns[i].name,
-                    projection_node->as<ColumnNode>() ? projection_node->as<ColumnNode>()->getColumnName() : "");
-
                 if (projection_node->getAlias().empty())
                 {
                     if (const auto * column = projection_node->as<ColumnNode>())
@@ -6877,10 +6870,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             for (size_t i = 0; i < projection_columns.size(); ++i)
             {
                 const auto & alias = query_node_typed.getProjection().getNodes()[i]->getAlias();
-                LOG_WARNING(getLogger("QueryAnalyzer"),
-                    "PIVOT collision debug: checking alias={}, unaliased_match={}",
-                    alias,
-                    unaliased_output_names.contains(alias));
                 if (!alias.empty() && unaliased_output_names.contains(alias))
                     throw Exception(
                         ErrorCodes::AMBIGUOUS_COLUMN_NAME,
