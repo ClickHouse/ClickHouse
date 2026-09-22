@@ -1,8 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/scope_guard_safe.h>
 
@@ -21,6 +23,10 @@ namespace ErrorCodes
 }
 
 struct Settings;
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_skip_variant_nulls;
+}
 
 ColumnPtr createSingleCountStateColumn(const AggregateFunctionPtr & count_function, UInt64 num_rows)
 {
@@ -126,6 +132,101 @@ public:
 
 #endif
 
+};
+
+
+/// Count the number of rows whose `Variant` value is not NULL.
+/// A `Variant` is not `Nullable`, so the `Null` combinator -- and with it `AggregateFunctionCountNotNullUnary` --
+/// is never applied to it, but a `Variant` row can hold a NULL value (`isNull` is true for such a row), and
+/// `count(expr)` counts only the not-NULL values of its argument.
+class AggregateFunctionCountNotNullVariant final
+    : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariant>
+{
+public:
+    AggregateFunctionCountNotNullVariant(const DataTypePtr & argument, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariant>({argument}, params, createResultType())
+    {
+        if (!isVariant(argument))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not Variant data type passed to AggregateFunctionCountNotNullVariant");
+    }
+
+    String getName() const override { return "count"; }
+
+    static DataTypePtr createResultType()
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        data(place).count += !assert_cast<const ColumnVariant &>(*columns[0]).isNullAt(row_num);
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
+    {
+        /// The default `Variant` value is NULL, and `count` does not count NULLs.
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        /// The local discriminators are indexed by the row number, and `NULL_DISCRIMINATOR` is the same in the
+        /// local and the global order, so the null map does not have to be materialized.
+        const auto & discriminators = assert_cast<const ColumnVariant &>(*columns[0]).getLocalDiscriminators();
+        size_t count = 0;
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                count += flags[row] && discriminators[row] != ColumnVariant::NULL_DISCRIMINATOR;
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                count += discriminators[row] != ColumnVariant::NULL_DISCRIMINATOR;
+        }
+        data(place).count += count;
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        return this->getName() == rhs.getName();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// Return normalized state type: count()
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        data(place).count += data(rhs).count;
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        writeVarUInt(data(place).count, buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        readVarUInt(data(place).count, buf);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+    }
 };
 
 
@@ -256,12 +357,26 @@ llvm::Value * AggregateFunctionCountNotNullUnary::compileGetResult(llvm::IRBuild
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     assertNoParameters(name, parameters);
 
     if (argument_types.size() > 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one argument", name);
+
+    /// A `Variant` argument is accepted natively (`support_variant_argument`), without the supertype adapter, but
+    /// its NULL values still must not be counted. This dedicated implementation skips them itself while keeping
+    /// the plain `count` state representation, so `count` declares `skips_variant_nulls` and the factory does not
+    /// wrap it in `AggregateFunctionVariantNull` (which would be equivalent, but would lose the interchangeability
+    /// of the state with plain `count()` provided by `getNormalizedStateType`).
+    /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior, where every row was
+    /// counted. When `count` is resolved as the nested
+    /// function of a -Distinct combinator, the factory disables the setting in the settings passed here, so that
+    /// the replay of a stored countDistinct history counts its NULL keys independently of the current setting
+    /// (see AggregateFunctionFactory::getImpl).
+    if (argument_types.size() == 1 && isVariant(argument_types[0])
+        && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls]))
+        return std::make_shared<AggregateFunctionCountNotNullVariant>(argument_types[0], parameters);
 
     return std::make_shared<AggregateFunctionCount>(argument_types);
 }
@@ -339,7 +454,7 @@ SELECT count(DISTINCT num) FROM t
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false, .support_variant_argument = true, .skips_variant_nulls = true };
 
     factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }

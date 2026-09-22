@@ -448,7 +448,7 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true};
 
     factory.registerFunction("any", {createAggregateFunctionAny, documentation, default_properties});
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);

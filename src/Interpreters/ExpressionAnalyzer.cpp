@@ -608,7 +608,9 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
         aggregate.function
-            = AggregateFunctionFactory::instance().get(node.name, node.getNullsAction(), types, aggregate.parameters, properties);
+            = AggregateFunctionFactory::instance().get(
+                node.name, node.getNullsAction(), types, aggregate.parameters, properties,
+                AggregateFunctionStateVariant::Aggregation, false, false, &getContext()->getSettingsRef());
 
         descriptions.push_back(aggregate);
     }
@@ -848,7 +850,10 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             window_function.argument_types,
             window_function.function_parameters,
             properties,
-            AggregateFunctionStateVariant::Window);
+            AggregateFunctionStateVariant::Window,
+            false,
+            false,
+            &getContext()->getSettingsRef());
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it

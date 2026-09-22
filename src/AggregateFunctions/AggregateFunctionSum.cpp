@@ -117,7 +117,7 @@ SELECT sum(salary) FROM employees;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation, {.is_float_promoting = true}}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_overflow = R"(
 Computes a sum of numeric values, using the same data type for the result as for the input parameters.
@@ -205,7 +205,7 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation::Category category_kahan = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
-    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
+    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan, {.is_float_promoting = true}});
 }
 
 }

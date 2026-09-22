@@ -53,6 +53,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)
 /// lossy numeric common type, instead of throwing.
 DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy_numeric);
 
+/// The lossy numeric fallback itself: promotes an all-numeric set of types with at least one
+/// floating-point member (e.g. Decimal + Float64, Int64 + Float64) to Float64, matching binary
+/// arithmetic promotion. Returns nullptr when the promotion does not apply (some type is not
+/// numeric, or none of them is floating point). Does not try the lossless common type first.
+DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types);
+
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 

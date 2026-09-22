@@ -30,8 +30,10 @@ SELECT anyRespectNulls(if(number = 0, NULL, number::Variant(String, UInt64))) FR
 SELECT anyRespectNulls(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
 
 -- Even NULL-skipping aggregates (count/any) must NOT be rewritten when the if result is Variant/Dynamic:
--- the NULL branch becomes a discriminator-NULL payload row that the aggregate still processes, so the
--- -If form (which skips it) changes the result (count goes 4 -> 3, any goes \N -> 1).
+-- for a Dynamic, the NULL branch becomes a payload row that the aggregate still processes, so the -If form
+-- (which skips it) changes the result (count over a Dynamic goes 4 -> 3, any over a Dynamic keeps the NULL).
+-- Aggregation over a Variant skips its NULL values (AggregateFunctionVariantNull), so count/any report the
+-- same result either way; the rewrite stays conservatively disabled for both types.
 SELECT count(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);
 SELECT count(if(number = 0, NULL, number::Dynamic)) FROM numbers(4);
 SELECT any(if(number = 0, NULL, number::Variant(String, UInt64))) FROM numbers(4);

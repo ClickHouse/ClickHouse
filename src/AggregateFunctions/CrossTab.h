@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,6 +29,12 @@ namespace ErrorCodes
 {
 extern const int CORRUPTED_DATA;
 }
+
+/// Note: the CrossTab family (`contingency`, `cramersV`, `cramersVBiasCorrected`, `theilsU`) hashes its arguments
+/// through UniqVariadicHash, which relies on IColumn::getDataAt. ColumnVariant does not implement getDataAt, so the
+/// creators reject Variant and Dynamic arguments at resolution with assertNoDynamicOrVariantArguments (see
+/// FactoryHelpers.h); a lossless supertype yields a concrete column getDataAt can hash,
+/// e.g. Variant(UInt8, UInt64) -> UInt64.
 
 struct CrossTabPhiSquaredWindowData;
 

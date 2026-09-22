@@ -1,0 +1,5 @@
+merge with the setting on	3.5	1.75
+merge with the setting off	3.5	1.75
+state type	AggregateFunction(sum, Variant(Float64, Int64))	AggregateFunction(avg, Variant(Float64, Int64))
+cast to the state type	3.5
+declared with the setting off	3.5
