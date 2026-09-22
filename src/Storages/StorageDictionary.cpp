@@ -60,8 +60,7 @@ namespace
 
         const auto local_context = args.getLocalContext();
 
-        /// Shared Catalog secondaries re-execute the initiator's DDL, and a secondary that refuses one retries
-        /// its queue entry forever.
+        /// A Shared Catalog secondary re-executes the initiator's DDL and retries its queue entry forever if it throws.
 #if CLICKHOUSE_CLOUD
         const bool is_shared_catalog_replay
             = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
@@ -71,8 +70,7 @@ namespace
         if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_shared_catalog_replay)
             return;
 
-        /// These changes reach the source query's context through `applySettingsChanges`, which skips the
-        /// constraints a `SET` passes, so the name is checked the way `SettingsConstraints` checks it.
+        /// These changes reach the source query's context through `applySettingsChanges`, which skips the constraints a `SET` passes.
         const auto & access_control = local_context->getAccessControl();
         for (const auto & change : dict_settings->changes)
         {
