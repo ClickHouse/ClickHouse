@@ -2938,19 +2938,67 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::START_VIRTUAL_PARTS_UPDATE,
         with_check_fn(
-            AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+            std::nullopt,
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+            {
+                if (!query.table)
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+                }
+                else
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+                }
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            }));
     reg_fn(
         Type::STOP_VIRTUAL_PARTS_UPDATE,
         with_check_fn(
-            AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+            std::nullopt,
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+            {
+                if (!query.table)
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+                }
+                else
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+                }
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            }));
     reg_fn(
         Type::START_REDUCE_BLOCKING_PARTS,
         with_check_fn(
-            AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+            std::nullopt,
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+            {
+                if (!query.table)
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+                }
+                else
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+                }
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            }));
     reg_fn(
         Type::STOP_REDUCE_BLOCKING_PARTS,
         with_check_fn(
-            AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+            std::nullopt,
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+            {
+                if (!query.table)
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+                }
+                else
+                {
+                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+                }
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            }));
     auto dup = with_check_fn(
         std::nullopt,
         [](LoggerPtr, InterpreterSystemQuery & interpreter)
