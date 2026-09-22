@@ -34,6 +34,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -171,7 +173,17 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -195,9 +207,9 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    if (creating_new_storage)
     {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
@@ -467,6 +479,27 @@ configuration->update(object_storage, query_context);
     return configuration->getExternalMetadata();
 }
 
+bool StorageObjectStorage::isTransactionalRefreshTarget()
+{
+    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    if (!isIcebergStorage())
+        return false;
+    if (catalog && !catalog->isTransactional())
+        return false;
+    return true;
+}
+
+CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_context)
+{
+    auto metadata = getExternalMetadata(query_context);
+    if (!metadata)
+        return nullptr;
+    auto stored = metadata->getRefreshCursor(query_context);
+    if (!stored || stored->empty())
+        return nullptr;
+    return refreshCursorFromStorage(*stored);
+}
+
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)
 {
     if (!hive_partitioning_sample_path_deferred)
@@ -504,6 +537,17 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
             "Failed to list object storage, cannot use hive partitioning. "
             "Error: {}",
             getCurrentExceptionMessage(true));
+        return;
+    }
+
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
         return;
     }
 
@@ -1100,7 +1144,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
-void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);

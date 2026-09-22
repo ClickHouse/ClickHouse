@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
 
+For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
@@ -99,7 +101,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}

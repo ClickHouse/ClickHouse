@@ -1877,7 +1877,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         auto & discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            if (null_map[i] ^ inverted)
+            if (!!null_map[i] != inverted)
             {
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
@@ -2024,4 +2024,17 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
 }
 
 
+ColumnPlanes ColumnVariant::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Variant, getLocalDiscriminators().data(), getOffsets().data());
+    const size_t num_variants = variants.size();
+    planes.children.reserve(num_variants);
+    planes.local_to_global.reserve(num_variants);
+    for (size_t i = 0; i < num_variants; ++i)
+    {
+        planes.children.push_back(&getVariantByGlobalDiscriminator(i));
+        planes.local_to_global.push_back(globalDiscriminatorByLocal(static_cast<Discriminator>(i)));
+    }
+    return planes;
+}
 }

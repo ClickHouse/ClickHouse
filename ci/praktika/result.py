@@ -373,16 +373,60 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
+        # A job whose direct children are test cases publishes a row per case and
+        # renders each one on its report page, so naming every failure here would
+        # repeat those payloads and grow this text with the failure count. Naming
+        # a few is enough to identify a job that died in one of its steps, which
+        # is the case that has no other carrier.
+        MAX_NAMED_STEPS = 3
         if not self.info:
             total = 0
             fail_cnt = 0
+            named = []
             for r in self.results:
                 if not r.is_ok():
                     fail_cnt += 1
+                    if r.info and len(named) < MAX_NAMED_STEPS:
+                        named.append(self._trim_step_info(f"{r.name}: {r.info}"))
                 total += 1
-            self.set_info(f"Failures: {fail_cnt}/{total}")
+            self.set_info("\n".join([f"Failures: {fail_cnt}/{total}"] + named))
 
         return self
+
+    @staticmethod
+    def _trim_step_info(line):
+        """Bounds one failed-step line, keeping both of its ends.
+
+        A step payload carries its cause either near the front (the
+        marker-centered excerpt of ``from_commands_run``) or at the very tail
+        (its plain last-N excerpt), so trimming one end alone can drop the
+        cause. The head also carries the step name, which is the only
+        identifying text a job-level row has.
+
+        The bound sits above the widest shape ``from_commands_run`` produces
+        (300 retained lines, about 26 KB), so an ordinary step log is named
+        whole and only a step with pathologically long single lines is cut.
+        Such a step can carry its marker anywhere, including inside the span
+        that would otherwise be dropped, so the kept tail is anchored on the
+        first ``: error:`` or ``: warning:``, the two markers
+        ``from_commands_run`` centers its own excerpt on. The anchor search
+        starts ``MARKER_CONTEXT`` characters before the head boundary rather
+        than at it, because a marker that close to the boundary is cut in two
+        by it, or introduces a message that is.
+        """
+        MAX_STEP_INFO_LEN = 32768
+        MARKER_CONTEXT = 200
+        if len(line) <= MAX_STEP_INFO_LEN:
+            return line
+        half = MAX_STEP_INFO_LEN // 2
+        head, tail = line[:half], line[-half:]
+        found = [line.find(m, half - MARKER_CONTEXT) for m in (": error:", ": warning:")]
+        marker = min((p for p in found if p != -1), default=-1)
+        if marker != -1 and marker < len(line) - half:
+            start = max(min(marker, half), marker - MARKER_CONTEXT)
+            head, tail = line[: min(half, start)], line[start : marker + half]
+        dropped = len(line) - len(head) - len(tail)
+        return head + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + tail
 
     @classmethod
     def file_name_static(cls, name):
@@ -1058,16 +1102,24 @@ class Result(MetaClasses.Serializable):
     def do_not_block_pipeline_on_failure(self):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
+    def do_not_cache(self):
+        return self.ext.get("do_not_cache", False)
+
     def complete_job(
         self,
         with_job_summary_in_info=True,
         do_not_block_pipeline_on_failure=False,
         disable_attached_files_sorting=False,
+        do_not_cache=False,
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
+        # A job sets this flag when its verdict depends on run-time state no digest input
+        # captures, so a later commit with the same digest must not reuse its success record.
+        if do_not_cache:
+            self.ext["do_not_cache"] = True
         if not disable_attached_files_sorting:
             try:
                 # Normalize to string and sort by filename case-insensitively
