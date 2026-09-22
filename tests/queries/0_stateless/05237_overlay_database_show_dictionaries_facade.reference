@@ -1,0 +1,19 @@
+Default user: the facade lists d, but not the shadowed name; the source lists both
+d
+db_b	d	1
+db_b	shadow	0
+db_ovl	d	1
+The facade row agrees with the point lookups on the facade name
+1
+0
+is not a DICTIONARY
+Facade grant only: nothing is listed through the facade, and EXISTS DICTIONARY agrees
+0
+0
+Source grant only: the source is listed, the facade is not
+d
+shadow
+0
+Both grants: the facade lists d and EXISTS DICTIONARY agrees
+d
+1

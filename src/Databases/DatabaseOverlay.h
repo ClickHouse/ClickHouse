@@ -223,6 +223,15 @@ public:
     /// exception, nor learn from it which source the facade name resolves to.
     bool isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context, AccessType access_to_check) const;
 
+    /// The resolving form of `isSourceTableVisibleNoLoad`: the name of the source database that
+    /// `table_name` resolves to through the facade (the first listed source whose metadata contains
+    /// the name) when both grants hold, an empty string otherwise — with the same fail-closed
+    /// fencing. Used by listings that synthesize facade rows from objects registered under their
+    /// source name (`system.dictionaries`): such a row is shown only when the facade really
+    /// resolves the name to that very source, so that a name shadowed by an earlier source is not
+    /// advertised through the facade as an object the point lookups would never reach.
+    String tryGetVisibleSourceDatabaseNameNoLoad(const String & table_name, ContextPtr context, AccessType access_to_check) const;
+
     /// Fail-closed dual-grant check for queries that must throw on denial (`SHOW CREATE`,
     /// `DESCRIBE`, and the data entrypoints): first throws the ordinary `ACCESS_DENIED` on the
     /// written facade name unless `access_to_check` is granted on it, then resolves `table_name`

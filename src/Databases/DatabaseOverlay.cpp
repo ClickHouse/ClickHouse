@@ -101,13 +101,18 @@ bool DatabaseOverlay::isFacadeNameVisible(const String & table_name, const Conte
 
 bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context_, AccessType access_to_check) const
 {
+    return !tryGetVisibleSourceDatabaseNameNoLoad(table_name, std::move(context_), access_to_check).empty();
+}
+
+String DatabaseOverlay::tryGetVisibleSourceDatabaseNameNoLoad(const String & table_name, ContextPtr context_, AccessType access_to_check) const
+{
     /// Reaching a name through the facade requires the grant on both the facade name as written
     /// and the source name it resolves to. Without the facade-side grant the name is not visible
     /// through the facade at all, whatever the sources hold, so nothing is probed: the probes
     /// below can throw a broken source's own error, and a caller granted on the source alone
     /// must not learn from it which source the facade name resolves to.
     if (!isFacadeNameVisible(table_name, context_, access_to_check))
-        return false;
+        return {};
 
     for (const auto & db : resolveDatabases())
     {
@@ -127,12 +132,16 @@ bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, Cont
             /// and answer as for a hidden or missing name.
             if (context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
                 throw;
-            return false;
+            return {};
         }
         if (exists)
-            return context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name);
+        {
+            if (context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
+                return db->getDatabaseName();
+            return {};
+        }
     }
-    return false;
+    return {};
 }
 
 void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextPtr context_, AccessType access_to_check) const
