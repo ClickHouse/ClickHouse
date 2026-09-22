@@ -379,7 +379,7 @@ SELECT '--- a sibling aggregate that throws on a rejected group stops being reac
 -- `insertResultInto` on that group - `kolmogorovSmirnovTest` with one empty sample, here - stops
 -- raising. This is the same elision the bucket Top-K conversion already performs by default on
 -- master (`query_plan_aggregation_bucket_top_k`), which likewise destroys a rejected group's states
--- without finalizing them; the last cell pins that precedent next to this one. As above, the raising
+-- without finalizing them; the last cell pins that precedent next to this one, by its annotation. As above, the raising
 -- arm is pinned as a value and the eliding arm as the annotation on the shape, because whether the
 -- annotated conversion runs is not something this test can fix a configuration for.
 DROP TABLE IF EXISTS having_prefilter_sibling;
@@ -395,10 +395,13 @@ SELECT 'sibling aggregate', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a HAVING cnt > 3
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 3%';
 
-SELECT count() FROM (
+-- The precedent is pinned the same way: whether the bucket Top-K conversion actually runs depends on
+-- the configuration too (one run of the private `s3 storage, meta in keeper` flaky check reached the
+-- exception with it enabled), so only its annotation on the shape is asserted, not the elision.
+SELECT 'bucket Top-K precedent', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt, kolmogorovSmirnovTest(b, s) AS t FROM having_prefilter_sibling GROUP BY a ORDER BY cnt DESC LIMIT 5
-) WHERE t.1 >= 0 OR t.1 < 0
-SETTINGS query_plan_aggregation_having_prefilter = 0, query_plan_aggregation_bucket_top_k = 1;
+    SETTINGS query_plan_aggregation_having_prefilter = 0, query_plan_aggregation_bucket_top_k = 1
+) WHERE explain LIKE '%Bucket top-K: 5 descending%';
 
 DROP TABLE having_prefilter_sibling;
 

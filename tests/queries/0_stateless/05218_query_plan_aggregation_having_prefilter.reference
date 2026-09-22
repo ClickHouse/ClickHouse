@@ -76,7 +76,7 @@ dividing conjunct before the bound	1
 2000
 --- a sibling aggregate that throws on a rejected group stops being reached ---
 sibling aggregate	1
-5
+bucket Top-K precedent	1
 --- independent per-partition aggregation is refused ---
 skip merging is set	1
 and the pre-filter is not	0
