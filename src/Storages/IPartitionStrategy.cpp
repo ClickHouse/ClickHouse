@@ -20,6 +20,11 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsBool hive_partition_strategy_strict_read_glob;
+}
+
 namespace
 {
     using PartitionExpressionActionsAndColumnName = IPartitionStrategy::PartitionExpressionActionsAndColumnName;
@@ -151,6 +156,8 @@ namespace
 
         const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context);
 
+        const bool strict_read_glob = context->getSettingsRef()[Setting::hive_partition_strategy_strict_read_glob];
+
         for (const auto & partition_expression_column : partition_key_description.sample_block)
         {
             if (!sample_block.has(partition_expression_column.name))
@@ -158,6 +165,14 @@ namespace
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Hive partitioning expects that the partition by expression columns are a part of the storage columns, could not find '{}' in storage",
+                    partition_expression_column.name);
+            }
+
+            if (strict_read_glob && partition_expression_column.name.find_first_of("*?{}") != std::string::npos)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Partition column name '{}' contains glob metacharacters, which is not supported with `hive_partition_strategy_strict_read_glob`",
                     partition_expression_column.name);
             }
 
@@ -178,7 +193,8 @@ namespace
             sample_block,
             context,
             file_format,
-            partition_columns_in_data_file);
+            partition_columns_in_data_file,
+            strict_read_glob);
     }
 
     std::shared_ptr<IPartitionStrategy> createWildcardPartitionStrategy(
@@ -330,10 +346,12 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool partition_columns_in_data_file_)
+    bool partition_columns_in_data_file_,
+    bool strict_read_glob_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
-    partition_columns_in_data_file(partition_columns_in_data_file_)
+    partition_columns_in_data_file(partition_columns_in_data_file_),
+    strict_read_glob(strict_read_glob_)
 {
     const auto partition_columns = getPartitionColumns();
     for (const auto & partition_column : partition_columns)
@@ -352,6 +370,26 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
 
 std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
 {
+    if (strict_read_glob)
+    {
+        /// Read only paths laid out exactly as getPathForWrite lays them out: one `key=value`
+        /// directory per partition column and the file. Staging output and marker objects that
+        /// Hive-ecosystem writers place under the same root (`_temporary/...`,
+        /// `.spark-staging-<id>/...`, `_SUCCESS`) do not match the shape, and the longer
+        /// non-glob prefix already skips most of them at the listing level. The flip side:
+        /// files at a different depth or with differently named partition directories are
+        /// silently ignored, where the recursive glob reads them or fails the hive
+        /// partitioning parse loudly — which is why this is opt-in.
+        std::string path = prefix;
+        if (!path.empty() && path.back() != '/')
+            path += '/';
+
+        for (const auto & partition_column : getPartitionColumns())
+            path += partition_column.name + "=*/";
+
+        return path + "*." + Poco::toLower(file_format);
+    }
+
     return prefix + "**." + Poco::toLower(file_format);
 }
 

@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
+            {"hive_partition_strategy_strict_read_glob", false, false, "New setting: build the read glob of tables with `partition_strategy = 'hive'` from the partition columns instead of a recursive glob, so only objects laid out as the table writes them are read."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"legacy_join_size_limits_trigger_spilling", true, false, "`max_rows_in_join` / `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` alone."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
