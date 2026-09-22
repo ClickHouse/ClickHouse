@@ -16,8 +16,8 @@
 ========================================
 ============= parallel_hash ===============
 499.5
-      Algorithm: ConcurrentHashJoin
-            Algorithm: ConcurrentHashJoin
+      Algorithm: HashJoin
+            Algorithm: HashJoin
                 BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
           BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000

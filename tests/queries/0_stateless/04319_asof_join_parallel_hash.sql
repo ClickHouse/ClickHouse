@@ -1,16 +1,15 @@
--- Tests that ASOF JOIN with join_algorithm = 'parallel_hash' produces the same
--- result as with join_algorithm = 'hash'. Previously parallel_hash was opted
--- out for ASOF in allowParallelHashJoin.
+-- Tests that an ASOF JOIN built with the parallel layout produces the same
+-- result as one built with the serial layout. ASOF can use the parallel layout.
 --
 -- Strategy: per-row mutual EXCEPT in both directions. This is strictly stronger
 -- than comparing aggregate count/sum and avoids float-summation-order
--- non-determinism (ConcurrentHashJoin materializes rows in a different order
--- than HashJoin, which changes the bit-level result of sum() over floats —
--- semantically identical, but EXCEPT would treat the rows as different).
+-- non-determinism. The two layouts materialize rows in a different order.
+-- That changes the bit-level result of sum() over floats.
+-- The sums are semantically identical, but EXCEPT would treat the rows as different.
 
--- Force more than one ConcurrentHashJoin shard. With max_threads = 1 the number
--- of shards is 1, dispatchBlock returns the whole block without ever calling
--- selectDispatchBlock, and the ASOF prefix-slicing fix would not be exercised.
+-- Force more than one build slot. With max_threads = 1 there is one slot,
+-- scatterBlockBySlot is never called, and the ASOF key slicing would not be
+-- exercised.
 SET max_threads = 4;
 
 DROP TABLE IF EXISTS asof_left;
@@ -99,9 +98,9 @@ DROP TABLE asof_left;
 DROP TABLE asof_right;
 
 -- Multi-equality-key ASOF JOIN. Exercises the HashMethodKeysFixed /
--- HashMethodHashed code paths in ConcurrentHashJoin::selectDispatchBlock,
+-- HashMethodHashed code paths in scatterBlockBySlot,
 -- which hash N columns based on `key_sizes.size()`. Without the trailing-
--- asof-key slicing in selectDispatchBlock, same-(a,b) rows with different
+-- asof-key slicing in scatterBlockBySlot, same-(a,b) rows with different
 -- t values would be scattered to different partitions and probe rows would
 -- miss their asof matches. The single-key tests above pass even without
 -- that slicing because HashMethodOneNumber only reads column[0].

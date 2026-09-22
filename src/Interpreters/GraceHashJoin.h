@@ -28,7 +28,7 @@ class HashJoin;
  * Each input block is split into multiple buckets based on the hash of the row join keys.
  * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
  * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
+ * There can be multiple threads calling addBlockToJoin, just like HashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
@@ -40,7 +40,7 @@ class HashJoin;
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
- * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
+ * Note that non-joined rows are processed in multiple threads, unlike MergeJoin.
  */
 class GraceHashJoin final : public IJoin
 {
@@ -79,7 +79,8 @@ public:
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
-        size_t external_join_threshold_);
+        size_t external_join_threshold_,
+        size_t max_threads_);
 
     ~GraceHashJoin() override;
 
@@ -102,6 +103,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    size_t getMaxBuildThreads() const override { return max_threads; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -170,6 +172,7 @@ private:
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
     const size_t external_join_threshold;
+    const size_t max_threads;
 
     Names left_key_names;
     Names right_key_names;
@@ -195,6 +198,9 @@ private:
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
     std::atomic<size_t> accounted_right_rows = 0;
     std::atomic<size_t> accounted_right_bytes = 0;
+
+    /// Without it every probe thread would take `hash_join_mutex` once per block to learn the phase already ran.
+    std::atomic<bool> post_build_phase_ran = false;
 
     GraceHashJoinStats stats;
 
