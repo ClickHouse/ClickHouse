@@ -31,6 +31,8 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
@@ -45,6 +47,9 @@
 #include <Columns/ColumnString.h>
 
 #include <fmt/format.h>
+
+#include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -83,6 +88,69 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_sc
         ++timestamp_ticks;
 
     return Decimal64{timestamp_ticks};
+}
+
+struct TagsScanContext
+{
+    DataTypePtr timestamp_data_type;
+    UInt32 timestamp_scale = 0;
+    std::optional<DateTime64> min_time;
+    std::optional<DateTime64> max_time;
+    StorageID tags_table_id = StorageID::createEmpty();
+    std::shared_ptr<const TimeSeriesSettings> time_series_settings;
+    std::unordered_map<String, String> column_name_by_tag_name;
+};
+
+TagsScanContext makeTagsScanContext(
+    const StorageTimeSeries & time_series_storage,
+    const ContextPtr & context,
+    const String & start_param,
+    const String & end_param)
+{
+    TagsScanContext scan;
+    auto time_series_metadata = time_series_storage.getInMemoryMetadataPtr(context, false);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
+    scan.timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
+    scan.timestamp_scale = tryGetDecimalScale(*scan.timestamp_data_type).value_or(0);
+
+    if (!start_param.empty())
+        scan.min_time = parseTimeSeriesTimestamp(start_param, scan.timestamp_scale);
+    if (!end_param.empty())
+        scan.max_time = parseTimeSeriesTimestamp(end_param, scan.timestamp_scale);
+    if (scan.min_time && scan.max_time && (*scan.max_time < *scan.min_time))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
+
+    scan.time_series_settings = time_series_storage.getStorageSettings();
+    if (!(*scan.time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
+        || !(*scan.time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
+    {
+        scan.min_time.reset();
+        scan.max_time.reset();
+    }
+
+    scan.tags_table_id = time_series_storage.getTargetTableID(ViewTarget::Tags, context);
+    scan.column_name_by_tag_name = StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*scan.time_series_settings);
+    return scan;
+}
+
+PrometheusQueryTree::MatcherList parseInstantSelectorMatchers(const String & match_param, UInt32 timestamp_scale)
+{
+    PrometheusQueryTree selector;
+    String error_message;
+    if (!selector.tryParse(match_param, timestamp_scale, &error_message))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the value {} of the 'match[]' parameter: {}",
+                        quoteString(match_param), error_message);
+
+    const auto * root = selector.getRoot();
+    if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector",
+                        quoteString(match_param));
+
+    const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers;
+    if (matchers.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter must contain at least one matcher",
+                        quoteString(match_param));
+    return matchers;
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -520,31 +588,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & start_param,
     const String & end_param)
 {
-    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
-
-    /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.
-    std::optional<DateTime64> min_time;
-    std::optional<DateTime64> max_time;
-    if (!start_param.empty())
-        min_time = parseTimeSeriesTimestamp(start_param, timestamp_scale);
-    if (!end_param.empty())
-        max_time = parseTimeSeriesTimestamp(end_param, timestamp_scale);
-    if (min_time && max_time && (*max_time < *min_time))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
-
-    /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
-    auto time_series_settings = time_series_storage->getStorageSettings();
-    if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
-        || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
-    {
-        min_time.reset();
-        max_time.reset();
-    }
-
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    auto scan = makeTagsScanContext(*time_series_storage, getContext(), start_param, end_param);
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
@@ -553,24 +597,9 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
 
     for (const auto & match_param : match_params)
     {
-        PrometheusQueryTree selector;
-        String error_message;
-        if (!selector.tryParse(match_param, timestamp_scale, &error_message))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the value {} of the 'match[]' parameter: {}",
-                            quoteString(match_param), error_message);
-
-        const auto * root = selector.getRoot();
-        if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector",
-                            quoteString(match_param));
-
-        const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers;
-        if (matchers.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter must contain at least one matcher",
-                            quoteString(match_param));
-
+        auto matchers = parseInstantSelectorMatchers(match_param, scan.timestamp_scale);
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type);
+            scan.tags_table_id, matchers, *scan.time_series_settings, scan.min_time, scan.max_time, scan.timestamp_data_type);
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }
