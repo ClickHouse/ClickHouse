@@ -2802,6 +2802,9 @@ def main():
                         status = Result.Status.FAIL
             elif info.is_local_run:
                 print("Local run: skipping the performance dashboard gate")
+            elif report_not_judged:
+                # The dashboard gate ignores the thresholds, so it would judge anyway.
+                print("Not judged: skipping the performance dashboard gate")
             else:
                 # `master_head` mode: the performance dashboard's verdict is the
                 # gate. It judges every changed query on its raw samples and
