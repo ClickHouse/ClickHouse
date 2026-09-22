@@ -38,6 +38,13 @@ public:
         String container_for_logging_ = {},
         String expected_etag_ = {});
 
+    /// The `ETag` of one generation of a blob arrives in two spellings: quoted in HTTP headers
+    /// (`ETag: "0x8DA..."`), as RFC 9110 requires, and unquoted in the XML body of a blob listing
+    /// (`<Etag>0x8DA...</Etag>`). Returns the quoted spelling, so that the two compare equal and
+    /// so that `If-Match` carries the spelling the HTTP specification prescribes. An empty `ETag`
+    /// stays empty.
+    static String quotedETag(String etag);
+
     off_t seek(off_t off, int whence) override;
 
     off_t getPosition() override;
@@ -121,7 +128,7 @@ private:
     /// correct bound for that generation: a blob that was replaced with a longer one after the
     /// listing would otherwise be silently truncated to the stale size instead of rejected.
     /// So, as `ReadBufferFromS3` does, each download is pinned to it with `If-Match` and the `ETag`
-    /// of the response is checked against it.
+    /// of the response is checked against it. Kept in the spelling of `quotedETag`.
     const String expected_etag;
 
     off_t offset = 0;

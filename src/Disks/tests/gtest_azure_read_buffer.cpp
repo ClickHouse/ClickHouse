@@ -817,6 +817,67 @@ TEST(AzureReadObject, EmptyObjectMetadataRejectsReplacedBlob)
     ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
 }
 
+/// The plain `readObject` path of an object listed as empty issues no download either, so
+/// `If-Match` never reaches the endpoint: the generation is checked on the properties before the
+/// buffer is handed out, instead of returning the replaced blob as a clean empty file.
+TEST(AzureReadObject, EmptyObjectRejectsReplacedBlob)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, replaced_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 0);
+    object.etag = listed_etag;
+
+    assertRejectsReplacedBlob([&] { object_storage->readObject(object, DB::ReadSettings{}); });
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
+}
+
+/// The XML body of a blob listing spells the `ETag` without the quotes that the `ETag` header of a
+/// download has (`0x8DA...` against `"0x8DA..."`), so the two spellings name one generation and
+/// must compare equal, and `If-Match` must carry the quoted spelling that HTTP prescribes.
+constexpr auto unquoted_listed_etag = "0x8DA000000000000";
+
+TEST(AzureReadObject, AcceptsTheUnquotedETagOfAListing)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, listed_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    object.etag = unquoted_listed_etag;
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    ASSERT_EQ(transport->getLastIfMatch(), listed_etag);
+}
+
+TEST(AzureReadObject, EmptyObjectAcceptsTheUnquotedETagOfAListing)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0, listed_etag, /* honours_if_match */ true);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 0);
+    object.etag = unquoted_listed_etag;
+
+    ASSERT_NO_THROW(object_storage->readObject(object, DB::ReadSettings{}));
+
+    DB::SmallObjectDataWithMetadata result;
+    ASSERT_NO_THROW(result = object_storage->readSmallObjectAndGetObjectMetadata(object, DB::ReadSettings{}, /* max_size_bytes */ 4096));
+    ASSERT_TRUE(result.data.empty());
+    ASSERT_EQ(result.metadata.etag, listed_etag);
+    ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
+}
+
+TEST(AzureQuotedETag, Spellings)
+{
+    ASSERT_EQ(DB::ReadBufferFromAzureBlobStorage::quotedETag(""), "");
+    ASSERT_EQ(DB::ReadBufferFromAzureBlobStorage::quotedETag("0x8DA000000000000"), "\"0x8DA000000000000\"");
+    ASSERT_EQ(DB::ReadBufferFromAzureBlobStorage::quotedETag("\"0x8DA000000000000\""), "\"0x8DA000000000000\"");
+    ASSERT_EQ(DB::ReadBufferFromAzureBlobStorage::quotedETag("\""), "\"\"\"");
+}
+
 /// `readBigAt` issues its own downloads, so it carries the same condition and the same check.
 TEST(AzureReadBigAt, RejectsReplacedBlobThroughIfMatch)
 {

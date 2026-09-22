@@ -87,7 +87,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
-    , expected_etag(std::move(expected_etag_))
+    , expected_etag(quotedETag(std::move(expected_etag_)))
     , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
@@ -406,6 +406,17 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
     return total;
 }
 
+String ReadBufferFromAzureBlobStorage::quotedETag(String etag)
+{
+    if (etag.empty())
+        return etag;
+
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+        return etag;
+
+    return "\"" + etag + "\"";
+}
+
 void ReadBufferFromAzureBlobStorage::setAccessConditions(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const
 {
     if (!expected_etag.empty())
@@ -418,11 +429,12 @@ void ReadBufferFromAzureBlobStorage::checkReturnedGeneration(const Azure::Storag
     if (expected_etag.empty() || !details.ETag.HasValue())
         return;
 
-    if (details.ETag.ToString() != expected_etag)
+    const String returned_etag = quotedETag(details.ETag.ToString());
+    if (returned_etag != expected_etag)
         throw Exception(
             ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
             "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query, or set azure_validate_etag_on_read=0 to disable this check for table reads",
-            path, expected_etag, details.ETag.ToString());
+            path, expected_etag, returned_etag);
 }
 
 void ReadBufferFromAzureBlobStorage::rethrowIfGenerationChanged(const Azure::Core::RequestFailedException & e) const
