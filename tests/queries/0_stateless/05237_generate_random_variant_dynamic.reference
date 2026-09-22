@@ -6,11 +6,12 @@
 1	1
 -- Dynamic: every type name is a pool member
 0
--- Dynamic(max_types=1): a single type
+-- Dynamic(max_types=1): seed 1 draws three types, one gets a variant of its own and the two others spill into the shared variant
+3	1	1
 1
 -- Dynamic(max_types=0): every value lives in the shared variant
-100	1	100
-100	1
+100	3	0	100
+100	3
 -- the same seed gives the same values twice
 1
 -- Array(Dynamic): strings mixed with one number type

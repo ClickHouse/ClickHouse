@@ -575,44 +575,50 @@ DataTypes pickScalarTypes(pcg64 & rng, size_t count, bool wrap_into_arrays)
     return result;
 }
 
-/// The set of types one `Dynamic` column mixes, drawn once for its position in the type tree.
+/// The set of types one `Dynamic` column mixes, drawn once for its position in the type tree. Its
+/// width does not depend on `max_dynamic_types`: that limit only decides how many of the types get a
+/// variant of their own, the rest of them are encoded into the shared variant - the way
+/// `ColumnDynamic` itself spills the types it meets once its limit is reached.
 struct DynamicSchema
 {
-    DataTypes types;                          /// Distinct by name, at least one, at most `max_dynamic_types`.
-    DataTypePtr variant_type;                 /// `Variant(types..., SharedVariant)`.
-    std::vector<UInt8> global_discriminator;  /// The discriminator of `types[i]` inside `variant_type`.
+    DataTypes types;                          /// Distinct by name, at least one.
+    size_t num_dedicated = 0;                 /// `min(max_dynamic_types, types.size())`: the leading types with a variant of their own.
+    DataTypePtr variant_type;                 /// `Variant(types[0], ..., types[num_dedicated - 1], SharedVariant)`.
+    std::vector<UInt8> global_discriminator;  /// The discriminator of `types[i]` inside `variant_type`; the shared one for a shared type.
+    UInt8 shared_variant_discriminator = 0;
     size_t max_dynamic_types = 0;
 };
 
-/// Wraps an already chosen set of types into the variant a `Dynamic` column of them is built on.
+/// Wraps an already chosen set of types into the variant a `Dynamic` column of them is built on: the
+/// leading `max_dynamic_types` of them become variants of their own and the rest are left to the
+/// shared variant, so the number of real variants never exceeds the limit of the type.
 DynamicSchema makeDynamicSchema(DataTypes types, size_t max_dynamic_types)
 {
     DynamicSchema schema;
     schema.types = std::move(types);
     schema.max_dynamic_types = max_dynamic_types;
+    schema.num_dedicated = std::min(max_dynamic_types, schema.types.size());
 
-    if (max_dynamic_types == 0)
-    {
-        /// No real variant is allowed, so the shared variant - the only variant - holds every value.
-        schema.variant_type = std::make_shared<DataTypeVariant>(DataTypes{ColumnDynamic::getSharedVariantDataType()});
-        schema.global_discriminator.assign(schema.types.size(), 0);
-        return schema;
-    }
-
-    DataTypes variants = schema.types;
+    DataTypes variants(schema.types.begin(), schema.types.begin() + schema.num_dedicated);
     variants.push_back(ColumnDynamic::getSharedVariantDataType());
     schema.variant_type = std::make_shared<DataTypeVariant>(variants);
 
     /// `DataTypeVariant` sorts its variants by name, so never rely on the order the types were
     /// chosen in: resolve every one of them by name.
-    schema.global_discriminator.reserve(schema.types.size());
-    for (const auto & chosen : schema.types)
+    const auto & variant_type = typeid_cast<const DataTypeVariant &>(*schema.variant_type);
+    auto resolve = [&](const String & name)
     {
-        auto discriminator = typeid_cast<const DataTypeVariant &>(*schema.variant_type).tryGetVariantDiscriminator(chosen->getName());
+        auto discriminator = variant_type.tryGetVariantDiscriminator(name);
         if (!discriminator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} is missing from the variant of a generated `Dynamic` column", chosen->getName());
-        schema.global_discriminator.push_back(*discriminator);
-    }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} is missing from the variant of a generated `Dynamic` column", name);
+        return *discriminator;
+    };
+
+    schema.shared_variant_discriminator = resolve(ColumnDynamic::getSharedVariantTypeName());
+    schema.global_discriminator.reserve(schema.types.size());
+    for (size_t i = 0; i < schema.types.size(); ++i)
+        schema.global_discriminator.push_back(
+            i < schema.num_dedicated ? resolve(schema.types[i]->getName()) : schema.shared_variant_discriminator);
 
     return schema;
 }
@@ -622,7 +628,7 @@ DynamicSchema buildDynamicSchema(UInt64 seed, size_t max_dynamic_types, bool arr
     pcg64 schema_rng(seed);
 
     DataTypes types;
-    if (array_element && max_dynamic_types >= 2)
+    if (array_element)
     {
         /// A heterogeneous JSON array is inferred as `Array(Dynamic)` whose elements are strings
         /// mixed with one number type - the parser never produces a wider element set.
@@ -633,8 +639,9 @@ DynamicSchema buildDynamicSchema(UInt64 seed, size_t max_dynamic_types, bool arr
     }
     else
     {
-        types = pickScalarTypes(
-            schema_rng, 1 + schema_rng() % std::min<size_t>(4, std::max<size_t>(max_dynamic_types, 1)), /*wrap_into_arrays=*/true);
+        /// Between one and four types, whatever the limit of the column is: a low `max_dynamic_types`
+        /// does not narrow the set of types the values take, it sends the excess to the shared variant.
+        types = pickScalarTypes(schema_rng, 1 + schema_rng() % 4, /*wrap_into_arrays=*/true);
     }
 
     return makeDynamicSchema(std::move(types), max_dynamic_types);
@@ -671,50 +678,53 @@ MutableColumnPtr buildVariantColumn(
 
 /// Assembles a `Dynamic` column out of one already filled column per schema type. `type_index[i]` is
 /// the index in `schema.types` of the type of row `i`, or `schema.types.size()` when the row is NULL;
-/// `value_columns[t]` holds the values of the rows of type `t`, in row order.
+/// `value_columns[t]` holds the values of the rows of type `t`, in row order. The column of a
+/// dedicated type becomes its variant as it is; the values of a shared type are encoded one by one,
+/// in row order, into the shared variant, the way `ColumnDynamic` stores the types it has no variant
+/// left for. Never silently promote a shared type to a real variant instead.
 ColumnPtr buildDynamicColumn(const DynamicSchema & schema, const std::vector<UInt8> & type_index, MutableColumns && value_columns)
 {
     const size_t num_types = schema.types.size();
 
-    MutableColumnPtr variant_column;
-    if (schema.max_dynamic_types == 0)
+    std::vector<SerializationPtr> serializations(num_types);
+    for (size_t i = schema.num_dedicated; i < num_types; ++i)
+        serializations[i] = schema.types[i]->getDefaultSerialization();
+
+    auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
+    auto & discriminators = discriminators_column->getData();
+    discriminators.resize(type_index.size());
+
+    /// `consumed[t]` is how many values of the shared type `t` are encoded already, so it is the
+    /// position of the value of the next row of that type in `value_columns[t]`.
+    std::vector<size_t> consumed(num_types, 0);
+    auto shared_variant = ColumnString::create();
+    for (size_t i = 0; i < type_index.size(); ++i)
     {
-        /// The shared variant is the only variant, so every value is encoded into it, in row order;
-        /// its discriminator is 0. Never silently promote a value to a real variant instead.
-        std::vector<SerializationPtr> serializations(num_types);
-        for (size_t i = 0; i < num_types; ++i)
-            serializations[i] = schema.types[i]->getDefaultSerialization();
-
-        auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
-        auto & discriminators = discriminators_column->getData();
-        discriminators.resize(type_index.size());
-
-        std::vector<size_t> consumed(num_types, 0);
-        auto shared_variant = ColumnString::create();
-        for (size_t i = 0; i < type_index.size(); ++i)
+        const size_t chosen = type_index[i];
+        if (chosen == num_types)
         {
-            if (type_index[i] == num_types)
-            {
-                discriminators[i] = ColumnVariant::NULL_DISCRIMINATOR;
-                continue;
-            }
+            discriminators[i] = ColumnVariant::NULL_DISCRIMINATOR;
+            continue;
+        }
 
-            const size_t chosen = type_index[i];
-            discriminators[i] = 0;
+        discriminators[i] = schema.global_discriminator[chosen];
+        if (chosen >= schema.num_dedicated)
+        {
             ColumnDynamic::serializeValueIntoSharedVariant(
                 *shared_variant, *value_columns[chosen], schema.types[chosen], serializations[chosen], consumed[chosen]);
             ++consumed[chosen];
         }
-        MutableColumns columns;
-        columns.push_back(std::move(shared_variant));
-        variant_column = ColumnVariant::create(std::move(discriminators_column), std::move(columns));
-    }
-    else
-    {
-        variant_column
-            = buildVariantColumn(*schema.variant_type, schema.global_discriminator, type_index, std::move(value_columns));
     }
 
+    /// The variants go in global discriminator order; every slot is either a dedicated type or the
+    /// shared variant, so none of them is left empty.
+    const size_t num_variants = typeid_cast<const DataTypeVariant &>(*schema.variant_type).getVariants().size();
+    MutableColumns columns(num_variants);
+    for (size_t i = 0; i < schema.num_dedicated; ++i)
+        columns[schema.global_discriminator[i]] = std::move(value_columns[i]);
+    columns[schema.shared_variant_discriminator] = std::move(shared_variant);
+
+    MutableColumnPtr variant_column = ColumnVariant::create(std::move(discriminators_column), std::move(columns));
     return ColumnDynamic::create(std::move(variant_column), schema.variant_type, schema.max_dynamic_types, schema.max_dynamic_types);
 }
 
@@ -856,9 +866,9 @@ private:
             return {std::make_shared<DataTypeArray>(makeNullable(pickScalarTypes(rng, 1, /*wrap_into_arrays=*/false).front()))};
         }
 
-        /// A second type needs a second variant to live in, so a key can only drift when the object
-        /// is allowed at least two of them.
-        const bool drifts = object_type.getMaxDynamicTypes() >= 2 && drawChance(rng, TYPE_DRIFT_KEY_SHARE);
+        /// A key drifts whatever `max_dynamic_types` of the object is: a type its path column has no
+        /// variant left for is encoded into the shared variant of that column, see `makeDynamicSchema`.
+        const bool drifts = drawChance(rng, TYPE_DRIFT_KEY_SHARE);
         return pickScalarTypes(rng, drifts ? 2 : 1, /*wrap_into_arrays=*/false);
     }
 
@@ -1178,6 +1188,17 @@ size_t estimateWidestAlternative(
     return res;
 }
 
+/// What a value of a type without a variant of its own costs on top of the value itself: the offset
+/// of the encoded value inside the shared variant and the binary encoding of its type, which is never
+/// longer than the name of the type. Zero when every type of the schema has a variant of its own.
+size_t estimateSharedVariantOverhead(const DynamicSchema & schema)
+{
+    size_t res = 0;
+    for (size_t i = schema.num_dedicated; i < schema.types.size(); ++i)
+        res = std::max(res, sizeof(UInt64) + schema.types[i]->getName().size());
+    return res;
+}
+
 size_t estimateValueSize(
     const DataTypePtr & type, const GenerateRandomOptions & options, const RandomSchemas & schemas, UInt64 schema_seed)
 {
@@ -1230,14 +1251,19 @@ size_t estimateValueSize(
             return sizeof(size_t) + estimateValueSize(nested_type, options, schemas, schema_seed);
         }
 
-        case TypeIndex::Dynamic: [[fallthrough]];
+        case TypeIndex::Dynamic:
+        {
+            /// One discriminator byte and one offset per row on top of the widest type.
+            const auto & schema = schemas.dynamic(schema_seed);
+            return 1 + sizeof(UInt64) + estimateWidestAlternative(schema.types, options, schemas, schema_seed)
+                + estimateSharedVariantOverhead(schema);
+        }
+
         case TypeIndex::Variant:
         {
-            /// One discriminator byte and one offset per row on top of the widest alternative.
-            const DataTypes & alternatives = idx == TypeIndex::Dynamic
-                ? schemas.dynamic(schema_seed).types
-                : typeid_cast<const DataTypeVariant &>(*type).getVariants();
-            return 1 + sizeof(UInt64) + estimateWidestAlternative(alternatives, options, schemas, schema_seed);
+            /// One discriminator byte and one offset per row on top of the widest variant.
+            const DataTypes & variants = typeid_cast<const DataTypeVariant &>(*type).getVariants();
+            return 1 + sizeof(UInt64) + estimateWidestAlternative(variants, options, schemas, schema_seed);
         }
 
         case TypeIndex::Object:
@@ -1258,7 +1284,8 @@ size_t estimateValueSize(
                 const size_t overhead
                     = i < schema.num_dynamic_leaves ? 1 + sizeof(UInt64) : leaf.path.size() + 2 * sizeof(UInt64);
                 res += overhead
-                    + estimateWidestAlternative(leaf.types.types, nested_options, schemas, deriveSeed(schema_seed, leaf.path));
+                    + estimateWidestAlternative(leaf.types.types, nested_options, schemas, deriveSeed(schema_seed, leaf.path))
+                    + estimateSharedVariantOverhead(leaf.types);
             }
             return res;
         }

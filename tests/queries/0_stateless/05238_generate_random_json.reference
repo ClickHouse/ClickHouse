@@ -41,11 +41,12 @@
 -- the depth bound counts the object levels inside arrays too
 3
 2
--- a key drifts between two types, unless the type allows only one of them
+-- a key drifts between two types, whatever `max_dynamic_types` leaves to its path column
 3	0
-1
+3	0
+['Float64']	['Bool']
 -- `JSON(max_dynamic_types=0)` keeps every value in the shared variant of its path column
-14	0
+15	0
 -- `Nullable(JSON)` has both NULLs and documents
 1	1
 -- `JSON` inside other types

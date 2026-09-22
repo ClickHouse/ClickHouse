@@ -129,15 +129,23 @@ FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3) LIMIT 100);
 SELECT max(arrayMax(arrayCumSum(arrayMap(c -> if(c = '{', 1, if(c = '}', -1, 0)), extractAll(toString(x), '.')))))
 FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3, SETTINGS max_json_depth = 2) LIMIT 100);
 
-SELECT '-- a key drifts between two types, unless the type allows only one of them';
+SELECT '-- a key drifts between two types, whatever `max_dynamic_types` leaves to its path column';
+-- The key set of seed 45 does not depend on `max_dynamic_types`, so both columns have the same three
+-- drifting keys. With `max_dynamic_types=1` the second type of such a key has no variant of its own
+-- and is encoded into the shared variant of the path column, where it still reads back as itself.
 SELECT countIf(types = 2), countIf(types > 2)
 FROM (SELECT p, uniqExact(t) AS types
       FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
             FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000)) GROUP BY p);
-SELECT max(types)
+SELECT countIf(types = 2), countIf(types > 2)
 FROM (SELECT p, uniqExact(t) AS types
       FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
             FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_types=1)', 45) LIMIT 2000)) GROUP BY p);
+-- `sku` drifts between `Float64` and `Bool`: the first type is the one variant of the path column
+-- and the second one is read back from its shared variant.
+SELECT arraySort(groupUniqArrayIf(dynamicType(x.sku), NOT isDynamicElementInSharedData(x.sku) AND x.sku IS NOT NULL)),
+       arraySort(groupUniqArrayIf(dynamicType(x.sku), isDynamicElementInSharedData(x.sku)))
+FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_types=1)', 45) LIMIT 2000);
 
 SELECT '-- `JSON(max_dynamic_types=0)` keeps every value in the shared variant of its path column';
 -- The path columns can hold no dynamic type at all, yet every value still reads back with the type

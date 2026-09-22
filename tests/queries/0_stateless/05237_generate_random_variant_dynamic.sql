@@ -18,12 +18,23 @@ SELECT '-- Dynamic: every type name is a pool member';
 SELECT countIf(NOT match(t, '^(String|Int64|Float64|Bool|DateTime|Date|UInt64|Array\\(Nullable\\((String|Int64|Float64|Bool|DateTime|Date|UInt64)\\)\\))$'))
 FROM (SELECT dynamicType(d) AS t FROM generateRandom('d Dynamic', 1, SETTINGS null_ratio = 0) LIMIT 1000);
 
-SELECT '-- Dynamic(max_types=1): a single type';
-SELECT uniqExact(dynamicType(d))
+SELECT '-- Dynamic(max_types=1): seed 1 draws three types, one gets a variant of its own and the two others spill into the shared variant';
+-- The set of types does not shrink with `max_types`: the excess types are encoded into the shared
+-- variant, the way a `Dynamic` column stores the types it has no variant left for.
+SELECT uniqExact(dynamicType(d)), countIf(isDynamicElementInSharedData(d)) > 0, uniqExactIf(dynamicType(d), NOT isDynamicElementInSharedData(d))
 FROM (SELECT * FROM generateRandom('d Dynamic(max_types=1)', 1, SETTINGS null_ratio = 0) LIMIT 1000);
 
+-- The shared values survive a `MergeTree` round trip: the table reads back the same types in the same numbers.
+DROP TABLE IF EXISTS t_generate_random_dynamic_one;
+CREATE TABLE t_generate_random_dynamic_one (d Dynamic(max_types=1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_generate_random_dynamic_one SELECT * FROM generateRandom('d Dynamic(max_types=1)', 1, SETTINGS null_ratio = 0) LIMIT 300;
+SELECT (SELECT arraySort(groupArray((t, c))) FROM (SELECT dynamicType(d) AS t, count() AS c FROM t_generate_random_dynamic_one GROUP BY t))
+     = (SELECT arraySort(groupArray((t, c))) FROM (SELECT dynamicType(d) AS t, count() AS c
+                                                    FROM (SELECT * FROM generateRandom('d Dynamic(max_types=1)', 1, SETTINGS null_ratio = 0) LIMIT 300) GROUP BY t));
+DROP TABLE t_generate_random_dynamic_one;
+
 SELECT '-- Dynamic(max_types=0): every value lives in the shared variant';
-SELECT count(), uniqExact(dynamicType(d)),
+SELECT count(), uniqExact(dynamicType(d)), countIf(NOT isDynamicElementInSharedData(d)),
        countIf(match(dynamicType(d), '^(String|Int64|Float64|Bool|DateTime|Date|UInt64|Array\\(Nullable\\((String|Int64|Float64|Bool|DateTime|Date|UInt64)\\)\\))$'))
 FROM (SELECT * FROM generateRandom('d Dynamic(max_types=0)', 1, SETTINGS null_ratio = 0) LIMIT 100);
 
