@@ -427,7 +427,7 @@ Required parameters:
 Optional parameters:
 
 - `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`. For `OAUTHBEARER` configuration and per-broker credentials, see [Kafka named collections](/integrations/data-ingestion/kafka/kafka-table-engine-named-collections#oauth-authentication-with-oauthbearer).
 - `kafka_aws_region` - AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Explicitly specify when using PrivateLink aliases or custom DNS hostnames that don't contain region information. Default: empty (auto-detect).
 - `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
