@@ -74,7 +74,7 @@ public:
         DataTypePtr storage_type_,
         DataTypePtr logical_type_,
         Float64 decay_length_)
-        : SerializationWrapper(std::move(storage_serialization_))
+        : SerializationWrapper(storage_serialization_)
         , logical_serialization(std::move(logical_serialization_))
         , storage_type(std::move(storage_type_))
         , logical_type(std::move(logical_type_))
