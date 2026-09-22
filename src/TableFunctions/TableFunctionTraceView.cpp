@@ -328,7 +328,7 @@ TraceBounds traceBounds(const SpanColumns & spans)
     for (size_t i = 0; i < spans.rows; ++i)
     {
         start = std::min(start, spans.start(i));
-        finish = std::max(finish, spans.finish_time_us.getUInt(i));
+        finish = std::max(finish, spans.finish(i));
     }
     return {.start = start, .duration = std::max<UInt64>(1, finish - start)};
 }
@@ -345,7 +345,7 @@ UInt64 selfTimeUs(const SpanColumns & spans, const SpanForest & forest, size_t r
     for (size_t child : forest.children[row])
     {
         const UInt64 child_start = std::clamp(spans.start(child), cursor, finish);
-        const UInt64 child_finish = std::clamp(spans.finish_time_us.getUInt(child), cursor, finish);
+        const UInt64 child_finish = std::clamp(spans.finish(child), cursor, finish);
         if (child_finish > child_start)
             covered += child_finish - child_start;
         cursor = std::max(cursor, child_finish);
