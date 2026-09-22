@@ -59,6 +59,11 @@ public:
     const SerializationPtr & getValueSerialization() const { return value_serialization; }
     String keyToStreamName(const Field & key) const;
 
+    static MapKeyManifest collectManifestFromColumn(const IColumn & column);
+    static void writeManifest(WriteBuffer & ostr, const SerializationPtr & key_serialization, const MapKeyManifest & manifest);
+    static MapKeyManifest readManifest(ReadBuffer & istr, const SerializationPtr & key_serialization);
+    static std::vector<Field> keysFromManifest(const MapKeyManifest & manifest);
+
     struct PivotedKeyColumn
     {
         Field key;
@@ -122,6 +127,8 @@ public:
     {
         MapKeyManifest manifest;
         std::vector<SerializeBinaryBulkStatePtr> value_states;
+        std::vector<std::vector<UInt8>> pending_presence;
+        size_t pending_rows = 0;
     };
 
     struct DeserializeBinaryBulkStateMapWithKeyColumns : public DeserializeBinaryBulkState
@@ -143,10 +150,9 @@ private:
         const SerializationPtr & value_serialization_,
         const SerializationPtr & nested_serialization_);
 
-    static MapKeyManifest collectManifestFromColumn(const IColumn & column);
-    static std::vector<Field> keysFromManifest(const MapKeyManifest & manifest);
     void addMapKeyPath(SerializeBinaryBulkSettings & settings, const Field & key) const;
     void addMapKeyPath(DeserializeBinaryBulkSettings & settings, const Field & key) const;
+    void flushPendingPresence(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStateMapWithKeyColumns & state) const;
 
     DataTypePtr key_type;
     DataTypePtr value_type;

@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 
@@ -261,6 +262,11 @@ private:
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
+        /// Union of `with_key_columns` keys across source parts, keyed by Map column name.
+        std::unordered_map<String, MapKeyManifest> map_key_unions;
+        /// Map columns whose key union is large enough to gather one key at a time.
+        NameSet per_key_vertical_map_columns;
+
         std::vector<ProjectionDescriptionRawPtr> projections_to_rebuild{};
         std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
         std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
@@ -390,6 +396,7 @@ private:
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
+        void collectMapKeyUnions() const;
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -448,6 +455,30 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+
+        struct PerKeyMapMergeState
+        {
+            enum class Phase : uint8_t
+            {
+                Presence,
+                Key,
+            };
+
+            String map_column_name;
+            DataTypePtr map_type;
+            DataTypePtr value_type;
+            SerializationPtr map_serialization;
+            SerializationPtr value_serialization;
+            MapKeyManifest union_manifest;
+            std::vector<MapKeyManifest> part_manifests;
+            Phase phase{Phase::Presence};
+            size_t key_index = 0;
+            std::vector<String> keys_info_substreams;
+            std::vector<String> presence_substreams;
+            std::vector<String> key_value_substreams;
+        };
+
+        std::optional<PerKeyMapMergeState> per_key_map;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -485,6 +516,12 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
+        bool isPerKeyMapGatheringColumn() const;
+        void preparePerKeyMapPresence() const;
+        void preparePerKeyMapKey() const;
+        void finalizePerKeyMapPiece() const;
+        void finishPerKeyMapColumn() const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForMapPresence() const;
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;

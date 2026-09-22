@@ -411,6 +411,13 @@ performance degradation during inserts, while using `with_buckets` or `with_key_
 Reserved bound on the number of distinct keys that `with_key_columns` `Map` serialization stores as independent streams.
 A value of `0` means no limit. The writer does not apply this bound yet: every distinct key is stored in its own streams.
 )", 0) \
+    DECLARE(UInt64, map_key_columns_per_key_merge_min_keys, 32, R"(
+When a `with_key_columns` `Map` column's distinct key union across the source parts is at least this many,
+merge uses Vertical merge and gathers one key at a time so the merge does not open every key file together.
+Below the threshold the column is still merged as a single logical `Map`.
+A value of `0` disables the per-key gather path.
+Merges that cannot use Vertical (for example `OPTIMIZE ... DEDUPLICATE`) fail if the key union meets this threshold.
+)", 0) \
     DECLARE(UInt64, max_bytes_for_compact_map_key_columns, 64ull * 1024 * 1024, R"(
 If `map_serialization_version` (or `map_serialization_version_for_zero_level_parts`) is `with_key_columns`,
 zero-level Compact parts are allowed only when the estimated uncompressed size is below this limit.

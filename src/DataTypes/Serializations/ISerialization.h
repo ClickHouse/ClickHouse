@@ -466,6 +466,11 @@ public:
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// When false, granule-scoped streams (e.g. Map `key_presence`) must
+        /// buffer until a later call or `serializeBinaryBulkStateSuffix`.
+        /// Wide MergeTree may append several blocks into one granule.
+        bool granule_is_complete = true;
     };
 
     struct DeserializeBinaryBulkSettings

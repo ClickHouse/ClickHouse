@@ -17,6 +17,14 @@ public:
         const SerializationPtr & map_with_key_columns_serialization_,
         Field key_);
 
+    /// Writes only this key's value streams under the parent Map column name.
+    /// Does not touch `keys_info` (written by the presence pass).
+    static SerializationPtr createForWrite(
+        const SerializationPtr & value_serialization_,
+        const DataTypePtr & value_type_,
+        const SerializationPtr & map_with_key_columns_serialization_,
+        Field key_);
+
     bool supportsPooling() const override { return false; }
 
     void enumerateStreams(
@@ -57,12 +65,14 @@ private:
         const SerializationPtr & value_serialization_,
         const DataTypePtr & value_type_,
         const SerializationPtr & map_with_key_columns_serialization_,
-        Field key_);
+        Field key_,
+        bool write_value_only_);
 
     DataTypePtr value_type;
     SerializationPtr map_with_key_columns_serialization;
     Field key;
     String key_name;
+    bool write_value_only = false;
 };
 
 }

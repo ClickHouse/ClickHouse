@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationMapKeyPresence.h>
+#include <DataTypes/Serializations/SerializationMapKeyPresenceMerge.h>
 #include <DataTypes/Serializations/SerializationMapKeyValue.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumnsValue.h>
@@ -250,6 +251,64 @@ ColumnPtr makePresenceColumnFromMap(const ColumnMap & column_map, const IColumn 
 /// stream; `basic` / `with_buckets` keep using `SerializationMapKeyValue`.
 std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
+    /// Must run before the `key_` prefix check: `keys_presence` starts with `key_`.
+    /// Always expose the type so `hasSubcolumn` / sample blocks resolve it even when
+    /// the current serialization is not `with_key_columns` (the part's info is used later).
+    if (subcolumn_name == KEYS_PRESENCE_SUBCOLUMN)
+    {
+        auto res = std::make_unique<SubstreamData>(data.serialization);
+        res->type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+        auto serialization = removeNamedSerialization(data.serialization);
+        if (typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
+            res->serialization = SerializationMapKeyPresenceMerge::create(serialization);
+        else
+            res->serialization = res->type->getDefaultSerialization();
+
+        if (data.column)
+        {
+            const auto & map = assert_cast<const ColumnMap &>(*data.column);
+            const auto manifest = SerializationMapWithKeyColumns::collectManifestFromColumn(map);
+            const auto & keys_column = map.getNestedData().getColumn(0);
+            const auto & map_offsets = map.getNestedColumn().getOffsets();
+            const size_t rows = map.size();
+            const size_t key_count = manifest.keys.size();
+
+            auto presence_nested = ColumnUInt8::create();
+            auto offsets = ColumnArray::ColumnOffsets::create();
+            auto & presence = presence_nested->getData();
+            auto & offs = offsets->getData();
+            presence.reserve(rows * key_count);
+            offs.reserve(rows);
+
+            std::vector<Field> keys;
+            keys.reserve(key_count);
+            for (const auto & entry : manifest.keys)
+                keys.push_back(entry.key);
+
+            for (size_t row = 0; row < rows; ++row)
+            {
+                const size_t begin = map_offsets[static_cast<ssize_t>(row) - 1];
+                const size_t end = map_offsets[row];
+                for (const auto & key : keys)
+                {
+                    UInt8 present = 0;
+                    for (size_t pos = begin; pos < end; ++pos)
+                    {
+                        if (keys_column[pos] == key)
+                        {
+                            present = 1;
+                            break;
+                        }
+                    }
+                    presence.push_back(present);
+                }
+                offs.push_back(presence.size());
+            }
+            res->column = ColumnArray::create(std::move(presence_nested), std::move(offsets));
+        }
+        return res;
+    }
+
     const bool is_exists = subcolumn_name.starts_with(EXISTS_SUBCOLUMN_PREFIX);
     const bool is_key = subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX);
     if (!is_exists && !is_key)
