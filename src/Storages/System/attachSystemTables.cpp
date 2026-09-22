@@ -3163,7 +3163,14 @@ comment:                     The temporary dictionary
 )DOCS_MD");
     attach<StorageSystemClusters>(context, system_database, "clusters", R"DOCS_MD(
 .description
-Contains information about clusters available in the config file and the servers in them.
+Contains information about clusters available in the configuration file or created with SQL, and the servers in them.
+
+SQL-managed clusters created with [`CREATE CLUSTER`](/reference/statements/create/cluster) expose two additional columns:
+
+- `source` ([String](/reference/data-types/string)) — `CONFIG` for clusters defined in the configuration file, `SQL` for SQL-managed clusters.
+- `create_query` ([String](/reference/data-types/string)) — the stored `CREATE CLUSTER` statement for SQL-managed clusters. Empty for config-defined clusters. Secrets are hidden according to the same rules as [`system.named_collections`](/reference/system-tables/named_collections).
+
+See [SQL-managed clusters](/concepts/features/configuration/server-config/sql-clusters).
 
 .examples
 ```sql title="Query"
@@ -3213,6 +3220,7 @@ is_active:               NULL
 ```
 
 .see_also
+- [SQL-managed clusters](/concepts/features/configuration/server-config/sql-clusters)
 - [Table engine Distributed](/reference/engines/table-engines/special/distributed)
 - [distributed_replica_error_cap setting](/reference/settings/session-settings/distributed-replica#distributed_replica_error_cap)
 - [distributed_replica_error_half_life setting](/reference/settings/session-settings/distributed-replica#distributed_replica_error_half_life)

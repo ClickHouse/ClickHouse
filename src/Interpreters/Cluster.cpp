@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CLUSTER_ALREADY_EXISTS;
 }
 
 namespace
@@ -439,7 +440,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         {
             auto it = impl.find(key);
             if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
-                continue;
+            {
+                throw Exception(
+                    ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                    "Cannot load cluster `{}` from server configuration: "
+                    "an SQL-managed cluster with the same name already exists",
+                    key);
+            }
 
             impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
         }

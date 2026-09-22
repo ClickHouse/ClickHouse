@@ -141,6 +141,40 @@ def assert_cluster_state(nodes, expected):
         assert expected == node.query(clusters_query()).strip()
 
 
+def wait_cluster_state(nodes, expected, timeout=30):
+    """Wait until every node observes the expected SQL-managed cluster topology.
+
+    For Keeper-backed metadata, non-initiator replicas rely on the background root-version
+    watch (not ON CLUSTER DDL) to pick up CREATE/ALTER/DROP.
+    """
+    deadline = time.time() + timeout
+    last_error = None
+    while time.time() < deadline:
+        try:
+            assert_cluster_state(nodes, expected)
+            return
+        except AssertionError as error:
+            last_error = error
+            time.sleep(0.5)
+    raise AssertionError(f"Cluster state did not converge within {timeout}s: {last_error}")
+
+
+def wait_cluster_absent(nodes, timeout=30):
+    deadline = time.time() + timeout
+    last_counts = None
+    while time.time() < deadline:
+        last_counts = [
+            node.query(
+                f"SELECT count() FROM system.clusters WHERE cluster = '{SQL_CLUSTER_NAME}'"
+            ).strip()
+            for node in nodes
+        ]
+        if all(count == "0" for count in last_counts):
+            return
+        time.sleep(0.5)
+    raise AssertionError(f"Cluster was not dropped on all nodes within {timeout}s: {last_counts}")
+
+
 def read_local_metadata_file(node, metadata_path):
     metadata_dir = metadata_path.removeprefix("/var/lib/clickhouse/")
     file_path = os.path.join(node.path, "database", metadata_dir, f"{SQL_CLUSTER_NAME}.sql")
@@ -199,7 +233,10 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
     else:
         leader.query(CREATE_CLUSTER_QUERY.replace(f" ON CLUSTER '{ON_CLUSTER}'", ""))
 
-    assert_cluster_state(nodes, EXPECTED_INITIAL)
+    if keeper or not use_on_cluster:
+        wait_cluster_state(nodes, EXPECTED_INITIAL)
+    else:
+        assert_cluster_state(nodes, EXPECTED_INITIAL)
     if keeper:
         check_keeper_metadata(zk, keeper_metadata_path, encrypted)
     else:
@@ -212,12 +249,14 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
     if use_on_cluster:
         nodes[1].query(ALTER_CLUSTER_QUERY)
     else:
+        # Single-node ALTER: only the initiator writes Keeper; other replicas must pick up the
+        # change via the root-version data watch (children-list watches miss ALTER).
         nodes[1].query(ALTER_CLUSTER_QUERY.replace(f" ON CLUSTER '{ON_CLUSTER}'", ""))
 
-    if keeper:
-        time.sleep(5)
-
-    assert_cluster_state(nodes, EXPECTED_ALTERED)
+    if keeper or not use_on_cluster:
+        wait_cluster_state(nodes, EXPECTED_ALTERED)
+    else:
+        assert_cluster_state(nodes, EXPECTED_ALTERED)
     if keeper:
         check_keeper_metadata(zk, keeper_metadata_path, encrypted)
     else:
@@ -228,13 +267,13 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
     else:
         nodes[2].query(f"DROP CLUSTER {SQL_CLUSTER_NAME}")
 
-    if keeper:
-        time.sleep(5)
-
-    for node in nodes:
-        assert "0" == node.query(
-            f"SELECT count() FROM system.clusters WHERE cluster = '{SQL_CLUSTER_NAME}'"
-        ).strip()
+    if keeper or not use_on_cluster:
+        wait_cluster_absent(nodes)
+    else:
+        for node in nodes:
+            assert "0" == node.query(
+                f"SELECT count() FROM system.clusters WHERE cluster = '{SQL_CLUSTER_NAME}'"
+            ).strip()
 
     if keeper:
         zk.sync(keeper_metadata_path)

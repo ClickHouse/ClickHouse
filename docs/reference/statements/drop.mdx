@@ -174,6 +174,6 @@ CREATE CLUSTER my_cluster (
 DROP CLUSTER my_cluster;
 ```
 
-Requires the `DROP SQL CLUSTER` grant.
+Requires the global `DROP CLUSTER` grant (`GRANT DROP CLUSTER ON *.*`).
 
 See also: [SQL-managed clusters](/concepts/features/configuration/server-config/sql-clusters), [CREATE CLUSTER](/reference/statements/create/cluster), [ALTER CLUSTER](/reference/statements/alter/cluster).

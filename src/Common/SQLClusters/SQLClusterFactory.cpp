@@ -251,8 +251,11 @@ void SQLClusterFactory::loadIfNotImpl(std::lock_guard<std::mutex> &)
 void SQLClusterFactory::reloadFromStorage()
 {
     auto context = Context::getGlobalContextInstance()->getGlobalContext();
-    const auto cluster_names = metadata_storage->listClusterNames();
-    std::unordered_set<String> new_stored_cluster_names(cluster_names.begin(), cluster_names.end());
+    const auto clusters = metadata_storage->getAll();
+    std::unordered_set<String> new_stored_cluster_names;
+    new_stored_cluster_names.reserve(clusters.size());
+    for (const auto & [cluster_name, _] : clusters)
+        new_stored_cluster_names.insert(cluster_name);
 
     for (const auto & cluster_name : stored_cluster_names)
     {
@@ -260,15 +263,18 @@ void SQLClusterFactory::reloadFromStorage()
             context->removeCluster(cluster_name);
     }
 
-    stored_cluster_names = new_stored_cluster_names;
+    stored_cluster_names = std::move(new_stored_cluster_names);
 
-    for (const auto & cluster_name : cluster_names)
+    for (const auto & [cluster_name, create_query] : clusters)
     {
-        const auto create_query = metadata_storage->readCreateQuery(cluster_name);
         auto create_statement = create_query.formatWithSecretsOneLine();
         auto cluster = materializeCluster(create_query, context, std::move(create_statement));
         context->setCluster(cluster_name, cluster);
     }
+
+    /// Advance the loaded version only now that the new snapshot has been fully read and applied,
+    /// so a reload that throws above does not skip the failed version on the next `waitUpdate`.
+    metadata_storage->commitReload();
 }
 
 void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)

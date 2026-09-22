@@ -131,7 +131,7 @@ void StorageSystemClusters::writeCluster(
     const size_t replication_lag_column_idx = columns_mask.size() - 2;
     const size_t is_unsynced_column_idx = columns_mask.size() - 3;
     const size_t is_active_column_idx = columns_mask.size() - 4;
-    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 7;
+    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 5;
     std::vector<ReplicaInfo> replicas;
     bool replicas_belong_to_shared_catalog = false;
     if (replicas_info_getter && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx] || columns_mask[is_shared_catalog_cluster_idx]))

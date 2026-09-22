@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 SQL-managed clusters let you define cluster topologies with SQL instead of editing the server configuration file. They can be used anywhere config-defined clusters are used: [`Distributed`](/reference/engines/table-engines/special/distributed) tables, [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions, `ON CLUSTER` DDL, and other features that reference a cluster name.
 
-SQL-managed clusters coexist with clusters defined in `<remote_servers>`. Both appear in [`system.clusters`](/reference/system-tables/clusters); SQL-managed clusters have `source = 'SQL'`.
+SQL-managed clusters share the same namespace as clusters defined in `<remote_servers>`. Both appear in [`system.clusters`](/reference/system-tables/clusters); SQL-managed clusters have `source = 'SQL'`. Cluster names must be unique across both sources: defining the same name twice fails with `CLUSTER_ALREADY_EXISTS`.
 
 ## Syntax overview {#syntax-overview}
 
@@ -149,13 +149,17 @@ Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does
 
 ## Permissions {#permissions}
 
-To manage SQL clusters with DDL, a user needs:
+To manage SQL clusters with DDL, a user needs these **global** privileges (grantable only as `ON *.*`):
 
-- `CREATE SQL CLUSTER` for [`CREATE CLUSTER`](/reference/statements/create/cluster)
-- `ALTER SQL CLUSTER` for [`ALTER CLUSTER`](/reference/statements/alter/cluster)
-- `DROP SQL CLUSTER` for [`DROP CLUSTER`](/reference/statements/drop#drop-cluster)
+- `CREATE CLUSTER` for [`CREATE CLUSTER`](/reference/statements/create/cluster)
+- `ALTER CLUSTER` for [`ALTER CLUSTER`](/reference/statements/alter/cluster)
+- `DROP CLUSTER` for [`DROP CLUSTER`](/reference/statements/drop#drop-cluster)
 
-These privileges can be granted globally or for a specific cluster name.
+```sql
+GRANT CREATE CLUSTER ON *.* TO john;
+GRANT ALTER CLUSTER ON *.* TO john;
+GRANT DROP CLUSTER ON *.* TO john;
+```
 
 Secrets in the stored `create_query` are hidden in [`system.clusters`](/reference/system-tables/clusters) unless the user is allowed to see secrets (the same rules as [`system.named_collections`](/reference/system-tables/named_collections)).
 
@@ -180,5 +184,3 @@ Cluster names are also listed by [`SHOW CLUSTERS`](/reference/statements/show#sh
 ## XML-defined clusters {#xml-defined-clusters}
 
 Clusters can still be defined in the server configuration under `<remote_servers>`. See [Clusters](/reference/engines/table-engines/special/distributed#distributed-clusters) in the `Distributed` table engine documentation.
-
-SQL-managed and config-defined clusters can coexist. If the same cluster name exists in both places, the SQL-managed definition takes precedence for queries using that name.

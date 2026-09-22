@@ -18,7 +18,7 @@ BlockIO InterpreterCreateSQLClusterQuery::execute()
     const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query->as<const ASTCreateSQLClusterQuery &>();
 
-    current_context->checkAccess(AccessType::CREATE_SQL_CLUSTER);
+    current_context->checkAccess(AccessType::CREATE_CLUSTER);
 
     if (!query.cluster.empty())
     {
@@ -37,7 +37,7 @@ BlockIO InterpreterAlterSQLClusterQuery::execute()
     const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query->as<const ASTAlterSQLClusterQuery &>();
 
-    current_context->checkAccess(AccessType::ALTER_SQL_CLUSTER);
+    current_context->checkAccess(AccessType::ALTER_CLUSTER);
 
     if (!query.cluster.empty())
     {
@@ -56,7 +56,7 @@ BlockIO InterpreterDropSQLClusterQuery::execute()
     const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query->as<const ASTDropSQLClusterQuery &>();
 
-    current_context->checkAccess(AccessType::DROP_SQL_CLUSTER);
+    current_context->checkAccess(AccessType::DROP_CLUSTER);
 
     if (!query.cluster.empty())
     {

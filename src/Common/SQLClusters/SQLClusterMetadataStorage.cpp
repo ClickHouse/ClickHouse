@@ -1,6 +1,8 @@
 #include <Common/SQLClusters/SQLClusterMetadataStorage.h>
 
+#include <atomic>
 #include <filesystem>
+#include <mutex>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromFile.h>
@@ -18,6 +20,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
@@ -41,9 +44,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 static const std::string cluster_metadata_config_path = "cluster_metadata";
+
+/// How many times a snapshot read (list the children, then read each of them) is retried when a concurrent
+/// mutation bumped the root version midway, so the read never returns a mixed set that never existed.
+static constexpr size_t max_snapshot_read_attempts = 100;
 
 namespace
 {
@@ -75,6 +83,16 @@ public:
     virtual bool isReplicated() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
+
+    /// Promote the version observed when the update watch was last armed (in `list`) to the
+    /// "successfully loaded" version that `waitUpdate` compares against. No-op for local storage.
+    virtual void commitReload() const {}
+
+    /// Current root-node data version (replicated) or 0 (local). Used by `getAll` for snapshot retries.
+    virtual Int32 getVersion() const { return 0; }
+
+    /// Root version observed when the update watch was last armed in `list`.
+    virtual Int32 getArmedVersion() const { return 0; }
 };
 
 
@@ -209,14 +227,31 @@ class SQLClusterMetadataStorage::ZooKeeperStorage : public ISQLClusterStorage, p
 {
 private:
     std::string root_path;
+    /// Guards the lazy (re)creation of `zookeeper_client` in `getClient`, which can run concurrently on
+    /// the background reload task and a foreground DDL request.
+    mutable std::mutex client_mutex;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
+    /// Created once in the constructor and never reassigned, so it can be read from any thread without
+    /// synchronization (Poco::Event's own operations are thread-safe). The same event is reused as the
+    /// data-watch on the root node across reloads.
     mutable Coordination::EventPtr wait_event;
-    mutable Int32 node_cversion = 0;
+    /// Version of the root node's data that has been successfully loaded into the in-memory snapshot. It
+    /// is bumped on every create/drop/alter (see `bumpVersionRequest`), so a single data-watch on the
+    /// root notifies replicas of all kinds of changes - in particular ALTER, which only changes a child's
+    /// data and would not be observed by a children-list watch. `waitUpdate` compares it against Keeper's
+    /// current root version to decide whether a reload is due. It is advanced only by `commitReload`,
+    /// after the snapshot read at `armed_version` has been fully applied, so a reload that throws midway
+    /// does not lose the retry.
+    mutable std::atomic<Int32> root_version = 0;
+    /// Root version observed when the update watch was last armed in `list`. Promoted to `root_version`
+    /// by `commitReload` once the corresponding snapshot has been successfully loaded.
+    mutable std::atomic<Int32> armed_version = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
         : WithContext(context_)
         , root_path(path_)
+        , wait_event(std::make_shared<Poco::Event>())
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::ZooKeeperStorage");
         if (root_path.empty())
@@ -242,35 +277,47 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::waitUpdate");
-        if (!wait_event)
-            return true;
-
         if (wait_event->tryWait(timeout))
             return true;
 
         std::string res;
         Coordination::Stat stat;
-
         if (!getClient()->tryGet(root_path, res, &stat))
         {
             chassert(false);
             return false;
         }
-
-        return stat.cversion != node_cversion;
+        return stat.version != root_version;
     }
 
     std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::list");
-        if (!wait_event)
-            wait_event = std::make_shared<Poco::Event>();
-
+        /// Set a data-watch on the root node and remember its version as the armed version. Every
+        /// modification bumps the root version (see `bumpVersionRequest`), so this watch fires for create,
+        /// drop and alter alike. The armed version is promoted to `root_version` only by `commitReload`,
+        /// after the caller has fully read and applied this snapshot.
         Coordination::Stat stat;
-        auto children = getClient()->getChildren(root_path, &stat, wait_event);
-        node_cversion = stat.cversion;
-        return children;
+        getClient()->get(root_path, &stat, wait_event);
+        armed_version = stat.version;
+
+        return getClient()->getChildren(root_path);
     }
+
+    void commitReload() const override
+    {
+        root_version = armed_version.load();
+    }
+
+    Int32 getVersion() const override
+    {
+        auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::getVersion");
+        Coordination::Stat stat;
+        getClient()->get(root_path, &stat);
+        return stat.version;
+    }
+
+    Int32 getArmedVersion() const override { return armed_version.load(); }
 
     bool exists(const std::string & file_name) const override
     {
@@ -294,22 +341,41 @@ public:
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::write");
         auto write_data = writeHook(data);
-        if (replace)
-        {
-            getClient()->createOrUpdate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
-        }
-        else
-        {
-            auto code = getClient()->tryCreate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
 
-            if (code == Coordination::Error::ZNODEEXISTS)
-            {
-                throw Exception(
-                    ErrorCodes::CLUSTER_ALREADY_EXISTS,
-                    "Metadata file {} for SQL cluster already exists",
-                    file_name);
-            }
+        /// Mutate the child node and bump the root version (see `bumpVersionRequest`) in a single Keeper
+        /// transaction, so the watched root version always advances together with the change. Otherwise a
+        /// connection loss between the child mutation and a separate version bump would commit the change
+        /// while leaving other replicas unnotified. ALTER only changes child data and would otherwise be
+        /// invisible to a children-list watch.
+        Coordination::Requests requests;
+        if (replace)
+            /// ALTER must update an existing cluster only; using `set` (not create-or-update) prevents a
+            /// delayed ALTER from resurrecting a cluster that was concurrently dropped on another replica.
+            requests.push_back(zkutil::makeSetRequest(getPath(file_name), write_data, -1));
+        else
+            requests.push_back(zkutil::makeCreateRequest(getPath(file_name), write_data, zkutil::CreateMode::Persistent));
+        requests.push_back(bumpVersionRequest());
+
+        Coordination::Responses responses;
+        auto code = getClient()->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+            return;
+
+        if (replace && code == Coordination::Error::ZNONODE)
+        {
+            throw Exception(
+                ErrorCodes::CLUSTER_DOESNT_EXIST,
+                "Metadata file {} for SQL cluster doesn't exist",
+                file_name);
         }
+        if (!replace && code == Coordination::Error::ZNODEEXISTS)
+        {
+            throw Exception(
+                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                "Metadata file {} for SQL cluster already exists",
+                file_name);
+        }
+        zkutil::KeeperMultiException::check(code, requests, responses);
     }
 
     virtual std::string writeHook(const std::string & data) const
@@ -320,23 +386,47 @@ public:
     void remove(const std::string & file_name) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::remove");
-        getClient()->remove(getPath(file_name));
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeRemoveRequest(getPath(file_name), -1));
+        requests.push_back(bumpVersionRequest());
+
+        Coordination::Responses responses;
+        auto code = getClient()->tryMulti(requests, responses);
+        if (code != Coordination::Error::ZOK)
+            zkutil::KeeperMultiException::check(code, requests, responses);
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::removeIfExists");
-        auto code = getClient()->tryRemove(getPath(file_name));
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeRemoveRequest(getPath(file_name), -1));
+        requests.push_back(bumpVersionRequest());
+
+        Coordination::Responses responses;
+        auto code = getClient()->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
             return true;
+        /// The node is absent: the whole transaction is rejected atomically, so the root version is not
+        /// bumped and nothing changed - this is exactly the IF EXISTS no-op contract.
         if (code == Coordination::Error::ZNONODE)
             return false;
-        throw Coordination::Exception::fromPath(code, getPath(file_name));
+        zkutil::KeeperMultiException::check(code, requests, responses);
+        return false;
     }
 
 private:
+    /// A request that bumps the root node's data version to notify all replicas (including for ALTER,
+    /// which only changes child data and would otherwise be invisible to a children-list watch). It is
+    /// always issued together with the child mutation in a single `multi`, so the two never diverge.
+    Coordination::RequestPtr bumpVersionRequest() const
+    {
+        return zkutil::makeSetRequest(root_path, "", -1);
+    }
+
     zkutil::ZooKeeperPtr getClient() const
     {
+        std::lock_guard lock(client_mutex);
         if (!zookeeper_client || zookeeper_client->expired())
         {
             zookeeper_client = getContext()->getZooKeeper();
@@ -461,6 +551,55 @@ std::vector<String> SQLClusterMetadataStorage::listClusterNames() const
     return result;
 }
 
+SQLClusterCreateQueries SQLClusterMetadataStorage::readClusters(const std::vector<String> & cluster_names) const
+{
+    SQLClusterCreateQueries result;
+    for (const auto & cluster_name : cluster_names)
+    {
+        if (result.contains(cluster_name))
+            throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Found duplicate SQL cluster `{}`", cluster_name);
+        try
+        {
+            result.emplace(cluster_name, readCreateQuery(cluster_name));
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// A concurrent update may have removed the cluster between listing and reading.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                LOG_DEBUG(
+                    getLogger("SQLClusterMetadataStorage"),
+                    "Cluster '{}' was removed while reading, skipping",
+                    cluster_name);
+                continue;
+            }
+            throw;
+        }
+    }
+    return result;
+}
+
+SQLClusterCreateQueries SQLClusterMetadataStorage::getAll() const
+{
+    /// Listing only fixes the *child list* at one root version - the per-child reads happen afterwards, so
+    /// without the version re-check below the reader could assemble a map that never existed atomically.
+    /// Retry until the root version is unchanged across the child reads. Concurrently dropped children
+    /// are skipped in `readClusters` (same pattern as SQLDefinedHandlersMetadataStorage).
+    for (size_t attempt = 0; attempt < max_snapshot_read_attempts; ++attempt)
+    {
+        auto cluster_names = listClusterNames();
+        const Int32 listed_version = storage->getArmedVersion();
+        auto clusters = readClusters(cluster_names);
+        if (storage->getVersion() == listed_version)
+            return clusters;
+    }
+
+    throw Exception(
+        ErrorCodes::KEEPER_EXCEPTION,
+        "Cannot read a consistent snapshot of SQL clusters: the set kept changing during {} attempts",
+        max_snapshot_read_attempts);
+}
+
 bool SQLClusterMetadataStorage::exists(const String & cluster_name) const
 {
     return storage->exists(getFileName(cluster_name));
@@ -506,6 +645,11 @@ bool SQLClusterMetadataStorage::waitUpdate()
     const size_t timeout = config.getUInt(cluster_metadata_config_path + ".update_timeout_ms", 5000);
 
     return storage->waitUpdate(timeout);
+}
+
+void SQLClusterMetadataStorage::commitReload() const
+{
+    storage->commitReload();
 }
 
 std::unique_ptr<SQLClusterMetadataStorage> SQLClusterMetadataStorage::create(const ContextPtr & context_)

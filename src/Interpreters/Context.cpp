@@ -483,6 +483,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int CLUSTER_ALREADY_EXISTS;
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
@@ -6884,8 +6885,21 @@ void Context::reloadClusterConfig() const
         {
             for (const auto & [name, cluster] : old_clusters->getContainer())
             {
-                if (cluster->getSourceId() == Cluster::SourceId::SQL)
-                    new_clusters->setCluster(name, cluster);
+                if (cluster->getSourceId() != Cluster::SourceId::SQL)
+                    continue;
+
+                /// Config and SQL cluster names must not collide. Reject here so a newly added
+                /// `<remote_servers>` entry cannot silently hide behind an existing SQL cluster
+                /// (and later vanish from view after `DROP CLUSTER`).
+                if (new_clusters->getCluster(name))
+                {
+                    throw Exception(
+                        ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                        "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
+                        name);
+                }
+
+                new_clusters->setCluster(name, cluster);
             }
         }
 
