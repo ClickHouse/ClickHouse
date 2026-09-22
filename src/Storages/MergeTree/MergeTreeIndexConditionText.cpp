@@ -83,6 +83,31 @@ TextSearchQuery::TextSearchQuery(
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
+
+    for (const auto & pattern : patterns)
+    {
+        std::shared_ptr<const TextIndexDictionaryAutomaton> automaton;
+        if (pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact)
+            automaton = TextIndexDictionaryAutomaton::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix);
+        else if (pattern.getRE2())
+        {
+            /// The existing SQL surface supplies `LIKE` patterns. Leading wildcards
+            /// cannot prune ASCII prefixes, so avoid determinizing them altogether.
+            std::string prefix;
+            bool fold_case = false;
+            re2::Regexp * suffix = nullptr;
+            const bool has_prefix = pattern.getRE2()->Regexp()->RequiredPrefix(&prefix, &fold_case, &suffix);
+            if (suffix)
+                suffix->Decref();
+            if (has_prefix && !prefix.empty())
+            {
+                automaton = TextIndexDictionaryAutomaton::fromRegexp(*pattern.getRE2());
+                if (automaton && !automaton->canSkipPrefixes())
+                    automaton.reset();
+            }
+        }
+        pattern_automata.push_back(std::move(automaton));
+    }
 }
 
 void TextSearchQuery::initializeHash()

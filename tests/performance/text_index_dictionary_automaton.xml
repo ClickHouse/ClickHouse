@@ -1,0 +1,29 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <optimize_rewrite_like_perfect_affix>0</optimize_rewrite_like_perfect_affix>
+        <use_text_index_like_evaluation_by_dictionary_scan>1</use_text_index_like_evaluation_by_dictionary_scan>
+    </settings>
+    <create_query>
+        CREATE TABLE text_automaton_bench
+        (
+            id UInt64,
+            body String,
+            INDEX idx body TYPE text(tokenizer = array, dictionary_block_size = 128)
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO text_automaton_bench
+        SELECT number, concat(if(number % 1000 = 0, 'service', 'unrelated'), toString(number), 'error')
+        FROM numbers(1000000)
+    </fill_query>
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE 'service%error'</query>
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE 'service____error'</query>
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE 'missing%error'</query>
+    <!-- Keep broad, literal-only and infix controls to expose scan regressions. -->
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE 'unrelated%error'</query>
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE 'service%'</query>
+    <query>SELECT count() FROM text_automaton_bench WHERE body LIKE '%service%'</query>
+    <drop_query>DROP TABLE text_automaton_bench</drop_query>
+</test>

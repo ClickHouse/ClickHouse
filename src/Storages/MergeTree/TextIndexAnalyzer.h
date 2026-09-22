@@ -92,6 +92,9 @@ public:
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;
+    bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    /// Intersects the union of the active pattern languages with sorted dictionary keys.
+    TextIndexDictionaryAutomaton::Result nextPatternToken(std::string_view token, String & seek_target);
     /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
     void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
@@ -130,6 +133,7 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+    std::vector<TextIndexDictionaryAutomaton::Cursor> pattern_cursors;
 
     /* Fields updated dynamically during text index analysis. */
 

@@ -722,6 +722,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
+    const bool intersect_dictionary = analyzer->canIntersectDictionary();
+    using AutomatonResult = TextIndexDictionaryAutomaton::Result;
+    String seek_token;
+    String next_token;
+    bool dictionary_exhausted = false;
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
@@ -730,6 +735,25 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     {
         for (size_t block_idx = range_begin; block_idx < range_end; ++block_idx)
         {
+            if (intersect_dictionary)
+            {
+                /// The first key bounds the whole block. A rejected prefix can skip
+                /// compressed blocks without reading either tokens or posting metadata.
+                auto first_token = sparse_index.getToken(block_idx);
+                auto probe = std::max(first_token, std::string_view(seek_token));
+                auto result = analyzer->nextPatternToken(probe, next_token);
+                if (result == AutomatonResult::Exhausted)
+                    return;
+                if (result == AutomatonResult::Seek)
+                    seek_token = next_token;
+                else
+                    seek_token = probe;
+                size_t next_block = sparse_index.upperBound(seek_token);
+                block_idx = std::max(block_idx, next_block ? next_block - 1 : 0);
+                if (block_idx >= range_end)
+                    break;
+            }
+
             /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
             UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
             dictionary_stream.seekToMark({offset_in_file, 0});
@@ -742,7 +766,47 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
             matched_indices.clear();
 
-            if (filter_tokens_by_literals)
+            if (intersect_dictionary)
+            {
+                auto lower_bound = [&](size_t begin, std::string_view key)
+                {
+                    size_t end = num_tokens;
+                    while (begin < end)
+                    {
+                        size_t middle = begin + (end - begin) / 2;
+                        if (std::string_view(block_tokens.getDataAt(middle)) < key)
+                            begin = middle + 1;
+                        else
+                            end = middle;
+                    }
+                    return begin;
+                };
+                size_t token_idx = lower_bound(0, seek_token);
+                while (token_idx < num_tokens)
+                {
+                    auto token = block_tokens.getDataAt(token_idx);
+                    auto result = analyzer->nextPatternToken(token, next_token);
+                    if (result == AutomatonResult::Exhausted)
+                    {
+                        dictionary_exhausted = true;
+                        break;
+                    }
+                    if (result == AutomatonResult::Seek)
+                    {
+                        seek_token = next_token;
+                        token_idx = lower_bound(token_idx + 1, seek_token);
+                    }
+                    else
+                    {
+                        /// Keep the existing matcher authoritative, including its
+                        /// literal filters, and attach a token to every matching query.
+                        if (analyzer->addTokenToPatterns(token))
+                            matched_indices.push_back(token_idx);
+                        ++token_idx;
+                    }
+                }
+            }
+            else if (filter_tokens_by_literals)
             {
                 analyzer->matchTokensByLiterals(block_tokens, candidate_marks, matched_indices);
             }
@@ -757,7 +821,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             }
 
             if (matched_indices.empty())
+            {
+                if (dictionary_exhausted)
+                    return;
                 continue;
+            }
 
             /// Deserialize only the token infos for matched tokens.
             auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
@@ -777,6 +845,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
                 return;
             }
+            if (dictionary_exhausted)
+                return;
         }
     }
 }
