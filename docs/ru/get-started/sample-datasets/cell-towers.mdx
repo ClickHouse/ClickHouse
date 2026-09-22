@@ -45,12 +45,12 @@ import { Image } from "/snippets/components/Image.jsx";
 
     Результат — примерно `2.62 million`.
   </Step>
-  <Step title="Визуализируйте данные с ClickHouse Agents">
-    Откройте **ClickHouse agents** и отправьте: "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables".
+  <Step title="Необязательно: визуализируйте данные с ClickHouse Agents">
+    Это необязательный пример запуска: `ClickHouse Agents` — бета-функциональность, управляемая моделью, поэтому план, используемые инструменты и результат могут различаться между запусками. Откройте **ClickHouse agents** и отправьте: "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables".
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="Чат ClickHouse Agent, создающий сетку плотности базовых станций Германии"/>
 
-    Агент находит MCC Германии, подсчитывает станции, группирует их в ячейки `0.1°` и рисует контур на карте.
+    В одном запуске агент нашёл MCC Германии, подсчитал станции, сгруппировал их в ячейки `0.1°` и нарисовал контур на карте.
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Тепловая карта плотности базовых станций Германии"/>
   </Step>

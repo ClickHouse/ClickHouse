@@ -49,12 +49,12 @@ Este guia mostra como carregar os dados do `OpenCelliD` no `ClickHouse Cloud`, e
 
     O resultado é aproximadamente `2.62 million`.
   </Step>
-  <Step title="Visualize os dados com ClickHouse Agents">
-    Abra **ClickHouse agents** e envie: "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables".
+  <Step title="Opcional: visualize os dados com ClickHouse Agents">
+    Este é um exemplo opcional: `ClickHouse Agents` é um recurso beta orientado por modelo, portanto seu plano, ferramentas e saída podem variar entre execuções. Abra **ClickHouse agents** e envie: "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables".
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="Conversa do ClickHouse Agent criando uma grade de densidade de torres na Alemanha"/>
 
-    O agente encontra o MCC alemão, conta as torres, agrupa-as em uma grade de `0.1°` e desenha o contorno no mapa.
+    Em uma execução, o agente encontrou o MCC alemão, contou as torres, agrupou-as em uma grade de `0.1°` e desenhou o contorno no mapa.
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Mapa de calor da densidade de torres de celular na Alemanha"/>
   </Step>

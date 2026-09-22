@@ -45,12 +45,12 @@ import { Image } from "/snippets/components/Image.jsx";
 
     결과는 약 `2.62 million`입니다.
   </Step>
-  <Step title="ClickHouse Agents로 시각화">
-    **ClickHouse agents**를 열고 "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables"를 보냅니다.
+  <Step title="선택 사항: ClickHouse Agents로 시각화">
+    이는 선택 사항인 실행 예시입니다. `ClickHouse Agents`는 모델 기반 베타 기능이므로 계획, 사용하는 도구, 출력은 실행마다 달라질 수 있습니다. **ClickHouse agents**를 열고 "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables"를 보냅니다.
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="독일 기지국 밀도 격자를 만드는 ClickHouse Agent 채팅"/>
 
-    에이전트는 독일 MCC를 찾고 기지국을 세어 `0.1°` 격자로 묶은 후 지도에 윤곽을 그립니다.
+    한 실행에서는 에이전트가 독일 MCC를 찾고 기지국을 세어 `0.1°` 격자로 묶은 후 지도에 윤곽을 그렸습니다.
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="독일 기지국 밀도 히트맵"/>
   </Step>

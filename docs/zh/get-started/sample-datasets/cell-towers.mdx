@@ -45,12 +45,12 @@ import { Image } from "/snippets/components/Image.jsx";
 
     结果约为 `2.62 million`。
   </Step>
-  <Step title="使用 ClickHouse Agents 可视化数据">
-    打开 **ClickHouse agents**，发送："Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables"。
+  <Step title="可选：使用 ClickHouse Agents 可视化数据">
+    这是一个可选的运行示例：`ClickHouse Agents` 是模型驱动的 Beta 功能，因此其计划、所用工具和输出可能因运行而异。打开 **ClickHouse agents**，发送："Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables"。
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="创建德国基站密度网格的 ClickHouse Agent 对话"/>
 
-    Agent 会找到德国 MCC、统计基站、将它们归入 `0.1°` 网格，并在地图上绘制边界。
+    在一次运行中，Agent 找到了德国 MCC、统计了基站、将它们归入 `0.1°` 网格，并在地图上绘制了边界。
 
     <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="德国蜂窝基站密度热力图"/>
   </Step>
