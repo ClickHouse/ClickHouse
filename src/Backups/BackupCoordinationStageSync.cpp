@@ -779,25 +779,41 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
         {
             if (!host_info.connected && !host_info.finished && (host != current_host))
             {
-                auto disconnected_duration = std::chrono::duration_cast<std::chrono::seconds>(monotonic_now - host_info.last_connection_time_monotonic);
-                if (disconnected_duration > failure_after_host_disconnected_for_seconds)
+                /// For a host that never created its 'alive' node the duration is counted from the start of
+                /// the operation: there was no connection to lose, the host never showed up.
+                auto unresponsive_duration = std::chrono::duration_cast<std::chrono::seconds>(monotonic_now - host_info.last_connection_time_monotonic);
+                if (unresponsive_duration > failure_after_host_disconnected_for_seconds)
                 {
-                    /// Host `host` was disconnected too long.
                     /// We can't just throw an exception here because readCurrentState() is called from a background thread.
                     /// So here we're writingh the error to the `process_list_element` and let it to be thrown later
                     /// from `process_list_element->checkTimeLimit()`.
-                    String message = fmt::format("The 'alive' node hasn't been updated in ZooKeeper for {} for {} "
-                                                 "which is more than the specified timeout {}. Last time the 'alive' node was detected at {}",
-                                                 getHostDesc(host), disconnected_duration, failure_after_host_disconnected_for_seconds,
-                                                 host_info.last_connection_time);
-                    LOG_WARNING(log, "Lost connection to {}: {}", getHostDesc(host), message);
-                    exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lost connection to {}: {}", getHostDesc(host), message});
+                    if (host_info.started)
+                    {
+                        /// Host `host` was disconnected too long.
+                        String message = fmt::format("The 'alive' node hasn't been updated in ZooKeeper for {} for {} "
+                                                     "which is more than the specified timeout {}. Last time the 'alive' node was detected at {}",
+                                                     getHostDesc(host), unresponsive_duration, failure_after_host_disconnected_for_seconds,
+                                                     host_info.last_connection_time);
+                        LOG_WARNING(log, "Lost connection to {}: {}", getHostDesc(host), message);
+                        exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lost connection to {}: {}", getHostDesc(host), message});
+                    }
+                    else
+                    {
+                        /// Host `host` never created its 'alive' node, so there was no connection to lose:
+                        /// it never picked the query up, or it failed before it could report anything here.
+                        /// The reason is recorded in the distributed DDL queue on that host.
+                        String message = fmt::format("{} hasn't started working on this {} within {}, and never created its 'alive' node "
+                                                     "in ZooKeeper. Look for the reason in the distributed DDL queue on that host",
+                                                     getHostDesc(host), operation_name, failure_after_host_disconnected_for_seconds);
+                        LOG_WARNING(log, "{}", message);
+                        exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "{}", message});
+                    }
                     break;
                 }
 
-                if ((disconnected_duration >= std::chrono::seconds{1}) && !info_shown)
+                if ((unresponsive_duration >= std::chrono::seconds{1}) && !info_shown)
                 {
-                    LOG_TRACE(log, "The 'alive' node hasn't been updated in ZooKeeper for {} for {}", getHostDesc(host), disconnected_duration);
+                    LOG_TRACE(log, "The 'alive' node hasn't been updated in ZooKeeper for {} for {}", getHostDesc(host), unresponsive_duration);
                     info_shown = true;
                 }
             }
