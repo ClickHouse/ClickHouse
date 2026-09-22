@@ -132,6 +132,8 @@ namespace FailPoints
 {
 extern const char kafka2_remove_zk_before_get_children[];
 extern const char kafka2_remove_zk_before_final_multi[];
+extern const char kafka2_activate_pause_before_partial_shutdown[];
+extern const char kafka2_activate_pause_before_is_active_removal[];
 }
 
 namespace ErrorCodes
@@ -308,32 +310,48 @@ bool StorageKafka2::activate()
     {
         LOG_WARNING(log, "Registration of replica {} in Keeper is not valid anymore. Will re-register it", replica_path);
 
-        /// `partialShutdown` drops the node holder, and the holder removes whatever node is at its path. After a
-        /// registration loss that node is not necessarily ours anymore: another Keeper client may have created
-        /// one under our replica name, and removing it would take over the very registration this branch has
-        /// just refused to accept as ours. Remove the node only while it still carries our identifier, and
-        /// merely forget it otherwise; `activate_in_keeper` then waits for it to disappear before re-registering.
+        /// `partialShutdown` drops the node holder, and the holder removes whatever node is at its path at that
+        /// moment. After a registration loss that node is not necessarily ours anymore: another Keeper client may
+        /// have created one under our replica name, and one may even appear between any check made here and the
+        /// removal. Removing it would take over the very registration this branch has just refused to accept as
+        /// ours, so the holder is never allowed to remove by path. Instead, the node is removed here, only when it
+        /// is ours and only in the exact version that was just validated, which fails against a node that replaced
+        /// it in between; `activate_in_keeper` then waits for anything else to disappear before re-registering.
         if (replica_is_active_node)
         {
             const auto zookeeper = getZooKeeper();
+            const String is_active_path = replica_is_active_node->getPath();
+            replica_is_active_node->setAlreadyRemoved();
+
             String is_active_data;
             Coordination::Stat is_active_stat;
-            if (zookeeper->tryGet(replica_is_active_node->getPath(), is_active_data, &is_active_stat)
-                && (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != zookeeper->getClientID()))
+            if (!zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat))
+            {
+                LOG_WARNING(log, "The node {} does not exist anymore", is_active_path);
+            }
+            else if (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != zookeeper->getClientID())
             {
                 LOG_WARNING(
                     log,
                     "The node {} was not created by this server (it is owned by session {}, ours is {}; its data is '{}', "
                     "ours is '{}'). Leaving it in place",
-                    replica_is_active_node->getPath(),
+                    is_active_path,
                     is_active_stat.ephemeralOwner,
                     zookeeper->getClientID(),
                     is_active_data,
                     active_node_identifier);
-                replica_is_active_node->setAlreadyRemoved();
+            }
+            else
+            {
+                const auto code = zookeeper->tryRemove(is_active_path, is_active_stat.version);
+                if (code == Coordination::Error::ZBADVERSION)
+                    LOG_WARNING(log, "The node {} was replaced by another Keeper client. Leaving it in place", is_active_path);
+                else if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception::fromPath(code, is_active_path);
             }
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::kafka2_activate_pause_before_partial_shutdown);
         partialShutdown();
     }
     else
@@ -382,7 +400,8 @@ bool StorageKafka2::activate()
             /// previous process is removed by its payload.
             String is_active_data;
             Coordination::Stat is_active_stat;
-            if (zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat) && is_active_stat.ephemeralOwner != 0)
+            const bool is_active_exists = zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat);
+            if (is_active_exists && is_active_stat.ephemeralOwner != 0)
             {
                 const bool is_ours = is_active_data == active_node_identifier
                     && (!own_is_active_session_id || is_active_stat.ephemeralOwner == *own_is_active_session_id
@@ -400,7 +419,27 @@ bool StorageKafka2::activate()
                         active_node_identifier);
             }
 
-            zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+            FailPointInjection::pauseFailPoint(FailPoints::kafka2_activate_pause_before_is_active_removal);
+
+            /// Remove the leftover only in the exact version that was just validated: a node that replaced it in the
+            /// meantime belongs to somebody else, whatever its payload says (the identifier is readable from Keeper
+            /// and can be replayed), and removing it by path or by payload would take it over in exactly the way the
+            /// check above refuses to. A node that is not ephemeral is not anybody's session and is removed the same
+            /// way `restoreReplicaRegistration` removes it.
+            if (is_active_exists)
+            {
+                const auto code = zookeeper->tryRemove(is_active_path, is_active_stat.version);
+                if (code == Coordination::Error::ZBADVERSION)
+                    throw Exception(
+                        ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                        "Replica {} appears to be already active: znode {}/is_active was replaced by another Keeper client "
+                        "while this replica was about to remove its own leftover. If you're sure it's not, try again in a minute "
+                        "or remove the znode manually",
+                        replica_path,
+                        replica_path);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception::fromPath(code, is_active_path);
+            }
 
             try
             {

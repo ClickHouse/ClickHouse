@@ -1232,3 +1232,170 @@ def test_replayed_is_active_payload_triggers_reactivation(kafka_cluster):
             retry_count=120,
             sleep_time=1,
         )
+
+
+def check_marker_planted_during_reactivation_is_kept(kafka_cluster, failpoint, topic_name, keeper_path):
+    """Plant a foreign same-payload `is_active` node while the reactivation is paused at `failpoint`.
+
+    The reactivation path validates `replicas/<self>/is_active` (payload and owner session) before it
+    removes what it takes for its own leftover. A node that another Keeper client creates *after* that
+    validation must survive both removals: the old `EphemeralNodeHolder` dropped by `partialShutdown`
+    and the leftover removal right before the server re-creates the node. Both used to remove by path
+    or payload alone, so the foreign live node was deleted and the replica registered over it, which is
+    exactly the split-brain the ownership checks are there to prevent. The removals have to be bound to
+    the version that was validated instead, and the replica has to stay out until the foreign node is
+    gone.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    num_partitions = 2
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        is_active_path = f"{keeper_path}/replicas/r1/is_active"
+        conflict_line = "appears to be already active"
+        conflicts_before = int(instance.count_in_log(conflict_line))
+
+        # The planted node lives as long as this kazoo session does, so the session is kept open until
+        # the replica has proven that it gives way to it.
+        kazoo = kafka_cluster.get_kazoo_client("zoo1")
+        try:
+            own_data, own_stat = kazoo.get(is_active_path)
+            assert own_stat.ephemeralOwner != 0
+
+            instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            try:
+                # Drop our own registration behind the server's back: the consumers notice that this
+                # replica is not active anymore and hand over to the reactivation, which stops at the
+                # failpoint right after it has checked what is (not) at the `is_active` path.
+                kazoo.delete(is_active_path, version=own_stat.version)
+                instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=240)
+
+                # Now another client registers under our name with our very payload.
+                kazoo.create(is_active_path, own_data, ephemeral=True)
+                planted_stat = kazoo.exists(is_active_path)
+                assert planted_stat.ephemeralOwner != 0
+                assert planted_stat.ephemeralOwner != own_stat.ephemeralOwner
+            finally:
+                instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+            # The reactivation goes on and must report the conflict instead of removing the planted node.
+            deadline = time.time() + 120.0
+            while time.time() < deadline:
+                current_stat = kazoo.exists(is_active_path)
+                if current_stat is None or current_stat.ephemeralOwner != planted_stat.ephemeralOwner:
+                    pytest.fail(
+                        f"The server took over {is_active_path} planted by another session (now: {current_stat!r})"
+                    )
+                if int(instance.count_in_log(conflict_line)) > conflicts_before:
+                    break
+                time.sleep(1.0)
+            else:
+                pytest.fail(f"Timed out waiting for the server to report that {is_active_path} is foreign")
+
+            # The locks have to go too: the peers do not count this replica while the node is foreign.
+            deadline = time.time() + 120.0
+            remaining = None
+            while time.time() < deadline:
+                with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                    remaining = [lock for lock in zk.ls(base) if lock]
+                if not remaining:
+                    break
+                time.sleep(1.0)
+            else:
+                pytest.fail(f"Timed out waiting for the topic-partition locks to be released, still held: {remaining!r}")
+
+            current_data, current_stat = kazoo.get(is_active_path)
+            assert current_data == own_data
+            assert current_stat.ephemeralOwner == planted_stat.ephemeralOwner
+        finally:
+            # Ends the foreign session, which takes its ephemeral node with it.
+            kazoo.stop()
+            kazoo.close()
+
+        # Now the replica must re-register with a node of its own session ...
+        deadline = time.time() + 180.0
+        while time.time() < deadline:
+            kazoo = kafka_cluster.get_kazoo_client("zoo1")
+            try:
+                if kazoo.exists(is_active_path) is not None:
+                    restored_data, restored_stat = kazoo.get(is_active_path)
+                    if (
+                        restored_data == own_data
+                        and restored_stat.ephemeralOwner != 0
+                        and restored_stat.ephemeralOwner != planted_stat.ephemeralOwner
+                    ):
+                        break
+            finally:
+                kazoo.stop()
+                kazoo.close()
+            time.sleep(1.0)
+        else:
+            pytest.fail(f"Timed out waiting for {is_active_path} to be re-created by the server")
+
+        # ... and keep consuming afterwards, with the full lock set back in place.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1", timeout=120.0)
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= 2 * len(messages),
+            retry_count=120,
+            sleep_time=1,
+        )
+
+
+def test_marker_planted_before_partial_shutdown_is_kept(kafka_cluster):
+    """A foreign node that appears after the pre-check and before `partialShutdown` must not be removed by
+    the old node holder, which knows nothing but the path."""
+    check_marker_planted_during_reactivation_is_kept(
+        kafka_cluster,
+        "kafka2_activate_pause_before_partial_shutdown",
+        "zk_marker_before_shutdown_topic",
+        "/clickhouse/test/zk_marker_before_shutdown",
+    )
+
+
+def test_marker_planted_before_leftover_removal_is_kept(kafka_cluster):
+    """A foreign node that appears after the ownership check and before the leftover removal in the
+    re-registration must not be removed by its payload."""
+    check_marker_planted_during_reactivation_is_kept(
+        kafka_cluster,
+        "kafka2_activate_pause_before_is_active_removal",
+        "zk_marker_before_removal_topic",
+        "/clickhouse/test/zk_marker_before_removal",
+    )
