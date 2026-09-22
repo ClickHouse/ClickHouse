@@ -320,7 +320,7 @@ Removes what `prepare` created for a service that ClickHouse Cloud has deleted. 
 
 ### instances create {#instances-create}
 
-Submits a prepared create to ClickHouse Cloud through your connector endpoint, with the connector's own credentials. It prints the spoken name ClickHouse Cloud assigned, the state, and a `watch:` hint that uses your service name. The create body comes from the file `prepare` wrote, or from the four `--deployed-name`, `--data-bucket`, `--backup-bucket`, and `--irsa-role-arn` flags together. A retry with the same inputs returns the first create.
+Submits a prepared create to ClickHouse Cloud through your connector endpoint, with the connector's own credentials. Creation is enabled per environment; see [create a service](/products/bring-your-own-cloud/connector/managed-services#create-a-service). It prints the spoken name ClickHouse Cloud assigned, the state, and a `watch:` hint that uses your service name. The create body comes from the file `prepare` wrote, or from the four `--deployed-name`, `--data-bucket`, `--backup-bucket`, and `--irsa-role-arn` flags together. A retry with the same inputs returns the first create.
 
 | Flag | Description |
 |------|-------------|
