@@ -125,8 +125,8 @@ DROP TABLE tab_string;
 
 SELECT '-- array tokenizer on a FixedString column';
 
--- The `array` tokenizer stores the whole padded value as one term, so the constant is looked up re-padded
--- to the column width. Other constant widths are covered by 05223_text_index_fixed_string_padded_needle.
+-- The `array` tokenizer stores the whole padded value as one term, so the constant keeps its padding
+-- and only a constant as wide as the column matches.
 DROP TABLE IF EXISTS tab_fixed_string;
 CREATE TABLE tab_fixed_string
 (
