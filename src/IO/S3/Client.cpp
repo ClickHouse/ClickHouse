@@ -199,7 +199,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
+    const NormalizedHTTPHeaderEntries & extra_headers
 )
 {
     for (const auto & [name, value] : extra_headers)
@@ -1325,7 +1325,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
-    HTTPHeaderEntries headers,
+    NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
     const String & session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
@@ -1350,7 +1350,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     }
 
     // These will be added after request signing
-    normalizeHeaderNames(headers);
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
