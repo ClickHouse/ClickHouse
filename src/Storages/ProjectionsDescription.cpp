@@ -1,6 +1,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
@@ -606,7 +607,11 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
-    for (const auto & column : minmax_columns)
+    /// The i-th min/max pair below is answered from slot i of the part min-max index, whose own order is
+    /// derived the same way: from the partition key column names, never from the table column order.
+    Names sorted_minmax_columns = minmax_columns;
+    ::sort(sorted_minmax_columns.begin(), sorted_minmax_columns.end());
+    for (const auto & column : sorted_minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
