@@ -8,7 +8,7 @@ width 20: OK
 query_id finds the trace: OK	named width: OK
 === errors ===
 No spans found for trace_id
-Cannot parse uuid
+as a trace_id UUID
 timeline_width must be in
 No trace found for query_id
 exactly one of trace_id and query_id

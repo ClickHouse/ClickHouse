@@ -104,7 +104,7 @@ ${CLICKHOUSE_CLIENT} -q "select * from traceView('00000000-0000-0000-0000-000000
     | grep -o -m1 'No spans found for trace_id' || echo 'missing-trace error: FAIL'
 # Malformed trace_id.
 ${CLICKHOUSE_CLIENT} -q "select * from traceView('not-a-uuid')" 2>&1 \
-    | grep -o -m1 'Cannot parse uuid' || echo 'malformed-uuid error: FAIL'
+    | grep -o -m1 'as a trace_id UUID' || echo 'malformed-uuid error: FAIL'
 # Bad width.
 ${CLICKHOUSE_CLIENT} -q "select * from traceView('$trace_id', 0)" 2>&1 \
     | grep -o -m1 'timeline_width must be in' || echo 'bad-width error: FAIL'
