@@ -77,6 +77,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+bool StackTrace::showAddresses()
+{
+    return show_addresses.load(std::memory_order_relaxed);
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
