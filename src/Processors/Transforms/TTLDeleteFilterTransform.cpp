@@ -60,7 +60,11 @@ TTLDeleteFilterTransform::build(
         {
             auto expressions = buildTTLExpressions(rows_ttl, subqueries, context);
 
-            if (isTTLExpired(old_ttl_infos.table_ttl.max, current_time) && !rows_ttl.where_expression_ast)
+            /// Rows whose TTL computed to exactly 0 (the epoch) are not summarized by `max` - it means
+            /// "no TTL" to the rest of the machinery and is excluded from the stored bounds - so a part
+            /// holding one is not fully expired even when `max` is (see `TTLTransform`).
+            if (isTTLExpired(old_ttl_infos.table_ttl.max, current_time) && !rows_ttl.where_expression_ast
+                && !old_ttl_infos.table_ttl.has_epoch_timestamps)
                 state->all_data_dropped = true;
 
             state->entries.push_back({std::move(expressions), rows_ttl});
