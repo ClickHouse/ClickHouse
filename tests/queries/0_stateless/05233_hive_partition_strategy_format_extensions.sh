@@ -158,6 +158,14 @@ INSERT INTO 05233_jsonl VALUES (3, 4);
 SELECT 'jsonl lake after insert:';
 SELECT id, key FROM 05233_jsonl ORDER BY id;
 
+-- The same holds under an explicit codec: the table still writes <snowflake id>.<lowercased format
+-- name> without any compression suffix (the codec is fixed by the table, not by the name), so the
+-- explicit-codec glob has to keep the bare extensions, or the table would not see its own writes.
+INSERT INTO 05233_gz_explicit VALUES (15, 12);
+
+SELECT 'gzipped jsonl lake with an explicit compression method after insert:';
+SELECT id, key FROM 05233_gz_explicit ORDER BY id;
+
 DROP TABLE 05233_jsonl;
 DROP TABLE 05233_json;
 DROP TABLE 05233_csv;

@@ -28,5 +28,9 @@ gzipped jsonl lake with compression_method = none:
 jsonl lake after insert:
 1	1
 3	4
+gzipped jsonl lake with an explicit compression method after insert:
+11	8
+12	9
+15	12
 invalid compression method:
 1
