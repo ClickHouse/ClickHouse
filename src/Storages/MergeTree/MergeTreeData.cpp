@@ -9374,6 +9374,11 @@ Pipe MergeTreeData::alterPartition(
                         "Cannot replace partition from table {} with storage {} to table {}",
                         from_storage->getStorageID().getNameForLogs(), from_storage->getName(), getStorageID().getNameForLogs());
 
+                /// The wait returns at once while the source is read-only, including inside both windows
+                /// of its `table_readonly` 1 -> 0 `ALTER`, because nothing is loading. That is safe for the
+                /// source: cloning reads only its active parts, and their set is complete once the source
+                /// is attached, since the deferred outdated parts are exactly the parts covered by an
+                /// active one.
                 from_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
