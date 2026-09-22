@@ -29,6 +29,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
+#include <array>
 
 namespace DB
 {
@@ -63,6 +64,20 @@ namespace ErrorCodes
 String HostID::readableString() const
 {
     return host_name + ":" + DB::toString(port);
+}
+
+std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
+{
+    static constexpr std::array settings{
+        std::string_view{"dialect"},
+        std::string_view{"allow_experimental_kusto_dialect"},
+        std::string_view{"allow_experimental_prql_dialect"},
+        std::string_view{"allow_experimental_polyglot_dialect"},
+        std::string_view{"polyglot_dialect"},
+        std::string_view{"enable_json_ast_dialect"},
+        std::string_view{"enable_trino_dialect"},
+    };
+    return settings;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -146,6 +161,12 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
             "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
             "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
         for (const auto * name : initiator_only_settings)
+            settings->removeSetting(name);
+
+        /// The initiator has already parsed and normalized the query to the `ClickHouse` dialect. Forwarding
+        /// parser selection settings is unnecessary, and can make an older worker reject the entry with
+        /// `UNKNOWN_SETTING` during a rolling upgrade before it gets a chance to parse the normalized query.
+        for (const auto name : getDDLQueryParserOnlySettingNames())
             settings->removeSetting(name);
     }
 }
