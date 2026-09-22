@@ -1629,7 +1629,12 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
+        {
             columns = partition_key.expression->getRequiredColumnsWithTypes();
+            /// Min-max index slots are addressed by position and a loaded part keeps the order it was
+            /// built with, so this order must not follow the mutable table column order.
+            columns.sort();
+        }
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
