@@ -198,25 +198,11 @@ namespace
             hash.update(x);
         }
     };
-
-}
-
-MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
-{
-    /// During INSERT, partition values are extracted from columns via `column->get()`,
-    /// which produces UInt64 Fields for Bool columns (ColumnUInt8 → NearestFieldType → UInt64).
-    /// But the query path (ALTER TABLE DROP/DETACH/ATTACH PARTITION) uses `convertFieldToType`,
-    /// which faithfully produces Bool-typed Fields. Since `LegacyFieldVisitorHash` hashes
-    /// Bool (type tag 28) differently from UInt64 (type tag 1), partition IDs won't match.
-    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk.
-    for (auto & field : value)
-        normalizeBoolFields(field);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-    return getID(storage_metadata_snapshot->getPartitionKey().sample_block);
+    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -323,7 +309,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
         {
             case DATE:
             {
-                UInt32 date_yyyymmdd = 0;
+                UInt32 date_yyyymmdd;
                 readText(date_yyyymmdd, buf);
                 constexpr UInt32 min_yyyymmdd = 10000000;
                 constexpr UInt32 max_yyyymmdd = 99999999;
@@ -337,14 +323,14 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
             }
             case UNSIGNED:
             {
-                UInt64 value = 0;
+                UInt64 value;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
             }
             case SIGNED:
             {
-                Int64 value = 0;
+                Int64 value;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
@@ -508,7 +494,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
         return adjusted_partition_key;
     }
 

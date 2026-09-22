@@ -2,8 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <DataTypes/DataTypeString.h>
-
 #if USE_DELTA_KERNEL_RS
 
 #include <base/scope_guard.h>
@@ -11,6 +9,8 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
+
+#include <DataTypes/DataTypeString.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -86,165 +86,6 @@ TEST(DeltaLakeMetadata, GetFieldValueNullableDateTime64)
 {
     auto nullable_datetime64_type = std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeDateTime64>(6, "UTC"));
     ASSERT_NO_THROW(DB::DeltaLakeMetadata::getFieldValue("2024-01-15 10:30:45.123456", nullable_datetime64_type));
-}
-
-/// varchar(n) and char(n) are valid Delta Lake column types emitted by Spark/Databricks.
-/// They must map to String, ignoring the length constraint, since it is a SQL-layer annotation
-/// only — the underlying Parquet encoding is identical to a plain string column.
-TEST(DeltaLakeMetadata, GetSimpleTypeByNameVarchar)
-{
-    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("varchar(256)");
-    ASSERT_NE(type, nullptr);
-    ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
-}
-
-TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
-{
-    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("char(1)");
-    ASSERT_NE(type, nullptr);
-    ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
-}
-
-#endif
-
-#if USE_DELTA_KERNEL_RS && USE_AZURE_BLOB_STORAGE
-
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-
-#include <optional>
-
-namespace
-{
-std::optional<std::string> findBuilderOption(
-    const std::vector<std::pair<std::string, std::string>> & options, const std::string & name)
-{
-    for (const auto & [k, v] : options)
-        if (k == name)
-            return v;
-    return std::nullopt;
-}
-}
-
-/// Empty connection string
-TEST(DeltaLakeAzureKernelHelper, VendedSasTokenSetsAccountName)
-{
-    DB::AzureBlobStorage::ConnectionParams params;
-    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
-    params.endpoint.container_name = "testcontainer";
-    params.endpoint.sas_auth = "sv=2021-06-08&sig=abcDEF123";
-    /// auth_method intentionally left default: the empty ConnectionString alternative that
-    /// the vended-credentials / Unity catalog path produces.
-    ASSERT_EQ(params.auth_method.index(), 0u);
-
-    const auto options = DeltaLake::getAzureBuilderOptions(params);
-
-    const auto account = findBuilderOption(options, "azure_storage_account_name");
-    ASSERT_TRUE(account.has_value());
-    ASSERT_EQ(*account, "testaccount");
-
-    const auto sas = findBuilderOption(options, "azure_storage_sas_key");
-    ASSERT_TRUE(sas.has_value());
-    ASSERT_EQ(*sas, "sv=2021-06-08&sig=abcDEF123");
-
-    const auto container = findBuilderOption(options, "azure_container_name");
-    ASSERT_TRUE(container.has_value());
-    ASSERT_EQ(*container, "testcontainer");
-
-    /// The endpoint URL must be passed through as is, without connection string parsing.
-    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
-    ASSERT_TRUE(endpoint_url.has_value());
-    ASSERT_EQ(*endpoint_url, "https://testaccount.blob.core.windows.net");
-    ASSERT_FALSE(findBuilderOption(options, "azure_allow_http").has_value());
-}
-
-/// An explicit https endpoint (a sovereign cloud, a private link) must be passed to the
-/// kernel, which would otherwise derive the public host from the account name. Plain HTTP
-/// must stay disallowed.
-TEST(DeltaLakeAzureKernelHelper, ExplicitHttpsEndpointIsPassedToKernel)
-{
-    DB::AzureBlobStorage::ConnectionParams params;
-    params.endpoint.storage_account_url = "https://testaccount.blob.core.chinacloudapi.cn";
-    params.endpoint.container_name = "testcontainer";
-    params.endpoint.account_name = "testaccount";
-    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("testaccount", "dGVzdGtleQ==");
-
-    const auto options = DeltaLake::getAzureBuilderOptions(params);
-
-    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
-    ASSERT_TRUE(endpoint_url.has_value());
-    ASSERT_EQ(*endpoint_url, "https://testaccount.blob.core.chinacloudapi.cn");
-    ASSERT_FALSE(findBuilderOption(options, "azure_allow_http").has_value());
-}
-
-/// A plain-HTTP endpoint (the Azurite emulator) must additionally allow plain HTTP,
-/// since the object-store builder is https-only by default.
-TEST(DeltaLakeAzureKernelHelper, ExplicitHttpEndpointAllowsPlainHttp)
-{
-    DB::AzureBlobStorage::ConnectionParams params;
-    params.endpoint.storage_account_url = "http://127.0.0.1:10000/testaccount";
-    params.endpoint.container_name = "testcontainer";
-    params.endpoint.account_name = "testaccount";
-    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("testaccount", "dGVzdGtleQ==");
-
-    const auto options = DeltaLake::getAzureBuilderOptions(params);
-
-    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
-    ASSERT_TRUE(endpoint_url.has_value());
-    ASSERT_EQ(*endpoint_url, "http://127.0.0.1:10000/testaccount");
-
-    const auto allow_http = findBuilderOption(options, "azure_allow_http");
-    ASSERT_TRUE(allow_http.has_value());
-    ASSERT_EQ(*allow_http, "true");
-}
-
-/// An endpoint-style disk configuration (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
-/// keeps only the scheme and host in `storage_account_url` and carries the account name as a
-/// separate path segment (`add_account_name_to_url` is set). The kernel must receive the endpoint
-/// with the account segment appended, the same URL the SDK client itself uses.
-TEST(DeltaLakeAzureKernelHelper, EndpointStyleConfigAppendsAccountName)
-{
-    DB::AzureBlobStorage::ConnectionParams params;
-    params.endpoint.storage_account_url = "http://127.0.0.1:10000";
-    params.endpoint.container_name = "testcontainer";
-    params.endpoint.account_name = "devstoreaccount1";
-    params.endpoint.prefix = "sub/path";
-    params.endpoint.add_account_name_to_url = true;
-    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("devstoreaccount1", "dGVzdGtleQ==");
-
-    const auto options = DeltaLake::getAzureBuilderOptions(params);
-
-    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
-    ASSERT_TRUE(endpoint_url.has_value());
-    ASSERT_EQ(*endpoint_url, "http://127.0.0.1:10000/devstoreaccount1");
-
-    const auto allow_http = findBuilderOption(options, "azure_allow_http");
-    ASSERT_TRUE(allow_http.has_value());
-    ASSERT_EQ(*allow_http, "true");
-}
-
-/// A real connection string (non-empty ConnectionString alternative) must still be parsed
-/// into its components, including the account name.
-TEST(DeltaLakeAzureKernelHelper, ConnectionStringSetsAccountName)
-{
-    DB::AzureBlobStorage::ConnectionParams params;
-    const std::string connection_string =
-        "DefaultEndpointsProtocol=https;AccountName=testaccount;"
-        "AccountKey=dGVzdGtleQ==;EndpointSuffix=core.windows.net";
-    params.endpoint.storage_account_url = connection_string;
-    params.endpoint.container_name = "testcontainer";
-    params.auth_method = DB::AzureBlobStorage::ConnectionString{connection_string};
-    ASSERT_EQ(params.auth_method.index(), 0u);
-
-    const auto options = DeltaLake::getAzureBuilderOptions(params);
-
-    const auto account = findBuilderOption(options, "azure_storage_account_name");
-    ASSERT_TRUE(account.has_value());
-    ASSERT_EQ(*account, "testaccount");
-
-    const auto key = findBuilderOption(options, "azure_storage_account_key");
-    ASSERT_TRUE(key.has_value());
-    ASSERT_EQ(*key, "dGVzdGtleQ==");
 }
 
 #endif

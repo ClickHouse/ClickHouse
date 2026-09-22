@@ -3,9 +3,9 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/BlockMissingValues.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
 
@@ -25,17 +25,8 @@ class CompressedReadBufferFromFile;
 class NativeReader
 {
 public:
-    /// Kinds accepted from the peer unless the caller declares its own set. `Detached` is excluded
-    /// because it yields a column that does not match the declared type, which few callers handle.
-    static constexpr ISerialization::KindSet default_allowed_kinds
-        = ISerialization::KindSet::all().without(ISerialization::Kind::DETACHED);
-
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    NativeReader(
-        ReadBuffer & istr_,
-        UInt64 server_revision_,
-        std::optional<FormatSettings> format_settings_ = std::nullopt,
-        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
@@ -59,7 +50,7 @@ public:
 
     static void readData(
         const ISerialization & serialization,
-        IColumn & column,
+        ColumnPtr & column,
         ReadBuffer & istr,
         const FormatSettings * format_settings,
         size_t rows,
@@ -72,7 +63,6 @@ private:
     UInt64 server_revision;
     std::optional<FormatSettings> format_settings = std::nullopt;
     BlockMissingValues * block_missing_values = nullptr;
-    ISerialization::KindSet allowed_kinds = default_allowed_kinds;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

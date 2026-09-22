@@ -48,7 +48,6 @@ static const size_t default_num_tries_on_connection_loss = 3;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -62,35 +61,10 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
-    "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
-    "enable_local_infile", "opt_reconnect", "enable_compression",
+    "enable_local_infile", "opt_reconnect",
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
 
-#if USE_MYSQL
-/// The source configuration of a dictionary created with a DDL query comes from the query itself, so
-/// it may not name files for the server to open: the server reads them with its own privileges, and a
-/// user who cannot read a certificate and key must not be able to authenticate with them. The
-/// contents can be passed in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem` instead.
-/// Dictionaries defined in server configuration files are written by an operator and keep using paths.
-static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
-{
-    static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
-        = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};
-
-    for (const auto & [key, contents_key] : keys)
-    {
-        if (config.has(prefix + "." + std::string(key)))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` cannot be specified in a dictionary created with a DDL query. "
-                "Pass the contents of the file in `{}` instead",
-                key, contents_key);
-    }
-}
-#endif
-
-void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -102,7 +76,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    const std::string & /* default_database */,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr {
 #if USE_MYSQL
-        MySQLStreamSettings mysql_input_stream_settings(
+        StreamSettings mysql_input_stream_settings(
             global_context->getSettingsRef(),
             config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false),
             false,
@@ -111,11 +85,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
-
-        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
-        /// named collection, so this covers both of the branches below.
-        if (created_from_ddl)
-            checkNoSSLPaths(config, settings_config_prefix);
 
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
@@ -169,7 +138,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
-                    StorageMySQL::getSSLParams(*named_collection),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else
@@ -196,7 +167,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         if (replica_key.starts_with("replica"))
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
-                            checkNoSSLPaths(config, replica_prefix);
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port", 3306)));
@@ -225,149 +195,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source, Documentation{
-        .description = R"DOCS_MD(
-# MySQL dictionary source
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MYSQL(
-    port 3306
-    user 'clickhouse'
-    password 'qwerty'
-    replica(host 'example01-1' priority 1)
-    replica(host 'example01-2' priority 1)
-    db 'db_name'
-    table 'table_name'
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-    fail_on_connection_loss 'true'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-    enable_compression 1
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-  <mysql>
-      <port>3306</port>
-      <user>clickhouse</user>
-      <password>qwerty</password>
-      <replica>
-          <host>example01-1</host>
-          <priority>1</priority>
-      </replica>
-      <replica>
-          <host>example01-2</host>
-          <priority>1</priority>
-      </replica>
-      <db>db_name</db>
-      <table>table_name</table>
-      <where>id=10</where>
-      <invalidate_query>SQL_QUERY</invalidate_query>
-      <fail_on_connection_loss>true</fail_on_connection_loss>
-      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
-      <enable_compression>1</enable_compression>
-  </mysql>
-</source>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-Setting fields:
-
-| Setting | Description |
-|---------|-------------|
-| `port` | The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
-| `user` | Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
-| `password` | Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
-| `replica` | Section of replica configurations. There can be multiple sections. |
-| `replica/host` | The MySQL host. |
-| `replica/priority` | The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority. |
-| `db` | Name of the database. |
-| `table` | Name of the table. |
-| `where` | The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional. |
-| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
-| `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the server retries to fetch data at least three times before reporting an error. Note that retrying leads to increased response times. Default value: `false`. |
-| `query` | The custom query. Optional. |
-| `enable_compression` | Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server. Can also be set per-replica inside `<replica>`. Default value: `0`. |
-| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
-| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
-| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
-| `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
-
-<Note>
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-</Note>
-
-<Note>
-`ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file, or through a named collection defined there. A `CREATE DICTIONARY` query that specifies the TLS credentials directly must pass their contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
-</Note>
-
-<Note>
-There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
-</Note>
-
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
-
-Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MYSQL(
-    host 'localhost'
-    socket '/path/to/socket/file.sock'
-    user 'clickhouse'
-    password 'qwerty'
-    db 'db_name'
-    table 'table_name'
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-    fail_on_connection_loss 'true'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<source>
-  <mysql>
-      <host>localhost</host>
-      <socket>/path/to/socket/file.sock</socket>
-      <user>clickhouse</user>
-      <password>qwerty</password>
-      <db>db_name</db>
-      <table>table_name</table>
-      <where>id=10</where>
-      <invalidate_query>SQL_QUERY</invalidate_query>
-      <fail_on_connection_loss>true</fail_on_connection_loss>
-      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
-  </mysql>
-</source>
-```
-
-</Tab>
-</Tabs>
-)DOCS_MD"
-#if !USE_MYSQL
-            "\n\nCurrently unavailable, because this ClickHouse build does not include MySQL support."
-#endif
-        ,
-        .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",
-        .related = {"clickhouse", "postgresql"}});
+    factory.registerSource("mysql", create_table_source);
 }
 
 }
@@ -384,7 +212,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Configuration & configuration_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
-    const MySQLStreamSettings & settings_)
+    const StreamSettings & settings_)
     : log(getLogger("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)

@@ -4,9 +4,10 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -52,29 +53,6 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-
-        const size_t rhs_size_of_data = rhs_nested->sizeOfData();
-        place[size_of_data] |= rhs_place[rhs_size_of_data];
-    }
-
     bool isVersioned() const override
     {
         return nested_function->isVersioned();
@@ -102,8 +80,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
-        return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
+        return size_of_data + sizeof(char);
     }
 
     size_t alignOfData() const override
@@ -161,33 +138,6 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 if (places[i])
                     (places[i] + place_offset)[size_of_data] = 1;
-        }
-    }
-
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            nested_function->addBatchWithNonNullPlaces(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-            for (size_t i = row_begin; i < row_end; ++i)
-                (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 
@@ -261,7 +211,7 @@ public:
         }
     }
 
-    void mergeImpl(
+    void merge(
         AggregateDataPtr __restrict place,
         ConstAggregateDataPtr rhs,
         Arena * arena) const override
@@ -282,8 +232,7 @@ public:
     {
         nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
-            if (places[i])
-                (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
+            (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
