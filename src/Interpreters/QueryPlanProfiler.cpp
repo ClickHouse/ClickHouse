@@ -44,6 +44,8 @@ bool isSupportedQuery(const ASTPtr & ast)
     return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
 }
 
+/// `compact` and `pretty` are necessary as they are the only settings which makes describe
+/// methods not read the `ActionsDAG`, that `buildQueryPipeline` has moved out.
 ExplainPlanOptions planExplainOptions()
 {
     return ExplainPlanOptions
@@ -286,8 +288,7 @@ SubPlanCapture & SubPlanCapture::operator=(SubPlanCapture && other) noexcept
 SubPlanCapture::~SubPlanCapture()
 {
     /// Reached when `finish` never ran -- an exception while the sub-pipeline was executing, or a
-    /// caller that stopped early. The structure is still worth having: without it the stored plan
-    /// does not name the tables this subquery read. Only the statistics are lost.
+    /// caller that stopped early.
     publish(nullptr);
 }
 
@@ -296,11 +297,10 @@ void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
     if (!profiler)
         return;
 
-    /// Spent first, so that neither a later call nor the destructor publishes this a second time.
+    /// Avoids publishing the plan a second time afterwards
     auto owner = std::move(profiler);
 
-    /// As everywhere else in the profiler: this runs in the middle of planning a query that has
-    /// returned nothing yet, so the allocations are the profiler's and no exception may escape.
+    /// Allocations belong to the profiler and no exception may escape.
     MemoryTrackerBlockerInThread block_memory_tracker;
 
     try
@@ -319,10 +319,7 @@ void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
 
         owner->addSubPlan(std::move(serialized));
     }
-    catch (...) /// Ok: the plan is a diagnostic, and this runs both from a destructor and in the
-                /// middle of planning a query that has not returned anything yet. Losing one
-                /// sub-plan from the document costs the row some detail; letting the exception out
-                /// would fail the query itself.
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -341,7 +338,7 @@ void SubPlanCapture::instrument(QueryPipeline & pipeline)
         registry->populateFromPlan(*plan);
         pipeline.setStepWallClockRegistry(std::move(registry));
     }
-    catch (...) /// Ok: the sub-plan keeps its structure and loses only its timings.
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -362,12 +359,9 @@ void SubPlanCapture::finish(const QueryPipeline & pipeline)
             UInt64 execution_time_ns = 0;
             if (const auto * registry = pipeline.getStepClocks())
                 execution_time_ns = registry->getExecutionTimeNs();
-
-            /// The subquery's own pipeline and its own execution time -- not the query's, which has
-            /// no pipeline at this point.
             stats.emplace(pipeline, *plan, execution_time_ns);
         }
-        catch (...) /// Ok: publishing below still records the sub-plan, without its statistics.
+        catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -377,29 +371,25 @@ void SubPlanCapture::finish(const QueryPipeline & pipeline)
 }
 
 SubPlanCapture QueryPlanProfiler::captureSubPlan(
-    const ContextPtr & context, const QueryPlan & plan, size_t subquery_id, SubPlanKind kind)
+    const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind)
 {
     auto profiler = context->getPlanProfiler();
     if (!profiler)
         return {};
 
-    if (!plan.isInitialized() || !plan.getRootNode())
+    if (!sub_plan.isInitialized() || !sub_plan.getRootNode())
         return {};
 
     MemoryTrackerBlockerInThread block_memory_tracker;
 
     try
     {
-        /// The only thing that has to be read now rather than at the end: building the pipeline
-        /// moves the ActionsDAGs these names come from out of every expression step.
-        /// The sub-plan is a plan of its own: its steps can consume other subqueries' sets too,
-        /// which is how TPC-H Q20 nests one set subquery inside another.
-        recordConsumedSubqueries(const_cast<QueryPlan &>(plan));
+        recordConsumedSubqueries(sub_plan);
 
         return SubPlanCapture(
-            std::move(profiler), plan, QueryPlanFormat::buildPrettyNamesPerPlan(plan), subquery_id, kind);
+            std::move(profiler), sub_plan, QueryPlanFormat::buildPrettyNamesPerPlan(sub_plan), subquery_id, kind);
     }
-    catch (...) /// Ok: see `publish`.
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return {};
@@ -414,17 +404,16 @@ void QueryPlanProfiler::addSubPlan(SerializedSubPlan sub_plan)
 
 const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
 {
-    /// Rendering twice would throw away the version that has the statistics, and the second call
-    /// would have no plan left to read anyway.
+    /// Don't render twice to avoid throwing away the plan
     if (plan_json)
         return *plan_json;
 
     if (!canRender())
         return plan_json.emplace();
 
-    /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard,
-    /// after the client has already received the result. An exception here would fail a query that
-    /// had already succeeded, so diagnostics must not propagate.
+    /// Rendering runs on the query-finish path after the client has already received the result.
+    /// An exception here would fail a query that had already succeeded,
+    /// so diagnostics must not propagate.
     MemoryTrackerBlockerInThread block_memory_tracker;
 
     try
@@ -453,19 +442,11 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
 
         try
         {
-            /// The result is written into a JSON column, so a failure has to be reported as JSON as
-            /// well: a bare message would fail to parse in QueryLogElement::appendToBlock and take
-            /// the whole log flush with it. Going through JSONBuilder also escapes whatever the
-            /// exception message happens to contain.
             auto error_map = std::make_unique<JSONBuilder::JSONMap>();
             error_map->add("Error", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
             plan_json = toJSONString(std::move(error_map));
         }
-        catch (...) /// Ok: reporting the failure has itself failed, and this runs on the
-                    /// query-finish path of a query that already returned its result. The first
-                    /// exception was logged above; leaving the plan empty costs the row its plan
-                    /// and nothing else, whereas letting this one out would fail a query that
-                    /// succeeded.
+        catch (...)
         {
             /// Empty rather than invalid: the column takes its default, an empty JSON object.
             plan_json.emplace();

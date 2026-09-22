@@ -157,8 +157,10 @@ public:
     /// `subquery_id` is `FutureSetFromSubquery::getSubqueryId`. The steps that consume the set
     /// carry the same id, which is what lets the document say who used it rather than leaving the
     /// sub-plan looking like an unrelated plan that happened to run.
+    /// Takes the plan by non-const reference because it records, on the sub-plan's own steps, the
+    /// ids of any subqueries they consume -- a subquery nested inside this one.
     static SubPlanCapture captureSubPlan(
-        const ContextPtr & context, const QueryPlan & plan, size_t subquery_id, SubPlanKind kind);
+        const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind);
 
 private:
     friend class SubPlanCapture;
