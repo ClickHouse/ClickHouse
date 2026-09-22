@@ -41,6 +41,20 @@ namespace ErrorCodes
 namespace
 {
 
+bool convertToNullableIfSupported(QueryTreeNodePtr & node)
+{
+    if (auto * column_node = node->as<ColumnNode>())
+        column_node->convertToNullable();
+    else if (auto * constant_node = node->as<ConstantNode>())
+        constant_node->convertToNullable();
+    else if (auto * function_node = node->as<FunctionNode>())
+        function_node->convertToNullable();
+    else
+        return false;
+
+    return true;
+}
+
 void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
 {
     DataTypePtr filter_node_result_type;
@@ -354,7 +368,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
                 original_group_by_keys_nodes.push_back(grouping_set_key);
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
                 if (params.group_by_use_nulls)
-                    group_by_keys_nodes.back()->convertToNullable();
+                    convertToNullableIfSupported(group_by_keys_nodes.back());
             }
         }
         else
@@ -362,7 +376,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             original_group_by_keys_nodes.push_back(node);
             group_by_keys_nodes.push_back(node->clone());
             if (params.group_by_use_nulls)
-                group_by_keys_nodes.back()->convertToNullable();
+                convertToNullableIfSupported(group_by_keys_nodes.back());
         }
     }
 

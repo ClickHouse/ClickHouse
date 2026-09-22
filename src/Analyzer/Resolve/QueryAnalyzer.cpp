@@ -4763,8 +4763,10 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+bool QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
+    bool has_rename_aliases = false;
+
     /// RENAME target names behave like regular SELECT aliases. Matchers are expanded while resolving
     /// the projection, so resolve matchers with RENAME anywhere in each projection expression first
     /// and register their aliases before resolving the other projection expressions. Do not cross
@@ -4778,6 +4780,7 @@ void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection
                 if (!transformer->as<RenameColumnTransformerNode>())
                     continue;
 
+                has_rename_aliases = true;
                 resolveExpressionNode(
                     node,
                     scope,
@@ -4806,6 +4809,8 @@ void QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection
 
     for (auto & projection_node : projection_node_list->as<ListNode &>().getNodes())
         resolve_rename_matchers(resolve_rename_matchers, projection_node, true);
+
+    return has_rename_aliases;
 }
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
@@ -7254,7 +7259,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// RENAME aliases must be visible to clauses resolved before the delayed projection when
     /// group_by_use_nulls is enabled. Full projection resolution stays in its original place so
     /// GROUP BY keys can still be converted to Nullable only where required.
-    resolveProjectionRenameAliases(query_node_typed.getProjectionNode(), scope);
+    const bool has_rename_aliases = resolveProjectionRenameAliases(query_node_typed.getProjectionNode(), scope);
+
+    if (!query_node_typed.isGroupByAll() && !has_rename_aliases)
+        unresolved_projection.reset();
 
     if (!scope.group_by_use_nulls)
     {

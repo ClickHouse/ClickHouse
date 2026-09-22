@@ -278,7 +278,7 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    void resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    bool resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 
