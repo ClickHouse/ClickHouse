@@ -151,9 +151,17 @@ SELECT round(
     6)
 FROM
 (
-    SELECT exponentialTimeDecayedSumState(exponentialTimeDecaying(10)(1, toFloat64(0))) AS state
+    SELECT exponentialTimeDecayedSumState(decaying_value) AS state
+    FROM
+    (
+        SELECT exponentialTimeDecaying(10)(1, toFloat64(0)) AS decaying_value
+    )
     UNION ALL
-    SELECT exponentialTimeDecayedSumState(exponentialTimeDecaying(10)(2, toFloat64(100))) AS state
+    SELECT exponentialTimeDecayedSumState(decaying_value) AS state
+    FROM
+    (
+        SELECT exponentialTimeDecaying(10)(2, toFloat64(100)) AS decaying_value
+    )
 );
 
 -- The same setting must never approximate persisted SimpleAggregateFunction
