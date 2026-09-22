@@ -5235,9 +5235,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// A top-K read whose threshold column is a primary key column skips granules by the primary index as the
     /// threshold tightens (see `SkipIndexReadResult::isGranuleBeyondTopKThreshold`). Same safety gates as the
     /// runtime-filter pruning above; `Nullable` and floating-point columns are left out, as NULLs and NaNs
-    /// are placed by the query's NULLS FIRST/LAST rather than by the primary key order.
+    /// are placed by the query's NULLS FIRST/LAST rather than by the primary key order. A collated threshold
+    /// (`ORDER BY s COLLATE ...`) is left out too: the primary key is in byte order, so a granule starting
+    /// beyond the collated threshold can still hold a later row that collates before it.
     std::optional<size_t> top_k_primary_key_column_position;
     if (top_k_filter_info && top_k_filter_info->threshold_tracker
+        && !top_k_filter_info->threshold_tracker->getCollator()
         && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         && !query_info.isFinal()
         && !pending_mutations
