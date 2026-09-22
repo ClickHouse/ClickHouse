@@ -10,7 +10,7 @@ namespace DB
 {
 
 ReadState::ReadState(const StreamSettings & stream_settings)
-    : partition_cursors(buildMergeTreeCursor(stream_settings.cursor))
+    : partition_cursors(cursorTreeToMergeTreeCursor(stream_settings.cursor))
 {
 }
 
@@ -145,6 +145,11 @@ PartitionCursor ReadState::getPartitionCursor(const std::string & partition) con
 {
     auto it = partition_cursors.find(partition);
     return it == partition_cursors.end() ? PartitionCursor{} : it->second;
+}
+
+const std::map<std::string, PartitionCursor> & ReadState::getPartitionCursors() const
+{
+    return partition_cursors;
 }
 
 Field ReadState::getPartitionWatermark(const std::string & partition) const

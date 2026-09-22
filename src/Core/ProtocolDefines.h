@@ -50,7 +50,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMP
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS = 11;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -118,19 +119,32 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
-/// Version 19 registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
-/// reads `system.one` or `numbers(...)` can be shipped. An older peer does not know those step names.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 19;
+/// Version 19 writes a per-step serialization version next to every step, so a step can change its
+/// own bytes without moving this global version (see the constant below).
+/// Version 20 adds `legacy_join_size_limits_trigger_spilling` to the join step settings. A peer below
+/// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
+/// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
+/// needs the new contract is not serialized for such a peer at all.
+/// Version 21 registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
+/// reads `system.one` or `numbers(...)` can be shipped. This is a new step name rather than a change
+/// of a step's own bytes, so the per-step version added in 19 does not cover it: an older peer does
+/// not know the name at all.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
+/// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
+/// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
+/// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
 /// First query-plan serialization version that registers the "ReadFromSystemOne" and
 /// "ReadFromSystemNumbers" steps. Used to gate serializing them for `make_distributed_plan`; the
 /// parallel-replicas path excludes an older replica up front through
 /// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 19;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 21;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -151,7 +165,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
-/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// First query-plan serialization version that registers a `LimitRange` step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// First query-plan serialization version that carries the estimate-derived decisions of
@@ -163,6 +177,15 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_AL
 /// bounds in a serialized sort description. Gates `FillingStep::serialize` and the fill payload in
 /// `serializeSortDescription`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP = 18;
+/// First query-plan serialization version that writes a per-step serialization version next to each
+/// step. Each step owns its version and bumps it on any change to its bytes; the version travels on
+/// the wire so a reader refuses a step version it does not know rather than misparsing it. The global
+/// version then only needs to move once per release, not on every step change.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 19;
+/// First global query-plan version that writes version 1 of `Distinct` and `PreDistinct`, adding the
+/// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
+/// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

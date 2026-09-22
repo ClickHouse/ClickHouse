@@ -122,6 +122,11 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                     || aggregating_step->isGroupingSets())
                     break;
 
+                /// The sort description may be a strict prefix of the group-by sort description.
+                /// Each in-order stream then stops only at a boundary of that prefix (see
+                /// `AggregatingInOrderTransform`), so the groups it drops sort strictly after
+                /// at least `limit` complete groups and the final sort can never pick a group
+                /// with a partial aggregate value (issue #116849).
                 const auto & sort_desc = sorting_step->getSortDescription();
                 const auto & agg_sort_desc = aggregating_step->getGroupBySortDescription();
                 if (sort_desc.empty() || !agg_sort_desc.hasPrefix(sort_desc))
@@ -130,7 +135,7 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                 /// Use the smallest limit if multiple LimitSteps point to the same AggregatingStep.
                 size_t current_hint = aggregating_step->getLimitHint();
                 if (!current_hint || limit < current_hint)
-                    aggregating_step->setLimitHint(limit);
+                    aggregating_step->setLimitHint(limit, sort_desc.size());
                 break;
             }
 
