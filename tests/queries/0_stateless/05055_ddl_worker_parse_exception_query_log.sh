@@ -8,9 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-UDF="ddl_worker_parse_exception_05182_${CLICKHOUSE_DATABASE}"
-TABLE="ddl_worker_parse_exception_05182"
-QUERY_ID="ddl_worker_parse_exception_05182_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+UDF="ddl_worker_parse_exception_05055_${CLICKHOUSE_DATABASE}"
+TABLE="ddl_worker_parse_exception_05055"
+QUERY_ID="ddl_worker_parse_exception_05055_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 QUERY_SIZE_LIMIT=512
 PARSER_DEPTH_LIMIT=50
 
