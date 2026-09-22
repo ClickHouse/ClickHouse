@@ -353,6 +353,11 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         query_context->setUser(*user_id, role_ids);
     }
 
+    /// Only a non-append refresh of a materialized view sets `parent_table_uuid`, and its `CREATE` restates
+    /// the view's own stored target definition rather than stating a new one.
+    if (entry.parent_table_uuid.has_value())
+        query_context->setStorageSettingsFromStoredMetadata(true);
+
     if (entry.settings)
     {
         /// Clamp settings to the constraints of the local node, similar to how
