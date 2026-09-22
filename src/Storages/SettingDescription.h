@@ -84,6 +84,10 @@ struct SettingDescription
     /// literal, and no plain string form of it hides anything. Empty means nothing of this value has to be
     /// hidden - a reader who may not see it is then shown `[HIDDEN]` in full, as for a named collection's value.
     String masked_value;
+    /// Which named collection supplied this value, where `origin` says one did. A reader sees it only where it
+    /// may read that collection, and a grant names one, so the row has to say which. Empty where the engine
+    /// did not record a name, which is then a value nothing can check and so nothing may see.
+    String named_collection;
 };
 
 using SettingDescriptions = std::vector<SettingDescription>;

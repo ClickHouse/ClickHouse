@@ -7,6 +7,7 @@
 
 #include <base/defines.h>
 
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -27,18 +28,23 @@ ColumnsDescription sharedSettingColumns();
 class SettingRowWriter
 {
 public:
-    /// `show_secrets` is whether this reader sees the real value of a setting that holds one, and
-    /// `show_named_collection_values` whether it sees what a named collection supplied - which is the whole of a
-    /// collection, not only the keys a masking rule knows, exactly as `system.named_collections` decides it.
+    /// Whether this reader may see the values the named collection of this name supplied. A collection is
+    /// secret as a whole rather than key by key, and a grant names one collection, so the answer is per
+    /// collection - `system.named_collections` decides it the same way.
+    using MayShowNamedCollection = std::function<bool(const String &)>;
+
+    /// `show_secrets` is whether this reader sees the real value of a setting that holds one. A table whose rows
+    /// can never come from a named collection - one describing an engine rather than a table - leaves
+    /// `may_show_named_collection` out, and nothing of a collection is shown.
     SettingRowWriter(
         MutableColumns & res_columns_,
         const std::vector<UInt8> & columns_mask_,
         bool show_secrets_,
-        bool show_named_collection_values_)
+        MayShowNamedCollection may_show_named_collection_ = {})
         : res_columns(res_columns_)
         , columns_mask(columns_mask_)
         , show_secrets(show_secrets_)
-        , show_named_collection_values(show_named_collection_values_)
+        , may_show_named_collection(std::move(may_show_named_collection_))
     {
     }
 
@@ -49,8 +55,10 @@ public:
         /// than what it holds, and `system.named_collections` hides every key without the grant. So a value this
         /// reader could not read there must not be readable here either, whether or not a masking rule knows the
         /// name - a broker address or a database name says as much as a password does about where a table points.
+        /// The question is asked of the collection that supplied it, because that is what a grant names; a row
+        /// whose collection was not recorded cannot be checked, and so is not shown.
         if (setting.origin == SettingOrigin::NamedCollection)
-            return !show_named_collection_values;
+            return !may_show_named_collection || !may_show_named_collection(setting.named_collection);
         return !show_secrets && !setting.masked_value.empty();
     }
 
@@ -102,7 +110,7 @@ private:
     MutableColumns & res_columns;
     const std::vector<UInt8> & columns_mask;
     const bool show_secrets;
-    const bool show_named_collection_values;
+    const MayShowNamedCollection may_show_named_collection;
     size_t src_index = 0;
     size_t res_index = 0;
 };

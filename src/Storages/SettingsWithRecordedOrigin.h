@@ -29,6 +29,12 @@ namespace DB
 template <typename TTraits>
 struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
 {
+    /// The named collection a loader took values from. A reader may see those values only where it may read
+    /// that collection, so the name has to travel with them - `SettingOrigin::NamedCollection` alone says a
+    /// collection supplied a value, not which one, and a grant names one. Empty where none supplied any.
+    void recordNamedCollection(const String & name) { named_collection = name; }
+    const String & recordedNamedCollection() const { return named_collection; }
+
     /// Assigns `value` and records `origin` as its source; `Default` records none.
     void setWithOrigin(std::string_view name, const Field & value, SettingOrigin origin)
     {
@@ -100,6 +106,7 @@ private:
     static constexpr size_t num_settings = static_cast<size_t>(TTraits::SettingID_::NUM_SETTINGS);
 
     CompactArray<size_t, 4, num_settings> recorded;
+    String named_collection;
 
     /// An index out of range is a name `BaseSettings` does not know: `resetToDefault` ignores it, and `set`
     /// throws `UNKNOWN_SETTING` before recording, or stores a custom setting, which has no origin to record,

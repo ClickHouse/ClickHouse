@@ -1,4 +1,5 @@
 #include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -92,12 +93,11 @@ VectorWithMemoryTracking<std::string_view> YTsaurusSettings::getAllRegisteredNam
 
 void YTsaurusSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection.has(setting_name))
-            impl->set(setting_name, named_collection.get<String>(setting_name));
-    }
+    /// Through the shared loader, which records that the collection supplied these values and which collection
+    /// it was. A reader may see a collection's values only where it may read that collection, and that is
+    /// decided from what the settings object recorded - so a loader that assigns without recording would put
+    /// its values outside the check.
+    loadSettingsFromNamedCollection(*impl, named_collection);
 }
 
 void YTsaurusSettings::set(const std::string & name, const std::string & value)

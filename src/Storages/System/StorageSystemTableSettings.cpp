@@ -115,13 +115,23 @@ protected:
 
         /// Whether this user may see the real value of a secret setting - decided as `SHOW CREATE TABLE` decides
         /// it - and what a named collection supplied, decided as `system.named_collections` decides it, so no
-        /// surface disagrees with another.
+        /// surface disagrees with another. That table asks two questions about a collection: whether this reader
+        /// may see the collection at all, which is granted per collection, and whether it may see secrets. Both
+        /// are asked here, of the collection that supplied the value - a reader who may not read a collection
+        /// there must not read it through a table built on it. A value whose collection was not recorded cannot
+        /// be checked, so it is not shown.
         const bool show_secrets = canDisplaySecrets(context);
+        const auto access = context->getAccess();
         SettingRowWriter writer(
             res_columns,
             columns_mask,
             show_secrets,
-            show_secrets && context->getAccess()->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS));
+            [show_secrets, access](const String & collection)
+            {
+                return show_secrets && !collection.empty()
+                    && access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS, collection)
+                    && access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+            });
 
         size_t rows_count = writeCatalogTables(writer);
         rows_count += writeTemporaryTables(writer, rows_count);

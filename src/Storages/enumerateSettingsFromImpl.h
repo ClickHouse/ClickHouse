@@ -44,6 +44,8 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
         if (described.origin == SettingOrigin::Other)
             if (const auto recorded = impl.recordedOrigin(described.name); recorded != SettingOrigin::Default)
                 described.origin = recorded;
+        if (described.origin == SettingOrigin::NamedCollection)
+            described.named_collection = impl.recordedNamedCollection();
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));

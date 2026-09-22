@@ -26,6 +26,17 @@ node_compat = cluster.add_instance(
 )
 
 
+# What a named collection supplied is shown only to a reader who may read that collection, which needs a server
+# where secrets can be displayed at all - the stateless test server does not enable
+# `display_secrets_in_show_and_select`, so `05243` can only assert that values stay hidden there.
+node_secrets = cluster.add_instance(
+    "node_secrets",
+    main_configs=["configs/display_secrets.xml"],
+    # `default` has to be able to make the collection and to grant what the reader is given.
+    user_configs=["configs/named_collection_admin.xml"],
+)
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -148,3 +159,62 @@ def test_config_source_survives_a_restart(started_cluster):
     )
 
     node.query("DROP TABLE t_restart SYNC")
+
+
+def test_named_collection_values_need_access_to_that_collection(started_cluster):
+    """A reader that may not see a collection in `system.named_collections` must not read its values here.
+
+    `system.named_collections` asks two things: whether this reader may see the collection, granted per
+    collection, and whether it may see secrets. A table built on a collection has to ask both, of the collection
+    that supplied the value - otherwise a user holding only the secrets grant reads, through the settings of a
+    table, a collection that table's own `SHOW CREATE` would not name.
+    """
+    node_secrets.query("DROP TABLE IF EXISTS k SYNC")
+    node_secrets.query("DROP NAMED COLLECTION IF EXISTS nc_access")
+    node_secrets.query("DROP USER IF EXISTS partial_reader")
+
+    node_secrets.query(
+        "CREATE NAMED COLLECTION nc_access AS kafka_broker_list = 'secret-broker.invalid:9092', "
+        "kafka_topic_list = 'secret_topic', kafka_group_name = 'secret_group', kafka_format = 'CSV'"
+    )
+    node_secrets.query("CREATE TABLE k (a UInt64) ENGINE = Kafka(nc_access)")
+
+    def collection_values(user):
+        return node_secrets.query(
+            "SELECT name, value FROM system.table_settings "
+            "WHERE database = currentDatabase() AND table = 'k' AND source = 'named_collection' "
+            "ORDER BY name",
+            user=user,
+            settings={"format_display_secrets_in_show_and_select": 1},
+        )
+
+    # Everything is granted, except seeing this one collection.
+    node_secrets.query("CREATE USER partial_reader IDENTIFIED WITH no_password")
+    node_secrets.query("GRANT ALL ON *.* TO partial_reader")
+    node_secrets.query("REVOKE SHOW NAMED COLLECTIONS ON nc_access FROM partial_reader")
+
+    assert (
+        node_secrets.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'nc_access'",
+            user="partial_reader",
+        ).strip()
+        == "0"
+    )
+    assert collection_values("partial_reader") == (
+        "kafka_broker_list\t[HIDDEN]\n"
+        "kafka_format\t[HIDDEN]\n"
+        "kafka_group_name\t[HIDDEN]\n"
+        "kafka_topic_list\t[HIDDEN]\n"
+    )
+
+    # A reader that may read the collection reads its values, as it does in `system.named_collections`.
+    assert collection_values("default") == (
+        "kafka_broker_list\tsecret-broker.invalid:9092\n"
+        "kafka_format\tCSV\n"
+        "kafka_group_name\tsecret_group\n"
+        "kafka_topic_list\tsecret_topic\n"
+    )
+
+    node_secrets.query("DROP USER partial_reader")
+    node_secrets.query("DROP TABLE k SYNC")
+    node_secrets.query("DROP NAMED COLLECTION nc_access")

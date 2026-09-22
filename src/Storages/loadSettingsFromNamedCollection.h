@@ -12,6 +12,8 @@ namespace DB
 template <typename TTraits>
 void loadSettingsFromNamedCollection(SettingsWithRecordedOrigin<TTraits> & impl, const NamedCollection & collection)
 {
+    impl.recordNamedCollection(collection.getName());
+
     for (const auto & setting : impl.all())
     {
         const auto & name = setting.getName();
