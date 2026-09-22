@@ -93,6 +93,20 @@ is enabled:
 ```
 </Note>
 
+### Do not make `readonly` changeable in read-only mode {#readonly-changeable-in-readonly}
+
+<Warning>
+A `changeable_in_readonly` constraint can be declared on any setting, including `readonly` itself. Do not
+declare it on `readonly`: a session at `readonly = 1` whose constraints mark it that way can run
+`SET readonly = 0` and regain write access. Over the HTTP interface a `GET` request is raised to
+`readonly = 2` only if the effective value would otherwise be 0, so a profile that pins `readonly = 1`
+and marks it `changeable_in_readonly` leaves such a request able to reach `readonly = 0` and write data.
+
+This applies to every profile in the configuration, not only to the profiles assigned to users:
+selecting a profile is not access-checked, so any session can name any of them with `SET profile`,
+subject to the settings constraints already in force.
+</Warning>
+
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
 If there are multiple profiles active for a user, then constraints are merged. 
