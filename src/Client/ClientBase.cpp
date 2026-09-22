@@ -1692,8 +1692,13 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
         /// (`apply_settings_from_server`, applied after `connect`), and the `dialect` among them is
         /// the one the server is going to parse with - a settings profile selecting a foreign dialect
         /// must keep working, not be overridden by the client for every query.
-        if (current_query_settings_changed_dialect)
-            client_context->setSetting("dialect", current_query_parse_dialect);
+        ///
+        /// The same holds for the settings gating a dialect: a `SETTINGS enable_trino_dialect = 0`
+        /// of a query the client accepted with the gate on must not make the receiving side reject
+        /// that very text. The query still runs with its own `SETTINGS`, which are applied from the
+        /// parsed query after parsing.
+        for (const auto & change : current_query_parse_settings_changed_by_query)
+            client_context->setSetting(change.name, change.value);
         return;
     }
 
@@ -3040,10 +3045,17 @@ void ClientBase::processParsedSingleQuery(
         /// Capture the dialect this query was parsed with *before* applying any in-query `SET` (which
         /// may change `dialect`/`enable_json_ast_dialect`). The outbound transport dialect is pinned to
         /// match the outbound text in `pinOutboundDialect`.
-        current_query_parse_dialect = client_context->getSettingsRef().get("dialect");
+        static constexpr std::string_view parse_dialect_setting_names[]
+            = {"dialect", "enable_trino_dialect", "allow_experimental_polyglot_dialect", "polyglot_dialect"};
+        SettingsChanges parse_dialect_settings;
+        for (const auto name : parse_dialect_setting_names)
+            parse_dialect_settings.emplace_back(name, client_context->getSettingsRef().get(name));
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
-        current_query_settings_changed_dialect = client_context->getSettingsRef().get("dialect") != current_query_parse_dialect;
+        current_query_parse_settings_changed_by_query.clear();
+        for (auto & change : parse_dialect_settings)
+            if (client_context->getSettingsRef().get(change.name) != change.value)
+                current_query_parse_settings_changed_by_query.push_back(std::move(change));
         connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs

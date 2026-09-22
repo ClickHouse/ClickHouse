@@ -745,16 +745,16 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    /// The `dialect` the current query text was parsed with, and whether that was the `clickhouse_json`
-    /// JSON path. Captured before any in-query `SET` is applied, so `pinOutboundDialect` can keep the
-    /// outbound transport dialect consistent with the outbound text even if the query changed it.
-    Field current_query_parse_dialect;
+    /// Whether the current query text was parsed on the `clickhouse_json` JSON path. Captured before
+    /// any in-query `SET` is applied, so `pinOutboundDialect` can keep the outbound transport dialect
+    /// consistent with the outbound text even if the query changed it.
     bool current_query_parsed_as_json_dialect = false;
-    /// Whether the `SETTINGS` clause of the current query is what changed the `dialect`. Only that
-    /// change is undone for the transport: the `dialect` of the session, which the server sends to
-    /// the client for it to know (`apply_settings_from_server`), is the one the server parses with
-    /// and must not be overridden - see `pinOutboundDialect`.
-    bool current_query_settings_changed_dialect = false;
+    /// The settings selecting the dialect of the current query text (`dialect` and its gates) that
+    /// the `SETTINGS` clause of the query changed, with the values the text was parsed with. Only
+    /// these changes are undone for the transport: the settings of the session, which the server
+    /// sends to the client for it to know (`apply_settings_from_server`), are the ones the server
+    /// parses with and must not be overridden - see `pinOutboundDialect`.
+    SettingsChanges current_query_parse_settings_changed_by_query;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
