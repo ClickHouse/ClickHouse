@@ -261,6 +261,12 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
+
+        if (max_flags.contains(AccessType::SYSTEM_JEMALLOC))
+        {
+            for (const auto * table_name : {"jemalloc_bins", "jemalloc_arena_bins", "jemalloc_stats", "jemalloc_profile_text", "jemalloc_sampled_allocations"})
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+        }
     }
     else
     {
