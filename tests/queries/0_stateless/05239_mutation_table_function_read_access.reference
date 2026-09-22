@@ -12,8 +12,20 @@ ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
--- SELECT on the very table it matches is not enough: the tables matched are not known when the mutation is checked
 ACCESS_DENIED
+ACCESS_DENIED
+-- SELECT on the very table it matches is not enough: the tables matched when the mutation runs are not known when it is checked
+ACCESS_DENIED
+-- A table function over the objects of the server whose read is not a SELECT on tables cannot be used in a mutation, for any user
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- Also with validation on, and for a user with every grant
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
 -- A table function whose reads depend on the current user's grants cannot be stored in a mutation, for any user
 (BAD_ARGUMENTS)
 (BAD_ARGUMENTS)
@@ -30,9 +42,11 @@ NOT_DENIED
 -- With SELECT on the table the query of the table function reads, the same mutations are accepted
 NOT_DENIED
 NOT_DENIED
--- With SELECT on every table of the database, merge over a literal database is accepted
+-- With SELECT on every table of the database, merge over that database is accepted, however the database is named
 NOT_DENIED
 NOT_DENIED
 NOT_DENIED
--- ... but not one whose database is not a literal, which can name a table of any database
+NOT_DENIED
+NOT_DENIED
+-- ... but not one over a REGEXP of databases, which can name a table of any database
 ACCESS_DENIED

@@ -1,0 +1,52 @@
+-- The row policy hides a row from the user's own SELECT
+1
+-- A table on which the user has a row policy cannot be read by the user's mutation, on every entry point
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+-- ... even when the table does not exist yet and validation is deferred
+(ACCESS_DENIED)
+-- ... and when the table is one of those a merge table function matches (which needs SELECT on the whole database)
+(ACCESS_DENIED)
+OK
+-- A table with no row policy for the user is read under its SELECT grant
+OK
+OK
+-- ... and so is the restricted table for a user the policy does not apply to
+OK
+OK
+-- Once the policy is dropped the same mutations are accepted
+OK
+OK
+OK
+-- A table whose engine checks the reading user's access only when it is read cannot be read by a mutation, for any user
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- ... also when a merge table function matches it
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- A table whose engine reads its own data is read under its SELECT grant
+OK
+OK
+OK
+OK
+OK
+OK
+-- Nothing was mutated
+2

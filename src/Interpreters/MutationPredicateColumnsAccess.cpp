@@ -1,13 +1,18 @@
 #include <Interpreters/MutationPredicateColumnsAccess.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/Exception.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/Names.h>
+#include <Databases/IDatabase.h>
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/misc.h>
@@ -27,6 +32,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/scope_guard.h>
@@ -41,6 +48,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -238,8 +246,7 @@ private:
             if (const auto * identifier = arguments[1]->as<ASTIdentifier>(); identifier && namesATable(*identifier))
             {
                 if (auto table_id = tryGetNamedTable(*identifier); table_id && !needsNoGrant(*table_id))
-                    required_access.emplace_back(
-                        AccessType::SELECT, databaseOfTable(*table_id), table_id->table_name);
+                    requireTableRead(*table_id);
             }
             /// `x IN file(...)` reads through a table function, which is a table expression here and
             /// not an ordinary call - `PlannerJoinTree` tells the two apart by the same name lookup.
@@ -328,17 +335,30 @@ private:
                 required_access.emplace_back(std::move(element));
             }
 
-            /// What the call requires is not all a wrapper over ordinary tables reads: `merge(db, '^t')`
-            /// requires nothing of its own, and `SELECT` on every table it matches is checked only
-            /// when it is read - for a mutation, in the background, under full access. The tables
-            /// are not known here (the arguments are not evaluated), so the read is taken for a read
-            /// of every table the arguments can name: the database when it is named by a literal,
-            /// every database otherwise. A function reading a source of its own (`file`, `s3`,
-            /// `remote`, ...) reads no table of the server and is covered by the source grant above;
-            /// of the others only the ones known to read no table, or only the tables of a query
-            /// walked here, are exempt.
+            /// What the call requires is not all a function over the objects of the server reads.
+            /// `merge(db, '^t')` requires nothing of its own and `SELECT` on every table it matches
+            /// is checked only when it is read; `dictionary('d')` checks `dictGet` on the dictionary
+            /// then, `loop(t)` `SHOW COLUMNS` on the table, `mergeTreeIndex(db, t)` `SELECT` on the
+            /// source table under its row policies - each for the user reading it, which for a
+            /// mutation is nobody, in the background, with full access. `merge` reads the tables it
+            /// matches like a subquery over each of them would, and is modelled as such
+            /// (`visitMergeTableFunction`); the contracts of the others are not a set of grants that
+            /// can be required here, so such a function is refused, for every user. A function
+            /// reading a source of its own (`file`, `s3`, `remote`, ...) reads no object of the server
+            /// and is covered by the source grant above; of the others only the ones known to read no
+            /// object, or only the tables of a query walked here, are accepted.
             if (!reads_a_source && !readsNoTableOfItsOwn(table_function->getName()))
-                required_access.emplace_back(wrapperTableFunctionReadAccess(table_function->getName(), function));
+            {
+                if (table_function->getName() == "merge")
+                    visitMergeTableFunction(function);
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{}' cannot be used in a mutation, neither directly nor nested in another table function "
+                        "or in a subquery: what it reads from the server, and the access that read requires, is checked for the "
+                        "user reading it only when it is read, and a mutation reads it in the background, for no user",
+                        function.name);
+            }
         }
 
         if (!function.arguments)
@@ -355,14 +375,14 @@ private:
         }
     }
 
-    /// The table functions without a source of their own that read no table of the server by
+    /// The table functions without a source of their own that read no object of the server by
     /// themselves: their rows come from their arguments or from nowhere, and whatever a call of them
     /// requires is all in `getRequiredAccessForRead` - or, for `view`, the tables of the query it
     /// carries, which are walked here like any subquery. Everything else without a source - a
-    /// function over the tables of the server (`merge`, `mergeTreeIndex`, `dictionary`, `loop`, one
-    /// executing a query given as text like `eval`, ...) and any function added later - is taken for
-    /// a read of the tables it can name, so that a function whose reads are checked only when it is
-    /// read fails closed here rather than open.
+    /// function over the objects of the server (`mergeTreeIndex`, `mergeTreeProjection`, `dictionary`,
+    /// `loop`, one executing a query given as text like `eval`, ...) and any function added later -
+    /// is refused in a mutation (see `visitTableFunction`), so that a function whose reads are
+    /// checked only when it is read fails closed here rather than open; `merge` alone is modelled.
     static bool readsNoTableOfItsOwn(const String & name)
     {
         static const NameSet functions_reading_no_table{
@@ -386,19 +406,172 @@ private:
         return functions_reading_no_table.contains(name);
     }
 
-    /// The `SELECT` a wrapper table function's read of the tables it names comes down to. For
-    /// `merge('db', '^t')` the tables are the ones of `db` whose name matches, which is not known
-    /// without running the regular expression against the catalog, so `SELECT` on every table of
-    /// `db` is required; for any other spelling or function, on every table there is.
-    static AccessRightsElement wrapperTableFunctionReadAccess(const String & name, const ASTFunction & function)
+    /// `merge(['db' | REGEXP('db'),] 'tables_regexp')` reads every table its arguments match the way
+    /// a subquery over each of them would, and `StorageMerge::read` checks `SELECT` on each of them
+    /// for the user reading it - for a mutation, in the background, for no user. The read is required
+    /// here as `SELECT` on every table of the database named (of every database, for a regular
+    /// expression): a superset of the tables matched, and the only requirement that also covers a
+    /// table created between this check and the read. The tables matched now are then each checked
+    /// as a table read of its own (`checkReadMeansTheSameForMutation`): a row policy on one of them,
+    /// or an engine among them that reads other objects, refuses the mutation the same way a
+    /// subquery over that table would.
+    ///
+    /// The arguments are read the way the mutation stores them: `AddDefaultDatabaseVisitor` puts the
+    /// mutated table's database into a one-argument call and substitutes it for `currentDatabase()`
+    /// in the first argument, which is otherwise any constant expression, so it is evaluated here
+    /// with that database as the current one. An argument that is not what `merge` accepts fails
+    /// the same way it fails in the function itself.
+    void visitMergeTableFunction(const ASTFunction & function)
     {
-        if (name == "merge" && function.arguments && function.arguments->children.size() == 2)
+        const ASTs & arguments = function.arguments ? function.arguments->children : ASTs{};
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Table function 'merge' requires exactly 1 or 2 arguments: merge(['db_name',] 'tables_regexp')");
+
+        String database_name;
+        std::optional<OptimizedRegularExpression> database_regexp;
+        if (arguments.size() == 1)
         {
-            if (const auto * database = function.arguments->children[0]->as<ASTLiteral>();
-                database && database->value.getType() == Field::Types::String && !database->value.safeGet<String>().empty())
-                return AccessRightsElement(AccessType::SELECT, database->value.safeGet<String>());
+            database_name = defaultDatabase();
         }
-        return AccessRightsElement(AccessType::SELECT);
+        else
+        {
+            auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(arguments[0], databaseEvaluationContext());
+            const auto * literal = database_ast->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The database argument of table function 'merge' must be a constant string");
+            if (is_regexp)
+                database_regexp.emplace(literal->value.safeGet<String>());
+            else
+                database_name = literal->value.safeGet<String>();
+        }
+
+        const auto * table_regexp_literal = arguments.back()->as<ASTLiteral>();
+        if (!table_regexp_literal || table_regexp_literal->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The tables argument of table function 'merge' must be a string literal");
+        const OptimizedRegularExpression table_regexp(table_regexp_literal->value.safeGet<String>());
+
+        if (database_regexp)
+            required_access.emplace_back(AccessType::SELECT);
+        else
+            required_access.emplace_back(AccessType::SELECT, database_name);
+
+        Databases databases;
+        if (database_regexp)
+        {
+            for (const auto & [name, database] : DatabaseCatalog::instance().getDatabases(
+                     GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}))
+                if (database_regexp->match(name))
+                    databases.emplace(name, database);
+        }
+        else if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+        {
+            databases.emplace(database_name, database);
+        }
+
+        for (const auto & [name, database] : databases)
+        {
+            auto tables = database->getTablesIterator(
+                context, [&table_regexp](const String & table_name) { return table_regexp.match(table_name); });
+            for (; tables->isValid(); tables->next())
+                checkReadMeansTheSameForMutation(StorageID{name, tables->name()});
+        }
+    }
+
+    /// The context the database argument of `merge` is evaluated in: the submitting user's, with the
+    /// database of the mutated table as the current one, which is what `currentDatabase()` stands for
+    /// in the stored mutation.
+    ContextPtr databaseEvaluationContext() const
+    {
+        const String database = defaultDatabase();
+        if (database.empty() || database == context->getCurrentDatabase() || !DatabaseCatalog::instance().isDatabaseExist(database))
+            return context;
+
+        auto evaluation_context = Context::createCopy(context);
+        evaluation_context->setCurrentDatabase(database);
+        return evaluation_context;
+    }
+
+    /// Requires `SELECT` on a table a mutation expression reads - on the given columns of it, or on
+    /// the whole table - once the read is known to mean the same for the submitting user and for the
+    /// background mutation that performs it. A read is reduced to a static `SELECT` grant only when
+    /// nothing else decides what it returns for the user reading it:
+    /// - a row policy of the user on the table hides rows from a plain `SELECT`, and a background
+    ///   mutation, which reads for no user, applies none: `... WHERE id IN (SELECT secret FROM other)`
+    ///   would act on the rows the policy hides, and tell them apart. Such a read is refused with
+    ///   `ACCESS_DENIED`, for this user;
+    /// - an engine that reads other objects of the server checks the reading user's access to them
+    ///   only when it is read - `Merge` requires `SELECT` on every table it matches, `MaterializedView`
+    ///   and `Buffer` on their target, `Distributed` on the remote table, a `system` table its `SHOW`
+    ///   privilege - or applies their row policies (a `View`), and a background read passes every
+    ///   such check with full access. So only an engine reading its own data is accepted, and any
+    ///   other is refused with `BAD_ARGUMENTS`, for every user.
+    /// A table the catalog does not know (yet) is required by name, and its row policies are looked
+    /// up by name too.
+    void requireTableRead(const StorageID & table_id, const std::optional<Strings> & columns = {})
+    {
+        const StorageID resolved{databaseOfTable(table_id), table_id.table_name};
+        checkReadMeansTheSameForMutation(resolved);
+
+        if (columns)
+            required_access.emplace_back(AccessType::SELECT, resolved.database_name, resolved.table_name, *columns);
+        else
+            required_access.emplace_back(AccessType::SELECT, resolved.database_name, resolved.table_name);
+    }
+
+    void checkReadMeansTheSameForMutation(const StorageID & table_id) const
+    {
+        StoragePtr storage;
+        if (!table_id.database_name.empty())
+            storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+
+        /// `getEffectiveRowPolicyFilter` combines the policies on the table with those on the tables
+        /// its rows come from, where the engine tells (`IStorage::getUnderlyingStorages`).
+        const bool restricted_by_row_policy = storage
+            ? getEffectiveRowPolicyFilter(*storage, context) != nullptr
+            : context->getRowPolicyFilter(table_id.database_name, table_id.table_name, RowPolicyFilterType::SELECT_FILTER) != nullptr;
+
+        if (restricted_by_row_policy)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Table {} cannot be read by a mutation of the current user: a row policy restricts what the user reads from it, "
+                "and a mutation reads it in the background, for no user, where the policy would not apply",
+                table_id.getNameForLogs());
+
+        if (storage && !readsOnlyItsOwnData(*storage))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table {} of engine {} cannot be read by a mutation, neither on the right of IN nor in a subquery: what it "
+                "reads, and the access that read requires, is decided for the user reading it when it is read, and a "
+                "mutation reads it in the background, for no user",
+                table_id.getNameForLogs(),
+                storage->getName());
+    }
+
+    /// The engines whose read returns their own data and nothing else, and so is what `SELECT` on
+    /// them grants: the `MergeTree` family, the plain and log engines, and the `system` tables that
+    /// generate their rows. `Dictionary` reads the dictionary it is, which a plain `SELECT` on it is
+    /// allowed to. `Alias` answers `isMergeTree` for its target and is not its target.
+    static bool readsOnlyItsOwnData(const IStorage & storage)
+    {
+        static const NameSet engines_reading_their_own_data{
+            "Memory",
+            "Log",
+            "TinyLog",
+            "StripeLog",
+            "Set",
+            "Join",
+            "Null",
+            "KeeperMap",
+            "Dictionary",
+            "SystemNumbers",
+            "SystemOne",
+            "SystemZeros",
+        };
+        const String name = storage.getName();
+        if (name == "Alias")
+            return false;
+        return storage.isMergeTree() || engines_reading_their_own_data.contains(name);
     }
 
     /// A table named by an identifier (`x IN other`, `dictGet(db.dict, ...)`) or by a string
@@ -696,15 +869,14 @@ private:
         {
             if (auto columns = tryAttributeColumns(expressions, tables.front(), aliases.front()))
             {
-                required_access.emplace_back(
-                    AccessType::SELECT, databaseOfTable(tables.front()), tables.front().table_name, *columns);
+                requireTableRead(tables.front(), columns);
                 return;
             }
         }
 
         /// Fall back to the whole table, a superset of any column set it may read.
         for (const auto & table_id : tables)
-            required_access.emplace_back(AccessType::SELECT, databaseOfTable(table_id), table_id.table_name);
+            requireTableRead(table_id);
     }
 
     /// The columns this level reads from its single table, or nothing when they cannot all be
@@ -1000,6 +1172,12 @@ private:
     {
         if (!table_id.database_name.empty())
             return table_id.database_name;
+        return defaultDatabase();
+    }
+
+    /// The database an unqualified name in the mutation expression is read from; see `databaseOfTable`.
+    String defaultDatabase() const
+    {
         if (!mutated_database.empty())
             return mutated_database;
         return context->getCurrentDatabase();

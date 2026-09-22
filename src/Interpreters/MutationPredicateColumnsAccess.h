@@ -51,6 +51,15 @@ void addExpressionColumnsSelectAccess(
 /// not, because the background mutation that replays the expression has no such table and the name
 /// can only be read there as a permanent one.
 ///
+/// A read is reduced to a `SELECT` grant only when that grant is all that decides what the read
+/// returns. A table on which the user has a row policy is refused with `ACCESS_DENIED`: a plain
+/// `SELECT` applies the policy and the background mutation, reading for no user, would not, and so
+/// would act on the hidden rows. A table whose engine reads other objects of the server and checks
+/// the reading user's access to them, or applies their row policies, only when it is read (`Merge`,
+/// `View`, `MaterializedView`, `Buffer`, `Distributed`, a `system` table, ...) is refused with
+/// `BAD_ARGUMENTS` for every user, since a background read passes those checks with full access;
+/// the `MergeTree` family and the other engines reading their own data are accepted.
+///
 /// A table function - on the right of an `IN` or in the `FROM` of a subquery - requires the access
 /// a call of it requires (`ITableFunction::getRequiredAccessForRead`), on the whole source of its
 /// engine: the data it reads is named by its arguments rather than by an object to grant on, and
@@ -58,8 +67,13 @@ void addExpressionColumnsSelectAccess(
 /// under full access.
 /// A query among its arguments (`view(SELECT ...)`) is analyzed like a subquery. A table function
 /// whose reads depend on the grants of the current user (`ITableFunction::dependsOnCurrentUserGrants`,
-/// e.g. `viewIfPermitted`) is refused with `BAD_ARGUMENTS` at any depth: the background mutation
-/// executes it for no user, so no requirement would preserve the meaning it was checked with.
+/// e.g. `viewIfPermitted`), and one without a source of its own that reads objects of the server
+/// under checks made only when it is read (`dictionary`, `loop`, `mergeTreeIndex`, ...), is refused
+/// with `BAD_ARGUMENTS` at any depth: the background mutation executes it for no user, so no
+/// requirement would preserve the meaning it was checked with. `merge` is the exception: it reads
+/// tables like a subquery over each of them, so it requires `SELECT` on every table of the database
+/// it names (of every database for a `REGEXP` one), and every table it matches at submission is
+/// checked as a table read of its own.
 ///
 /// An unqualified table is required in `mutated_database` - the database the mutation expression is
 /// qualified with before it is stored, and so the one it is read from - rather than in the session's

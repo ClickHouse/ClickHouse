@@ -23,6 +23,8 @@ INSERT INTO tf_tab VALUES (1);
 -- The table the user has no access to.
 CREATE TABLE secret_tab (secret UInt32, payload String) ENGINE = MergeTree ORDER BY secret;
 INSERT INTO secret_tab VALUES (42, 'TOP-SECRET');
+CREATE DICTIONARY secret_dict (secret UInt64, payload String) PRIMARY KEY secret
+    SOURCE(CLICKHOUSE(TABLE 'secret_tab' DB '$CLICKHOUSE_DATABASE')) LAYOUT(FLAT()) LIFETIME(0);
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 GRANT ALTER DELETE, DELETE, SELECT ON $CLICKHOUSE_DATABASE.tf_tab TO $user_name;
@@ -70,19 +72,38 @@ check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SEL
 check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) SETTINGS $off"
 
 # What `merge` reads is the tables of the database its name pattern matches, and `SELECT` on them is
-# checked only when they are read - for a mutation, in the background, under full access. The tables
-# are not known when the mutation is submitted (the pattern is not run against the catalog), so the
-# read is taken for a read of every table of the database named by a literal, and of every table
-# there is when the database is not a literal.
+# checked only when they are read - for a mutation, in the background, under full access. Which
+# tables those are when the mutation runs is not known when it is submitted, so the read is required
+# as `SELECT` on every table of the database named (of every database for a `REGEXP` one), and each
+# table matched at submission is checked like a table of a subquery (see 05241 for a row policy or a
+# view among them). The database argument is read as the stored mutation reads it: a one-argument
+# call and `currentDatabase()` name the mutated table's database.
 echo "-- A table function over the tables of the server requires SELECT on every table it can name"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN merge('$CLICKHOUSE_DATABASE', '^secret_tab\$') SETTINGS $off"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge('$CLICKHOUSE_DATABASE', '^secret_tab\$')) SETTINGS $off"
 check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM merge('$CLICKHOUSE_DATABASE', '^secret_tab\$')) SETTINGS $off"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge(currentDatabase(), '^secret_tab\$')) SETTINGS $off"
-echo "-- SELECT on the very table it matches is not enough: the tables matched are not known when the mutation is checked"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge('^secret_tab\$')) SETTINGS $off"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge(REGEXP('^$CLICKHOUSE_DATABASE\$'), '^secret_tab\$')) SETTINGS $off"
+echo "-- SELECT on the very table it matches is not enough: the tables matched when the mutation runs are not known when it is checked"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_tab TO $user_name"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge('$CLICKHOUSE_DATABASE', '^secret_tab\$')) SETTINGS $off"
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $CLICKHOUSE_DATABASE.secret_tab FROM $user_name"
+
+# What `dictionary`, `loop` or `mergeTreeIndex` reads is checked only when it is read as well -
+# `dictGet` on the dictionary, `SHOW COLUMNS` on the table, `SELECT` on the source table under the
+# reader's row policies - and, unlike `merge`, not as a `SELECT` on tables that could be required
+# here, so such a function is refused in a mutation for every user.
+echo "-- A table function over the objects of the server whose read is not a SELECT on tables cannot be used in a mutation, for any user"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM dictionary('$CLICKHOUSE_DATABASE.secret_dict')) SETTINGS $off"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM loop('$CLICKHOUSE_DATABASE', 'secret_tab') LIMIT 1) SETTINGS $off"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeIndex('$CLICKHOUSE_DATABASE', 'secret_tab')) SETTINGS $off"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM dictionary('$CLICKHOUSE_DATABASE.secret_dict'))) SETTINGS $off"
+check_refusal "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM dictionary('$CLICKHOUSE_DATABASE.secret_dict')) SETTINGS $off"
+echo "-- Also with validation on, and for a user with every grant"
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM dictionary('$CLICKHOUSE_DATABASE.secret_dict'))" admin
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM loop('$CLICKHOUSE_DATABASE', 'secret_tab') LIMIT 1)" admin
+check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeIndex('$CLICKHOUSE_DATABASE', 'secret_tab'))" admin
 
 # What `viewIfPermitted` or `mergeTreeTextIndex` reads is decided by the grants of the user it runs
 # for, and a mutation runs it later, in the background, for no user at all - so there is no grant to
@@ -109,15 +130,17 @@ echo "-- With SELECT on the table the query of the table function reads, the sam
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_tab TO $user_name"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS $off"
 check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS $off"
-echo "-- With SELECT on every table of the database, merge over a literal database is accepted"
+echo "-- With SELECT on every table of the database, merge over that database is accepted, however the database is named"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.* TO $user_name"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN merge('$CLICKHOUSE_DATABASE', '^secret_tab\$') AND 0 SETTINGS $off"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge('$CLICKHOUSE_DATABASE', '^secret_tab\$')) AND 0 SETTINGS $off"
 check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM merge('$CLICKHOUSE_DATABASE', '^secret_tab\$')) AND 0 SETTINGS $off"
-echo "-- ... but not one whose database is not a literal, which can name a table of any database"
 check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge(currentDatabase(), '^secret_tab\$')) AND 0 SETTINGS $off"
-
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge('^secret_tab\$')) AND 0 SETTINGS $off"
+echo "-- ... but not one over a REGEXP of databases, which can name a table of any database"
+check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM merge(REGEXP('^$CLICKHOUSE_DATABASE\$'), '^secret_tab\$')) AND 0 SETTINGS $off"
 $CLICKHOUSE_CLIENT -q "
+DROP DICTIONARY IF EXISTS secret_dict;
 DROP TABLE IF EXISTS tf_tab, secret_tab;
 DROP USER IF EXISTS $user_name;
 "
