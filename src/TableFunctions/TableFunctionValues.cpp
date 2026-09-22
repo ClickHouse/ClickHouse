@@ -17,6 +17,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertColumnToType.h>
+#include <Formats/FormatFactory.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,10 @@ namespace
 
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
+    /// The query's format settings, so that a constant outside the window of a `DateTime64` / `Time64` column
+    /// follows `date_time_overflow_behavior` exactly as the same constant does in `INSERT ... VALUES`.
+    const FormatSettings format_settings = getFormatSettings(context);
+
     if (res_columns.size() == 1) /// Parsing arguments as single values
     {
         for (size_t i = start; i < args.size(); ++i)
@@ -48,7 +53,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             const auto & value_type = value.getType();
 
             ColumnPtr converted = convertColumnToTypeOrThrow(
-                *value_column, value_type, sample_block.getByPosition(0).type, {}, /*convert_inexact_floats=*/true);
+                *value_column, value_type, sample_block.getByPosition(0).type, format_settings, /*convert_inexact_floats=*/true);
             res_columns[0]->insertRangeFrom(*converted, 0, 1);
         }
     }
@@ -76,7 +81,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             for (size_t j = 0; j < value_types_tuple.size(); ++j)
             {
                 ColumnPtr converted = convertColumnToTypeOrThrow(
-                    value_tuple.getColumn(j), value_types_tuple[j], sample_block.getByPosition(j).type, {}, /*convert_inexact_floats=*/true);
+                    value_tuple.getColumn(j), value_types_tuple[j], sample_block.getByPosition(j).type, format_settings, /*convert_inexact_floats=*/true);
                 res_columns[j]->insertRangeFrom(*converted, 0, 1);
             }
         }

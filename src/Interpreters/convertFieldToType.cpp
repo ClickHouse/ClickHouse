@@ -338,6 +338,78 @@ std::optional<Int64> ticksFromFloatField(Float64 from, Int64 scale_multiplier_to
     return ticks;
 }
 
+/// Whether a `DateTime64` / `Time64` constant source lies below zero. Decides the side a value that does not fit the
+/// `Int64` ticks at all saturates to. `src` must satisfy `isDateTime64TicksSourceFieldType`.
+bool isNegativeDateTime64TicksSource(const Field & src)
+{
+    switch (src.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::UInt128:
+        case Field::Types::UInt256:
+            return false;
+        case Field::Types::Int64:
+            return src.safeGet<Int64>() < 0;
+        case Field::Types::Int128:
+            return src.safeGet<Int128>() < 0;
+        case Field::Types::Int256:
+            return src.safeGet<Int256>() < 0;
+        case Field::Types::Decimal32:
+            return src.safeGet<DecimalField<Decimal32>>().getValue().value < 0;
+        case Field::Types::Decimal64:
+            return src.safeGet<DecimalField<Decimal64>>().getValue().value < 0;
+        case Field::Types::Decimal128:
+            return src.safeGet<DecimalField<Decimal128>>().getValue().value < 0;
+        case Field::Types::Decimal256:
+            return src.safeGet<DecimalField<Decimal256>>().getValue().value < 0;
+        case Field::Types::Float64:
+            return src.safeGet<Float64>() < 0;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected field type {} for a DateTime64 / Time64 constant", src.getTypeName());
+    }
+}
+
+/// A `DateTime64` / `Time64` constant whose ticks (`ticks`, nullopt when they do not even fit the `Int64`) fall
+/// outside the `[min_ticks, max_ticks]` window of `type`.
+///
+/// Under `strict` the caller is deciding exact set membership or a key range: such a value cannot equal any stored
+/// value, so it is Null ("cannot convert") and the caller leaves it out of the set or of the range. The same holds for
+/// the non-strict comparison-bound callers that keep the exact default of `convert_inexact_floats` (`KeyCondition`,
+/// the skip indexes, the sharding-key rewrite, ...): clamping the constant there would turn "matches no row" into
+/// "matches the rows at the boundary".
+///
+/// A materialization caller (`convert_inexact_floats`: the `INSERT ... VALUES` expression fallback in
+/// `ValuesBlockInputFormat`, the `values` table function, `WITH FILL`, ...) consumes the `Field` as the value to
+/// store and does not retry through `CAST`, so it applies `date_time_overflow_behavior` the way `ConvertImpl` does
+/// for the very same constant: `throw` raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`, while both `saturate` and the
+/// default `ignore` clamp to the nearest end of the window, i.e. the extreme representable tick. A `NaN` has no
+/// side to saturate to and stays Null.
+template <typename DecimalType>
+Field dateTime64OutOfWindow(
+    const Field & src,
+    const IDataType & type,
+    std::optional<Int64> ticks,
+    Int64 min_ticks,
+    Int64 max_ticks,
+    UInt32 scale,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    if (strict || !convert_inexact_floats)
+        return {};
+
+    if (src.getType() == Field::Types::Float64 && isNaN(src.safeGet<Float64>()))
+        return {};
+
+    if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Value {} is out of bounds of type {}", applyVisitor(FieldVisitorToString(), src), type.getName());
+
+    const bool below = ticks ? *ticks < min_ticks : isNegativeDateTime64TicksSource(src);
+    return DecimalField<DecimalType>(DecimalType(below ? min_ticks : max_ticks), scale);
+}
+
 /// The ticks of `src` at the target scale, or nullopt when they do not fit the `Int64` ticks. Whether the ticks are
 /// inside the calendar / clock window is up to the caller. `src` must satisfy `isDateTime64TicksSourceFieldType`.
 std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_multiplier_to, bool strict)
@@ -794,16 +866,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && isDateTime64TicksSourceFieldType(src.getType()))
         {
-            /// `DateTime64` is a `Decimal64` carrier with a calendar window narrower than its `Int64` ticks. A value
-            /// whose rescale overflows the ticks, or that lands outside the window, is not representable and cannot
-            /// equal any stored value: return Null ("cannot convert") like the `Date32` branch above, so that an
-            /// exact `IN` constant is excluded from the set and the `VALUES` expression fallback goes through `CAST`,
-            /// which honours `date_time_overflow_behavior`. This matches the window `ConvertImpl` applies.
+            /// `DateTime64` is a `Decimal64` carrier with a calendar window narrower than its `Int64` ticks - the same
+            /// window `ConvertImpl` applies. A value whose rescale overflows the ticks, or that lands outside the
+            /// window, is not representable: for an exact `IN` constant or a key range that is Null ("cannot
+            /// convert"), like the `Date32` branch above, while a materialization caller gets the
+            /// `date_time_overflow_behavior` outcome of the equivalent `CAST` - see `dateTime64OutOfWindow`.
             const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
             const Int64 scale_multiplier = date_time64_type.getScaleMultiplier();
+            const Int64 min_ticks = minTicksForDateTime64(scale_multiplier);
+            const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
             const auto ticks = dateTime64TicksFromField(src, scale_multiplier, strict);
-            if (!ticks || *ticks < minTicksForDateTime64(scale_multiplier) || *ticks > maxTicksForDateTime64(scale_multiplier))
-                return {};
+            if (!ticks || *ticks < min_ticks || *ticks > max_ticks)
+                return dateTime64OutOfWindow<DateTime64>(
+                    src, type, ticks, min_ticks, max_ticks, date_time64_type.getScale(), format_settings, strict, convert_inexact_floats);
             return DecimalField<DateTime64>(DateTime64(*ticks), date_time64_type.getScale());
         }
 
@@ -812,9 +887,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// Same as the `DateTime64` branch above, against the clock window of `Time64`.
             const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
             const Int64 scale_multiplier = time64_type.getScaleMultiplier();
+            const Int64 min_ticks = minTicksForTime64(scale_multiplier);
+            const Int64 max_ticks = maxTicksForTime64(scale_multiplier);
             const auto ticks = dateTime64TicksFromField(src, scale_multiplier, strict);
-            if (!ticks || *ticks < minTicksForTime64(scale_multiplier) || *ticks > maxTicksForTime64(scale_multiplier))
-                return {};
+            if (!ticks || *ticks < min_ticks || *ticks > max_ticks)
+                return dateTime64OutOfWindow<Time64>(
+                    src, type, ticks, min_ticks, max_ticks, time64_type.getScale(), format_settings, strict, convert_inexact_floats);
             return DecimalField<Time64>(Time64(*ticks), time64_type.getScale());
         }
 

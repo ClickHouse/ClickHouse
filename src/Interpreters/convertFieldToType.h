@@ -59,6 +59,10 @@ class IDataType;
   *
   * Out-of-range values are always rejected (return Null) regardless of `strict`/`convert_inexact_floats`,
   * e.g. convertFieldToType(Field(1e300), Float32, .., false, true) -> Field(Null) (no silent overflow to inf).
+  * The one exception is a numeric constant outside the calendar / clock window of `DateTime64` / `Time64`
+  * under `convert_inexact_floats`: such a caller stores the value rather than comparing against it, so it
+  * gets what `CAST` gives for the same constant under `format_settings.date_time_overflow_behavior` -
+  * an exception for `throw`, the nearest representable tick for `saturate` and the default `ignore`.
   *
   * The strictness checks apply recursively inside composite types (Tuple, Array, Map), so e.g. a
   * Tuple(Decimal64(2)) element inside an Array is also checked for precision loss, and a Float32 element
