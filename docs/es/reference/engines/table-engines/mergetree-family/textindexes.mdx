@@ -986,9 +986,9 @@ A medida que aumenta el volumen de logs, estas consultas se vuelven lentas.
 La solución es un índice de texto sobre la columna [Map](/es/reference/data-types/map).
 Qué índice crear depende de qué busques: una clave junto con su valor, o claves y valores de forma independiente.
 
-#### Búsquedas combinadas de key-value con el tokenizador `keyValuePairs` {#tokenizer-key-value-pairs}
+#### Búsquedas combinadas de clave-valor con el tokenizador `keyValuePairs` {#tokenizer-key-value-pairs}
 
-Utilice el tokenizador `keyValuePairs` sobre la propia columna `Map` cuando busque una key concreta que contenga un valor concreto:
+Utilice el tokenizador `keyValuePairs` sobre la propia columna `Map` cuando busque una clave concreta que contenga un valor concreto:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
@@ -1003,6 +1003,7 @@ Los índices `mapKeys` y `mapValues` descritos más abajo no pueden responder a 
 
 Un par se almacena como el token `key ‖ value ‖ length(key)`.
 La longitud final al final mantiene inequívoco el límite entre la clave y el valor, por lo que ambos pueden contener bytes arbitrarios: a diferencia de unirlos con un separador como `key=value`, una clave o un valor que contenga el separador no puede producir una coincidencia falsa.
+La función de tabla [mergeTreeTextIndex](/es/reference/functions/table-functions/mergeTreeTextIndex) devuelve las partes decodificadas de cada token en las columnas `token_key` y `token_value`.
 
 Se aplican las siguientes restricciones:
 

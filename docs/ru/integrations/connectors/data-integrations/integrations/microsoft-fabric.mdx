@@ -187,54 +187,138 @@ ClickHouse предлагает гораздо больше, чем быстры
 
 ## Вводное руководство {#getting-started-tutorial}
 
-В этом руководстве используются встроенные демонстрационные данные Fabric, поэтому вы можете опробовать рабочую нагрузку без собственного набора данных.
+В этом руководстве мы загрузим общедоступный набор данных в Lakehouse, синхронизируем его с ClickHouse и выполним к нему запросы.
 
-### Загрузите образцы данных {#load-the-sample-data}
+### Загрузка данных о поездках такси Нью-Йорка {#load-the-nyc-taxi-data}
 
-В рабочем пространстве Fabric выберите **+ New item**, а затем **Sample lakehouse**, чтобы добавить образец **Public holidays**. Убедитесь, что таблица `publicholidays` появилась в разделе Tables.
+В этом руководстве используются общедоступные записи NYC TLC о поездках жёлтого такси — известный набор данных о посадках и высадках пассажиров и стоимости поездок. Данные за один год — это около 40 миллионов строк; они загружаются за несколько минут, и этого достаточно, чтобы увидеть, как ведёт себя рабочая нагрузка на реальных данных. Если позже понадобится более крупный набор данных, полная история с 2013 по 2026 год насчитывает около 1,1 миллиарда строк.
+
+1. Создайте Lakehouse в своём рабочем пространстве или используйте существующий
+2. Выберите **+ Новый элемент** и создайте **Notebook**
+3. Подключите Lakehouse к блокноту. Он должен быть для этого блокнота Lakehouse по умолчанию
+4. Вставьте в блокнот две ячейки, приведённые ниже, и выполните их по порядку
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+Вторая ячейка нормализует схему, поскольку в файлах TLC имена и типы столбцов меняются от года к году. Если закрепить за каждым столбцом одно имя и один тип, один и тот же код будет работать независимо от того, загружаете ли вы данные за один год или за все сразу.
+
+<Note>
+  Чтобы добавить другие годы, расширьте диапазон `YEARS` и повторно выполните обе ячейки. Первая ячейка пропускает уже загруженные файлы, а вторая заново создаёт таблицу.
+</Note>
+
+Убедитесь, что таблица `yellow_tripdata` появилась в разделе Tables в Lakehouse.
 
 <Frame>
-  ![Образец таблицы Public holidays в Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![Таблица yellow\_tripdata и её столбцы в Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### Создайте элемент ClickHouse и синхронизируйте данные {#create-a-clickhouse-item-and-sync}
 
 1. Создайте элемент ClickHouse в том же рабочем пространстве, как описано в разделе [подготовки](#provisioning)
-2. Откройте **Sync**, выберите свой Lakehouse и таблицу `publicholidays`
-3. Укажите сортировку по столбцам, по которым вы чаще всего фильтруете: `countryOrRegion, date`
-4. Запустите синхронизацию — данные вскоре будут загружены. Таблица такого размера синхронизируется за считаные секунды
+2. Откройте **Sync**, выберите свой Lakehouse и таблицу `yellow_tripdata`
+3. Задайте ключ сортировки `PULocationID, tpep_pickup_datetime`
+4. Запустите синхронизацию. Данные за год синхронизируются за несколько минут, а запрашивать таблицу можно сразу после того, как её статус сменится на «завершено»
 
-### Выполните запрос к данным {#query-the-data}
+Такой ключ сортировки соответствует тому, как панели мониторинга и агенты фильтруют эти данные: сначала по зоне посадки, затем по времени. Поэтому такие запросы читают лишь небольшую часть таблицы, а не сканируют её целиком.
 
-Откройте консоль SQL и выполните:
+### Выполните запросы к данным {#query-the-data}
+
+Откройте консоль SQL и выполните следующие запросы:
+
+<Frame>
+  ![Три запроса из руководства во встроенной консоли SQL ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-Сохраните первый запрос под названием **Праздники по странам**, чтобы увидеть сохранённые запросы в действии.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+Рядом со временем выполнения консоль показывает количество прочитанных строк и байтов. Количество строк берётся непосредственно из метаданных таблицы, без чтения самих данных. Два других запроса сначала фильтруют по `PULocationID` — первому столбцу ключа сортировки, поэтому ClickHouse читает только соответствующий фрагмент таблицы, а не сканирует её целиком.
+
+Сохраните вкладку под именем **Demo queries**, чтобы она появилась в разделе **Сохранённые запросы**.
 
 ### Подключение к MCP {#connect-to-mcp}
 
-1. На экране **Connect** включите **MCP** для сервиса
+1. На экране **Подключение** включите **MCP** для сервиса
 2. Зарегистрируйте MCP-сервер ClickHouse в выбранном MCP-клиенте, как описано в разделе [начало работы с удалённым MCP-сервером](/ru/products/cloud/features/ai-ml/remote-mcp#getting-started)
-3. Задайте вопрос: *&quot;В какой стране больше всего государственных праздников в 2026 году и сколько из них оплачиваемые?&quot;*
+3. Задайте вопрос: *&quot;В какой зоне посадки было больше всего поездок в июне 2024 года и какой была средняя стоимость поездки?&quot;*
 
 Агент ответит, выполнив управляемый SQL-запрос только для чтения к синхронизированной таблице.
 

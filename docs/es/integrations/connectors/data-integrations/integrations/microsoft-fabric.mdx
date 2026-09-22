@@ -187,54 +187,138 @@ La carga de trabajo se comercializa mediante la [oferta de ClickHouse Cloud en A
 
 ## Tutorial de introducción {#getting-started-tutorial}
 
-Esta guía utiliza los datos de ejemplo integrados de Fabric, por lo que puede probar la carga de trabajo sin necesidad de aportar su propio conjunto de datos.
+Esta guía carga un conjunto de datos público en un Lakehouse, lo sincroniza con ClickHouse y ejecuta consultas sobre él.
 
-### Cargar los datos de ejemplo {#load-the-sample-data}
+### Cargar los datos de taxis de NYC {#load-the-nyc-taxi-data}
 
-En el espacio de trabajo de Fabric, seleccione **+ Nuevo elemento** y luego **Lakehouse de ejemplo** para agregar el ejemplo **Días festivos públicos**. Confirme que la tabla `publicholidays` aparezca en Tablas.
+El tutorial utiliza los registros públicos de viajes de taxis amarillos de la NYC TLC, un conjunto de datos muy conocido que incluye recogidas, bajadas de pasajeros y tarifas. Un año equivale a unos 40 millones de filas y se carga en pocos minutos, suficiente para observar cómo se comporta el workload con datos reales. Si más adelante desea un conjunto de datos más grande, el historial completo de 2013 a 2026 contiene aproximadamente 1.100 millones de filas.
+
+1. Cree un Lakehouse en su workspace o utilice uno existente
+2. Seleccione **+ Nuevo elemento** y cree un **Notebook**
+3. Asocie el Lakehouse al notebook. Debe ser el Lakehouse predeterminado del notebook
+4. Pegue las dos celdas siguientes en el notebook y ejecútelas en orden
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+La segunda celda normaliza el esquema, ya que los archivos de TLC cambian los nombres y los tipos de las columnas de un año a otro. Al fijar un único nombre y tipo para cada columna, el mismo código funciona tanto si carga un solo año como todos.
+
+<Note>
+  Para añadir más años, amplíe `YEARS` y vuelva a ejecutar ambas celdas. La primera celda omite los archivos que ya se han descargado y la segunda vuelve a crear la tabla.
+</Note>
+
+Confirme que la tabla `yellow_tripdata` aparece en Tables dentro del Lakehouse.
 
 <Frame>
-  ![Tabla de ejemplo de días festivos públicos en un lakehouse de Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![La tabla yellow\_tripdata y sus columnas en un Lakehouse de Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### Cree un elemento de ClickHouse y sincronícelo {#create-a-clickhouse-item-and-sync}
 
-1. Cree un elemento de ClickHouse en el mismo espacio de trabajo, como se describe en [el aprovisionamiento](#provisioning).
-2. Abra **Sync**, elija su Lakehouse y seleccione la tabla `publicholidays`.
-3. Ordene por las columnas que filtre con más frecuencia: `countryOrRegion, date`.
-4. Inicie la sincronización; los datos se poblarán en breve. Una tabla de este tamaño se completa en segundos.
+1. Cree un elemento de ClickHouse en el mismo workspace, como se describe en [el aprovisionamiento](#provisioning).
+2. Abra **Sync**, elija su Lakehouse y seleccione la tabla `yellow_tripdata`.
+3. Establezca la clave de ordenación en `PULocationID, tpep_pickup_datetime`.
+4. Inicie la sincronización. Un año de datos tarda unos minutos en sincronizarse, y la tabla se puede consultar en cuanto su estado aparezca como completado.
+
+Esa clave de ordenación coincide con la forma en que los dashboards y los agentes filtran estos datos (primero por zona de recogida y luego por tiempo), por lo que esas consultas solo leen una pequeña porción de la tabla en lugar de recorrerla entera.
 
 ### Consultar los datos {#query-the-data}
 
-Abra la consola SQL y pruebe lo siguiente:
+Abra la consola SQL y ejecute las siguientes consultas:
+
+<Frame>
+  ![Las tres consultas del tutorial en la consola SQL de ClickHouse integrada](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-Guarda la primera consulta como **Días festivos por país** para ver cómo funcionan las consultas guardadas.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+La consola muestra las filas y los bytes leídos junto al tiempo transcurrido. El recuento de filas se obtiene directamente de los metadata de la tabla, sin leer ningún dato. Las otras dos consultas filtran primero por `PULocationID`, la primera columna de la clave de ordenación, de modo que ClickHouse lee solo la porción de la tabla que coincide, en lugar de recorrerla por completo.
+
+Guarde la pestaña como **Demo queries** para verla en la lista de **Consultas guardadas**.
 
 ### Conectarse a MCP {#connect-to-mcp}
 
 1. En la pantalla **Conectar**, habilite **MCP** para el servicio.
 2. Registre el servidor MCP de ClickHouse con el cliente MCP que prefiera, como se describe en [primeros pasos con el servidor MCP remoto](/es/products/cloud/features/ai-ml/remote-mcp#getting-started).
-3. Pregunte: *&quot;¿Qué país tiene más días festivos en 2026 y cuántos son días libres remunerados?&quot;*
+3. Pregunte: *&quot;¿Qué zona de recogida tuvo más viajes en junio de 2024 y cuál fue la tarifa media?&quot;*
 
 El agente responde ejecutando SQL gobernado y de solo lectura en su tabla sincronizada.
 

@@ -187,54 +187,138 @@ ClickHouse 为 ClickHouse 工作负载提供支持。有关严重级别、响应
 
 ## 入门教程 {#getting-started-tutorial}
 
-本演练使用 Fabric 内置的示例数据，您无需自备数据集即可试用该工作负载。
+本演练将一个公开数据集加载到湖仓中，再同步到 ClickHouse 并进行查询。
 
-### 加载样本数据 {#load-the-sample-data}
+### 加载 NYC 出租车数据 {#load-the-nyc-taxi-data}
 
-在 Fabric 工作区中，选择 **+ New item**，再选择 **Sample lakehouse**，添加 **Public holidays** 示例数据。确认 `publicholidays` 表显示在“表”下。
+本教程使用公开的 NYC TLC 黄色出租车行程记录，这是一个广为人知的数据集，包含上车、下车和车费等信息。一年的数据约有 4000 万行，几分钟即可加载完成，足以观察该工作负载在真实数据上的表现。如果之后需要更大的数据集，2013 年至 2026 年的完整历史数据约有 11 亿行。
+
+1. 在工作区中创建一个湖仓，或使用现有的湖仓
+2. 选择 **+ 新建项目**，然后创建一个 **Notebook**
+3. 将该湖仓附加到 notebook，且必须将其设为该 notebook 的默认湖仓
+4. 将下面两个单元格粘贴到 notebook 中，并按顺序运行
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+第二个单元格用于规范化 schema，因为 TLC 文件的列名和类型在不同年份之间有所变化。将每一列固定为统一的名称和类型后，无论加载一年还是所有年份的数据，同一段代码都能正常运行。
+
+<Note>
+  如需添加更多年份，请扩大 `YEARS` 的范围，然后重新运行这两个单元格。第一个单元格会跳过已下载的文件，第二个单元格则会重建该表。
+</Note>
+
+确认 `yellow_tripdata` 表已出现在湖仓的 Tables 下。
 
 <Frame>
-  ![Fabric Lakehouse 中的 Public holidays 示例表](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![Fabric 湖仓中的 yellow\_tripdata 表及其列](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### 创建 ClickHouse 项目并同步 {#create-a-clickhouse-item-and-sync}
 
 1. 按照[预配](#provisioning)中的说明，在同一工作区内创建一个 ClickHouse 项目
-2. 打开 **Sync**，选择你的 Lakehouse，然后选择 `publicholidays` 表
-3. 按最常用于过滤的列排序：`countryOrRegion, date`
-4. 启动同步后，数据很快便会填充完成。此规模的表可在数秒内完成同步
+2. 打开 **Sync**，选择你的湖仓，然后选择 `yellow_tripdata` 表
+3. 将 sorting key 设置为 `PULocationID, tpep_pickup_datetime`
+4. 启动同步。一年的数据只需几分钟即可同步完成，表的状态显示为完成后即可查询
+
+该 sorting key 与仪表盘和智能体过滤这些数据的方式一致，即先按上车区域、再按时间过滤。因此，这些查询只需读取表中的一小部分数据，而无需扫描整张表。
 
 ### 查询数据 {#query-the-data}
 
-打开 SQL 控制台，然后尝试：
+打开 SQL 控制台，运行以下查询：
+
+<Frame>
+  ![内嵌 ClickHouse SQL 控制台中的三个教程查询](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-将第一个查询保存为 **按国家/地区统计的节假日**，体验已保存查询功能。
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+控制台会在耗时旁边显示读取的行数和字节数。行数统计查询直接从表的元数据中获取结果，无需读取任何数据。另外两个查询都先按 `PULocationID` 进行过滤，而它正是 sorting key 的首列，因此 ClickHouse 只需读取表中匹配的那部分数据，而不必扫描整个表。
+
+将该选项卡保存为 **Demo queries**，即可在 **Saved queries** 下看到它。
 
 ### 连接到 MCP {#connect-to-mcp}
 
-1. 在 **连接** 页面，为服务启用 **MCP**
+1. 在 **Connect** 页面，为服务启用 **MCP**
 2. 按照[远程 MCP 服务器入门](/zh/products/cloud/features/ai-ml/remote-mcp#getting-started)中的说明，在您选择的 MCP 客户端中注册 ClickHouse MCP 服务器
-3. 提问：*&quot;2026 年哪个国家的公共假期最多，其中有多少天为带薪休假？&quot;*
+3. 提问：*&quot;2024 年 6 月哪个上车区域的行程最多，平均车费是多少？&quot;*
 
 agent 会对您同步的表运行受治理的只读 SQL，并据此作答。
 

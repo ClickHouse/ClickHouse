@@ -986,9 +986,9 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 La solution consiste à créer un index de texte sur la colonne [Map](/fr/reference/data-types/map).
 L’index à créer dépend de ce que vous recherchez : une clé avec sa valeur, ou les clés et les valeurs indépendamment.
 
-#### Recherches key-value combinées avec le tokenizer `keyValuePairs` {#tokenizer-key-value-pairs}
+#### Recherches clé-valeur combinées avec le tokenizer `keyValuePairs` {#tokenizer-key-value-pairs}
 
-Utilisez le tokenizer `keyValuePairs` directement sur la colonne `Map` lorsque vous recherchez une key précise contenant une valeur précise :
+Utilisez le tokenizer `keyValuePairs` directement sur la colonne `Map` lorsque vous recherchez une clé précise contenant une valeur précise :
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
@@ -1003,6 +1003,7 @@ Les index `mapKeys` et `mapValues` décrits ci-dessous ne peuvent pas répondre 
 
 Une paire est stockée sous la forme du token `key ‖ value ‖ length(key)`.
 La longueur placée à la fin lève toute ambiguïté sur la frontière entre la clé et la valeur, si bien que l&#39;une comme l&#39;autre peuvent contenir des octets arbitraires : contrairement à une concaténation au moyen d&#39;un séparateur tel que `key=value`, une clé ou une valeur contenant le séparateur ne peut pas produire de faux appariement.
+La fonction de table [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex) renvoie les parties décodées de chaque token dans les colonnes `token_key` et `token_value`.
 
 Les restrictions suivantes s&#39;appliquent :
 

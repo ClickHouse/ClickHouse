@@ -187,54 +187,138 @@ ClickHouse 워크로드에 대한 지원은 ClickHouse에서 제공합니다. �
 
 ## 시작하기 튜토리얼 {#getting-started-tutorial}
 
-이 안내에서는 Fabric에 기본 제공되는 샘플 데이터를 사용하므로 자체 데이터셋 없이도 워크로드를 사용해 볼 수 있습니다.
+이 안내에서는 공개 데이터셋을 Lakehouse에 로드하고 ClickHouse로 동기화한 다음 쿼리를 실행합니다.
 
-### 샘플 데이터 불러오기 {#load-the-sample-data}
+### NYC 택시 데이터 로드하기 {#load-the-nyc-taxi-data}
 
-Fabric 워크스페이스에서 **+ New item**을 선택한 후 **Sample lakehouse**를 선택하여 **Public holidays** 샘플을 추가합니다. `publicholidays` 테이블이 Tables 아래에 표시되는지 확인합니다.
+이 튜토리얼에서는 공개된 NYC TLC 옐로 택시 운행 기록을 사용합니다. 승차, 하차, 요금 정보를 담은 잘 알려진 데이터셋입니다. 1년치 데이터는 약 4,000만 행으로 몇 분이면 로드되며, 실제 데이터에서 워크로드가 어떻게 동작하는지 확인하기에 충분한 규모입니다. 나중에 더 큰 데이터셋이 필요하다면 약 11억 행에 달하는 2013년부터 2026년까지의 전체 이력 데이터를 사용할 수 있습니다.
+
+1. 워크스페이스에서 Lakehouse를 생성하거나 기존 Lakehouse를 사용하세요
+2. **+ New item**을 선택하고 **Notebook**을 생성하세요
+3. Lakehouse를 노트북에 연결하세요. 이 Lakehouse는 반드시 노트북의 기본 Lakehouse로 지정되어 있어야 합니다
+4. 아래 두 셀을 노트북에 붙여 넣고 순서대로 실행하세요
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+TLC 파일은 연도마다 컬럼명과 타입이 달라지므로 두 번째 셀에서 스키마를 정규화합니다. 모든 컬럼의 이름과 타입을 하나로 고정해 두면 한 해의 데이터만 로드하든 전체 연도를 로드하든 동일한 코드로 처리할 수 있습니다.
+
+<Note>
+  연도를 더 추가하려면 `YEARS`의 범위를 넓힌 뒤 두 셀을 모두 다시 실행하세요. 첫 번째 셀은 이미 다운로드한 파일을 건너뛰고, 두 번째 셀은 테이블을 다시 생성합니다.
+</Note>
+
+Lakehouse의 Tables 아래에 `yellow_tripdata` 테이블이 표시되는지 확인하세요.
 
 <Frame>
-  ![Fabric Lakehouse의 Public holidays 샘플 테이블](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![Fabric Lakehouse의 yellow\_tripdata 테이블과 해당 컬럼](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### ClickHouse 항목 생성 및 동기화 {#create-a-clickhouse-item-and-sync}
 
 1. [프로비저닝](#provisioning)에 설명된 대로 동일한 워크스페이스에 ClickHouse 항목을 생성합니다.
-2. **Sync**를 열고 Lakehouse를 선택한 다음 `publicholidays` 테이블을 선택합니다.
-3. 가장 자주 필터링하는 컬럼을 기준으로 정렬합니다: `countryOrRegion, date`
-4. 동기화를 시작합니다. 잠시 후 데이터가 채워지며, 이 정도 크기의 테이블은 몇 초 안에 완료됩니다.
+2. **Sync**를 열고 Lakehouse를 선택한 다음 `yellow_tripdata` 테이블을 선택합니다.
+3. 정렬 키를 `PULocationID, tpep_pickup_datetime`으로 설정합니다.
+4. 동기화를 시작합니다. 1년 분량의 데이터는 몇 분 안에 완료되며, 상태가 완료로 표시되는 즉시 테이블을 쿼리할 수 있습니다.
 
-### 데이터 쿼리 {#query-the-data}
+이 정렬 키는 대시보드와 에이전트가 이 데이터를 필터링하는 방식, 즉 승차 구역을 먼저 기준으로 한 뒤 시간으로 필터링하는 방식과 일치합니다. 따라서 해당 쿼리는 테이블 전체를 스캔하지 않고 필요한 일부분만 읽습니다.
 
-SQL 콘솔을 열고 다음을 실행해 보십시오:
+### 데이터 쿼리하기 {#query-the-data}
+
+SQL 콘솔을 열고 다음 쿼리를 실행하세요.
+
+<Frame>
+  ![내장 ClickHouse SQL 콘솔에서 실행한 튜토리얼 쿼리 3개](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-첫 번째 쿼리를 **국가별 공휴일**로 저장해 저장된 쿼리가 어떻게 작동하는지 확인합니다.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+콘솔에는 경과 시간 옆에 읽은 행 수와 바이트 수가 표시됩니다. 행 수 쿼리는 데이터를 읽지 않고 테이블 메타데이터에서 바로 결과를 가져옵니다. 나머지 두 쿼리는 모두 정렬 키의 첫 번째 컬럼인 `PULocationID`로 먼저 필터링하므로, ClickHouse는 테이블 전체를 스캔하지 않고 조건에 일치하는 부분만 읽습니다.
+
+탭을 **Demo queries**라는 이름으로 저장하면 **Saved queries** 아래에 표시됩니다.
 
 ### MCP에 연결 {#connect-to-mcp}
 
 1. **Connect** 화면에서 서비스의 **MCP**를 활성화합니다.
 2. [원격 MCP 서버 시작하기](/ko/products/cloud/features/ai-ml/remote-mcp#getting-started)에 설명된 대로 원하는 MCP 클라이언트에 ClickHouse MCP 서버를 등록합니다.
-3. 다음과 같이 질문합니다: *&quot;2026년에 공휴일이 가장 많은 국가는 어디이며, 그중 유급 휴가일은 며칠인가요?&quot;*
+3. 다음과 같이 질문합니다: *&quot;2024년 6월에 운행이 가장 많았던 승차 구역은 어디이며, 평균 요금은 얼마였나요?&quot;*
 
 에이전트는 동기화된 테이블에 대해 거버넌스가 적용된 읽기 전용 SQL을 실행하여 답변합니다.
 

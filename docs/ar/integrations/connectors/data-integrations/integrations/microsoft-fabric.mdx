@@ -187,56 +187,140 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 ## دليل عملي للبدء {#getting-started-tutorial}
 
-يستخدم هذا الدليل العملي بيانات العينة المضمنة في Fabric، ما يتيح لك تجربة عبء العمل دون الحاجة إلى توفير مجموعة بيانات خاصة بك.
+يوضّح هذا الدليل العملي كيفية تحميل مجموعة بيانات عامة إلى Lakehouse، ثم مزامنتها مع ClickHouse والاستعلام عنها.
 
-### تحميل البيانات النموذجية {#load-the-sample-data}
+### تحميل بيانات سيارات الأجرة في مدينة نيويورك {#load-the-nyc-taxi-data}
 
-في مساحة عمل Fabric، اختر **+ عنصر جديد**، ثم اختر **lakehouse نموذجي** لإضافة نموذج **العطلات الرسمية**. تأكد من ظهور جدول `publicholidays` ضمن الجداول.
+يعتمد هذا الدليل العملي على سجلات رحلات سيارات الأجرة الصفراء المتاحة للعموم والصادرة عن NYC TLC، وهي مجموعة بيانات معروفة تتضمن مواقع صعود الركاب ونزولهم وأجرة الرحلات. تضم بيانات سنة واحدة نحو 40 مليون صف، ولا يستغرق تحميلها سوى بضع دقائق، وهذا كافٍ لملاحظة سلوك عبء العمل على بيانات حقيقية. وإذا احتجت لاحقًا إلى مجموعة بيانات أكبر، فإن السجل الكامل من 2013 إلى 2026 يضم نحو 1.1 مليار صف.
+
+1. أنشئ Lakehouse في مساحة العمل الخاصة بك، أو استخدم Lakehouse موجودًا
+2. اختر **+ New item** وأنشئ **Notebook**
+3. اربط الـ Lakehouse بالدفتر، على أن يكون هو الـ Lakehouse الافتراضي للدفتر
+4. الصق الخليتين أدناه في الدفتر وشغّلهما بالترتيب
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+تعمل الخلية الثانية على توحيد المخطط، لأن ملفات TLC تغيّر أسماء الأعمدة وأنواعها من سنة إلى أخرى. وبتثبيت اسم ونوع واحد لكل عمود، تعمل الشيفرة نفسها سواء حمّلت سنة واحدة أو جميع السنوات.
+
+<Note>
+  لإضافة المزيد من السنوات، وسّع نطاق `YEARS` وأعد تشغيل الخليتين. تتخطى الخلية الأولى الملفات التي سبق تنزيلها، بينما تعيد الخلية الثانية بناء الجدول.
+</Note>
+
+تأكد من ظهور الجدول `yellow_tripdata` ضمن Tables في Lakehouse.
 
 <Frame>
-  ![جدول نموذج العطلات الرسمية في Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![الجدول yellow\_tripdata وأعمدته في Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### أنشئ عنصر ClickHouse وزامنه {#create-a-clickhouse-item-and-sync}
 
 1. أنشئ عنصر ClickHouse في مساحة العمل نفسها، كما هو موضح في قسم [الإعداد](#provisioning)
-2. افتح **Sync**، واختر Lakehouse، ثم حدّد جدول `publicholidays`
-3. رتّب البيانات حسب الأعمدة التي تُجري التصفية عليها غالبًا: `countryOrRegion, date`
-4. ابدأ المزامنة، وستُملأ البيانات بعد وقت قصير. يكتمل نقل جدول بهذا الحجم خلال ثوانٍ
+2. افتح **Sync**، واختر Lakehouse، ثم حدّد جدول `yellow_tripdata`
+3. اضبط مفتاح الفرز على `PULocationID, tpep_pickup_datetime`
+4. ابدأ المزامنة. تكتمل مزامنة بيانات عام كامل خلال دقائق قليلة، ويصبح الجدول جاهزًا للاستعلام بمجرد أن تُشير حالته إلى اكتمال العملية
+
+يتوافق مفتاح الفرز هذا مع طريقة تصفية لوحات المعلومات والوكلاء لهذه البيانات، أي حسب منطقة الانطلاق ثم حسب الوقت، ولذلك لا تقرأ تلك الاستعلامات سوى جزء صغير من الجدول بدلًا من فحصه بالكامل.
 
 ### الاستعلام عن البيانات {#query-the-data}
 
-افتح وحدة تحكم SQL وجرّب:
+افتح وحدة تحكم SQL وشغّل الاستعلامات التالية:
+
+<Frame>
+  ![استعلامات الدليل العملي الثلاثة في وحدة تحكم ClickHouse SQL المدمجة](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-احفظ الاستعلام الأول باسم **العطلات حسب البلد** للاطلاع على الاستعلامات المحفوظة أثناء الاستخدام.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+تعرض وحدة التحكم عدد الصفوف والبايتات المقروءة بجوار الوقت المنقضي. يُستخرج عدد الصفوف مباشرةً من البيانات الوصفية للجدول دون قراءة أي بيانات. أما الاستعلامان الآخران، فكلاهما يطبّق عامل تصفية على `PULocationID` أولًا، وهو العمود الأول في مفتاح الفرز، ولذلك لا يقرأ ClickHouse سوى الجزء المطابق من الجدول بدلًا من فحصه بالكامل.
+
+احفظ علامة التبويب باسم **Demo queries** لتظهر ضمن **Saved queries**.
 
 ### الاتصال بـ MCP {#connect-to-mcp}
 
 1. في شاشة **Connect**، فعّل **MCP** للخدمة.
-2. سجّل ClickHouse MCP server لدى MCP client الذي تختاره، كما هو موضح في [بدء الاستخدام مع Remote MCP server](/ar/products/cloud/features/ai-ml/remote-mcp#getting-started).
-3. اسأل: *&quot;أي دولة لديها أكبر عدد من العطلات الرسمية في عام 2026، وكم منها إجازات مدفوعة الأجر؟&quot;*
+2. سجّل خادم ClickHouse MCP لدى MCP client الذي تختاره، كما هو موضح في [بدء الاستخدام مع Remote MCP server](/ar/products/cloud/features/ai-ml/remote-mcp#getting-started).
+3. اسأل: *&quot;أي نطاق انطلاق سجّل أكبر عدد من الرحلات في يونيو 2024، وما متوسط الأجرة؟&quot;*
 
-يجيب agent عبر تشغيل استعلامات SQL خاضعة للحوكمة وبصلاحية للقراءة فقط على table المتزامن لديك.
+يجيب الوكيل عبر تشغيل استعلامات SQL خاضعة للحوكمة وبصلاحية للقراءة فقط على الجدول المتزامن لديك.
 
 ## القيود المعروفة {#known-limitations}
 

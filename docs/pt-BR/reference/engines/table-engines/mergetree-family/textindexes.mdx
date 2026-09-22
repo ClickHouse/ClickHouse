@@ -1003,6 +1003,7 @@ Os índices `mapKeys` e `mapValues` descritos abaixo não conseguem responder a 
 
 Um par é armazenado como o token `key ‖ value ‖ length(key)`.
 O comprimento ao final mantém inequívoca a fronteira entre a chave e o valor, de modo que ambos podem conter bytes arbitrários: diferentemente de uni-los com um separador como `key=value`, uma chave ou um valor que contenha o separador não pode gerar uma correspondência falsa.
+A função de tabela [mergeTreeTextIndex](/pt-BR/reference/functions/table-functions/mergeTreeTextIndex) retorna as partes decodificadas de cada token nas colunas `token_key` e `token_value`.
 
 Aplicam-se as seguintes restrições:
 

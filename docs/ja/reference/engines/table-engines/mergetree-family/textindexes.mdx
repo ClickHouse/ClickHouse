@@ -1003,6 +1003,7 @@ SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from t
 
 ペアは `key ‖ value ‖ length(key)` というトークンとして格納されます。
 末尾の長さによってキーと値の境界が一意に定まるため、どちらにも任意のバイト列を含められます。`key=value` のように区切り文字で連結する場合と異なり、区切り文字を含むキーや値があっても誤った一致は発生しません。
+テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) は、各トークンをデコードした構成要素を `token_key` および `token_value` カラムで返します。
 
 以下の制約が適用されます:
 

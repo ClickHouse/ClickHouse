@@ -1002,6 +1002,7 @@ SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from t
 
 键值对以标记 `key ‖ value ‖ length(key)` 的形式存储。
 末尾的长度使键与值之间的边界不存在歧义，因此两者都可以包含任意字节：与使用 `key=value` 这类分隔符拼接不同，即使键或值本身包含该分隔符，也不会产生误匹配。
+表函数 [mergeTreeTextIndex](/zh/reference/functions/table-functions/mergeTreeTextIndex) 会在 `token_key` 和 `token_value` 列中返回每个标记解码后的各个组成部分。
 
 适用以下限制：
 

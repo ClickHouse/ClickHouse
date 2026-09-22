@@ -986,9 +986,9 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 يتمثل الحل في إنشاء فهرس نصي على عمود [Map](/ar/reference/data-types/map).
 ويعتمد اختيار الفهرس الذي تنشئه على ما تبحث عنه: مفتاح مع قيمته، أو المفاتيح والقيم بشكل مستقل.
 
-#### عمليات lookup المدمجة للأزواج key-value باستخدام مُقسِّم الرموز `keyValuePairs` {#tokenizer-key-value-pairs}
+#### عمليات lookup المدمجة للأزواج مفتاح-قيمة باستخدام مُقسِّم الرموز `keyValuePairs` {#tokenizer-key-value-pairs}
 
-استخدم مُقسِّم الرموز `keyValuePairs` على column من النوع `Map` نفسه عند البحث عن key محدد يحمل قيمة محددة:
+استخدم مُقسِّم الرموز `keyValuePairs` على column من النوع `Map` نفسه عند البحث عن key محدد يحمل قيمة محددة:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
@@ -998,23 +998,24 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
 ```
 
-يدمج الـ مُقسِّم الرموز كل زوج `(key, value)` في الصف في token واحد، بحيث يعرف الـ index أي قيمة تنتمي إلى أي مفتاح.
-أما indexes الخاصة بـ `mapKeys` و`mapValues` الموضّحة أدناه فلا تستطيع الإجابة عن مثل هذا الاستعلام، لأنها تُفهرس المفاتيح والقيم بشكل مستقل: فهي تستطيع أن تخبرك بأن أحد attributes الصف يحمل القيمة `error`، لكن لا تستطيع تحديد أنه كان attribute المسمّى `level`.
+يدمج الـ مُقسِّم الرموز كل زوج `(key, value)` في الصف في رمز واحد، بحيث يعرف الفهرس أي قيمة تنتمي إلى أي مفتاح.
+أما الفهارس الخاصة بـ `mapKeys` و`mapValues` الموضّحة أدناه فلا تستطيع الإجابة عن مثل هذا الاستعلام، لأنها تُفهرس المفاتيح والقيم بشكل مستقل: فهي تستطيع أن تخبرك بأن أحد attributes الصف يحمل القيمة `error`، لكن لا تستطيع تحديد أنه كان attribute المسمّى `level`.
 
-يُخزَّن الزوج على هيئة الـ token التالي: `key ‖ value ‖ length(key)`.
+يُخزَّن الزوج على هيئة الرمز التالي: `key ‖ value ‖ length(key)`.
 ويجعل الطول الملحق في النهاية الحدّ الفاصل بين المفتاح والقيمة واضحًا لا لبس فيه، بحيث يمكن أن يحتوي كلاهما على بايتات عشوائية: فخلافًا لدمجهما بفاصل مثل `key=value`، لا يمكن لمفتاح أو قيمة يحتوي على الفاصل أن ينتج تطابقًا خاطئًا.
+تُعيد دالة الجدول [mergeTreeTextIndex](/ar/reference/functions/table-functions/mergeTreeTextIndex) الأجزاء المفككة الترميز من كل رمز في العمودين `token_key` و`token_value`.
 
 تنطبق القيود التالية:
 
-* يجب إنشاء الـ index على `Map` تكون مفاتيحه وقيمه من النوع `String` أو `LowCardinality(String)`.
+* يجب إنشاء الفهرس على `Map` تكون مفاتيحه وقيمه من النوع `String` أو `LowCardinality(String)`.
   يُرفض `FixedString` لأن الـ column يخزّن بايتات الـ padding بينما الثابت المبحوث عنه لا يحتوي عليها، ما قد يؤدي إلى تفويت صفوف بصمت.
   ويُرفض `Nullable` لأن الـ encoding لا يمكنه التمييز بين قيمة فارغة و`NULL`.
-* تُرفض الوسيطات `preprocessor` و`postprocessor` و`support_phrase_search` عند إنشاء الـ table.
-* حتى الآن، لا يُجاب من الـ index إلا عن `=` على عنصر من الـ map.
+* تُرفض الوسيطات `preprocessor` و`postprocessor` و`support_phrase_search` عند إنشاء الجدول.
+* حتى الآن، لا يُجاب من الفهرس إلا عن `=` على عنصر من الـ map.
   أما عمليات البحث الأخرى في الـ map، مثل `mapContainsKey` و`mapContainsValue` وبدائلها `*Like` و`IN`، فتعود إلى الفحص الشامل (brute-force scan).
-* يُعيد `map['key']` القيمة الافتراضية لنوع القيمة عندما يكون المفتاح غير موجود، لذا فإن `map['key'] = ''` تكون true أيضًا للصفوف التي لا تحتوي على المفتاح وبالتالي ليس لها token.
+* يُعيد `map['key']` القيمة الافتراضية لنوع القيمة عندما يكون المفتاح غير موجود، لذا فإن `map['key'] = ''` تكون true أيضًا للصفوف التي لا تحتوي على المفتاح وبالتالي ليس لها رمز.
   ويعود مثل هذا الـ مسند إلى الفحص الشامل (brute-force scan).
-* إذا احتوى الصف على المفتاح نفسه أكثر من مرة، فإن `map['key']` هي قيمة أول ظهور له، ويطابق الـ index ذلك الظهور.
+* إذا احتوى الصف على المفتاح نفسه أكثر من مرة، فإن `map['key']` هي قيمة أول ظهور له، ويطابق الفهرس ذلك الظهور.
 
 #### البحث في المفاتيح والقيم باستخدام `mapKeys` و`mapValues` {#text-index-map-keys-and-values}
 

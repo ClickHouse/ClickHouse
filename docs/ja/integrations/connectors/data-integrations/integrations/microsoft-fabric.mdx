@@ -187,54 +187,138 @@ ClickHouse ワークロードのサポートは、ClickHouse が提供します�
 
 ## 入門チュートリアル {#getting-started-tutorial}
 
-このチュートリアルでは、Fabric に組み込まれているサンプルデータを使用するため、独自のデータセットを用意しなくてもワークロードを試すことができます。
+このチュートリアルでは、公開データセットを Lakehouse に読み込み、ClickHouse に同期してからクエリを実行します。
 
-### サンプルデータを読み込む {#load-the-sample-data}
+### NYC タクシーデータを読み込む {#load-the-nyc-taxi-data}
 
-Fabric ワークスペースで **+ New item** を選択し、**Sample lakehouse** を選択して **Public holidays** サンプルを追加します。Tables の下に `publicholidays` テーブルが表示されていることを確認します。
+このチュートリアルでは、一般公開されている NYC TLC のイエローキャブ乗車記録を使用します。これは乗車・降車の記録や運賃を含む、よく知られたデータセットです。1 年分でおよそ 4,000 万行あり、数分で読み込めます。実データでワークロードの挙動を確認するには十分な量です。より大規模なデータセットを試したい場合は、2013 年から 2026 年までの全期間のデータ (約 11 億行) を利用できます。
+
+1. ワークスペースに Lakehouse を作成するか、既存の Lakehouse を使用します
+2. **+ New item** を選択し、**Notebook** を作成します
+3. Lakehouse をノートブックにアタッチします。この Lakehouse はノートブックのデフォルト Lakehouse に設定されている必要があります
+4. 以下の 2 つのセルをノートブックに貼り付け、順番に実行します
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+TLC のファイルは年によってカラム名や型が異なるため、2 番目のセルでスキーマを正規化しています。すべてのカラムの名前と型を 1 つに固定しておけば、1 年分だけをロードする場合でも全年分をロードする場合でも、同じコードがそのまま動作します。
+
+<Note>
+  対象の年を増やすには、`YEARS` の範囲を広げてから両方のセルを再実行してください。1 番目のセルはダウンロード済みのファイルをスキップし、2 番目のセルはテーブルを再構築します。
+</Note>
+
+Lakehouse の Tables の下に `yellow_tripdata` テーブルが表示されていることを確認します。
 
 <Frame>
-  ![Fabric Lakehouse の Public holidays サンプルテーブル](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![Fabric Lakehouse 内の yellow\_tripdata テーブルとそのカラム](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### ClickHouse アイテムを作成して同期する {#create-a-clickhouse-item-and-sync}
 
 1. [プロビジョニング](#provisioning)で説明されているように、同じワークスペースに ClickHouse アイテムを作成します
-2. **Sync** を開き、Lakehouse を選択して `publicholidays` テーブルを選択します
-3. 最も頻繁にフィルタリングするカラムを指定して並べ替えます: `countryOrRegion, date`
-4. 同期を開始すると、まもなくデータが投入されます。このサイズのテーブルであれば、数秒で完了します
+2. **Sync** を開き、Lakehouse を選択して `yellow_tripdata` テーブルを選択します
+3. sorting key を `PULocationID, tpep_pickup_datetime` に設定します
+4. 同期を開始します。1 年分のデータであれば数分で完了し、ステータスが完了になった時点でテーブルをクエリできるようになります
+
+この sorting key は、ダッシュボードやエージェントがこのデータをフィルタする方法 (まず乗車ゾーン、次に時刻) と一致しています。そのため、これらのクエリはテーブル全体をスキャンせず、ごく一部を読み取るだけで済みます。
 
 ### データをクエリする {#query-the-data}
 
-SQL Consoleを開き、次を実行してください。
+SQL コンソールを開き、以下のクエリを実行します。
+
+<Frame>
+  ![埋め込みの ClickHouse SQL コンソールで実行した 3 つのチュートリアル用クエリ](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-最初のクエリを**国別の祝日**として保存し、保存クエリの使い方を確認します。
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+コンソールには、経過時間の横に読み取られた行数とバイト数が表示されます。行数のカウントはテーブルのメタデータから直接取得されるため、データは一切読み取られません。残りの2つのクエリは、どちらも sorting key の先頭カラムである `PULocationID` で最初にフィルタするため、ClickHouse はテーブル全体をスキャンせずに、条件に一致する部分だけを読み取ります。
+
+タブを **Demo queries** という名前で保存すると、**保存クエリ** に一覧表示されます。
 
 ### MCP に接続する {#connect-to-mcp}
 
 1. **Connect** 画面で、サービスの **MCP** を有効にします
 2. [リモートMCPサーバーの使用を開始する](/ja/products/cloud/features/ai-ml/remote-mcp#getting-started)で説明されている手順に従い、任意のMCPクライアントにClickHouse MCP serverを登録します
-3. 次のように質問します：*&quot;2026年に祝日が最も多い国はどこですか？そのうち有給休暇は何日ですか？&quot;*
+3. 次のように質問します：*&quot;2024年6月に乗車記録が最も多かった乗車エリアはどこですか？また、その平均運賃はいくらでしたか？&quot;*
 
 エージェントは、同期したテーブルに対してガバナンスが適用された読み取り専用SQLを実行し、回答します。
 

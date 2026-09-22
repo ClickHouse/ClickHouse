@@ -1003,6 +1003,7 @@ SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from t
 
 쌍은 `key ‖ value ‖ length(key)` 형태의 토큰으로 저장됩니다.
 끝에 붙는 길이 값이 키와 값 사이의 경계를 명확하게 유지해 주므로, 키와 값 모두 임의의 바이트를 포함할 수 있습니다. `key=value`처럼 구분자로 이어 붙이는 방식과 달리, 구분자를 포함하는 키나 값이 잘못된 일치를 일으키지 않습니다.
+[mergeTreeTextIndex](/ko/reference/functions/table-functions/mergeTreeTextIndex) 테이블 함수는 각 토큰을 디코딩한 구성 요소를 `token_key` 및 `token_value` 컬럼으로 반환합니다.
 
 다음과 같은 제약이 적용됩니다:
 

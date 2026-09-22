@@ -187,54 +187,138 @@ La charge de travail est commercialisée via [l’offre ClickHouse Cloud sur Azu
 
 ## Tutoriel de prise en main {#getting-started-tutorial}
 
-Ce guide utilise les données d’exemple intégrées à Fabric pour vous permettre d’essayer cette charge de travail sans avoir à fournir votre propre jeu de données.
+Dans ce guide, vous allez charger un jeu de données public dans un Lakehouse, le synchroniser avec ClickHouse, puis l’interroger.
 
-### Charger les données d’exemple {#load-the-sample-data}
+### Charger les données des taxis de NYC {#load-the-nyc-taxi-data}
 
-Dans votre espace de travail Fabric, sélectionnez **+ Nouvel élément**, puis **Exemple de lakehouse** pour ajouter l’exemple **Jours fériés**. Vérifiez que la table `publicholidays` apparaît sous Tables.
+Ce tutoriel utilise les données publiques des courses de taxis jaunes de la NYC TLC, un jeu de données bien connu qui recense les prises en charge, les déposes et les tarifs. Une année représente environ 40 millions de lignes et se charge en quelques minutes, ce qui suffit pour observer le comportement de la charge de travail sur des données réelles. Si vous avez besoin par la suite d&#39;un jeu de données plus volumineux, l&#39;historique complet de 2013 à 2026 compte environ 1,1 milliard de lignes.
+
+1. Créez un Lakehouse dans votre espace de travail ou utilisez un Lakehouse existant
+2. Sélectionnez **+ Nouvel élément** et créez un **Notebook**
+3. Associez le Lakehouse au notebook. Il doit s&#39;agir du Lakehouse par défaut du notebook
+4. Collez les deux cellules ci-dessous dans le notebook et exécutez-les dans l&#39;ordre
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+La deuxième cellule normalise le schéma, car les noms et les types de colonnes des fichiers TLC varient d&#39;une année à l&#39;autre. En associant chaque colonne à un nom et à un type fixes, le même code fonctionne, que vous chargiez une seule année ou toutes.
+
+<Note>
+  Pour ajouter d&#39;autres années, étendez `YEARS` et réexécutez les deux cellules. La première cellule ignore les fichiers déjà téléchargés, et la seconde reconstruit la table.
+</Note>
+
+Vérifiez que la table `yellow_tripdata` apparaît sous Tables dans le Lakehouse.
 
 <Frame>
-  ![Exemple de table Jours fériés dans un lakehouse Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![La table yellow\_tripdata et ses colonnes dans un Lakehouse Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### Créer un élément ClickHouse et le synchroniser {#create-a-clickhouse-item-and-sync}
 
 1. Créez un élément ClickHouse dans le même espace de travail, comme décrit dans la section [provisionnement](#provisioning)
-2. Ouvrez **Sync**, choisissez votre Lakehouse et sélectionnez la table `publicholidays`
-3. Triez les données selon les colonnes que vous filtrez le plus souvent : `countryOrRegion, date`
-4. Lancez la synchronisation ; les données seront rapidement renseignées. Une table de cette taille est synchronisée en quelques secondes
+2. Ouvrez **Sync**, choisissez votre Lakehouse et sélectionnez la table `yellow_tripdata`
+3. Définissez la clé de tri sur `PULocationID, tpep_pickup_datetime`
+4. Lancez la synchronisation. Une année de données est synchronisée en quelques minutes, et la table peut être interrogée dès que son statut indique que la synchronisation est terminée
+
+Cette clé de tri correspond à la manière dont les tableaux de bord et les agents filtrent ces données, par zone de prise en charge puis par heure : ces requêtes ne lisent ainsi qu&#39;une petite portion de la table au lieu de la parcourir entièrement.
 
 ### Interroger les données {#query-the-data}
 
-Ouvrez la console SQL et exécutez :
+Ouvrez la console SQL et exécutez les requêtes suivantes :
+
+<Frame>
+  ![Les trois requêtes du tutoriel dans la console SQL ClickHouse intégrée](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-Enregistrez la première requête sous le nom **Jours fériés par pays** pour voir les requêtes enregistrées en action.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+La console affiche le nombre de lignes et d&#39;octets lus à côté du temps écoulé. Le nombre de lignes est obtenu directement à partir des métadonnées de la table, sans lire la moindre donnée. Les deux autres requêtes filtrent d&#39;abord sur `PULocationID`, la première colonne de la clé de tri : ClickHouse ne lit donc que la portion correspondante de la table, au lieu de la parcourir entièrement.
+
+Enregistrez l&#39;onglet sous le nom **Demo queries** pour le voir apparaître dans **requêtes enregistrées**.
 
 ### Se connecter à MCP {#connect-to-mcp}
 
 1. Dans l’écran **Connect**, activez **MCP** pour le service
-2. Enregistrez le ClickHouse MCP server auprès du MCP client de votre choix, comme décrit dans [la prise en main du serveur MCP distant](/fr/products/cloud/features/ai-ml/remote-mcp#getting-started)
-3. Demandez : *« Quel pays compte le plus de jours fériés en 2026, et combien sont des congés payés ? »*
+2. Enregistrez le serveur MCP ClickHouse auprès du MCP client de votre choix, comme décrit dans [la prise en main du serveur MCP distant](/fr/products/cloud/features/ai-ml/remote-mcp#getting-started)
+3. Demandez : *« Quelle zone de prise en charge a enregistré le plus de trajets en juin 2024, et quel était le tarif moyen ? »*
 
 L’agent répond en exécutant des requêtes SQL régies par des règles et en lecture seule sur votre table synchronisée.
 
