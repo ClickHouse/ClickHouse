@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -177,13 +178,66 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     }
 }
 
-ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replica_plan)
+/// Collect the lazy reads inside one lazy-materialization branch, i.e. the branch of a
+/// `JoinLazyColumnsStep` that `findReadingStep` does not descend into. The branch is a plan of its own
+/// (`optimizeLazyMaterialization2` unites the main plan with a single-step lazy plan), so there is
+/// normally exactly one lazy read and it sits at the branch root. Walk the branch anyway, so that a
+/// later pass putting a step on top of it, or nesting another lazy materialization inside it, is seen
+/// rather than silently missed.
+void collectLazyReads(const QueryPlan::Node & branch_root, std::vector<LazilyReadFromMergeTree *> & lazy_reads)
 {
+    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        /// The step is reached through a `shared_ptr`, so a const node still hands out a mutable step.
+        if (auto * lazy = typeid_cast<LazilyReadFromMergeTree *>(node->step.get()))
+            lazy_reads.push_back(lazy);
+
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+}
+
+/// Find the read whose ranges parallel replicas would split between them, by descending from the node
+/// whose output the replicas ship to the initiator.
+///
+/// `lazy_reading_step`, when passed, additionally reports the lazy half of that same read. Lazy
+/// materialization splits one read in two: the `ReadFromMergeTree` returned here keeps the sorting
+/// column, and a `LazilyReadFromMergeTree` under the sibling branch of a `JoinLazyColumnsStep` reads
+/// the columns taken out of it. Both are executed by every replica - the plan the initiator ships is
+/// the whole query, so each replica materializes its own rows lazily - so both belong in the same
+/// statistics. Only the lazy reads met on this descent qualify: a lazy read on the join side we do not
+/// descend into belongs to a different table, one that every replica reads in full rather than splits,
+/// and the cost model divides `input_bytes` by the number of replicas.
+ReadFromMergeTree * findReadingStep(
+    const QueryPlan::Node & top_of_single_replica_plan, LazilyReadFromMergeTree ** lazy_reading_step = nullptr)
+{
+    if (lazy_reading_step)
+        *lazy_reading_step = nullptr;
+
+    std::vector<LazilyReadFromMergeTree *> lazy_reads;
+
     const auto * reading_step = &top_of_single_replica_plan;
     while (reading_step && !reading_step->children.empty())
     {
         // TODO(nickitat): support multiple read steps with parallel replicas
         const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
+
+        if (lazy_joining)
+        {
+            /// Unlike the `JoinStep` below, which side is which is not a decision here: this is not a SQL
+            /// join, the step has neither a kind nor `swap_streams`, and its inputs are positional - input
+            /// 0 is the main branch, input 1 the lazy one. `updatePipeline` hands the two pipelines to
+            /// `LazyMaterializingTransform` in exactly that order, so the order is what makes the step
+            /// work at all, not a convention this function relies on. Both places that build it
+            /// (`optimizeLazyMaterialization2` and `optimizeLazyFinal`) unite the plans that way, and
+            /// `unitePlans` rejects any other order because the headers would not line up.
+            chassert(reading_step->children.size() == 2);
+            collectLazyReads(*reading_step->children.back(), lazy_reads);
+        }
 
         // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
         // the replicas plan), follow the parallelized side: child 0, or child 1 for `RIGHT`. This
@@ -223,7 +277,17 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 
     chassert(reading_step);
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
+    {
+        if (lazy_reading_step)
+        {
+            // TODO(nickitat): support multiple read steps with parallel replicas
+            if (lazy_reads.size() > 1)
+                LOG_DEBUG(getLogger("optimizeTree"), "More than one lazy reading step, not collecting their statistics");
+            else if (lazy_reads.size() == 1)
+                *lazy_reading_step = lazy_reads.front();
+        }
         return read_from_merge_tree;
+    }
 
     LOG_DEBUG(
         getLogger("optimizeTree"),
@@ -316,6 +380,84 @@ void considerEnablingParallelReplicas(
         return;
     }
 
+    /// Building the parallel-replicas plan below re-plans the query from scratch, which is expensive.
+    /// Before paying for that, reject queries that read too little data for parallel replicas to be
+    /// worth considering at all. The final check further down applies
+    /// `automatic_parallel_replicas_min_bytes_per_replica` to the compressed bytes of the read that
+    /// ends up being parallelized, which is not known until both plans are built and matched. Bound it
+    /// here by the largest read in the plan: the parallelized read is one of them, so no read in the
+    /// plan clearing the threshold means the parallelized one would not have cleared it either.
+    ///
+    /// The two byte counts are estimates of the same quantity but are not derived the same way: this
+    /// one sums the compressed sizes the parts record for the columns read, while `input_bytes` is
+    /// measured at runtime as in-memory bytes scaled by a sampled compression ratio. They agree
+    /// closely for fixed-width columns and can differ by ~40% for columns of mostly-short strings,
+    /// whose in-memory representation carries a per-row offset that the on-disk one does not. So a
+    /// query just above the threshold can be rejected here - which is the intended trade: the gate
+    /// exists to skip planning work, and the queries it can misjudge are the ones where parallel
+    /// replicas barely pay off anyway.
+    ///
+    /// A read whose size cannot be estimated counts as large enough, so the gate never rejects on
+    /// missing information. Mode 2 of `automatic_parallel_replicas_mode` only collects statistics and
+    /// never switches to parallel replicas, and the threshold does not apply to it, so such queries
+    /// are exempt and keep collecting statistics however little they read.
+    const bool threshold_applies = optimization_settings.automatic_parallel_replicas_mode == 1
+        && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica != 0;
+    if (threshold_applies)
+    {
+        const auto min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+        const auto num_replicas = std::max<size_t>(optimization_settings.max_parallel_replicas, 1);
+
+        /// The largest read measured so far. It is only read by the log message below, which is
+        /// reached exactly when every read was measured, so it really is the largest read in the plan.
+        size_t max_bytes_to_read = 0;
+        bool found_read_worth_parallelizing = false;
+        traverseQueryPlan(
+            stack,
+            root,
+            [&](auto & frame_node)
+            {
+                /// One qualifying read is enough to keep the plan, and measuring a read runs index
+                /// analysis, so stop measuring as soon as one is found.
+                if (found_read_worth_parallelizing)
+                    return;
+
+                /// Only `ReadFromMergeTree`, deliberately. Lazy materialization splits one read in
+                /// two - this step keeps the sorting column, and a `LazilyReadFromMergeTree` reads the
+                /// columns taken out of it - and the lazy half is far the larger: its rows are spread
+                /// over the whole table, so it touches almost every granule of them. It is still not
+                /// what to size the plan by. `findReadingStep` descends into the first child of
+                /// `JoinLazyColumnsStep`, so the read this loop measures is the one the optimization
+                /// goes on to instrument and cost, and the only one it would parallelize. Sizing the
+                /// plan by the lazy half instead would admit plans whose parallelizable read is tiny.
+                const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get());
+                if (!reading)
+                    return;
+
+                /// A read whose size cannot be measured may be of any size, so it counts as
+                /// qualifying: the gate must never reject a plan on missing information.
+                const auto bytes_to_read = reading->estimateCompressedBytesToRead();
+                if (!bytes_to_read || *bytes_to_read / num_replicas >= min_bytes_per_replica)
+                {
+                    found_read_worth_parallelizing = true;
+                    return;
+                }
+
+                max_bytes_to_read = std::max(max_bytes_to_read, *bytes_to_read);
+            });
+
+        if (!found_read_worth_parallelizing)
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
+                "less than automatic_parallel_replicas_min_bytes_per_replica {}",
+                max_bytes_to_read / num_replicas,
+                min_bytes_per_replica);
+            return;
+        }
+    }
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
@@ -341,7 +483,8 @@ void considerEnablingParallelReplicas(
         return;
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection
-    ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan);
+    LazilyReadFromMergeTree * lazy_reading_step = nullptr;
+    ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan, &lazy_reading_step);
     if (!source_reading_step)
         return;
 
@@ -489,6 +632,12 @@ void considerEnablingParallelReplicas(
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        /// Share the updater with the lazy half of the same read so its bytes land in the same
+        /// `input_bytes`. Without it the statistics describe only the sorting column, while the lazy
+        /// read is the larger of the two by far, and the cost model prices the query on a fraction of
+        /// what replicas read.
+        if (lazy_reading_step)
+            lazy_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
 }
 
