@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
@@ -28,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
