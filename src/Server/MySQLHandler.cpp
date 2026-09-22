@@ -1066,8 +1066,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
 
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    /// Not from the plaintext socket: the deadline clamped that one, and the clamped value would
-    /// become the one restored after authentication.
+    /// Not from the plaintext socket: the deadline clamped that one.
     ss->setReceiveTimeout(server.context()->getSettingsRef()[Setting::receive_timeout]);
     ss->setSendTimeout(socket().getSendTimeout());
 

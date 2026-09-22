@@ -31,11 +31,7 @@ def started_cluster():
 
 
 def connect_and_read_greeting():
-    """Open a MySQL connection and consume the server handshake packet.
-
-    Reading the greeting proves the handler runs, so a test waiting for a disconnect cannot pass by
-    the server refusing connections outright.
-    """
+    """Open a MySQL connection and consume the server handshake packet."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(DISCONNECT_DEADLINE)
     sock.connect((node.ip_address, MYSQL_PORT))
@@ -60,10 +56,9 @@ def wait_for_disconnect(sock):
 
 
 def test_trickled_handshake_is_disconnected(started_cluster):
-    """A client that trickles its handshake response must be cut off by the wall-clock deadline.
+    """A trickling client must be cut off by the wall-clock deadline.
 
-    A pace slower than the floor on the read window would time out the read instead, which bounds
-    the connection just as well but reports the socket timeout rather than the deadline.
+    The pace has to stay under the floor on the read window, or the read times out first.
     """
     sock = connect_and_read_greeting()
     try:
@@ -86,11 +81,7 @@ def test_trickled_handshake_is_disconnected(started_cluster):
 
 
 def test_silence_after_packet_header_is_disconnected(started_cluster):
-    """A client that promises a payload and then goes quiet must be cut off too.
-
-    No read completes, so the deadline check never runs and the clamped receive timeout is what
-    fires. Without it the server waits `receive_timeout`, 300 s.
-    """
+    """A client that promises a payload and then goes quiet must be cut off by the receive timeout."""
     sock = connect_and_read_greeting()
     try:
         # Declare a 16 KiB payload and send none of it.

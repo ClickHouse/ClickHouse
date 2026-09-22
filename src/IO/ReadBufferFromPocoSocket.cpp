@@ -176,7 +176,6 @@ void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_micr
         return;
 
     const Poco::Timespan timeout(static_cast<Poco::Timespan::TimeDiff>(receive_timeout_microseconds));
-    /// An armed deadline owns the socket timeout, so leave the request for clearHandshakeTimeout.
     if (receive_timeout_before_handshake)
         receive_timeout_before_handshake = timeout;
     else
@@ -191,7 +190,6 @@ void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_millisecon
 
     handshake_stopwatch.restart();
 
-    /// Keep the first value seen, never a timeout this class clamped itself.
     if (!receive_timeout_before_handshake)
         receive_timeout_before_handshake = socket.getReceiveTimeout();
 }
@@ -209,7 +207,6 @@ void ReadBufferFromPocoSocketBase::clampReceiveTimeoutToHandshakeDeadline(UInt64
 {
     Poco::Timespan read_window(
         static_cast<Poco::Timespan::TimeDiff>(std::max<UInt64>(milliseconds_left, MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS)) * 1000);
-    /// A socket left without a receive timeout waits forever, so that value never wins.
     if (receive_timeout_before_handshake > Poco::Timespan(0) && receive_timeout_before_handshake < read_window)
         read_window = *receive_timeout_before_handshake;
 

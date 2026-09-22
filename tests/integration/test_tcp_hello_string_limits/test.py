@@ -448,12 +448,7 @@ def test_slowloris_handshake_timeout(started_cluster):
 
 
 def test_silent_client_handshake_timeout(started_cluster):
-    """A client that connects and then says nothing must be cut off by the handshake timeout.
-
-    No read completes here, so the wall-clock check in `nextImpl` never gets to run: this covers the
-    receive timeout that `setHandshakeTimeout` clamps to the same budget. Without the clamp the
-    server waits `receive_timeout`, 300 seconds by default.
-    """
+    """A client that connects and then says nothing must be cut off by the handshake timeout."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(60)
     try:

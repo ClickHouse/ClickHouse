@@ -38,15 +38,11 @@ public:
 
     ssize_t socketReceiveBytesImpl(char * ptr, size_t size);
 
-    /// 0 does nothing, rather than clearing the socket's timeout.
     void setReceiveTimeout(size_t receive_timeout_microseconds);
 
-    /// Bound the whole handshake phase, so an unauthenticated connection cannot hold a thread,
-    /// whether it trickles bytes or goes silent inside a read. 0 disables.
+    /// Bound the whole handshake phase, whether the peer trickles bytes or goes silent in a read.
     void setHandshakeTimeout(size_t timeout_milliseconds);
     void clearHandshakeTimeout();
-    /// What is left of the deadline, for a buffer that replaces this one mid-handshake to adopt.
-    /// 0 only when none is armed, so adopting it never disables the deadline by accident.
     UInt64 handshakeMillisecondsLeft() const;
 
 private:
