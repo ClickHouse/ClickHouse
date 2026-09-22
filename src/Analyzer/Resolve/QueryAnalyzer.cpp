@@ -87,6 +87,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
+    extern const SettingsBool analyzer_compatibility_cte_redefinition;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
