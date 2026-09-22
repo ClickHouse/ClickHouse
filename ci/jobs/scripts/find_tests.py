@@ -82,6 +82,7 @@ class Targeting:
         "ci/defs/job_configs.py",
         "ci/jobs/functional_tests.py",
         "ci/jobs/scripts/clickhouse_proc.py",
+        "ci/jobs/scripts/s3_key_lifecycle.py",
         "ci/jobs/scripts/log_cluster.py",
         "ci/jobs/scripts/find_tests.py",
         "ci/jobs/scripts/functional_tests_results.py",
@@ -93,6 +94,9 @@ class Targeting:
         "ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
         "ci/praktika/cidb.py",
+        # `Result.complete_job` builds the job summary that `cidb.py` publishes,
+        # so a change to it changes what the functional-test run reports.
+        "ci/praktika/result.py",
         "ci/workflows/pull_request.py",
         "tests/clickhouse-test",
     )
