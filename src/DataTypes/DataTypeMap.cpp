@@ -343,6 +343,7 @@ Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contai
 
 You can use syntax `m[k]` to obtain the value for key `k` in map `m`.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
+In MergeTree, a constant key can skip that scan. See [Bucketed Map Serialization in MergeTree](#bucketed-map-serialization) and [Per-key Map Serialization in MergeTree](#per-key-map-serialization).
 
 **Parameters**
 
@@ -487,7 +488,7 @@ The bucket count can vary between parts. When parts with different bucket counts
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `map_serialization_version` | `basic` | Serialization format for `Map` columns. `basic` stores as a single array stream. `with_buckets` splits keys into buckets for faster single-key reads. |
+| `map_serialization_version` | `basic` | Serialization format for `Map` columns. `basic` stores as a single array stream. `with_buckets` splits keys into buckets for faster single-key reads. `with_key_columns` stores each distinct key in its own streams. See [Per-key Map Serialization in MergeTree](#per-key-map-serialization). |
 | `map_serialization_version_for_zero_level_parts` | `basic` | Serialization format for zero-level parts (created by `INSERT`). Allows keeping `basic` for inserts to avoid write overhead, while merged parts use `with_buckets`. |
 | `max_buckets_in_map` | `32` | Upper bound on the number of buckets. The actual count depends on `map_buckets_strategy`. The maximum allowed value is 256. |
 | `map_buckets_strategy` | `sqrt` | Strategy for computing bucket count from average map size: `constant` — always use `max_buckets_in_map`; `sqrt` — use `round(coefficient * sqrt(avg_size))`; `linear` — use `round(coefficient * avg_size)`. Result is clamped to `[1, max_buckets_in_map]`. |
@@ -558,6 +559,41 @@ During insertion, route each key-value pair to the column `m{hash(key) % 4}`. Du
 | Bucket granularity | Per-part, adapts to data statistics | Fixed at table creation |
 
 Manual sharding is beneficial when vertical merges are important for reducing memory usage during merges of tables with many columns, or when the number of shards must be fixed and controlled explicitly. For most use cases, automatic bucketed serialization is simpler and sufficient.
+
+## Per-key Map Serialization in MergeTree {#per-key-map-serialization}
+
+`with_key_columns` stores each distinct key in its own streams, plus one shared presence stream. A query that reads one key, such as `m['key']` or `mapContains`, opens only that key's files. Bytes read follow the selected key, including when the other keys in the row are much larger. `with_buckets` still reads every key that landed in the same bucket.
+
+### Enabling per-key serialization {#enabling-per-key-serialization}
+
+```sql
+CREATE TABLE tab (id UInt64, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    map_serialization_version = 'with_key_columns',
+    map_serialization_version_for_zero_level_parts = 'with_key_columns',
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0;
+```
+
+The format is implemented for Wide parts. Writing a Compact part raises `NOT_IMPLEMENTED`. An insert below [min_bytes_for_wide_part](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) is a Compact part (10 MiB by default on a self-managed build). Set `min_bytes_for_wide_part` and `min_rows_for_wide_part` to `0` when every part must use `with_key_columns`.
+
+`map_serialization_version_for_zero_level_parts` can stay `basic` for inserts. Merged parts then use `with_key_columns`. Those merged parts still have to be Wide.
+
+### Read results {#per-key-map-read-results}
+
+`m['k']` matches `basic` and `with_buckets`: the first value written for `k` in that row.
+
+Reading the whole map differs in two ways:
+
+- Keys come back in key comparison order. For `String` keys that is lexicographical order. `basic` and `with_buckets` keep the insertion order of the pairs.
+- A repeated key in one row is stored once, keeping the first value. `length` and `m.size0` count the distinct keys present in the row. `basic` and `with_buckets` keep every pair, so `length` counts repeated keys.
+
+`map('k', 1, 'k', 2, 'x', 3)` is read back as `{'k':1,'x':3}` with `length` equal to 2. Under `basic` and `with_buckets` the same value is `{'k':1,'k':2,'x':3}` with `length` equal to 3. `m['k']` is `1` in all three.
+
+`mapKeys` and `mapValues` follow this same key order. Compare full maps with `mapSort` when the order itself is not significant.
+
+`map_max_key_columns` defaults to `0` (no limit). The writer does not apply it yet, and there is no fallback stream for extra keys. Nested `Map` values stay on `basic` serialization.
 
 **See Also**
 
