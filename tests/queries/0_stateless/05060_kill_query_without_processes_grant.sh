@@ -7,11 +7,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 U1="u1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U2="u2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U3="u3_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+U4="u4_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 A1="a1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 A2="a2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $A1, ${A1}_renamed, $A2, ${A2}_new"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"
 $CLICKHOUSE_CLIENT -q "CREATE USER $U1, $U2, $U3 IDENTIFIED WITH no_password"
 # Deliberately no SELECT on system.processes for any user under test.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U1, $U2, $U3"
@@ -70,6 +71,18 @@ function processes_grant_denial()
 {
     if grep -q -F "the grant SELECT ON system.processes" <<< "$1"; then
         echo "needs SELECT ON system.processes"
+    else
+        echo "unexpected: $1"
+    fi
+}
+
+# A `SELECT` holder aimed at somebody else's id must be refused by the ordinary path, which reports
+# this instead of naming a grant. Answering it with an empty result would mean the reduced path had
+# taken a caller who can read the table, and with it their row policies.
+function foreign_kill_denial()
+{
+    if grep -q -F "attempts to kill query created by" <<< "$1"; then
+        echo "refused: attempts to kill query created by another user"
     else
         echo "unexpected: $1"
     fi
@@ -156,4 +169,30 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "renamed_$ID")"
 drop_victim "renamed_$ID"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $A1, ${A1}_renamed, $A2, ${A2}_new"
+echo "-- 11. the literal on the left of the equality is the same shape"
+start_victim "$U2" "rev_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE 'rev_$ID' = query_id ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "rev_$ID")"
+drop_victim "rev_$ID"
+
+echo "-- 12. SYNC reports the query stopped, through the same ownership check"
+start_victim "$U2" "sync_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'sync_$ID' SYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "sync_$ID")"
+drop_victim "sync_$ID"
+
+echo "-- 13. a SELECT holder keeps the ordinary path, so its refusal is the ordinary one"
+$CLICKHOUSE_CLIENT -q "CREATE USER $U4 IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U4"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.processes TO $U4"
+start_victim "$U2" "sel_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U4" -q "KILL QUERY WHERE query_id = 'sel_$ID' ASYNC" 2>&1)
+foreign_kill_denial "$OUT"
+echo "victim: $(running "sel_$ID")"
+drop_victim "sel_$ID"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"

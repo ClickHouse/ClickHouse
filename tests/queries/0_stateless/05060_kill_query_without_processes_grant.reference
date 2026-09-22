@@ -31,3 +31,14 @@ victim: gone
 rows: 1
 status: waiting
 victim: gone
+-- 11. the literal on the left of the equality is the same shape
+rows: 1
+status: waiting
+victim: gone
+-- 12. SYNC reports the query stopped, through the same ownership check
+rows: 1
+status: finished
+victim: gone
+-- 13. a SELECT holder keeps the ordinary path, so its refusal is the ordinary one
+refused: attempts to kill query created by another user
+victim: 1
