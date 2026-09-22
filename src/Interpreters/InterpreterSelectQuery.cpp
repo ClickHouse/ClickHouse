@@ -3150,8 +3150,9 @@ void InterpreterSelectQuery::executeAggregation(
 
     /// `getSortDescriptionFromGroupBy` calls `getColumnName` on every GROUP BY child, but with
     /// GROUPING SETS those children are `ExpressionList` nodes, so in-order aggregation cannot apply.
-    const bool force_aggregation_in_order
-        = !group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey();
+    /// Aggregation in order does not produce the overflow row either, so it cannot serve a query that needs one.
+    const bool force_aggregation_in_order = !group_by_info && settings[Setting::force_aggregation_in_order]
+        && !query_analyzer->useGroupingSetKey() && !overflow_row;
 
     if (force_aggregation_in_order)
     {
