@@ -3151,41 +3151,15 @@ static bool tryPrepareSetColumnsForIndex(
 namespace
 {
 
-bool fieldContainsNaN(const Field & field)
-{
-    if (field.isNaN())
-        return true;
-
-    if (field.getType() == Field::Types::Tuple)
-    {
-        for (const auto & element : field.safeGet<Tuple>())
-            if (fieldContainsNaN(element))
-                return true;
-    }
-
-    if (field.getType() == Field::Types::Array)
-    {
-        for (const auto & element : field.safeGet<Array>())
-            if (fieldContainsNaN(element))
-                return true;
-    }
-
-    return false;
-}
-
 bool typeContainsFloat(const DataTypePtr & type)
 {
-    if (!type)
-        return false;
-
-    if (isFloat(removeLowCardinalityAndNullable(type)))
+    if (isFloat(type))
         return true;
 
     bool has_float = false;
     type->forEachChild([&](const IDataType & child)
     {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
+        has_float |= isFloat(child);
     });
     return has_float;
 }
@@ -3207,9 +3181,7 @@ bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_ty
         const size_t size = column->size();
         for (size_t i = 0; i < size; ++i)
         {
-            Field field;
-            column->get(i, field);
-            if (fieldContainsNaN(field))
+            if (anyFieldSatisfies((*column)[i], isNaNField))
                 return true;
         }
     }
@@ -3726,27 +3698,13 @@ void KeyCondition::prepareSetAtomsForHas(
     /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
     /// including nested tuple elements: using it under `notHas` could otherwise prune rows that satisfy
     /// the predicate.
-    auto contains_float = [](const DataTypePtr & type)
-    {
-        bool found = WhichDataType(*type).isFloat();
-        if (!found)
-        {
-            type->forEachChild([&found](const IDataType & child)
-            {
-                if (!found && WhichDataType(child).isFloat())
-                    found = true;
-            });
-        }
-        return found;
-    };
-
     /// `Variant` and `Dynamic` elements are judged by the alternatives the constant column actually
     /// holds rather than by the declared ones, which is only known below, once the column data is at
     /// hand.
     const bool element_type_is_from_column
         = WhichDataType(*array_nested_type).isDynamic() || WhichDataType(*array_nested_type).isVariant();
 
-    if (!element_type_is_from_column && contains_float(array_nested_type))
+    if (!element_type_is_from_column && typeContainsFloat(array_nested_type))
         return;
 
     const auto array_elements = array_col->getDataPtr();
@@ -3783,7 +3741,7 @@ void KeyCondition::prepareSetAtomsForHas(
             assert_cast<const ColumnVariant &>(*array_elements), variant_element_type->getVariants());
     }
 
-    if (element_type_is_from_column && contains_float(checked_element_type))
+    if (element_type_is_from_column && typeContainsFloat(checked_element_type))
         return;
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
