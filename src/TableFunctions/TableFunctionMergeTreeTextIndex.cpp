@@ -122,7 +122,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    StorageMergeTreeTextIndex::checkAccess(context, source_table_ptr->getStorageID(), *text_index);
+    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *text_index);
     return {std::move(source_table_ptr), std::move(text_index)};
 }
 

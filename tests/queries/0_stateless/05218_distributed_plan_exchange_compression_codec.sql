@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- no-fasttest: needs the streaming exchange of the stateless worker configuration.
--- no-old-analyzer: distributed planning requires the analyzer.
 
 -- The exchange between the tasks of a distributed plan compresses its packets with the codec of
 -- `network_compression_method`. The setting reaches the sending tasks on the workers, not only the
