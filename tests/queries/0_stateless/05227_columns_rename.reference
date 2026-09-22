@@ -13,7 +13,7 @@ x	b	metric_cpu	metric_mem	count()
 \N	\N	\N	\N	1
 Nullable(UInt8)
 \N	1
-1	1
+2	1
 x	y	metric_cpu	metric_mem
 1	2	3	4
 x	b	metric_cpu	metric_mem

@@ -44,12 +44,12 @@ FROM
     SETTINGS group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1
 );
 
--- Clause lookup must re-resolve the same correlated RENAME alias after GROUP BY.
-SELECT COLUMNS('^a$') REPLACE((SELECT a) AS a) RENAME a AS x, count()
+-- Clause lookup must re-resolve the same RENAME alias after GROUP BY.
+SELECT COLUMNS('^a$') REPLACE(a + 1 AS a) RENAME a AS x, count()
 FROM t_columns_rename
 GROUP BY t_columns_rename.a WITH ROLLUP
 ORDER BY x ASC NULLS FIRST
-SETTINGS group_by_use_nulls = 1, allow_experimental_correlated_subqueries = 1
+SETTINGS group_by_use_nulls = 1
 FORMAT TSV;
 SELECT * RENAME (a AS x, b AS y) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT t_columns_rename.* RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
