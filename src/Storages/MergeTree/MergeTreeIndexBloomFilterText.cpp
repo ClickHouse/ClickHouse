@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/formatIPv6.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Functions/Regexps.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -478,18 +480,6 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
-namespace
-{
-
-bool isLikePatternFunction(const String & function_name)
-{
-    return function_name == "like"
-        || function_name == "notLike"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike";
-}
-
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
 Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
     auto inner_type = removeNullable(removeLowCardinality(type));
@@ -515,10 +505,70 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     return field;
 }
 
-/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
 bool functionIgnoresFixedStringPadding(const String & function_name)
 {
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+}
+
+namespace
+{
+
+bool isLikePatternFunction(const String & function_name)
+{
+    return function_name == "like"
+        || function_name == "notLike"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike";
+}
+
+/// The fixed-size byte domain the index stores its values in, if any. `IPv6` has one: exactly 16 raw bytes.
+std::optional<size_t> domainByteWidth(const DataTypePtr & primitive_type)
+{
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(primitive_type.get()))
+        return fixed_string_type->getN();
+    if (WhichDataType(primitive_type).isIPv6())
+        return IPV6_BINARY_LENGTH;
+    return {};
+}
+
+/// Re-encode a string constant into the bytes the index stores, so its probe tokens are a subset of the granule's.
+bool normalizeConstantForIndexDomain(
+    const String & function_name, const ITokenizer & tokenizer, const DataTypePtr & indexed_type,
+    const WhichDataType & constant_type, String & value)
+{
+    const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
+
+    /// A textual constant is parsed into an address before the comparison, and the index holds the parsed bytes.
+    if (WhichDataType(primitive_type).isIPv6() && !constant_type.isFixedString())
+    {
+        std::array<unsigned char, IPV6_BINARY_LENGTH> parsed{};
+        if (!parseIPv6Whole(value.data(), value.data() + value.size(), parsed.data()))
+            return false;
+        value.assign(reinterpret_cast<const char *>(parsed.data()), parsed.size());
+        return true;
+    }
+
+    const auto width = domainByteWidth(primitive_type);
+
+    /// Without a width to re-encode into, a membership predicate compares the constant byte for byte, padding
+    /// included, so its own bytes are already the exact probe.
+    if (!width && !functionIgnoresFixedStringPadding(function_name))
+        return true;
+
+    /// Both sides are variable width, so a trailing NUL is data that a matching stored value carries too.
+    if (!width && !constant_type.isFixedString())
+        return true;
+
+    trimRight(value, '\0');
+
+    /// The constant reaching here may already have been trimmed above, so the probe is judged as it stands.
+    if (!width)
+        return tokensSurviveTrailingNuls(tokenizer.getType(), value);
+
+    /// A constant longer than the domain equals no stored value, so its own tokens are the most selective probe.
+    if (value.size() <= *width)
+        value.resize(*width, '\0');
+    return true;
 }
 
 }
@@ -571,6 +621,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
         return false;
 
+    /// After the `mapKeys` redirects below `const_value` is the map key while `value_type` still describes the value.
+    bool const_value_is_redirected_map_key = false;
+
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
@@ -604,6 +657,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 if (second_argument.tryGetConstant(const_value, const_type))
                 {
                     key_index = map_keys_index;
+                    const_value_is_redirected_map_key = true;
 
                     auto unwrapped_const_type = removeLowCardinality(const_type);
                     if (!const_value.isNull())
@@ -646,6 +700,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
+                const_value_is_redirected_map_key = true;
             }
             else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
@@ -693,7 +748,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
-            auto & value = const_value.safeGet<String>();
+            auto value = const_value.safeGet<String>();
+            if (!normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*map_key_index], value_data_type, value))
+                return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -716,7 +773,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.key_column = *map_value_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
-            auto & value = const_value.safeGet<String>();
+            auto value = const_value.safeGet<String>();
+            if (!normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*map_value_index], value_data_type, value))
+                return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -737,6 +796,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.key_column = *key_index;
         out.function = function_name == "hasAll" ? RPNElement::FUNCTION_HAS_ALL : RPNElement::FUNCTION_HAS_ANY;
 
+        /// `has` reaches this arm only as `has(<constant array>, <indexed scalar>)`, which does not ignore the padding.
+        const auto * array_value_type = typeid_cast<const DataTypeArray *>(unwrapped_value_type.get());
+        const bool normalize = function_name != "has" && array_value_type;
+        const auto element_data_type = normalize
+            ? WhichDataType(removeNullable(removeLowCardinality(array_value_type->getNestedType())))
+            : value_data_type;
+
         // 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
         bloom_filters.emplace_back();
@@ -745,8 +811,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (element.getType() != Field::Types::String)
                 return false;
 
+            auto value = element.safeGet<String>();
+            if (normalize
+                && !normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*key_index], element_data_type, value))
+                return false;
+
             bloom_filters.back().emplace_back(params);
-            const auto & value = element.safeGet<String>();
             tokenizer->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
         }
         out.set_bloom_filters = std::move(bloom_filters);
@@ -757,29 +827,29 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_HAS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        auto & value = const_value.safeGet<String>();
+        auto value = const_value.safeGet<String>();
+        if (!normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*key_index], value_data_type, value))
+            return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-    if (function_name == "notEquals")
+    if (function_name == "notEquals" || function_name == "equals")
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
+        out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
-        tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
-        return true;
-    }
-    if (function_name == "equals")
-    {
-        if (!value_data_type.isStringOrFixedString())
+        auto value = const_value.safeGet<String>();
+        if (const_value_is_redirected_map_key)
+        {
+            /// The key arrives as its own text while `value_type` describes the map value, so it cannot be
+            /// re-encoded here. A key type storing something other than that text needs to be.
+            if (!WhichDataType(BloomFilter::getPrimitiveType(index_data_types[*key_index])).isStringOrFixedString())
+                return false;
+        }
+        else if (!normalizeConstantForIndexDomain(function_name, *tokenizer, index_data_types[*key_index], value_data_type, value))
             return false;
-        out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }

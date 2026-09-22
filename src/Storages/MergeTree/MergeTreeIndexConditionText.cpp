@@ -26,6 +26,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
@@ -1037,36 +1038,17 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
-static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+/// Whether the terms of `field` stay the terms of the padded value it was stripped from. A value stopping inside a
+/// declared UTF-8 sequence is the case where they do not.
+static bool keepsTermsOfWhatFollows(ITokenizer::Type tokenizer_type, const Field & field)
 {
-    auto inner_type = removeNullable(removeLowCardinality(type));
-
-    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
-    {
-        String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
-        return Field(std::move(value));
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
-        array_type && field.getType() == Field::Types::Array)
-    {
-        Array stripped;
-        const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
-        for (const auto & element : elements)
-            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
-        return Field(std::move(stripped));
-    }
-
-    return field;
-}
-
-/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
-static bool functionIgnoresFixedStringPadding(const String & function_name)
-{
-    return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
+    if (field.getType() == Field::Types::String)
+        return tokensSurviveTrailingNuls(tokenizer_type, field.safeGet<String>());
+    if (field.getType() == Field::Types::Array)
+        return std::ranges::all_of(
+            field.safeGet<Array>(),
+            [&](const auto & element) { return keepsTermsOfWhatFollows(tokenizer_type, element); });
+    return true;
 }
 
 /// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
@@ -1174,7 +1156,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return false;
 
     if (functionIgnoresFixedStringPadding(function_name) && canStripFixedStringPadding(tokenizer->getType(), header))
-        value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+    {
+        auto stripped_value = stripFixedStringPaddingForTerms(value_field, value_type);
+        if (stripped_value != value_field && !keepsTermsOfWhatFollows(tokenizer->getType(), stripped_value))
+            return false;
+        value_field = std::move(stripped_value);
+    }
 
     const auto & settings = getContext()->getSettingsRef();
 

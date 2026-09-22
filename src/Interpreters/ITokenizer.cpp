@@ -36,6 +36,43 @@
 namespace DB
 {
 
+bool tokensSurviveTrailingNuls(ITokenizer::Type type, std::string_view value)
+{
+    switch (type)
+    {
+        /// `nextInString` advances one byte at a time and never consults `seqLength`.
+        case ITokenizer::Type::SplitByNonAlpha:
+            return true;
+        case ITokenizer::Type::Ngrams:
+        case ITokenizer::Type::SparseGrams:
+        case ITokenizer::Type::AsciiCJK:
+            break;
+        /// The rest either emit the whole buffer as one token or take their separators from a configured pattern,
+        /// which a suffix can complete, and `KeyValuePairs` tokenizes no string at all.
+        case ITokenizer::Type::SplitByString:
+        case ITokenizer::Type::SplitByRegexp:
+        case ITokenizer::Type::Array:
+        case ITokenizer::Type::KeyValuePairs:
+#if USE_JIEBA
+        case ITokenizer::Type::Chinese:
+#endif
+#if USE_ICU
+        case ITokenizer::Type::Icu:
+#endif
+#if USE_MECAB
+        case ITokenizer::Type::Japanese:
+#endif
+            return false;
+            /// No `default:` to make the compiler warn if not all enum values are handled.
+    }
+
+    size_t i = 0;
+    while (i < value.size())
+        i += UTF8::seqLength(static_cast<UInt8>(value[i]));
+    return i == value.size();
+}
+
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

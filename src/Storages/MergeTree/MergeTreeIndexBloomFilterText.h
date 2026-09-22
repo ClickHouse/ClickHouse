@@ -11,6 +11,12 @@
 namespace DB
 {
 
+/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type);
+
+/// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
+bool functionIgnoresFixedStringPadding(const String & function_name);
+
 struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleBloomFilterText(

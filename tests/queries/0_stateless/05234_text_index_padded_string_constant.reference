@@ -1,0 +1,61 @@
+has wide const	1	1
+hasAny wide const	1	1
+hasAll wide const	1	1
+mapContainsKey wide const	1	1
+mapContains wide const	1	1
+has mapKeys wide const	1	1
+mapContainsValue wide const	1	1
+equals wide const	1	1
+equals String const	1	1
+notEquals String const	1	1
+equals FixedString const, UTF-8 tail	1	1
+equals String const, UTF-8 tail	1	1
+has String const, UTF-8 tail	1	1
+hasAny String const, UTF-8 tail	1	1
+hasAll String const, UTF-8 tail	1	1
+mapContainsKey String const, UTF-8 tail	1	1
+text array, NUL tail in the data	1	1
+text splitByString, NUL tail in the data	1	1
+text array uses its index	1
+text splitByString uses its index	1
+text array answer, String constant	1	1
+String column, UTF-8 tail	1	1
+LowCardinality column, UTF-8 tail	1	1
+sparse_grams column, UTF-8 tail	1	1
+text ngrams, UTF-8 tail	1	1
+text sparseGrams, UTF-8 tail	1	1
+text splitByNonAlpha, UTF-8 tail	1	1
+text ngrams prunes	1
+text sparseGrams prunes	1
+text splitByNonAlpha keeps pruning	1
+text ngrams declines	1
+IPv6 equals	1	1
+IPv6 equals text	1	1
+IPv6 equals text zero-filled	1	1
+IPv6 equals text uppercase	1	1
+IPv6 equals text v4 mapped	1	1
+LowCardinality(FixedString) wide const	1	1
+exact prune, equals	1
+exact prune, has	1
+exact prune, hasAny	1
+exact prune, mapContainsKey	1
+exact prune, IPv6	1
+exact prune, IPv6 text	1
+exact prune, hasAll	1
+exact prune, mapContainsValue	1
+exact prune, LowCardinality(FixedString)	1
+widthless prunes, ngrambf_v1	1
+widthless prunes, LowCardinality	1
+widthless prunes, sparse_grams	1
+widthless prunes, tokenbf_v1	1
+widthless answers, ngrambf_v1	1	1
+widthless has answer	1	1
+widthless has prunes exactly	1
+wider than column prunes all	1
+token index keeps pruning	1
+declined index absent, String	1
+declined index absent, LowCardinality	1
+declined index absent, sparse_grams	1
+reversed has unchanged	1
+map element redirect	1
+ipv6 map key subcolumn	1	1
