@@ -42,3 +42,5 @@ victim: gone
 -- 13. a SELECT holder keeps the ordinary path, so its refusal is the ordinary one
 refused: attempts to kill query created by another user
 victim: 1
+-- 14. a statement naming its own id skips itself instead of cancelling itself
+rows: 0

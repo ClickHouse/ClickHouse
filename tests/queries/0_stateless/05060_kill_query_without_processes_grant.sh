@@ -195,4 +195,9 @@ foreign_kill_denial "$OUT"
 echo "victim: $(running "sel_$ID")"
 drop_victim "sel_$ID"
 
+echo "-- 14. a statement naming its own id skips itself instead of cancelling itself"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" --query_id "self_$ID" -q \
+    "KILL QUERY WHERE query_id = 'self_$ID' ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"
