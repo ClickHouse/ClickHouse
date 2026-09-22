@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import traceback
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -890,7 +891,7 @@ def main():
             # the check so the selection service problem is visible and retried.
             Result.create_from(
                 status=Result.Status.ERROR,
-                info=f"Failed to select tests: {e}",
+                info=f"Failed to select tests: {e}\n{traceback.format_exc()}",
             ).complete_job()
 
     if is_selected_tests_run:
