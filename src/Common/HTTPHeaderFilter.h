@@ -20,6 +20,7 @@ public:
     /// Validates the headers (throws BAD_ARGUMENTS on an invalid or forbidden name/value) and
     /// normalizes the names in place.
     void checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const;
+    void checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const;
 
 private:
     /// Header names are case-insensitive (RFC 7230 3.2): entries are stored
