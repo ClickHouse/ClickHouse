@@ -2,7 +2,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
-
 #include <ranges>
 #include <base/hex.h>
 
