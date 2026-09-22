@@ -1,0 +1,8 @@
+│  l[100] ⋈ r[100] ⋈ t[10]
+│  Output rows: estimated 10.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 10.00
+│  │  l[100] ⋈ r[100]
+│  │  Output rows: estimated 100.00
+│  │  Left: rows estimated 100.00
+│  │  Right: rows estimated 100.00

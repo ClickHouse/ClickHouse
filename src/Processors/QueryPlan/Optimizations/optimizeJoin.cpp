@@ -972,7 +972,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
-            .imprecise_estimate = rel.imprecise_estimate};
+            .imprecise_estimate = rel.imprecise_estimate,
+            .composite = rel.composite};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
