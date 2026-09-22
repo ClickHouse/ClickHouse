@@ -11,23 +11,23 @@ rows: 0
 ACCESS_DENIED
 ACCESS_DENIED
 victim: 1
--- 7. a qualified column name is not matched
+-- 5. a qualified column name is not matched
 ACCESS_DENIED
--- 9. holding the grants keeps the ordinary path, including other users' queries
+-- 6. holding the grants keeps the ordinary path, including other users' queries
 rows: 1
 status: waiting
 victim: gone
--- 10. KILL QUERY without the SELECT grant, aimed at another user's id
+-- 7. KILL QUERY without the SELECT grant, aimed at another user's id
 needs SELECT ON system.processes
 victim: 1
--- 11. a recreated name is a different principal and reaches nothing
+-- 8. a recreated name is a different principal and reaches nothing
 rows: 0
 victim: 1
--- 12. KILL QUERY without the SELECT grant, aimed at its holder's own id
+-- 9. KILL QUERY without the SELECT grant, aimed at its holder's own id
 rows: 1
 status: waiting
 victim: gone
--- 13. a renamed principal still reaches the query it started under the old name
+-- 10. a renamed principal still reaches the query it started under the old name
 rows: 1
 status: waiting
 victim: gone

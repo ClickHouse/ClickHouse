@@ -104,12 +104,12 @@ denial "$OUT"
 echo "victim: $(running "conj_$ID")"
 drop_victim "conj_$ID"
 
-echo "-- 7. a qualified column name is not matched"
+echo "-- 5. a qualified column name is not matched"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q \
     "KILL QUERY WHERE processes.query_id = 'own_$ID' ASYNC" 2>&1)
 denial "$OUT"
 
-echo "-- 9. holding the grants keeps the ordinary path, including other users' queries"
+echo "-- 6. holding the grants keeps the ordinary path, including other users' queries"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.processes TO $U1"
 $CLICKHOUSE_CLIENT -q "GRANT KILL QUERY ON *.* TO $U1"
 start_victim "$U2" "granted_$ID"
@@ -119,14 +119,14 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "granted_$ID")"
 drop_victim "granted_$ID"
 
-echo "-- 10. KILL QUERY without the SELECT grant, aimed at another user's id"
+echo "-- 7. KILL QUERY without the SELECT grant, aimed at another user's id"
 start_victim "$U2" "foreign_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U3" -q "KILL QUERY WHERE query_id = 'foreign_$ID' ASYNC" 2>&1)
 processes_grant_denial "$OUT"
 echo "victim: $(running "foreign_$ID")"
 drop_victim "foreign_$ID"
 
-echo "-- 11. a recreated name is a different principal and reaches nothing"
+echo "-- 8. a recreated name is a different principal and reaches nothing"
 $CLICKHOUSE_CLIENT -q "CREATE USER $A1 IDENTIFIED WITH no_password"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $A1"
 start_victim "$A1" "reused_$ID"
@@ -137,7 +137,7 @@ echo "rows: $(echo -n "$OUT" | grep -c .)"
 echo "victim: $(running "reused_$ID")"
 drop_victim "reused_$ID"
 
-echo "-- 12. KILL QUERY without the SELECT grant, aimed at its holder's own id"
+echo "-- 9. KILL QUERY without the SELECT grant, aimed at its holder's own id"
 start_victim "$U3" "kqown_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U3" -q "KILL QUERY WHERE query_id = 'kqown_$ID' ASYNC" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
@@ -145,7 +145,7 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "kqown_$ID")"
 drop_victim "kqown_$ID"
 
-echo "-- 13. a renamed principal still reaches the query it started under the old name"
+echo "-- 10. a renamed principal still reaches the query it started under the old name"
 $CLICKHOUSE_CLIENT -q "CREATE USER $A2 IDENTIFIED WITH no_password"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $A2"
 start_victim "$A2" "renamed_$ID"
