@@ -18,6 +18,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AccessType.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -940,6 +941,18 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         functions_requiring_grant_names = std::move(names);
     }
     functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
+}
+
+void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
+{
+    for (auto & element : elements)
+    {
+        if (element.isGlobalWithParameter() && !element.anyParameter()
+            && element.access_flags.getParameterType() == AccessFlags::FUNCTION)
+        {
+            element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
+        }
+    }
 }
 
 void AccessControl::checkFunctionGrant(const ContextPtr & context, std::string_view function_name)

@@ -5,6 +5,7 @@
             <function>decrypt</function>
             <function>listed_udf</function>
             <function>isValidASCII</function>
+            <function>FQDN</function>
             <function>listed_executable_udf</function>
         </functions_requiring_grant>
     </access_control_improvements>

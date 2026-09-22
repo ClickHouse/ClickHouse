@@ -33,6 +33,7 @@ namespace zkutil
 
 namespace DB
 {
+class AccessRightsElements;
 class ContextAccess;
 class ContextAccessParams;
 struct User;
@@ -221,6 +222,10 @@ public:
     /// and pass the name the function is registered under: both the configured list and the callers
     /// resolve aliases with `IFactoryWithAliases::resolveNameOrAlias` before matching.
     static void checkFunctionGrant(const ContextPtr & context, std::string_view function_name);
+    /// Rewrites the names in `FUNCTION ON <name>` elements to the name the function is registered
+    /// under, so that `GRANT FUNCTION ON HEX` or `GRANT FUNCTION ON isASCII` matches the check for
+    /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept.
+    static void canonicalizeFunctionNames(AccessRightsElements & elements);
     /// Read once at server start; `SYSTEM RELOAD CONFIG` does not re-read it, as for every other
     /// setting of the `access_control_improvements` section.
     void setFunctionsRequiringGrant(const Strings & function_names);

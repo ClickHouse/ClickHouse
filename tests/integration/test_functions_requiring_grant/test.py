@@ -244,6 +244,39 @@ def test_case_sensitive_alias_requires_grant():
     assert instance.query("SELECT isASCII('a')", user="A") == "1\n"
 
 
+def test_alias_of_case_insensitive_function_requires_grant():
+    """`fullHostName` is a case-sensitive alias of the case-insensitive `FQDN`."""
+    instance.query("CREATE USER A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT fullHostName()", user="A"
+    )
+
+    instance.query("GRANT FUNCTION ON FQDN TO A")
+    assert instance.query("SELECT fullHostName() != ''", user="A") == "1\n"
+
+
+def test_grant_by_other_spelling_or_alias():
+    """The name in GRANT and REVOKE is resolved like the checked call, so any spelling works."""
+    instance.query("CREATE USER A")
+
+    instance.query("GRANT FUNCTION ON HEX TO A")
+    assert instance.query("SELECT hex('a')", user="A") == "61\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT FUNCTION ON hex TO A"])
+    assert instance.query("CHECK GRANT FUNCTION ON HEX", user="A") == "1\n"
+
+    instance.query("REVOKE FUNCTION ON HEX FROM A")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT hex('a')", user="A"
+    )
+
+    instance.query("GRANT FUNCTION ON isASCII TO A")
+    assert instance.query("SELECT isValidASCII('a')", user="A") == "1\n"
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        ["GRANT FUNCTION ON isValidASCII TO A"]
+    )
+
+
 def test_listed_executable_udf_requires_grant():
     skip_test_msan()
     instance.query("CREATE USER A")

@@ -1027,7 +1027,9 @@ shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is
 user-defined function that calls a listed function also requires a grant for that inner function.
 
 Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
-`isValidASCII` or its `isASCII` alias covers both spellings.
+`isValidASCII` or its `isASCII` alias covers both spellings. The name in `GRANT FUNCTION ON <name>`
+is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,
+`GRANT FUNCTION ON isASCII` grants `isValidASCII`, and `SHOW GRANTS` shows the registered name.
 
 The setting is read when the server starts. Like the other `access_control_improvements` settings,
 it is not re-read by `SYSTEM RELOAD CONFIG`, so changing the list requires a restart.

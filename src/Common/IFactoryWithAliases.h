@@ -122,9 +122,11 @@ public:
     String resolveNameOrAlias(const String & name) const
     {
         const String & canonical_name = getCanonicalNameIfAny(name);
-        if (isAlias(canonical_name))
-            return aliasTo(canonical_name);
-        return canonical_name;
+        if (!isAlias(canonical_name))
+            return canonical_name;
+        /// `registerAlias` accepts a target of a case-insensitive function in any case, so the
+        /// target itself may need the canonical spelling too.
+        return getCanonicalNameIfAny(aliasTo(canonical_name));
     }
 
     /// Return the canonical name (the name used in registration) if it's different from `name`.
