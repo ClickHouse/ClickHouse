@@ -1267,20 +1267,20 @@ try
     /// it to the threads that already exist, so everything that runs from here on - including the
     /// processes the server forks later, which inherit it - is covered.
     const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
-    if (size_t allowed_syscalls = installSeccompFilter(seccomp_mode); allowed_syscalls != 0)
+    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
         LOG_INFO(
             log,
             "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
             "be handled according to the `seccomp` server setting, which is set to `{}`",
-            allowed_syscalls,
+            seccomp_status.allowed_syscalls,
             SettingFieldSeccompMode(seccomp_mode).toString());
     else if (seccomp_mode != SeccompMode::Disabled)
         LOG_WARNING(
             log,
-            "The `seccomp` server setting is set to `{}`, but the seccomp policy is not implemented for this architecture, "
-            "so the server is running without one. `PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs "
-            "can gain privileges through a setuid program",
-            SettingFieldSeccompMode(seccomp_mode).toString());
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
+            "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
 #endif
 
     // If the startup_level is set in the config, we override the root logger level.

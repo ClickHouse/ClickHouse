@@ -21,6 +21,8 @@ namespace DB::ErrorCodes
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 
+#include <fmt/format.h>
+
 #include <asm/ioctls.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
@@ -650,43 +652,37 @@ std::string_view getActionName(SeccompMode mode)
 
 /// A filter return value the running kernel does not implement is treated as `kill_process`, which
 /// would silently turn `log` - the mode whose whole point is to change nothing - into the harshest
-/// mode there is. So the action is checked against what the kernel says it implements.
-void checkActionIsAvailable(SeccompMode mode)
+/// mode there is. So the action is checked against what the kernel says it implements. Returns why
+/// the action cannot be used, or an empty string if it can.
+String getActionUnavailableReason(SeccompMode mode)
 {
     /// Added in Linux 4.14, together with the two newest actions asked for here.
     static constexpr auto path = "/proc/sys/kernel/seccomp/actions_avail";
 
+    const std::string_view action = getActionName(mode);
+
     if (!std::filesystem::exists(path))
     {
         if (mode == SeccompMode::Log || mode == SeccompMode::Kill)
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR,
-                "The `seccomp` server setting is set to `{}`, but the kernel has no {}, so it predates the Linux 4.14 that "
-                "introduced this action. Use `trap` or `errno` instead, or set `seccomp` to `disabled`",
-                getActionName(mode),
-                path);
-        return;
+            return fmt::format(
+                "the kernel has no {}, so it predates the Linux 4.14 that introduced the `{}` action", path, action);
+        return {};
     }
 
     ReadBufferFromFile in(path);
     String available;
     readStringUntilEOF(available, in);
 
-    const std::string_view action = getActionName(mode);
-    bool found = false;
     for (size_t begin = 0; begin < available.size();)
     {
         const size_t end = std::min(available.find_first_of(" \t\n", begin), available.size());
-        found |= std::string_view{available}.substr(begin, end - begin) == action;
+        if (std::string_view{available}.substr(begin, end - begin) == action)
+            return {};
         begin = end + 1;
     }
 
-    if (!found)
-        throw Exception(
-            ErrorCodes::SYSTEM_ERROR,
-            "The `seccomp` server setting is set to `{}`, but the only seccomp actions the kernel implements are: {}",
-            action,
-            available);
+    const std::string_view listed = std::string_view{available}.substr(0, available.find_last_not_of(" \t\n") + 1);
+    return fmt::format("the only seccomp actions the kernel implements are: {}", listed);
 }
 
 /// Calling `seccomp` with a null program is the documented way of asking whether a flag is
@@ -698,14 +694,58 @@ bool isFilterFlagSupported(unsigned int flag)
     return -1 == syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, flag, nullptr) && errno == EFAULT;
 }
 
+/// The same probe without any flags asks whether a filter can be installed at all. It cannot if the
+/// kernel is built without `CONFIG_SECCOMP_FILTER` (`EINVAL`), or if an outer sandbox refuses the
+/// `seccomp` system call itself (typically `EPERM` or `ENOSYS`). Returns why, or an empty string.
+String getFilterUnavailableReason()
+{
+    if (-1 == syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0, nullptr) && errno == EFAULT)
+        return {};
+    return fmt::format(
+        "the `seccomp` system call cannot install a filter ({}): either the kernel is built without "
+        "`CONFIG_SECCOMP_FILTER`, or an outer sandbox refuses the call",
+        errnoToString(errno));
 }
 
-size_t installSeccompFilter(SeccompMode mode)
+/// Installing a filter needs either this or `CAP_SYS_ADMIN`, and it is wanted in its own right:
+/// from here on, neither the server nor anything it forks can gain privileges by executing a
+/// setuid binary or one carrying file capabilities.
+void setNoNewPrivs()
+{
+    if (0 != prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+        throw ErrnoException(
+            ErrorCodes::SYSTEM_ERROR, "Cannot do `prctl(PR_SET_NO_NEW_PRIVS)`, which the `seccomp` server setting asks for");
+}
+
+}
+
+SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 {
     if (mode == SeccompMode::Disabled)
-        return 0;
+        return {};
 
-    checkActionIsAvailable(mode);
+    String unavailable_reason = getActionUnavailableReason(mode);
+    if (unavailable_reason.empty())
+        unavailable_reason = getFilterUnavailableReason();
+
+    if (!unavailable_reason.empty())
+    {
+        /// The `log` mode refuses nothing, so running without its filter takes away nothing that
+        /// would have been enforced - while refusing to start would turn a validation mode into an
+        /// outage on an old kernel or inside a restrictive container runtime. The half of the
+        /// setting that does not depend on the kernel is still applied.
+        if (mode == SeccompMode::Log)
+        {
+            setNoNewPrivs();
+            return {.allowed_syscalls = 0, .not_installed_reason = std::move(unavailable_reason)};
+        }
+
+        throw Exception(
+            ErrorCodes::SYSTEM_ERROR,
+            "The `seccomp` server setting is set to `{}`, but {}. Use another mode, or set `seccomp` to `disabled`",
+            getActionName(mode),
+            unavailable_reason);
+    }
 
     std::vector<int> numbers(std::begin(allowed_syscalls), std::end(allowed_syscalls));
     std::sort(numbers.begin(), numbers.end());
@@ -733,14 +773,11 @@ size_t installSeccompFilter(SeccompMode mode)
             program.size(),
             BPF_MAXINSNS);
 
-    /// Installing a filter needs either this or `CAP_SYS_ADMIN`, and it is wanted in its own right:
-    /// from here on, neither the server nor anything it forks can gain privileges by executing a
-    /// setuid binary or one carrying file capabilities. It happens in every mode but `disabled`,
-    /// including `log`, where nothing is refused - the kernel asks for it before it accepts a
-    /// filter at all, and a filter is what the `log` mode installs.
-    if (0 != prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
-        throw ErrnoException(
-            ErrorCodes::SYSTEM_ERROR, "Cannot do `prctl(PR_SET_NO_NEW_PRIVS)`, which is required to install a seccomp filter");
+    /// This happens in every mode but `disabled`, including `log`, where nothing is refused - the
+    /// kernel asks for it before it accepts a filter at all, and a filter is what the `log` mode
+    /// installs. `TSYNC` below carries it over to the threads that already exist, together with
+    /// the filter.
+    setNoNewPrivs();
 
     unsigned int flags = SECCOMP_FILTER_FLAG_TSYNC;
 
@@ -780,7 +817,7 @@ size_t installSeccompFilter(SeccompMode mode)
             "Cannot install the seccomp filter on every thread of the process: thread {} could not be synchronized",
             result);
 
-    return allowed.size();
+    return {.allowed_syscalls = allowed.size(), .not_installed_reason = {}};
 }
 
 }
@@ -794,10 +831,10 @@ size_t installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-size_t installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 {
     if (mode == SeccompMode::Disabled)
-        return 0;
+        return {};
 
     /// A policy is a list of system call numbers and those are specific to an architecture, so
     /// there is none to install here. `PR_SET_NO_NEW_PRIVS` is not: it is the half of the setting
@@ -810,9 +847,7 @@ size_t installSeccompFilter(SeccompMode mode)
             "Cannot do `prctl(PR_SET_NO_NEW_PRIVS)`, which the `seccomp` server setting asks for. Set it to `disabled` to "
             "leave the process as it is");
 
-    /// Returning zero is not an error - the caller reports that the server is running without a
-    /// filter, because the policy is not implemented for this architecture.
-    return 0;
+    return {.allowed_syscalls = 0, .not_installed_reason = "the seccomp policy is not implemented for this architecture"};
 }
 
 }

@@ -210,3 +210,81 @@ def test_binary_integrity_check_survives_the_filter(started_cluster):
         assert node.query("SELECT 1") == "1\n"
         assert not node.contains_in_log("is modified (most likely with breakpoints)")
 
+
+def test_log_mode_starts_where_seccomp_is_unavailable(started_cluster):
+    # The default `log` mode refuses nothing, so a kernel or a container runtime that cannot
+    # install a filter must not stop the server from starting: it runs without one and says why.
+    # This starts a second server in the container of `disabled_node` under an outer filter that
+    # refuses the `seccomp` system call, which is what a restrictive container runtime does.
+    node = disabled_node
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "scripts/refuse_seccomp.py"), "/refuse_seccomp.py"
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /tmp/seccomp_unavailable && mkdir -p /tmp/seccomp_unavailable && "
+            "cat > /tmp/seccomp_unavailable/config.xml <<'EOF'\n"
+            "<clickhouse>\n"
+            "    <path>/tmp/seccomp_unavailable/</path>\n"
+            "    <listen_host>127.0.0.1</listen_host>\n"
+            "    <tcp_port>19123</tcp_port>\n"
+            "    <users_config>/etc/clickhouse-server/users.xml</users_config>\n"
+            "    <logger><log>/tmp/seccomp_unavailable/server.log</log><level>information</level></logger>\n"
+            "    <skip_binary_checksum_checks>true</skip_binary_checksum_checks>\n"
+            "    <seccomp>log</seccomp>\n"
+            "</clickhouse>\n"
+            "EOF",
+        ],
+        user="root",
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "CLICKHOUSE_WATCHDOG_ENABLE=0 python3 /refuse_seccomp.py /usr/bin/clickhouse server "
+            "--config-file=/tmp/seccomp_unavailable/config.xml "
+            "> /tmp/seccomp_unavailable/stdout.log 2>&1 & echo $! > /tmp/seccomp_unavailable/pid",
+        ],
+        user="root",
+    )
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "for _ in $(seq 1 300); do "
+                "grep -q 'Ready for connections' /tmp/seccomp_unavailable/server.log 2>/dev/null && exit 0; "
+                "kill -0 $(cat /tmp/seccomp_unavailable/pid) || exit 1; sleep 0.5; done; exit 1",
+            ],
+            user="root",
+        )
+        log = node.exec_in_container(
+            ["cat", "/tmp/seccomp_unavailable/server.log"], user="root"
+        )
+        assert "the `seccomp` system call cannot install a filter" in log
+        assert "so the server is running without a seccomp policy" in log
+        assert "Applied a seccomp policy to this process" not in log
+
+        pid = node.exec_in_container(
+            ["cat", "/tmp/seccomp_unavailable/pid"], user="root"
+        ).strip()
+        # The outer filter, not one of the server's own, and `PR_SET_NO_NEW_PRIVS` all the same.
+        assert get_status_field(node, pid, "Seccomp") == SECCOMP_MODE_FILTER
+        assert get_status_field(node, pid, "NoNewPrivs") == "1"
+        assert (
+            node.exec_in_container(
+                ["clickhouse", "client", "--port", "19123", "--query", "SELECT 1"]
+            )
+            == "1\n"
+        )
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "kill -9 $(cat /tmp/seccomp_unavailable/pid) 2>/dev/null; rm -rf /tmp/seccomp_unavailable",
+            ],
+            user="root",
+        )

@@ -1861,6 +1861,8 @@ Possible values:
 
 The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`.
 
+Where the kernel cannot install a filter with the `log` action - it predates Linux 4.14, it is built without `CONFIG_SECCOMP_FILTER`, or an outer sandbox such as a container runtime refuses the `seccomp` system call - the `log` mode logs a warning with the reason and the server runs without a filter, since there is nothing the filter would have enforced. `PR_SET_NO_NEW_PRIVS` is set all the same. The enforcing modes do not do that: if their filter cannot be installed, the server does not start.
+
 In every mode but `disabled` the kernel also records the offending system call in its audit log, naming the process and the system call number - which is the only evidence left behind in the `kill` mode, where the server does not get to write to its own log.
 
 A filter cannot be removed or relaxed once installed, and it is inherited across both `fork` and `execve`, so it also applies to executable dictionaries and executable user defined functions, to the library and ODBC bridges, and to the OOM canary. A script run by one of those is subject to the same policy, which is worth keeping in mind if it does something unusual.
