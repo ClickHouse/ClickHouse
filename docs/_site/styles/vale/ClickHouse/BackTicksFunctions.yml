@@ -822,6 +822,7 @@ tokens:
   -'mapContains'
   -'randBernoulli'
   -'sipHash64'
+  -'catboostEvaluate'
   -'randNormal'
   -'arrayReverseFill'
   -'in'

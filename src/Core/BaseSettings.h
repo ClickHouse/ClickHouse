@@ -140,7 +140,6 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -244,11 +243,6 @@ public:
 
     /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
-
-    /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
-    /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
-    /// remote server, which only receives changed settings. No-op for custom settings.
-    void markUnchanged(std::string_view name);
 
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
@@ -548,15 +542,6 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.erase(String{resolveCustomSettingName<TTraits>(name)});
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::markUnchanged(std::string_view name)
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValueChanged(*this, index, false);
 }
 
 template <typename TTraits>
@@ -1402,11 +1387,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
             } \
-            void setValueChanged(Data & data, size_t index, bool changed) const \
-            { \
-                const auto & fi = field_infos[index]; \
-                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
-            } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
                 /* Typed copy from the canonical default-constructed Data, dispatched per type via */ \
@@ -1501,11 +1481,10 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates an alias mapping entry
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
-    { #ALIAS, #NAME }, \
-    __VA_OPT__({ #__VA_ARGS__, #NAME },)
+#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
+    { #ALIAS, #NAME },
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and

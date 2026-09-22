@@ -1,12 +1,9 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
 #include <Processors/Port.h>
@@ -17,11 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
-}
-
-namespace FailPoints
-{
-extern const char postgresql_output_format_cancel_mid_loop[];
 }
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -67,17 +59,6 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
         /// Check for cancellation periodically, use throw instead of return.
         if (isCancelled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
-        if (i == 5)
-        {
-            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
-            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
-            /// check above then observes the cancellation on the next row.
-            fiu_do_on(FailPoints::postgresql_output_format_cancel_mid_loop, {
-                if (auto query_context = CurrentThread::tryGetQueryContext())
-                    query_context->killCurrentQuery();
-            });
-        }
 
         const Columns & columns = chunk.getColumns();
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;

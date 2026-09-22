@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
@@ -88,6 +89,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -302,7 +304,8 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
-    if (processed_stage > QueryProcessingStage::FetchColumns)
+    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -537,16 +540,27 @@ void StorageBuffer::read(
         auto buffers_select_query_options = SelectQueryOptions(processed_stage);
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
-        auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
-                std::move(pipe_from_buffers),
-                storage_snapshot->metadata->virtuals);
+        if (enable_analyzer)
+        {
+            auto storage = std::make_shared<StorageValues>(
+                    getStorageID(),
+                    storage_snapshot->getAllColumnsDescription(),
+                    std::move(pipe_from_buffers),
+                    storage_snapshot->metadata->virtuals);
 
-        auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        buffers_plan = std::move(interpreter).extractQueryPlan();
+            auto interpreter
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            buffers_plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            auto interpreter = InterpreterSelectQuery(
+                    query_info.query, local_context, std::move(pipe_from_buffers),
+                    buffers_select_query_options);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(buffers_plan);
+        }
     }
     else
     {
@@ -913,21 +927,6 @@ void StorageBuffer::startup()
     }
 
     flush_handle->activateAndSchedule();
-}
-
-
-size_t StorageBuffer::flushBufferedRowsBeforeShutdown()
-{
-    /// Sequential and without the threshold check: this runs once per shutdown, before any database
-    /// is gone, and every buffer that holds anything has to move now. The destination may be another
-    /// `Buffer` that is drained by a later pass of the caller's loop.
-    size_t buffers_flushed = 0;
-    for (auto & buffer : buffers)
-    {
-        if (flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ false))
-            ++buffers_flushed;
-    }
-    return buffers_flushed;
 }
 
 
@@ -1416,7 +1415,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(ContextPtr) const
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
@@ -1477,7 +1476,7 @@ void registerStorageBuffer(StorageFactory & factory)
         if (engine_args.size() < 9 || engine_args.size() > 12)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Buffer requires from 9 to 12 parameters: "
-                            "destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
+                            " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
                             "max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].");
 
         // Table and database name arguments accept expressions, evaluate them.
@@ -1570,9 +1569,9 @@ void registerStorageBuffer(StorageFactory & factory)
         .description = R"DOCS_MD(
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-<Note>
+:::note
 A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
-</Note>
+:::
 
 ```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
@@ -1648,9 +1647,9 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
-<Note>
+:::note
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-</Note>
+:::
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

@@ -149,14 +149,10 @@ public:
     void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
-    /// Int64 count of microseconds and can be negative. A negative timeout means "already expired", i.e. give up
-    /// immediately if there is no free thread, the same as `wait_microseconds = 0`.
-    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
+    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    /// See trySchedule() above about the sign of `wait_microseconds`.
-    void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -250,7 +246,7 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();

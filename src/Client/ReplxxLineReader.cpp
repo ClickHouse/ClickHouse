@@ -1,5 +1,4 @@
 #include <Client/ClientBaseHelpers.h>
-#include <Client/ClientSlashCommands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
@@ -26,7 +25,6 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
-#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -350,8 +348,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , highlighter(std::move(options.highlighter))
     , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
-    , enable_slash_commands(options.enable_slash_commands)
-    , enable_suggestion_hints(options.enable_suggestion_hints)
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
@@ -390,32 +386,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     rx.install_window_change_handler();
 
-    /// `context` is the input up to the cursor, and `context_size` how much of its end the
-    /// completion replaces - by default the last word, which the callback may extend (see the
-    /// `/`-commands below).
-    auto callback = [this] (const String & context, int & context_size)
+    auto callback = [this] (const String & context, size_t context_size)
     {
-        /// The `/`-commands of the client are completed at the beginning of the input. This is the
-        /// only way to complete them when the as-you-type hints are disabled. The whole typed prefix
-        /// is replaced, including the leading `/` - replxx counts it as a word break character and
-        /// would otherwise complete only the part after it.
-        if (enable_slash_commands)
-        {
-            if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
-            {
-                /// replxx passes the prefix through the cursor only. Do not fall back to the
-                /// regular completion source for a command being edited in the middle: it has no
-                /// visibility of the suffix, and completing it would insert another command name
-                /// before that suffix. In particular, this must not ask `Suggest` for completions
-                /// when suggestions are disabled.
-                if (!isCursorAtEndOfInput())
-                    return replxx::Replxx::completions_t{};
-
-                context_size = static_cast<int>(slash_commands.prefix_length);
-                return replxx::Replxx::completions_t(slash_commands.commands.begin(), slash_commands.commands.end());
-            }
-        }
-
         /// When this completion corresponds to the hints currently displayed, reuse the exact
         /// snapshot taken when they were shown. replxx accepts a hint by indexing this completion
         /// list with the hint selection, and the background `Suggest::load` thread can insert a
@@ -424,7 +396,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// (plain Tab where no hints are shown — empty word, mid-line) is recomputed.
         if (!hint_completions.empty()
             && context == hint_completions_context
-            && context_size == hint_completions_context_size)
+            && static_cast<int>(context_size) == hint_completions_context_size)
             return hint_completions;
 
         /// Prioritize identifiers already present in the whole query line (not just up to the
@@ -449,8 +421,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// one. Accepting a hint makes replxx index the *completion* list with the hint selection, so
     /// the completion callback must return the same words in the same order as the displayed hints
     /// — guaranteed here by computing the words once in the hint callback and reusing that exact
-    /// snapshot in the completion callback (`hint_completions`). The `/`-commands need no snapshot:
-    /// both callbacks derive them from the same static list, so the order is the same anyway.
+    /// snapshot in the completion callback (`hint_completions`).
     /// Hints need color, so they are only enabled together with highlighting (see ClientBase).
     if (options.enable_hints && highlighter)
     {
@@ -465,40 +436,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             hint_completions.clear();
             hint_completions_context.clear();
             hint_completions_context_size = 0;
-
-            /// Remember how many hints are shown and whether any of them adds something to what is
-            /// already typed, so that the navigation and acceptance keys know that there is a
-            /// "popup". A fully-typed word matches itself with an empty suffix; that must not count,
-            /// otherwise Enter would accept the no-op instead of running the query.
-            auto show = [this](replxx::Replxx::hints_t hints_to_show, int shown_context_size)
-            {
-                hint_count = static_cast<int>(hints_to_show.size());
-                for (const auto & hint : hints_to_show)
-                {
-                    if (hint.size() > static_cast<size_t>(shown_context_size))
-                    {
-                        hints_visible = true;
-                        break;
-                    }
-                }
-                return hints_to_show;
-            };
-
-            /// The `/`-commands of the client are hinted at the beginning of the input, as soon as
-            /// the `/` is typed. The hints replace the whole typed prefix including the `/`, so
-            /// `context_size` is widened to it (see the completion callback).
-            if (enable_slash_commands && isCursorAtEndOfInput())
-            {
-                if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
-                {
-                    context_size = static_cast<int>(slash_commands.prefix_length);
-                    slash_commands.commands.resize(std::min(slash_commands.commands.size(), HINTS_MAX_ROWS));
-                    return show(replxx::Replxx::hints_t(slash_commands.commands.begin(), slash_commands.commands.end()), context_size);
-                }
-            }
-
-            if (!enable_suggestion_hints)
-                return replxx::Replxx::hints_t{};
 
             /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
             /// every suggestion, and this callback runs on every zero-delay repaint, so we must not
@@ -523,8 +460,20 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             hints.reserve(shown);
             for (size_t i = 0; i < shown; ++i)
                 hints.push_back(hint_completions[i].text());
+            hint_count = static_cast<int>(hints.size());
 
-            return show(std::move(hints), context_size);
+            /// The "popup" is active only if at least one hint actually has something to complete
+            /// (a non-empty suffix). A fully-typed word matches itself with an empty suffix; that
+            /// must not count, otherwise Enter would accept the no-op instead of running the query.
+            for (const auto & hint : hints)
+            {
+                if (hint.size() > static_cast<size_t>(context_size))
+                {
+                    hints_visible = true;
+                    break;
+                }
+            }
+            return hints;
         };
         rx.set_hint_callback(hint_callback);
         rx.set_hint_delay(0); /// Show hints immediately, without a delay.
@@ -788,31 +737,12 @@ bool ReplxxLineReader::hintChosen()
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    /// `Replxx::print` may fail with `std::runtime_error("write failed")` when e.g. the pty of the embedded
-    /// SSH client is gone already. A destructor is implicitly `noexcept`, so letting anything escape from
-    /// here would `std::terminate` the whole process.
-    try
-    {
-        if (history_file_fd >= 0 && close(history_file_fd))
-            rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+    if (history_file_fd >= 0 && close(history_file_fd))
+        rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 
-        /// Reset cursor blinking
-        if (overwrite_mode)
-            rx.print("%s", "\033[0 q");
-    }
-    catch (...)
-    {
-        /// The reporting path must not be able to escape either: the `const char *` overload of
-        /// `tryLogCurrentException` builds a `String` for the logger name and calls `getLogger`
-        /// before it reaches its own `try`, so under memory pressure it can throw as well.
-        try
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch) Ok: reporting failed, nothing more to do
-        {
-        }
-    }
+    /// Reset cursor blinking
+    if (overwrite_mode)
+        rx.print("%s", "\033[0 q");
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)

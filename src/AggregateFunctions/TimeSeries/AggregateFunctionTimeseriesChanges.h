@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstring>
 
-#include <base/bit_cast.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -28,7 +27,6 @@ struct AggregateFunctionTimeseriesChangesTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -48,13 +46,13 @@ struct AggregateFunctionTimeseriesChangesTraits
         UInt64 count = 0;
         UInt64 changes = 0;
 
-        /// Whether the transition prev -> curr is counted: a decrease for resets, or a bitwise value change for changes.
+        /// Whether the transition prev -> curr is counted: a decrease for resets, any change otherwise.
         static bool isCounted(ValueType prev, ValueType curr)
         {
             if constexpr (is_resets)
                 return curr < prev;
             else
-                return bit_cast<UInt64>(curr) != bit_cast<UInt64>(prev);
+                return curr != prev;
         }
 
         void merge(const Summary & added)

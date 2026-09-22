@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Edge cases of the IEJoin residual condition: a residual that yields NULL (counts as failed),
 -- empty inputs, a String residual column alongside encodable numeric keys, and max_block_size=1
 -- (the residual is evaluated per single-pair batch).
