@@ -1377,7 +1377,7 @@ Entries for finished mutations are not deleted right away (the number of preserv
 
 For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
-For `ALTER` queries that creates mutations (e.g.: including, but not limited to `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`) the synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
+For `ALTER` queries that creates mutations (e.g.: including, but not limited to `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `RENAME INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`) the synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
 
 For other `ALTER` queries which only modify the metadata, you can use the [alter_sync](/reference/settings/session-settings/alter#alter_sync) setting to set up waiting.
 
@@ -2605,6 +2605,10 @@ The following operations are available:
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
 
+## RENAME INDEX {#rename-index}
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] RENAME INDEX [IF EXISTS] old_name TO new_name` - Renames a secondary index without rebuilding its data. Existing index files are renamed by a [mutation](/reference/statements/alter/index#mutations).
+
 ## MATERIALIZE INDEX {#materialize-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Rebuilds the secondary index `name` for the specified `partition_name`. Implemented as a [mutation](/reference/statements/alter/index#mutations). If `IN PARTITION` part is omitted then it rebuilds the index for the whole table data.
@@ -2632,6 +2636,7 @@ Multiple `MATERIALIZE INDEX` clauses can appear in one `ALTER`. The covered case
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] RENAME INDEX [IF EXISTS] old_name TO new_name
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",

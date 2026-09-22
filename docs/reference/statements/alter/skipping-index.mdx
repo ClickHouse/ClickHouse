@@ -18,6 +18,10 @@ The following operations are available:
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
 
+## RENAME INDEX {#rename-index}
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] RENAME INDEX [IF EXISTS] old_name TO new_name` - Renames a secondary index without rebuilding its data. Existing index files are renamed by a [mutation](/reference/statements/alter/index#mutations).
+
 ## MATERIALIZE INDEX {#materialize-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Rebuilds the secondary index `name` for the specified `partition_name`. Implemented as a [mutation](/reference/statements/alter/index#mutations). If `IN PARTITION` part is omitted then it rebuilds the index for the whole table data.
