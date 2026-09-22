@@ -39,7 +39,7 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }

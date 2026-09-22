@@ -1453,7 +1453,7 @@ static NameToNameVector collectFilesForRenames(
                     /// Delete files if they are no longer shared with another column.
                     /// `operator[]` would insert a 0 for an absent stream and wrap it to SIZE_MAX.
                     auto stream_it = stream_name ? stream_counts.find(*stream_name) : stream_counts.end();
-                    if (stream_it != stream_counts.end() && --stream_it->second == 0)
+                    if (stream_it != stream_counts.end() && stream_it->second > 0 && --stream_it->second == 0)
                     {
                         add_rename(*stream_name + ".bin", "");
                         add_rename(*stream_name + mrk_extension, "");

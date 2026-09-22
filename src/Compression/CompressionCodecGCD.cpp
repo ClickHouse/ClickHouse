@@ -94,7 +94,8 @@ namespace
 {
 
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
+/// Negating the quotient of the most negative value only exists modulo 2^N, as with the magnitude.
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
     /// T must be unsigned even when `is_signed` is true, because the codec's arithmetic needs
     /// well-defined modulo-2^N semantics, which only unsigned types provide: the magnitude of the
