@@ -3299,7 +3299,42 @@ Contains information about all filesystem cache settings
 )DOCS_MD");
     attachNoDescription<StorageSystemColumnsCache>(context, system_database, "columns_cache", R"DOCS_MD(
 .description
-Contains information about all cached column blocks in columns cache for `MergeTree` tables.
+Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
+
+Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` of a single column of a single data part, within a fixed stripe of the part of about 65536 rows. Reads are served from the cache granule by granule, and the stripes are the same for every read of the part, so the entries do not depend on how a query splits the part into mark ranges: a read that touches only some granules of a stripe caches those, and adjacent ranges written by different reads are merged.
+
+The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs (`Atomic` and `Replicated`). Tables in databases without UUIDs are silently excluded from the cache; this includes legacy `Ordinary` databases and `Shared` databases, the default database engine in ClickHouse Cloud. Only wide parts participate in the cache; compact parts are silently excluded.
+
+The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
+
+The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally.
+
+.examples
+Total memory consumed by cached columns, per table:
+
+```sql
+SELECT
+    database,
+    table,
+    formatReadableSize(sum(bytes)) AS size,
+    sum(rows) AS rows,
+    count() AS entries
+FROM system.columns_cache
+GROUP BY database, table
+ORDER BY sum(bytes) DESC
+```
+
+Largest individual cache entries:
+
+```sql
+SELECT database, table, part, column, row_begin, row_end, rows, formatReadableSize(bytes) AS size
+FROM system.columns_cache
+ORDER BY bytes DESC
+LIMIT 10
+```
+
+.see_also
+- [SYSTEM DROP COLUMNS CACHE](/reference/statements/system) — The statement which drops every entry of the columns cache.
 )DOCS_MD");
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", R"DOCS_MD(
 .description

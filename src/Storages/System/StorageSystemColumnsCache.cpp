@@ -206,15 +206,15 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
     StorageInMemoryMetadata storage_metadata;
 
     ColumnsDescription columns{
-        {"database", std::make_shared<DataTypeString>(), "Database name"},
-        {"table", std::make_shared<DataTypeString>(), "Table name"},
-        {"table_uuid", std::make_shared<DataTypeUUID>(), "Table UUID"},
-        {"part", std::make_shared<DataTypeString>(), "Data part name"},
-        {"column", std::make_shared<DataTypeString>(), "Column name"},
-        {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index (inclusive)"},
-        {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index (exclusive)"},
-        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the cached range of granules"},
-        {"bytes", std::make_shared<DataTypeUInt64>(), "Memory the cached column retains in bytes, capacity included"}
+        {"database", std::make_shared<DataTypeString>(), "Database name of the table the part belongs to."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table. Stable across renames."},
+        {"part", std::make_shared<DataTypeString>(), "Name of the data part."},
+        {"column", std::make_shared<DataTypeString>(), "Name of the column."},
+        {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index of the cached range (inclusive)."},
+        {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index of the cached range (exclusive)."},
+        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the cached range (`row_end - row_begin`)."},
+        {"bytes", std::make_shared<DataTypeUInt64>(), "Memory the entry retains, in bytes: the allocated size of the cached column plus a small per-entry overhead. This is the quantity the cache is bounded by, so the sum of this column over all entries stays within `columns_cache_size`. It can be larger than the logical size of the rows, because a column keeps the capacity it was allocated with."}
     };
 
     storage_metadata.setColumns(columns);

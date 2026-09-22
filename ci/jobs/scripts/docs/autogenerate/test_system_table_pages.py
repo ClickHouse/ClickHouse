@@ -33,14 +33,14 @@ ASYNC_METRICS_PAGE = (
     REPO_ROOT / "docs" / "reference" / "system-tables" / "asynchronous_metrics.mdx"
 )
 
-EXPECTED_DOCUMENTATION_COUNT = 172
-EXPECTED_ATTACH_DOCUMENTATION_COUNT = 142
+EXPECTED_DOCUMENTATION_COUNT = 173
+EXPECTED_ATTACH_DOCUMENTATION_COUNT = 143
 EXPECTED_SYSTEM_LOG_DOCUMENTATION_COUNT = 30
 EXPECTED_FIELD_COUNTS = {
     "description": EXPECTED_DOCUMENTATION_COUNT,
     "columns_notes": 11,
-    "examples": 107,
-    "see_also": 62,
+    "examples": 108,
+    "see_also": 63,
 }
 PLACEHOLDERS = {
     "{{PROFILE_EVENTS}}": 1,
