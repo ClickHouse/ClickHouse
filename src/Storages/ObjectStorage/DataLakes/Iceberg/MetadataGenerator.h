@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Poco/JSON/Object.h>
 
 
@@ -26,25 +27,13 @@ public:
         Iceberg::IcebergPathFromMetadata manifest_list_path;
     };
 
-    enum class SnapshotOperation
-    {
-        Append,
-        Replace,
-    };
-
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id,
-        Int64 added_files,
-        Int64 added_records,
-        Int64 added_files_size,
-        Int64 num_partitions,
-        Int64 added_delete_files,
-        Int64 num_deleted_rows,
+        Iceberg::SnapshotSummaryUpdate snapshot_summary_update,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt,
-        SnapshotOperation operation = SnapshotOperation::Append,
         /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
         const std::optional<String> & refresh_cursor = std::nullopt);
 
@@ -67,6 +56,13 @@ private:
 
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
+
+    Iceberg::SnapshotSummary generateNextSnaphotSummary(
+        Iceberg::SnapshotSummaryUpdate && update,
+        Int64 parent_snapshot_id,
+        const String & metadata_file_path,
+        int format_version
+    );
 };
 
 #endif
