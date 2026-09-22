@@ -1034,19 +1034,38 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     # subscriber, so whatever was still in flight when it was stopped is gone for good and the
     # count of the first batch cannot be asserted. The no-loss guarantee belongs to JetStream and
     # is asserted by the test of the same name in `test_nats_jet_stream.py`. What this test is
-    # named after is the connection, so publish a second batch and require all of it to arrive:
-    # that proves both the producer and the two consumers reconnected.
-    second_batch_num = 1000
-    second_batch_keys = range(messages_num, messages_num + second_batch_num)
-    second_batch = ",".join("({i}, {i})".format(i=i) for i in second_batch_keys)
-    instance.query_with_retry("INSERT INTO test.producer_reconnect VALUES {}".format(second_batch))
+    # named after is the connection, so what is asserted here is that publishing works again.
+    #
+    # A core subscription comes back only when the client reconnects and re-sends `SUB` -
+    # `NATSCoreConsumer` does not override `needsResubscribe`, so nothing on the ClickHouse side
+    # resubscribes it and nothing is logged when it happens - and a message published before that
+    # lands on a subject with no subscriber and is dropped. Waiting longer after publishing cannot
+    # recover it, so the same batch is published until it arrives: its keys are fixed, so
+    # `DISTINCT` collapses the duplicates.
+    probe_num = 1000
+    probe_values = ",".join(
+        "({i}, {i})".format(i=i) for i in range(messages_num, messages_num + probe_num)
+    )
+    probe_count = "SELECT count(DISTINCT key) FROM test.view WHERE key >= {}".format(messages_num)
 
-    result = instance.query_with_retry(
-        "SELECT count(DISTINCT key) FROM test.view WHERE key >= {}".format(messages_num),
-        check_callback = lambda num_rows: int(num_rows) == second_batch_num)
+    received = 0
+    deadline = time.monotonic() + 120
+    while received != probe_num and time.monotonic() < deadline:
+        instance.query_with_retry(
+            "INSERT INTO test.producer_reconnect VALUES {}".format(probe_values)
+        )
+        received = int(
+            instance.query_with_retry(
+                probe_count,
+                retry_count=10,
+                sleep_time=0.5,
+                check_callback=lambda num_rows: int(num_rows) == probe_num,
+            )
+        )
 
-    assert int(result) == second_batch_num, "ClickHouse did not restore the connection, it received {} of the {} messages published after the broker came back".format(
-        result, second_batch_num
+    assert received == probe_num, (
+        "ClickHouse did not restore the connection: {} of the {} messages republished after the "
+        "broker came back arrived within 120s".format(received, probe_num)
     )
 
 
