@@ -52,13 +52,16 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fata
 # What this pull request guarantees is that a JSON-null `current-snapshot-id` never reaches
 # `getValue<Int64>`, i.e. never produces `Invalid access: Can not convert empty value`. The exit code
 # alone cannot express that, because the two builds legitimately differ in how far `OPTIMIZE` gets:
-# the open-source build runs the synchronous path and must end in a quiet no-op, while a cloud build
-# gates `OPTIMIZE` on `IcebergCompactionMetadataGenerator`, which the background scheduler creates
-# lazily, and reports a user-facing exception instead. Classify the outcome the way
-# `04513_iceberg_optimize_orc_position_delete_88123` does, so the conversion error fails everywhere
-# and only the OSS build is held to the no-op.
+# the open-source build runs the synchronous path this fix changes, while a cloud build gates
+# `OPTIMIZE` on `IcebergCompactionMetadataGenerator`, which the background scheduler creates lazily.
+# The table here is freshly re-attached, so on a cloud build that generator does not exist yet and
+# the command raises `Logical error: Background compaction is not initialized`, which the test
+# harness reports as a failure of whatever job is sharing that server - this is what got the first
+# attempt at this change reverted. The command is therefore not run at all on a cloud build, rather
+# than run and have its outcome excused, and everything printed below holds on both builds.
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
+# Prints nothing when the command behaves: the reference is made of build-independent lines only.
 check_no_conversion_error()
 {
     local label=$1 && shift
@@ -67,27 +70,24 @@ check_no_conversion_error()
     if printf '%s' "${err}" | grep -qF 'Can not convert empty value'; then
         # The regression: `has` was true for the JSON null and `getValue<Int64>` threw.
         echo "FAIL: ${label} hit the JSON-null conversion error"
-    elif [[ "${IS_CLOUD}" = "1" ]]; then
-        # Cloud gates this command elsewhere; any other exception is not this fix's business.
-        echo "${label}: no conversion error"
     elif [[ -n "${err}" ]]; then
-        echo "FAIL: ${label} failed on the open-source build: ${err}"
-    else
-        echo "${label}: no conversion error"
+        echo "FAIL: ${label} failed: ${err}"
     fi
 }
 
-# `OPTIMIZE TABLE` walks the snapshot ancestry through `IcebergMetadata::getHistory`.
-check_no_conversion_error "OPTIMIZE" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
-    --allow_experimental_iceberg_compaction=1 \
-    --query "OPTIMIZE TABLE ${TABLE}" 2>&1)"
+if [[ "${IS_CLOUD}" != "1" ]]; then
+    # `OPTIMIZE TABLE` walks the snapshot ancestry through `IcebergMetadata::getHistory`.
+    check_no_conversion_error "OPTIMIZE" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+        --allow_experimental_iceberg_compaction=1 \
+        --query "OPTIMIZE TABLE ${TABLE}" 2>&1)"
 
-# `OPTIMIZE TABLE ... MANIFEST` takes a different route - `IcebergMetadata::optimizeManifestFiles` ->
-# `compactIcebergManifests` -> `isCurrentManifestListAboveThreshold` - which reads
-# `current-snapshot-id` with its own `has` check.
-check_no_conversion_error "OPTIMIZE MANIFEST" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
-    --allow_experimental_iceberg_compaction=1 \
-    --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)"
+    # `OPTIMIZE TABLE ... MANIFEST` takes a different route - `IcebergMetadata::optimizeManifestFiles` ->
+    # `compactIcebergManifests` -> `isCurrentManifestListAboveThreshold` - which reads
+    # `current-snapshot-id` with its own `has` check.
+    check_no_conversion_error "OPTIMIZE MANIFEST" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+        --allow_experimental_iceberg_compaction=1 \
+        --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)"
+fi
 
 # The table is still readable, still empty.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}"

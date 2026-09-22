@@ -12,12 +12,13 @@
 # compaction path and is indifferent to how the absence is encoded - `null` is merely the spelling
 # this pull request taught the readers to accept.
 #
-# The row counts are asserted on both builds - a cloud build gates `OPTIMIZE` on
-# `IcebergCompactionMetadataGenerator` and throws instead of compacting, which leaves the table empty
-# for a different reason but never resurrects rows. So that a count of zero cannot pass for the wrong
-# reason, the open-source build is additionally held to `OPTIMIZE` succeeding: without that, any
-# exception raised before the guard would leave the table empty and the test green. Classify the
-# outcome the way the sibling `04846_iceberg_optimize_null_current_snapshot_id` does.
+# `OPTIMIZE` is not run at all on a cloud build. There the command is gated on
+# `IcebergCompactionMetadataGenerator`, which the background scheduler creates lazily, so on the
+# freshly re-attached table below it raises `Logical error: Background compaction is not
+# initialized`; the harness reports such a log line as a failure of whatever job shares that server,
+# which is what got the first attempt at this change reverted. The row counts printed below hold on
+# both builds, and the open-source build is additionally held to `OPTIMIZE` succeeding: without
+# that, an exception raised before the guard would leave the table empty and the counts green.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,20 +64,21 @@ PY
     ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}"
 
     before=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
-    # The exit status, not the presence of output, is what says whether `OPTIMIZE` failed: server
-    # logs reach the client's stderr at the harness' log level, so an unrelated warning must not
-    # count as a failure. `--send_logs_level=fatal` keeps a real exception's report short.
-    ERR=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_experimental_iceberg_compaction=1 \
-        --send_logs_level=fatal --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
-    STATUS=$?
-    after=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
-    if [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
-        # A quiet no-op is what the guard produces on the open-source build. Without this, an
-        # exception raised before the guard would leave the table empty and the count assertion green.
-        echo "${VARIANT} FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
-    else
-        echo "${VARIANT} before=${before} after=${after}"
+    if [[ "${IS_CLOUD}" != "1" ]]; then
+        # The exit status, not the presence of output, is what says whether `OPTIMIZE` failed: server
+        # logs reach the client's stderr at the harness' log level, so an unrelated warning must not
+        # count as a failure. `--send_logs_level=fatal` keeps a real exception's report short.
+        ERR=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_experimental_iceberg_compaction=1 \
+            --send_logs_level=fatal --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
+        STATUS=$?
+        # A quiet no-op is what the guard produces. Without this, an exception raised before the
+        # guard would leave the table empty and the count assertion below green.
+        if [[ "${STATUS}" -ne 0 ]]; then
+            echo "${VARIANT} FAIL: OPTIMIZE failed: ${ERR}"
+        fi
     fi
+    after=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
+    echo "${VARIANT} before=${before} after=${after}"
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE} SYNC"
     rm -rf "${TABLE_PATH}"
