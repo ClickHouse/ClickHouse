@@ -179,20 +179,20 @@ bool keyBreaksMergeJoinEquivalence(const DataTypePtr & type)
     return QueryPlanOptimizations::keyTypeBreaksHashSharding(*type) || hasAggregateFunctionType(type);
 }
 
-/// Whether the enabled join algorithms execute a left join of two subqueries with this strictness the way the
-/// set operation compares its rows.
-///
+}
+
 /// The algorithms are tried in the order they are listed in, so a hash algorithm that is enabled does not keep
 /// a merge join from being chosen. For a key that a merge join compares differently, the rewrite is therefore
 /// only equivalent when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE`,
 /// `PREFER_PARTIAL_MERGE` and `FULL_SORTING_MERGE` run one directly, and `AUTO` switches to one once the right
 /// side outgrows the limits.
 ///
-/// `GRACE_HASH` only counts when it can run: the planner throws for it without a spill threshold or without
-/// temporary storage, while the set operation needs neither.
-bool joinAlgorithmSupports(const ContextPtr & context, JoinStrictness strictness, bool has_merge_unsafe_key)
+/// The walk over the list mirrors `tryCreateJoin`: an algorithm that cannot execute the join is passed over, and
+/// the set-operation step is kept where the planner would throw, since the step needs neither a spill threshold
+/// nor temporary storage.
+bool joinAlgorithmExecutesSetOperationJoin(
+    const Settings & settings, bool has_temporary_storage, JoinStrictness strictness, bool has_merge_unsafe_key)
 {
-    const auto & settings = context->getSettingsRef();
     const auto & algorithms = settings[Setting::join_algorithm].value;
     auto enabled = [&](JoinAlgorithm algorithm) { return TableJoin::isEnabledAlgorithm(algorithms, algorithm); };
 
@@ -204,16 +204,46 @@ bool joinAlgorithmSupports(const ContextPtr & context, JoinStrictness strictness
     const bool grace_hash_has_spill_trigger = settings[Setting::legacy_join_size_limits_trigger_spilling]
         || JoinSettings::getMaxBytesBeforeExternalJoin(
             settings[Setting::max_bytes_before_external_join], settings[Setting::max_bytes_ratio_before_external_join]) > 0;
-    const bool can_run_grace_hash
-        = enabled(JoinAlgorithm::GRACE_HASH) && grace_hash_has_spill_trigger && context->getTempDataOnDisk();
 
-    if (enabled(JoinAlgorithm::HASH) || enabled(JoinAlgorithm::PARALLEL_HASH) || can_run_grace_hash
-        || enabled(JoinAlgorithm::AUTO) || enabled(JoinAlgorithm::PREFER_PARTIAL_MERGE))
-        return true;
-
-    /// The partial merge join executes semi joins but not anti joins.
-    return strictness == JoinStrictness::Semi && enabled(JoinAlgorithm::PARTIAL_MERGE);
+    for (const auto algorithm : algorithms)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::DEFAULT:
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                return true;
+            /// The partial merge join executes semi joins but not anti joins.
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (strictness == JoinStrictness::Semi)
+                    return true;
+                break;
+            /// Without a spill threshold, `grace_hash` is passed over when another algorithm is listed and fails
+            /// the join when listed alone. With one, it fails the join without temporary storage.
+            case JoinAlgorithm::GRACE_HASH:
+                if (!grace_hash_has_spill_trigger)
+                {
+                    if (algorithms.size() > 1)
+                        break;
+                    return false;
+                }
+                return has_temporary_storage;
+            /// `direct` needs a key-value storage on the right, the sorting merge joins execute neither a semi
+            /// nor an anti join, and the IE join needs inequality conditions.
+            case JoinAlgorithm::DIRECT:
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+            case JoinAlgorithm::IE_JOIN:
+                break;
+        }
+    }
+    return false;
 }
+
+namespace
+{
 
 /// Keyed by the replaced node, which the key itself keeps alive so that the columns of the outer queries
 /// still sourced by it can be re-pointed.
@@ -245,7 +275,8 @@ public:
         const auto result_columns = union_node->computeProjectionColumns();
         const bool has_merge_unsafe_key
             = std::ranges::any_of(result_columns, [](const auto & column) { return keyBreaksMergeJoinEquivalence(column.type); });
-        if (!joinAlgorithmSupports(getContext(), strictness, has_merge_unsafe_key))
+        const bool has_temporary_storage = getContext()->getTempDataOnDisk() != nullptr;
+        if (!joinAlgorithmExecutesSetOperationJoin(getSettings(), has_temporary_storage, strictness, has_merge_unsafe_key))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());
