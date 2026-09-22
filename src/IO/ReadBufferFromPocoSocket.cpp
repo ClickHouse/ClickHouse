@@ -17,7 +17,7 @@
 namespace
 {
     /// How much the last read of a handshake deadline may overdraw it, to catch late bytes.
-    constexpr size_t MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS = 500;
+    constexpr size_t MIN_HANDSHAKE_READ_WINDOW_MILLISECONDS = 100;
 }
 
 namespace ProfileEvents

@@ -34,10 +34,10 @@ HANDSHAKE_TIMEOUT = 3
 # The server has to close within the budget plus slack. A client-side timeout is a failure: it would
 # also happen if the server sat on `receive_timeout`, 300 s, which is the bug under test.
 DISCONNECT_DEADLINE = 4 * HANDSHAKE_TIMEOUT
-# Under the 500 ms floor the deadline keeps on the read window, so every byte lands while a read is
-# waiting and the deadline is what cuts the connection. Together the steps outlast the budget.
-TRICKLE_INTERVAL = 0.2
-TRICKLE_STEPS = 40
+# Has to stay under the floor the deadline keeps on the read window (100 ms), so every byte lands
+# while a read is waiting and the deadline is what cuts the connection, not the socket timeout.
+TRICKLE_INTERVAL = 0.05
+TRICKLE_STEPS = int(3 * HANDSHAKE_TIMEOUT / TRICKLE_INTERVAL)
 # The TLS case needs to outlast the budget while feeding a byte per interval.
 TLS_TRICKLE_STEPS = int(2 * HANDSHAKE_TIMEOUT / TRICKLE_INTERVAL)
 
