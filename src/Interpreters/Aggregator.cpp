@@ -54,6 +54,7 @@
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <fmt/ranges.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace ProfileEvents
@@ -1099,7 +1100,10 @@ void NO_INLINE Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    /// `hits` is a running total that a caller reporting more misses than tries leaves wrapped
+    /// (see `ColumnsHashingImpl`), so the sum is only meaningful modulo 2^64. It feeds a hit rate
+    /// used as a heuristic, so keep the existing value rather than reinterpreting it.
+    UInt64 total_records = common::addIgnoreOverflow(consecutive_keys_cache_stats.hits, consecutive_keys_cache_stats.misses);
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
@@ -1312,7 +1316,10 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
             return row_end;
         };
 
-        UInt64 total_records = cache_stats.hits + cache_stats.misses;
+        /// `hits` is a running total that a caller reporting more misses than tries leaves wrapped
+        /// (see `ColumnsHashingImpl`), so the sum is only meaningful modulo 2^64. It feeds a hit
+        /// rate used as a heuristic, so keep the existing value rather than reinterpreting it.
+        UInt64 total_records = common::addIgnoreOverflow(cache_stats.hits, cache_stats.misses);
         double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
         bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
@@ -4934,7 +4941,10 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys) const
 {
-    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    /// `hits` is a running total that a caller reporting more misses than tries leaves wrapped
+    /// (see `ColumnsHashingImpl`), so the sum is only meaningful modulo 2^64. It feeds a hit rate
+    /// used as a heuristic, so keep the existing value rather than reinterpreting it.
+    UInt64 total_records = common::addIgnoreOverflow(consecutive_keys_cache_stats.hits, consecutive_keys_cache_stats.misses);
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 

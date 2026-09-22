@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <shared_mutex>
+#include <base/arithmeticOverflow.h>
 
 namespace DB::ErrorCodes
 {
@@ -398,7 +399,11 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         const RangeState & range = ranges[idx];
         RequestState * req = range.request;
         req->task = &task;
-        req->task_offset = range.start - task.offset;
+        /// `task.offset` is the minimum over the ranges in state `HasRange`; a cancelled range in
+        /// this span took no part in that minimum and can start before the task. Its `task_offset`
+        /// is never read - the compare-exchange below fails for it - so keep the value and drop the
+        /// wraparound.
+        req->task_offset = common::subIgnoreOverflow(range.start, task.offset);
 
         RequestState::State s = RequestState::State::HasRange;
         if (req->state.compare_exchange_strong(s, RequestState::State::HasTask))
