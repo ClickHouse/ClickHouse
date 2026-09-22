@@ -842,6 +842,17 @@ void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, Rea
     }
 
     auto variant_type_name = variant_type->getName();
+
+    /// Nullable/LowCardinality(Nullable)/Variant/Dynamic/Object types cannot be regular variants
+    /// of a Dynamic column. Store such values in the shared variant in self-describing binary form.
+    if (isNullableOrLowCardinalityNullable(variant_type) || isDynamic(variant_type) || isObject(variant_type) || isVariant(variant_type))
+    {
+        auto tmp_variant_column = variant_type->createColumn();
+        variant_type->getDefaultSerialization()->deserializeBinary(*tmp_variant_column, istr, settings);
+        dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
+        return;
+    }
+
     const auto & variant_serialization = dynamic_column.getVariantSerialization(variant_type, variant_type_name);
     const auto & variant_info = dynamic_column.getVariantInfo();
     auto it = variant_info.variant_name_to_discriminator.find(variant_type_name);

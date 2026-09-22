@@ -130,4 +130,6 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+    check(DataTypeFactory::instance().get("JSON(DEFAULT PATH TYPE String)"));
+    check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, a.b.c UInt32, SKIP a.c, DEFAULT PATH TYPE Array(Nullable(UInt32)))"));
 }

@@ -121,7 +121,8 @@ void checkFlattenedSharedData(
     size_t end,
     const std::map<String, DensePath> & expected)
 {
-    auto bucket = flattenSharedDataPathsForBucket(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 0, 1);
+    auto bucket = flattenSharedDataPathsForBucket(
+        *col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), col_object.getDefaultPathType(), /* for_shared_data_stream = */ false, 0, 1);
 
     std::map<String, ColumnPtr> path_to_column;
     for (const auto & [path, column] : bucket)

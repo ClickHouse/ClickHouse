@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
@@ -50,7 +51,11 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    ColumnObject(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    ColumnObject(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        DataTypePtr default_path_type_ = nullptr);
     ColumnObject(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
@@ -59,13 +64,14 @@ private:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr default_path_type_ = nullptr);
 
     ColumnObject(const ColumnObject & other);
 
     /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
     using PathToColumnMap = UnorderedMapWithMemoryTracking<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
-    using PathToDynamicColumnPtrMap = UnorderedMapWithMemoryTracking<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using PathToColumnPtrMap = UnorderedMapWithMemoryTracking<String, IColumn *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use mutate in order to make mutable column and mutate shared nested columns.
@@ -80,7 +86,8 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr default_path_type_ = nullptr);
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -90,9 +97,14 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr default_path_type_ = nullptr);
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        DataTypePtr default_path_type_ = nullptr);
 
     std::string getName() const override;
 
@@ -219,8 +231,11 @@ public:
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
-    const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
-    PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+    const PathToColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
+    PathToColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+
+    const DataTypePtr & getDefaultPathType() const { return default_path_type; }
+    bool hasDefaultPathType() const { return default_path_type != nullptr; }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
@@ -237,32 +252,32 @@ public:
     ColumnArray::Offsets & getSharedDataOffsets() { return assert_cast<ColumnArray &>(*shared_data).getOffsets(); }
     const ColumnArray::Offsets & getSharedDataOffsets() const { return assert_cast<const ColumnArray &>(*shared_data).getOffsets(); }
 
-    std::pair<ColumnString *, ColumnString *> getSharedDataPathsAndValues()
+    std::pair<ColumnString *, IColumn *> getSharedDataPathsAndValues()
     {
         auto & column_array = assert_cast<ColumnArray &>(*shared_data);
         auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
-        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1))};
+        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), &column_tuple.getColumn(1)};
     }
 
-    static std::tuple<ColumnString *, ColumnString *, Offsets *> getSharedDataPathsValuesAndOffsets(IColumn & shared_data_column)
+    static std::tuple<ColumnString *, IColumn *, Offsets *> getSharedDataPathsValuesAndOffsets(IColumn & shared_data_column)
     {
         auto & column_array = assert_cast<ColumnArray &>(shared_data_column);
         auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
-        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), &column_tuple.getColumn(1), &column_array.getOffsets()};
     }
 
-    std::pair<const ColumnString *, const ColumnString *> getSharedDataPathsAndValues() const
+    std::pair<const ColumnString *, const IColumn *> getSharedDataPathsAndValues() const
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*shared_data);
         const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
-        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1))};
+        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), &column_tuple.getColumn(1)};
     }
 
-    static std::tuple<const ColumnString *, const ColumnString *, const Offsets *> getSharedDataPathsValuesAndOffsets(const IColumn & shared_data_column)
+    static std::tuple<const ColumnString *, const IColumn *, const Offsets *> getSharedDataPathsValuesAndOffsets(const IColumn & shared_data_column)
     {
         const auto & column_array = assert_cast<const ColumnArray &>(shared_data_column);
         const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
-        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), &column_tuple.getColumn(1), &column_array.getOffsets()};
     }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
@@ -271,9 +286,10 @@ public:
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
     DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
-    /// Try to add new dynamic path. Returns pointer to the new dynamic
-    /// path column or nullptr if limit on dynamic paths is reached.
-    ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
+    /// Try to add a new runtime-discovered path. Returns its column or nullptr if the
+    /// path limit is reached. It is ColumnDynamic for ordinary JSON and Variant(T) for
+    /// DPT JSON (NULL discriminator = path missing in the row).
+    IColumn * tryToAddNewDynamicPath(std::string_view path);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
     void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
@@ -288,13 +304,18 @@ public:
     void takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
-    static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
+    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, IColumn * shared_data_values, std::string_view path, const IColumn & column, size_t n, bool has_default_path_type = false);
+    static void deserializeValueFromSharedData(const IColumn * shared_data_values, size_t n, IColumn & column, bool has_default_path_type = false);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
     static size_t findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end);
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
+    static void fillPathColumnFromSharedDataT(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end, const DataTypePtr & default_path_type);
+
+    /// Densify a Variant(T) runtime path column into a bare T column, where a NULL
+    /// discriminator (missing path) becomes default(T).
+    static void densifyVariantInto(IColumn & result, const ColumnVariant & variant_column);
 
     /// Due to previous bugs we can have an invalid state where we have some path
     /// both in shared data and in dynamic paths and only one value is not NULL.
@@ -304,6 +325,9 @@ public:
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
     void validateDynamicPathsSizes() const;
+
+    /// Validate sparse single-variant runtime paths used by JSON(DEFAULT PATH TYPE T).
+    void checkSparseVariantState(bool allow_logical_error = true) const;
 
     /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
     /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
@@ -373,7 +397,7 @@ public:
         size_t shared_data_it;
         size_t shared_data_end;
         const ColumnString * shared_data_paths{};
-        const ColumnString * shared_data_values{};
+        const IColumn * shared_data_values{};
         PathType current_path_type{};
         size_t row;
         bool skip_typed_nulls;
@@ -385,6 +409,8 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
+    MutableColumnPtr createRuntimePathColumn() const;
+    SerializationPtr getRuntimePathSerialization() const;
     /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
     /// Must be called after any operation that can replace typed path column pointers
     /// (e.g. forEachMutableSubcolumn).
@@ -398,21 +424,20 @@ private:
     /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
     /// Used for cache-friendly iteration in hot loops (e.g., default filling).
     VectorWithMemoryTracking<IColumn *> sorted_typed_path_columns;
-    /// Map path -> column for dynamically added paths. All columns
-    /// here are Dynamic columns. This set of paths can be extended
-    /// during inserts into the column.
+    /// Map path -> column for runtime-discovered paths. Columns are Dynamic for ordinary
+    /// JSON and Variant(T) (NULL discriminator = missing path) for JSON with DEFAULT PATH TYPE T.
+    /// This set can grow during inserts.
     PathToColumnMap dynamic_paths;
     /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
     SetWithMemoryTracking<std::string_view> sorted_dynamic_paths;
 
-    /// Store and use pointers to ColumnDynamic to avoid virtual calls.
-    /// With hundreds of dynamic paths these virtual calls are noticeable.
-    PathToDynamicColumnPtrMap dynamic_paths_ptrs;
-    /// Shared storage for all other paths and values. It's filled
-    /// when the number of dynamic paths reaches the limit.
-    /// It has type Array(Tuple(String, String)) and stores
-    /// an array of pairs (path, binary serialized dynamic value) for each row.
+    /// Cached pointers to runtime path columns.
+    PathToColumnPtrMap dynamic_paths_ptrs;
+    /// Shared storage for all other paths and values. It is Array(Tuple(String, String))
+    /// for ordinary JSON and Array(Tuple(String, T)) for DPT JSON.
     WrappedPtr shared_data;
+    /// Default type of runtime-discovered paths. nullptr means ordinary Dynamic JSON.
+    DataTypePtr default_path_type;
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
     /// This limit can be different for different instances of Object column. For example, we can decrease it

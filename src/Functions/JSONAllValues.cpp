@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
@@ -90,6 +91,9 @@ private:
         SerializationPtr serialization;
         bool is_dynamic; /// dynamic paths need a null check before serialization
         bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
+        /// For DPT runtime paths: the Variant(T) wrapper around `column` (nullptr otherwise).
+        /// The emitted value is the bare nested T value at the row's offset.
+        const ColumnVariant * variant = nullptr;
     };
 
     ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
@@ -107,7 +111,10 @@ private:
         const auto & typed_path_types = type_object.getTypedPaths();
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
-        auto dynamic_serialization = SerializationDynamic::create();
+        const bool has_default_path_type = type_object.hasDefaultPathType();
+        /// For DPT the runtime path column is Variant(T); emit the bare nested T value.
+        auto dynamic_serialization = has_default_path_type
+            ? type_object.getDefaultPathType()->getDefaultSerialization() : SerializationDynamic::create();
 
         VectorWithMemoryTracking<PathInfo> sorted_paths;
         sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
@@ -115,11 +122,19 @@ private:
         for (const auto & [path, type] : typed_path_types)
         {
             const auto & column = typed_path_columns.at(path);
-            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false, true});
+            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false, true, nullptr});
         }
 
         for (const auto & [path, column] : dynamic_path_columns)
-            sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false});
+        {
+            if (has_default_path_type)
+            {
+                const auto & variant = assert_cast<const ColumnVariant &>(*column);
+                sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false, &variant});
+            }
+            else
+                sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false, nullptr});
+        }
 
         std::sort(sorted_paths.begin(), sorted_paths.end(),
             [](const PathInfo & a, const PathInfo & b) { return a.path < b.path; });
@@ -151,7 +166,10 @@ private:
                 }
 
                 /// Emit the shared data value.
-                emitSharedDataValue(shared_data_values->getDataAt(j), format_settings, result_data, shared_serializations_cache, shared_columns_cache);
+                if (type_object.hasDefaultPathType())
+                    emitValue({shared_data_path, shared_data_values, dynamic_serialization, true, false}, j, format_settings, result_data);
+                else
+                    emitSharedDataValue(shared_data_values->getDataAt(j), format_settings, result_data, shared_serializations_cache, shared_columns_cache);
             }
 
             /// Emit remaining typed/dynamic paths after all shared data for this row.
@@ -177,6 +195,12 @@ private:
 
         if (entry.is_typed && skip_null_typed_paths && entry.column->isNullAt(row))
             return;
+
+        if (entry.variant)
+        {
+            serializeValueIntoResult(*entry.serialization, entry.variant->getVariantByGlobalDiscriminator(0), entry.variant->getOffsets()[row], format_settings, result_data);
+            return;
+        }
 
         serializeValueIntoResult(*entry.serialization, *entry.column, row, format_settings, result_data);
     }

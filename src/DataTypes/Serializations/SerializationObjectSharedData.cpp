@@ -5,10 +5,12 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
@@ -50,16 +52,17 @@ void reserveOrThrowTooMany(Container & container, size_t count, const char * wha
 
 }
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
     : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , default_path_type(default_path_type_)
     , buckets(buckets_)
-    , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
+    serialization_map = DataTypeObject::getTypeOfSharedData(default_path_type)->getDefaultSerialization();
 }
 
-UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("ObjectSharedData");
@@ -69,14 +72,17 @@ UInt128 SerializationObjectSharedData::getHash(SerializationVersion serializatio
     hash.update(dynamic_type_name);
     hash.update(dynamic_serialization_->getHash());
     hash.update(buckets_);
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
 {
     if (!dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_));
-    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_));
+    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_); });
 }
 
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
@@ -366,8 +372,8 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
     const std::vector<std::pair<std::string_view, ColumnPtr>> & flattened_paths,
     WriteBuffer & data_stream,
     ISerialization::SerializeBinaryBulkSettings & settings,
-    const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & path_data_type,
+    const SerializationPtr & path_data_serialization,
     MergeTreeObjectSharedDataSerializationVersion nested_shared_data_version)
 {
     ChunkBucketSerializationMetadata metadata;
@@ -414,7 +420,7 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
             if (data_stream.offset() >= settings.min_compress_block_size)
                 data_stream.next();
             /// Add new substream and its mark for current path.
-            metadata.paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type_), substream_path, stream_file_name_settings));
+            metadata.paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", path_data_type), substream_path, stream_file_name_settings));
             metadata.paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
             return &data_stream;
         };
@@ -425,9 +431,9 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
             data_stream.next();
         /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
         metadata.paths_marks.push_back(settings.stream_mark_getter(settings.path));
-        dynamic_serialization_->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
-        dynamic_serialization_->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
-        dynamic_serialization_->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
+        path_data_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
+        path_data_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
+        path_data_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
     }
 
     return metadata;
@@ -574,7 +580,8 @@ void writeChunkCopySection(
     const IColumn & column,
     size_t offset, size_t end,
     const std::vector<std::vector<std::string_view>> & bucket_path_names,
-    ISerialization::SerializeBinaryBulkSettings & settings)
+    ISerialization::SerializeBinaryBulkSettings & settings,
+    const DataTypePtr & default_path_type = nullptr)
 {
     settings.path.push_back(ISerialization::Substream::ObjectSharedDataCopy);
 
@@ -595,7 +602,15 @@ void writeChunkCopySection(
     settings.path.pop_back();
 
     auto & copy_values_stream = getCopyValuesStream(settings);
-    if (nested_limit)
+    if (default_path_type)
+    {
+        /// With DEFAULT PATH TYPE T the copy values are bare T values; write them one by one
+        /// with the T serialization instead of bulk String serialization.
+        const auto & serialization = default_path_type->getDefaultSerialization();
+        for (size_t i = nested_offset; i != nested_end; ++i)
+            serialization->serializeBinary(cols.values_column, i, copy_values_stream, FormatSettings{});
+    }
+    else if (nested_limit)
         SerializationString::create()->serializeBinaryBulk(cols.values_column, copy_values_stream, nested_offset, nested_limit);
     settings.path.pop_back();
 
@@ -651,6 +666,16 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 {
     auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedData>(state);
 
+    /// When the type has DEFAULT PATH TYPE T, path values are serialized as T instead
+    /// of Dynamic (dense columns, default = path missing).
+    DataTypePtr path_data_type = dynamic_type;
+    SerializationPtr path_data_serialization = dynamic_serialization;
+    if (default_path_type)
+    {
+        path_data_type = default_path_type;
+        path_data_serialization = path_data_type->getDefaultSerialization();
+    }
+
     if (serialization_version.value == SerializationVersion::MAP)
     {
         serialization_map->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, shared_data_state->map_state);
@@ -660,7 +685,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
         /// Build one bucket at a time (and free it before building the next) to reduce peak memory,
         /// instead of materializing all bucket columns simultaneously.
-        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets, default_path_type != nullptr);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             auto bucket_column = buckets_splitter.extractBucket(bucket);
@@ -683,7 +708,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             auto flattened_paths = flattenSharedDataPathsForBucket(
-                column, offset, end, dynamic_type, bucket, buckets);
+                column, offset, end, dynamic_type, default_path_type, /* for_shared_data_stream = */ true, bucket, buckets);
 
             /// Save path names for the copy section.
             bucket_path_names[bucket].reserve(flattened_paths.size());
@@ -712,7 +737,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
             /// Serialize data and collect metadata, then write metadata substreams + structure suffix.
             auto & data_stream = getDataStream(settings);
-            auto metadata = serializeChunkBucketData(flattened_paths, data_stream, settings, dynamic_type, dynamic_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED);
+            auto metadata = serializeChunkBucketData(flattened_paths, data_stream, settings, path_data_type, path_data_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED);
             settings.path.pop_back();
             writeAllChunkBucketMetadata(metadata, settings);
 
@@ -720,7 +745,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         }
 
         /// Write Copy section.
-        writeChunkCopySection(column, offset, end, bucket_path_names, settings);
+        writeChunkCopySection(column, offset, end, bucket_path_names, settings, default_path_type);
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED_CHUNKED)
     {
@@ -801,9 +826,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 {
                     auto [chunk_start, chunk_end] = get_chunk_range(chunk_idx);
                     auto flattened_paths = flattenSharedDataPathsForBucket(
-                        column, chunk_start, chunk_end, dynamic_type, bucket, buckets);
+                        column, chunk_start, chunk_end, dynamic_type, default_path_type, /* for_shared_data_stream = */ true, bucket, buckets);
 
-                    chunk_metadata.push_back(serializeChunkBucketData(flattened_paths, data_stream, settings, dynamic_type, dynamic_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED));
+                    chunk_metadata.push_back(serializeChunkBucketData(flattened_paths, data_stream, settings, path_data_type, path_data_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED));
                     /// flattened_paths goes out of scope here, freeing ColumnDynamic memory.
                 }
                 settings.path.pop_back();
@@ -887,7 +912,13 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 size_t nested_offset = chunk_start ? cols.offsets[chunk_start - 1] : 0;
                 size_t nested_end = cols.offsets[chunk_end - 1];
                 size_t nested_limit = nested_end - nested_offset;
-                if (nested_limit)
+                if (default_path_type)
+                {
+                    const auto & serialization = default_path_type->getDefaultSerialization();
+                    for (size_t i = nested_offset; i != nested_end; ++i)
+                        serialization->serializeBinary(cols.values_column, i, copy_values_stream, FormatSettings{});
+                }
+                else if (nested_limit)
                     SerializationString::create()->serializeBinaryBulk(cols.values_column, copy_values_stream, nested_offset, nested_limit);
             }
             settings.path.pop_back();
@@ -906,7 +937,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 for (size_t bucket = 0; bucket != buckets; ++bucket)
                 {
                     auto flattened_paths = flattenSharedDataPathsForBucket(
-                        column, chunk_start, chunk_end, dynamic_type, bucket, buckets);
+                        column, chunk_start, chunk_end, dynamic_type, default_path_type, /* for_shared_data_stream = */ true, bucket, buckets);
 
                     /// Save path names for the copy section.
                     bucket_path_names[bucket].reserve(flattened_paths.size());
@@ -933,7 +964,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
                     /// Serialize data and write metadata.
                     auto & data_stream = getDataStream(settings);
-                    auto metadata = serializeChunkBucketData(flattened_paths, data_stream, settings, dynamic_type, dynamic_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED);
+                    auto metadata = serializeChunkBucketData(flattened_paths, data_stream, settings, path_data_type, path_data_serialization, MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED);
                     settings.path.pop_back();
                     writeAllChunkBucketMetadata(metadata, settings);
 
@@ -942,7 +973,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 }
 
                 /// Write Copy section for this chunk.
-                writeChunkCopySection(column, chunk_start, chunk_end, bucket_path_names, settings);
+                writeChunkCopySection(column, chunk_start, chunk_end, bucket_path_names, settings, default_path_type);
             }
         }
     }
@@ -1334,6 +1365,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
     ISerialization::DeserializeBinaryBulkSettings & settings,
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization,
+    const DataTypePtr & default_path_type,
     ISerialization::SubstreamsCache * cache)
 {
     settings.path.push_back(Substream::ObjectSharedDataData);
@@ -1368,6 +1400,16 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
     StreamFileNameSettings stream_file_name_settings;
     stream_file_name_settings.escape_variant_substreams = false;
 
+    /// When the type has DEFAULT PATH TYPE T, path values are serialized as T instead of
+    /// Dynamic. Read them back with the matching serialization.
+    DataTypePtr path_data_type = dynamic_type;
+    SerializationPtr path_data_serialization = dynamic_serialization;
+    if (default_path_type)
+    {
+        path_data_type = default_path_type;
+        path_data_serialization = path_data_type->getDefaultSerialization();
+    }
+
     for (size_t chunk_idx = 0; chunk_idx != chunk_structures.size(); ++chunk_idx)
     {
         const auto & chunk_structure = chunk_structures[chunk_idx];
@@ -1401,7 +1443,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
 
                 deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
                 {
-                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", path_data_type), substream_path, stream_file_name_settings);
 
                     auto it = path_info.substream_to_mark.find(stream_name);
                     if (it == path_info.substream_to_mark.end())
@@ -1452,10 +1494,11 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
-                auto dynamic_column = dynamic_type->createColumn();
-                dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
-                paths_data_chunk.paths_data[requested_path] = std::move(dynamic_column);
+                auto path_column = path_data_type->createColumn();
+                path_data_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
+                path_data_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
+                /// With DEFAULT PATH TYPE the path column is already T, the type of the subcolumn.
+                paths_data_chunk.paths_data[requested_path] = std::move(path_column);
             }
         }
     }
@@ -1511,6 +1554,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             return;
 
         size_t prev_size = column.size();
+
+        /// When the type has DEFAULT PATH TYPE T, flattened path values are serialized as T.
+        DataTypePtr path_data_type = dynamic_type;
+        SerializationPtr path_data_serialization = dynamic_serialization;
+        if (default_path_type)
+        {
+            path_data_type = default_path_type;
+            path_data_serialization = path_data_type->getDefaultSerialization();
+        }
 
         /// In Compact part we always read whole chunk(s), so we don't need to worry about reading partial data.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1594,16 +1646,17 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
                 deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
-
+                /// With DEFAULT PATH TYPE the flattened path values are serialized as T, so consume
+                /// them with the T serialization (the column is only used to advance the stream).
                 for (const auto & chunk_structure : chunk_structures)
                 {
                     for (size_t i = 0; i != chunk_structure.num_paths; ++i)
                     {
-                        auto path_column = dynamic_type->createColumn();
+                        auto path_column = path_data_type->createColumn();
                         DeserializeBinaryBulkStatePtr path_state;
-                        dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
+                        path_data_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                         /// We only need to consume this path's data from the stream to advance to the next path; the column is discarded.
-                        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
+                        path_data_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, chunk_structure.num_rows, deserialization_settings, path_state, nullptr);
                     }
                 }
 
@@ -1720,7 +1773,14 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            if (default_path_type)
+            {
+                const auto & serialization = default_path_type->getDefaultSerialization();
+                for (size_t i = 0; i != nested_limit; ++i)
+                    serialization->deserializeBinary(values_column, *values_stream, FormatSettings{});
+            }
+            else
+                SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1807,7 +1867,14 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            if (default_path_type)
+            {
+                const auto & serialization = default_path_type->getDefaultSerialization();
+                for (size_t i = 0; i != nested_limit; ++i)
+                    serialization->deserializeBinary(values_column, *values_stream, FormatSettings{});
+            }
+            else
+                SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();

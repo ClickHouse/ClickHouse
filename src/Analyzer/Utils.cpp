@@ -1566,7 +1566,19 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, datetime64_as_numbers, date_time_as_numbers);
 
             for (const auto & [path, path_column] : object_column.getDynamicPaths())
+            {
+                /// Skip missing paths (NULL discriminator in DPT Variant(T) runtime paths).
+                if (object_column.hasDefaultPathType() && path_column->isNullAt(row))
+                    continue;
+                if (object_column.hasDefaultPathType())
+                {
+                    /// DPT runtime paths are Variant(T); the value is the nested T value.
+                    const auto & variant = assert_cast<const ColumnVariant &>(*path_column);
+                    object[path] = getFieldFromColumnForASTLiteralImpl(variant.getVariantByGlobalDiscriminator(0).getPtr(), variant.getOffsets()[row], object_column.getDefaultPathType(), true, false, false);
+                    continue;
+                }
                 object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, false, false);
+            }
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
@@ -1579,6 +1591,11 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             for (size_t i = start; i != end; ++i)
             {
                 String path{shared_paths->getDataAt(i)};
+                if (object_column.hasDefaultPathType())
+                {
+                    object[path] = getFieldFromColumnForASTLiteralImpl(shared_values->getPtr(), i, object_column.getDefaultPathType(), true, false, false);
+                    continue;
+                }
                 auto value_data = shared_values->getDataAt(i);
                 ReadBufferFromMemory buf(value_data);
                 auto tmp_column = dynamic_type->createColumn();

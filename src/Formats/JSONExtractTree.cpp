@@ -1927,7 +1927,8 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & type_of_nested_objects)
+        const DataTypePtr & type_of_nested_objects,
+        const DataTypePtr & default_path_type_ = nullptr)
         : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
@@ -1942,6 +1943,12 @@ public:
         all_typed_paths_have_trivial_defaults = std::all_of(
             typed_paths_types_.begin(), typed_paths_types_.end(),
             [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
+
+        if (default_path_type_)
+        {
+            default_path_type = default_path_type_;
+            default_path_node = buildJSONExtractTree<JSONParser>(default_path_type_, "JSON type with DEFAULT PATH TYPE");
+        }
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
@@ -1998,9 +2005,6 @@ public:
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
         reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
-        auto & shared_data_values_chars = shared_data_values->getChars();
-        auto & shared_data_values_offsets = shared_data_values->getOffsets();
-        shared_data_values_offsets.reserve(shared_data_values_offsets.size() + paths_and_values_for_shared_data.size());
         MutableColumnPtr tmp_dynamic_column;
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
@@ -2017,16 +2021,28 @@ public:
             }
             else
             {
-                /// Serialize value directly into shared data chars.
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
-                if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                if (default_path_node)
                 {
-                    error += fmt::format(" (while reading path {})", path);
-                    SerializationObject::restoreColumnObject(column_object, prev_size);
-                    return false;
+                    if (!default_path_node->insertResultToColumn(*shared_data_values, value, insert_settings, format_settings, error))
+                    {
+                        error += fmt::format(" (while reading path {})", path);
+                        SerializationObject::restoreColumnObject(column_object, prev_size);
+                        return false;
+                    }
                 }
-                value_buf.finalize();
-                shared_data_values_offsets.push_back(shared_data_values_chars.size());
+                else
+                {
+                    auto & shared_data_values_string = assert_cast<ColumnString &>(*shared_data_values);
+                    WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_string.getChars(), AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                    if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                    {
+                        error += fmt::format(" (while reading path {})", path);
+                        SerializationObject::restoreColumnObject(column_object, prev_size);
+                        return false;
+                    }
+                    value_buf.finalize();
+                    shared_data_values_string.getOffsets().push_back(shared_data_values_string.getChars().size());
+                }
                 shared_data_paths->insertData(path.data(), path.size());
             }
         }
@@ -2205,42 +2221,56 @@ private:
         else if (element.isNull())
         {
         }
-        /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
-        else if (column_object.getMaxDynamicPaths() == 0)
+        else
         {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
-        }
-        /// Check if we have this path in dynamic paths.
-        else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
-        {
-            /// Check if we already had this path.
-            if (dynamic_it->second->size() > current_size)
+            /// If the type has DEFAULT PATH TYPE, all values in dynamic paths and shared data must conform to it.
+            /// Validate the value by inserting it into a temporary column of the default path type.
+            if (default_path_node)
             {
-                if (!format_settings.json.type_json_skip_duplicated_paths)
+                bool skip_value = false;
+                if (!validateValueAgainstDefaultPathType(current_path, element, insert_settings, format_settings, error, skip_value))
+                    return false;
+                if (skip_value)
+                    return true;
+            }
+
+            /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
+            if (column_object.getMaxDynamicPaths() == 0)
+            {
+                paths_and_values_for_shared_data.emplace_back(current_path, element);
+            }
+            /// Check if we have this path in dynamic paths.
+            else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
+            {
+                /// Check if we already had this path.
+                if (dynamic_it->second->size() > current_size)
                 {
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                    if (!format_settings.json.type_json_skip_duplicated_paths)
+                    {
+                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                        return false;
+                    }
+                }
+                else if (!insertIntoDynamicPath(*dynamic_it->second, element, insert_settings, format_settings, error))
+                {
+                    error += fmt::format(" (while reading path {})", current_path);
                     return false;
                 }
             }
-            else if (!insertIntoDynamicPath(*dynamic_it->second, element, insert_settings, format_settings, error))
+            /// Try to add a new dynamic path.
+            else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
             {
-                error += fmt::format(" (while reading path {})", current_path);
-                return false;
+                if (!insertIntoDynamicPath(*dynamic_column, element, insert_settings, format_settings, error))
+                {
+                    error += fmt::format(" (while reading path {})", current_path);
+                    return false;
+                }
             }
-        }
-        /// Try to add a new dynamic path.
-        else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
-        {
-            if (!insertIntoDynamicPath(*dynamic_column, element, insert_settings, format_settings, error))
+            /// Otherwise this path should go to the shared data.
+            else
             {
-                error += fmt::format(" (while reading path {})", current_path);
-                return false;
+                paths_and_values_for_shared_data.emplace_back(current_path, element);
             }
-        }
-        /// Otherwise this path should go to the shared data.
-        else
-        {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
         }
 
         return true;
@@ -2288,8 +2318,28 @@ private:
         return false;
     }
 
-    bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
+    bool insertIntoDynamicPath(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
+        /// DPT runtime paths are stored as Variant(T): the NULL discriminator marks a missing path.
+        /// When T cannot be inside Variant (Nullable/Dynamic/Variant/Object) the caller keeps
+        /// the path in shared data and this method is never called.
+        if (default_path_node)
+        {
+            /// Insert the value into a fresh T column and then into the nested variant column.
+            /// (validateValueAgainstDefaultPathType uses its own local column; sharing a mutable
+            /// member across parallel parsing threads is not safe.)
+            auto value_column = default_path_type->createColumn();
+            if (!default_path_node->insertResultToColumn(*value_column, element, insert_settings, format_settings, error))
+                return false;
+            auto & variant_column = assert_cast<ColumnVariant &>(column);
+            auto & nested = variant_column.getVariantByGlobalDiscriminator(0);
+            nested.insertFrom(*value_column, 0);
+            variant_column.getOffsets().push_back(nested.size() - 1);
+            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(0));
+            return true;
+        }
+
+        auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
         /// Check if element is NULL.
         if (element.isNull())
         {
@@ -2543,6 +2593,27 @@ private:
         return false;
     }
 
+    bool validateValueAgainstDefaultPathType(const String & path, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error, bool & skip_value) const
+    {
+        /// Create a fresh temporary column per value: this method is called from parallel
+        /// parsing threads and a shared mutable column is not safe.
+        auto tmp_column = default_path_type->createColumn();
+
+        if (default_path_node->insertResultToColumn(*tmp_column, element, insert_settings, format_settings, error))
+            return true;
+
+        if (insert_settings.skip_invalid_typed_paths)
+        {
+            /// Skip the whole value if it doesn't conform to the default path type.
+            error.clear();
+            skip_value = true;
+            return true;
+        }
+
+        error += fmt::format(" (value of path {} doesn't conform to the DEFAULT PATH TYPE {})", path, default_path_type->getName());
+        return false;
+    }
+
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
@@ -2551,6 +2622,9 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
+    /// Default type of all non-typed paths (JSON(DEFAULT PATH TYPE T)) and the node to parse/validate values of this type.
+    DataTypePtr default_path_type;
+    std::unique_ptr<JSONExtractTreeNode<JSONParser>> default_path_node;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
@@ -2753,7 +2827,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getTypeOfNestedObjects());
+                        object_type.getTypeOfNestedObjects(),
+                        object_type.getDefaultPathType());
             }
         }
         default:

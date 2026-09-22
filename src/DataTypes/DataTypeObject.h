@@ -38,9 +38,10 @@ public:
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        DataTypePtr default_path_type_ = nullptr);
 
-    DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_, DataTypePtr default_path_type_ = nullptr);
 
     const char * getFamilyName() const override { return "Object"; }
     String doGetName() const override;
@@ -86,8 +87,16 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    /// Default data type of all non-typed paths (JSON(DEFAULT PATH TYPE T)). nullptr if not specified.
+    const DataTypePtr & getDefaultPathType() const { return default_path_type; }
+    bool hasDefaultPathType() const { return default_path_type != nullptr; }
+
     DataTypePtr getTypeOfNestedObjects() const;
     DataTypePtr getDynamicType() const;
+    /// Type stored in runtime path subcolumns and streams: Dynamic for ordinary JSON,
+    /// Variant(T) for JSON(DEFAULT PATH TYPE T) where the NULL discriminator marks a missing path.
+    DataTypePtr getTypeOfRuntimePaths() const;
+    static DataTypePtr getTypeOfRuntimePaths(const DataTypePtr & default_path_type);
 
     /// Extracts a combined literal+sub-object subcolumn for the given path.
     /// When skip_null_typed_paths is true, typed paths with NULL values in sub-objects
@@ -95,8 +104,10 @@ public:
     /// is treated as absent (NULL in the result).
     ColumnPtr extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const;
 
-    /// Shared data has type Array(Tuple(String, String)).
+    /// Shared data has type Array(Tuple(String, String)) for ordinary JSON and
+    /// Array(Tuple(String, T)) for JSON(DEFAULT PATH TYPE T).
     static const DataTypePtr & getTypeOfSharedData();
+    static const DataTypePtr & getTypeOfSharedData(const DataTypePtr & default_path_type);
 
 private:
     /// Don't change these constants, it can break backward compatibility.
@@ -114,6 +125,8 @@ private:
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
+    /// Default data type of all non-typed paths (JSON(DEFAULT PATH TYPE T)).
+    DataTypePtr default_path_type;
 };
 
 }
