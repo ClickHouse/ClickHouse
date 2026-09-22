@@ -392,30 +392,20 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
 /// same across a same-second, same-size overwrite and would let the cache serve stale row-group
 /// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
-/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
-/// are immutable, so no ETag is required (this also avoids disabling the cache for data lakes whose
-/// object metadata does not carry an ETag); a strong ETag is still preferred when the store supplied
-/// one, and the storage namespace stands in otherwise.
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
-    const ObjectInfo & object_info, bool is_data_lake, const String & storage_namespace)
+/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). The same token keys all
+/// four caches: the strong ETag, or the namespace token the Iceberg manifest shortcut records for an
+/// immutable data file (`ObjectMetadata::immutable_contents_namespace`). A data-lake file with
+/// neither, such as one fetched from a weak-ETag store with the shortcut off, skips the cache like
+/// any other object.
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info)
 {
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
     const auto & metadata = object_info.getObjectMetadata();
-    if (is_data_lake)
-    {
-        /// A strong ETag tracks an in-place rewrite, which is what `use_iceberg_manifest_object_metadata = 0`
-        /// is documented to protect against.
-        if (metadata)
-            if (const auto content_cache_token = metadata->getContentCacheToken())
-                return QueryConditionCache::makeFilePartName(identifier, *content_cache_token);
-
-        /// The namespace, not the bare path: a data lake path is bucket-relative, and a table function
-        /// reads under a nil table UUID, so two buckets would otherwise share an entry.
-        return QueryConditionCache::makeFilePartName(identifier, makeImmutableContentsCacheToken(storage_namespace));
-    }
-    if (!metadata || !metadata->isEtagUsableAsCacheKey())
+    if (!metadata)
         return std::nullopt;
-    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+    const auto content_cache_token = metadata->getContentCacheToken();
+    if (!content_cache_token)
+        return std::nullopt;
+    return QueryConditionCache::makeFilePartName(object_info.getIdentifier(/*include_file_bucket_info=*/false), *content_cache_token);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -1014,10 +1004,7 @@ Chunk StorageObjectStorageSource::generate()
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key
-                = makeQueryConditionCacheKey(
-                    *object_info,
-                    configuration->isDataLakeConfiguration(),
-                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
+                = makeQueryConditionCacheKey(*object_info);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1202,10 +1189,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (query_condition_cache && !object_info->file_bucket_info)
         {
             const auto query_condition_cache_key
-                = makeQueryConditionCacheKey(
-                    *object_info,
-                    configuration->isDataLakeConfiguration(),
-                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
+                = makeQueryConditionCacheKey(*object_info);
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
