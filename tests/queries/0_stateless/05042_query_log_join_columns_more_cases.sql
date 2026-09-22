@@ -68,53 +68,25 @@ INSERT INTO tj SELECT number, number FROM numbers(10);
 INSERT INTO ta SELECT number, number FROM numbers(10);
 INSERT INTO tb SELECT number, number FROM numbers(10);
 
-SELECT 'join in a subquery in FROM';
 -- The subquery is part of the same query plan, so its join is one of the joins of the pipeline.
 SELECT count() FROM (SELECT t1.a AS a FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_subquery_from', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_subquery\_from%'
-ORDER BY log_comment;
 
-SELECT 'join in a subquery in IN';
 -- The set is built by a part of the same pipeline, and the join that fills it is reported as well.
 SELECT count() FROM t3 WHERE a IN (SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_subquery_in', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_subquery\_in%'
-ORDER BY log_comment;
 
-SELECT 'join in the right side of a join';
 -- The right side of a join is a subquery with a join of its own, so the pipeline holds two joins: the
 -- inner one and the one that reads its result.
 SELECT count() FROM t1 JOIN (SELECT x.a AS a FROM t1 AS x JOIN t2 AS y ON x.a = y.a) s ON t1.a = s.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_subquery_right', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_subquery\_right%'
-ORDER BY log_comment;
 
-SELECT 'join in a common table expression';
 -- A common table expression is inlined at each of its references, so a CTE that holds one join and is
 -- read twice contributes two joins to the pipeline, and the join between its two references makes
 -- three. `enable_materialized_cte` is pinned because a materialized CTE would be a different pipeline.
@@ -123,32 +95,14 @@ SELECT count() FROM c AS c1 JOIN c AS c2 ON c1.a = c2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_cte', join_algorithm = 'hash', enable_materialized_cte = 0;
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_cte%'
-ORDER BY log_comment;
 
-SELECT 'join in a scalar subquery';
 -- A scalar subquery is executed while the outer query is still being analyzed, on the thread of that
 -- query, so it reports into the same counters even though it runs a pipeline of its own.
 SELECT (SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_subquery_scalar', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_subquery\_scalar%'
-ORDER BY log_comment;
 
-SELECT 'join inside a view';
 CREATE VIEW v_join AS SELECT t1.a AS a FROM t1 JOIN t2 ON t1.a = t2.a;
 -- A view is inlined into the query that reads it, so the join of the view is a join of that query,
 -- which has none of its own.
@@ -160,16 +114,7 @@ SELECT count() FROM v_join JOIN t3 ON v_join.a = t3.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_view_b_joined', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_view\_%'
-ORDER BY log_comment;
 
-SELECT 'join inside a view of a view';
 CREATE VIEW v_over_view AS SELECT v_join.a AS a FROM v_join JOIN t3 ON v_join.a = t3.a;
 -- Both views are inlined, one into the other, so the two joins of the pair are reported for a query
 -- that reads the outer view alone.
@@ -177,16 +122,7 @@ SELECT count() FROM v_over_view
 FORMAT Null
 SETTINGS log_comment = '05042_join_views_nested_views', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_nested\_views%'
-ORDER BY log_comment;
 
-SELECT 'join inside a materialized view';
 CREATE TABLE src (a UInt64) ENGINE = Memory;
 CREATE TABLE dst (a UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_first TO dst AS SELECT src.a AS a FROM src JOIN t2 ON src.a = t2.a;
@@ -197,16 +133,7 @@ CREATE MATERIALIZED VIEW mv_first TO dst AS SELECT src.a AS a FROM src JOIN t2 O
 INSERT INTO src SELECT number FROM numbers(10)
 SETTINGS log_comment = '05042_join_views_mv_a_single', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_mv\_a\_%'
-ORDER BY log_comment;
 
-SELECT 'join inside a chain of materialized views';
 CREATE TABLE dst_chained (a UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_chained TO dst_chained AS SELECT dst.a AS a FROM dst JOIN t3 ON dst.a = t3.a;
 -- The insert into `dst` made by `mv_first` triggers `mv_chained` in turn, and its thread group is
@@ -214,16 +141,7 @@ CREATE MATERIALIZED VIEW mv_chained TO dst_chained AS SELECT dst.a AS a FROM dst
 INSERT INTO src SELECT number FROM numbers(10)
 SETTINGS log_comment = '05042_join_views_mv_b_chained', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_mv\_b\_%'
-ORDER BY log_comment;
 
-SELECT 'join inside a materialized view with its own inner table';
 CREATE TABLE src_inner (a UInt64) ENGINE = Memory;
 -- A materialized view without `TO` writes into an inner table it owns, which is a different storage
 -- but the same nested thread group, so the join of its `SELECT` is reported just as it is for one with
@@ -232,16 +150,7 @@ CREATE MATERIALIZED VIEW mv_inner ENGINE = Memory AS SELECT src_inner.a AS a FRO
 INSERT INTO src_inner SELECT number FROM numbers(10)
 SETTINGS log_comment = '05042_join_views_mv_c_inner_table', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_mv\_c\_%'
-ORDER BY log_comment;
 
-SELECT 'join inside a materialized view that reads a view';
 CREATE TABLE src_over_view (a UInt64) ENGINE = Memory;
 -- The `SELECT` of the materialized view joins a view which holds a join of its own, and the two are
 -- reported together: the nesting of the view inside the materialized view is no different from the
@@ -254,31 +163,13 @@ SETTINGS log_comment = '05042_join_views_mv_over_view_a_plain', join_algorithm =
 INSERT INTO src_over_view SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a
 SETTINGS log_comment = '05042_join_views_mv_over_view_b_insert_with_join', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_mv\_over\_view\_%'
-ORDER BY log_comment;
 
-SELECT 'join in the SELECT of CREATE MATERIALIZED VIEW POPULATE';
 -- `POPULATE` runs the `SELECT` of the view as part of the `CREATE`, and the join it executes is
 -- reported in the row of the `CREATE` query.
 CREATE MATERIALIZED VIEW mv_populate ENGINE = Memory POPULATE AS SELECT src_inner.a AS a FROM src_inner JOIN t2 ON src_inner.a = t2.a
 SETTINGS log_comment = '05042_join_views_mv_populate', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT query_kind, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_mv\_populate%'
-ORDER BY log_comment;
 
-SELECT 'join in the SELECT of an INSERT with no view attached';
 CREATE TABLE ins (a UInt64) ENGINE = Memory;
 -- Nothing is nested here: the join belongs to the `SELECT` of the `INSERT` itself, and it is reported
 -- in the row of that `INSERT`, which is the plainest case of a join in a query whose text is an
@@ -286,16 +177,7 @@ CREATE TABLE ins (a UInt64) ENGINE = Memory;
 INSERT INTO ins SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a
 SETTINGS log_comment = '05042_join_views_insert_plain', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_views\_insert\_plain%'
-ORDER BY log_comment;
 
-SELECT 'parallel hash';
 -- `parallel_hash` builds a `ConcurrentHashJoin`, which reports `PARALLEL_HASH`. It is picked only for
 -- INNER, LEFT, RIGHT and FULL joins over a single disjunct and never for a special storage on the
 -- right. When `join_algorithm` allows `hash` as well, the right table also has to be estimated at
@@ -305,16 +187,7 @@ SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_parallel_hash', join_algorithm = 'parallel_hash', max_threads = 4;
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_algorithms\_parallel\_hash%'
-ORDER BY log_comment;
 
-SELECT 'parallel hash for the other kinds it is picked for';
 -- The kinds `ConcurrentHashJoin` is built for are INNER, which is above, and these three. Strictness
 -- is not part of the condition, so an ASOF join of an allowed kind is executed with it as well.
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a
@@ -330,16 +203,7 @@ SELECT count() FROM ta ASOF LEFT JOIN tb ON ta.a = tb.a AND ta.t >= tb.t
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_ph_kind_d_asof_left', join_algorithm = 'parallel_hash', max_threads = 4;
 
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_algorithms\_ph\_kind\_%'
-ORDER BY log_comment;
 
-SELECT 'parallel hash switching to grace hash';
 -- A `parallel_hash` join with a spilling threshold is a `SpillingHashJoin` wrapping the concurrent
 -- join, and it reports `PARALLEL_HASH` until it switches. Over the threshold it becomes `grace_hash`
 -- while the query is already running, and both algorithms are reported for the one join, the same way
@@ -348,16 +212,7 @@ SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT num
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_parallel_hash_switch', join_algorithm = 'parallel_hash', max_threads = 4, max_bytes_before_external_join = 65536;
 
-SYSTEM FLUSH LOGS query_log;
-SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_algorithms\_parallel\_hash\_switch%'
-ORDER BY log_comment;
 
-SELECT 'direct join with a dictionary';
 CREATE TABLE dict_source (key UInt64, value String) ENGINE = Memory;
 INSERT INTO dict_source SELECT number, toString(number) FROM numbers(10);
 CREATE DICTIONARY dict_direct (key UInt64 DEFAULT 0, value String DEFAULT '')
@@ -386,16 +241,7 @@ SELECT count() FROM t1 ANTI LEFT JOIN dict_direct ON t1.a = dict_direct.key
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_direct_e_anti_left', join_algorithm = 'direct';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_algorithms\_direct\_%'
-ORDER BY log_comment;
 
-SELECT 'algorithms that were asked for but not executed';
 -- The reported algorithm is the one that ran, not the one the query asked for. Each of these queries
 -- allows an algorithm whose conditions it then fails to meet, and the join falls back to `hash`:
 --  * `parallel_hash` is not built for more than one disjunct, and multiple ORs need `hash` to be
@@ -418,56 +264,24 @@ SELECT count() FROM t1 LEFT JOIN dict_direct ON t1.a = dict_direct.key AND t1.b 
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_declined_d_direct_mixed_condition', join_algorithm = 'direct,hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_algorithms\_declined\_%'
-ORDER BY log_comment;
 
-SELECT 'a query that succeeds';
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_rows_success', join_algorithm = 'hash';
 
-SYSTEM FLUSH LOGS query_log;
-SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_rows\_success%'
-ORDER BY type;
 
-SELECT 'a query that fails while its pipeline runs';
 -- The join exceeds `max_rows_in_join` while it fills its right side, which is late enough for the
 -- pipeline, and the join in it, to have been built and reported.
 SELECT count() FROM (SELECT number AS a FROM numbers(100000)) x JOIN (SELECT number AS a FROM numbers(100000)) y ON x.a = y.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_rows_exception_while_processing', join_algorithm = 'hash', max_rows_in_join = 1000, join_overflow_mode = 'throw'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
-SYSTEM FLUSH LOGS query_log;
-SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_rows\_exception\_while\_processing%'
-ORDER BY type;
 
-SELECT 'a query that fails before it starts';
 -- The query is rejected while it is analyzed, so no pipeline is built and the join of its text is
 -- never one of the joins of a pipeline. The one row it writes reports none.
 SELECT count() FROM t1 JOIN no_such_table ON t1.a = no_such_table.a
 SETTINGS log_comment = '05042_join_rows_exception_before_start', join_algorithm = 'hash'; -- { serverError UNKNOWN_TABLE }
 
-SYSTEM FLUSH LOGS query_log;
-SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND event_date >= yesterday()
-  AND log_comment LIKE '05042\_join\_rows\_exception\_before\_start%'
-ORDER BY type;
 
 DROP VIEW mv_populate;
 DROP VIEW mv_over_view;
@@ -477,6 +291,167 @@ DROP VIEW mv_chained;
 DROP VIEW mv_first;
 DROP VIEW v_join;
 DROP DICTIONARY dict_direct;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- One snapshot of the rows this test produced, so that the sections below read a small local table
+-- instead of scanning `system.query_log` once per section. In a flaky check that table holds the
+-- traffic of every test in the run and nothing indexes `current_database`, so each scan was a full
+-- read; the flush itself also writes a part per call.
+CREATE TABLE joins_log ENGINE = Memory AS
+SELECT log_comment, type, query_kind, used_number_of_joins, used_join_algorithms,
+       used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND event_date >= yesterday();
+
+SELECT 'join in a subquery in FROM';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_subquery\_from%'
+ORDER BY log_comment;
+
+SELECT 'join in a subquery in IN';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_subquery\_in%'
+ORDER BY log_comment;
+
+SELECT 'join in the right side of a join';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_subquery\_right%'
+ORDER BY log_comment;
+
+SELECT 'join in a common table expression';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_cte%'
+ORDER BY log_comment;
+
+SELECT 'join in a scalar subquery';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_subquery\_scalar%'
+ORDER BY log_comment;
+
+SELECT 'join inside a view';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_view\_%'
+ORDER BY log_comment;
+
+SELECT 'join inside a view of a view';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_nested\_views%'
+ORDER BY log_comment;
+
+SELECT 'join inside a materialized view';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_mv\_a\_%'
+ORDER BY log_comment;
+
+SELECT 'join inside a chain of materialized views';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_mv\_b\_%'
+ORDER BY log_comment;
+
+SELECT 'join inside a materialized view with its own inner table';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_mv\_c\_%'
+ORDER BY log_comment;
+
+SELECT 'join inside a materialized view that reads a view';
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_mv\_over\_view\_%'
+ORDER BY log_comment;
+
+SELECT 'join in the SELECT of CREATE MATERIALIZED VIEW POPULATE';
+SELECT query_kind, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_mv\_populate%'
+ORDER BY log_comment;
+
+SELECT 'join in the SELECT of an INSERT with no view attached';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_views\_insert\_plain%'
+ORDER BY log_comment;
+
+SELECT 'parallel hash';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  -- Matched exactly: `05042_join_algorithms_parallel_hash_switch` below shares this prefix, and the
+  -- snapshot holds every row of the test, so a prefix match would pull that row in here too.
+  AND log_comment = '05042_join_algorithms_parallel_hash'
+ORDER BY log_comment;
+
+SELECT 'parallel hash for the other kinds it is picked for';
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_algorithms\_ph\_kind\_%'
+ORDER BY log_comment;
+
+SELECT 'parallel hash switching to grace hash';
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_algorithms\_parallel\_hash\_switch%'
+ORDER BY log_comment;
+
+SELECT 'direct join with a dictionary';
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_algorithms\_direct\_%'
+ORDER BY log_comment;
+
+SELECT 'algorithms that were asked for but not executed';
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE type = 'QueryFinish'
+  AND log_comment LIKE '05042\_join\_algorithms\_declined\_%'
+ORDER BY log_comment;
+
+SELECT 'a query that succeeds';
+SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE log_comment LIKE '05042\_join\_rows\_success%'
+ORDER BY type;
+
+SELECT 'a query that fails while its pipeline runs';
+SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE log_comment LIKE '05042\_join\_rows\_exception\_while\_processing%'
+ORDER BY type;
+
+SELECT 'a query that fails before it starts';
+SELECT type, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM joins_log
+WHERE log_comment LIKE '05042\_join\_rows\_exception\_before\_start%'
+ORDER BY type;
+
+DROP TABLE joins_log;
 DROP TABLE dict_source;
 DROP TABLE ins;
 DROP TABLE src_over_view;

@@ -26,24 +26,19 @@ SET query_plan_join_swap_table = 0;
 CREATE TABLE dim1 (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE dim2 (a UInt64) ENGINE = MergeTree ORDER BY a;
 
-INSERT INTO dim1 SELECT number FROM numbers(10);
-INSERT INTO dim2 SELECT number FROM numbers(10);
+INSERT INTO dim1 SELECT number FROM numbers(3);
+INSERT INTO dim2 SELECT number FROM numbers(3);
 
 SELECT 'one join in a materialized view, an insert of several blocks';
 CREATE TABLE src_one (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE dst_one (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE MATERIALIZED VIEW mv_one TO dst_one AS SELECT src_one.a AS a FROM src_one JOIN dim1 ON src_one.a = dim1.a;
 
-INSERT INTO src_one SELECT number FROM numbers(10)
+INSERT INTO src_one SELECT number FROM numbers(3)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
          log_comment = '05054_view_rebuilds_a_one_join', join_algorithm = 'hash';
 
 SELECT count() FROM dst_one;
-
-SYSTEM FLUSH LOGS part_log;
-SELECT count() > 1 AS the_view_consumed_more_than_one_block
-FROM system.part_log
-WHERE database = currentDatabase() AND table = 'dst_one' AND event_type = 'NewPart';
 
 SELECT 'one join in a materialized view, with parallel_view_processing enabled';
 -- `parallel_view_processing` lets several insert streams run the view at once, so the builds of its
@@ -56,24 +51,19 @@ SELECT 'one join in a materialized view, with parallel_view_processing enabled';
 -- `max_insert_threads` is a request and the scheduler decides, nothing here can force it, and there is no
 -- profile event that records it; a witness read from thread identifiers would fail on a machine that
 -- happens to run the builds one after another. The per-stream multiplication is not observable in this
--- shape anyway: an insert of ten one-row blocks writes ten parts with these settings, one per block, just
--- as it does without them.
+-- shape anyway: an insert of three one-row blocks writes three parts with these settings, one per
+-- block, just as it does without them.
 CREATE TABLE src_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE dst_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS
     SELECT src_parallel.a AS a FROM src_parallel JOIN dim1 ON src_parallel.a = dim1.a;
 
-INSERT INTO src_parallel SELECT number FROM numbers(10)
+INSERT INTO src_parallel SELECT number FROM numbers(3)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
          max_insert_threads = 4, parallel_view_processing = 1,
          log_comment = '05054_view_rebuilds_b_parallel_view_processing', join_algorithm = 'hash';
 
 SELECT count() FROM dst_parallel;
-
-SYSTEM FLUSH LOGS part_log;
-SELECT count() > 1 AS the_view_consumed_more_than_one_block
-FROM system.part_log
-WHERE database = currentDatabase() AND table = 'dst_parallel' AND event_type = 'NewPart';
 
 SELECT 'two joins in a materialized view, an insert of several blocks';
 CREATE TABLE src_two (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -81,7 +71,7 @@ CREATE TABLE dst_two (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE MATERIALIZED VIEW mv_two TO dst_two AS
     SELECT src_two.a AS a FROM src_two JOIN dim1 ON src_two.a = dim1.a JOIN dim2 ON dim1.a = dim2.a;
 
-INSERT INTO src_two SELECT number FROM numbers(10)
+INSERT INTO src_two SELECT number FROM numbers(3)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
          log_comment = '05054_view_rebuilds_c_two_joins', join_algorithm = 'hash';
 
@@ -96,7 +86,7 @@ CREATE MATERIALIZED VIEW mv_chain_first TO dst_chain_first AS
 CREATE MATERIALIZED VIEW mv_chain_second TO dst_chain_second AS
     SELECT dst_chain_first.a AS a FROM dst_chain_first JOIN dim2 ON dst_chain_first.a = dim2.a;
 
-INSERT INTO src_chain SELECT number FROM numbers(10)
+INSERT INTO src_chain SELECT number FROM numbers(3)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
          log_comment = '05054_view_rebuilds_d_chain', join_algorithm = 'hash';
 
@@ -116,7 +106,16 @@ SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_si
 
 SELECT count() FROM dst_insert_join;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS part_log, query_log;
+
+SELECT count() > 1 AS the_view_consumed_more_than_one_block
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 'dst_one' AND event_type = 'NewPart';
+
+SELECT count() > 1 AS the_view_consumed_more_than_one_block
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 'dst_parallel' AND event_type = 'NewPart';
+
 SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness
 FROM system.query_log
 WHERE current_database = currentDatabase()
