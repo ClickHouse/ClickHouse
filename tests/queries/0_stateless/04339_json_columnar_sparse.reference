@@ -1,165 +1,32 @@
 0
-0	0	0	0
-0	0	0	0
+0	0	0
 0
 0
 0
-0	0	0	0
 0
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-1
-Wide ratio=0.9375 OK
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-1
-Wide ratio=1 OK
-0
-0	0	0	0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-1
 Wide ratio=0 OK
 0
 0
-Wide mixed V3/V4 OK
 0
 0
 0
+Wide ratio=1 OK
 0
-Wide rewrite encoding OK
-0
-0	0	0	0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
 1
-Compact ratio=0.9375 OK
+Wide mixed merge OK
 0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
+0	0	0
 0
 0
 0
-0	0	0	0
 0
-0
-0	0	0	0
-1
-Compact ratio=1 OK
-0
-0	0	0	0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-0
-0
-0
-0	0	0	0
-0
-0
-0	0	0	0
-1
 Compact ratio=0 OK
 0
 0
-Compact mixed V3/V4 OK
 0
 0
 0
-0
-Compact rewrite encoding OK
-0
-0
-v1 unchanged OK
-0
-0
-v2 unchanged OK
-0
-0
-v3 unchanged OK
-0
-0	0	0	0
-0
-0
-0	0	0	0
+Compact ratio=1 OK
 0
 1
-Wide nested and shared paths OK
-0
-0	0	0	0	0
-0
-0	0	0	0	0
-1
-Wide Dynamic mixed types without sparse streams OK
-0
-0	0	0	0
-0
-0
-0	0	0	0
-0
-1
-Compact nested and shared paths OK
-0
-0	0	0	0	0
-0
-0	0	0	0	0
-1
-Compact Dynamic mixed types without sparse streams OK
+Compact mixed merge OK

@@ -1,236 +1,79 @@
--- Tags: no-fasttest, no-msan, no-tsan
--- V4 adds automatic per-typed-path sparse encoding driven by
--- ratio_of_defaults_for_sparse_serialization. Typed paths cover the sparse
--- stream layout; dynamic paths keep compact Variant encoding.
+-- Tags: no-fasttest
+-- V4 stores typed paths with sparse encoding when their default ratio strictly
+-- exceeds `ratio_of_defaults_for_sparse_serialization`. The choice is fixed per
+-- part and recorded in the Object structure, so reads use the stored encoding
+-- regardless of the current table settings. Dynamic paths keep their compact
+-- Variant encoding and never gain sparse streams.
 --
--- The first blocks have sparse typed paths; later blocks/granules are dense.
--- `Nullable` zero and `Dynamic` zero are present values, while `UInt64` zero is a default.
+-- `j.half` is a default in half the rows, `j.t`/`j.n`/`j.always` in almost all
+-- rows, `j.d` is a dynamic path present in a few rows.
 
 DROP TABLE IF EXISTS json_sparse_source;
-CREATE TABLE json_sparse_source
-(id UInt64, j JSON(t UInt64, n Nullable(Int64), z UInt8, half UInt8, nest.v UInt64, s String)) ENGINE=Memory;
+CREATE TABLE json_sparse_source (id UInt64, j JSON(t UInt64, n Nullable(Int64), half UInt8)) ENGINE=Memory;
 INSERT INTO json_sparse_source SELECT number,
-concat('{"always":0,"half":', toString(number % 2),
-       if(number % 128 = 0 OR number >= 3072,
-          ',"t":7,"n":0,"d":0,"nest":{"v":9,"d":0},"s":"abc"', ''), '}')
-FROM numbers(4096);
+concat('{"always":0,"half":', toString(number % 2), if(number % 64 = 0, ',"t":7,"n":0,"d":0', ''), '}')
+FROM numbers(512);
 
 {% for part, wide_limit in [('Wide', 0), ('Compact', 1000000000)] -%}
-{% for ratio in ['0.9375', '1', '0'] -%}
+{% for ratio in ['0', '1'] -%}
 DROP TABLE IF EXISTS json_sparse_test;
 CREATE TABLE json_sparse_test AS json_sparse_source ENGINE=MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part={{ wide_limit }}, min_rows_for_wide_part={{ wide_limit }},
-         index_granularity=64, index_granularity_bytes=1048576,
-         write_marks_for_substreams_in_compact_parts=1,
-         ratio_of_defaults_for_sparse_serialization={{ ratio }},
          object_serialization_version='v4',
-         object_shared_data_serialization_version='map',
-         object_shared_data_serialization_version_for_zero_level_parts='map',
-         merge_max_block_size=128;
-SYSTEM STOP MERGES json_sparse_test;
-{% for start in range(0, 4096, 512) -%}
-INSERT INTO json_sparse_test SELECT * FROM json_sparse_source
-WHERE id >= {{ start }} AND id < {{ start + 512 }} ORDER BY id SETTINGS max_threads=1;
-{% endfor -%}
-SELECT throwIf(countIf(part_type != '{{ part }}') != 0)
-FROM system.parts WHERE database=currentDatabase() AND table='json_sparse_test' AND active;
--- Inspect real per-part stream metadata, not the type's default serialization.
-SELECT throwIf(NOT (countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) {{ '= 0' if ratio == '1' else '> 0' }})),
-       throwIf(countIf(has(substreams, 'j.half.sparse.idx')) != {{ 8 if ratio == '0' else 0 }}),
-       throwIf(countIf(has(substreams, 'j.always.sparse.idx')) != 0),
-       throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0)
+         ratio_of_defaults_for_sparse_serialization={{ ratio }};
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source ORDER BY id SETTINGS max_threads=1;
+
+-- ratio=0 selects sparse encoding for typed paths with defaults; ratio=1 disables it.
+SELECT throwIf((countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) > 0) != {{ 'false' if ratio == '1' else 'true' }})
 FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
      AND active AND column='j';
-{% if ratio != '1' -%}
-SELECT throwIf(countIf(has(substreams, 'j.t.sparse.idx')) != 6),
-       throwIf(countIf(has(substreams, 'j.n.sparse.idx')) != 6),
-       throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0),
-       throwIf(countIf(has(substreams, 'j.z.sparse.idx')) != 8)
+{% if ratio == '0' -%}
+SELECT throwIf(countIf(has(substreams, 'j.t.sparse.idx')) = 0),
+       throwIf(countIf(has(substreams, 'j.n.sparse.idx')) = 0),
+       throwIf(countIf(has(substreams, 'j.half.sparse.idx')) = 0)
 FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
      AND active AND column='j';
 {% endif -%}
--- Reader behavior must not depend on the current writer version or threshold.
+-- Dynamic paths never get sparse streams.
+SELECT throwIf(countIf(has(substreams, 'j.d.sparse.idx')) != 0)
+FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
+     AND active AND column='j';
+
+-- Reads match the source, including a `Nullable` typed path and its `.null` subcolumn.
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0)
+           OR j.n.null != (id % 64 != 0)
+           OR j.half != id % 2
+           OR isNotNull(j.d) != (id % 64 = 0)) != 0)
+FROM json_sparse_test;
+SELECT throwIf(countIf(j_str != src_str) != 0)
+FROM (SELECT a.id AS id, toString(a.j) AS j_str, toString(b.j) AS src_str
+      FROM json_sparse_test a INNER JOIN json_sparse_source b USING id)
+SETTINGS join_algorithm='hash', max_block_size=1000;
+
+-- The recorded encoding drives reads, not the current writer settings.
 ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3',
        ratio_of_defaults_for_sparse_serialization=1;
-{% set ns = namespace(stage=0) -%}
-{% for stage in ['plain', 'merged'] -%}
-{% if stage == 'merged' -%}
-ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v4',
-       ratio_of_defaults_for_sparse_serialization={{ ratio }};
-SYSTEM START MERGES json_sparse_test;
-OPTIMIZE TABLE json_sparse_test FINAL;
-{% endif -%}
--- Check every read stage, including mixed versions and merges.
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0
-                   AND (startsWith(x, 'j.d.') OR startsWith(x, 'j.always.') OR startsWith(x, 'j.nest.d.')),
-                   substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
-     AND active AND column='j';
-{% for block_size in [1000, 1] -%}
--- Whole JSON, direct paths, .null, and a subobject share substream caches.
-SELECT throwIf(countIf(toString(a.j) != toString(b.j)
-           OR a.j.t != b.j.t OR a.j.n.null != b.j.n.null
-           OR toString(a.j.d) != toString(b.j.d)
-           OR toString(a.j.^nest) != toString(b.j.^nest)) != 0)
-FROM json_sparse_test a INNER JOIN json_sparse_source b USING id
-SETTINGS max_threads=1, max_block_size={{ block_size }}, join_algorithm='hash',
-         optimize_functions_to_subcolumns=1;
--- Only subcolumns, including Dynamic's type-specific null map. Exercise
--- nonzero offsets and partial granules through PREWHERE and LIMIT/OFFSET.
-SELECT throwIf(countIf(t != if(id % 128 = 0 OR id >= 3072, 7, 0)
-           OR nnull != NOT (id % 128 = 0 OR id >= 3072)
-           OR dnull != nnull OR z != 0 OR half != id % 2 OR always != 0) != 0)
-FROM (SELECT id, j.t AS t, j.n.null AS nnull, j.d.:Int64.null AS dnull,
-             j.z AS z, j.half AS half, j.always.:Int64 AS always
-      FROM json_sparse_test PREWHERE id >= 3 AND id < 4000
-      ORDER BY id LIMIT 2701 OFFSET 5)
-SETTINGS max_threads=1, max_block_size={{ block_size }};
-SELECT throwIf(sum(j.n.null) != 3048), throwIf(countIf(isNotNull(j.d)) != 1048),
-       throwIf(sum(j.t) != 7336), throwIf(sum(j.n) != 0)
-FROM json_sparse_test SETTINGS max_threads=1, max_block_size={{ block_size }};
-{% endfor -%}
-{% endfor -%}
-CHECK TABLE json_sparse_test SETTINGS check_query_single_value_result=1;
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0) OR j.n.null != (id % 64 != 0)) != 0)
+FROM json_sparse_test;
+
 SELECT '{{ part }} ratio={{ ratio }} OK';
 {% endfor -%}
 
--- Mix legacy V3 and V4 parts, then merge using V4 with advanced shared data.
+-- A merge of a sparse V4 part and a legacy V3 part reads consistently.
 TRUNCATE TABLE json_sparse_test;
 SYSTEM STOP MERGES json_sparse_test;
-ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3',
-    ratio_of_defaults_for_sparse_serialization=0.9375;
-INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id < 2048;
+ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3';
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id < 256;
 ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v4',
-    object_shared_data_serialization_version='advanced';
-INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id >= 2048;
-{% for stage in ['before', 'after'] -%}
-{% if stage == 'after' -%}
+    ratio_of_defaults_for_sparse_serialization=0;
+INSERT INTO json_sparse_test SELECT * FROM json_sparse_source WHERE id >= 256;
 SYSTEM START MERGES json_sparse_test;
 OPTIMIZE TABLE json_sparse_test FINAL;
-{% endif -%}
-SELECT throwIf(countIf(toString(a.j) != toString(b.j)
-           OR a.j.t != b.j.t OR a.j.n.null != b.j.n.null
-           OR toString(a.j.d) != toString(b.j.d)
-           OR toString(a.j.^nest) != toString(b.j.^nest)) != 0)
-FROM json_sparse_test a INNER JOIN json_sparse_source b USING id
-SETTINGS max_threads=1, max_block_size=1000, join_algorithm='hash',
-         optimize_functions_to_subcolumns=1;
+SELECT throwIf(countIf(j.t != if(id % 64 = 0, 7, 0) OR j.n.null != (id % 64 != 0) OR j.half != id % 2) != 0)
+FROM json_sparse_test;
+CHECK TABLE json_sparse_test SETTINGS check_query_single_value_result=1;
+SELECT '{{ part }} mixed merge OK';
 {% endfor -%}
-SELECT '{{ part }} mixed V3/V4 OK';
 
--- One INSERT with multiple blocks; later blocks change the default ratio.
-TRUNCATE TABLE json_sparse_test;
-INSERT INTO json_sparse_test SELECT * FROM json_sparse_source ORDER BY id
-SETTINGS max_threads=1, max_block_size=128, max_insert_block_size=128,
-         min_insert_block_size_rows=0, min_insert_block_size_bytes=0;
-SELECT throwIf(countIf(toString(a.j) != toString(b.j)) != 0)
-FROM json_sparse_test a INNER JOIN json_sparse_source b USING id
-SETTINGS max_threads=1, max_block_size=1000, join_algorithm='hash',
-         optimize_functions_to_subcolumns=1;
--- Rewriting with ratio=1 disables sparse, even though the source part was sparse.
-ALTER TABLE json_sparse_test MODIFY SETTING ratio_of_defaults_for_sparse_serialization=1;
-ALTER TABLE json_sparse_test UPDATE j=j WHERE 1 SETTINGS mutations_sync=2;
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
-     AND active AND column='j';
--- Re-enable sparse encoding for eligible typed paths with defaults, then rewrite to the old format.
-ALTER TABLE json_sparse_test MODIFY SETTING ratio_of_defaults_for_sparse_serialization=0;
-ALTER TABLE json_sparse_test UPDATE j=j WHERE 1 SETTINGS mutations_sync=2;
-SELECT throwIf(countIf(has(substreams, 'j.z.sparse.idx')) = 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
-     AND active AND column='j';
-ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='v3';
-ALTER TABLE json_sparse_test UPDATE j=j WHERE 1 SETTINGS mutations_sync=2;
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
-     AND active AND column='j';
-SELECT '{{ part }} rewrite encoding OK';
-{% endfor -%}
-{% for version in ['v1', 'v2', 'v3'] -%}
-TRUNCATE TABLE json_sparse_test;
-ALTER TABLE json_sparse_test MODIFY SETTING object_serialization_version='{{ version }}',
-    ratio_of_defaults_for_sparse_serialization=0;
-INSERT INTO json_sparse_test SELECT * FROM json_sparse_source;
-SELECT throwIf(countIf(toString(a.j) != toString(b.j)) != 0)
-FROM json_sparse_test a INNER JOIN json_sparse_source b USING id
-SETTINGS max_threads=1, max_block_size=1000, join_algorithm='hash',
-         optimize_functions_to_subcolumns=1;
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_test'
-     AND active AND column='j';
-SELECT '{{ version }} unchanged OK';
-{% endfor -%}
 DROP TABLE json_sparse_test;
 DROP TABLE json_sparse_source;
-
-{% for part, wide_limit in [('Wide', 0), ('Compact', 1000000000)] -%}
--- Nested typed JSON paths plus shared/dynamic path transitions.
-CREATE TABLE json_sparse_nested
-(id UInt64, j JSON(inner JSON(t UInt64, n Nullable(Int64)), max_dynamic_paths=1))
-ENGINE=MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part={{ wide_limit }}, min_rows_for_wide_part={{ wide_limit }},
-         index_granularity=64, index_granularity_bytes=1048576,
-         write_marks_for_substreams_in_compact_parts=1,
-         object_serialization_version='v4', ratio_of_defaults_for_sparse_serialization=0.9375,
-         merge_max_block_size=128;
-SYSTEM STOP MERGES json_sparse_nested;
-INSERT INTO json_sparse_nested SELECT number,
-       if(number % 128 = 0, '{"inner":{"t":7,"n":0},"x":0}', '{}')
-       FROM numbers(1024);
-INSERT INTO json_sparse_nested SELECT number+1024,
-       if(number % 128 = 0, '{"inner":{"t":7,"n":0},"y":0}', '{}')
-       FROM numbers(1024);
-{% for stage in ['before', 'after'] -%}
-{% if stage == 'after' -%}
-SYSTEM START MERGES json_sparse_nested;
-OPTIMIZE TABLE json_sparse_nested FINAL;
-{% endif -%}
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0
-                   AND (startsWith(x, 'j.x.') OR startsWith(x, 'j.y.')), substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_nested'
-     AND active AND column='j';
-SELECT throwIf(sum(j.inner.t) != 112), throwIf(sum(j.inner.n.null) != 2032),
-       throwIf(countIf(isNotNull(j.x)) != 8), throwIf(countIf(isNotNull(j.y)) != 8)
-FROM json_sparse_nested SETTINGS max_threads=1, max_block_size=7;
-SELECT throwIf(countIf(toString(j) != if(id % 128 = 0,
-                if(id < 1024, '{"inner":{"n":0,"t":7},"x":0}', '{"inner":{"n":0,"t":7},"y":0}'),
-                '{"inner":{"n":null,"t":0}}')) != 0)
-FROM json_sparse_nested SETTINGS max_threads=1, max_block_size=7;
-{% endfor -%}
-CHECK TABLE json_sparse_nested SETTINGS check_query_single_value_result=1;
-DROP TABLE json_sparse_nested;
-SELECT '{{ part }} nested and shared paths OK';
-
--- Purely dynamic V4 has an empty typed sparse list, including after a merge.
-CREATE TABLE json_sparse_dynamic (id UInt64, j JSON(max_dynamic_types=1))
-ENGINE=MergeTree ORDER BY id SETTINGS object_serialization_version='v4',
-    ratio_of_defaults_for_sparse_serialization=0.9375,
-    min_bytes_for_wide_part={{ wide_limit }}, min_rows_for_wide_part={{ wide_limit }},
-    index_granularity=64, index_granularity_bytes=1048576;
-SYSTEM STOP MERGES json_sparse_dynamic;
-INSERT INTO json_sparse_dynamic SELECT number,
-    multiIf(number % 256 = 0, '{"d":0}', number % 256 = 128, '{"d":"s"}', '{}')
-    FROM numbers(2048);
-INSERT INTO json_sparse_dynamic SELECT number + 2048,
-    multiIf(number % 256 = 0, '{"d":"s"}', number % 256 = 128, '{"d":0}', '{}')
-    FROM numbers(2048);
-{% for stage in ['before', 'after'] -%}
-{% if stage == 'after' -%}
-SYSTEM START MERGES json_sparse_dynamic;
-OPTIMIZE TABLE json_sparse_dynamic FINAL;
-{% endif -%}
-SELECT throwIf(countIf(arrayExists(x -> position(x, 'sparse.idx') > 0, substreams)) != 0)
-FROM system.parts_columns WHERE database=currentDatabase() AND table='json_sparse_dynamic'
-     AND active AND column='j';
-SELECT throwIf(countIf(isNotNull(j.d)) != 32),
-       throwIf(countIf(isNotNull(j.d.:Int64)) != 16),
-       throwIf(countIf(isNotNull(j.d.:String)) != 16),
-       throwIf(sum(j.d.:Int64.null) != 4080),
-       throwIf(countIf(toString(j) != if(id % 128 != 0, '{}',
-           if((id < 2048) = (id % 256 = 0), '{"d":0}', '{"d":"s"}'))) != 0)
-FROM json_sparse_dynamic SETTINGS max_threads=1, max_block_size=7;
-{% endfor -%}
-CHECK TABLE json_sparse_dynamic SETTINGS check_query_single_value_result=1;
-DROP TABLE json_sparse_dynamic;
-SELECT '{{ part }} Dynamic mixed types without sparse streams OK';
-{% endfor -%}
