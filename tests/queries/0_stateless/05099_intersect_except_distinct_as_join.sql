@@ -70,8 +70,9 @@ SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) EXCEPT ALL SELECT number %
 
 -- The join algorithm depends on the settings, and the optimizer may swap the join sides, which also moves the tree
 -- drawing, so only the strictness and the conditions are kept.
--- Parallel replicas execute the whole join remotely, which changes the plan shape.
-SET enable_parallel_replicas = 0;
+-- Parallel replicas execute the whole join remotely, which changes the plan shape, and the preliminary DISTINCT of
+-- the set operation inputs is only added for more than one thread.
+SET enable_parallel_replicas = 0, max_threads = 4;
 SELECT 'plan';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
