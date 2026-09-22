@@ -1,0 +1,12 @@
+Hello, world!
+3
+qualified
+aliased
+from outer scope
+from two levels up
+42
+3
+33
+inner wins
+ClickHouse
+Hello, ClickHouse

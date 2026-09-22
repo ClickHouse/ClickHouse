@@ -9,11 +9,15 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -35,6 +39,33 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
 }
 
+/// The invocation is parsed as a table function, so look for a table expression calling a function of that
+/// name anywhere below the `SELECT` that declares the CTE - the invocation may sit in a nested subquery.
+bool isParameterizedCTEInvoked(const IAST & ast, const String & name)
+{
+    std::vector<const IAST *> nodes_to_visit{&ast};
+
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (const auto * table_expression = node->as<ASTTableExpression>();
+            table_expression && table_expression->table_function)
+        {
+            const auto * function = table_expression->table_function->as<ASTFunction>();
+            if (function && function->name == name)
+                return true;
+        }
+
+        for (const auto & child : node->children)
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
 /// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
 /// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
 /// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
@@ -43,6 +74,11 @@ namespace ErrorCodes
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
+
+    /// The body of a parameterized CTE keeps its placeholders until the invocation supplies the values.
+    if (preserved_subtrees.contains(ast.get()))
+        return;
+
     resolveParameterizedAlias(ast);
 
     if (ast->as<ASTQueryParameter>())
@@ -51,6 +87,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitIdentifier(ast);
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
+    else if (const auto * select_query = ast->as<ASTSelectQuery>())
+        visitSelectQuery(ast, *select_query);
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
@@ -107,6 +145,25 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         else
             visitChildren(ast);
     }
+}
+
+
+void ReplaceQueryParameterVisitor::visitSelectQuery(ASTPtr & ast, const ASTSelectQuery & select_query)
+{
+    if (const auto & with_list = select_query.with())
+    {
+        for (const auto & child : with_list->children)
+        {
+            const auto * with_element = child->as<ASTWithElement>();
+            if (!with_element || !with_element->subquery)
+                continue;
+
+            if (isParameterizedCTEInvoked(select_query, with_element->name))
+                preserved_subtrees.insert(with_element->subquery.get());
+        }
+    }
+
+    visitChildren(ast);
 }
 
 
