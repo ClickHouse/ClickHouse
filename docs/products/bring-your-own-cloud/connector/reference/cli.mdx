@@ -241,6 +241,8 @@ clicklink clctl scraper access provision --target helm \
 
 ## clicklink clctl executor access {#executor-access}
 
+The `init --managed` workflow below requires a [build with managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not expose that flag.
+
 `init --managed` applies the executor's cluster-wide grant with your credentials. When it cannot, `init` prints the commands to run from a kubeconfig with cluster admin: `access apply` alone on a VM (the bundle is already staged), `access grant` then `access apply` on Kubernetes. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
 ### executor access grant {#executor-access-grant}
