@@ -260,3 +260,30 @@ def test_label_values_records_query_finish():
         )
         > 0
     )
+
+
+def test_label_values_reads_tags_table_without_series_id_registry():
+    get_json_from_api("/api/v1/label/__name__/values")
+    get_json_from_api("/api/v1/label/host/values")
+    get_json_from_api("/api/v1/label/datacenter/values")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND query LIKE '%groupUniqArray%' AND query LIKE '%metric_name%' "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND (query LIKE '%timeSeriesStoreTags%' OR query LIKE '%timeSeriesIdToTags%') "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        == 0
+    )

@@ -214,3 +214,29 @@ def test_labels_records_query_finish():
         )
         > 0
     )
+
+
+def test_labels_reads_tags_table_without_series_id_registry():
+    get_json_from_api("/api/v1/labels")
+    get_json_from_api("/api/v1/labels?match[]=cpu_usage")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND query LIKE '%mapKeys%' AND query LIKE '%groupUniqArrayArray%' "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND (query LIKE '%timeSeriesStoreTags%' OR query LIKE '%timeSeriesIdToTags%') "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        == 0
+    )
