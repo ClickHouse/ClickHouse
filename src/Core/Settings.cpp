@@ -7708,7 +7708,7 @@ SETTINGS additional_result_filter = 'x != 2'
 Name of workload to be used to access resources
 )", 0) \
     DECLARE(String, ddl_workload, "default", R"(
-Name of the workload used to schedule DDL and administrative queries (CREATE, DROP, ALTER, RENAME, OPTIMIZE, MOVE, GRANT, REVOKE, SYSTEM, ...) when the server setting `use_ddl_workload` is enabled. Such queries are then admitted under this workload instead of the `workload` setting, so administrative statements do not compete with regular queries for the same query-slot and memory-reservation limits. Defaults to the `default` workload. Has no effect when `use_ddl_workload` is disabled (then DDL is exempt from workload admission entirely).
+Name of the workload used to schedule DDL and administrative queries (CREATE, DROP, ALTER, RENAME, OPTIMIZE, MOVE, GRANT, REVOKE, SYSTEM, ...) when the server setting `use_ddl_workload` is enabled. Such queries are then scheduled under this workload instead of the `workload` setting for every resource (query-slot and memory-reservation admission, CPU and IO), so administrative statements do not compete with regular queries. Defaults to the `default` workload. Has no effect when `use_ddl_workload` is disabled (then DDL is exempt from workload scheduling entirely, though still subject to the server-wide `max_concurrent_queries*` limits).
 
 `ddl_workload` is an independent setting with its own constraints (which an administrator can configure in a user profile). It is intentionally NOT validated against the constraints placed on `workload`: to restrict which workloads DDL may use, constrain `ddl_workload` itself rather than relying on `workload`'s constraints.
 
