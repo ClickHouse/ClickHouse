@@ -48,10 +48,32 @@ enum EpollFlags : uint32_t
 namespace DB
 {
 
+/// How deep a chain of other `Epoll`s this `Epoll` can hold.
+///
+/// Linux nests an epoll descriptor at any depth up to `EPOLL_MAX_NESTS`, in any order. macOS instead
+/// gates registering one kqueue in another on an order-dependent ceiling (xnu-11215.1.10
+/// `bsd/kern/kern_event.c`, `kqueue_kqfilter()`): an attach requires
+/// `parent.level == 0 || parent.level >= child.level`, raises the parent to
+/// `max(parent.level or 2, child.level + 1)`, pins a child whose level is 0 to 1, and a level never
+/// decreases. A kqueue registered somewhere before it nests anything is therefore pinned to 1 and can
+/// never accept a deeper child afterwards.
+///
+/// The values are a total order: each must exceed every level it can nest, so inserting one means
+/// renumbering the whole enum, and too low a value brings the rejection back. 1 is not reservable,
+/// being the pinned mark itself.
+enum class EpollNesting : int
+{
+    Leaf = 0,               /// Only plain descriptors: sockets, pipes, timers.
+    ConnectionsFactory = 2, /// HedgedConnectionsFactory: ConnectionEstablisherAsync.
+    HedgedConnections = 3,  /// HedgedConnections: PacketReceiver and the factory.
+    AsyncReadContext = 4,   /// RemoteQueryExecutorReadContext: the two above.
+    PipelinePoller = 5,     /// PollingQueue, distributedIndexAnalysis: async read contexts.
+};
+
 class Epoll
 {
 public:
-    Epoll();
+    explicit Epoll(EpollNesting nesting = EpollNesting::Leaf);
 
     Epoll(const Epoll &) = delete;
     Epoll & operator=(const Epoll &) = delete;
