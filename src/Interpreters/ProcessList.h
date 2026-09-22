@@ -578,7 +578,6 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    /// The name a running query is filed under, plus its text.
     struct OwnQuery
     {
         String user;

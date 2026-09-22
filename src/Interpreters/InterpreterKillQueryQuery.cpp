@@ -233,7 +233,6 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-/// Row-driven like the function above, so a block carrying no row yields no descriptor.
 static QueryDescriptors selfKillDescriptors(const Block & processes_block, const SelfKillTarget & target)
 {
     QueryDescriptors res;
