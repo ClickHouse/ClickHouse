@@ -1,0 +1,19 @@
+lc string
+apple	3
+banana	1
+lc string type
+LowCardinality(String)
+string reference
+apple	3
+banana	1
+lc uint64
+2	3
+lc uint64 type
+LowCardinality(UInt64)
+lc float64
+2	3
+lc 2d
+2	3
+lc uint64 zero distance wide
+2	2
+lc nullable rejected

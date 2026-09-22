@@ -1,0 +1,8 @@
+reject 1D imprecise bucket
+reject 2D imprecise cell
+1D still works
+2
+2D still works
+2
+1D large values large distance still works
+2

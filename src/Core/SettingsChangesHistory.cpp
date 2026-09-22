@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"allow_experimental_group_by_with_cluster", false, false, "New setting to gate the experimental `GROUP BY ... WITH CLUSTER <distance>` modifier."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
