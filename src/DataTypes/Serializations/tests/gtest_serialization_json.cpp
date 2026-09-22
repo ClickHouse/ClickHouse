@@ -150,17 +150,20 @@ TEST(SerializationJSON, EquivalentSchemasShareAndCustomChildrenDoNotPool)
     EXPECT_NE(serialization, type->getDefaultSerialization());
 }
 
-TEST(SerializationJSON, ValidatesSchemasWhenConstructingSerialization)
+TEST(SerializationJSON, ValidatesSchemasWhenParsingText)
 {
     tryRegisterAggregateFunctions();
     auto & factory = DataTypeFactory::instance();
+    FormatSettings settings;
     for (const auto * schema : {"JSON(x Map(UInt64, String))", "JSON(x Array(Map(UInt64, String)))",
              "JSON(x Tuple(a Map(UInt64, String)))", "JSON(x AggregateFunction(sum, UInt64))"})
     {
         auto type = factory.get(schema);
-        EXPECT_THROW(type->getDefaultSerialization(), Exception);
+        auto serialization = type->getDefaultSerialization();
+        EXPECT_THROW(parseJSON(type, serialization, "{}", settings), Exception);
     }
-    EXPECT_NO_THROW(factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))")->getDefaultSerialization());
+    auto type = factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))");
+    EXPECT_NO_THROW(parseJSON(type, type->getDefaultSerialization(), "{}", settings));
 }
 
 TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
