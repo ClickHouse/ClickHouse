@@ -132,8 +132,6 @@ namespace FailPoints
 {
 extern const char kafka2_remove_zk_before_get_children[];
 extern const char kafka2_remove_zk_before_final_multi[];
-extern const char kafka2_activate_pause_before_partial_shutdown[];
-extern const char kafka2_activate_pause_before_is_active_removal[];
 }
 
 namespace ErrorCodes
@@ -247,10 +245,6 @@ void StorageKafka2::partialShutdown()
         task->holder->deactivate();
     }
     is_active = false;
-    /// The consumers own the topic-partition locks, and nothing else releases them: `setKeeper` only runs when the
-    /// session is gone, so after a registration loss on a live session the locks would stay in Keeper while the
-    /// reactivation is retried, even though the peers already distribute the partitions without this replica.
-    releaseConsumersLocks();
     /// Reset the active node holder while the old ZooKeeper session is still alive (even if expired).
     /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
     /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
@@ -258,40 +252,10 @@ void StorageKafka2::partialShutdown()
     replica_is_active_node = nullptr;
 }
 
-void StorageKafka2::releaseConsumersLocks()
-{
-    std::lock_guard lock(consumers_mutex);
-    for (const auto & consumer : consumers)
-    {
-        if (!consumer)
-            continue;
-
-        /// A consumer can still be held by a direct `SELECT`, which is not stopped by `partialShutdown`.
-        /// Touching its assignment here would race with the reader, so leave it alone: once it is released,
-        /// its next `prepareToPoll` sees that this replica is not active and drops the locks itself.
-        if (consumer->isInUse())
-        {
-            LOG_INFO(log, "Consumer is in use, its topic-partition locks will be released when it is free");
-            continue;
-        }
-
-        consumer->releaseLocks();
-    }
-}
-
 bool StorageKafka2::activate()
 {
     LOG_TEST(log, "Activate task");
-
-    const bool session_expired = is_active && getZooKeeper()->expired();
-    /// The registration in Keeper can also fall apart while the session is alive, e.g. when the nodes are
-    /// removed or edited from outside the server. Nothing repairs it on its own, and since the consumers count
-    /// only active replicas when they distribute the partition locks, this replica would be silently left out
-    /// of every peer's quota while still holding on to its own locks. Detect it here so the same
-    /// deactivate/reactivate path as for a lost session recovers the whole registration.
-    const bool registration_lost = is_active && !session_expired && !isReplicaRegistrationValid(getZooKeeper());
-
-    if (is_active && !session_expired && !registration_lost)
+    if (is_active && !getZooKeeper()->expired())
     {
         LOG_TEST(log, "No need to activate");
         return true;
@@ -301,57 +265,9 @@ bool StorageKafka2::activate()
     {
         LOG_WARNING(log, "Table was not active. Will try to activate it");
     }
-    else if (session_expired)
+    else if (getZooKeeper()->expired())
     {
         LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session");
-        partialShutdown();
-    }
-    else if (registration_lost)
-    {
-        LOG_WARNING(log, "Registration of replica {} in Keeper is not valid anymore. Will re-register it", replica_path);
-
-        /// `partialShutdown` drops the node holder, and the holder removes whatever node is at its path at that
-        /// moment. After a registration loss that node is not necessarily ours anymore: another Keeper client may
-        /// have created one under our replica name, and one may even appear between any check made here and the
-        /// removal. Removing it would take over the very registration this branch has just refused to accept as
-        /// ours, so the holder is never allowed to remove by path. Instead, the node is removed here, only when it
-        /// is ours and only in the exact version that was just validated, which fails against a node that replaced
-        /// it in between; `activate_in_keeper` then waits for anything else to disappear before re-registering.
-        if (replica_is_active_node)
-        {
-            const auto zookeeper = getZooKeeper();
-            const String is_active_path = replica_is_active_node->getPath();
-            replica_is_active_node->setAlreadyRemoved();
-
-            String is_active_data;
-            Coordination::Stat is_active_stat;
-            if (!zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat))
-            {
-                LOG_WARNING(log, "The node {} does not exist anymore", is_active_path);
-            }
-            else if (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != zookeeper->getClientID())
-            {
-                LOG_WARNING(
-                    log,
-                    "The node {} was not created by this server (it is owned by session {}, ours is {}; its data is '{}', "
-                    "ours is '{}'). Leaving it in place",
-                    is_active_path,
-                    is_active_stat.ephemeralOwner,
-                    zookeeper->getClientID(),
-                    is_active_data,
-                    active_node_identifier);
-            }
-            else
-            {
-                const auto code = zookeeper->tryRemove(is_active_path, is_active_stat.version);
-                if (code == Coordination::Error::ZBADVERSION)
-                    LOG_WARNING(log, "The node {} was replaced by another Keeper client. Leaving it in place", is_active_path);
-                else if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception::fromPath(code, is_active_path);
-            }
-        }
-
-        FailPointInjection::pauseFailPoint(FailPoints::kafka2_activate_pause_before_partial_shutdown);
         partialShutdown();
     }
     else
@@ -380,65 +296,8 @@ bool StorageKafka2::activate()
         {
             auto zookeeper = getZooKeeper();
 
-            /// The ephemeral `is_active` node is a child of the persistent replica znode, so it can only be
-            /// created once the whole registration is in place. Repair it first, otherwise a replica whose
-            /// persistent znode is gone would retry `create` forever and never come back.
-            restoreReplicaRegistration(zookeeper);
-
             String is_active_path = fs::path(replica_path) / "is_active";
-
-            /// A node of another Keeper session under our replica name is not ours to remove: whoever created it
-            /// claims to be this replica, and stealing it would leave two servers consuming under one name. Do not
-            /// wait for it either (`deleteEphemeralNodeIfContentMatches` would block for three session timeouts and
-            /// then report a logical error for a state that comes from outside the server); report the conflict
-            /// right away and let the retry with backoff re-register once the foreign node is gone.
-            /// A node that carries our identifier is ours only when it was created by our own session: the one that
-            /// registered us last (it is either this very session, when the registration fell apart while the
-            /// session was alive, or the expired one whose leftover node Keeper has not removed yet). Anything else
-            /// replayed our identifier and is just as foreign. Before the first registration of this process the
-            /// identifier is all there is to go by, as for every other replicated storage: a leftover of the
-            /// previous process is removed by its payload.
-            String is_active_data;
-            Coordination::Stat is_active_stat;
-            const bool is_active_exists = zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat);
-            if (is_active_exists && is_active_stat.ephemeralOwner != 0)
-            {
-                const bool is_ours = is_active_data == active_node_identifier
-                    && (!own_is_active_session_id || is_active_stat.ephemeralOwner == *own_is_active_session_id
-                        || is_active_stat.ephemeralOwner == zookeeper->getClientID());
-                if (!is_ours)
-                    throw Exception(
-                        ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                        "Replica {} appears to be already active: znode {}/is_active is owned by another Keeper session {} "
-                        "(ours is {}; its data is '{}', ours is '{}'). If you're sure it's not, try again in a minute or remove the znode manually",
-                        replica_path,
-                        replica_path,
-                        is_active_stat.ephemeralOwner,
-                        zookeeper->getClientID(),
-                        is_active_data,
-                        active_node_identifier);
-            }
-
-            FailPointInjection::pauseFailPoint(FailPoints::kafka2_activate_pause_before_is_active_removal);
-
-            /// Remove the leftover only in the exact version that was just validated: a node that replaced it in the
-            /// meantime belongs to somebody else, whatever its payload says (the identifier is readable from Keeper
-            /// and can be replayed), and removing it by path or by payload would take it over in exactly the way the
-            /// check above refuses to.
-            if (is_active_exists)
-            {
-                const auto code = zookeeper->tryRemove(is_active_path, is_active_stat.version);
-                if (code == Coordination::Error::ZBADVERSION)
-                    throw Exception(
-                        ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                        "Replica {} appears to be already active: znode {}/is_active was replaced by another Keeper client "
-                        "while this replica was about to remove its own leftover. If you're sure it's not, try again in a minute "
-                        "or remove the znode manually",
-                        replica_path,
-                        replica_path);
-                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception::fromPath(code, is_active_path);
-            }
+            zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
             try
             {
@@ -458,7 +317,6 @@ bool StorageKafka2::activate()
                 throw;
             }
             replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *zookeeper);
-            own_is_active_session_id = zookeeper->getClientID();
 
             return true;
         }
@@ -537,34 +395,6 @@ void StorageKafka2::activateAndReschedule()
         partialShutdown();
         tryLogCurrentException(log, "Failed to restart the table. Will try again");
     }
-}
-
-bool StorageKafka2::needsReactivation(KeeperHandlingConsumer::CannotPollReason reason)
-{
-    switch (reason)
-    {
-        case KeeperHandlingConsumer::CannotPollReason::NoPartitions:
-            [[fallthrough]];
-        case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
-            return false;
-        /// The session is gone together with every ephemeral node it owned, `is_active` included. The activating
-        /// task notices that on its own only once a minute, so the consumer that has just run into it asks for
-        /// the new session right away instead of stalling until then.
-        case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
-            [[fallthrough]];
-        case KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive:
-            return true;
-    }
-}
-
-void StorageKafka2::scheduleReactivation(KeeperHandlingConsumer::CannotPollReason reason)
-{
-    chassert(needsReactivation(reason));
-    if (reason == KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded)
-        LOG_INFO(log, "The Keeper session has expired, scheduling reactivation");
-    else
-        LOG_INFO(log, "The replica is not registered as active in Keeper anymore, scheduling reactivation");
-    activating_task->schedule();
 }
 
 void StorageKafka2::assertActive() const
@@ -767,16 +597,7 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i),
-                    getZooKeeper(),
-                    fs_keeper_path,
-                    replica_name,
-                    active_node_identifier,
-                    i,
-                    log,
-                    num_consumers,
-                    partition_shard_num,
-                    shard_count);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, num_consumers, partition_shard_num, shard_count);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -1073,89 +894,12 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     return completely_removed;
 }
 
-String StorageKafka2::getReplicaRegistrationData() const
-{
-    return shard_count > 0 ? std::to_string(partition_shard_num) : "";
-}
-
-bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keeper_to_use) const
-{
-    String stored_data;
-    /// The persistent replica znode is what makes this replica visible to its peers: they list
-    /// `replicas` and, in affinity mode, keep only the ones whose data holds their own shard num.
-    if (!keeper_to_use->tryGet(replica_path, stored_data))
-        return false;
-
-    if (stored_data != getReplicaRegistrationData())
-        return false;
-
-    /// Peers count an `is_active` node as a sign of life, but ours has to be the one this server created, which
-    /// is what its payload and, above all, its owner session tell. The payload is readable from Keeper and can be
-    /// replayed by another client, the session cannot: our node is owned by the session we are checking with,
-    /// since that is the one that created it. A node of another Keeper session under our replica name means
-    /// somebody else claims to be this replica, and the peers then account for them, not for us. Our registration is not valid
-    /// in that case, and the deactivate/reactivate path takes it from there: it releases our locks and waits for
-    /// the foreign node to disappear before it re-registers, without ever stealing a live session's node.
-    Coordination::Stat is_active_stat;
-    String is_active_data;
-    if (!keeper_to_use->tryGet(fs::path(replica_path) / "is_active", is_active_data, &is_active_stat))
-        return false;
-
-    if (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != keeper_to_use->getClientID())
-    {
-        LOG_WARNING(
-            log,
-            "The node {}/is_active is owned by another Keeper session {} (ours is {}; its data is '{}', ours is '{}'), "
-            "so this replica is not the one registered under its name",
-            replica_path,
-            is_active_stat.ephemeralOwner,
-            keeper_to_use->getClientID(),
-            is_active_data,
-            active_node_identifier);
-        return false;
-    }
-
-    return true;
-}
-
-void StorageKafka2::restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use)
-{
-    const String replica_data = getReplicaRegistrationData();
-
-    Coordination::Stat stat;
-    String stored_data;
-    if (keeper_to_use->tryGet(replica_path, stored_data, &stat))
-    {
-        if (stored_data == replica_data)
-            return;
-
-        /// The table definition is the source of truth for this replica's own shard num: it was already
-        /// validated against the stored value when the replica was created, so a difference here means the
-        /// znode was edited from outside the server.
-        LOG_WARNING(
-            log,
-            "Replica znode {} holds the shard num '{}' instead of '{}'. Restoring it",
-            replica_path,
-            stored_data,
-            replica_data);
-        keeper_to_use->set(replica_path, replica_data, stat.version);
-        return;
-    }
-
-    LOG_WARNING(log, "Replica znode {} is gone. Re-creating it", replica_path);
-    const auto code = keeper_to_use->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
-    if (code == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} was suddenly removed", keeper_path);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-        throw Coordination::Exception::fromPath(code, replica_path);
-}
-
 void StorageKafka2::createReplica()
 {
     LOG_INFO(log, "Creating replica {}", replica_path);
     // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
     // metadata about the table to be able to identify that the same table is created, not a new one.
-    const String replica_data = getReplicaRegistrationData();
+    const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
     const auto code = keeper->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
 
     switch (code)
@@ -1654,11 +1398,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
-        {
-            if (needsReactivation(*cannot_poll_reason))
-                scheduleReactivation(*cannot_poll_reason);
             return getStallKind(*cannot_poll_reason);
-        }
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
         const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
@@ -1909,11 +1649,7 @@ StorageKafka2::StallKind StorageKafka2::getStallKind(const KeeperHandlingConsume
             [[fallthrough]];
         case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
             return StallKind::LongStall;
-        /// The activating task has just been asked to re-register the replica (see `needsReactivation`),
-        /// so the stream should be able to continue soon.
         case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
-            [[fallthrough]];
-        case KeeperHandlingConsumer::CannotPollReason::ReplicaNotActive:
             return StallKind::ShortStall;
     }
 }

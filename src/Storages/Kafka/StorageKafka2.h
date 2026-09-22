@@ -18,7 +18,6 @@
 #include <filesystem>
 #include <list>
 #include <mutex>
-#include <optional>
 #include <rdkafka.h>
 
 namespace cppkafka
@@ -207,28 +206,15 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
-    /// The Keeper session that created our current or latest `is_active` node. The identifier stored in the node
-    /// is readable from Keeper and can be replayed by another client, the session cannot, so this is what tells a
-    /// leftover of our own from a foreign node when the replica re-registers. Empty until the first registration
-    /// of this process; `partialShutdown` deliberately leaves it in place, since the re-registration may take
-    /// several attempts.
-    std::optional<Int64> own_is_active_session_id;
     UInt64 consecutive_activate_failures = 0;
 
     bool activate();
     void activateAndReschedule();
     void partialShutdown();
-    /// Drops the topic-partition locks held by the consumers that are not in use at the moment.
-    void releaseConsumersLocks();
 
     void parsePartitionAffinitySettings();
 
     void assertActive() const;
-    /// Whether the consumer could not poll because this replica has to be re-registered in Keeper, i.e. the
-    /// activating task has to run again before any consumer of this table can make progress.
-    static bool needsReactivation(KeeperHandlingConsumer::CannotPollReason reason);
-    /// Asks the activating task to re-register this replica in Keeper as soon as possible.
-    void scheduleReactivation(KeeperHandlingConsumer::CannotPollReason reason);
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.
@@ -265,12 +251,6 @@ private:
     bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to_use, const zkutil::EphemeralNodeHolder::Ptr & drop_lock);
     // Creates only the replica in ZooKeeper. Shouldn't be called on the first replica as it is created in createTableIfNotExists
     void createReplica();
-    /// The data stored in the persistent `replicas/<replica_name>` znode: the shard num in affinity mode, empty otherwise.
-    String getReplicaRegistrationData() const;
-    /// True when the persistent `replicas/<replica_name>` znode is there with the expected data and carries our `is_active` node.
-    bool isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keeper_to_use) const;
-    /// Re-creates the persistent `replicas/<replica_name>` znode or restores its data when it drifted.
-    void restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use);
     void dropReplica();
 
     std::optional<BlocksAndGuard>

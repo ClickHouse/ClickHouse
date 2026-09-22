@@ -112,7 +112,6 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
     const std::filesystem::path & keeper_path_,
     const String & replica_name_,
-    const String & active_node_identifier_,
     size_t idx_,
     const LoggerPtr & log_,
     size_t num_consumers_,
@@ -120,7 +119,6 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
-    , active_node_identifier(active_node_identifier_)
     , idx(idx_)
     , num_consumers(std::max<size_t>(num_consumers_, 1))
     , partition_shard_num(partition_shard_num_)
@@ -138,25 +136,20 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
     return keeper->expired();
 }
 
-void KeeperHandlingConsumer::releaseLocks()
+void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
 {
+    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
+    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
     }
+    keeper = keeper_;
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
     poll_count = 0;
-}
-
-void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
-{
-    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
-    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
-    releaseLocks();
-    keeper = keeper_;
 }
 
 std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll()
@@ -211,18 +204,6 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
-    /// We are not registered as active in Keeper anymore, so the peers distribute the locks without us.
-    /// Give up the locks we are still holding right here: the peers don't count us in their quota any longer,
-    /// so keeping them would wedge those partitions for as long as the reactivation takes. The storage reacts
-    /// to this reason by deactivating and activating the table again, which re-creates our `is_active` node.
-    if (!active_replicas_info.self_is_active)
-    {
-        LOG_INFO(log, "This replica is not active in Keeper anymore, releasing the topic-partition locks of consumer {}", idx);
-        releaseLocks();
-        return CannotPollReason::ReplicaNotActive;
-    }
-
-    chassert(active_replicas_info.active_replica_count > 0);
     /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
     /// assignment must be left either rewound to the committed offsets or empty.
     try
@@ -341,80 +322,33 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         }
     }
 
-    /// The replica znode is persistent and outlives a dead replica, so the ephemeral `is_active` is the
-    /// liveness signal: it is tied to the session of a running replica and disappears with it.
-    /// The nodes are read rather than only probed for existence, because for our own replica the payload
-    /// matters too: `StorageKafka2::activate` stores `active_node_identifier` in it, and an ephemeral node
-    /// with a different payload was created by some other Keeper session, so it is not our registration.
-    /// The payload alone does not prove ownership either, since it is readable from Keeper and can be replayed
-    /// by another client. What cannot be replayed is the session: the consumers share the storage's Keeper
-    /// session, which is the one that created our node, so our node is the one owned by this very session.
+    /// The replica znode is persistent and outlives a dead replica, so is_active is the liveness signal.
     Strings is_active_paths;
     is_active_paths.reserve(candidates.size());
     for (const auto & name : candidates)
         is_active_paths.push_back(keeper_path / "replicas" / name / "is_active");
 
-    auto is_active_responses = keeper->tryGet(is_active_paths);
+    auto is_active_responses = keeper->exists(is_active_paths);
 
     size_t active_replica_count = 0;
     size_t active_replicas_with_lock = 0;
-    bool self_is_active = false;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        const auto & response = is_active_responses[i];
-        if (response.error != Coordination::Error::ZOK)
+        if (is_active_responses[i].error != Coordination::Error::ZOK)
             continue;
-
-        const bool is_self = candidates[i] == replica_name;
-        if (is_self && (response.data != active_node_identifier || response.stat.ephemeralOwner != keeper->getClientID()))
-        {
-            /// Somebody else holds our replica name. We must neither count it as our own liveness signal nor
-            /// take part in the distribution on the strength of it: the caller goes through the
-            /// deactivate/reactivate path, which releases our locks and waits until the foreign node is gone.
-            LOG_WARNING(
-                log,
-                "The node {}/replicas/{}/is_active is owned by another Keeper session {} (ours is {}; its data is '{}', "
-                "ours is '{}'), so it is not the registration of this replica. Not counting it",
-                keeper_path.string(),
-                candidates[i],
-                response.stat.ephemeralOwner,
-                keeper->getClientID(),
-                response.data,
-                active_node_identifier);
-            continue;
-        }
 
         ++active_replica_count;
-        if (is_self)
-            self_is_active = true;
         if (replicas_with_lock.contains(candidates[i]))
             ++active_replicas_with_lock;
     }
 
-    /// Our own registration is completed by `StorageKafka2::activate` before the reader tasks are started and
-    /// is only torn down after they are stopped, so by the time we get here this replica must be among the
-    /// active ones. If it is not, our registration in Keeper is broken: the persistent replica znode is gone,
-    /// its shard num does not match ours anymore, or the ephemeral `is_active` node was removed or replaced by
-    /// a node of another Keeper session (e.g. from outside the server). In all of these cases every peer already
-    /// leaves us out of its quota, or accounts for somebody else under our name. Taking part in the distribution anyway would
-    /// let this replica claim locks nobody accounts for, so the caller stops the cycle and asks the storage to
-    /// go through the normal deactivate/reactivate path instead.
-    if (!self_is_active)
-        LOG_WARNING(
-            log,
-            "Replica {} is not among the active replicas of {}: {} of the {} candidate replicas (out of {} total, "
-            "shard_count={}) are registered as active, but this replica is not",
-            replica_name,
-            keeper_path.string(),
-            active_replica_count,
-            candidates.size(),
-            replica_names.size(),
-            shard_count);
-
+    /// Clamp to 1: our own is_active may be transiently missing, and 0 would divide by zero in
+    /// updatePermanentLocksLocked (its chassert is a no-op in the release build).
+    active_replica_count = std::max<size_t>(active_replica_count, 1);
     LOG_TEST(log, "There are {} active replicas with lock, {} active replicas out of {} total replicas (shard_count={})",
              active_replicas_with_lock, active_replica_count, replica_names.size(), shard_count);
     const auto has_replica_without_locks = active_replicas_with_lock < active_replica_count;
-    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks, self_is_active};
+    return ActiveReplicasInfo{active_replica_count, has_replica_without_locks};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
