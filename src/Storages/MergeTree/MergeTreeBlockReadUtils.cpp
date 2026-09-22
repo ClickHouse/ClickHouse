@@ -500,18 +500,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 continue;
 
             auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
-            auto column_in_part = data_part_info_for_reader.tryGetColumn(name);
-            if (!column_in_storage || !column_in_storage->isSubcolumn() || !column_in_part)
-                continue;
-
-            auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
-            bool has_separate_size_stream = false;
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
-            {
-                for (const auto & substream : path)
-                    has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
-            });
-            if (has_separate_size_stream)
+            if (!column_in_storage || !column_in_storage->isSubcolumn())
                 continue;
 
             String parent_name = name.substr(0, name.size() - string_size_suffix_length);
@@ -523,6 +512,32 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                     == column_to_read_after_prewhere.end()
                 || columns_from_previous_steps.contains(parent_name)
                 || std::find(step_column_names.begin(), step_column_names.end(), parent_name) != step_column_names.end())
+                continue;
+
+            auto name_in_part = column_in_storage->getNameInStorage();
+            if (!data_part_info_for_reader.isProjectionPart())
+            {
+                if (auto alter_conversions = data_part_info_for_reader.getAlterConversions();
+                    alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+                    name_in_part = alter_conversions->getColumnOldName(name_in_part);
+            }
+
+            auto full_name_in_part = Nested::concatenateName(name_in_part, column_in_storage->getSubcolumnName());
+            auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetColumnOrSubcolumn(
+                GetColumnsOptions::AllPhysical, full_name_in_part);
+
+            bool has_separate_size_stream = false;
+            if (column_in_part)
+            {
+                auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
+                serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
+                {
+                    for (const auto & substream : path)
+                        has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
+                });
+            }
+
+            if (has_separate_size_stream)
                 continue;
 
             /// A legacy String .size is virtual and scans the regular String stream. PREWHERE and
