@@ -98,7 +98,14 @@ public:
     /// Gives up every topic-partition lock held by this consumer and forgets the current assignment.
     /// The lock holders are ephemeral nodes, so when the Keeper session is still alive the locks are
     /// actually removed and the partitions become available to the other replicas right away, instead of
-    /// staying wedged until this session expires. Must not be called while the consumer is polling.
+    /// staying wedged until this session expires.
+    /// Thread safety: the lock holders (`permanent_locks`, `tmp_locks`) are cleared under
+    /// `topic_partition_locks_mutex`, but the assignment state (`assigned_topic_partitions`, `tmp_locks_quota`,
+    /// `poll_count`, `topic_partition_index_to_consume_from`) is not protected by any mutex; it is read and
+    /// written by `prepareToPoll`, `poll` and `commit` without synchronisation. So this method may only be
+    /// called by the thread that currently owns the consumer (between `prepareToPoll` calls, as `setKeeper`
+    /// and `prepareToPoll` themselves do), or by `StorageKafka2::partialShutdown` for a consumer that is not
+    /// in use (`isInUse` is `false`) after the reader tasks have been deactivated, i.e. when no thread polls it.
     void releaseLocks();
 
     /// The concept of `prepareToPoll` and `poll` is quite a bit quirky, but I didn't find a better way to:

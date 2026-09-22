@@ -424,8 +424,7 @@ bool StorageKafka2::activate()
             /// Remove the leftover only in the exact version that was just validated: a node that replaced it in the
             /// meantime belongs to somebody else, whatever its payload says (the identifier is readable from Keeper
             /// and can be replayed), and removing it by path or by payload would take it over in exactly the way the
-            /// check above refuses to. A node that is not ephemeral is not anybody's session and is removed the same
-            /// way `restoreReplicaRegistration` removes it.
+            /// check above refuses to.
             if (is_active_exists)
             {
                 const auto code = zookeeper->tryRemove(is_active_path, is_active_stat.version);
@@ -1090,22 +1089,16 @@ bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keep
     if (stored_data != getReplicaRegistrationData())
         return false;
 
-    /// Peers count only an ephemeral `is_active` as a sign of life, so a session-less node with that name
-    /// leaves us out of their quota just like a missing one. Treat it as a broken registration here too,
-    /// otherwise the repair would be skipped and this replica would stall forever.
-    /// An ephemeral node is not enough either: it has to be the one this server created, which is what its
-    /// payload and, above all, its owner session tell. The payload is readable from Keeper and can be replayed by
-    /// another client, the session cannot: our node is owned by the session we are checking with, since that is
-    /// the one that created it. A node of another Keeper session under our replica name means somebody else
-    /// claims to be this replica, and the peers then account for them, not for us. Our registration is not valid
+    /// Peers count an `is_active` node as a sign of life, but ours has to be the one this server created, which
+    /// is what its payload and, above all, its owner session tell. The payload is readable from Keeper and can be
+    /// replayed by another client, the session cannot: our node is owned by the session we are checking with,
+    /// since that is the one that created it. A node of another Keeper session under our replica name means
+    /// somebody else claims to be this replica, and the peers then account for them, not for us. Our registration is not valid
     /// in that case, and the deactivate/reactivate path takes it from there: it releases our locks and waits for
     /// the foreign node to disappear before it re-registers, without ever stealing a live session's node.
     Coordination::Stat is_active_stat;
     String is_active_data;
     if (!keeper_to_use->tryGet(fs::path(replica_path) / "is_active", is_active_data, &is_active_stat))
-        return false;
-
-    if (is_active_stat.ephemeralOwner == 0)
         return false;
 
     if (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != keeper_to_use->getClientID())
@@ -1128,19 +1121,6 @@ bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keep
 void StorageKafka2::restoreReplicaRegistration(const zkutil::ZooKeeperPtr & keeper_to_use)
 {
     const String replica_data = getReplicaRegistrationData();
-
-    /// This server only ever creates `is_active` as an ephemeral node, so a persistent one at that path can
-    /// only come from outside. It would block the `create` below forever, so remove it as part of the repair.
-    const String is_active_path = fs::path(replica_path) / "is_active";
-    Coordination::Stat is_active_stat;
-    if (keeper_to_use->exists(is_active_path, &is_active_stat) && is_active_stat.ephemeralOwner == 0)
-    {
-        LOG_WARNING(log, "The node {} is not ephemeral, it was not created by this server. Removing it", is_active_path);
-        const auto remove_code = keeper_to_use->tryRemove(is_active_path, is_active_stat.version);
-        if (remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
-            && remove_code != Coordination::Error::ZBADVERSION)
-            throw Coordination::Exception::fromPath(remove_code, is_active_path);
-    }
 
     Coordination::Stat stat;
     String stored_data;

@@ -341,10 +341,8 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         }
     }
 
-    /// The replica znode is persistent and outlives a dead replica, so is_active is the liveness signal.
-    /// Only an ephemeral `is_active` carries that meaning: it is tied to the session of a running replica
-    /// and disappears with it. A persistent or otherwise session-less node with the same name (e.g. re-created
-    /// from outside the server) says nothing about liveness, so it must not be counted.
+    /// The replica znode is persistent and outlives a dead replica, so the ephemeral `is_active` is the
+    /// liveness signal: it is tied to the session of a running replica and disappears with it.
     /// The nodes are read rather than only probed for existence, because for our own replica the payload
     /// matters too: `StorageKafka2::activate` stores `active_node_identifier` in it, and an ephemeral node
     /// with a different payload was created by some other Keeper session, so it is not our registration.
@@ -366,16 +364,6 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         const auto & response = is_active_responses[i];
         if (response.error != Coordination::Error::ZOK)
             continue;
-
-        if (response.stat.ephemeralOwner == 0)
-        {
-            LOG_WARNING(
-                log,
-                "The node {}/replicas/{}/is_active is not ephemeral, so it does not indicate a live replica. Not counting it",
-                keeper_path.string(),
-                candidates[i]);
-            continue;
-        }
 
         const bool is_self = candidates[i] == replica_name;
         if (is_self && (response.data != active_node_identifier || response.stat.ephemeralOwner != keeper->getClientID()))
