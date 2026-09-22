@@ -750,6 +750,10 @@ void StorageTimeSeries::readImpl(
 
     auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
     query_plan = QueryPlan();
+    /// The generated plan joins the outer plan only during optimization, after the outer plan has decided
+    /// on distribution, so its contexts must be handed over now for a fallback to reach them.
+    query_plan.takeContextsFrom(*generated_plan);
+    query_plan.addDistributedPlanDecisionContext(read_context);
     query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
