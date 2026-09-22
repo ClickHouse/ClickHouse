@@ -3064,7 +3064,6 @@ SinkToStoragePtr StorageFile::write(
             flags);
     }
 
-    /// Handed to the sink below, so it must be taken before the `paths` accesses it has to cover.
     auto lock = std::unique_lock{rwlock, getLockTimeout(context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
