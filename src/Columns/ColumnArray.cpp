@@ -1803,4 +1803,10 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+ColumnPlanes ColumnArray::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Array, getOffsets().data());
+    planes.children = {&getData()};
+    return planes;
+}
 }
