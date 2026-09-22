@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## 使用上の注意
-</div>
+## 使用上の注意 {#usage-remarks}
 
 `Interval` 型の値は、[Date](/ja/reference/data-types/date) 型および [DateTime](/ja/reference/data-types/datetime) 型の値に対する算術演算で使用できます。たとえば、現在時刻に 4 日を加えることができます。
 
@@ -89,9 +87,26 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## 混合型インターバル
-</div>
+## 集約 {#aggregation}
+
+`Interval` カラムに対する `avg`、`min`、`max`、`any` は、同じ型のインターバルを返します。
+`avg` は単位数の平均を取り、その結果を整数の単位数に丸めます:
+
+```sql
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
+```
+
+単位の異なるインターバル同士には共通の尺度がありません。1か月は固定の日数ではないためです。そのため両者を相互に変換することはできず、インターバル型ごとに個別に集計されます。
+
+## 混合型インターバル {#mixed-type-intervals}
 
 複数の時間や複数の分などを含む混合型インターバルは、`INTERVAL 'value' <from_kind> TO <to_kind>` 構文を使用して作成できます。
 結果は、2 つ以上のインターバルから成るタプルです。
@@ -134,9 +149,8 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [INTERVAL](/ja/reference/operators/index#interval) 演算子
 * [toInterval](/ja/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 型変換関数
+* [avg](/ja/reference/functions/aggregate-functions/avg) 集約関数

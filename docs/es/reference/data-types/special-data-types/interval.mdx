@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## Observaciones sobre el uso
-</div>
+## Observaciones sobre el uso {#usage-remarks}
 
 Puede usar valores de tipo `Interval` en operaciones aritméticas con valores de tipo [Date](/es/reference/data-types/date) y [DateTime](/es/reference/data-types/datetime). Por ejemplo, puede sumar 4 días a la hora actual:
 
@@ -89,9 +87,27 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## Intervalos de tipo mixto
-</div>
+## Agregación {#aggregation}
+
+`avg`, `min`, `max` y `any` sobre una columna `Interval` devuelven un intervalo del mismo tipo.
+`avg` promedia la cantidad de unidades y redondea el resultado a un número entero de ellas:
+
+```sql
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
+```
+
+Los intervalos de unidades distintas no son conmensurables —un mes no equivale a un número fijo de días—, por lo que
+no existe conversión entre ellos y cada tipo de intervalo se agrega por separado.
+
+## Intervalos de tipo mixto {#mixed-type-intervals}
 
 Los intervalos de tipo mixto, por ejemplo, varias horas y varios minutos, se pueden crear con la sintaxis `INTERVAL 'value' <from_kind> TO <to_kind>`.
 El resultado es una tupla de dos o más intervalos.
@@ -134,9 +150,8 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## Véase también
-</div>
+## Véase también {#see-also}
 
 * [INTERVAL](/es/reference/operators/index#interval), operador
 * [toInterval](/es/reference/functions/regular-functions/type-conversion-functions#toIntervalYear), funciones de conversión de tipos
+* [avg](/es/reference/functions/aggregate-functions/avg), función de agregación

@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## Примечания по использованию
-</div>
+## Примечания по использованию {#usage-remarks}
 
 Значения типа `Interval` можно использовать в арифметических операциях со значениями типов [Date](/ru/reference/data-types/date) и [DateTime](/ru/reference/data-types/datetime). Например, к текущему времени можно добавить 4 дня:
 
@@ -89,9 +87,27 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## Интервалы смешанных типов
-</div>
+## Агрегация {#aggregation}
+
+`avg`, `min`, `max` и `any` по столбцу типа `Interval` возвращают интервал того же типа.
+`avg` усредняет количество единиц и округляет результат до целого числа единиц:
+
+```sql
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
+```
+
+Интервалы в разных единицах несоизмеримы — месяц не равен фиксированному числу дней, — поэтому
+преобразование между ними невозможно, и каждый тип интервала агрегируется отдельно.
+
+## Интервалы смешанных типов {#mixed-type-intervals}
 
 Интервалы смешанных типов, например включающие и часы, и минуты, можно создавать с помощью синтаксиса `INTERVAL 'value' <from_kind> TO <to_kind>`.
 Результат представляет собой кортеж из двух или более интервалов.
@@ -134,9 +150,8 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * оператор [INTERVAL](/ru/reference/operators/index#interval)
 * [toInterval](/ru/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) функции преобразования типов
+* агрегатная функция [avg](/ru/reference/functions/aggregate-functions/avg)

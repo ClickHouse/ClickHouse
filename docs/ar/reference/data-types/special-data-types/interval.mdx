@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## ملاحظات حول الاستخدام
-</div>
+## ملاحظات حول الاستخدام {#usage-remarks}
 
 يمكنك استخدام القيم من النوع `Interval` في العمليات الحسابية مع القيم من النوع [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime). على سبيل المثال، يمكنك إضافة 4 أيام إلى الوقت الحالي:
 
@@ -89,9 +87,27 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## الفواصل الزمنية المختلطة النوع
-</div>
+## التجميع {#aggregation}
+
+تُرجع الدوال `avg` و`min` و`max` و`any` عند تطبيقها على column من النوع `Interval` فاصلًا زمنيًا من النوع نفسه.
+وتحسب `avg` متوسط عدد الوحدات ثم تقرّب النتيجة إلى عدد صحيح منها:
+
+```sql
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
+```
+
+الفواصل الزمنية ذات الوحدات المختلفة غير قابلة للقياس المشترك — فالشهر ليس عددًا ثابتًا من الأيام — لذا
+لا يوجد تحويل بينها، ويُجمَّع كل نوع من الفواصل الزمنية على حِدة.
+
+## الفواصل الزمنية المختلطة النوع {#mixed-type-intervals}
 
 يمكن إنشاء فواصل زمنية مختلطة النوع، مثل عدة ساعات وعدة دقائق، باستخدام البنية `INTERVAL 'value' <from_kind> TO <to_kind>`.
 وتكون النتيجة قيمة من النوع `Tuple` تتكوّن من فاصلين زمنيين أو أكثر.
@@ -134,9 +150,8 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## انظر أيضًا {#see-also}
 
-* المعامل [INTERVAL](/ar/reference/operators/index#interval)
+* المشغّل [INTERVAL](/ar/reference/operators/index#interval)
 * دوال تحويل النوع [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
+* الدالة التجميعية [avg](/ar/reference/functions/aggregate-functions/avg)
