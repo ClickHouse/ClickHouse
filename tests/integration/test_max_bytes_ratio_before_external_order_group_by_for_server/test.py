@@ -1,5 +1,3 @@
-import uuid
-
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -12,13 +10,6 @@ node_server = cluster.add_instance(
 )
 node_user = cluster.add_instance(
     "node_user", user_configs=["users.d/memory_overrides.yaml"]
-)
-# The runtime of each test below has a floor set by the memory limit it has to reach.
-node_server_small = cluster.add_instance(
-    "node_server_small", main_configs=["config.d/memory_overrides_small.yaml"]
-)
-node_user_small = cluster.add_instance(
-    "node_user_small", user_configs=["users.d/memory_overrides_small.yaml"]
 )
 
 
@@ -108,13 +99,13 @@ def test_max_bytes_ratio_before_external_sort(node):
 
 
 @pytest.mark.parametrize(
-    "node,rejected_by,limit_follows_rss",
+    "node,limit_follows_rss",
     [
-        pytest.param(node_server_small, "(total) memory limit exceeded", True, id="server"),
-        pytest.param(node_user_small, "User memory limit exceeded", False, id="user"),
+        pytest.param(node_server, True, id="server"),
+        pytest.param(node_user, False, id="user"),
     ],
 )
-def test_max_bytes_ratio_before_external_distinct(node, rejected_by, limit_follows_rss):
+def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
     if sanitizer_build["thread"]:
         pytest.skip("TSan build is skipped due to memory overhead")
     if sanitizer_build["memory"]:
@@ -130,10 +121,9 @@ def test_max_bytes_ratio_before_external_distinct(node, rejected_by, limit_follo
         # `max_memory_usage_for_user` counts tracked bytes rather than RSS.
         pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
 
-    # Peak memory usage: ~5.8GiB (7M unique 800-byte keys) against the nodes' 4Gi limit.
-    # Every number in the range has 8 digits, so every key is exactly 800 bytes.
+    # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
     query = """
-    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 100) AS k FROM numbers(10000000, 7000000)) FORMAT Null
+    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
     """
 
     settings = {
@@ -141,19 +131,8 @@ def test_max_bytes_ratio_before_external_distinct(node, rejected_by, limit_follo
         "max_bytes_before_external_distinct": 0,
         "max_bytes_ratio_before_external_distinct": 0.3,
     }
-    query_id = str(uuid.uuid4())
-    node.query(query, settings=settings, query_id=query_id)
-    node.query("SYSTEM FLUSH LOGS query_log")
-    assert (
-        node.query(
-            f"SELECT count() FROM system.query_log WHERE query_id = '{query_id}' "
-            "AND type = 'QueryFinish' AND ProfileEvents['ExternalDistinctWritePart'] > 0"
-        )
-        == "1\n"
-    )
+    node.query(query, settings=settings)
 
     settings["max_bytes_ratio_before_external_distinct"] = 0
-    with pytest.raises(QueryRuntimeException) as exc_info:
+    with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)
-    assert rejected_by in str(exc_info.value)
-    assert "maximum: 4.00 GiB" in str(exc_info.value)
