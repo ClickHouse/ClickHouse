@@ -1,3 +1,4 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
@@ -20,6 +21,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #if CLICKHOUSE_CLOUD
 #include <Dictionaries/SystemDictionaryUUIDs.h>
+#include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -50,6 +52,36 @@ namespace ErrorCodes
 
 namespace
 {
+    void checkDictionarySettingNames(const StorageFactory::Arguments & args)
+    {
+        const auto * dict_settings = args.query.dictionary ? args.query.dictionary->dict_settings : nullptr;
+        if (!dict_settings)
+            return;
+
+        const auto local_context = args.getLocalContext();
+
+        /// Shared Catalog secondaries re-execute the initiator's DDL, and a secondary that refuses one retries
+        /// its queue entry forever.
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay
+            = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
+        if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_shared_catalog_replay)
+            return;
+
+        /// These changes reach the source query's context through `applySettingsChanges`, which skips the
+        /// constraints a `SET` passes, so the name is checked the way `SettingsConstraints` checks it.
+        const auto & access_control = local_context->getAccessControl();
+        for (const auto & change : dict_settings->changes)
+        {
+            const std::string_view name = Settings::resolveName(change.name);
+            if (name != "profile")
+                access_control.checkSettingNameIsAllowed(name);
+        }
+    }
+
     void checkNamesAndTypesCompatibleWithDictionary(const String & dictionary_name, const ColumnsDescription & columns, const DictionaryStructure & dictionary_structure)
     {
         auto dictionary_names_and_types = StorageDictionary::getNamesAndTypes(dictionary_structure, false);
@@ -370,6 +402,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (query.is_dictionary)
         {
+            checkDictionarySettingNames(args);
+
             auto dictionary_id = args.table_id;
             auto & external_dictionaries_loader = local_context->getExternalDictionariesLoader();
 
