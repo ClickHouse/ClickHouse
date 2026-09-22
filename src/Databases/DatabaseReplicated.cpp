@@ -567,9 +567,9 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
               fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
 
-    assert(!hosts.empty());
-    assert(hosts.size() == host_ids.size());
-    assert(hosts.size() == host_groups.size());
+    chassert(!hosts.empty());
+    chassert(hosts.size() == host_ids.size());
+    chassert(hosts.size() == host_groups.size());
     String current_shard;
     Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
