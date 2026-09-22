@@ -780,14 +780,14 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     pipeline.init(std::move(pipe));
 }
 
-bool StorageObjectStorageQueue::dependentViewsDeduplicateBlocks(const ContextPtr & context) const
+bool StorageObjectStorageQueue::dependentViewsDeduplicateBlocks(const ContextPtr & local_context) const
 {
     bool deduplication_v2_is_set = false;
     {
         std::lock_guard lock(mutex);
         deduplication_v2_is_set = deduplication_v2;
     }
-    if (!deduplication_v2_is_set || !context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views])
+    if (!deduplication_v2_is_set || !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views])
         return false;
 
     /// Deduplication is what makes it safe to abort a partially processed file and replay it from
@@ -797,7 +797,7 @@ bool StorageObjectStorageQueue::dependentViewsDeduplicateBlocks(const ContextPtr
     /// block ids only under its own `deduplicate` flag, and `Memory` never does, so for such targets
     /// the table setting alone would turn the replay into duplicated rows. The same predicate decides
     /// whether the per-chunk deduplication token is attached at all, so the two cannot drift apart.
-    return InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(getStorageID(), context);
+    return InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(getStorageID(), local_context);
 }
 
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
