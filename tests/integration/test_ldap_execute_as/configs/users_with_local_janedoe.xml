@@ -18,10 +18,22 @@
             <!-- Tells this principal apart from the LDAP `janedoe` after `EXECUTE AS`. -->
             <profile>local_janedoe_profile</profile>
         </janedoe>
+        <!-- Same name as an LDAP user the handoff test materialises then deletes from the directory; its
+             profile shows that `EXECUTE AS` fell through to this local user once the directory refused the
+             cached LDAP entry. -->
+        <handoff>
+            <password>local_password</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+            <profile>handoff_profile</profile>
+        </handoff>
     </users>
     <profiles>
         <local_janedoe_profile>
             <max_result_rows>12345</max_result_rows>
         </local_janedoe_profile>
+        <handoff_profile>
+            <max_result_rows>54321</max_result_rows>
+        </handoff_profile>
     </profiles>
 </clickhouse>

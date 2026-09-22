@@ -912,6 +912,13 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
     return result;
 }
 
+bool ExternalAuthenticators::hasLDAPLookupIdentity(const String & server) const
+{
+    std::lock_guard lock(mutex);
+    const auto it = ldap_client_params_blueprint.find(server);
+    return it != ldap_client_params_blueprint.end() && it->second.hasLookupIdentity();
+}
+
 void ExternalAuthenticators::checkLDAPServerCanEnumerate(const String & server) const
 {
     std::lock_guard lock(mutex);

@@ -882,7 +882,13 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
         const auto eit = users_external_roles.find(name);
         const bool roles_incomplete = has_role_mapping
             && ((eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size()));
-        if (unverified_user_names.contains(name) || roles_incomplete)
+        /// With a service account (`lookup_bind_dn`) every cached entry is revalidated against the directory here,
+        /// so `EXECUTE AS` stops resolving a user removed from the directory, or one that lost their groups, without
+        /// waiting for that user's next login or a restart. Without one there is nothing to revalidate against, so
+        /// only the entries the interserver path left unconfirmed (`unverified_user_names`) or with incomplete roles
+        /// are re-queried; a normal login already validated the rest.
+        const bool has_lookup = access_control.getExternalAuthenticators().hasLDAPLookupIdentity(ldap_server_name);
+        if (has_lookup || unverified_user_names.contains(name) || roles_incomplete)
         {
             LDAPClient::SearchResultsList external_roles;
             if (!access_control.getExternalAuthenticators().findLDAPUser(
@@ -891,7 +897,7 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
                     has_role_mapping ? &role_search_params : nullptr,
                     has_role_mapping ? &external_roles : nullptr))
             {
-                LOG_DEBUG(getLogger(), "User {} is cached in LDAP directory {} without a confirmation by the directory, and the lookup does not confirm the name; not resolving it",
+                LOG_DEBUG(getLogger(), "User {} is cached in LDAP directory {} but the directory does not confirm the name; not resolving it",
                     name, backQuote(getStorageName()));
                 return {};
             }
@@ -1365,8 +1371,29 @@ LDAPAccessStorage::SyncDiff LDAPAccessStorage::computeSyncDiffNoLock(const SyncP
     SyncDiff diff;
     diff.synced = synced_user_names.size();
 
+    /// `planSync` decided which names a preceding storage shadows, but it ran without the lock and before this diff.
+    /// A `CREATE USER` or a reload of an earlier storage may have defined one of the planned names since, so the
+    /// decision is re-checked here, under the lock right before the plan is applied: this run then never materialises
+    /// a name a preceding storage now owns, which would leave the login resolving to that storage while a second
+    /// copy of the user lingers in this directory until the next run.
+    const auto storages = access_control.getStorages();
+    auto shadowed_by_preceding = [&](const String & name)
+    {
+        for (const auto & storage : storages)
+        {
+            if (storage.get() == this)
+                return false;
+            if (storage->find<User>(name))
+                return true;
+        }
+        return false;
+    };
+
     for (const auto & [name, entry] : plan.users)
     {
+        if (shadowed_by_preceding(name))
+            continue;
+
         const auto id = memory_storage.find<User>(name);
         if (!id)
         {

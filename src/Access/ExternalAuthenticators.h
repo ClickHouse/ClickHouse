@@ -74,6 +74,11 @@ public:
     /// first run.
     void checkLDAPServerCanEnumerate(const String & server) const;
 
+    /// Whether LDAP server `server` is configured with a service account (`lookup_bind_dn`). False when the
+    /// server is unknown or failed to parse. Lets a lazy `ldap` directory decide whether it can revalidate a
+    /// cached user against the directory on `EXECUTE AS`.
+    bool hasLDAPLookupIdentity(const String & server) const;
+
     GSSAcceptorContext::Params getKerberosParams() const;
 
 private:

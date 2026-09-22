@@ -935,7 +935,8 @@
                     max_users - a run that receives more entries applies nothing (10000 by default, 0 = unlimited).
                     max_removed_fraction - a run that would remove more than max(1, floor(fraction * synchronized users)) users
                              applies nothing (0.5 by default).
-                    max_staleness - seconds; when > 0, logins of synchronized users are refused while the last successful run
+                    max_staleness - seconds; when > 0, logins, interserver authentication (distributed queries under a cluster
+                             secret) and EXECUTE AS of synchronized users are refused while the last successful run
                              is older than this (0 = off; requires only_synced_users = true and a value greater than interval;
                              at most 315360000).
                     dry_run - enumerate and plan, log what would change, apply nothing ('false' by default).

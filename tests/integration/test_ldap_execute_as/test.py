@@ -448,6 +448,52 @@ def test_execute_as_ldap_user_with_role_mapping_without_prior_login(started_clus
         )
 
 
+def test_execute_as_hands_a_refused_cached_ldap_user_to_a_later_storage(
+    started_cluster,
+):
+    """The later-storage half of the `resolveImpersonationTargetUser` fallback, made observable by the
+    lazy-directory revalidation: with a service account, `EXECUTE AS` revalidates a cached LDAP user, and
+    a user removed from the directory is no longer impersonated but handed to the next storage.
+
+    `node_with_local_user_precedence` declares the `ldap` directory before `users_xml`, and `users_xml`
+    defines a local `handoff` with a profile (`max_result_rows` = 54321). An LDAP `handoff` is created,
+    logged in (so the `ldap` directory, ordered first, materialises it and shadows the local user), then
+    deleted from the directory. `EXECUTE AS handoff` must now revalidate the cached LDAP entry, fail, and
+    resolve the local `handoff`, whose profile setting proves which storage won.
+    """
+    try:
+        add_ldap_user(started_cluster, "handoff", "qwerty")
+        assert (
+            node_with_local_user_precedence.query(
+                "SELECT currentUser()", user="handoff", password="qwerty"
+            ).strip()
+            == "handoff"
+        )
+        assert (
+            node_with_local_user_precedence.query(
+                "SELECT count() FROM system.users WHERE name = 'handoff' AND storage = 'ldap'",
+                user="admin",
+                password="qwerty",
+            ).strip()
+            == "1"
+        )
+
+        delete_ldap_user(started_cluster, "handoff")
+
+        # The cached LDAP `handoff` is revalidated on EXECUTE AS, the directory no longer confirms the name,
+        # so resolution falls through to the local `handoff` in `users_xml`, whose profile shows through.
+        assert (
+            node_with_local_user_precedence.query(
+                "EXECUTE AS handoff SELECT getSetting('max_result_rows')",
+                user="admin",
+                password="qwerty",
+            ).strip()
+            == "54321"
+        )
+    finally:
+        delete_ldap_user(started_cluster, "handoff")
+
+
 def test_execute_as_local_user_takes_precedence_over_ldap(started_cluster):
     """Bot concern on `src/Interpreters/Access/InterpreterExecuteAsQuery.cpp`:
     the forced LDAP lookup must not be allowed to shadow a target name that

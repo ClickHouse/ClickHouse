@@ -2160,7 +2160,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 | `min_users` | a run that finds fewer users applies nothing; `1` by default. |
 | `max_users` | a run that receives more entries applies nothing; `10000` by default, `0` = unlimited. Must be `0` or greater than `min_users`. |
 | `max_removed_fraction` | a run that would remove more than max(1, floor(fraction × currently synchronized users)) users applies nothing; `0.5` by default, between `0` and `1`. |
-| `max_staleness` | seconds; when greater than `0`, logins and `EXECUTE AS` of synchronized users are refused while the last successful run is older than this. Requires `only_synced_users` = `true`, `interval` > `0` and a value greater than `interval`; at most `315360000` (ten years). `0` (the default) disables the gate. |
+| `max_staleness` | seconds; when greater than `0`, logins, interserver authentication (distributed queries under a cluster `secret`) and `EXECUTE AS` of synchronized users are refused while the last successful run is older than this. Requires `only_synced_users` = `true`, `interval` > `0` and a value greater than `interval`; at most `315360000` (ten years). `0` (the default) disables the gate. |
 | `dry_run` | enumerate and plan, log what would change, apply nothing; `false` by default. |
 
 **Example**
