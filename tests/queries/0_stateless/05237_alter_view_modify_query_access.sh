@@ -42,6 +42,12 @@ run 'union leg       ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::Strin
 echo '-- only tables the user can read, so this must stay accepted'
 run 'own subquery    ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM (SELECT * FROM $db.src)"
 
+echo '-- a column grant must not be rejected just because the read sits inside a subquery'
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(id) ON $db.secret TO $author"
+run 'granted column  ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM (SELECT id FROM $db.secret)"
+run 'ungranted column' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, secret FROM (SELECT id, secret FROM $db.secret)"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(id) ON $db.secret FROM $author"
+
 echo '-- no data leaked: none of the denied bodies was stored, so the view still reads only src'
 run 'back to src     ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
 ${CLICKHOUSE_CLIENT} --user "$author" --query "INSERT INTO $db.src VALUES (1)"
