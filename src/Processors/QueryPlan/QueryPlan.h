@@ -161,7 +161,7 @@ public:
     bool staysDistributed() const { return distributed_plan_decision == DistributedPlanDecision::Distributed; }
 
     /// True once `applyDistributedPlanFallbackToLocal` rejected this plan, which then runs locally.
-    bool fellBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
+    bool didFallBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
