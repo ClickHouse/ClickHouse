@@ -187,12 +187,17 @@ def worker_budget(keystrokes):
     )
 
 
-def run_with_timeout(program, argv, name, keystrokes, check):
+def run_with_timeout(program, argv, name, history, keystrokes, check):
+    """Run a case with a history file holding the `history` entries. The file is written anew for
+    every attempt: an attempt killed after its final Enter may already have appended the query to
+    it, and a retry starting from that tail would recall a different entry than the case intends
+    while still printing the expected result."""
     for attempt in range(5):
+        history_file = make_history_file(name, history)
         state = multiprocessing.Value("i", -1)
         process = multiprocessing.Process(
             target=run_case,
-            args=(program, argv, name, keystrokes, check),
+            args=(program, argv + [f"--history_file={history_file}"], name, keystrokes, check),
             kwargs={"state": state},
         )
         process.start()
@@ -217,33 +222,33 @@ def main():
 
     # 1. Up recalls an entry; no hint appears at its end ("ive" would be the ghost suffix of
     #    "concatAssumeInjective").
-    history = make_history_file("up_recall", ["SELECT concatAssumeInject"])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "up_recall_no_hints",
+        ["SELECT concatAssumeInject"],
         [b"\x1b[A"],
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
 
     # Meta-Up is replxx's direct history-previous binding. It must use the same suppression as
     # plain Up, rather than leaving the default action to regenerate hints.
-    history = make_history_file("meta_up_recall", ["SELECT concatAssumeInject"])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "meta_up_recall_no_hints",
+        ["SELECT concatAssumeInject"],
         [b"\x1b\x1b[A"],
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
 
     # Ctrl-G restores the currently recalled history entry after an edit. It is another whole
     # line display, so Down must return to the scratch line rather than navigate the hint list.
-    history = make_history_file("restore_current", ["SELECT concatAssumeInjec"])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "restore_current_down_navigates_history",
+        ["SELECT concatAssumeInjec"],
         [b"SELECT 111 AS rand", b"\x1b[A", b"t", b"\x07", b"\x1b[B", b"\r"],
         lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
     )
@@ -252,24 +257,22 @@ def main():
     #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
     #    so its result (222) is printed. The result can use either Pretty or TabSeparated output
     #    depending on the client's default format.
-    history = make_history_file(
-        "down_navigates", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
-    )
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "down_navigates_history",
+        ["SELECT 111 AS rand", "SELECT 222 AS rand"],
         [b"\x1b[A", b"\x1b[A", b"\x1b[B", b"\r"],
         lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
     )
 
     # 3. Recalling a history entry with the same text as the scratch line is still a programmatic
     # display. Down must return from that entry to the scratch line instead of selecting a hint.
-    history = make_history_file("same_text_recall", ["SELECT 222 AS rand", "SELECT 111 AS rand"])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "same_text_recall_down_navigates_history",
+        ["SELECT 222 AS rand", "SELECT 111 AS rand"],
         [b"SELECT 111 AS rand", b"\x1b[A", b"\x1b[B", b"\r"],
         lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
     )
@@ -282,34 +285,32 @@ def main():
     # would render. The accepted entry is committed as the most recent recall, so the first Down
     # re-displays it (`replxx` emulates the Windows down-arrow there) and the second one moves on
     # to "SELECT 222 AS rand", which Enter then runs.
-    history = make_history_file(
-        "incremental_search", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
-    )
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "incremental_search_down_navigates_history",
+        ["SELECT 111 AS rand", "SELECT 222 AS rand"],
         [b"\x14", b"111", b"\x05", b"\x1b[B", b"\x1b[B", b"\r"],
         lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
     )
 
     # 4. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
     #    prefix "concatAssumeInject" and the ghost "ive" appears.
-    history = make_history_file("edit_after_recall", ["SELECT concatAssumeInjec"])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "edit_after_recall_shows_hints",
+        ["SELECT concatAssumeInjec"],
         [b"\x1b[A", b"t"],
         lambda o: (HINT_COLOR + "ive") in o,
     )
 
     # 5. A (bracketed) paste is also a whole new line displayed at once - no hint at its end.
-    history = make_history_file("paste", [])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "paste_no_hints",
+        [],
         [b"\x1b[200~SELECT concatAssumeInject\x1b[201~"],
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
@@ -321,11 +322,11 @@ def main():
     # valid query, which is irrelevant here, only the cache state matters - and then the very same
     # text is pasted on the next prompt, where no hint may appear. Only the output after the last
     # prompt is examined: the first, typed line legitimately shows the ghost.
-    history = make_history_file("same_text_paste", [])
     run_with_timeout(
         base[0],
-        args + [f"--history_file={history}"],
+        args,
         "same_text_paste_no_hints",
+        [],
         [
             b"SELECT concatAssumeInject",
             b"\r",
@@ -345,11 +346,11 @@ def main():
     previous_editor = os.environ.get("EDITOR")
     os.environ["EDITOR"] = editor
     try:
-        history = make_history_file("unchanged_editor", [])
         run_with_timeout(
             base[0],
-            args + [f"--history_file={history}"],
+            args,
             "unchanged_editor_down_navigates_history",
+            [],
             [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
             lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
         )
@@ -369,11 +370,11 @@ def main():
     previous_editor = os.environ.get("EDITOR")
     os.environ["EDITOR"] = editor
     try:
-        history = make_history_file("failing_editor", [])
         run_with_timeout(
             base[0],
-            args + [f"--history_file={history}"],
+            args,
             "failing_editor_down_navigates_history",
+            [],
             [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
             lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
         )
