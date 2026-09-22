@@ -255,7 +255,10 @@ def test_time_series_target_functions_require_source_select():
                 with pytest.raises(Exception, match="ACCESS_DENIED|Not enough privileges"):
                     node.query(query, user="ts_target_reader")
 
+        # A table function also needs CREATE TEMPORARY TABLE unless it is registered with
+        # `allow_readonly`, which none of the timeSeries* target functions is.
         node.query("GRANT SELECT ON prometheus TO ts_target_reader")
+        node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO ts_target_reader")
         assert int(
             node.query(
                 "SELECT count() FROM timeSeriesTagsMinMax('prometheus')",

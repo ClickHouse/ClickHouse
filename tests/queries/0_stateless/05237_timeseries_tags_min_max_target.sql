@@ -53,16 +53,20 @@ SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(900,
 SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(0, 3), toDateTime64(500, 3));
 SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(0, 3), toDateTime64(9000, 3));
 
-SELECT '-- a series whose bounds row is missing must not vanish from a read';
+SELECT '-- a series with no bounds row is pruned while filtering is on, and returns once it is off';
 
--- Written straight into the tags target, so the sink never gave it a bounds row. A read that joined
--- the two targets the wrong way round would drop the series entirely.
+-- Written straight into the tags target, so the sink never gave it a bounds row. This is not something
+-- the split introduced: before it, the same series had NULL bounds in its tags row and a filtered read
+-- pruned it exactly the same way.
 INSERT INTO FUNCTION timeSeriesTags(currentDatabase(), 'ts_v7') (metric_name, tags)
     VALUES ('orphan_series', {'job': 'api'});
 INSERT INTO FUNCTION timeSeriesSamples(currentDatabase(), 'ts_v7') (id, timestamp, value)
     SELECT id, toDateTime64(1000, 3), 9.0 FROM timeSeriesTags(currentDatabase(), 'ts_v7')
     WHERE metric_name = 'orphan_series';
 
+SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
+
+ALTER TABLE ts_v7 MODIFY SETTING filter_by_min_time_and_max_time = 0;
 SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
 
 DROP TABLE ts_v7;

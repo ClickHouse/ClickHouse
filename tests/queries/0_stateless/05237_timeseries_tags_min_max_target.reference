@@ -17,7 +17,8 @@ AggregatingMergeTree	1
 2
 0
 3
--- a series whose bounds row is missing must not vanish from a read
+-- a series with no bounds row is pruned while filtering is on, and returns once it is off
+0
 1
 -- a table pinned to version 6 keeps the old single-table layout
 0
