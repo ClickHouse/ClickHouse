@@ -113,7 +113,7 @@ For this tutorial, you'll need:
         )
         PRIMARY KEY MCC
         SOURCE(HTTP(
-        url 'https://raw.githubusercontent.com/Blargian/examples/2a95fbc746bf9ba35ff6f331217756882d860b2d/datasets/mcc-countries.csv'
+        url 'https://raw.githubusercontent.com/ClickHouse/examples/refs/heads/main/datasets/mcc-countries.csv'
         format 'CSVWithNames'
         ))
         LAYOUT(HASHED())
@@ -130,20 +130,15 @@ For this tutorial, you'll need:
         FROM cell_towers
         GROUP BY mcc
         ORDER BY cnt DESC
-        LIMIT 10
+        LIMIT 5
         ```
 
         ```sql title="Response"
-        310	Guam	5024650
-        262	Germany	2622423
-        250	Russia	1953176
-        208	France	1891187
-        724	Brazil	1836150
-        404	India	1729151
-        234	United Kingdom	1618924
-        510	Indonesia	1353998
-        440	Japan	1343355
-        311	Guam	1332798
+        310	United States of America	5024650
+        262	Germany	                    2622423
+        250	Russia	                    1953176
+        208	France	                    1891187
+        724	Brazil	                    1836150
         ```
     </Step>
 
