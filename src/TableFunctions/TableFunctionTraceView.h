@@ -29,6 +29,9 @@ private:
         return "";
     }
 
+    /// The result columns are fixed, so `CREATE TABLE ... AS traceView(...)` needs no lazy proxy storage.
+    bool hasStaticStructure() const override { return true; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;

@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -49,26 +50,40 @@ namespace
 /// `since` and `until` are named only as well: a date has no natural position.
 constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
 
+struct Argument
+{
+    String name;
+    ASTPtr value;
+    bool named;
+};
+
 /// `name = value` -> (name, value); anything else -> (the name of the position, the argument).
-std::pair<String, ASTPtr> splitNamedArgument(const ASTPtr & arg, size_t position)
+/// `after_named` is whether a named argument came before: positional arguments cannot follow one,
+/// because their position would count the named argument as well.
+Argument splitNamedArgument(const ASTPtr & arg, size_t position, bool after_named)
 {
     const auto * equals = arg->as<ASTFunction>();
-    if (!equals || equals->name != "equals")
+    /// A malformed `equals` (wrong arity) is not a named argument: it is reported as a bad positional value.
+    if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
     {
+        if (after_named)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function 'traceView': positional argument {} after a named argument; give it by name (`name = value`)",
+                arg->formatForErrorMessage());
         if (position >= positional_names.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function 'traceView': argument {} must be given by name (`name = value`), got '{}'",
                 position + 1, arg->formatForErrorMessage());
-        return {String(positional_names[position]), arg};
+        return {.name = String(positional_names[position]), .value = arg, .named = false};
     }
 
-    const auto * identifier = equals->arguments->children.at(0)->as<ASTIdentifier>();
+    const auto * identifier = equals->arguments->children[0]->as<ASTIdentifier>();
     if (!identifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function 'traceView': the left side of a named argument must be an identifier, got '{}'",
             arg->formatForErrorMessage());
 
-    return {identifier->name(), equals->arguments->children.at(1)};
+    return {.name = identifier->name(), .value = equals->arguments->children[1], .named = true};
 }
 
 UUID parseTraceId(const ASTPtr & value)
@@ -83,8 +98,7 @@ UUID parseTraceId(const ASTPtr & value)
         const auto & text = literal->value.safeGet<String>();
         ReadBufferFromString buf(text);
         UUID uuid;
-        readUUIDText(uuid, buf);
-        if (!buf.eof())
+        if (!tryReadUUIDText(uuid, buf) || !buf.eof())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function 'traceView': cannot parse '{}' as a trace_id UUID", text);
         return uuid;
@@ -117,7 +131,8 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
     const auto & args = function->arguments->children;
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires arguments: trace_id|query_id [, timeline_width [, cluster]] [, since = date] [, until = date]",
+            "Table function '{}' requires arguments: trace_id [, timeline_width [, cluster]] [, since = '...'] [, until = '...'],"
+            " or query_id = '...' in place of trace_id",
             getName());
 
     bool has_trace_id = false;
@@ -155,20 +170,22 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
     };
 
     UnorderedSetWithMemoryTracking<String> seen;
+    bool seen_named = false;
     for (size_t i = 0; i < args.size(); ++i)
     {
-        auto [param_name, value] = splitNamedArgument(args[i], i);
+        const Argument argument = splitNamedArgument(args[i], i, seen_named);
+        seen_named |= argument.named;
 
-        auto parser = parsers.find(param_name);
+        auto parser = parsers.find(argument.name);
         if (parser == parsers.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}': unknown argument '{}'; expected trace_id, query_id, timeline_width, cluster, since or until",
-                getName(), param_name);
+                getName(), argument.name);
 
-        if (!seen.insert(param_name).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': argument '{}' is given twice", getName(), param_name);
+        if (!seen.insert(argument.name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': argument '{}' is given twice", getName(), argument.name);
 
-        parser->second(evaluateConstantExpressionOrIdentifierAsLiteral(value, context));
+        parser->second(evaluateConstantExpressionOrIdentifierAsLiteral(argument.value, context));
     }
 
     if (has_trace_id == !query_id.empty())
@@ -475,8 +492,31 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
     const TraceBounds trace = traceBounds(spans);
 
     MutableColumns res;
+    UnorderedMapWithMemoryTracking<String, IColumn *> by_name;
     for (const auto & column : result_structure)
+    {
         res.push_back(column.type->createColumn());
+        by_name[column.name] = res.back().get();
+    }
+
+    /// The columns are found by name, so the order of `getActualTableStructure` is free to change.
+    const auto column = [&](const String & name) -> IColumn &
+    {
+        auto it = by_name.find(name);
+        if (it == by_name.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'traceView': no result column '{}'", name);
+        return *it->second;
+    };
+    IColumn & span = column("span");
+    IColumn & kind = column("kind");
+    IColumn & status = column("status");
+    IColumn & status_message = column("status_message");
+    IColumn & start_offset_us = column("start_offset_us");
+    IColumn & duration_us = column("duration_us");
+    IColumn & duration_text = column("duration");
+    IColumn & self_pct = column("self_pct");
+    IColumn & timeline = column("timeline");
+    IColumn & attribute = column("attribute");
 
     walkDepthFirst(forest, [&](size_t row, const String & prefix, const String & connector)
     {
@@ -484,22 +524,22 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
         const UInt64 duration = spans.finish(row) - spans.start(row);
         const UInt64 self = selfTimeUs(spans, forest, row);
 
-        res[0]->insert(renderSpanText(spans, row, prefix + connector));
-        res[1]->insert(String(spans.kind.getDataAt(row)));
-        res[2]->insert(String(spans.status.getDataAt(row)));
-        res[3]->insert(String(spans.status_message.getDataAt(row)));
-        res[4]->insert(offset);
-        res[5]->insert(duration);
-        res[6]->insert(formatDurationUs(duration));
-        res[7]->insert(100.0 * static_cast<Float64>(self) / static_cast<Float64>(trace.duration));
-        res[8]->insert(renderTimeline(offset, duration, trace, timeline_width));
-        res[9]->insertFrom(spans.attribute, row);
+        span.insert(renderSpanText(spans, row, prefix + connector));
+        kind.insert(String(spans.kind.getDataAt(row)));
+        status.insert(String(spans.status.getDataAt(row)));
+        status_message.insert(String(spans.status_message.getDataAt(row)));
+        start_offset_us.insert(offset);
+        duration_us.insert(duration);
+        duration_text.insert(formatDurationUs(duration));
+        self_pct.insert(100.0 * static_cast<Float64>(self) / static_cast<Float64>(trace.duration));
+        timeline.insert(renderTimeline(offset, duration, trace, timeline_width));
+        attribute.insertFrom(spans.attribute, row);
     });
 
     Block block;
     size_t i = 0;
-    for (const auto & column : result_structure)
-        block.insert({std::move(res[i++]), column.type, column.name});
+    for (const auto & column_desc : result_structure)
+        block.insert({std::move(res[i++]), column_desc.type, column_desc.name});
     return block;
 }
 
@@ -554,6 +594,15 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
 StoragePtr TableFunctionTraceView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
+    /// The span log is created on its first flush: a server that never wrote a span has no
+    /// table, and the internal query would fail with an unknown table and the whole generated
+    /// query in the message, exactly where the flush hint is needed most. Only the local log
+    /// can be checked here; with `cluster`, a replica without the table fails on its own.
+    if (cluster.empty() && !DatabaseCatalog::instance().tryGetTable(StorageID{"system", "opentelemetry_span_log"}, context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The table system.opentelemetry_span_log does not exist yet: it is created by the first flush of spans."
+            " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log and retry");
+
     const String source = spanLogSource();
     const String time_filter = spanLogTimeFilter();
     const UUID effective_trace_id = resolveTraceId(source, time_filter, context);
