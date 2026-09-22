@@ -1015,9 +1015,18 @@ For example, for the AzureBlobStorage table engine, following grant may be requi
 Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
 (SQL, executable, and WebAssembly) listed in the
 [`functions_requiring_grant`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)
-server setting (not table functions). By default the list is empty and any user can call any function.
-The check runs when the function is resolved. A SQL user-defined function that calls a listed function
-also requires a grant for that inner function.
+server setting. By default the list is empty and any user can call any function.
+
+Aggregate functions, window functions and table functions are out of scope: they are resolved through
+other factories that this privilege does not cover. Listing an aggregate name is rejected when the
+configuration is loaded, so it never looks protected while it is not.
+
+The check runs when a call is resolved to that function, not when the name is merely looked up, so
+`system.functions` and `SHOW FUNCTIONS` keep working for users without the grant, and an alias that
+shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected. A SQL
+user-defined function that calls a listed function also requires a grant for that inner function.
+
+Names are matched after resolving aliases, so listing `hex` also covers `HEX`.
 
 Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
 

@@ -19,6 +19,8 @@
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
 #include <Access/Common/AccessType.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
@@ -26,13 +28,11 @@
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
-#include <Poco/String.h>
-#include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <filesystem>
 #include <atomic>
@@ -80,27 +80,38 @@ namespace
         if (!config.has(prefix))
             return names;
 
+        /// Repeated elements are enumerated as `function`, `function[1]`, `function[2]`, ...
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(prefix, keys);
-        if (!keys.empty())
+
+        if (keys.empty())
         {
-            for (const auto & key : keys)
-            {
-                const String value = config.getString(prefix + "." + key);
-                if (!value.empty())
-                    names.push_back(value);
-            }
+            /// A bare list such as `<functions_requiring_grant>hex, decrypt</functions_requiring_grant>`
+            /// protects nothing. Say so instead of starting up with an empty list.
+            String text = config.getString(prefix, "");
+            boost::trim(text);
+            if (!text.empty())
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Function names in {} must be listed as <function> elements, got the text '{}'",
+                    prefix,
+                    text);
             return names;
         }
 
-        const String raw = config.getString(prefix, "");
-        Strings parts;
-        boost::split(parts, raw, boost::is_any_of(","));
-        for (auto & part : parts)
+        for (const auto & key : keys)
         {
-            boost::trim(part);
-            if (!part.empty())
-                names.push_back(std::move(part));
+            if (key != "function" && !key.starts_with("function["))
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Unknown element '{}' in {}: only <function> is allowed there",
+                    key,
+                    prefix);
+
+            String name = config.getString(prefix + "." + key);
+            boost::trim(name);
+            if (!name.empty())
+                names.push_back(std::move(name));
         }
         return names;
     }
@@ -888,8 +899,37 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
     {
         if (name.empty())
             continue;
-        names->emplace(name);
-        names->emplace(Poco::toLower(name));
+
+        /// Store the canonical name, because that is what the resolution paths check against:
+        /// `<function>HEX</function>` protects `hex()`, and `GRANT FUNCTION ON hex` matches it.
+        const auto & function_factory = FunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+
+        if (function_factory.hasNameOrAlias(name))
+        {
+            names->emplace(function_factory.getCanonicalNameIfAny(name));
+        }
+        else if (aggregate_function_factory.isAggregateFunctionName(name))
+        {
+            /// Aggregate and window functions are resolved through `AggregateFunctionFactory`, which this
+            /// privilege does not cover. Accepting such a name would silently protect nothing, so reject it
+            /// here instead of leaving the administrator with a false sense of security.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function '{}' cannot be listed in access_control_improvements.functions_requiring_grant: "
+                "only ordinary and user defined functions are supported",
+                name);
+        }
+        else
+        {
+            /// Not a no-op: a user defined function with this name may be created later.
+            LOG_WARNING(
+                getLogger(),
+                "Function '{}' listed in access_control_improvements.functions_requiring_grant is neither an ordinary nor an "
+                "aggregate function. It will require GRANT FUNCTION only if a user defined function with this name exists.",
+                name);
+            names->emplace(name);
+        }
     }
 
     const bool enabled = !names->empty();
@@ -918,18 +958,10 @@ bool AccessControl::functionRequiresGrant(std::string_view function_name)
         std::lock_guard lock(functions_requiring_grant_mutex);
         names = functions_requiring_grant_names;
     }
-    if (names->contains(function_name))
-        return true;
-
-    /// Config names are stored both as written and in lowercase. Canonical
-    /// function names from `FunctionFactory` are usually already lowercase
-    /// ASCII, so skip the allocation unless we see an uppercase letter.
-    for (char c : function_name)
-    {
-        if (c >= 'A' && c <= 'Z')
-            return names->contains(Poco::toLower(String{function_name}));
-    }
-    return false;
+    /// Both sides are canonical names: the config list is canonicalized in
+    /// `setFunctionsRequiringGrant`, and the callers in `checkFunctionAccess` canonicalize the
+    /// name written in the query. So a plain lookup is enough, with no allocation.
+    return names->contains(function_name);
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const

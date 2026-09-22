@@ -903,14 +903,21 @@
         <table_engines_require_grant>false</table_engines_require_grant>
 
         <!-- By default any user can call any SQL function. To require an explicit
-             GRANT FUNCTION ON <name> for selected functions, list their names here
-             (canonical names from system.functions, or user-defined function names).
+             GRANT FUNCTION ON <name> for selected functions, list their names here: ordinary
+             function names from system.functions and user-defined function names.
+             Names are matched after resolving aliases, so listing `hex` also covers `HEX`.
+             Aggregate and window functions are not covered and an aggregate name here is an error:
+             the server refuses to start rather than pretend that such a function is protected.
+             Table functions are not covered either. An unknown name is kept and reported with a
+             warning in the log, because a user-defined function with that name may be created later.
              Empty by default for backward compatibility. GRANT ALL includes FUNCTION ON *. Example:
              <functions_requiring_grant>
                  <function>decrypt</function>
                  <function>tryDecrypt</function>
                  <function>aes_decrypt_mysql</function>
              </functions_requiring_grant>
+             Every name goes in its own <function> element; a bare list as the element's own
+             text, or any child element other than <function>, is an error.
         -->
         <functions_requiring_grant></functions_requiring_grant>
 

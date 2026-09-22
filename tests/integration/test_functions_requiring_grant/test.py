@@ -111,6 +111,56 @@ def test_listed_sql_udf_requires_grant():
     )
 
 
+def test_lambda_alias_shadowing_listed_function():
+    """The grant check must not run in the non-throwing probes used before name resolution."""
+    instance.query("CREATE USER A")
+
+    assert (
+        instance.query("WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])", user="A")
+        == "[2]\n"
+    )
+
+
+def test_system_functions_readable_without_grant():
+    """A listed SQL UDF must not break introspection for users who cannot execute it."""
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT ON system.functions TO A")
+    instance.query("CREATE FUNCTION listed_udf AS (x) -> plus(x, 1)")
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.functions WHERE name = 'listed_udf'", user="A"
+        )
+        == "1\n"
+    )
+    assert "listed_udf" in instance.query("SHOW FUNCTIONS ILIKE 'listed_udf'", user="A")
+
+
+def test_listed_function_requires_grant_old_analyzer():
+    instance.query("CREATE USER A")
+    old_analyzer = {"enable_analyzer": 0}
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT hex('a')", user="A", settings=old_analyzer
+    )
+
+    instance.query("GRANT FUNCTION ON hex TO A")
+    assert instance.query("SELECT hex('a')", user="A", settings=old_analyzer) == "61\n"
+
+
+def test_listed_sql_udf_requires_grant_old_analyzer():
+    instance.query("CREATE USER A")
+    instance.query("CREATE FUNCTION listed_udf AS (x) -> plus(x, 1)")
+    old_analyzer = {"enable_analyzer": 0}
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT listed_udf(1)", user="A", settings=old_analyzer
+    )
+
+    instance.query("GRANT FUNCTION ON listed_udf TO A")
+    assert instance.query("SELECT listed_udf(1)", user="A", settings=old_analyzer) == "2\n"
+
+
 def test_decrypt_requires_grant():
     instance.query("CREATE USER A")
     decrypt_query = (
@@ -123,3 +173,49 @@ def test_decrypt_requires_grant():
 
     instance.query("GRANT FUNCTION ON decrypt TO A")
     assert instance.query(decrypt_query, user="A") == "Secret\n"
+
+
+BAD_CONFIGS = [
+    pytest.param(
+        "<function>sum</function>",
+        "Aggregate function 'sum' cannot be listed",
+        id="aggregate_function",
+    ),
+    pytest.param(
+        "hex, decrypt",
+        "must be listed as <function> elements",
+        id="bare_text_list",
+    ),
+    pytest.param(
+        "<functoin>hex</functoin>",
+        "Unknown element 'functoin'",
+        id="misspelled_element",
+    ),
+]
+
+
+@pytest.mark.parametrize("body, expected_error", BAD_CONFIGS)
+def test_invalid_config_is_rejected(body, expected_error):
+    """Every one of these used to be a silent no-op: the administrator would see a protected
+    function in the config while anybody could still call it. The server must refuse to start."""
+    config_path = "/etc/clickhouse-server/config.d/functions_requiring_grant.xml"
+    original = instance.exec_in_container(["bash", "-c", f"cat {config_path}"])
+    bad_config = f"""<clickhouse>
+    <access_control_improvements>
+        <functions_requiring_grant>{body}</functions_requiring_grant>
+    </access_control_improvements>
+</clickhouse>
+"""
+
+    instance.stop_clickhouse()
+    instance.exec_in_container(
+        ["bash", "-c", f"cat > {config_path} << 'XMLEOF'\n{bad_config}XMLEOF"]
+    )
+    try:
+        instance.start_clickhouse(expected_to_fail=True)
+        assert instance.contains_in_log(expected_error)
+    finally:
+        instance.exec_in_container(
+            ["bash", "-c", f"cat > {config_path} << 'XMLEOF'\n{original}XMLEOF"]
+        )
+        instance.start_clickhouse()
