@@ -234,7 +234,7 @@ Limit (preliminary LIMIT)
 
 Lorsque `json = 1`, le plan de requête est représenté au format JSON. Chaque nœud est un dictionnaire qui possède toujours les clés `Node Type`, `Node Id` et `Plans`. `Node Type` est une chaîne contenant le nom de l’étape, et `Node Id` est un identifiant d’étape unique (le nom de l’étape avec un suffixe numérique, par ex. `Union_10`). `Plans` est un tableau contenant les descriptions des étapes enfants. D’autres clés facultatives peuvent être ajoutées selon le type de nœud et les paramètres.
 
-Exemple :
+Exemple :
 
 ```sql
 EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
@@ -273,7 +273,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-Avec `description` = 1, la clé `Description` est ajoutée à l’étape :
+Avec `description` = 1, la clé `Description` est ajoutée à l’étape :
 
 ```json
 {
@@ -284,7 +284,7 @@ Avec `description` = 1, la clé `Description` est ajoutée à l’étape :
 
 Avec `header` = 1, la clé `Header` est ajoutée à l’étape sous forme d’un tableau de colonnes.
 
-Exemple :
+Exemple :
 
 ```sql
 EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
@@ -323,7 +323,9 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-Avec `indexes` = 1, la clé `Indexes` est ajoutée. Elle contient un tableau des index utilisés. Chaque index est décrit en JSON avec la clé `Type` (une chaîne `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` ou `Skip`) et, éventuellement, les clés suivantes :
+Avec `indexes` = 1, la clé `Indexes` est ajoutée. Elle contient un tableau des index utilisés. Chaque index est décrit en JSON avec la clé `Type` (une chaîne `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` ou `Skip`) et, éventuellement, les clés suivantes :
+
+L’index `Statistics` utilise les statistiques de colonnes par part (valeurs min/max et nombre de valeurs `NULL` pour les colonnes `Nullable`) afin d’ignorer les parts qui ne peuvent pas correspondre au filter de la requête.
 
 * `Name` — Le nom de l’index (actuellement utilisé uniquement pour les index `Skip`).
 * `Keys` — Le tableau des colonnes utilisées par l’index.
@@ -333,7 +335,7 @@ Avec `indexes` = 1, la clé `Indexes` est ajoutée. Elle contient un tableau des
 * `Granules` — Le nombre de granules après/avant l’application de l’index.
 * `Ranges` — Le nombre de plages de granules après l’application de l’index.
 
-Exemple :
+Exemple :
 
 ```json
 "Node Type": "ReadFromMergeTree",

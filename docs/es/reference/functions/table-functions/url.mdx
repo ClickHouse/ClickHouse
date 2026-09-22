@@ -75,6 +75,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 La selección por esquema aún no está implementada en [`urlCluster`](/es/reference/functions/table-functions/urlCluster): si se pasa a `urlCluster` un esquema distinto de `http(s)`, se rechaza con un error. En su lugar, use la función de clúster correspondiente (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) para esos backends.
 
+Por el mismo motivo, una llamada `url` enrutada se lee en el nodo que recibió la consulta: no se le aplica el fan-out de [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/es/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines). Use directamente la función de clúster correspondiente cuando quiera que la lectura se distribuya entre réplicas.
+
 ## Globs en URL {#globs-in-url}
 
 Los patrones entre `{ }` se utilizan para generar un conjunto de segmentos o para especificar direcciones de conmutación por error. Para ver los tipos de patrones admitidos y ejemplos, consulte la descripción de la función [remote](/es/reference/functions/table-functions/remote#globs-in-addresses).

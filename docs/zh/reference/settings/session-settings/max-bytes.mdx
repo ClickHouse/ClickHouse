@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于在内存使用量超过指定阈值（以字节为单位）时将 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_ratio_before_external_distinct` 生效。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于在内存使用量超过指定阈值（以字节为单位）时将 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_ratio_before_external_distinct` 生效。"}]}]} />
 
 将 `DISTINCT` 数据落盘的查询内存阈值，以字节为单位。实际内存使用量可能超过该阈值。
 
@@ -117,7 +117,7 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "新增设置：当内存使用量超过可用内存的指定比例时，允许 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_before_external_distinct` 生效。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "新增设置：当内存使用量超过可用内存的指定比例时，允许 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_before_external_distinct` 生效。"}]}]} />
 
 在执行开始时，用于计算外部 `DISTINCT` 阈值的可用服务器或用户内存的比例。例如，`0.5` 表示使用可用内存的一半。
 

@@ -196,6 +196,16 @@ Cloud default value: `1`.
 
 يسمح باستخدام نوع Dynamic في مفاتيح JOIN. أُضيف لأغراض التوافق. لا يُنصح باستخدام نوع Dynamic في مفاتيح JOIN لأن المقارنة مع الأنواع الأخرى قد تؤدي إلى نتائج غير متوقعة.
 
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد لتعطيل القراءة عبر دالة الجدول `executable` ومن جداول `Executable` و`ExecutablePool`."}]}]} />
+
+يسمح بالقراءة عبر دالة الجدول `executable` ومن جداول `Executable` و`ExecutablePool`.
+
+يؤدي تعطيل هذا الإعداد إلى رفض عمليات القراءة فقط، أمّا إنشاء هذه الجداول وإرفاقها وحذفها ووصفها فيظل متاحاً. كما تُترك عمليات `ExecutablePool` التي بدأت بالفعل قيد التشغيل بدلاً من إنهائها، غير أنّ كل عملية قراءة تظل مرفوضة إلى أن يُعاد تفعيل الإعداد.
+
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

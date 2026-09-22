@@ -196,6 +196,16 @@ Cloud default value: `1`。
 
 允许在 JOIN 连接键中使用 Dynamic 类型。此设置是为兼容性而添加的。不建议在 JOIN 连接键中使用 Dynamic 类型，因为与其他类型比较时可能会产生意外结果。
 
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于禁止通过 `executable` 表函数以及从 `Executable` 和 `ExecutablePool` 表进行读取。"}]}]} />
+
+允许通过 `executable` 表函数以及从 `Executable` 和 `ExecutablePool` 表进行读取。
+
+禁用该设置仅会拒绝读取操作：创建、附加、删除和查看此类表的结构仍然可用。已启动的 `ExecutablePool` 进程会继续运行，不会被终止，但在重新启用该设置之前，每次读取仍会被拒绝。
+
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

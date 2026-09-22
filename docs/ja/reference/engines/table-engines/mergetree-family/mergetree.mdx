@@ -1270,10 +1270,12 @@ ALTER TABLE tab DROP STATISTICS a;
 これらの軽量な統計は、カラム内の値の分布に関する情報を集約したものです。統計は各パートに保存され、INSERT のたびに更新されます。
 これらは、`set use_statistics = 1` を有効にした場合にのみ、PREWHERE 最適化に使用できます。
 
-#### 統計情報を用いたパーツ剪枝 {#part-pruning-with-statistics}
+#### STATISTICSを用いたパーツ剪枝 {#part-pruning-with-statistics}
 
-`use_statistics_for_part_pruning` が有効になっている場合、統計情報をパーツ剪枝に利用できます。
-現在、パーツ剪枝に対応しているのは `basic` 統計情報 (および非推奨の `minmax` 統計情報) のみです。このような統計情報がカラムに定義されている場合、ClickHouse は各パーツについてそのカラムの最小値と最大値を追跡します。
+`use_statistics_for_part_pruning` が有効になっている場合、STATISTICSをパーツ剪枝に利用できます。
+現在、パーツ剪枝に対応しているのは `basic` STATISTICS (および非推奨の `minmax` STATISTICS) のみです。
+数値型および時刻型のカラムでは、`basic` (および明示的な `minmax`) が各パーツの最小値と最大値を追跡するため、範囲を指定する述語では境界が一致し得ないパーツをスキップできます。
+あらゆる型の `Nullable` カラムでは、`basic` は各パーツ内の `NULL` 値の個数も追跡します。これにより、`IS NULL` / `IS NOT NULL` の述語に基づく剪枝が可能になります。数値型および時刻型のカラムでは、`NULL` 値を含まないパーツについて範囲の境界をより厳密に絞り込むこともできます。
 パーツ剪枝では、そのパーツ内のどの行もクエリのフィルタ条件に一致しないことが分かっている場合、データパーツ全体の読み取りをスキップできます。
 
 **例:**

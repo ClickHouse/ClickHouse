@@ -54,7 +54,7 @@ SELECT * FROM test_table;
 
 Функция `url` выступает как единая обёртка над другими табличными функциями для файловых и объектных хранилищ: она перенаправляет вызов в нужный backend в зависимости от схемы URL. Это позволяет читать данные из любого поддерживаемого источника, используя единый синтаксис.
 
-| Схема                                        | Dispatches to                                                                       |
+| Схема                                         | Dispatches to                                                                       |
 | --------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `http`, `https` (and any unrecognized scheme) | сам движок `URL` (HTTP `GET`/`POST`)                                                |
 | `file`                                        | функция [`file`](/ru/reference/functions/table-functions/file)                         |
@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 Поддержка схем URL в [`urlCluster`](/ru/reference/functions/table-functions/urlCluster) пока не реализована: если передать в `urlCluster` схему, отличную от `http(s)`, функция вернёт ошибку. Для таких backend-соединений используйте соответствующую кластерную функцию (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …).
+
+По той же причине перенаправленный вызов `url` выполняется на том узле, который получил запрос: распараллеливание [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ru/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) к нему не применяется. Если требуется распределить чтение по репликам, используйте соответствующую кластерную функцию напрямую.
 
 ## Глоб-шаблоны в URL {#globs-in-url}
 

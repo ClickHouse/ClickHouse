@@ -13,21 +13,21 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="aggregate_function_input_format">
-  ## aggregate_function_input_format
-</div>
+## aggregate_function_input_format {#aggregate_function_input_format}
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "INSERT 작업 중 AggregateFunction 입력 형식을 제어하는 새로운 설정입니다. 설정 값의 기본값은 state입니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "INSERT 작업 중 AggregateFunction 입력 형식을 제어하는 새로운 설정. 설정 값은 기본적으로 state로 지정됨"}]}]} />
 
-INSERT 작업에서 AggregateFunction 입력에 사용할 포맷입니다.
+입력 형식이 `AggregateFunction` 타입의 컬럼을 읽는 방식입니다.
 
 가능한 값:
 
-* `state` — 직렬화된 상태를 담은 바이너리 문자열입니다(기본값). AggregateFunction 값이 바이너리 데이터로 제공된다고 가정하는 기본 동작입니다.
-* `value` — 집계 함수 인수의 단일 값을 받는 포맷이며, 인수가 여러 개인 경우에는 그 인수들로 이루어진 튜플을 받습니다. 이 값들은 해당 IDataType 또는 DataTypeTuple을 사용해 역직렬화된 후 집계되어 상태를 형성합니다.
-* `array` — 위의 `value` 옵션에서 설명한 값들의 배열을 받는 포맷입니다. 배열의 모든 원소는 집계되어 상태를 형성합니다.
+* `state` — 출력 형식이 기록하는 형태 그대로의, 집계 함수의 직렬화된 상태입니다(기본값).
+* `value` — 집계 함수 인수의 값이며, 인수가 여러 개이면 인수들의 tuple입니다. 이 값이 집계되어 상태가 만들어집니다.
+* `array` — 위 `value` 옵션에서 설명한 값들의 배열입니다. 배열의 모든 원소가 집계되어 상태가 만들어집니다.
+
+`value` 및 `array` 모드에서 포맷은 해당 컬럼을 값 타입의 컬럼처럼 읽습니다. 즉, `AggregateFunction(f, T)`는 `T`로, `AggregateFunction(f, T1, T2)`는 `Tuple(T1, T2)`로, `array` 모드에서는 그 타입의 `Array`로 읽습니다. 값은 해당 포맷이 그 타입에 대해 사용하는 표현 방식으로 기록됩니다. 텍스트 형식에서는 숫자나 문자열, JSON 포맷에서는 JSON 배열, `RowBinary`나 `Native`에서는 해당 타입의 이진 인코딩, `Parquet`에서는 해당 타입의 컬럼과 같은 식입니다. 이는 모든 입력 형식에 적용되며, `Array`, `Tuple`, `Map` 안에 중첩된 `AggregateFunction`에도 적용됩니다.
 
 **예시**
 
@@ -40,11 +40,16 @@ CREATE TABLE example (
 );
 ```
 
-`aggregate_function_input_format = 'value'`로 설정한 경우:
+`aggregate_function_input_format = 'value'`일 때:
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
+```
+
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
 ```
 
 `aggregate_function_input_format = 'array'`로 설정한 경우:
@@ -54,11 +59,14 @@ INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
+```
+
 참고: `value` 및 `array` 포맷은 삽입 시 값을 생성하고 집계해야 하므로 기본 `state` 포맷보다 느립니다.
 
-<div id="aggregate_functions_null_for_empty">
-  ## aggregate_functions_null_for_empty
-</div>
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

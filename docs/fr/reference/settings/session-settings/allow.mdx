@@ -196,6 +196,16 @@ Autorise les requêtes ALTER TABLE ... DROP DETACHED PART[ITION] ...
 
 Autorise l&#39;utilisation du type Dynamic dans les clés de JOIN. Ajouté pour des raisons de compatibilité. Il n&#39;est pas recommandé d&#39;utiliser le type Dynamic dans les clés de JOIN, car les comparaisons avec d&#39;autres types peuvent produire des résultats inattendus.
 
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de désactiver la lecture via la fonction de table `executable` et depuis les tables `Executable` et `ExecutablePool`."}]}]} />
+
+Autorise la lecture via la fonction de table `executable` et depuis les tables `Executable` et `ExecutablePool`.
+
+Désactiver ce paramètre refuse uniquement les lectures : la création, l&#39;attachement, la suppression et la description de ces tables restent possibles. Les processus `ExecutablePool` déjà démarrés continuent de s&#39;exécuter au lieu d&#39;être arrêtés, mais chaque lecture est refusée tant que le paramètre n&#39;est pas réactivé.
+
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

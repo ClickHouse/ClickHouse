@@ -325,6 +325,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 当 `indexes` = 1 时，会添加 `Indexes` 键。它包含一个由已使用索引组成的数组。每个索引都以 JSON 格式描述，包含 `Type` 键 (其值为字符串 `Partition Min-Max`、`Partition`、`Statistics`、`PrimaryKey` 或 `Skip`) 以及以下可选键：
 
+`Statistics` 索引利用每个 part 的列统计信息 (最小/最大值，以及 `Nullable` 列中 `NULL` 值的数量) 来跳过不可能匹配查询过滤器的 parts。
+
 * `Name` — 索引名称 (目前仅用于 `Skip` 索引) 。
 * `Keys` — 该索引使用的列数组。
 * `Condition` — 使用的条件。

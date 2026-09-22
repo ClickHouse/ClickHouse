@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка для включения сброса данных `DISTINCT` на диск, если использование памяти превышает заданный порог в байтах. Если значение равно 0, применяется только `max_bytes_ratio_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для включения сброса данных `DISTINCT` на диск, если использование памяти превышает заданный порог в байтах. Если значение равно 0, применяется только `max_bytes_ratio_before_external_distinct`."}]}]} />
 
 Порог использования памяти запросом в байтах, при достижении которого данные `DISTINCT` сбрасываются на диск. Фактическое использование памяти может превышать
 этот порог.
@@ -124,13 +124,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Новая настройка, включающая сброс `DISTINCT` на диск, когда использование памяти превышает заданную долю доступной памяти. Если равно 0, применяется только `max_bytes_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Новая настройка, включающая сброс данных `DISTINCT` на диск, когда использование памяти превышает заданную долю доступной памяти. Если равно 0, применяется только `max_bytes_before_external_distinct`."}]}]} />
 
 Доля доступной памяти сервера или пользователя, используемая для расчёта порога внешнего `DISTINCT` в начале выполнения. Например, при значении `0.5` используется половина доступной памяти.
 
 Значение должно быть не меньше `0` и меньше `1`. Значение `0` отключает этот порог. При отсутствии применимого ограничения памяти сервера или пользователя эта доля не действует.
 
-`max_memory_usage` не влияет на этот расчёт. Чтобы настроить сброс на диск относительно этого ограничения, используйте `max_bytes_before_external_distinct`, оставив запас для дополнительного использования памяти.
+`max_memory_usage` не влияет на этот расчёт. Чтобы настроить сброс данных на диск относительно этого ограничения, используйте `max_bytes_before_external_distinct`, оставив запас для дополнительного использования памяти.
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 

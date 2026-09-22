@@ -52,7 +52,7 @@ SELECT * FROM test_table;
 
 ## التوجيه وفق مخطط URL {#scheme-dispatch}
 
-تعمل الدالة `url` كغلاف موحّد فوق دوال الجداول الأخرى الخاصة بالملفات وتخزين الكائنات: إذ تُوجِّه إلى الواجهة الخلفية المناسبة استنادًا إلى مخطط URL. يتيح لك ذلك القراءة من أي موقع مدعوم باستخدام صياغة موحّدة واحدة.
+تعمل الدالة `url` كغلاف موحّد فوق دوال الجداول الأخرى الخاصة بالملفات وتخزين الكائنات: إذ تُوجِّه إلى الواجهة الخلفية المناسبة استنادًا إلى مخطط URL. يتيح لك ذلك القراءة من أي موقع مدعوم باستخدام صياغة موحّدة واحدة.
 
 | المخطط                               | يوجّه إلى                                                                          |
 | ------------------------------------ | ---------------------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ SELECT * FROM test_table;
 | `az`, `azure`, `abfss`, `abfs`       | الدالة [`azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage) |
 | `hdfs`                               | الدالة [`hdfs`](/ar/reference/functions/table-functions/hdfs)                         |
 
-لا تُوجَّه إلا مخططات S3 التي يحلّها معيّن عناوين URI الخاص بـ S3 إلى endpoint فعلي من دون إعداد إضافي (`s3`، بالإضافة إلى `gs`/`gcs`/`oss`). أمّا مخططات المورّدين الأخرى المتوافقة مع S3 (`cos` و`obs` و`eos` و…) فهي خاصة بكل منطقة ولا تملك تعيين endpoint افتراضيًا، لذلك يُعامَل URL من النوع `cos://…` على أنه مخطط غير معروف ويُبلَّغ عنه كـ error؛ استخدم الدالة [`s3`](/ar/reference/functions/table-functions/s3) مباشرةً (مع تهيئة `url_scheme_mappers`) لتلك الواجهات الخلفية.
+لا تُوجَّه إلا مخططات S3 التي يحلّها معيّن عناوين URI الخاص بـ S3 إلى endpoint فعلي من دون إعداد إضافي (`s3`، بالإضافة إلى `gs`/`gcs`/`oss`). أمّا مخططات المورّدين الأخرى المتوافقة مع S3 (`cos` و`obs` و`eos` و…) فهي خاصة بكل منطقة ولا تملك تعيين endpoint افتراضيًا، لذلك يُعامَل URL من النوع `cos://…` على أنه مخطط غير معروف ويُبلَّغ عنه كـ error؛ استخدم الدالة [`s3`](/ar/reference/functions/table-functions/s3) مباشرةً (مع تهيئة `url_scheme_mappers`) لتلك الواجهات الخلفية.
 
 بالنسبة إلى `file://`، يُحل المسار النسبي (`file://data.csv`) داخل الدليل [user&#95;files](/ar/reference/settings/server-settings/settings/user#user_files_path)، ويجب أن يشير المسار المطلق (`file:///home/user/data.csv`) إلى موقع داخله كالمعتاد.
 
@@ -73,7 +73,9 @@ SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
-لا يزال تمرير الـ مخطط عبر [`urlCluster`](/ar/reference/functions/table-functions/urlCluster) غير مدعوم: إذ يُرفَض أي مخطط غير `http(s)` يُمرَّر إلى `urlCluster` مع ظهور خطأ. استخدم بدلًا من ذلك دالة cluster المقابلة (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) لهذه الجهات الخلفية.
+لا يزال تمرير الـ مخطط عبر [`urlCluster`](/ar/reference/functions/table-functions/urlCluster) غير مدعوم: إذ يُرفَض أي مخطط غير `http(s)` يُمرَّر إلى `urlCluster` مع ظهور خطأ. استخدم بدلًا من ذلك دالة cluster المقابلة (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) لهذه الجهات الخلفية.
+
+وللسبب نفسه، يُنفَّذ أي استدعاء `url` موجَّه على العقدة التي استقبلت الاستعلام: إذ لا يُطبَّق عليه توزيع [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines). استخدم دالة cluster المقابلة مباشرةً عندما تريد توزيع القراءة على الـ replicas.
 
 ## أنماط glob في URL {#globs-in-url}
 

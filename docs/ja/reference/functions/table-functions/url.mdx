@@ -50,30 +50,32 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## URL スキームによる振り分け {#scheme-dispatch}
+## URL 認証スキームによる振り分け {#scheme-dispatch}
 
-`url` 関数は、他のファイルストレージおよびオブジェクトストレージのテーブル関数を統一的に扱うラッパーとして機能します。URL スキームに基づいて適切なバックエンドに振り分けられるため、サポートされている任意の場所から単一の統一された構文で読み取ることができます。
+`url` 関数は、他のファイルストレージおよびオブジェクトストレージのテーブル関数を統一的に扱うラッパーとして機能します。URL 認証スキームに基づいて適切なバックエンドに振り分けられるため、サポートされている任意の場所から単一の統一された構文で読み取ることができます。
 
-| Scheme                             | 振り分け先                                                                          |
+| 認証スキーム                             | 振り分け先                                                                          |
 | ---------------------------------- | ------------------------------------------------------------------------------ |
-| `http`, `https` (および認識されない任意のスキーム) | `URL` エンジン自体 (HTTP `GET`/`POST`)                                               |
+| `http`, `https` (および認識されない任意の認証スキーム) | `URL` エンジン自体 (HTTP `GET`/`POST`)                                               |
 | `file`                             | [`file`](/ja/reference/functions/table-functions/file) 関数                         |
 | `s3`, `gs`, `gcs`, `oss`           | [`s3`](/ja/reference/functions/table-functions/s3) 関数                             |
 | `az`, `azure`, `abfss`, `abfs`     | [`azureBlobStorage`](/ja/reference/functions/table-functions/azureBlobStorage) 関数 |
 | `hdfs`                             | [`hdfs`](/ja/reference/functions/table-functions/hdfs) 関数                         |
 
-追加設定なしで S3 URI mapper が具体的なエンドポイントに解決できる S3 スキーム (`s3` と `gs`/`gcs`/`oss`) のみが振り分けの対象です。その他の S3-compatible ベンダーのスキーム (`cos`、`obs`、`eos`、…) はリージョン固有で、デフォルトのエンドポイントマッピングがありません。そのため、`cos://…` URL は認識されないスキームとして扱われ、エラーとして報告されます。これらのバックエンドでは、[`s3`](/ja/reference/functions/table-functions/s3) 関数を直接使用してください (`url_scheme_mappers` を設定したうえで) 。
+追加設定なしで S3 URI mapper が具体的なエンドポイントに解決できる S3 認証スキーム (`s3` と `gs`/`gcs`/`oss`) のみが振り分けの対象です。その他の S3-compatible ベンダーの認証スキーム (`cos`、`obs`、`eos`、…) はリージョン固有で、デフォルトのエンドポイントマッピングがありません。そのため、`cos://…` URL は認識されない認証スキームとして扱われ、エラーとして報告されます。これらのバックエンドでは、[`s3`](/ja/reference/functions/table-functions/s3) 関数を直接使用してください (`url_scheme_mappers` を設定したうえで) 。
 
 `file://` の場合、相対パス (`file://data.csv`) は [user&#95;files](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内で解決され、絶対パス (`file:///home/user/data.csv`) は通常どおりその配下を指している必要があります。
 
-`フォーマット`、`構造`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
+`format`、`structure`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
 
 ```sql
 SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
-スキームの振り分けは、[`urlCluster`](/ja/reference/functions/table-functions/urlCluster) ではまだサポートされていません。`urlCluster` に `http(s)` 以外のスキームを渡すと、エラーになって拒否されます。そうしたバックエンドでは、代わりに対応するクラスター関数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster`、…) を使用してください。
+認証スキームの振り分けは、[`urlCluster`](/ja/reference/functions/table-functions/urlCluster) ではまだサポートされていません。`urlCluster` に `http(s)` 以外の認証スキームを渡すと、エラーになって拒否されます。そうしたバックエンドでは、代わりに対応するクラスター関数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster`、…) を使用してください。
+
+同じ理由から、振り分けられた `url` の呼び出しは、クエリを受け取ったノード上で読み取られます。つまり、[parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) による fan-out は適用されません。読み取りをレプリカ間で分散させたい場合は、対応するクラスター関数を直接使用してください。
 
 ## URL 内の globs {#globs-in-url}
 

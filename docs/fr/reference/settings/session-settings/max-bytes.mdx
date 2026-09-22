@@ -17,7 +17,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le seuil indiqué en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_distinct` s'applique."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le seuil indiqué en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_distinct` s'applique."}]}]} />
 
 Seuil de mémoire de la requête, en octets, à partir duquel les données `DISTINCT` sont déversées sur disque. L&#39;utilisation réelle de la mémoire peut dépasser
 ce seuil.
@@ -125,7 +125,7 @@ créé à partir d’une sous-requête peut utiliser.
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le ratio donné de la mémoire disponible. Si 0, seul `max_bytes_before_external_distinct` s'applique."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le ratio donné de la mémoire disponible. Si 0, seul `max_bytes_before_external_distinct` s'applique."}]}]} />
 
 Fraction de la mémoire disponible du serveur ou de l&#39;utilisateur servant à calculer le seuil de `DISTINCT` externe
 au début de l&#39;exécution. Par exemple, `0.5` utilise la moitié de la mémoire disponible.

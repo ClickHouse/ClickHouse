@@ -196,6 +196,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать тип Dynamic в ключах JOIN. Добавлено для совместимости. Не рекомендуется использовать тип Dynamic в ключах JOIN, поскольку сравнение с другими типами может приводить к неожиданным результатам.
 
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка для отключения чтения через табличную функцию `executable`, а также из таблиц `Executable` и `ExecutablePool`."}]}]} />
+
+Разрешает чтение через табличную функцию `executable`, а также из таблиц `Executable` и `ExecutablePool`.
+
+Если настройка отключена, запрещается только чтение: создание, присоединение (ATTACH), удаление и описание таких таблиц продолжают работать. Уже запущенные процессы `ExecutablePool` не завершаются и продолжают работать, но каждая операция чтения будет отклоняться, пока настройка не будет включена снова.
+
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

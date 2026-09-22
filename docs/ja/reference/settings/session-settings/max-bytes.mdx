@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "メモリ使用量が指定したバイト単位のしきい値を超えた場合に、`DISTINCT` をディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_ratio_before_external_distinct` のみが適用されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "メモリ使用量が指定したバイト単位のしきい値を超えた場合に、`DISTINCT` をディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_ratio_before_external_distinct` のみが適用されます。"}]}]} />
 
 `DISTINCT` データをディスクにスピルするための、クエリメモリのバイト単位のしきい値です。実際のメモリ使用量は
 このしきい値を超える場合があります。
@@ -135,7 +135,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "利用可能なメモリの指定した比率を超えた場合に、`DISTINCT` の中間データをディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_before_external_distinct` のみが適用されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "利用可能なメモリの指定した比率を超えた場合に、`DISTINCT` の中間データをディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_before_external_distinct` のみが適用されます。"}]}]} />
 
 実行開始時に外部 `DISTINCT` のしきい値を計算するために使用する、利用可能なサーバーまたはユーザーのメモリの割合です。
 たとえば、`0.5` は利用可能なメモリの半分を使用します。

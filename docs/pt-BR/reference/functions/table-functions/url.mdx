@@ -56,7 +56,7 @@ A função `url` atua como um wrapper unificado sobre as outras funções de tab
 
 | Esquema                                              | Encaminha para                                                                       |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `http`, `https` (e qualquer esquema não reconhecido) | o próprio engine `URL` (HTTP `GET`/`POST`)                                           |
+| `http`, `https` (e qualquer esquema não reconhecido) | o próprio motor `URL` (HTTP `GET`/`POST`)                                           |
 | `file`                                               | a função [`file`](/pt-BR/reference/functions/table-functions/file)                         |
 | `s3`, `gs`, `gcs`, `oss`                             | a função [`s3`](/pt-BR/reference/functions/table-functions/s3)                             |
 | `az`, `azure`, `abfss`, `abfs`                       | a função [`azureBlobStorage`](/pt-BR/reference/functions/table-functions/azureBlobStorage) |
@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 O encaminhamento por esquema ainda não é suportado em [`urlCluster`](/pt-BR/reference/functions/table-functions/urlCluster): um esquema diferente de `http(s)` fornecido a `urlCluster` é rejeitado com erro. Em vez disso, use a função de cluster correspondente (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) para esses backends.
+
+Pelo mesmo motivo, uma chamada `url` encaminhada é lida no nó que recebeu a consulta: o fan-out de [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) não é aplicado a ela. Use a função de cluster correspondente diretamente quando quiser que a leitura seja distribuída entre as réplicas.
 
 ## Globs na URL {#globs-in-url}
 

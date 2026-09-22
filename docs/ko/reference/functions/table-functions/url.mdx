@@ -50,7 +50,7 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## URL 스킴별 디스패치 {#scheme-dispatch}
+## Dispatching by URL scheme {#scheme-dispatch}
 
 `url` 함수는 다른 파일 및 객체 스토리지 테이블 함수 위에서 동작하는 통합 래퍼 역할을 합니다. URL 스킴에 따라 적절한 백엔드로 디스패치합니다. 이를 통해 지원되는 모든 위치에서 하나의 일관된 구문으로 읽을 수 있습니다.
 
@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 스킴 디스패치는 아직 [`urlCluster`](/ko/reference/functions/table-functions/urlCluster)에 연결되지 않았습니다. `urlCluster`에 `http(s)`가 아닌 스킴을 전달하면 오류가 발생하며 거부됩니다. 이러한 백엔드에는 대신 해당 클러스터 함수(`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …)를 사용하십시오.
+
+같은 이유로, 디스패치된 `url` 호출은 쿼리를 받은 노드에서 읽기가 수행됩니다. 즉 [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ko/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out이 적용되지 않습니다. 읽기를 레플리카 전체에 분산하려면 해당 클러스터 함수를 직접 사용하십시오.
 
 ## URL의 글롭 패턴 {#globs-in-url}
 

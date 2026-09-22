@@ -54,13 +54,13 @@ SELECT * FROM test_table;
 
 `url` 函数充当其他文件和对象存储表函数之上的统一包装层：它会根据 URL 协议分派到正确的后端。这样一来，你就可以用一套统一的语法，从任何受支持的位置读取数据。
 
-| 协议                                          | Dispatches to                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| 协议                                        | Dispatches to                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
 | `http`, `https` (and any unrecognized 协议) | `URL` 引擎本身 (HTTP `GET`/`POST`)                                                 |
-| `file`                                        | [`file`](/zh/reference/functions/table-functions/file) 函数                         |
-| `s3`, `gs`, `gcs`, `oss`                      | [`s3`](/zh/reference/functions/table-functions/s3) 函数                             |
-| `az`, `azure`, `abfss`, `abfs`                | [`azureBlobStorage`](/zh/reference/functions/table-functions/azureBlobStorage) 函数 |
-| `hdfs`                                        | [`hdfs`](/zh/reference/functions/table-functions/hdfs) 函数                         |
+| `file`                                    | [`file`](/zh/reference/functions/table-functions/file) 函数                         |
+| `s3`, `gs`, `gcs`, `oss`                  | [`s3`](/zh/reference/functions/table-functions/s3) 函数                             |
+| `az`, `azure`, `abfss`, `abfs`            | [`azureBlobStorage`](/zh/reference/functions/table-functions/azureBlobStorage) 函数 |
+| `hdfs`                                    | [`hdfs`](/zh/reference/functions/table-functions/hdfs) 函数                         |
 
 只有那些无需额外配置、即可由 S3 URI mapper 解析为具体端点的 S3 协议 (`s3`，以及 `gs`/`gcs`/`oss`) 才会被分派。其他兼容 S3 的厂商协议 (`cos`、`obs`、`eos`、…) 具有区域特定性，且没有默认端点映射，因此像 `cos://…` 这样的 URL 会被视为无法识别的协议并报错；对于这些后端，请直接使用 [`s3`](/zh/reference/functions/table-functions/s3) 函数 (并配置 `url_scheme_mappers`) 。
 
@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 协议分派尚未贯通到 [`urlCluster`](/zh/reference/functions/table-functions/urlCluster)：传递给 `urlCluster` 的非 `http(s)` 协议 目前会报错并被拒绝。对于这些后端，请改用对应的集群函数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster` 等) 。
+
+出于同样的原因，被分派的 `url` 调用会在接收到该查询的节点上执行读取：[parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) 的 fan-out 不会应用于它。如果希望读取分布到多个副本上，请直接使用对应的集群函数。
 
 ## URL 中的通配符 {#globs-in-url}
 

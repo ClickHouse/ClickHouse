@@ -232,7 +232,7 @@ Limit (preliminary LIMIT)
   Não há suporte à estimativa de custo do passo e da consulta.
 </Note>
 
-Quando `json = 1`, o plano da consulta é representado em formato JSON. Cada nó é um dicionário que sempre tem as chaves `Node Type`, `Node Id` e `Plans`. `Node Type` é uma string com o nome do passo, e `Node Id` é um identificador exclusivo do passo (o nome do passo com um sufixo numérico, por exemplo, `Union_10`). `Plans` é um array com descrições dos passos filhos. Outras chaves opcionais podem ser adicionadas dependendo do tipo de nó e das configurações.
+Quando `json = 1`, o plano de consulta é representado em formato JSON. Cada nó é um dicionário que sempre tem as chaves `Node Type`, `Node Id` e `Plans`. `Node Type` é uma string com o nome do passo, e `Node Id` é um identificador exclusivo do passo (o nome do passo com um sufixo numérico, por exemplo, `Union_10`). `Plans` é um array com descrições dos passos filhos. Outras chaves opcionais podem ser adicionadas dependendo do tipo de nó e das configurações.
 
 Exemplo:
 
@@ -324,6 +324,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ```
 
 Com `indexes` = 1, a chave `Indexes` é adicionada. Ela contém um array dos índices usados. Cada índice é descrito como JSON com a chave `Type` (uma string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` ou `Skip`) e chaves opcionais:
+
+O índice `Statistics` usa estatísticas de coluna por parte (valores mínimo/máximo e o número de valores `NULL` para colunas `Nullable`) para pular partes que não podem corresponder ao filtro da consulta.
 
 * `Name` — O nome do índice (atualmente usado apenas para índices `Skip`).
 * `Keys` — O array de colunas usado pelo índice.

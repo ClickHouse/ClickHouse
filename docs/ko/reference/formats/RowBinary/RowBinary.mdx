@@ -17,9 +17,7 @@ import RowBinaryFormatSettings from '/snippets/ko/common-row-binary-format-setti
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 `RowBinary` 포맷은 데이터를 바이너리 형식으로 행 단위로 파싱합니다.
 행과 값은 구분자 없이 연속적으로 나열됩니다.
@@ -38,9 +36,7 @@ import RowBinaryFormatSettings from '/snippets/ko/common-row-binary-format-setti
   이 포맷은 행 기반이므로 [Native](/ko/reference/formats/Native) 포맷보다 효율이 떨어집니다.
 </Note>
 
-<div id="data-types-wire-format">
-  ## 데이터 타입의 wire 형식
-</div>
+## 데이터 타입의 wire 형식 {#data-types-wire-format}
 
 <Tip>
   예시에 제공된 대부분의 쿼리는 `curl`을 사용해 파일로 출력되도록 실행할 수 있습니다.
@@ -53,36 +49,26 @@ import RowBinaryFormatSettings from '/snippets/ko/common-row-binary-format-setti
 
 그런 다음 헥스 에디터로 데이터를 확인할 수 있습니다.
 
-<div id="unsigned-leb128">
-  ### Unsigned LEB128 (리틀 엔디언 베이스 128)
-</div>
+### Unsigned LEB128 (리틀 엔디언 베이스 128) {#unsigned-leb128}
 
 `String`, `Array`, `Map`과 같은 가변 크기 데이터 타입의 길이를 인코딩하는 데 사용되는 **부호 없는 리틀 엔디언 방식의** 가변 길이 정수 인코딩입니다. 샘플 구현은 [LEB128 위키 페이지](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer)에서 확인할 수 있습니다.
 
-<div id="integer-types">
-  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
-</div>
+### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256 {#integer-types}
 
 모든 정수 타입은 **리틀 엔디언**으로 적절한 수의 바이트를 사용해 인코딩됩니다. 부호 있는 타입(`Int8`부터 `Int256`까지)은 **2의 보수** 표현을 사용합니다. 대부분의 언어에서는 내장 도구 또는 널리 사용되는 라이브러리를 사용해 바이트 배열에서 이러한 정수를 추출할 수 있습니다. `Int128`/`Int256` 및 `UInt128`/`UInt256`는 대부분의 언어에서 지원하는 네이티브 정수 크기를 초과하므로, 사용자 정의 역직렬화가 필요할 수 있습니다.
 
-<div id="bool">
-  ### Bool
-</div>
+### Bool {#bool}
 
 불리언 값은 1바이트로 인코딩되며, `UInt8`와 유사한 방식으로 역직렬화할 수 있습니다.
 
 * `0`은 `false`입니다
 * `1`은 `true`입니다
 
-<div id="float32-float64">
-  ### Float32, Float64
-</div>
+### Float32, Float64 {#float32-float64}
 
 `Float32`는 4바이트, `Float64`는 8바이트로 인코딩되는 **리틀 엔디언** 부동소수점 값입니다. 정수와 마찬가지로 대부분의 언어는 이러한 값을 역직렬화할 수 있는 적절한 도구를 제공합니다.
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 [BFloat16](/ko/reference/data-types/float#bfloat16) (Brain Floating Point)은 Float32와 동일한 범위를 가지면서 정밀도는 낮춘 16비트 부동소수점 포맷으로, 기계 학습 워크로드에 유용합니다. wire 형식은 기본적으로 Float32 값의 상위 16비트입니다. 사용하는 언어가 이를 네이티브로 지원하지 않는다면, 가장 쉬운 방법은 UInt16으로 읽고 쓴 뒤 Float32로 변환하거나 Float32에서 변환하는 것입니다:
 
@@ -115,9 +101,7 @@ SELECT CAST(1.25, 'BFloat16')
 0xA0, 0x3F, // BFloat16로 표현한 1.25
 ```
 
-<div id="decimal">
-  ### Decimal32, Decimal64, Decimal128, Decimal256
-</div>
+### Decimal32, Decimal64, Decimal128, Decimal256 {#decimal}
 
 Decimal 타입은 각 비트 폭에 맞는 **리틀 엔디언** 정수로 표현됩니다.
 
@@ -146,9 +130,7 @@ let result = whole_part * scale_multiplier + fractional_part
 
 자세한 내용은 [Decimal 타입에 대한 ClickHouse 문서](/ko/reference/data-types/decimal)를 참조하십시오.
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 ClickHouse 문자열은 **임의의 바이트 시퀀스**입니다. 반드시 유효한 UTF-8일 필요는 없습니다. 길이 프리픽스는 문자 수가 아니라 **바이트 길이**를 나타냅니다.
 
@@ -169,9 +151,7 @@ ClickHouse 문자열은 **임의의 바이트 시퀀스**입니다. 반드시 �
 0x72, // 'r'
 ```
 
-<div id="fixedstring">
-  ### FixedString
-</div>
+### FixedString {#fixedstring}
 
 `String`과 달리 `FixedString`은 스키마(schema)에 정의된 고정 길이를 가집니다. 바이트 시퀀스로 인코딩되며, 값의 길이가 `N`보다 짧으면 뒤쪽을 0 바이트로 채웁니다.
 
@@ -203,9 +183,7 @@ ClickHouse 문자열은 **임의의 바이트 시퀀스**입니다. 반드시 �
 
 마지막 예시에서는 *세* 바이트를 모두 사용하므로 패딩이 필요하지 않습니다.
 
-<div id="date">
-  ### Date
-</div>
+### Date {#date}
 
 `1970-01-01` ***이후*** 경과한 일수를 나타내는 `UInt16`(2바이트)로 저장됩니다.
 
@@ -221,9 +199,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 0x19, 0x4D, // UInt16(리틀 엔디언)로 표현된 19737 = 1970-01-01 이후 19737일
 ```
 
-<div id="date32">
-  ### Date32
-</div>
+### Date32 {#date32}
 
 `1970-01-01`을 기준으로 ***이전 또는 이후***&#xC758; 날짜 수를 나타내는 `Int32`(4바이트)로 저장됩니다.
 
@@ -249,9 +225,7 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (little-endian) = 25567 days before 1970-01-01
 ```
 
-<div id="datetime">
-  ### DateTime
-</div>
+### DateTime {#datetime}
 
 `1970-01-01 00:00:00 UTC` ***이후부터***&#xC758; 초 수를 나타내는 `UInt32`(4바이트)로 저장됩니다.
 
@@ -279,9 +253,7 @@ SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
 0x28, 0x09, 0xA5, 0x65, // UInt32 형식의 1705314600 (리틀 엔디언)
 ```
 
-<div id="datetime64">
-  ### DateTime64
-</div>
+### DateTime64 {#datetime64}
 
 `1970-01-01 00:00:00 UTC`를 기준으로 ***이전 또는 이후의*** **틱** 수를 나타내는 `Int64`(8바이트)로 저장됩니다. 틱의 해상도는 `precision` 매개변수로 정의되며, 아래 구문을 참조하십시오:
 
@@ -317,9 +289,7 @@ DateTime64(precision, [timezone])
   내부 `Int64` 틱 범위는 정밀도가 높을수록 더 좁아지므로 지원되는 최댓값도 줄어듭니다. `precision` 8에서는 `4892-10-07`이고, `precision` 9(나노초)에서는 UTC 기준 `2262-04-11 23:47:16`입니다.
 </Note>
 
-<div id="time">
-  ### Time
-</div>
+### Time {#time}
 
 초 단위의 시간 값을 나타내는 `Int32`로 저장됩니다. 음수 값도 유효합니다.
 
@@ -340,9 +310,7 @@ SELECT CAST('15:32:16', 'Time') AS t
 0x80, 0xDA, 0x00, 0x00, // 55936초 = 15:32:16
 ```
 
-<div id="time64">
-  ### Time64
-</div>
+### Time64 {#time64}
 
 내부적으로는 `Decimal64`(`Int64`로 저장됨)로 저장되며, 소수 초를 포함하는 시간 값을 나타냅니다. 정밀도는 구성할 수 있으며, 음수 값도 유효합니다.
 
@@ -375,9 +343,7 @@ SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
 // 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
 ```
 
-<div id="interval-types">
-  ### 인터벌 타입
-</div>
+### 인터벌 타입 {#interval-types}
 
 모든 인터벌 타입은 `Int64`(8바이트, 리틀 엔디언)로 저장됩니다. 값은 해당 시간 단위의 개수를 나타냅니다. 음수도 유효합니다.
 
@@ -410,9 +376,7 @@ SELECT INTERVAL 5 SECOND   AS a,
 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ```
 
-<div id="enum8-enum16">
-  ### Enum8, Enum16
-</div>
+### Enum8, Enum16 {#enum8-enum16}
 
 enum 정의에서 enum 값의 인덱스를 나타내는 1바이트(`Enum8` == `Int8`) 또는 2바이트(`Enum16` == `Int16`)로 저장됩니다. 저장 유형은 **signed**이므로 enum 값은 음수일 수 있습니다(예: `Enum8('a' = -128, 'b' = 0)`).
 
@@ -463,9 +427,7 @@ Map<Int16, String> {
 
 데이터 타입 파서의 주요 과제는 enum 정의에서 `\'`와 같은 이스케이프된 기호와, 따옴표로 묶인 문자열 내부에 나타날 수 있는 `=`와 같은 특수 기호를 정확히 식별하는 것입니다.
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 16바이트 시퀀스로 표현됩니다. UUID는 **2개의 리틀 엔디언 `UInt64` 값**으로 저장됩니다. 즉, 표준 UUID 표현에서 처음 8바이트는 바이트 순서가 반전되어 저장되며, 다음 8바이트도 별도로 바이트 순서가 반전되어 저장됩니다.
 
@@ -493,9 +455,7 @@ Map<Int16, String> {
 
 새 레코드가 삽입되었지만 UUID 값이 지정되지 않았을 때 사용할 수 있습니다.
 
-<div id="ipv4">
-  ### IPv4
-</div>
+### IPv4 {#ipv4}
 
 4바이트의 `UInt32`로 **리틀 엔디언** 바이트 순서로 저장됩니다. 이는 IP 주소에 일반적으로 사용되는 기존 네트워크 바이트 순서(빅 엔디언)와 다릅니다. `IPv4`의 예시 내부 값은 다음과 같습니다:
 
@@ -516,9 +476,7 @@ SELECT
 0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
 ```
 
-<div id="ipv6">
-  ### IPv6
-</div>
+### IPv6 {#ipv6}
 
 **빅 엔디언 / 네트워크 바이트 순서**(MSB 우선)로 16바이트에 저장됩니다. `IPv6`의 예시 내부 값은 다음과 같습니다:
 
@@ -541,9 +499,7 @@ SELECT
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ```
 
-<div id="nullable">
-  ### 널 허용
-</div>
+### 널 허용 {#nullable}
 
 널 허용 데이터 타입은 다음과 같이 인코딩됩니다.
 
@@ -566,9 +522,7 @@ SELECT
 0x01,                   // NULL - 뒤따르는 값 없음
 ```
 
-<div id="lowcardinality">
-  ### LowCardinality
-</div>
+### LowCardinality {#lowcardinality}
 
 RowBinary format에서는 low-cardinality 마커가 wire 형식에 영향을 주지 않습니다. 예를 들어 `LowCardinality(String)`은 일반 `String`과 동일한 방식으로 인코딩됩니다.
 
@@ -582,9 +536,7 @@ RowBinary format에서는 low-cardinality 마커가 wire 형식에 영향을 주
 
 테스트 중에는 더 폭넓게 검증할 수 있도록 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types)를 `1`로 설정하여 `LowCardinality` 내부에서 대부분의 데이터 타입을 허용할 수 있습니다.
 
-<div id="array">
-  ### 배열
-</div>
+### 배열 {#array}
 
 배열은 다음과 같은 방식으로 인코딩됩니다:
 
@@ -647,9 +599,7 @@ SELECT CAST([NULL, 'foo'], 'Array(Nullable(String))') AS arr;
 
 다차원 배열을 다루는 예시는 [Geo 섹션](#geo-types)에서 찾아볼 수 있습니다.
 
-<div id="tuple">
-  ### Tuple
-</div>
+### Tuple {#tuple}
 
 Tuple은 추가적인 메타데이터나 구분 기호 없이, 각 요소가 해당하는 wire 형식으로 차례대로 이어져 인코딩됩니다.
 
@@ -689,9 +639,7 @@ CREATE OR REPLACE TABLE foo
 ) ENGINE = Memory;
 ```
 
-<div id="map">
-  ### 맵
-</div>
+### 맵 {#map}
 
 맵은 `Array(Tuple(K, V))`로 볼 수 있으며, 여기서 `K`는 키 타입이고 `V`는 값 타입입니다. 맵은 다음과 같이 인코딩됩니다.
 
@@ -718,9 +666,7 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
   `Map(String, Map(Int32, Array(Nullable(String))))`와 같이 깊이 중첩된 구조의 맵도 가능하며, 위에서 설명한 것과 유사한 방식으로 인코딩됩니다.
 </Note>
 
-<div id="variant">
-  ### Variant
-</div>
+### Variant {#variant}
 
 이 타입은 다른 데이터 타입의 union을 나타냅니다. 타입 `Variant(T1, T2, ..., TN)`은 이 타입의 각 행이 `T1`, `T2`, …, `TN` 중 하나의 타입 값을 가지거나, 어느 타입에도 속하지 않는 값(`NULL` 값)을 가질 수 있음을 의미합니다.
 
@@ -786,9 +732,7 @@ SELECT NULL :: Variant(UInt32, String)
 
 [allow&#95;suspicious&#95;variant&#95;types](/ko/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 설정을 사용하면 `Variant` 타입을 더 철저하게 테스트할 수 있습니다.
 
-<div id="dynamic">
-  ### Dynamic
-</div>
+### Dynamic {#dynamic}
 
 `Dynamic` 타입은 런타임에 결정되는 임의의 타입의 값을 담을 수 있습니다. RowBinary format에서는 각 값이 자체적으로 타입 정보를 포함합니다. 즉, 첫 번째 부분에는 [이 포맷](/ko/reference/data-types/data-types-binary-encoding)으로 표현된 타입 지정이 들어갑니다. 그 뒤에는 이 문서에 설명된 방식으로 인코딩된 값의 내용이 이어집니다. 따라서 값을 파싱하려면 타입 인덱스를 사용해 적절한 parser를 결정한 다음, 이미 다른 곳에서 사용 중인 RowBinary 파싱 로직을 재사용하면 됩니다.
 
@@ -832,9 +776,7 @@ SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
 c0 6c be 0d 8d 01 00 00   # Int64: timestamps
 ```
 
-<div id="json">
-  ### JSON
-</div>
+### JSON {#json}
 
 JSON 타입은 데이터를 두 가지 범주로 인코딩합니다:
 
@@ -986,9 +928,7 @@ Schema: `JSON(id UInt64)`
 
 설정 `output_format_binary_write_json_as_string=1`을 사용하면 JSON 컬럼은 구조화된 바이너리 형식 대신 하나의 JSON 텍스트 문자열로 직렬화됩니다. JSON 컬럼에 쓸 때 사용하는 대응 설정 `input_format_binary_read_json_as_string`도 있습니다. 여기서 어떤 설정을 사용할지는 JSON을 클라이언트에서 파싱할지, 서버에서 파싱할지에 따라 달라집니다.
 
-<div id="geo-types">
-  ### Geo 타입
-</div>
+### Geo 타입 {#geo-types}
 
 Geo는 지리 데이터를 나타내는 데이터 타입 범주입니다. 여기에는 다음이 포함됩니다.
 
@@ -1073,9 +1013,7 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
 ```
 
-<div id="geometry">
-  ### Geometry
-</div>
+### Geometry {#geometry}
 
 `Geometry`는 위에 나열된 모든 Geo 타입을 담을 수 있는 `Variant` 타입입니다. wire 형식에서는 뒤에 오는 geo 타입을 나타내는 판별자 바이트를 포함해 `Variant`와 완전히 동일한 방식으로 인코딩됩니다.
 
@@ -1123,9 +1061,7 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
 ```
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
 `Nested`의 wire 형식은 `flatten_nested` 설정에 따라 달라집니다.
 
@@ -1133,9 +1069,7 @@ SELECT ((1.0, 2.0)::Point)::Geometry
   하나의 행에 있는 모든 구성 요소 배열의 **길이는 반드시 같아야 합니다**. 이는 server에서 강제하는 제약 조건입니다. 길이가 서로 다르면 삽입 오류가 발생합니다.
 </Warning>
 
-<div id="nested-flattened">
-  #### `flatten_nested = 1` (기본값)
-</div>
+#### `flatten_nested = 1` (기본값) {#nested-flattened}
 
 기본 설정에서는 `Nested`가 개별 배열로 평탄화됩니다. 각 하위 컬럼은 점(.)으로 구분된 이름의 별도 `Array` 컬럼이 됩니다:
 
@@ -1170,9 +1104,7 @@ INSERT INTO foo VALUES (['foo', 'bar'], [42, 144]);
  0x90, 0x00, 0x00, 0x00, // Int32로 표현한 144
 ```
 
-<div id="nested-unflattened">
-  #### `flatten_nested = 0`
-</div>
+#### `flatten_nested = 0` {#nested-unflattened}
 
 `flatten_nested = 0`으로 설정하면 `Nested`는 `Array(Tuple(...))` 유형의 단일 컬럼으로 유지됩니다. 컬럼 이름은 점으로 구분하지 않습니다:
 
@@ -1207,9 +1139,7 @@ INSERT INTO foo VALUES ([('foo', 42), ('bar', 144)]);
 
 필드가 평탄화된 표현에서처럼 컬럼(a₁, a₂, b₁, b₂)별로 그룹화되는 것이 아니라, 요소별로 (a₁, b₁, a₂, b₂) 교차 배치된다는 점에 유의하십시오.
 
-<div id="simpleaggregatefunction">
-  ### SimpleAggregateFunction
-</div>
+### SimpleAggregateFunction {#simpleaggregatefunction}
 
 `SimpleAggregateFunction(func, T)`는 기반 데이터 타입인 `T`와 동일한 방식으로 인코딩됩니다. 집계 함수 이름은 wire 형식에 영향을 주지 않습니다.
 
@@ -1232,11 +1162,9 @@ RowBinaryWithNamesAndTypes 헤더는 타입을 `SimpleAggregateFunction(max, UIn
 0x2A, 0x00, 0x00, 0x00, // UInt32로 표현한 42
 ```
 
-<div id="aggregatefunction">
-  ### AggregateFunction
-</div>
+### AggregateFunction {#aggregatefunction}
 
-`AggregateFunction(func, T)`는 집계 함수의 전체 중간 상태를 저장합니다. 중간 상태를 저장하되 이를 기본 데이터 타입과 동일한 방식으로 인코딩하는 `SimpleAggregateFunction`과 달리, `AggregateFunction`은 각 집계 함수마다 포맷이 다른 불투명한 바이너리 blob을 저장합니다.
+`AggregateFunction(func, T)`는 집계 함수의 전체 중간 상태를 저장합니다. 중간 상태를 저장하되 이를 기반 데이터 타입과 동일한 방식으로 인코딩하는 `SimpleAggregateFunction`과 달리, `AggregateFunction`은 각 집계 함수마다 포맷이 다른 불투명한 바이너리 blob을 저장합니다.
 
 <Warning>
   집계 상태는 RowBinary에서 **길이 접두사(length prefix)가 없습니다**. 따라서 파서는 몇 바이트를 읽어야 하는지 알기 위해 각 집계 함수별 내부 직렬화 포맷을 이해해야 합니다. 실제로는 대부분의 클라이언트가 집계 상태를 불투명한 값으로 취급하고, 직렬화는 서버가 처리하도록 `*State` / `*Merge` combinator를 사용합니다.
@@ -1257,22 +1185,22 @@ SELECT countState(number) FROM numbers(5)
 **`sumState`** — 누적 합계를 고정 크기 정수에 저장합니다. 너비는 인수 유형에 따라 달라지며(정수 인수의 경우 `UInt64`):
 
 ```sql
-SELECT sumState(toUInt32(number)) FROM numbers(5) -- 합계 = 0+1+2+3+4 = 10
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
 ```
 
 ```text
-0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // UInt64로 표현한 10
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 as UInt64
 ```
 
 **`minState` / `maxState`** — 먼저 플래그 바이트를 저장한 다음, 기본 데이터 유형의 값을 저장합니다. 플래그는 빈 state(값이 없음)일 때 `0x00`, 값이 있을 때 `0x01`입니다:
 
 ```sql
-SELECT maxState(toUInt32(number)) FROM numbers(5) -- 최댓값 = 4
+SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
 ```
 
 ```text
-0x01,                   // 플래그: 값 있음
-0x04, 0x00, 0x00, 0x00, // UInt32로 표현한 4
+0x01,                   // flag: has value
+0x04, 0x00, 0x00, 0x00, // 4 as UInt32
 ```
 
 빈 상태(집계된 행이 없음):
@@ -1282,16 +1210,16 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 ```
 
 ```text
-0x00, // 플래그: 값 없음
+0x00, // flag: no value
 ```
 
 <Note>
   `uniq`, `quantile`, `groupArray`와 같은 더 복잡한 함수는 구현별 포맷을 사용합니다. 이러한 상태를 읽거나 써야 한다면, 해당 함수의 ClickHouse 소스 코드를 참조하십시오.
 </Note>
 
-<div id="qbit">
-  ### QBit
-</div>
+`aggregate_function_input_format` 설정을 `value` 또는 `array`로 지정하면, `AggregateFunction(func, T)` 컬럼은 `T` 타입의 값(인수가 여러 개인 경우에는 해당 인수 타입들의 `Tuple`)으로 읽히거나, 그러한 값들의 `Array`로 읽히며, 인코딩은 RowBinary에서 해당 타입이 인코딩되는 방식과 정확히 동일합니다. 상태는 서버 측에서 이 값들로부터 생성됩니다. 예를 들어 `aggregate_function_input_format = 'array'`인 경우, `AggregateFunction(avg, UInt32)`의 셀은 `Array(UInt32)`이며, LEB128 길이 뒤에 원소들이 이어집니다.
+
+### QBit {#qbit}
 
 `QBit`은 다양한 수준의 정밀도로 효율적인 조회를 지원하는 벡터 타입입니다. 내부적으로는 전치된 포맷으로 저장됩니다. 전송 시 QBit은 단순히 기반 요소 타입(`Int8`, `Float32`, `Float64` 또는 `BFloat16`)의 `배열`입니다. 저장을 위한 비트 전치 최적화는 RowBinary 프로토콜이 아니라 server 측에서 수행됩니다.
 
@@ -1324,9 +1252,7 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
-<div id="format-settings">
-  ## 포맷 설정
-</div>
+## 포맷 설정 {#format-settings}
 
 <RowBinaryFormatSettings />
 

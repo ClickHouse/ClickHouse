@@ -325,6 +325,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 `indexes` = 1이면 `Indexes` 키가 추가됩니다. 이 키에는 사용된 인덱스의 배열이 포함됩니다. 각 인덱스는 `Type` 키(문자열 `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` 또는 `Skip`)와 선택적 키를 포함하는 JSON으로 설명됩니다.
 
+`Statistics` 인덱스는 파트별 컬럼 통계(최소/최대 값, 그리고 `Nullable` 컬럼의 `NULL` 값 개수)를 사용하여 쿼리 필터와 일치할 수 없는 파트를 건너뜁니다.
+
 * `Name` — 인덱스 이름입니다(현재는 `Skip` 인덱스에만 사용됩니다).
 * `Keys` — 인덱스에 사용되는 컬럼 배열입니다.
 * `Condition` — 사용된 조건입니다.

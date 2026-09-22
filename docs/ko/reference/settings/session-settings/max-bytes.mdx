@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "메모리 사용량이 지정된 임계값(바이트)을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_ratio_before_external_distinct`만 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "메모리 사용량이 지정된 임계값(바이트)을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_ratio_before_external_distinct`만 적용됩니다."}]}]} />
 
 `DISTINCT` 데이터를 디스크로 스필하는 기준이 되는 쿼리 메모리 임계값(바이트 단위)입니다. 실제 메모리 사용량은 이 임계값을 초과할 수 있습니다.
 
@@ -132,7 +132,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "메모리 사용량이 사용 가능한 메모리의 지정된 비율을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_distinct`만 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "메모리 사용량이 사용 가능한 메모리의 지정된 비율을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_distinct`만 적용됩니다."}]}]} />
 
 실행 시작 시점에 외부 `DISTINCT` 임계값을 계산하는 데 사용되는 서버 또는 사용자 가용 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 사용합니다.
 

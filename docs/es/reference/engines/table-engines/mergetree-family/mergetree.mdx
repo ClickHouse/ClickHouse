@@ -1273,7 +1273,9 @@ Solo pueden usarse para la optimización de PREWHERE si habilitamos `set use_sta
 #### Poda de partes con estadísticas {#part-pruning-with-statistics}
 
 Cuando `use_statistics_for_part_pruning` está habilitado, las estadísticas pueden usarse para la poda de partes.
-Actualmente, solo las estadísticas `basic` (y las estadísticas `minmax` obsoletas) admiten la poda de partes. Cuando se definen dichas estadísticas en una columna, ClickHouse registra los valores mínimo y máximo de esa columna en cada parte.
+Actualmente, solo las estadísticas `basic` (y las estadísticas `minmax` obsoletas) admiten la poda de partes.
+En columnas numéricas y temporales, `basic` (y `minmax` explícito) registran los valores mínimo y máximo de cada parte, de modo que los predicados de rango pueden omitir las partes cuyos límites no puedan coincidir.
+En columnas `Nullable` de cualquier tipo, `basic` también registra el número de valores `NULL` en cada parte, lo que permite la poda basada en predicados `IS NULL` / `IS NOT NULL`. En columnas numéricas y temporales, además ajusta con mayor precisión los límites de rango de las partes que no contienen valores `NULL`.
 La poda de partes permite omitir la lectura de partes de datos completas cuando la condición de filtro de la consulta no puede coincidir con ninguna fila de esa parte.
 
 **Ejemplo:**

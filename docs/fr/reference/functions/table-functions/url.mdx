@@ -52,7 +52,7 @@ SELECT * FROM test_table;
 
 ## Routage selon le schéma d’URL {#scheme-dispatch}
 
-La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de table pour les fichiers et le stockage d’objets : elle distribue les requêtes vers le bon backend selon le schéma d’URL. Cela permet de lire depuis n’importe quel emplacement pris en charge avec une syntaxe unique et uniforme.
+La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de table pour les fichiers et le stockage d’objets : elle distribue les requêtes vers le bon backend selon le schéma d’URL. Cela permet de lire depuis n’importe quel emplacement pris en charge avec une syntaxe unique et uniforme.
 
 | Schéma                                       | Distribué vers                                                                          |
 | -------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de tabl
 | `az`, `azure`, `abfss`, `abfs`               | la fonction [`azureBlobStorage`](/fr/reference/functions/table-functions/azureBlobStorage) |
 | `hdfs`                                       | la fonction [`hdfs`](/fr/reference/functions/table-functions/hdfs)                         |
 
-Seuls les schémas S3 que le mappeur d’URI S3 résout en un endpoint concret sans configuration supplémentaire (`s3`, ainsi que `gs`/`gcs`/`oss`) sont distribués. Les autres schémas de fournisseurs compatibles S3 (`cos`, `obs`, `eos`, …) sont spécifiques à une région et n’ont pas de mappage d’endpoint par défaut. Une URL `cos://…` est donc traitée comme un schéma non reconnu et signalée comme une erreur ; pour ces backends, utilisez directement la fonction [`s3`](/fr/reference/functions/table-functions/s3) (avec `url_scheme_mappers` configuré).
+Seuls les schémas S3 que le mappeur d’URI S3 résout en un endpoint concret sans configuration supplémentaire (`s3`, ainsi que `gs`/`gcs`/`oss`) sont distribués. Les autres schémas de fournisseurs compatibles S3 (`cos`, `obs`, `eos`, …) sont spécifiques à une région et n’ont pas de mappage d’endpoint par défaut. Une URL `cos://…` est donc traitée comme un schéma non reconnu et signalée comme une erreur ; pour ces backends, utilisez directement la fonction [`s3`](/fr/reference/functions/table-functions/s3) (avec `url_scheme_mappers` configuré).
 
 Pour `file://`, un chemin relatif (`file://data.csv`) est résolu dans le répertoire [user&#95;files](/fr/reference/settings/server-settings/settings/user#user_files_path), et un chemin absolu (`file:///home/user/data.csv`) doit, comme d’habitude, pointer à l’intérieur de celui-ci.
 
@@ -73,7 +73,9 @@ SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
-La répartition selon le schéma d’URL n’est pas encore prise en charge par [`urlCluster`](/fr/reference/functions/table-functions/urlCluster) : tout schéma autre que `http(s)` transmis à `urlCluster` est rejeté avec une erreur. Utilisez plutôt la fonction de cluster correspondante (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) pour ces backends.
+La répartition selon le schéma d’URL n’est pas encore prise en charge par [`urlCluster`](/fr/reference/functions/table-functions/urlCluster) : tout schéma autre que `http(s)` transmis à `urlCluster` est rejeté avec une erreur. Utilisez plutôt la fonction de cluster correspondante (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) pour ces backends.
+
+Pour la même raison, un appel `url` distribué est lu sur le nœud qui a reçu la requête : le fan-out [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/fr/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) ne lui est pas appliqué. Utilisez directement la fonction de cluster correspondante si vous souhaitez que la lecture soit répartie entre les répliques.
 
 ## Globs dans l’URL {#globs-in-url}
 

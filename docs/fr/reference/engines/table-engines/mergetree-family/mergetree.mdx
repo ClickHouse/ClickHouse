@@ -1273,10 +1273,12 @@ Elles ne peuvent être utilisées pour l’optimisation PREWHERE que si l’on a
 #### Élagage des parts avec des statistiques {#part-pruning-with-statistics}
 
 Lorsque `use_statistics_for_part_pruning` est activé, les statistiques peuvent être utilisées pour l&#39;élagage des parts.
-Actuellement, seules les statistiques `basic` (ainsi que les statistiques `minmax` obsolètes) prennent en charge l&#39;élagage des parts. Lorsque de telles statistiques sont définies sur une colonne, ClickHouse enregistre les valeurs minimale et maximale de cette colonne dans chaque part.
+Actuellement, seules les statistiques `basic` (ainsi que les statistiques `minmax` obsolètes) prennent en charge l&#39;élagage des parts.
+Sur les colonnes numériques et temporelles, `basic` (ainsi que `minmax` explicite) enregistre les valeurs minimale et maximale dans chaque part, de sorte que les prédicats de plage peuvent ignorer les parts dont les limites ne peuvent pas correspondre.
+Pour les colonnes `Nullable` de tout type, `basic` enregistre également le nombre de valeurs `NULL` dans chaque part. Cela permet un élagage basé sur les prédicats `IS NULL` / `IS NOT NULL`. Sur les colonnes numériques et temporelles, cela resserre également les limites de plage pour les parts qui ne contiennent aucune valeur `NULL`.
 L&#39;élagage des parts permet d&#39;éviter la lecture de parts de données entières lorsque la condition de filtre de la requête ne peut correspondre à aucune ligne dans cette part.
 
-**Exemple :**
+**Exemple :**
 
 ```sql
 -- Create a table with basic statistics on the 'value' column

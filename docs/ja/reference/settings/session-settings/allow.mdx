@@ -196,6 +196,16 @@ ALTER TABLE ... DROP DETACHED PART[ITION] ... クエリの実行を許可しま�
 
 JOIN キーで Dynamic 型を使用できるようにします。互換性のために追加された設定です。他の型との比較で予期しない結果になる可能性があるため、JOIN キーで Dynamic 型を使用することは推奨されません。
 
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`executable` テーブル関数経由での読み取り、および `Executable` テーブルと `ExecutablePool` テーブルからの読み取りを無効にするための新しい設定。"}]}]} />
+
+`executable` テーブル関数経由での読み取り、および `Executable` テーブルと `ExecutablePool` テーブルからの読み取りを許可します。
+
+これを無効にした場合、拒否されるのは読み取りのみで、こうしたテーブルの作成、アタッチ、削除、DESCRIBE は引き続き利用できます。すでに起動済みの `ExecutablePool` のプロセスは終了されずに実行されたままになりますが、この設定を再び有効にするまで、読み取りはその都度拒否されます。
+
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

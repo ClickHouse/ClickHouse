@@ -51,7 +51,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 51,
+      count: 52,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
@@ -73,6 +73,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_distributed_ddl", path: "/allow#allow_distributed_ddl", default: "1" },
         { name: "allow_drop_detached", path: "/allow#allow_drop_detached", default: "0" },
         { name: "allow_dynamic_type_in_join_keys", path: "/allow#allow_dynamic_type_in_join_keys", default: "0" },
+        { name: "allow_executable_tables", path: "/allow#allow_executable_tables", default: "1" },
         { name: "allow_execute_multiif_columnar", path: "/allow#allow_execute_multiif_columnar", default: "1" },
         { name: "allow_fuzz_query_functions", path: "/allow#allow_fuzz_query_functions", default: "0" },
         { name: "allow_general_join_planning", path: "/allow#allow_general_join_planning", default: "1" },
@@ -3316,7 +3317,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "設定" : "設定"}`
 
     return (
       <div key={key} className="min-w-max">

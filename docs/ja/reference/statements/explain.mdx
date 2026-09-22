@@ -325,6 +325,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 `indexes` = 1 の場合、`Indexes` キーが追加されます。これには、使用された索引の配列が含まれます。各索引は JSON で記述され、`Type` キー (文字列 `Partition Min-Max`、`Partition`、`Statistics`、`PrimaryKey` または `Skip`) と、必要に応じて以下のキーを持ちます。
 
+`Statistics` 索引は、パーツごとのカラム STATISTICS (最小値/最大値、および `Nullable` カラムにおける `NULL` 値の数) を使用して、クエリのフィルタに一致し得ないパーツをスキップします。
+
 * `Name` — 索引名 (現在は `Skip` 索引でのみ使用) 。
 * `Keys` — 索引で使用されるカラムの配列。
 * `Condition` — 使用された条件。

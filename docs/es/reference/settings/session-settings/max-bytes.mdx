@@ -17,7 +17,7 @@ Estas opciones de configuración están disponibles en [system.settings](/es/ref
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera el umbral indicado en bytes. Si es 0, solo se aplica `max_bytes_ratio_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera el umbral indicado en bytes. Si es 0, solo se aplica `max_bytes_ratio_before_external_distinct`."}]}]} />
 
 Umbral de memoria de la consulta, en bytes, a partir del cual los datos de `DISTINCT` se vuelcan a disco. El uso real de memoria puede superar
 este umbral.
@@ -137,7 +137,7 @@ creado a partir de una subconsulta.
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_distinct`."}]}]} />
 
 Fracción de la memoria disponible del servidor o del usuario que se emplea para calcular el umbral de `DISTINCT` externo al
 inicio de la ejecución. Por ejemplo, `0.5` utiliza la mitad de la memoria disponible.

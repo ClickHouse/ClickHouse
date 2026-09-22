@@ -325,6 +325,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 Con `indexes` = 1, se añade la clave `Indexes`. Contiene un array de los índices usados. Cada índice se describe como JSON con la clave `Type` (una cadena `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` o `Skip`) y claves opcionales:
 
+El índice `Statistics` usa estadísticas de columna por parte (valores mínimos/máximos y el número de valores `NULL` en columnas `Nullable`) para omitir las partes que no pueden coincidir con el filtro de la consulta.
+
 * `Name` — El nombre del índice (actualmente solo se usa para índices `Skip`).
 * `Keys` — El array de columnas que usa el índice.
 * `Condition` — La condición usada.

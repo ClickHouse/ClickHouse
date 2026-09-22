@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين كتابة `DISTINCT` إلى القرص عند تجاوز استخدام الذاكرة العتبة المحددة بالبايت. إذا كانت القيمة 0، فلا يُطبَّق سوى `max_bytes_ratio_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين كتابة `DISTINCT` إلى القرص عند تجاوز استخدام الذاكرة العتبة المحددة بالبايت. إذا كانت القيمة 0، فلا يُطبَّق سوى `max_bytes_ratio_before_external_distinct`."}]}]} />
 
 عتبة ذاكرة الاستعلام، بالبايت، لكتابة بيانات `DISTINCT` إلى القرص. وقد يتجاوز الاستخدام الفعلي للذاكرة
 هذه العتبة.
@@ -136,7 +136,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0.5"},{"label": "إعداد جديد لتفعيل كتابة `DISTINCT` إلى القرص عندما يتجاوز استهلاك الذاكرة النسبة المحددة من الذاكرة المتاحة. إذا كانت القيمة 0، فلا يُطبَّق سوى `max_bytes_before_external_distinct`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "إعداد جديد لتفعيل كتابة `DISTINCT` إلى القرص عندما يتجاوز استهلاك الذاكرة النسبة المحددة من الذاكرة المتاحة. إذا كانت القيمة 0، فلا يُطبَّق سوى `max_bytes_before_external_distinct`."}]}]} />
 
 نسبة من ذاكرة الخادم أو المستخدم المتاحة تُستخدم لحساب عتبة `DISTINCT` الخارجية عند
 بدء التنفيذ. فمثلاً، تستخدم القيمة `0.5` نصف الذاكرة المتاحة.
