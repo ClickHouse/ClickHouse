@@ -11,10 +11,6 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-<Note>
-The managed-mode enrollment, customer-create, and platform-approval workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither the managed-mode init flags nor the `platform` command, and does not ship the customer-create workflow.
-</Note>
-
 ## Components {#components}
 
 The ClickHouse Connector runs three daemons, all built into the `clicklink` binary:
@@ -28,8 +24,6 @@ On Kubernetes, the `clicklink-connector` Helm chart deploys the daemons in a nam
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
 
 ## Connections {#connections}
-
-The customer-create and platform-approval connections below apply to [supported managed-mode deployments](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); those workflows are unavailable in public `v0.16.0`.
 
 Every connection the connector makes is outbound. The complete list:
 
@@ -82,8 +76,6 @@ The connector verifies your endpoint's server certificate against the system tru
 - **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
 
 ## Trust boundaries {#trust-boundaries}
-
-The service-creation and platform-approval workflows require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not ship them.
 
 - **Your environment is the boundary.** ClickHouse Cloud receives only what the connector sends: scrapes, heartbeats and status, command results, and what an active support session returns. It never initiates a connection inward.
 - **The session gateway is yours.** It is reachable only inside your environment (over `kubectl port-forward` on Kubernetes, or locally on a VM) unless you opt into exposing it through an Ingress. ClickHouse Cloud never connects to it.

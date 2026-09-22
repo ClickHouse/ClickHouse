@@ -12,10 +12,6 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 To request access to the private preview, contact your ClickHouse account team.
 
-<Note>
-The managed-mode workflows described here are not yet available in the public connector release. Confirm the required build and deployment support with your account team before installing; see [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
-</Note>
-
 ## What the connector does {#what-the-connector-does}
 
 The ClickHouse Connector is a component you deploy inside your own environment. It lets ClickHouse Cloud manage, monitor, and support ClickHouse services in a Kubernetes cluster you operate. ClickHouse Cloud never connects into your environment: the connector makes outbound connections only, and acts under identities scoped to the ClickHouse services. The connector ships as one binary, `clicklink`, which contains the daemons and the `clicklink clctl` tooling you install and operate them with.
@@ -26,7 +22,7 @@ The connector has three components:
 - **The scraper** collects metrics from an allowlist of ClickHouse system tables, plus infrastructure metadata and health status, and ships them to ClickHouse Cloud.
 - **The troubleshooter** lets ClickHouse support engineers run read-only diagnostics during a [support session](/products/bring-your-own-cloud/connector/support-sessions) that you enable and can end at any time.
 
-With a [build that supports managed mode](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability), `init` asks whether to enable it on a terminal and preselects yes; a scripted `init` enables it only with `--managed`. You can also run without it and keep observability and support for clusters you operate yourself; see [run without managed mode](#run-without-managed-mode).
+On a terminal, `init` asks whether to enable managed mode and defaults to yes; scripts must pass `--managed`. You can also run without it and keep observability and support for clusters you operate yourself; see [run without managed mode](#run-without-managed-mode).
 
 Every connection the connector makes is outbound. ClickHouse Cloud never initiates a connection into your environment. The [architecture](/products/bring-your-own-cloud/connector/architecture) page lists every connection, its protocol, and how it authenticates.
 
@@ -41,11 +37,9 @@ Deploy the connector when you want ClickHouse Cloud to operate ClickHouse servic
 
 ## How it works {#how-it-works}
 
-The enrollment and service-creation flow below requires [managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team; it is unavailable in public `v0.16.0`.
-
 ClickHouse registers your environment during onboarding and provides your connector endpoint and a single-use enrollment token. You run `clicklink clctl init --enroll` once: from a workstation with kubeconfig access for a Kubernetes install, or on the host for a Linux VM install. That one command redeems the token, obtains an mTLS client certificate, deploys and starts the daemons, and verifies their health.
 
-`init` enables managed mode when you pass `--managed`; on a terminal it asks, and the default is yes. Enabling it deploys the executor and applies its Kubernetes access grant. The grant is a `pcm-executor` ServiceAccount. An admission policy confines its writes to service namespaces (prefix `ns-` by default), apart from its own token renewal, one registry ConfigMap, and, on Kubernetes, the renewed client certificate in its home namespace.
+`init` enables managed mode when you pass `--managed`; on a terminal it asks and defaults to yes. Enabling it deploys the executor and applies its Kubernetes access grant. The grant is a `pcm-executor` ServiceAccount. An admission policy confines its writes to service namespaces (prefix `ns-` by default), apart from its own token renewal, one registry ConfigMap, and, on Kubernetes, the renewed client certificate in its home namespace.
 
 Creating a service takes two commands. `clicklink clctl executor prepare` creates the service's buckets and IAM role with your own AWS credentials and shows the default user's password once. `clicklink clctl instances create` submits the service definition to ClickHouse Cloud through your connector endpoint. After that, ClickHouse Cloud drives the service through the executor's outbound command channel: scaling, stop and start, restarts, backups, version upgrades, and configuration changes. See [managed services](/products/bring-your-own-cloud/connector/managed-services) for the full walkthrough.
 
@@ -54,8 +48,6 @@ Two actions remain yours. Updates to the platform components in your cluster wai
 The scraper reads the allowlisted system tables on a fixed interval and ships metrics, metadata, and health status to your connector endpoint over mTLS. The troubleshooter keeps an outbound command channel open, but that channel carries nothing until you enable a support session. The mTLS certificate renews automatically.
 
 ## Run without managed mode {#run-without-managed-mode}
-
-The install-time choice below requires a [build with managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Public `v0.16.0` has no `--no-managed` flag or managed-mode prompt.
 
 Pass `--no-managed` to `clicklink clctl init`, or answer no when it asks, to install only the scraper and the troubleshooter. The connector then observes and supports ClickHouse clusters you operate yourself. ClickHouse cannot create, change, or delete services. The connector still deploys itself and provisions read-only ClickHouse users and ServiceAccounts; see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model). This is also the shape for targets managed mode does not cover. Managed mode runs on Amazon EKS with S3 storage; observability and support run on any conformant Kubernetes cluster or Linux host.
 

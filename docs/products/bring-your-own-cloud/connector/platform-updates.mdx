@@ -14,10 +14,6 @@ import { Image } from "/snippets/components/Image.jsx";
 
 A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; the executor applies nothing until you approve each one with your own cluster credentials. This page explains what a platform update is, how to approve one on a VM or a Kubernetes install, how long an approval lasts, and what it grants.
 
-<Note>
-The public `v0.16.0` CLI has no `platform` command, including `platform approve` and `platform reset`. Neither the Linux VM nor the Kubernetes workflow below is available in that release. Kubernetes approval additionally requires CLI and executor-chart support for the Secret-based token bundle (`--secret-namespace`). Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team before using either workflow.
-</Note>
-
 ## What a platform update is {#what-a-platform-update-is}
 
 The platform layer is three components: the snapshot controller, the ClickHouse operator, and the monitoring collectors. They install in this order because each needs the previous one's custom resource definitions. Alongside them sits a StorageClass named `gp3-encrypted` (encrypted gp3 volumes) that the services use.
@@ -36,8 +32,6 @@ The executor never applies a bundle you have not approved. It refuses a platform
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector platform approval flow" />
 
 ### Registry credentials {#registry-credentials}
-
-Both approval procedures below require a [build with platform support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` has no `platform` command. Kubernetes approval also needs matching CLI and chart support for Secret delivery.
 
 Registry authentication depends on the image distribution mode registered for your environment:
 
@@ -156,8 +150,6 @@ The executor applies the workload half as `pcm-platform`. That identity can crea
 The executor's service-lifecycle identity, `pcm-executor`, is separate and confined to the service namespaces. It cannot write to the platform namespaces; its reads are not confined by the prefix guard. For the complete listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ## Resetting a test cluster {#resetting-a-test-cluster}
-
-The public `v0.16.0` CLI has no `platform reset` command; confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using this procedure.
 
 `clicklink clctl platform reset` exists for test clusters: it uninstalls the platform components so their first installation can be exercised again. Before changing anything it lists the ClickHouse clusters in the namespaces this connector owns and refuses if any service exists.
 

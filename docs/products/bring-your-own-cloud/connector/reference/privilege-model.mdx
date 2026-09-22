@@ -13,13 +13,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 This page is the security reference for the ClickHouse Connector: its identities, connections, exact privileges, structural limits, and how every action is attributed. For how the pieces fit together, see [architecture](/products/bring-your-own-cloud/connector/architecture).
 
-<Note>
-The managed-mode workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither `init --managed` nor `init --no-managed`, and it does not ship the customer-create workflow or the `platform` command. The permissions below describe those workflows once that support is available.
-</Note>
-
 ## Identities {#identities}
-
-Managed-mode enrollment, customer service creation, and platform approval use these identities only on a [supported build and deployment](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
 
@@ -129,8 +123,6 @@ The scraper and troubleshooter have no ClusterRole or ClusterRoleBinding. The ch
 
 #### Executor {#kubernetes-rbac-executor}
 
-The `init --managed` workflow below is unavailable in public `v0.16.0`; confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
-
 In managed mode, `clicklink clctl init --managed` (or `clicklink clctl executor access grant --cluster` followed by `apply --cluster`) applies the executor's grant with your credentials. The grant is the `pcm-executor` ServiceAccount (in the connector namespace on Kubernetes, in `clicklink-system` on a VM install), one ClusterRole bound to it, and the `pcm-executor-prefix-guard` ValidatingAdmissionPolicy.
 
 The verbs are granted cluster-wide because RBAC cannot express a namespace prefix. The admission policy then denies every write from `pcm-executor` that targets a namespace outside the service prefix (`ns-` by default). Its home namespace admits three writes: its own token renewal, the `clicklink-instance-registry` ConfigMap the scraper reads, and, on Kubernetes, the renewed client certificate written back to the `clicklink-mtls` Secret. The policy applies to that ServiceAccount alone and uses `failurePolicy: Fail` and `validationActions: [Deny]`. The ClusterRoleBinding is applied last, after the policy and its binding, so a partially applied grant leaves the executor with no permissions rather than unguarded ones.
@@ -156,8 +148,6 @@ Admission does not run on `get`, `list`, or `watch`, so the executor's reads of 
 
 #### Platform identity {#kubernetes-rbac-platform}
 
-The public `v0.16.0` CLI has no `platform` command; this approval model requires [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
-
 `clicklink clctl platform approve` applies the permission half of a platform update with your credentials: Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and ClusterRoleBindings, Roles and RoleBindings, webhook and admission configurations, PriorityClasses, and the StorageClass. It then ensures the `pcm-platform` ServiceAccount, its ClusterRole, the `pcm-platform-scope-guard` ValidatingAdmissionPolicy, and the binding, and mints a bound token valid for 2 hours.
 
 With that token the executor may write only `deployments`, `services`, `configmaps`, `secrets`, `jobs`, and `poddisruptionbudgets`, and only in the platform namespaces the scope guard allows. It may read `pods`, `events`, `namespaces`, `serviceaccounts`, CustomResourceDefinitions, RBAC objects, webhook configurations, StorageClasses, and PriorityClasses to check that the permission half is in place before it applies anything. It never holds `escalate`, `bind`, or `impersonate`, never writes a cluster-scoped kind or an RBAC object, and cannot mint or renew its own token. The token authorizes exactly one bundle: the digest you approved is recorded on the ServiceAccount, and the executor refuses any other.
@@ -173,8 +163,6 @@ With that token the executor may write only `deployments`, `services`, `configma
 - **Nothing inbound.** ClickHouse Cloud never opens a connection into your environment. The only command paths are the two outbound WebSockets. The troubleshooter refuses every command unless a support session you enabled is active. The executor accepts lifecycle commands only for the services you asked ClickHouse to manage, within the scopes above. Even during a session, the troubleshooter's reach is bounded on both sides. ClickHouse queries are limited to the table allowlist, which refuses `query_log` and `text_log`, so they are never granted. Kubernetes access is limited to the read-only views and pod logs the namespace-scoped Roles grant.
 
 ## What requires your action {#what-requires-your-action}
-
-Before using the managed-mode enrollment, service-creation, or platform-approval commands below, confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team. Those workflows are unavailable in public `v0.16.0`.
 
 - **Enabling managed mode.** The executor runs, and its Kubernetes grant exists, only after you enable managed mode at `init`; the grant is applied with cluster admin. See [managed services](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode).
 - **Creating a service.** `clicklink clctl executor prepare` runs with your AWS credentials to create the buckets and the IAM role, and `clicklink clctl instances create` submits the definition. ClickHouse Cloud cannot create a service in your cluster without both. See [create a service](/products/bring-your-own-cloud/connector/managed-services#create-a-service).

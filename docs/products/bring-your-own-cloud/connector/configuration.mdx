@@ -59,10 +59,6 @@ sudo clicklink clctl preflight
 
 ## Managed mode {#managed-mode}
 
-<Note>
-The public `v0.16.0` CLI has neither `--managed` nor `--no-managed`. Before using either flag to change the configuration, confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) and obtain the matching build from your account team.
-</Note>
-
 Managed mode runs the executor, which applies the service lifecycle that ClickHouse Cloud drives to your cluster. `init` turns it on at enrollment and fills in the cluster identity (see [enable managed mode](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); the keys below are the ones you might revisit afterwards. To change the configured posture, re-run `init` with `--force` and `--managed` or `--no-managed`. Like every `init` run this needs an entry point: `--handoff` if you kept the bundle, or `--enroll` with a fresh token, as described in [re-runs and recovery](/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
 
 On a VM, `--no-managed` disables the executor in the configuration but does not stop or disable an already-running systemd unit. Stop it explicitly before changing the configuration:
@@ -364,8 +360,6 @@ image:
 ```
 
 To install the chart itself from a mirror, `init` accepts `--chart` as a chart name resolved in `--chart-repo`, or as a direct `oci://` reference, URL, or local archive or directory. `--chart-version` defaults to the CLI's own version so the binary and chart move together.
-
-The managed-mode example below requires a build with `--managed`, which public `v0.16.0` lacks. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it; mirroring the public release does not add this support.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

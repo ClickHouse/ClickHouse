@@ -14,8 +14,6 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 ### Who can change my services, and when? {#who-can-change-my-services}
 
-The managed-mode enrollment, customer-create, and platform-approval workflows require [support confirmed by your account team](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); they are unavailable in public `v0.16.0`.
-
 In managed mode, ClickHouse Cloud changes only the services you asked it to manage. Anyone with access to the executor host or pod can also drive them with local `clicklink clctl instances` commands; see [service lifecycle](/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud sends lifecycle commands over the executor's outbound channel:
 
 - create, from the definition you submitted
@@ -47,10 +45,6 @@ During an active [support session](/products/bring-your-own-cloud/connector/supp
 The complete outbound connection list is on the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) page.
 
 ### How do I stop ClickHouse from changing my clusters? {#stop-managed-mode}
-
-<Note>
-The public `v0.16.0` CLI has neither `--managed` nor `--no-managed`. The install-time choice below requires a build with [managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Stopping an existing executor uses the Helm or systemd instructions below and does not require either init flag.
-</Note>
 
 Run without managed mode. At install time, pass `--no-managed` to `clicklink clctl init`, or answer no when it asks. Only the scraper and the troubleshooter are deployed, so ClickHouse cannot create, change, or delete services. The connector still provisions read-only ClickHouse users and ServiceAccounts; see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
@@ -84,8 +78,6 @@ You remove the rest with `clicklink clctl executor teardown`, run with your cred
 
 ### Where is my default user password? {#default-user-password}
 
-Customer service creation requires [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) and is unavailable in public `v0.16.0`.
-
 `clicklink clctl executor prepare` generates it on your side and prints it exactly once. If you submit with the individual flags instead of `--from-prepare`, `clicklink clctl instances create` reads it from `--default-user-password-file` or mints and prints it. Only its hashes are submitted to ClickHouse Cloud, so neither the connector nor ClickHouse can show it to you again. Store it when it is displayed.
 
 ### How do I revoke ClickHouse's access? {#how-do-i-revoke-access}
@@ -108,7 +100,7 @@ Yes. Every install-time artifact can come from inside your boundary:
 - If your connector endpoint is served inside your boundary behind a private CA, `--api-private-ca` (Kubernetes) or `api.tls.ca_file` (VM) appends the enrollment bundle's CA chain to the system roots.
 - For enrollment without direct connectivity, `init --handoff` consumes a bundle obtained out of band, and `--no-auto-sign` plus `init --signed-cert` completes certificate signing out of band.
 - In managed mode, ClickHouse images for your services and platform components can come from your own registry after you import them there; ClickHouse registers that registry for your environment.
-- With a [build that supports platform approval](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability), platform bundles can be handed over out of band and passed to `clicklink clctl platform approve --bundle` as a file. Public `v0.16.0` has no `platform` command.
+- Platform bundles can be handed over out of band and passed to `clicklink clctl platform approve --bundle` as a file.
 
 See [private mirrors](/products/bring-your-own-cloud/connector/configuration) and the air-gapped section of [onboarding](/products/bring-your-own-cloud/connector/onboarding). The connector still needs a route to your connector endpoint at runtime; without one, ClickHouse Cloud receives no telemetry and no lifecycle command reaches the executor.
 

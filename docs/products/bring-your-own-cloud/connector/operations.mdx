@@ -88,8 +88,6 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) credentials {#rotate-api-credentials}
 
-The managed-mode behavior described here requires a [supported build](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` has neither `--managed` nor `--no-managed`.
-
 Request a fresh enrollment token from your ClickHouse account team, then re-run your original `init` command with `--enroll` and `--force`. Keep every target-specific flag from the first install (`--target-namespace`, `--values`, and any `--chart`, `--chart-repo`, or `--chart-version` mirror flags), because `--force` restages the kept configuration. Managed mode carries over from the configuration being replaced, so `--managed` is optional here. On a default install:
 
 ```bash
@@ -158,10 +156,6 @@ For operator-managed instances, add `--ch-user-via cr` and the pod-selection fla
 Renewal is automatic (see [certificates](#certificates)). To supersede an unexpired certificate immediately, re-run `init` with `--force`. Then restart every component so the daemons present the new leaf: on Kubernetes as described under [API credentials](#rotate-api-credentials), on a VM the three units.
 
 ## Re-runs and recovery {#re-runs-and-recovery}
-
-<Note>
-The public `v0.16.0` CLI has neither `--managed` nor `--no-managed`. The managed-mode preservation and override behavior below requires a build with [managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); confirm your build with your account team before changing that mode during recovery.
-</Note>
 
 `init` re-runs converge, so re-running the same command is always the first move. Without `--force`, an existing `/etc/clicklink/config.yaml` (VM) or `clicklink-values.yaml` overlay (Kubernetes) is kept, and an existing client key is reused; `init` overwrites credentials and the CA chain atomically. The recovery commands the CLI prints after a partial failure are safe to repeat.
 
@@ -253,8 +247,6 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
 ### The platform layer {#uninstall-platform-layer}
-
-The public `v0.16.0` CLI has no `platform` command, including `platform reset`; confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
 
 Uninstalling the connector does not remove the platform layer. The platform namespaces and workloads, the `pcm-platform` RBAC, and the admission objects your approvals installed stay in the cluster, and so does every managed service. Delete the services first; see [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service). On a test cluster with no services, `clicklink clctl platform reset` uninstalls the platform releases, and the CustomResourceDefinitions, RBAC, and StorageClass it leaves need deleting by hand; see [resetting a test cluster](/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). Outside a test cluster, agree a removal plan with your ClickHouse account team before touching the platform layer.
 
