@@ -522,17 +522,10 @@ void copyRightRange(const Columns & columns_to_add, MutableColumns & columns, si
 
         if (dst_nullable)
         {
-            if (const auto * src_nullable = typeid_cast<const ColumnNullable *>(src_column.get());
-                src_nullable && !src_nullable->isNullAt(row_position))
-            {
-                /// The repeated source row is known to be non-NULL, so copy only its nested value
-                /// and synthesize zeroes in the destination null map in bulk.
-                dst_nullable->insertManyFromNotNullable(src_nullable->getNestedColumn(), row_position, rows_to_add);
-            }
-            else if (!src_nullable)
-                dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
+            if (const auto * src_nullable = typeid_cast<const ColumnNullable *>(src_column.get()))
+                dst_nullable->insertManyFrom(*src_nullable, row_position, rows_to_add);
             else
-                dst_column->insertManyFrom(*src_column, row_position, rows_to_add);
+                dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
         }
         else
             dst_column->insertManyFrom(*src_column, row_position, rows_to_add);

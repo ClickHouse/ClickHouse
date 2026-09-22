@@ -1,8 +1,9 @@
 <test>
     <!--
         Compare unique keys and repeated right values with and without Nullable
-        output. Explicit Nullable payloads exercise MergeJoin's repeated-row path
-        with an already-Nullable source, including both NULL and non-NULL rows.
+        output. ANY LEFT JOIN keeps the left rows in place and isolates repeated
+        right-column expansion instead of also copying the left duplicate range.
+        Explicit Nullable payloads exercise the already-Nullable source path.
         Select the payload directly so aggregation does not obscure insertion.
     -->
     <settings>
@@ -64,21 +65,21 @@
     <query>
         SELECT r.value_number
         FROM nullable_bulk_left_{fanout} AS l
-        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
         SETTINGS join_use_nulls = {use_nulls}
         FORMAT Null
     </query>
     <query>
         SELECT r.value_string
         FROM nullable_bulk_left_{fanout} AS l
-        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
         SETTINGS join_use_nulls = {use_nulls}
         FORMAT Null
     </query>
     <query>
         SELECT r.value_nullable_number, r.value_nullable_string
         FROM nullable_bulk_left_{fanout} AS l
-        ALL LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
         SETTINGS join_use_nulls = {use_nulls}
         FORMAT Null
     </query>
