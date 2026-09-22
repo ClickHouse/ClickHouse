@@ -498,6 +498,29 @@ bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
     return true;
 }
 
+bool plusMinusWithConstantsIsInjective(
+    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
+{
+    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
+    /// fixed there is no varying argument to be injective in.
+    const bool left_is_const = left.column && isColumnConst(*left.column);
+    const bool right_is_const = right.column && isColumnConst(*right.column);
+    if (left_is_const == right_is_const)
+        return false;
+
+    auto is_integer_type = [](const DataTypePtr & type)
+    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
+
+    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
+        return false;
+
+    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
+    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
+    /// constant itself was materialized with size 0, as query-plan constants are.
+    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
+    return !constant.column->onlyNull();
+}
+
 bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
 {
     bool converted = false;
