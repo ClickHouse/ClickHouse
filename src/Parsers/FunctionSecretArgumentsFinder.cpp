@@ -352,7 +352,12 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
                 || equals_func->arguments->size() != 2)
+            {
+                /// A post-collection argument that is not a `key = value` override is ignored by the
+                /// named collection parser rather than rejected, so it can still spell out a credential.
+                markSecretArgument(i);
                 continue;
+            }
 
             String key;
             if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))

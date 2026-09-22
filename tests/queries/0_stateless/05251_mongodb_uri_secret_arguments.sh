@@ -43,6 +43,11 @@ CREATE VIEW f11 AS SELECT * FROM mongodb(${NC}, concat('u', 'ri') = 'mongodb://u
 -- An override VALUE is evaluated the same way, so a \`uri\` override that cannot be read here is still
 -- accepted and effective. It is hidden whole rather than printed.
 CREATE VIEW f12 AS SELECT * FROM mongodb(${NC}, uri = concat('mongodb://usr:', 'MONGOPW', '@127.0.0.1:27017/db'), collection = 'c', structure = 'x String');
+-- A post-collection argument that is not a \`key = value\` override is accepted and ignored, so it is
+-- hidden whole rather than printed, both on its own and next to an effective \`uri\` override.
+CREATE TABLE f13 (x String) ENGINE = MongoDB(${NC}, concat('mongodb://usr:', 'MONGOPW', '@127.0.0.1:27017/db'));
+CREATE VIEW f14 AS SELECT * FROM mongodb(${NC}, concat('mongodb://usr:', 'MONGOPW', '@127.0.0.1:27017/db'), structure = 'x String');
+CREATE VIEW f15 AS SELECT * FROM mongodb(${NC}, concat('mongodb://usr:', 'MONGOPW', '@127.0.0.1:27017/db'), uri = 'mongodb://usr:MONGOPW2@127.0.0.1:27017/db', structure = 'x String');
 
 -- Controls: masked before this change too, and their render must not move.
 CREATE TABLE c01 (x String) ENGINE = MongoDB('mongodb://usr:MONGOPW@127.0.0.1:27017/db', 'c');
@@ -61,14 +66,17 @@ CREATE TABLE c08 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db', 'c'
 -- argument (\`Code: 36\`), so the engine is the surface on which this shape is accepted.
 CREATE TABLE c09 (x String) ENGINE = MongoDB(concat('127.0.0.1', ':27017'), 'db', 'c', 'usr', 'MONGOPW');
 CREATE TABLE c10 (x String) ENGINE = MongoDB(concat('127.0.0.1', ':27017'), 'db', 'c', 'usr', 'MONGOPW', 'ssl=false', '_id');
+-- A well-formed override of a key that is not a credential keeps both its key and its value.
+CREATE VIEW c11 AS SELECT * FROM mongodb(${NC}, oid_columns = '_id', structure = 'x String');
 
 SELECT name, replaceAll(create_table_query, '\n', ' ') FROM system.tables
 WHERE database = currentDatabase() ORDER BY name;
 
 DROP VIEW f01; DROP VIEW f02; DROP VIEW f03; DROP VIEW f04; DROP TABLE f05; DROP TABLE f06;
 DROP VIEW f07; DROP VIEW f08; DROP VIEW f09; DROP VIEW f10; DROP VIEW f11; DROP VIEW f12;
+DROP TABLE f13; DROP VIEW f14; DROP VIEW f15;
 DROP TABLE c01; DROP VIEW c02; DROP VIEW c03; DROP TABLE c04; DROP VIEW c05; DROP VIEW c06;
-DROP TABLE c07; DROP TABLE c08; DROP TABLE c09; DROP TABLE c10;
+DROP TABLE c07; DROP TABLE c08; DROP TABLE c09; DROP TABLE c10; DROP VIEW c11;
 DROP NAMED COLLECTION ${NC};
 DROP NAMED COLLECTION ${NC_HOST};
 "
