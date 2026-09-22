@@ -105,6 +105,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
+    extern const SettingsDouble join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
     extern const SettingsJoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector;
@@ -133,6 +134,7 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 join_runtime_filter_min_probe_rows;
     extern const SettingsBool join_runtime_filter_size_from_hash_table_stats;
+    extern const SettingsBool join_runtime_filter_use_minmax;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -363,8 +365,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    join_runtime_bloom_filter_max_estimated_ratio_of_set_bits
+        = from[Setting::join_runtime_bloom_filter_max_estimated_ratio_of_set_bits];
     join_runtime_filter_min_probe_rows = from[Setting::join_runtime_filter_min_probe_rows];
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
+    join_runtime_filter_use_minmax = from[Setting::join_runtime_filter_use_minmax];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     query_plan_optimize_join_order_conflict_detector = from[Setting::query_plan_optimize_join_order_conflict_detector];

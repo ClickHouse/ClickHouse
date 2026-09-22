@@ -4,8 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <algorithm>
-
 
 namespace DB
 {
@@ -15,6 +13,91 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+UniqueRuntimeFilterPtr createRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & target_type,
+    const RuntimeFilterBuildOptions & build_options,
+    const RuntimeFilterConfig & runtime_filter_config)
+{
+    const bool allow_to_use_not_exact_filter = build_options.polarity == RuntimeFilterPolarity::Contains;
+    const bool adaptive_filter_supported = AdaptiveSetRuntimeFilter::isDataTypeSupported(target_type);
+    const bool minmax_filter_supported = supportsNumericMinMaxRuntimeFilter(target_type);
+    switch (build_options.minmax_mode)
+    {
+        case RuntimeFilterMinMaxMode::Disabled: break;
+        case RuntimeFilterMinMaxMode::Combined:
+            if (!allow_to_use_not_exact_filter || !adaptive_filter_supported || !minmax_filter_supported)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot use combined numeric minmax runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
+                    target_type->getName(),
+                    allow_to_use_not_exact_filter);
+            break;
+        case RuntimeFilterMinMaxMode::Only:
+            if (!allow_to_use_not_exact_filter || !minmax_filter_supported)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot use numeric minmax-only runtime filter mode with type {} and allow_to_use_not_exact_filter={}",
+                    target_type->getName(),
+                    allow_to_use_not_exact_filter);
+            break;
+    }
+
+    UniqueRuntimeFilterPtr filter;
+    if (allow_to_use_not_exact_filter)
+    {
+        auto make_adaptive = [&]
+        {
+            return RuntimeFilter::Adaptive(
+                target_type,
+                build_options.bloom.bytes,
+                build_options.exact_values_limit,
+                build_options.bloom.hash_functions,
+                build_options.max_ratio_of_set_bits,
+                build_options.distinct_keys_hint,
+                build_options.distinct_keys_hint_matches_filter_key);
+        };
+
+        switch (build_options.minmax_mode)
+        {
+            case RuntimeFilterMinMaxMode::Only:
+                filter = std::make_unique<RuntimeFilter>(filters_to_merge, runtime_filter_config, RuntimeFilter::MinMax(target_type));
+                break;
+            case RuntimeFilterMinMaxMode::Combined:
+                filter = std::make_unique<RuntimeFilter>(
+                    filters_to_merge,
+                    runtime_filter_config,
+                    RuntimeFilter::AdaptiveWithMinMax{make_adaptive(), RuntimeFilter::MinMax(target_type)});
+                break;
+            case RuntimeFilterMinMaxMode::Disabled:
+                if (adaptive_filter_supported)
+                    filter = std::make_unique<RuntimeFilter>(filters_to_merge, runtime_filter_config, make_adaptive());
+                else
+                    filter = std::make_unique<RuntimeFilter>(
+                        filters_to_merge,
+                        runtime_filter_config,
+                        RuntimeFilter::ExactContains(target_type, build_options.bloom.bytes, build_options.exact_values_limit));
+                break;
+        }
+    }
+    else
+    {
+        filter = std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            runtime_filter_config,
+            RuntimeFilter::ExactNotContains(target_type, build_options.bloom.bytes, build_options.exact_values_limit));
+    }
+
+    if (build_options.track_key_range)
+        filter->enableIndexAnalysis();
+    return filter;
+}
+
+}
+
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     SharedHeader header_,
     String filter_column_name_,
@@ -22,16 +105,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_name_,
     String filter_key_,
     size_t filters_to_merge_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    bool allow_to_use_not_exact_filter_,
-    bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_,
-    bool distinct_keys_hint_matches_filter_key_,
+    const RuntimeFilterBuildOptions & build_options_,
+    const RuntimeFilterConfig & runtime_filter_config_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -46,51 +121,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
-    const RuntimeFilterConfig runtime_filter_config{
-        pass_ratio_threshold_for_disabling_,
-        blocks_to_skip_before_reenabling_};
-
-    if (allow_to_use_not_exact_filter_)
-    {
-        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
-        {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config,
-                RuntimeFilter::Adaptive(
-                    filter_column_target_type,
-                    bloom_filter_bytes_,
-                    exact_values_limit_,
-                    bloom_filter_hash_functions_,
-                    max_ratio_of_set_bits_in_bloom_filter_,
-                    distinct_keys_hint_,
-                    distinct_keys_hint_matches_filter_key_));
-        }
-        else
-        {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config,
-                RuntimeFilter::ExactContains(
-                    filter_column_target_type,
-                    bloom_filter_bytes_,
-                    exact_values_limit_));
-        }
-    }
-    else
-    {
-        built_filter = std::make_unique<RuntimeFilter>(
-            filters_to_merge_,
-            runtime_filter_config,
-            RuntimeFilter::ExactNotContains(
-                filter_column_target_type,
-                bloom_filter_bytes_,
-                exact_values_limit_));
-    }
-
-    /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
-    if (track_key_range_)
-        built_filter->enableIndexAnalysis();
+    built_filter = createRuntimeFilter(filters_to_merge_, filter_column_target_type, build_options_, runtime_filter_config_);
 }
 
 

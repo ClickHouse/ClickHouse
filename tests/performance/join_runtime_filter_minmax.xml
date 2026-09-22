@@ -1,0 +1,184 @@
+<test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <!--
+        Min-max-specific `JOIN` runtime filter scenarios.
+
+        The data is deterministic: the probe side is wide, while the narrow build sides occupy
+        a small contiguous range in the middle of the probe domain. This makes the min-max
+        precheck useful before `Bloom`/exact membership checks, and useful as a standalone safe
+        over-approximation when a `Bloom` filter is saturated or skipped.
+    -->
+    <create_query>CREATE TABLE rf_minmax_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rf_minmax_build_exact_narrow (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rf_minmax_build_narrow (k UInt64 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rf_minmax_build_wide_sparse (k UInt64 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO rf_minmax_probe SELECT number FROM numbers(30000000)</fill_query>
+    <fill_query>INSERT INTO rf_minmax_build_exact_narrow SELECT number + 14999500 FROM numbers(1000)</fill_query>
+    <fill_query>INSERT INTO rf_minmax_build_narrow SELECT number + 14500000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO rf_minmax_build_wide_sparse SELECT number * 10 FROM numbers(3000000)</fill_query>
+    <fill_query>ALTER TABLE rf_minmax_build_narrow MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1</fill_query>
+    <fill_query>ALTER TABLE rf_minmax_build_wide_sparse MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Exact-set baseline: useful once implementations apply the min-max precheck before exact membership lookup. -->
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_exact_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 0, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_exact_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 0,
+            join_runtime_filter_exact_values_limit = 2000, join_runtime_bloom_filter_bytes = 1048576,
+            join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_exact_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 1,
+            join_runtime_filter_exact_values_limit = 2000, join_runtime_bloom_filter_bytes = 1048576,
+            join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <!-- Non-saturated `Bloom` filter: min-max avoids `Bloom` lookups for most probe rows outside the narrow build range. -->
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 0, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 0,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1048576,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.9, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 1,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1048576,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.9, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <!-- Saturated `Bloom` filter: without min-max it is disabled, with min-max the numeric range remains useful. -->
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 0,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1024,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 1,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1024,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <!-- Statistics-based planning-time disabling for a high-NDV sparse build side with a full min-max range. -->
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_wide_sparse AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 0, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, use_statistics = 1, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_wide_sparse AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 0,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 65536,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            use_statistics = 1, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_wide_sparse AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 0,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 65536,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 0.2,
+            use_statistics = 1, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <!--
+        Narrow range with high NDV: contrasts preserving min-max-only filtering after runtime `Bloom` saturation
+        with planning-time saturation detection. If the planner keeps min-max while skipping `Bloom`, the second
+        query should retain the range-filtering advantage instead of behaving like no runtime filter.
+    -->
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 1,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1024,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0,
+            use_statistics = 1, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <query>
+        SELECT count()
+        FROM rf_minmax_probe AS p INNER JOIN rf_minmax_build_narrow AS b ON p.k = b.k
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1,
+            enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 0, join_runtime_filter_from_fixed_hash_table = 0,
+            join_runtime_filter_size_from_hash_table_stats = 0, join_runtime_filter_use_minmax = 1,
+            join_runtime_filter_exact_values_limit = 0, join_runtime_bloom_filter_bytes = 1024,
+            join_runtime_bloom_filter_max_ratio_of_set_bits = 0.01, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 0.2,
+            use_statistics = 1, join_runtime_filter_pass_ratio_threshold_for_disabling = 1.0
+    </query>
+
+    <drop_query>DROP TABLE rf_minmax_probe</drop_query>
+    <drop_query>DROP TABLE rf_minmax_build_exact_narrow</drop_query>
+    <drop_query>DROP TABLE rf_minmax_build_narrow</drop_query>
+    <drop_query>DROP TABLE rf_minmax_build_wide_sparse</drop_query>
+</test>
