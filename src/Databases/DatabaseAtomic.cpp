@@ -94,7 +94,7 @@ DatabaseAtomic::DatabaseAtomic(
 
 bool DatabaseAtomic::supportsAtomicTableReplacement() const
 {
-    return supportsAtomicRename();
+    return true;
 }
 
 void DatabaseAtomic::createDirectories()
