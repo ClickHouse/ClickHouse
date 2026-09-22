@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS mv_comment_src;
 DROP TABLE IF EXISTS mv_comment_inner;
 DROP TABLE IF EXISTS mv_comment_view;
+DROP TABLE IF EXISTS mv_comment_to;
+DROP TABLE IF EXISTS mv_comment_target;
 
 CREATE TABLE mv_comment_src (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE MATERIALIZED VIEW mv_comment_inner (id UInt64 COMMENT 'initial')
@@ -31,6 +33,18 @@ ALTER TABLE mv_comment_view COMMENT COLUMN id 'changed';
 SELECT 'plain view', comment FROM system.columns
 WHERE database = currentDatabase() AND table = 'mv_comment_view' AND name = 'id';
 
+-- A view with a TO clause has no inner table either, and the explicit target is a table of its own:
+-- the comment belongs on the view, and the target keeps the comment it was created with.
+CREATE TABLE mv_comment_target (id UInt64 COMMENT 'target') ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_comment_to TO mv_comment_target AS SELECT id FROM mv_comment_src;
+ALTER TABLE mv_comment_to COMMENT COLUMN id 'changed';
+SELECT 'view with TO', comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_to' AND name = 'id';
+SELECT 'TO target', comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_target' AND name = 'id';
+
+DROP TABLE mv_comment_to;
+DROP TABLE mv_comment_target;
 DROP TABLE mv_comment_view;
 DROP TABLE mv_comment_inner;
 DROP TABLE mv_comment_src;

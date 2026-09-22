@@ -2,3 +2,5 @@ comment column	changed
 modify column	changed again
 after rejected alter	changed again
 plain view	changed
+view with TO	changed
+TO target	target
