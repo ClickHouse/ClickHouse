@@ -269,7 +269,8 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
 
             configure_fn(*cfg, config_prefix);
 
-            return ObjectStorageFactory::instance().create(storage_name, *cfg, config_prefix, context, /*skip_access_check*/ true);
+            return ObjectStorageFactory::instance().create(
+                storage_name, *cfg, config_prefix, context, /*run_access_check*/ false, /*run_local_paths_check*/ false);
         });
 }
 
@@ -796,7 +797,6 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
                     return std::make_shared<AzureObjectStorage>(
                         storage_name,
-                        params.auth_method,
                         std::move(client),
                         AzureBlobStorage::getRequestSettings(context->getSettingsRef()),
                         params,
