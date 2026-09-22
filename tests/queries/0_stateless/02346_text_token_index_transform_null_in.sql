@@ -68,4 +68,17 @@ INSERT INTO tab SELECT number, 'word' || toString(number) FROM numbers(4);
 SELECT count() FROM tab WHERE (id, s) IN ((1, 'word1')) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab WHERE (id, s) IN (SELECT tuple(number, 'word1') FROM numbers(4)) SETTINGS force_data_skipping_indices = 'idx';
 
+-- An absent map key reads the value type's default, which mapValues never stores. The FixedString default
+-- is all NUL and the array tokenizer keeps the padding, so it must be recognised as the default.
+
+DROP TABLE tab;
+CREATE TABLE tab (id UInt64, m Map(String, FixedString(4)), INDEX idx mapValues(m) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab VALUES (0, {'k':'val0'}), (1, {'other':'xxxx'}), (2, {'k':'val2'}), (3, {});
+
+SELECT count() FROM tab WHERE m['k'] IN (toFixedString('', 4)) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE m['k'] IN (toFixedString('', 4));
+SELECT count() FROM tab WHERE m['k'] = toFixedString('', 4) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE m['k'] = toFixedString('', 4);
+SELECT count() FROM tab WHERE m['k'] IN ('val0') SETTINGS force_data_skipping_indices = 'idx';
+
 DROP TABLE tab;

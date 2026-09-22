@@ -1098,6 +1098,12 @@ static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Bl
     return !isFixedString(indexed_type);
 }
 
+/// The value an absent key reads: `''`, or all NUL for `FixedString`. `mapValues` never stores it.
+static bool isMapValueDefault(std::string_view value)
+{
+    return value.find_first_not_of('\0') == std::string_view::npos;
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -1152,7 +1158,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
                 && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
+                && !isMapValueDefault(value_field.safeGet<String>()))
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
@@ -1973,7 +1979,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
+    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>()))
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
@@ -2036,10 +2042,16 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
+    bool indexed_map_element = false;
+
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
+        if (hasIndexForMapElementValue(node))
+        {
+            indexed_map_element = true;
+            return true;
+        }
         return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
 
@@ -2118,7 +2130,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty())
+        if (element.empty() || (indexed_map_element && isMapValueDefault(element)))
         {
             out.text_search_queries.clear();
             return false;
