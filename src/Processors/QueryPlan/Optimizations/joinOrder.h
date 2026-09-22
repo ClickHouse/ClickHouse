@@ -96,12 +96,10 @@ struct QueryGraph
     /// otherwise. See `ConflictJoinOp`.
     std::vector<ConflictJoinOp> conflict_ops;
 
-    /// When either is true, DPsub builds its reordering constraints from the conflict detector
+    /// When not `NONE`, DPsub builds its reordering constraints from the selected conflict detector
     /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
-    /// restrictions. CD-C takes precedence over CD-A when both are set. Set from settings in
-    /// `optimizeJoinOrder`; affects only the DPsub algorithm.
-    bool use_conflict_detector_a = false;
-    bool use_conflict_detector_c = false;
+    /// restrictions. Set from settings in `optimizeJoinOrder`; affects only the DPsub algorithm.
+    JoinOrderConflictDetector conflict_detector = JoinOrderConflictDetector::NONE;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
