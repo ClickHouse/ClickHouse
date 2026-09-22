@@ -44,7 +44,8 @@ SETTINGS query_plan_optimize_join_order_limit = 0;
 -- step is above the `Union` of the local read and `ReadFromParallelReplicas` instead of below it.
 SELECT
     arrayExists(x -> x LIKE '%ReadFromParallelReplicas%', plan) AS read_distributed,
-    arrayFirstIndex(x -> x LIKE '%──Join%', plan) < arrayFirstIndex(x -> x LIKE '%──Union%', plan) AS join_local
+    arrayFirstIndex(x -> x LIKE '%──Join%', plan) > 0
+        AND arrayFirstIndex(x -> x LIKE '%──Join%', plan) < arrayFirstIndex(x -> x LIKE '%──Union%', plan) AS join_local
 FROM
 (
     SELECT groupArray(explain) AS plan
