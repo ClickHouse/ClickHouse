@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -25,10 +24,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -215,30 +210,21 @@ const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
 
 }
 
-RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_)
-    : query_context(std::move(query_context_))
-{}
-
-const Settings & RPNBuilderTreeContext::getSettings() const
-{
-    return query_context->getSettingsRef();
-}
-
-RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_)
-    : dag_node(dag_node_)
-    , tree_context(tree_context_)
+RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_)
+    : WithContext(query_context_)
+    , dag_node(dag_node_)
 {
     chassert(dag_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnName() const
 {
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext());
+    return getColumnNameWithoutAlias(*dag_node, getContext());
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
 {
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), true /*legacy*/);
+    return getColumnNameWithoutAlias(*dag_node, getContext(), true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
@@ -322,7 +308,7 @@ RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
     if (!isFunction())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a function");
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
 }
 
 std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNull() const
@@ -330,14 +316,14 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
     if (!isFunction())
         return {};
 
-    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
+    return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), getContext());
 }
 
 std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() const
 {
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
     if (node_without_alias->type == ActionsDAG::ActionType::ARRAY_JOIN && node_without_alias->children.size() == 1)
-        return RPNBuilderTreeNode(node_without_alias->children[0], tree_context);
+        return RPNBuilderTreeNode(node_without_alias->children[0], getContext());
 
     return {};
 }
@@ -380,10 +366,10 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     {
         const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*dag_node->function_base);
         const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-        return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], tree_context);
+        return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], getContext());
     }
 
-    return RPNBuilderTreeNode(dag_node->children[index], tree_context);
+    return RPNBuilderTreeNode(dag_node->children[index], getContext());
 }
 
 template <typename RPNElement>
@@ -393,8 +379,7 @@ RPNBuilder<RPNElement>::RPNBuilder(
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
     : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
-    RPNBuilderTreeContext tree_context(query_context_);
-    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, query_context_));
 }
 
 template <typename RPNElement>

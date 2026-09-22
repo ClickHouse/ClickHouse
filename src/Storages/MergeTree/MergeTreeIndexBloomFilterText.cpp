@@ -912,7 +912,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

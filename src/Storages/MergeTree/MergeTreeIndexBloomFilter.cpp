@@ -532,7 +532,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getContext()); prepared_set)
             {
                 if (prepared_set->hasExplicitSetElements())
                 {

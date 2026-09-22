@@ -153,8 +153,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
+    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)

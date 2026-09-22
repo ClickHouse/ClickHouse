@@ -354,8 +354,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
 
     if (!traverseAtomNode(rpn_node, rpn_element))
         return nullptr;
@@ -376,8 +375,7 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     if (function_name == "like" || function_name == "ilike")
         return true;
 
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    RPNBuilderTreeNode rpn_node(&node, getContext());
     const auto function_node = rpn_node.toFunctionNode();
 
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
@@ -2072,7 +2070,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

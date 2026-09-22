@@ -658,8 +658,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
@@ -814,8 +813,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+    RPNBuilderTreeNode tree_node(node_to_check, context);
 
     if (WhichDataType(node.result_type).isSet())
     {

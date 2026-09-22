@@ -11,39 +11,17 @@ namespace DB
 class Field;
 class FutureSet;
 using FutureSetPtr = std::shared_ptr<FutureSet>;
-struct Settings;
-
-/** Context of RPNBuilderTree: the query context shared by all nodes of one tree.
-  * Constants and sets are read from the COLUMN nodes of the ActionsDAG, so nothing else is needed.
-  */
-class RPNBuilderTreeContext
-{
-public:
-    explicit RPNBuilderTreeContext(ContextPtr query_context_);
-
-    /// Get query context
-    const ContextPtr & getQueryContext() const
-    {
-        return query_context;
-    }
-
-    /// Get query context settings
-    const Settings & getSettings() const;
-
-private:
-    ContextPtr query_context;
-};
 
 class RPNBuilderFunctionTreeNode;
 
 /** RPNBuilderTreeNode is wrapper around an ActionsDAG node.
   * It defines unified interface for index analysis.
   */
-class RPNBuilderTreeNode
+class RPNBuilderTreeNode : public WithContext
 {
 public:
-    /// Construct RPNBuilderTreeNode with non null dag node and tree context
-    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_);
+    /// Construct RPNBuilderTreeNode with non null dag node and the query context shared by all nodes of one tree
+    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_);
 
     /// Get DAG node
     const ActionsDAG::Node * getDAGNode() const { return dag_node; }
@@ -91,21 +69,8 @@ public:
     /// If this node is the `ARRAY_JOIN` action `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
     std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
-    /// Get tree context
-    const RPNBuilderTreeContext & getTreeContext() const
-    {
-        return tree_context;
-    }
-
-    /// Get tree context
-    RPNBuilderTreeContext & getTreeContext()
-    {
-        return tree_context;
-    }
-
 protected:
     const ActionsDAG::Node * dag_node = nullptr;
-    RPNBuilderTreeContext & tree_context;
 };
 
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
