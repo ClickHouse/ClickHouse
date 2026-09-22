@@ -2,6 +2,7 @@
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Core/Settings.h>
@@ -78,25 +79,19 @@ public:
         if (!isResultTypeSupported(args[0]->getResultType(), is_suffix))
             return;
 
-        LikePatternFixedPrefix affix;
+        /// Only rewrite for perfect prefix or suffix
+        /// Suffix is prefix in reverse
         if (is_suffix)
-        {
-            std::string_view suffix_pattern = pattern;
-            while (suffix_pattern.starts_with('%'))
-                suffix_pattern.remove_prefix(1);
+            std::reverse(pattern.begin(), pattern.end());
 
-            affix = extractFixedPrefixFromLikePattern(suffix_pattern, true);
-            if (!affix.is_exact || affix.prefix.empty())
-                return;
-        }
-        else
-        {
-            affix = extractFixedPrefixFromLikePattern(pattern, true);
-            if (!affix.is_perfect || affix.prefix.empty())
-                return;
-        }
+        auto [affix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
+        if (!is_perfect || affix.empty())
+            return;
 
-        auto affix_constant = std::make_shared<ConstantNode>(std::move(affix.prefix));
+        if (is_suffix)
+            std::reverse(affix.begin(), affix.end());
+
+        auto affix_constant = std::make_shared<ConstantNode>(std::move(affix));
 
         /// Create startsWith/endsWith function
         FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", args[0], affix_constant);

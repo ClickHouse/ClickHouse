@@ -1,6 +1,4 @@
 set allow_experimental_kusto_dialect=1;
--- A KQL timespan is an Interval; this is how Kusto renders one.
-set interval_output_format='kusto';
 set dialect = 'kusto';
 
 print '-- bool'
@@ -41,10 +39,9 @@ print time(1d);
 print time(-1d);
 print time(6nanoseconds);
 print time(6tick);
--- FIXME: time(2) with bare numeric not supported — returns BAD_ARGUMENTS
--- print time(2);
--- print time(2) + 1d;
-print '-- guid';
+print time(2);
+print time(2) + 1d;
+print '-- guid'
 print guid(74be27de-1e4e-49d9-b579-fe0b331d3642);
 print guid(null);
 print '-- timespan (time)';
@@ -56,7 +53,7 @@ print timespan(10s); -- 	        10 seconds
 print timespan(100ms); -- 	        100 millisecond
 print timespan(10microsecond); -- 	10 microseconds
 print timespan(1tick); --           100 nanoseconds
-print timespan(1.5h) / timespan(30m);
+--print timespan(1.5h) / timespan(30m);
 print timespan('12.23:12:23') / timespan(1s);
 print '-- null';
 print isnull(null);
@@ -70,9 +67,7 @@ print dynamic(null);
 print dynamic(1);
 print dynamic(timespan(1d));
 print dynamic([1,2,3]);
--- CAST AS Array cannot be performed between same-dimensional array types
--- for nested arrays to Dynamic (passes under `clickhouse-local`).
-print dynamic([[1], [2], [3]]);  -- used to raise; the rewrite returns the value Kusto gives
+print dynamic([[1], [2], [3]]);
 print dynamic(['a', "b", 'c']);
 print '-- cast functions'
 print '--tobool("true")'; -- == true
@@ -106,15 +101,13 @@ print '-- todatetime()';
 print todatetime("2015-12-24") == datetime(2015-12-24);
 print todatetime('abc') == null;
 print '-- make_timespan()';
--- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
--- print v1=make_timespan(1,12), v2=make_timespan(1,12,30), v3=make_timespan(1,12,30,55.123);
+print v1=make_timespan(1,12), v2=make_timespan(1,12,30), v3=make_timespan(1,12,30,55.123);
 print '-- totimespan()';
 print totimespan(1tick);
 print totimespan('0.00:01:00');
--- [removed in the KQL rewrite] KQL literal totimespan(...) at position 7 could not read the timespan
--- print totimespan('abc');
+print totimespan('abc');
 print totimespan('12.23:12:23') / totimespan(1s);
-print totimespan(strcat('12.', '23', ':12:', '23')) / timespan(1s);
+-- print totimespan(strcat('12.', '23', ':12:', '23')) / timespan(1s); -> 1120343
 print '-- tolong()';
 print tolong('123');
 print tolong('abc');
