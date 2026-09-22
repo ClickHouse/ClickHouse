@@ -228,7 +228,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
 
-            if (settings.save_marks_in_cache)
+            /// Marks of per-row substreams are written in `fillSkipIndicesChecksums`, not collected
+            /// here, so an entry for them would prewarm the mark cache with an empty array.
+            if (settings.save_marks_in_cache && !MergeTreeIndexSubstream::isPerRow(index_substream.type))
                 cached_index_marks.emplace(on_disk_stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
