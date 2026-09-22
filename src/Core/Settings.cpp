@@ -4712,6 +4712,11 @@ Possible values:
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
 )", 0) \
+    DECLARE(Bool, allow_executable_tables, true, R"(
+Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
+
+Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
+)", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
@@ -5775,13 +5780,15 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 ```
 )", 0) \
     DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
-Format for AggregateFunction input during INSERT operations.
+How the input formats read columns of the `AggregateFunction` type.
 
 Possible values:
 
-- `state` — Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
-- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
-- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+- `state` — the serialized state of the aggregate function, as the output formats write it (the default).
+- `value` — a value of the argument of the aggregate function, or a tuple of the arguments if there are several of them. The value is aggregated to form the state.
+- `array` — an array of values, as described in the `value` option above. All elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes the format reads the column as if it had the type of the values: `T` for `AggregateFunction(f, T)`, `Tuple(T1, T2)` for `AggregateFunction(f, T1, T2)`, or `Array` of it in the `array` mode. The values are written in the representation the format uses for that type: a number or a string in a text format, a JSON array in the JSON formats, the binary encoding of the type in `RowBinary` or `Native`, a column of that type in `Parquet`, and so on. This applies to every input format, and also to `AggregateFunction` nested in `Array`, `Tuple` or `Map`.
 
 **Examples**
 
@@ -5793,18 +5800,26 @@ CREATE TABLE example (
 );
 ```
 
-
 With `aggregate_function_input_format = 'value'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
 
 With `aggregate_function_input_format = 'array'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
+```
+
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
 ```
 
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
@@ -9016,21 +9031,21 @@ Initial delay in milliseconds before the first retry of a failed AI function API
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. All three limits are disabled by default, so this has no effect until one of them is set. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
@@ -9119,6 +9134,8 @@ The maximum number of rows in the right table to determine whether to rerange th
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+This setting is experimental and currently does not work together with all other join optimizations.
+In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
