@@ -201,14 +201,24 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
     const size_t row_end = std::max(existing->row_begin + existing->rows, incoming->row_begin + incoming->rows);
     merged->rows = row_end - merged->row_begin;
 
+    /// The two runs can hold the same rows in different representations: the accumulated copy
+    /// of a read is a clone of the column the read produced, and the same column of the same
+    /// part is a `ColumnSparse` under one set of settings and a full column under another, which
+    /// is why `MergeTreeReaderWide::serveRowsFromColumnsCache` normalizes the serve path as well.
+    /// A sparse destination takes rows from a full source, but a full one cannot take them from
+    /// a `ColumnSparse`, so make the source full when the destination is not sparse.
+    ColumnPtr incoming_column = incoming->column;
+    if (!existing->column->isSparse() && incoming_column->isSparse())
+        incoming_column = incoming_column->convertToFullColumnIfSparse();
+
     auto column = existing->column->cloneEmpty();
     column->reserve(merged->rows);
     if (incoming->row_begin < existing->row_begin)
-        column->insertRangeFrom(*incoming->column, 0, existing->row_begin - incoming->row_begin);
+        column->insertRangeFrom(*incoming_column, 0, existing->row_begin - incoming->row_begin);
     column->insertRangeFrom(*existing->column, 0, existing->rows);
     const size_t existing_row_end = existing->row_begin + existing->rows;
     if (row_end > existing_row_end)
-        column->insertRangeFrom(*incoming->column, existing_row_end - incoming->row_begin, row_end - existing_row_end);
+        column->insertRangeFrom(*incoming_column, existing_row_end - incoming->row_begin, row_end - existing_row_end);
     column->shrinkToFit();
     merged->column = std::move(column);
 
@@ -301,6 +311,9 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     for (size_t i = 0; i < keys.size(); ++i)
         shardOf(keys[i]).set(keys[i], to_store[i]);
 
+    if (on_entries_inserted_for_test)
+        on_entries_inserted_for_test();
+
     /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
     /// the space left by the protected segment, even when it is within the overall size limit.
     /// In that case the eviction callback has already reset the bit.
@@ -315,19 +328,27 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     {
         std::lock_guard lock(index_mutex);
         stale = currentGeneration(table_uuid) != expected_table_generation;
-        if (stale)
+
+        /// A stale writer of the same stripe, racing this call, releases the bucket of the
+        /// stripe when it takes its own entry back out - see below - and the bucket has to be
+        /// there for every entry the cache holds, or `removePart` would walk past this one and
+        /// leave it resident for a part that is gone. Recording it again costs a lookup in a
+        /// hash set that holds it already in every other case.
+        if (!stale)
         {
             for (size_t i = 0; i < keys.size(); ++i)
             {
+                if (!resident[i])
+                    continue;
                 const auto & entry = *to_store[i];
-                forgetStripe(PartIdentifier{entry.table_uuid, entry.part_name}, keys[i].column_identity, keys[i].stripe);
+                part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
             }
         }
     }
 
     if (stale)
     {
-        removeFromShards(keys);
+        removeStaleEntries(keys, to_store);
         return 0;
     }
 
@@ -386,6 +407,32 @@ void ColumnsCache::removeFromShards(const std::vector<Key> & keys)
 {
     for (const auto & key : keys)
         shardOf(key).remove(key);
+}
+
+void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::vector<MappedPtr> & entries)
+{
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        /// Only the entries this batch put in the shards, identified by the object and not by
+        /// the key: an invalidation makes this write stale, and a reader that started after the
+        /// invalidation is allowed to write the very same key - after a `SYSTEM DROP COLUMNS
+        /// CACHE` it is exactly the reader that should repopulate the cache. Removing by key
+        /// alone would throw its fresh entry away together with this stale one.
+        ///
+        /// The bucket of the stripe is released with the entry, under the mutex of the shard and
+        /// then `index_mutex` - the order `onEntryRemoval` uses - so that the fresh writer cannot
+        /// insert its entry in between and be left without its stripe recorded. It can still
+        /// insert after this, which is what the recording at the end of `setMany` is for.
+        shardOf(keys[i]).removeIfMatches(keys[i], [&](const MappedPtr & resident)
+        {
+            if (resident != entries[i])
+                return false;
+
+            std::lock_guard lock(index_mutex);
+            forgetStripe(PartIdentifier{entries[i]->table_uuid, entries[i]->part_name}, keys[i].column_identity, keys[i].stripe);
+            return true;
+        });
+    }
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
