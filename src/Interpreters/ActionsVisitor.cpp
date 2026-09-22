@@ -1872,8 +1872,11 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         {
-            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            interpreter->buildQueryPlan(*source);
+            /// The analyzer, not the interpreter that preceded it: the subquery reads real tables, and a
+            /// storage that resolves its read through a query tree - `Distributed` and `Merge` - has no
+            /// other way to be read.
+            auto interpreter = interpretSubqueryWithAnalyzer(right_in_operand, data.getContext(), data.subquery_depth, {});
+            *source = std::move(*interpreter).extractQueryPlan();
         }
 
         return data.prepared_sets->addFromSubquery(
