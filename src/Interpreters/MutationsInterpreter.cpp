@@ -1805,9 +1805,14 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     {
         if (settings.return_all_columns || prepared_stages[i].affects_all_columns)
         {
+            /// When return_all_columns forces a physical full rewrite, callers may disable
+            /// apply_deleted_mask to preserve an existing _row_exists column.
+            const bool apply_deleted_mask_for_stage
+                = settings.apply_deleted_mask || prepared_stages[i].affects_all_columns;
+
             for (const auto & column : all_columns)
             {
-                if (column.name == RowExistsColumn::name && !deleted_mask_updated)
+                if (column.name == RowExistsColumn::name && !deleted_mask_updated && apply_deleted_mask_for_stage)
                     continue;
 
                 prepared_stages[i].output_columns.insert(column.name);

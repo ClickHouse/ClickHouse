@@ -12,6 +12,17 @@ Int64	-128	old-min
 Int64	127	old-max
 Int16	1	a
 Int16	2	b
+1	1
+2	0
+3	1
+UInt32	1	1
+UInt32	2	0
+UInt32	3	1
+1
+3
+UInt32	1	1
+UInt32	3	1
+UInt32	4	1
 rejected: shrinking integer key
 rejected: signedness change
 rejected: integer to float

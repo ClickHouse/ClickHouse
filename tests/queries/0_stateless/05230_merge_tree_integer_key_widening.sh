@@ -41,7 +41,7 @@ wait_for_mutation()
 
 cleanup()
 {
-    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_enum_key_widening merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening; do
+    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_enum_key_widening merge_tree_integer_key_widening_lwd merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening; do
         $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES $table" >/dev/null 2>&1 || true
         $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $table" >/dev/null 2>&1 || true
     done
@@ -92,6 +92,23 @@ wait_for_mutation merge_tree_enum_key_widening
 client "DETACH TABLE merge_tree_enum_key_widening"
 client "ATTACH TABLE merge_tree_enum_key_widening"
 client "SELECT toTypeName(k), k, value FROM merge_tree_enum_key_widening WHERE k IN (1, 2) ORDER BY k"
+
+client "DROP TABLE IF EXISTS merge_tree_integer_key_widening_lwd"
+client "CREATE TABLE merge_tree_integer_key_widening_lwd (k UInt16, value String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
+client "INSERT INTO merge_tree_integer_key_widening_lwd VALUES (1, 'keep-1'), (2, 'delete'), (3, 'keep-3')"
+client "DELETE FROM merge_tree_integer_key_widening_lwd WHERE k = 2"
+client "SELECT k, _row_exists FROM merge_tree_integer_key_widening_lwd ORDER BY k SETTINGS apply_deleted_mask = 0"
+client "SYSTEM STOP MERGES merge_tree_integer_key_widening_lwd"
+client "ALTER TABLE merge_tree_integer_key_widening_lwd MODIFY COLUMN k UInt32 SETTINGS mutations_sync = 0, alter_sync = 0"
+client "SYSTEM START MERGES merge_tree_integer_key_widening_lwd"
+wait_for_mutation merge_tree_integer_key_widening_lwd
+client "SELECT toTypeName(k), k, _row_exists FROM merge_tree_integer_key_widening_lwd ORDER BY k SETTINGS apply_deleted_mask = 0"
+client "DETACH TABLE merge_tree_integer_key_widening_lwd"
+client "ATTACH TABLE merge_tree_integer_key_widening_lwd"
+client "SELECT k FROM merge_tree_integer_key_widening_lwd ORDER BY k"
+client "INSERT INTO merge_tree_integer_key_widening_lwd VALUES (4, 'post-merge')"
+client "OPTIMIZE TABLE merge_tree_integer_key_widening_lwd FINAL"
+client "SELECT toTypeName(k), k, _row_exists FROM merge_tree_integer_key_widening_lwd ORDER BY k SETTINGS apply_deleted_mask = 0"
 
 client "DROP TABLE IF EXISTS merge_tree_integer_key_widening_reject"
 client "CREATE TABLE merge_tree_integer_key_widening_reject (k UInt32) ENGINE = MergeTree ORDER BY k"
