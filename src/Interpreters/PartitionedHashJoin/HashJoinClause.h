@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
@@ -31,16 +32,17 @@ class TableJoin;
   * and the counters of one build.
   *
   * Uses the join's `HashJoin` helper (map type, key sizes, stored blocks) and the join's fill
-  * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per join
-  * today. Several disjuncts are meant to share the store with one clause each.
+  * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per ON
+  * clause: a join with several disjuncts holds one per clause over the same store.
   */
 class HashJoinClause
 {
 public:
-    /// One right-side block: stored payload, prepared keys, and saved routes.
-    struct FillBlock
+    /// One clause's view of a fill block: its prepared key columns, null map and ON mask, and the
+    /// routes its table build saved. Prepared by `prepareInput`, consumed and released by this clause
+    /// alone, so a later clause still finds its own keys after an earlier one scattered.
+    struct Input
     {
-        StoredBlock stored;
         Columns keys_holder;
         ColumnRawPtrs key_columns;
         ColumnPtr null_map_holder;
@@ -52,8 +54,6 @@ public:
         /// Otherwise `skipData` returns the plain null map.
         PaddedPODArray<UInt8> skip_bytes;
         PaddedPODArray<UInt16> routes;
-        size_t rows = 0;
-        UInt32 block_no = 0; /// assigned at the build barrier
 
         const UInt8 * skipData() const
         {
@@ -62,8 +62,8 @@ public:
             return null_map ? null_map->data() : nullptr;
         }
 
-        /// Drops the prepared keys, masks and routes once the rows are inserted or scattered. The stored
-        /// payload stays. Returns the route bytes freed, for the byte count.
+        /// Drops the prepared keys, masks and routes once the rows are inserted or scattered. Returns
+        /// the route bytes freed, for the byte count.
         size_t releaseInputs()
         {
             const size_t freed_route_bytes = routes.allocated_bytes();
@@ -75,6 +75,39 @@ public:
             skip_bytes = {};
             routes = {};
             return freed_route_bytes;
+        }
+    };
+
+    /// One right-side block: the stored payload, shared by every clause, and one `Input` per clause.
+    struct FillBlock
+    {
+        StoredBlock stored;
+        /// Indexed like the join's clauses.
+        std::vector<Input> clauses;
+        /// The block's used flags when the join keeps them per right-table row: one per row, zeroed by
+        /// the fill thread. The store hands them to the join's flags.
+        JoinStuff::JoinUsedFlags::UsedFlagsForColumns per_row_flags;
+        size_t rows = 0;
+        UInt32 block_no = 0; /// assigned at the build barrier
+
+        /// Every clause's inputs at once, for the paths that abandon the build. The stored payload stays.
+        size_t releaseInputs()
+        {
+            size_t freed_route_bytes = 0;
+            for (auto & input : clauses)
+                freed_route_bytes += input.releaseInputs();
+            return freed_route_bytes;
+        }
+
+        /// Bytes the saved routes still hold. A released array reports its padding through
+        /// `allocated_bytes`, so only the arrays that still have rows count.
+        size_t routeBytes() const
+        {
+            size_t bytes = 0;
+            for (const auto & input : clauses)
+                if (!input.routes.empty())
+                    bytes += input.routes.allocated_bytes();
+            return bytes;
         }
     };
 
@@ -135,12 +168,14 @@ public:
         UInt64 row_store_blocks = 0;
     };
 
-    /// `hash_join_` is the schema helper; `build_blocks_` is the join's fill list; freed route bytes
-    /// go back into `accumulated_bytes_`. `max_bytes_before_external_join_` is the memory budget of the
-    /// post-build gate and the grow budget; zero disables both.
+    /// `hash_join_` is the schema helper; `clause_idx_` names this clause among `table_join_.getClauses()`,
+    /// the helper's `key_sizes` and every fill block's `clauses`; `build_blocks_` is the join's fill list;
+    /// freed route bytes go back into `accumulated_bytes_`. `max_bytes_before_external_join_` is the memory
+    /// budget of the post-build gate and the grow budget; zero disables both.
     HashJoinClause(
         HashJoin & hash_join_,
-        const TableJoin & table_join,
+        const TableJoin & table_join_,
+        size_t clause_idx_,
         bool any_take_last_row_,
         size_t num_threads_,
         size_t max_bytes_before_external_join_,
@@ -148,6 +183,12 @@ public:
         std::atomic<size_t> & accumulated_bytes_,
         LoggerPtr log_);
     ~HashJoinClause();
+
+    /// The fill's key preparation for this clause, into `fill.clauses[clause_idx]`: the key columns as
+    /// the probe side prepares them in `JoinOnKeyColumns`, the merged null map, the right-side ON mask,
+    /// and the skip bytes when the mask filters. `materialized` is the right block after
+    /// `HashJoin::materializeColumnsFromRightBlock`.
+    void prepareInput(const Block & materialized, FillBlock & fill) const;
 
     /// One map hash per insertable row. The top 16 bits of the placement word are the route.
     /// The top 32 bits of its mix are fed to `sketch`.
@@ -168,18 +209,19 @@ public:
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
 
     /// The post-build memory verdict for a partitioned build of `rows` rows, taken once at the barrier from
-    /// numbers that already exist. The join answers for the delegated and the single-fill builds itself.
+    /// numbers that already exist. The join answers for the single-fill builds itself.
     enum class PostBuildPlan
     {
         Fits, /// ungrouped scatter
         Grouped, /// in-memory scatter over block ranges
         MustSpill, /// even the resident data does not fit the budget
     };
-    PostBuildPlan planPostBuild(size_t rows);
+    /// `pool` is the join's post-build pool; the gate's histogram wave runs on it.
+    PostBuildPlan planPostBuild(size_t rows, ThreadPool & pool);
 
-    /// Builds the table from the fill blocks after the barrier. Returns whether every inserted key was
-    /// unique, which drives the RightAny promotion.
-    bool postBuild(size_t rows);
+    /// Builds the table from the fill blocks after the barrier, its waves on `pool`, the join's post-build
+    /// pool. Returns whether every inserted key was unique, which drives the RightAny promotion.
+    bool postBuild(size_t rows, ThreadPool & pool);
     /// `HashJoin`'s post-build conversion: a built `key32` / `key64` table whose keys span a dense range
     /// of at most 2^18 values becomes a `range*` fixed map indexed by `key - min_key`. The probe reads
     /// that map without hashing. Releases the shared table; the row refs it held are copied. Run after
@@ -218,8 +260,14 @@ public:
     /// ungrouped call and for the fill-phase gate; the grouped call receives the value `planPostBuild`
     /// computed from the ungrouped floor.
     size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
-    /// The pool of the post-build waves; the join's drain into another join runs on one too.
+    /// A pool of post-build waves. The join creates one per clause; the clause pool of a concurrent
+    /// build and the join's drain into another join use one too.
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
+
+    /// What the join's other clauses hold or will hold next to this clause's build - their tables and
+    /// arenas, built or predicted. The memory gate, the grow veto and the partition floor's guard count
+    /// it as resident. Set by the join before this clause is planned and before it is built.
+    void setBytesReservedElsewhere(size_t bytes) { bytes_reserved_elsewhere = bytes; }
 
     bool hasTable() const { return table_maps != nullptr; }
     /// Which `HashJoin::MapsVariant` alternative the table mirrors.
@@ -278,7 +326,7 @@ private:
     /// Both return whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuildPartitioned();
     bool postBuildSinglePartition(size_t rows);
-    void preparePostBuildContext();
+    void preparePostBuildContext(ThreadPool & pool);
     void runGroupStages(size_t block_begin, size_t block_end);
     size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
 
@@ -292,7 +340,7 @@ private:
     double reserveSafety() const { return estimate_is_exact ? 1.0 : reserve_safety; }
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
-    /// Bytes still held by the saved routes.
+    /// Bytes still held by the saved routes of every clause; a clause's scatter releases its own.
     size_t routeBytes() const;
 
     /// How the key columns are scattered. Fixed-width keys go by their raw bytes. Anything else
@@ -381,12 +429,17 @@ private:
     /// The join's helper: map type, key sizes, kind and strictness, and the block store the inserted
     /// references point into.
     HashJoin & hash_join;
+    const TableJoin & table_join;
+    /// This clause's index in `table_join.getClauses()`, `hash_join.key_sizes` and `FillBlock::clauses`.
+    const size_t clause_idx;
     const bool any_take_last_row;
     const size_t num_threads;
     /// Zero disables the gate; post-build is the ungrouped scatter.
     const size_t max_bytes_before_external_join;
     /// Same as the constructor budget unless a test lifts or tightens it to force or refuse a grow.
     size_t grow_budget = 0;
+    /// See `setBytesReservedElsewhere`.
+    size_t bytes_reserved_elsewhere = 0;
     std::optional<size_t> grow_budget_for_drain_for_tests;
     /// The join's concatenated fill blocks (one list for every clause), read by the post-build stages
     /// and released block by block as they are consumed.
@@ -441,7 +494,8 @@ private:
     std::shared_ptr<Arena> join_table_arena;
     size_t ht_total_bytes = 0; /// the table's buffer bytes (drives the prefetch heuristics)
 
-    std::unique_ptr<ThreadPool> post_build_pool;
+    /// The join's pool, set for the duration of the post-build waves (`planPostBuild`, `postBuild`).
+    ThreadPool * post_build_pool = nullptr;
     std::unique_ptr<PostBuildContext, PostBuildContextDeleter> post_build_ctx;
     /// Exact per-partition insertable row counts from the full-build histogram.
     std::vector<UInt64> total_bucket_rows;

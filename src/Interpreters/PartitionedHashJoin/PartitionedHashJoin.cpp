@@ -28,7 +28,6 @@ extern const Event HashJoinPartitionedBuildFillMicroseconds;
 extern const Event HashJoinPartitionedBuildInsertMicroseconds;
 extern const Event HashJoinPartitionedProbeMicroseconds;
 extern const Event HashJoinPartitions;
-extern const Event HashJoinInsertedRows;
 extern const Event HashJoinTableBytes;
 extern const Event HashJoinPartitionOverflowRows;
 extern const Event HashJoinDuplicateRunBytes;
@@ -138,22 +137,37 @@ PartitionedHashJoin::PartitionedHashJoin(
               /*max_threads_=*/1,
               /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
-    , delegate_mode(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , join_table_mode(join_table_mode_)
+    , used_flags_per_row(hash_join->needUsedFlagsForPerRightTableRow(table_join))
+    , cached_distinct_estimates(table_join->getClauses().size())
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
-          !delegate_mode && !join_table_mode
-          && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
+          !join_table_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
-    , clause(*hash_join, *table_join, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log)
 {
     if (!HashJoinTableMaps::isSupportedType(hash_join->data->type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "PartitionedHashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
             hash_join->data->type);
+
+    for (size_t clause_idx = 0; clause_idx < table_join->getClauses().size(); ++clause_idx)
+        clauses.emplace_back(
+            *hash_join, *table_join, clause_idx, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log);
+    post_build_pools.resize(clauses.size());
+
+    /// The same shapes for which `HashJoin` allocates its per-row flags: the flagged (kind, strictness)
+    /// pairs of `MapGetter`. The others mark nothing and read nothing.
+    if (used_flags_per_row)
+        joinDispatch(
+            hash_join->getKind(),
+            hash_join->getStrictness(),
+            hash_join->data->maps.front(),
+            hash_join->getMapsKind(),
+            [&](auto kind_, auto strictness_, auto & map_)
+            { allocate_per_row_flags = MapGetter<kind_, strictness_, mapsKindOf<decltype(map_)>()>::flagged; });
 
     /// `HashJoin`'s constructor derived the row store layout as `hash` builds it, so it gave way to the
     /// rerange optimization. This join never reranges its rows: derive the layout without that rule.
@@ -177,12 +191,12 @@ PartitionedHashJoin::PartitionedHashJoin(
     {
         /// `StorageJoin` accepts one key clause, no mixed ON condition and no ASOF at `CREATE`, so these
         /// are not user errors.
-        if (delegate_mode)
+        if (clauses.size() != 1 || used_flags_per_row)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table has exactly one key clause and no mixed ON condition");
         if (hash_join->getStrictness() == JoinStrictness::Asof)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
-        clause.createJoinTable();
+        clauses.front().createJoinTable();
     }
 }
 
@@ -205,7 +219,8 @@ PartitionedHashJoin::~PartitionedHashJoin()
         }
     }
 
-    clause.releaseTable();
+    for (auto & clause : clauses)
+        clause.releaseTable();
     hash_join.reset();
     probe_scratch_pool.clear();
     for (auto & slot : probe_scratch_slots)
@@ -253,8 +268,8 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
     }
 
     /// The keyless clauses have their own plan-time routing.
-    for (const auto & clause : table_join.getClauses())
-        if (clause.key_names_right.empty())
+    for (const auto & on_clause : table_join.getClauses())
+        if (on_clause.key_names_right.empty())
             return false;
 
     return true;
@@ -271,17 +286,17 @@ void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: only the instances of a Join table share its table");
     /// `StorageJoin` checked the kind and strictness; the map type follows from the key columns, which
     /// are the storage's. Both have to agree, or the probe would read the cells through the wrong layout.
-    if (clause.mapsVariantIndex() != source.clause.mapsVariantIndex() || hash_join->data->type != source.hash_join->data->type)
+    if (clauses.front().mapsVariantIndex() != source.clauses.front().mapsVariantIndex() || hash_join->data->type != source.hash_join->data->type)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "PartitionedHashJoin: the query's join shape (maps {}, type {}) does not match the Join table's (maps {}, type {})",
-            clause.mapsVariantIndex(),
+            clauses.front().mapsVariantIndex(),
             hash_join->data->type,
-            source.clause.mapsVariantIndex(),
+            source.clauses.front().mapsVariantIndex(),
             source.hash_join->data->type);
 
     hash_join->reuseJoinedData(*source.hash_join);
-    clause.shareTable(source.clause);
+    clauses.front().shareTable(source.clauses.front());
     shared_from_join_table = true;
     /// `reuseJoinedData` sized the flags to the inner join's own, empty map.
     reinitUsedFlags();
@@ -336,7 +351,7 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()
     std::lock_guard lock(fill_mutex);
     auto [it, inserted] = lane_by_thread.try_emplace(std::this_thread::get_id(), nullptr);
     if (inserted)
-        it->second = &lanes.emplace_back();
+        it->second = &lanes.emplace_back(clauses.size());
     return *it->second;
 }
 
@@ -355,7 +370,7 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_i
     std::lock_guard lock(fill_mutex);
     if (FillLane * raced = fill_lane_slots[worker_id].load(std::memory_order_relaxed))
         return *raced;
-    FillLane * fresh = &lanes.emplace_back();
+    FillLane * fresh = &lanes.emplace_back(clauses.size());
     fill_lane_slots[worker_id].store(fresh, std::memory_order_release);
     return *fresh;
 }
@@ -367,13 +382,6 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     if (build_phase_finished || stored_blocks_released)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: addBlockToJoin called after the build phase finished");
-
-    if (delegate_mode)
-    {
-        /// The standard machinery runs the join whole, on one fill stream, so the inner join has one worker.
-        ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, source_block.rows());
-        return hash_join->addBlockToJoin(source_block, source_block.rows(), /*worker_id=*/0, check_limits);
-    }
 
     /// Key preparation plus the per-row hash, route and sketch update. The partition plan comes later,
     /// at the barrier, so every plan pays exactly this much here.
@@ -390,28 +398,14 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     FillBlock fill;
     fill.rows = rows;
+    /// Zeroed here, on the fill thread, rather than for every block at once on the thread that stores
+    /// them; `HashJoin` allocates its per-row flags on its fill workers too.
+    if (allocate_per_row_flags)
+        fill.per_row_flags = JoinStuff::JoinUsedFlags::UsedFlagsForColumns(rows);
 
-    /// Exactly what the probe side does in `JoinOnKeyColumns`. Materialize. Keep a live
-    /// LowCardinality column only for the dictionary-aware map types. Extract the merged null map.
-    /// Strip to the nested columns. For ASOF the null map covers the inequality column too, so a
-    /// row with a NULL ASOF key never joins.
-    const auto & on_clause = table_join->getOnlyClause();
-    fill.keys_holder = HashJoin::isLowCardinalityType(hash_join->data->type)
-        ? JoinCommon::materializeColumnsKeepLowCardinality(materialized, on_clause.key_names_right)
-        : JoinCommon::materializeColumns(materialized, on_clause.key_names_right);
-    fill.key_columns = JoinCommon::getRawPointers(fill.keys_holder);
-    fill.null_map_holder = extractNestedColumnsAndNullMap(fill.key_columns, fill.null_map);
-
-    /// Rows the ON condition filters are not inserted, but are still saved for RIGHT/FULL
-    /// non-joined output.
-    fill.join_mask = JoinCommon::getColumnAsMask(materialized, on_clause.condColumnNames().second);
-    if (fill.join_mask.hasData() && fill.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
-    {
-        fill.skip_bytes.resize_exact(rows);
-        const NullMap * nulls = fill.null_map;
-        for (size_t i = 0; i < rows; ++i)
-            fill.skip_bytes[i] = ((nulls && (*nulls)[i]) || fill.join_mask.isRowFiltered(i)) ? 1 : 0;
-    }
+    fill.clauses.resize(clauses.size());
+    for (const auto & clause : clauses)
+        clause.prepareInput(materialized, fill);
 
     /// The payload in stored form. The constructor already decided the row store layout. The columns
     /// it admits are packed row-wise here. The probe then reads one row pointer per output row,
@@ -426,7 +420,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         /// table, which is probe-ready again when this returns. No routes, no sketch, no barrier. The
         /// limits are the storage's `max_rows_in_join` / `max_bytes_in_join`, checked as `HashJoin` does.
         const bool nullmap_saved = storeBlockInRowStore(fill);
-        const bool any_row_stored = clause.insertJoinTableBlock(fill);
+        const bool any_row_stored = clauses.front().insertJoinTableBlock(fill);
         if (!any_row_stored && !nullmap_saved)
             dropLastStoredBlock();
 
@@ -448,16 +442,18 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         /// oversized by that multiplicity. The count is the one a previous run of this query left in
         /// the hash table statistics cache. Without one the table starts at the smallest degree and
         /// doubles as the keys arrive, as `hash`'s does. The row hint only caps the reserve: a table
-        /// cannot hold more keys than rows.
-        if (!clause.hasTable())
+        /// cannot hold more keys than rows. Every clause sizes its table from the one cached count.
+        if (!clauses.front().hasTable())
         {
             const size_t keys = readDistinctKeysFromStatisticsCache() ? *cached_distinct_keys : 1;
-            clause.beginSinglePartitionInsert(
-                clause.reserveFor(build_rows_hint.value_or(keys), static_cast<double>(keys)),
-                accumulated_rows.load(std::memory_order_relaxed),
-                /*grow_at_max_fill_=*/true);
+            for (auto & clause : clauses)
+                clause.beginSinglePartitionInsert(
+                    clause.reserveFor(build_rows_hint.value_or(keys), static_cast<double>(keys)),
+                    accumulated_rows.load(std::memory_order_relaxed),
+                    /*grow_at_max_fill_=*/true);
         }
-        clause.insertSingleLaneBlock(fill);
+        for (auto & clause : clauses)
+            clause.insertSingleLaneBlock(fill);
 
         if (!check_limits)
             return true;
@@ -471,12 +467,14 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     FillLane & lane = getFillLane(worker_id);
     {
         /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
+        /// One hash pass per clause, as `HashJoin` hashes each block once per map.
         std::lock_guard hll_lock(lane.hll_mutex);
-        clause.computeRoutes(fill, lane.hll);
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+            clauses[clause_idx].computeRoutes(fill, lane.hll[clause_idx]);
     }
 
     accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
-    accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routes.allocated_bytes(), std::memory_order_relaxed);
+    accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routeBytes(), std::memory_order_relaxed);
     lane.blocks.push_back(std::move(fill));
 
     if (!check_limits)
@@ -532,32 +530,44 @@ bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         ProfileEvents::increment(ProfileEvents::HashJoinRowStoreBlocks);
     }
 
-    if (!isRightOrFull(hash_join->getKind()))
+    /// Per-row used flags cover every stored row, the ones that never enter a table included. A row
+    /// nothing marks is emitted as non-joined, so no null map is kept for it; `HashJoin` keeps none either.
+    /// The flags are attached here, on the one thread that stores blocks, before any probe can read them.
+    if (allocate_per_row_flags)
+    {
+        auto & flags = hash_join->used_flags->per_row_flags;
+        if (flags.size() <= stored.block_no)
+            flags.resize(stored.block_no + 1);
+        flags[stored.block_no] = std::move(fill.per_row_flags);
+    }
+    if (!isRightOrFull(hash_join->getKind()) || used_flags_per_row)
         return false;
 
     /// RIGHT/FULL output needs the rows that never made it into the table - null keys and rows the
-    /// ON condition filtered - exactly as the standard build saves them.
+    /// ON condition filtered - exactly as the standard build saves them, from the one clause's null map
+    /// and mask.
+    HashJoinClause::Input & input = fill.clauses.front();
     bool save_nullmap = false;
-    if (fill.null_map)
+    if (input.null_map)
         for (size_t i = 0; i < fill.rows && !save_nullmap; ++i)
-            save_nullmap = (*fill.null_map)[i];
+            save_nullmap = (*input.null_map)[i];
     bool nullmap_saved = false;
     if (save_nullmap)
     {
-        auto & holder = storedNullmaps().emplace_back(&stored, fill.null_map_holder);
+        auto & holder = storedNullmaps().emplace_back(&stored, input.null_map_holder);
         data.addBytes(data.nullmaps_allocated_size, holder.allocatedBytes());
         nullmap_saved = true;
     }
 
-    if (fill.join_mask.hasData() && fill.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
+    if (input.join_mask.hasData() && input.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
     {
         auto not_joined_map = ColumnUInt8::create(fill.rows, static_cast<UInt8>(0));
         bool has_right_not_joined = false;
         for (size_t i = 0; i < fill.rows; ++i)
         {
-            if (!fill.join_mask.isRowFiltered(i))
+            if (!input.join_mask.isRowFiltered(i))
                 continue;
-            if (save_nullmap && (*fill.null_map)[i])
+            if (save_nullmap && (*input.null_map)[i])
                 continue; /// already covered by the null-keys map
             not_joined_map->getData()[i] = 1;
             has_right_not_joined = true;
@@ -594,38 +604,35 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
-    if (delegate_mode)
-    {
-        /// The standard machinery already built during the fill; only its own barrier remains.
-        hash_join->onBuildPhaseFinish();
-        ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
-        return;
-    }
-
     if (single_fill_thread)
     {
-        /// Everything was inserted as it arrived. A build that never saw a block still needs its table,
-        /// because the used flags and the probe are sized from it. The exact distinct count stands in
+        /// Everything was inserted as it arrived. A build that never saw a block still needs its tables,
+        /// because the used flags and the probe are sized from them. The exact distinct count stands in
         /// for the sketch estimate the memory gate reads.
-        if (!clause.hasTable())
-            clause.beginSinglePartitionInsert(
-                clause.reserveFor(1, 1.0), accumulated_rows.load(std::memory_order_relaxed), /*grow_at_max_fill_=*/true);
-        clause.setDistinctEstimate(static_cast<double>(clause.claimedTotal()));
-        ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
-        LOG_TRACE(
-            log,
-            "Single fill thread: table of 2^{} cells, {} rows in {} blocks inserted during the fill, {} distinct keys",
-            clause.sizeDegree(),
-            accumulated_rows.load(std::memory_order_relaxed),
-            storedBlocks().size(),
-            static_cast<size_t>(clause.hllEstimate()));
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        {
+            auto & clause = clauses[clause_idx];
+            if (!clause.hasTable())
+                clause.beginSinglePartitionInsert(
+                    clause.reserveFor(1, 1.0), accumulated_rows.load(std::memory_order_relaxed), /*grow_at_max_fill_=*/true);
+            clause.setDistinctEstimate(static_cast<double>(clause.claimedTotal()));
+            ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
+            LOG_TRACE(
+                log,
+                "Single fill thread: table of clause {} has 2^{} cells, {} rows in {} blocks inserted during the fill, {} distinct keys",
+                clause_idx,
+                clause.sizeDegree(),
+                accumulated_rows.load(std::memory_order_relaxed),
+                storedBlocks().size(),
+                static_cast<size_t>(clause.hllEstimate()));
+        }
         return;
     }
 
     /// Run once by the last fill thread, and deliberately cheap: concatenate the lanes, number the
     /// row-store blocks, merge the sketches, pick the plan. The scatter, allocation and inserts are
     /// `runPostBuildPhase`'s work. Every fill call has returned, so the lane locks are free.
-    DenseHyperLogLog merged;
+    std::vector<DenseHyperLogLog> merged(clauses.size());
     size_t total_blocks = 0;
     {
         std::lock_guard lock(fill_mutex);
@@ -636,7 +643,8 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         {
             {
                 std::lock_guard hll_lock(lane.hll_mutex);
-                merged.merge(lane.hll);
+                for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+                    merged[clause_idx].merge(lane.hll[clause_idx]);
             }
             for (auto & block : lane.blocks)
                 build_blocks.push_back(std::move(block));
@@ -648,25 +656,42 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     /// A previous run's exact count replaces the sketch estimate. The table it sizes needs no safety
     /// margin and, when the data has not changed, no grow: the preallocation `HashJoin` made from the
-    /// same cache entry.
+    /// same cache entry. The entry counts the keys of every clause together, and each clause sizes from
+    /// it. `HashJoin` reserves each of its maps from the one entry the same way.
     const bool exact = readDistinctKeysFromStatisticsCache();
-    clause.setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged.estimate(), exact);
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        clauses[clause_idx].setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged[clause_idx].estimate(), exact);
     for (auto & fill : build_blocks)
         storeBlockInRowStore(fill);
-    clause.decidePartitionPlan(accumulated_rows.load(std::memory_order_relaxed));
-    ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
+    /// Every estimate is set before the first plan: a clause's partition floor is guarded by what the
+    /// other clauses' tables will take.
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+    {
+        clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
+        clauses[clause_idx].decidePartitionPlan(rows);
+        ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clauses[clause_idx].partitionCount());
+    }
 }
 
 PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
 {
-    if (max_bytes_before_external_join == 0 || delegate_mode)
+    if (max_bytes_before_external_join == 0)
         return PostBuildPlan::Fits;
 
     /// Everything is already resident: the stored blocks, the table and the duplicate runs.
     if (single_fill_thread)
         return getTotalByteCount() <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
 
-    return clause.planPostBuild(accumulated_rows.load(std::memory_order_relaxed));
+    /// The worst verdict over the clauses wins: `MustSpill` over `Grouped` over `Fits`, the enum's order.
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    PostBuildPlan plan = PostBuildPlan::Fits;
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+    {
+        clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
+        plan = std::max(plan, clauses[clause_idx].planPostBuild(rows, postBuildPool(clause_idx)));
+    }
+    return plan;
 }
 
 void PartitionedHashJoin::runPostBuildPhase()
@@ -675,24 +700,63 @@ void PartitionedHashJoin::runPostBuildPhase()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table's join has no post-build phase");
     chassert(!build_phase_finished);
 
-    if (delegate_mode)
-    {
-        /// Already built during the fill and the barrier. Its single-map post-build optimizations
-        /// stay off, as they do on the partitioned path.
-        build_phase_finished = true;
-        return;
-    }
-
     bool all_values_unique = true;
     if (single_fill_thread)
     {
         /// The rows went in during the fill; only the scratch finish and the publication remain.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
         ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
-        all_values_unique = clause.finishSinglePartitionInsert();
+        for (auto & clause : clauses)
+            all_values_unique &= clause.finishSinglePartitionInsert();
+    }
+    else if (clauses.size() == 1 || max_bytes_before_external_join != 0)
+    {
+        /// One clause after another. A clause's scatter releases only its own inputs, so the next clause
+        /// still finds its keys and routes in the fill blocks. A memory budget keeps this order. The gate
+        /// counts one scatter transient at a time, and each build's budget counts the tables built before
+        /// it and the ones predicted after it.
+        const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        {
+            clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
+            all_values_unique &= clauses[clause_idx].postBuild(rows, postBuildPool(clause_idx));
+        }
     }
     else
-        all_values_unique = clause.postBuild(accumulated_rows.load(std::memory_order_relaxed));
+    {
+        /// Without a budget the clauses build at once, each on a pool of its own. The barrier waves
+        /// (histogram, allocate, scatter, owner, drain) are fixed costs that add up per clause on a small
+        /// build. A clause reads and releases only its own inputs of the fill blocks and writes only its
+        /// own table, arenas and counters. The join's byte count is atomic. The pools are created on this
+        /// thread, before any worker could create one.
+        const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+        std::vector<UInt8> clause_unique(clauses.size(), 1);
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        {
+            clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
+            postBuildPool(clause_idx);
+        }
+        auto clause_pool = HashJoinClause::makePostBuildPool(clauses.size() - 1);
+        try
+        {
+            for (size_t clause_idx = 1; clause_idx < clauses.size(); ++clause_idx)
+                clause_pool->scheduleOrThrow(
+                    [this, clause_idx, rows, &clause_unique, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                        clause_unique[clause_idx] = clauses[clause_idx].postBuild(rows, *post_build_pools[clause_idx]);
+                    });
+            clause_unique[0] = clauses.front().postBuild(rows, *post_build_pools[0]);
+            clause_pool->wait();
+        }
+        catch (...)
+        {
+            clause_pool->wait();
+            throw;
+        }
+        for (UInt8 unique : clause_unique)
+            all_values_unique &= unique != 0;
+    }
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
@@ -703,30 +767,52 @@ void PartitionedHashJoin::runPostBuildPhase()
     /// From here the byte count tracks only the stored blocks.
     accumulated_bytes.store(hash_join->data->allocated_size, std::memory_order_relaxed);
 
-    const BuildStats built = clause.buildStats();
-    ProfileEvents::increment(ProfileEvents::HashJoinTableBytes, built.ht_total_bytes);
-    ProfileEvents::increment(ProfileEvents::HashJoinPartitionOverflowRows, built.overflow_rows);
-    ProfileEvents::increment(
-        ProfileEvents::HashJoinDuplicateRunBytes, built.owner_duplicates.arena_bytes + built.drain_duplicates.arena_bytes);
+    UInt64 distinct_keys = 0;
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+    {
+        const BuildStats built = clauses[clause_idx].buildStats();
+        const size_t duplicate_run_bytes = built.owner_duplicates.arena_bytes + built.drain_duplicates.arena_bytes;
+        distinct_keys += built.distinct_keys;
+        ProfileEvents::increment(ProfileEvents::HashJoinTableBytes, built.ht_total_bytes);
+        ProfileEvents::increment(ProfileEvents::HashJoinPartitionOverflowRows, built.overflow_rows);
+        ProfileEvents::increment(ProfileEvents::HashJoinDuplicateRunBytes, duplicate_run_bytes);
+        LOG_TRACE(
+            log,
+            "Built the hash table of clause {}: {} cells in {} partitions, {} keys from {} rows ({} committed, {} overflow rows "
+            "drained, {} bytes of duplicate runs)",
+            clause_idx,
+            built.table_cells,
+            built.partitions,
+            built.distinct_keys,
+            built.inserted_rows,
+            ReadableSize(built.ht_total_bytes),
+            built.overflow_rows,
+            ReadableSize(duplicate_run_bytes));
+        clauses[clause_idx].releaseBuildScratch();
+    }
+    for (auto & pool : post_build_pools)
+        pool.reset();
 
     /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation`,
     /// runtime-filter sizing and this join's own table size (`readDistinctKeysFromStatisticsCache`)
-    /// read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the exact distinct count.
-    /// `hash_join` holds no stats params, so nothing else writes this key for this join.
-    if (stats_collecting_params.isCollectionAndUseEnabled() && built.distinct_keys)
+    /// read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the exact distinct count,
+    /// summed over the clauses, as `HashJoin` publishes its `keys_to_join`. `hash_join` holds no stats
+    /// params, so nothing else writes this key for this join.
+    if (stats_collecting_params.isCollectionAndUseEnabled() && distinct_keys)
         getHashTablesStatistics<HashJoinEntry>().update(
-            {.ht_size = built.distinct_keys, .source_rows = hash_join->data->rows_to_join}, stats_collecting_params);
+            {.ht_size = distinct_keys, .source_rows = hash_join->data->rows_to_join}, stats_collecting_params);
 
-    clause.releaseBuildScratch();
-
-    clause.tryConvertToFixedHashMap();
+    /// `HashJoin` converts and publishes from one map only; several clauses keep their hash tables.
+    const bool one_clause = clauses.size() == 1;
+    if (one_clause)
+        clauses.front().tryConvertToFixedHashMap();
     finishBuildPhase(all_values_unique);
 
     /// With the table settled and its key count published: the exact runtime filter of a fixed table
     /// (8- or 16-bit keys, or a range map the conversion built) replaces the planner's Bloom filter.
     /// Only from a table that holds the whole build side; a bucket's would drop the probe rows of every
     /// other bucket.
-    if (!partial_build)
+    if (one_clause && !partial_build)
         std::visit(
             [&](const auto & shape_maps)
             {
@@ -738,20 +824,14 @@ void PartitionedHashJoin::runPostBuildPhase()
                     hash_join->data->keys_to_join.load(std::memory_order_relaxed),
                     shape_maps);
             },
-            clause.tableMaps().maps);
+            clauses.front().tableMaps().maps);
 
     LOG_TRACE(
         log,
-        "Built one shared hash table of {} cells in {} partitions: {} keys from {} rows, {} of right-table data including the table "
-        "({} committed, {} overflow rows drained, {} bytes of duplicate runs)",
-        built.table_cells,
-        built.partitions,
-        built.distinct_keys,
-        built.inserted_rows,
-        ReadableSize(getTotalByteCount()),
-        ReadableSize(built.ht_total_bytes),
-        built.overflow_rows,
-        ReadableSize(built.owner_duplicates.arena_bytes + built.drain_duplicates.arena_bytes));
+        "Built {} hash table(s) with {} keys, {} of right-table data including the tables",
+        clauses.size(),
+        getTotalRowCount(),
+        ReadableSize(getTotalByteCount()));
 }
 
 void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
@@ -769,11 +849,25 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     build_phase_finished = true;
 }
 
+ThreadPool & PartitionedHashJoin::postBuildPool(size_t clause_idx)
+{
+    auto & pool = post_build_pools[clause_idx];
+    if (!pool)
+        pool = HashJoinClause::makePostBuildPool(std::max<size_t>(1, std::min(num_threads, build_blocks.size())));
+    return *pool;
+}
+
 void PartitionedHashJoin::reinitUsedFlags()
 {
+    /// The per-row shape marks the flags of the stored rows and never reads a per-offset flag. The
+    /// `cells + 1` space would be allocated and zeroed for nothing. `HashJoin::reinitUsedFlags` skips it
+    /// for the same shape.
+    if (used_flags_per_row)
+        return;
+
     /// One per-offset space of `cells + 1` (offset 0 is the zero-value cell). Must run after the leaf
     /// barrier, which sized flags to its empty map. `reinit` only grows.
-    const size_t flags = clause.tableCells() + 1;
+    const size_t flags = clauses.front().tableCells() + 1;
     joinDispatch(
         hash_join->getKind(),
         hash_join->getStrictness(),
@@ -795,72 +889,103 @@ JoinResultPtr PartitionedHashJoin::joinBlock(Block block, size_t lane)
     JoinResultPtr result;
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedProbeMicroseconds);
-        result = delegate_mode ? hash_join->joinBlock(std::move(block)) : probeDispatch(std::move(block), lane);
+        result = probeDispatch(std::move(block), lane);
     }
     return std::make_unique<TimedJoinResult>(std::move(result), ProfileEvents::HashJoinPartitionedProbeMicroseconds);
 }
 
 size_t PartitionedHashJoin::getTotalRowCount() const
 {
-    if (delegate_mode)
-        return hash_join->getTotalRowCount();
-
     /// The distinct keys, as `HashJoin` reports them for a Join table; shared with the per-query
     /// instances, so read from the table rather than from this instance's fill counter.
     if (join_table_mode)
-        return clause.tableRowCount();
+        return clauses.front().tableRowCount();
 
-    if (!build_phase_finished || !clause.hasTable())
+    if (!build_phase_finished || !clauses.front().hasTable())
         return accumulated_rows.load(std::memory_order_relaxed);
 
-    return clause.tableRowCount();
+    size_t keys = 0;
+    for (const auto & clause : clauses)
+        keys += clause.tableRowCount();
+    return keys;
 }
 
 size_t PartitionedHashJoin::getTotalByteCount() const
 {
-    if (delegate_mode)
-        return hash_join->getTotalByteCount();
-
     if (join_table_mode)
     {
         /// The storage's stored blocks (shared with the per-query instances), the table and its arena.
         const auto & data = storedData();
-        return data.allocated_size + data.nullmaps_allocated_size + clause.tableAndArenaBytes();
+        return data.allocated_size + data.nullmaps_allocated_size + tablesAndArenasBytes();
     }
 
-    return accumulated_bytes.load(std::memory_order_relaxed) + storedData().nullmaps_allocated_size + clause.tableAndArenaBytes();
+    return accumulated_bytes.load(std::memory_order_relaxed) + storedData().nullmaps_allocated_size + tablesAndArenasBytes();
 }
 
-size_t PartitionedHashJoin::liveDistinctEstimate() const
+size_t PartitionedHashJoin::tablesAndArenasBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & clause : clauses)
+        bytes += clause.tableAndArenaBytes();
+    return bytes;
+}
+
+size_t PartitionedHashJoin::bytesReservedForOtherClauses(size_t clause_idx) const
+{
+    /// A built table counts what it holds; one still to build counts its prediction. A table created but
+    /// not yet committed holds little, so the larger of the two stands for it. The routes of every clause
+    /// are in the join's byte count already.
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    size_t bytes = 0;
+    for (size_t other = 0; other < clauses.size(); ++other)
+    {
+        if (other == clause_idx)
+            continue;
+        const auto & clause = clauses[other];
+        bytes += std::max(
+            clause.tableAndArenaBytes(), clause.predictedTableAndArenaBytes(rows, clause.distinctEstimate(), /*grouped=*/false));
+    }
+    return bytes;
+}
+
+size_t PartitionedHashJoin::liveDistinctEstimate(size_t clause_idx) const
 {
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
     const size_t last_rows = distinct_estimate_at_rows.load(std::memory_order_acquire);
-    const size_t cached = cached_distinct_estimate.load(std::memory_order_relaxed);
+    const size_t cached = cached_distinct_estimates[clause_idx].load(std::memory_order_relaxed);
 
     if (cached != 0 && rows <= last_rows + last_rows / 16)
         return cached;
 
     std::lock_guard lock(fill_mutex);
     const size_t last_rows_locked = distinct_estimate_at_rows.load(std::memory_order_relaxed);
-    const size_t cached_locked = cached_distinct_estimate.load(std::memory_order_relaxed);
+    const size_t cached_locked = cached_distinct_estimates[clause_idx].load(std::memory_order_relaxed);
     if (cached_locked != 0 && rows <= last_rows_locked + last_rows_locked / 16)
         return cached_locked;
 
-    DenseHyperLogLog merged;
+    /// Every clause's sketches are merged in one refresh, lane by lane: a lane in the middle of a hash
+    /// pass is waited for, the others keep filling.
+    std::vector<DenseHyperLogLog> merged(clauses.size());
     for (const auto & lane : lanes)
     {
         std::lock_guard hll_lock(lane.hll_mutex);
-        merged.merge(lane.hll);
+        for (size_t other = 0; other < clauses.size(); ++other)
+            merged[other].merge(lane.hll[other]);
     }
-
     /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
     /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an
     /// early small-sample HyperLogLog can overshoot, and locking that in would charge duplicate-run
     /// bytes for keys that do not exist.
-    const size_t estimate = std::max(static_cast<size_t>(std::llround(merged.estimate())), 1uz);
-    cached_distinct_estimate.store(estimate, std::memory_order_relaxed);
+    size_t result = 0;
+    for (size_t other = 0; other < clauses.size(); ++other)
+    {
+        const size_t estimate = std::max(static_cast<size_t>(std::llround(merged[other].estimate())), 1uz);
+        cached_distinct_estimates[other].store(estimate, std::memory_order_relaxed);
+        if (other == clause_idx)
+            result = estimate;
+    }
     distinct_estimate_at_rows.store(rows, std::memory_order_release);
-    return estimate;
+    return result;
 }
 
 bool PartitionedHashJoin::readDistinctKeysFromStatisticsCache()
@@ -879,9 +1004,6 @@ bool PartitionedHashJoin::readDistinctKeysFromStatisticsCache()
 
 size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
 {
-    if (delegate_mode)
-        return hash_join->getTotalByteCount();
-
     if (single_fill_thread)
     {
         const HashJoin::Type type = hash_join->data->type;
@@ -890,9 +1012,11 @@ size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
         /// maximum fill still has a doubling ahead of it, in place with both buffers alive.
         if (at_barrier)
         {
-            if (!clause.hasTable() || clause.claimedTotal() <= clause.tableMaps().maxFill(type))
-                return getTotalByteCount();
-            return getTotalByteCount() + 2 * clause.tableMaps().getBufferSizeInBytes(type);
+            size_t doublings = 0;
+            for (const auto & clause : clauses)
+                if (clause.hasTable() && clause.claimedTotal() > clause.tableMaps().maxFill(type))
+                    doublings += 2 * clause.tableMaps().getBufferSizeInBytes(type);
+            return getTotalByteCount() + doublings;
         }
 
         /// Before the barrier the prediction follows the rows, as the partitioned branch does: the stored
@@ -905,38 +1029,40 @@ size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
         /// the prediction then.
         const auto & data = storedData();
         const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
-        const size_t stored = data.allocated_size + data.nullmaps_allocated_size;
-        const size_t claimed = clause.hasTable() ? clause.claimedTotal() : 0;
-        const size_t keys = std::max(claimed, cached_distinct_keys.value_or(0));
-        size_t predicted = stored + clause.predictedTableAndArenaBytes(std::max(rows, keys), keys, /*grouped=*/false);
-        if (clause.hasTable())
+        const size_t blocks = storedBlocks().size();
+        const size_t rows_per_block = blocks == 0 ? rows : rows / blocks;
+        size_t predicted = data.allocated_size + data.nullmaps_allocated_size;
+        for (const auto & clause : clauses)
         {
-            const size_t blocks = storedBlocks().size();
-            const size_t rows_per_block = blocks == 0 ? rows : rows / blocks;
-            if (claimed + rows_per_block > clause.tableMaps().maxFill(type))
-                predicted = std::max(predicted, stored + 2 * clause.tableMaps().getBufferSizeInBytes(type));
+            const size_t claimed = clause.hasTable() ? clause.claimedTotal() : 0;
+            const size_t keys = std::max(claimed, cached_distinct_keys.value_or(0));
+            size_t table = clause.predictedTableAndArenaBytes(std::max(rows, keys), keys, /*grouped=*/false);
+            if (clause.hasTable() && claimed + rows_per_block > clause.tableMaps().maxFill(type))
+                table = std::max(table, 2 * clause.tableMaps().getBufferSizeInBytes(type));
+            predicted += table;
         }
         return predicted;
     }
 
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
-    const size_t bytes = accumulated_bytes.load(std::memory_order_relaxed);
-    return bytes + clause.predictedTableAndArenaBytes(rows, liveDistinctEstimate(), /*grouped=*/false);
+    size_t predicted = accumulated_bytes.load(std::memory_order_relaxed);
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        predicted += clauses[clause_idx].predictedTableAndArenaBytes(rows, liveDistinctEstimate(clause_idx), /*grouped=*/false);
+    return predicted;
 }
 
 size_t PartitionedHashJoin::graceInMemoryEstimateBytes() const
 {
     const auto & data = storedData();
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
-    return data.allocated_size + data.nullmaps_allocated_size
-        + clause.predictedTableAndArenaBytes(rows, clause.distinctEstimate(), /*grouped=*/false);
+    size_t bytes = data.allocated_size + data.nullmaps_allocated_size;
+    for (const auto & clause : clauses)
+        bytes += clause.predictedTableAndArenaBytes(rows, clause.distinctEstimate(), /*grouped=*/false);
+    return bytes;
 }
 
 StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
 {
-    if (delegate_mode)
-        return hash_join->getAnalysisReport();
-
     /// A Join table's rows are the storage's, shared with every per-query instance.
     const size_t right_rows = join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed);
 
@@ -966,8 +1092,6 @@ StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
 
 bool PartitionedHashJoin::alwaysReturnsEmptySet() const
 {
-    if (delegate_mode)
-        return hash_join->alwaysReturnsEmptySet();
     /// A Join table's rows are the storage's, shared with every per-query instance.
     const size_t rows = join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed);
     const bool empty_for_empty_right
@@ -975,9 +1099,9 @@ bool PartitionedHashJoin::alwaysReturnsEmptySet() const
     return empty_for_empty_right && rows == 0;
 }
 
-PartitionedHashJoin::BuildStats PartitionedHashJoin::getBuildStats() const
+PartitionedHashJoin::BuildStats PartitionedHashJoin::getBuildStats(size_t clause_idx) const
 {
-    BuildStats res = clause.buildStats();
+    BuildStats res = clauses[clause_idx].buildStats();
     res.row_store_blocks = row_store_blocks;
     return res;
 }
@@ -1086,10 +1210,9 @@ Block PartitionedHashJoin::releaseNextFillLaneBlock(size_t lane)
     if (blocks.empty())
         blocks.shrink_to_fit();
 
-    /// `dropFillAuxiliary` has usually released the routes already and left an empty array. Its
-    /// `allocated_bytes` still reports the padding, so count only what is really held.
-    const size_t route_bytes = fill.routes.empty() ? 0 : fill.routes.allocated_bytes();
-    accumulated_bytes.fetch_sub(fill.stored.allocatedBytes() + route_bytes, std::memory_order_relaxed);
+    /// `dropFillAuxiliary` has usually released the routes already. `routeBytes` counts only what is
+    /// really held.
+    accumulated_bytes.fetch_sub(fill.stored.allocatedBytes() + fill.routeBytes(), std::memory_order_relaxed);
     return storedBlockToBlock(std::move(fill.stored));
 }
 
@@ -1104,7 +1227,10 @@ void PartitionedHashJoin::beginStoredBlockDrain()
     stored_blocks_released = true;
     build_blocks.clear();
     build_blocks.shrink_to_fit();
-    clause.releaseTable();
+    for (auto & pool : post_build_pools)
+        pool.reset();
+    for (auto & clause : clauses)
+        clause.releaseTable();
 }
 
 Block PartitionedHashJoin::releaseNextStoredBlock()
@@ -1132,9 +1258,6 @@ Block PartitionedHashJoin::releaseNextStoredBlock()
 
 BlocksList PartitionedHashJoin::releaseJoinedBlocks(bool restructure)
 {
-    if (delegate_mode)
-        return hash_join->releaseJoinedBlocks(restructure);
-
     if (build_phase_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the right blocks were asked for after the build phase finished");
 
@@ -1161,8 +1284,6 @@ const Block & PartitionedHashJoin::savedBlockSample() const
 
 size_t PartitionedHashJoin::getRightTableRowCount() const
 {
-    if (delegate_mode)
-        return hash_join->getRightTableRowCount();
     return accumulated_rows.load(std::memory_order_relaxed);
 }
 

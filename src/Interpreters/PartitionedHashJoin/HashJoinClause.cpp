@@ -1,6 +1,7 @@
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 
 #include <Columns/ColumnsScatter.h>
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
@@ -940,7 +941,8 @@ struct HashJoinClause::PostBuildContext
 
 HashJoinClause::HashJoinClause(
     HashJoin & hash_join_,
-    const TableJoin & table_join,
+    const TableJoin & table_join_,
+    size_t clause_idx_,
     bool any_take_last_row_,
     size_t num_threads_,
     size_t max_bytes_before_external_join_,
@@ -948,6 +950,8 @@ HashJoinClause::HashJoinClause(
     std::atomic<size_t> & accumulated_bytes_,
     LoggerPtr log_)
     : hash_join(hash_join_)
+    , table_join(table_join_)
+    , clause_idx(clause_idx_)
     , any_take_last_row(any_take_last_row_)
     , num_threads(num_threads_)
     , max_bytes_before_external_join(max_bytes_before_external_join_)
@@ -972,25 +976,53 @@ HashJoinClause::HashJoinClause(
 
 HashJoinClause::~HashJoinClause() = default;
 
+void HashJoinClause::prepareInput(const Block & materialized, FillBlock & fill) const
+{
+    /// Exactly what the probe side does in `JoinOnKeyColumns`. Materialize. Keep a live
+    /// LowCardinality column only for the dictionary-aware map types. Extract the merged null map.
+    /// Strip to the nested columns. For ASOF the null map covers the inequality column too, so a
+    /// row with a NULL ASOF key never joins.
+    const auto & on_clause = table_join.getClauses()[clause_idx];
+    Input & input = fill.clauses[clause_idx];
+    input.keys_holder = HashJoin::isLowCardinalityType(hash_join.data->type)
+        ? JoinCommon::materializeColumnsKeepLowCardinality(materialized, on_clause.key_names_right)
+        : JoinCommon::materializeColumns(materialized, on_clause.key_names_right);
+    input.key_columns = JoinCommon::getRawPointers(input.keys_holder);
+    input.null_map_holder = extractNestedColumnsAndNullMap(input.key_columns, input.null_map);
+
+    /// Rows the ON condition filters are not inserted, but are still saved for RIGHT/FULL
+    /// non-joined output.
+    input.join_mask = JoinCommon::getColumnAsMask(materialized, on_clause.condColumnNames().second);
+    if (input.join_mask.hasData() && input.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
+    {
+        input.skip_bytes.resize_exact(fill.rows);
+        const NullMap * nulls = input.null_map;
+        for (size_t i = 0; i < fill.rows; ++i)
+            input.skip_bytes[i] = ((nulls && (*nulls)[i]) || input.join_mask.isRowFiltered(i)) ? 1 : 0;
+    }
+}
+
 void HashJoinClause::computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const
 {
     /// Skipped rows are not inserted and do not reach the sketch, but their routes are still written:
     /// the scatter reads them. ASOF hashes the equi-key prefix only.
     const size_t rows = fill.rows;
-    fill.routes.resize_exact(rows);
-    const Sizes & key_sizes = hash_join.key_sizes[0];
+    Input & input = fill.clauses[clause_idx];
+    input.routes.resize_exact(rows);
+    const Sizes & key_sizes = hash_join.key_sizes[clause_idx];
     if (hash_join.getStrictness() == JoinStrictness::Asof)
     {
-        ColumnRawPtrs equi_columns(fill.key_columns.begin(), fill.key_columns.end() - 1);
+        ColumnRawPtrs equi_columns(input.key_columns.begin(), input.key_columns.end() - 1);
         Sizes equi_sizes(key_sizes.begin(), key_sizes.end() - 1);
-        computeJoinRoutesForFill(hash_join.data->type, equi_columns, equi_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+        computeJoinRoutesForFill(hash_join.data->type, equi_columns, equi_sizes, rows, input.skipData(), input.routes.data(), sketch);
     }
     else
-        computeJoinRoutesForFill(hash_join.data->type, fill.key_columns, key_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+        computeJoinRoutesForFill(hash_join.data->type, input.key_columns, key_sizes, rows, input.skipData(), input.routes.data(), sketch);
 }
 
-bool HashJoinClause::postBuild(size_t rows)
+bool HashJoinClause::postBuild(size_t rows, ThreadPool & pool)
 {
+    post_build_pool = &pool;
     if (bits == 0)
     {
         /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
@@ -1005,7 +1037,7 @@ bool HashJoinClause::postBuild(size_t rows)
 void HashJoinClause::releaseBuildScratch()
 {
     post_build_ctx.reset();
-    post_build_pool.reset();
+    post_build_pool = nullptr;
 }
 
 void HashJoinClause::releaseTable()
@@ -1060,7 +1092,7 @@ void HashJoinClause::insertPartitionSection(
     UInt32 block_no,
     const UInt8 * skip_bytes)
 {
-    const Sizes & key_sizes = hash_join.key_sizes[0];
+    const Sizes & key_sizes = hash_join.key_sizes[clause_idx];
     const bool enable_prefetch = hash_join.enableSoftwarePrefetch();
     auto & state = ctx.worker_state[worker];
     Arena & arena = build_arenas[worker];
@@ -1220,8 +1252,10 @@ bool HashJoinClause::growBeforeLastFreeCell(Target & target)
 /// chunks are not counted here.
 size_t HashJoinClause::residentBytes() const
 {
-    /// The join's byte count: the stored blocks and routes, the null maps, the table and the arenas.
-    size_t bytes = accumulated_bytes.load(std::memory_order_relaxed) + hash_join.data->nullmaps_allocated_size + tableAndArenaBytes();
+    /// The join's byte count: the stored blocks and every clause's routes, the null maps, this table and
+    /// its arenas, and the other clauses' tables.
+    size_t bytes = accumulated_bytes.load(std::memory_order_relaxed) + hash_join.data->nullmaps_allocated_size + tableAndArenaBytes()
+        + bytes_reserved_elsewhere;
     if (!post_build_ctx)
         return bytes;
     const auto & ctx = *post_build_ctx;
@@ -1683,7 +1717,8 @@ bool HashJoinClause::partitionFloorFitsMemory(size_t floor_bits, size_t floor_de
     const size_t tables_and_spans = predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
     const size_t predicted_tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
     const size_t spans = tables_and_spans > predicted_tables ? tables_and_spans - predicted_tables : 0;
-    const size_t floor_bytes = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size + routeBytes() + spans + generic_key_bytes_est;
+    const size_t floor_bytes = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size + routeBytes() + spans
+        + generic_key_bytes_est + bytes_reserved_elsewhere;
     const size_t floor_partitions = 1uz << floor_bits;
     const size_t peak = floor_bytes + std::max(transient + tables / floor_partitions, tables + transient / floor_partitions);
     return peak <= max_bytes_before_external_join;
@@ -1712,7 +1747,7 @@ size_t HashJoinClause::routeBytes() const
 {
     size_t bytes = 0;
     for (const auto & fill : build_blocks)
-        bytes += fill.routes.allocated_bytes();
+        bytes += fill.routeBytes();
     return bytes;
 }
 
@@ -1731,7 +1766,7 @@ HashJoinClause::KeyLayout HashJoinClause::keyLayout() const
     KeyLayout layout;
     if (build_blocks.empty())
         return layout;
-    const ColumnRawPtrs & key_columns = build_blocks.front().key_columns;
+    const ColumnRawPtrs & key_columns = build_blocks.front().clauses[clause_idx].key_columns;
     layout.fixed_widths.resize(key_columns.size());
     for (size_t c = 0; c < key_columns.size(); ++c)
     {
@@ -1747,7 +1782,7 @@ size_t HashJoinClause::keyColumnBytes() const
 {
     size_t bytes = 0;
     for (const auto & fill : build_blocks)
-        for (const auto * key_column : fill.key_columns)
+        for (const auto * key_column : fill.clauses[clause_idx].key_columns)
             bytes += key_column->byteSize();
     return bytes;
 }
@@ -1836,7 +1871,8 @@ void HashJoinClause::createJoinTable()
 bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
 {
     const HashJoin::Type type = hash_join.data->type;
-    const Sizes & key_sizes = hash_join.key_sizes[0];
+    const Sizes & key_sizes = hash_join.key_sizes[clause_idx];
+    Input & input = fill.clauses[clause_idx];
     bool any_row_stored = false;
     std::visit(
         [&](auto & shape_maps)
@@ -1848,7 +1884,7 @@ bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
         any_row_stored = insertJoinTableRows<KeyGetter, Table>( \
-            *shape_maps.TYPE, fill.key_columns, key_sizes, fill.rows, fill.block_no, fill.skipData(), *join_table_arena, any_take_last_row); \
+            *shape_maps.TYPE, input.key_columns, key_sizes, fill.rows, fill.block_no, input.skipData(), *join_table_arena, any_take_last_row); \
         break; \
     }
                 APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
@@ -1865,7 +1901,7 @@ bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
     hash_join.data->keys_to_join = table_maps->getTotalRowCount(type);
     /// The table may have doubled; the probe's prefetch heuristics read the size.
     ht_total_bytes = table_maps->getBufferSizeInBytes(type);
-    fill.releaseInputs();
+    input.releaseInputs();
     return any_row_stored;
 }
 
@@ -1880,6 +1916,7 @@ void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;
     auto & state = ctx.worker_state[0];
+    Input & input = fill.clauses[clause_idx];
     /// In sections, each finished on the spot when its duplicate groups look complete (see
     /// `PassScratch::cheapToFinish`). The cells a section touched and the scratch it filled are then
     /// still cache-resident; one finish over the whole build at the end walks every duplicated key's
@@ -1891,19 +1928,19 @@ void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
             ctx,
             /*worker=*/0,
             single_partition,
-            fill.key_columns,
+            input.key_columns,
             first_row,
             std::min(single_lane_section_rows, fill.rows - first_row),
             /*locators=*/nullptr,
             /*narrow_locators_data=*/nullptr,
             fill.block_no,
-            fill.skipData());
+            input.skipData());
         if (state.scratch.cheapToFinish())
             state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
     }
     ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
     state.inserted_rows += fill.rows;
-    fill.releaseInputs();
+    input.releaseInputs();
 }
 
 bool HashJoinClause::finishSinglePartitionInsert()
@@ -2104,7 +2141,7 @@ size_t HashJoinClause::chunkBytesForBlockRange(size_t b0, size_t b1) const
         if (ctx.generic_mode)
         {
             size_t key_bytes = 0;
-            for (const auto * column : fill.key_columns)
+            for (const auto * column : fill.clauses[clause_idx].key_columns)
                 key_bytes += column->byteSize();
             bytes += key_bytes + fill.rows * (sizeof(UInt64) * ctx.num_key_columns + locator_width);
         }
@@ -2177,24 +2214,26 @@ void HashJoinClause::resetWorkerHistogram(PostBuildContext & ctx)
     ctx.worker_hist.resize_fill(ctx.workers * ctx.fanout, 0);
 }
 
-void HashJoinClause::preparePostBuildContext()
+void HashJoinClause::preparePostBuildContext(ThreadPool & pool)
 {
+    post_build_pool = &pool;
     if (post_build_ctx)
         return;
 
     chassert(!build_blocks.empty());
     post_build_ctx.reset(new PostBuildContext);
     auto & ctx = *post_build_ctx;
-    ctx.workers = std::max<size_t>(1, std::min(num_threads, build_blocks.size()));
+    ctx.workers = pool.getMaxThreads();
     chassert(!pass_bits.empty());
     ctx.multi_pass = pass_bits.size() > 1;
     ctx.route_bits = pass_bits.front();
     chassert(ctx.route_bits <= 15); /// `max_plan_bits`: the bucket ids are UInt16 and the drop bucket needs one more
     ctx.fanout = (1uz << ctx.route_bits) + 1;
-    ctx.num_key_columns = build_blocks.front().key_columns.size();
+    const ColumnRawPtrs & sample_key_columns = build_blocks.front().clauses[clause_idx].key_columns;
+    ctx.num_key_columns = sample_key_columns.size();
 
     ctx.key_samples.reserve(ctx.num_key_columns);
-    for (const auto * column : build_blocks.front().key_columns)
+    for (const auto * column : sample_key_columns)
         ctx.key_samples.push_back(column->cloneEmpty());
 
     KeyLayout layout = keyLayout();
@@ -2207,8 +2246,6 @@ void HashJoinClause::preparePostBuildContext()
     ctx.overflow.resize(partitions);
     ctx.claimed_per_partition.assign(partitions, 0);
     ctx.range_committed.assign(partitions, 0);
-
-    post_build_pool = makePostBuildPool(ctx.workers);
 
     std::atomic<UInt64> hist_thread_us{0};
     if (ctx.multi_pass)
@@ -2264,7 +2301,7 @@ void HashJoinClause::preparePostBuildContext()
     emplaceSizedBuildArena(build_arenas, /*predicted_bytes=*/0); /// the drain's arena
 }
 
-HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows)
+HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows, ThreadPool & pool)
 {
     if (max_bytes_before_external_join == 0)
     {
@@ -2283,24 +2320,24 @@ HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows)
         /// The single-partition path inserts straight from the stored blocks, so there is no transient
         /// to bound and grouping has nothing to do. Table and duplicate runs go through the shared
         /// helper so this verdict cannot drift from the fill-phase prediction.
-        const size_t resident
-            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false) + generic_key_bytes;
+        const size_t resident = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false)
+            + generic_key_bytes + bytes_reserved_elsewhere;
         post_build_plan = resident <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
         return post_build_plan;
     }
 
-    preparePostBuildContext();
+    preparePostBuildContext(pool);
     const UInt64 insertable = insertableRows();
 
     /// What must be resident whatever the scatter schedule is. The grouped arena term needs `groups_est`;
     /// it is computed from this ungrouped floor, so the header charge cannot feed back into itself.
-    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false);
+    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false) + bytes_reserved_elsewhere;
     const size_t tables = ht_total_bytes;
     const size_t chunk_all = chunkBytesForBlockRange(0, build_blocks.size());
     const size_t headroom_for_groups
         = max_bytes_before_external_join > floor_bytes + tables ? max_bytes_before_external_join - floor_bytes - tables : 1;
     groups_est = std::max(1uz, ceilDiv(chunk_all, headroom_for_groups));
-    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
+    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true) + bytes_reserved_elsewhere;
 
     /// The ungrouped scatter never holds the whole chunk next to the whole table: an owner commits its
     /// range and frees that partition's chunk in the same claim, so the peak sits at one end of the wave.
@@ -2454,7 +2491,7 @@ void HashJoinClause::runGroupStages(size_t block_begin, size_t block_end)
 
 bool HashJoinClause::postBuildPartitioned()
 {
-    preparePostBuildContext();
+    preparePostBuildContext(*post_build_pool);
     auto & ctx = *post_build_ctx;
     for (size_t w = 0; w < ctx.workers; ++w)
         ctx.worker_state[w].writer.emplace(build_arenas[w]);
@@ -2544,7 +2581,7 @@ bool HashJoinClause::postBuildPartitioned()
     stats.drain_appended_rows = ctx.drain_appended;
     /// A load-factor grow before publication rehashes on the pool, so the pool has to outlive it.
     maybeGrowForLoadFactor(claimedTotal());
-    post_build_pool.reset();
+    post_build_pool = nullptr;
     publishTableSize(ctx);
     return all_values_unique;
 }
@@ -2640,8 +2677,9 @@ void HashJoinClause::histogramWorker(PostBuildContext & ctx, size_t worker) cons
     for (size_t b = begin; b < end; ++b)
     {
         const FillBlock & fill = build_blocks[b];
+        const Input & input = fill.clauses[clause_idx];
         bucket_ids.resize(fill.rows);
-        deriveBucketIds(fill.routes, fill.skipData(), ctx.route_bits, ctx.fanout - 1, bucket_ids.data());
+        deriveBucketIds(input.routes, input.skipData(), ctx.route_bits, ctx.fanout - 1, bucket_ids.data());
         ColumnsScatter::histogramPidChunk(bucket_ids.data(), fill.rows, hist, hist_lanes, ctx.fanout);
     }
     if (hist_lanes)
@@ -2717,7 +2755,7 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
         ColumnsScatter::scatterPidChunk(
             sizeof(UInt16),
             bucket_ids,
-            reinterpret_cast<const char *>(fill.routes.data()),
+            reinterpret_cast<const char *>(fill.clauses[clause_idx].routes.data()),
             fill.rows,
             route_swwc,
             state.route_scratch);
@@ -2747,7 +2785,9 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
         }
     };
 
-    auto release_block_inputs = [this](FillBlock & fill) { accumulated_bytes.fetch_sub(fill.releaseInputs(), std::memory_order_relaxed); };
+    /// This clause's inputs only: a later clause still needs its own keys and routes of the block.
+    auto release_block_inputs
+        = [this](FillBlock & fill) { accumulated_bytes.fetch_sub(fill.clauses[clause_idx].releaseInputs(), std::memory_order_relaxed); };
 
     if (!ctx.generic_mode)
     {
@@ -2780,8 +2820,9 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
             for (size_t i = batch_begin; i < b; ++i)
             {
                 const FillBlock & fill = build_blocks[i];
+                const Input & input = fill.clauses[clause_idx];
                 batch_bucket_ids[i - batch_begin].resize(fill.rows);
-                deriveBucketIds(fill.routes, fill.skipData(), ctx.route_bits, ctx.fanout - 1, batch_bucket_ids[i - batch_begin].data());
+                deriveBucketIds(input.routes, input.skipData(), ctx.route_bits, ctx.fanout - 1, batch_bucket_ids[i - batch_begin].data());
             }
             for (size_t c = 0; c < ctx.num_key_columns; ++c)
                 for (size_t i = batch_begin; i < b; ++i)
@@ -2790,7 +2831,7 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
                     ColumnsScatter::scatterPidChunk(
                         ctx.fixed_widths[c],
                         batch_bucket_ids[i - batch_begin].data(),
-                        build_blocks[i].key_columns[c]->getRawData().data(), /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                        build_blocks[i].clauses[clause_idx].key_columns[c]->getRawData().data(), /// NOLINT(bugprone-suspicious-stringview-data-usage)
                         build_blocks[i].rows,
                         key_swwc[c],
                         state.key_scratch[c]);
@@ -2819,8 +2860,9 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
     for (size_t i = begin; i < end; ++i)
     {
         const FillBlock & fill = build_blocks[i];
+        const Input & input = fill.clauses[clause_idx];
         stripe_bucket_ids[i - begin].resize(fill.rows);
-        deriveBucketIds(fill.routes, fill.skipData(), ctx.route_bits, ctx.fanout - 1, stripe_bucket_ids[i - begin].data());
+        deriveBucketIds(input.routes, input.skipData(), ctx.route_bits, ctx.fanout - 1, stripe_bucket_ids[i - begin].data());
         bucket_id_spans[i - begin] = {stripe_bucket_ids[i - begin].data(), fill.rows};
         scatter_locators(fill, stripe_bucket_ids[i - begin].data());
         if (ctx.multi_pass)
@@ -2843,7 +2885,7 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
             continue;
         }
         for (size_t i = begin; i < end; ++i)
-            sources[i - begin] = build_blocks[i].key_columns[c];
+            sources[i - begin] = build_blocks[i].clauses[clause_idx].key_columns[c];
         ctx.pieces[c][worker] = ColumnsScatter::scatter(sources, bucket_id_spans, ctx.fanout);
         /// Those rows are never inserted.
         ctx.pieces[c][worker][ctx.fanout - 1].reset();
