@@ -20,56 +20,56 @@ key1	d	4	7	2	key1	D	4	1	6
 key1	e	5	5	5			0	0	\N
 key2	a2	1	1	1			0	0	\N
 key4	f	2	3	4			0	0	\N
--- every kind and strictness, three conditions: count, and whether hash and partitioned_hash agree
-LEFT | t1.key = t2.key AND t1.a < t2.a	10	1
-LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	9	1
-LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	13	1
-INNER | t1.key = t2.key AND t1.a < t2.a	6	1
-INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	6	1
-INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	11	1
-RIGHT | t1.key = t2.key AND t1.a < t2.a	9	1
-RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	8	1
-RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	12	1
-FULL | t1.key = t2.key AND t1.a < t2.a	13	1
-FULL | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	11	1
-FULL | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	14	1
-ANY LEFT | t1.key = t2.key AND t1.a < t2.a	7	1
-ANY LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	7	1
-ANY LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	7	1
-ANY INNER | t1.key = t2.key AND t1.a < t2.a	3	1
-ANY INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
-ANY INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
-ANY RIGHT | t1.key = t2.key AND t1.a < t2.a	6	1
-ANY RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	6	1
-ANY RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	6	1
-SEMI LEFT | t1.key = t2.key AND t1.a < t2.a	3	1
-SEMI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
-SEMI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
-SEMI RIGHT | t1.key = t2.key AND t1.a < t2.a	3	1
-SEMI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
-SEMI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
-ANTI LEFT | t1.key = t2.key AND t1.a < t2.a	4	1
-ANTI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	3	1
-ANTI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	2	1
-ANTI RIGHT | t1.key = t2.key AND t1.a < t2.a	3	1
-ANTI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	2	1
-ANTI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	1	1
+-- every kind and strictness, three conditions: count and fingerprint
+LEFT | t1.key = t2.key AND t1.a < t2.a	(10,[('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','D'),('key1','d','',''),('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(9,[('key1','a','key1','A'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','c','key1','B'),('key1','c','key1','C'),('key1','d','key1','D'),('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(13,[('key1','a','key1','A'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','C'),('key1','c','key1','D'),('key1','d','key1','D'),('key1','e','',''),('key2','a2','',''),('key4','f','key4','F')])
+INNER | t1.key = t2.key AND t1.a < t2.a	(6,[('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','D')])
+INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(6,[('key1','a','key1','A'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','c','key1','B'),('key1','c','key1','C'),('key1','d','key1','D')])
+INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(11,[('key1','a','key1','A'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','C'),('key1','c','key1','D'),('key1','d','key1','D'),('key4','f','key4','F')])
+RIGHT | t1.key = t2.key AND t1.a < t2.a	(9,[('','','key1','A'),('','','key3','a3'),('','','key4','F'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','D')])
+RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(8,[('','','key3','a3'),('','','key4','F'),('key1','a','key1','A'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','c','key1','B'),('key1','c','key1','C'),('key1','d','key1','D')])
+RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(12,[('','','key3','a3'),('key1','a','key1','A'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','C'),('key1','c','key1','D'),('key1','d','key1','D'),('key4','f','key4','F')])
+FULL | t1.key = t2.key AND t1.a < t2.a	(13,[('','','key1','A'),('','','key3','a3'),('','','key4','F'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','D'),('key1','d','',''),('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+FULL | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(11,[('','','key3','a3'),('','','key4','F'),('key1','a','key1','A'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','c','key1','B'),('key1','c','key1','C'),('key1','d','key1','D'),('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+FULL | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(14,[('','','key3','a3'),('key1','a','key1','A'),('key1','a','key1','B'),('key1','a','key1','C'),('key1','a','key1','D'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','C'),('key1','c','key1','D'),('key1','d','key1','D'),('key1','e','',''),('key2','a2','',''),('key4','f','key4','F')])
+ANY LEFT | t1.key = t2.key AND t1.a < t2.a	(7,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1'),('key1','d',''),('key1','e',''),('key2','a2',''),('key4','f','')])
+ANY LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(7,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1'),('key1','d','key1'),('key1','e',''),('key2','a2',''),('key4','f','')])
+ANY LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(7,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1'),('key1','d','key1'),('key1','e',''),('key2','a2',''),('key4','f','key4')])
+ANY INNER | t1.key = t2.key AND t1.a < t2.a	(3,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1')])
+ANY INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(4,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1'),('key1','d','key1')])
+ANY INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(5,[('key1','a','key1'),('key1','b','key1'),('key1','c','key1'),('key1','d','key1'),('key4','f','key4')])
+ANY RIGHT | t1.key = t2.key AND t1.a < t2.a	(6,[('','key1','A'),('','key3','a3'),('','key4','F'),('key1','key1','B'),('key1','key1','C'),('key1','key1','D')])
+ANY RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(6,[('','key3','a3'),('','key4','F'),('key1','key1','A'),('key1','key1','B'),('key1','key1','C'),('key1','key1','D')])
+ANY RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(6,[('','key3','a3'),('key1','key1','A'),('key1','key1','B'),('key1','key1','C'),('key1','key1','D'),('key4','key4','F')])
+SEMI LEFT | t1.key = t2.key AND t1.a < t2.a	(3,[('key1','a'),('key1','b'),('key1','c')])
+SEMI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(4,[('key1','a'),('key1','b'),('key1','c'),('key1','d')])
+SEMI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(5,[('key1','a'),('key1','b'),('key1','c'),('key1','d'),('key4','f')])
+SEMI RIGHT | t1.key = t2.key AND t1.a < t2.a	(3,[('key1','B'),('key1','C'),('key1','D')])
+SEMI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(4,[('key1','A'),('key1','B'),('key1','C'),('key1','D')])
+SEMI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(5,[('key1','A'),('key1','B'),('key1','C'),('key1','D'),('key4','F')])
+ANTI LEFT | t1.key = t2.key AND t1.a < t2.a	(4,[('key1','d','',''),('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+ANTI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(3,[('key1','e','',''),('key2','a2','',''),('key4','f','','')])
+ANTI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(2,[('key1','e','',''),('key2','a2','','')])
+ANTI RIGHT | t1.key = t2.key AND t1.a < t2.a	(3,[('','','key1','A'),('','','key3','a3'),('','','key4','F')])
+ANTI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	(2,[('','','key3','a3'),('','','key4','F')])
+ANTI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	(1,[('','','key3','a3')])
 -- a subquery inside the condition
-LEFT | subquery	10	1
+LEFT | subquery	(10,[('key1','a','key1','C'),('key1','b','key1','A'),('key1','b','key1','B'),('key1','b','key1','C'),('key1','b','key1','D'),('key1','c','key1','C'),('key1','d','key1','C'),('key1','e','key1','C'),('key2','a2','',''),('key4','f','key4','F')])
 -- join_use_nulls: the other side becomes Nullable and the residual still decides the match
-LEFT | join_use_nulls	12	1
-RIGHT | join_use_nulls	13	1
-FULL | join_use_nulls	14	1
-INNER | join_use_nulls	11	1
-ANY LEFT | join_use_nulls	7	1
-SEMI LEFT | join_use_nulls	6	1
-ANTI LEFT | join_use_nulls	1	1
+LEFT | join_use_nulls	(12,[('key1','a','key1','Nullable(String)','A'),('key1','a','key1','Nullable(String)','B'),('key1','b','key1','Nullable(String)','A'),('key1','b','key1','Nullable(String)','B'),('key1','c','key1','Nullable(String)','A'),('key1','d','key1','Nullable(String)','A'),('key1','d','key1','Nullable(String)','B'),('key1','e','key1','Nullable(String)','A'),('key1','e','key1','Nullable(String)','B'),('key1','e','key1','Nullable(String)','C'),('key2','a2',NULL,'Nullable(String)',NULL),('key4','f','key4','Nullable(String)','F')])
+RIGHT | join_use_nulls	(13,[('key1','a','key1','String','A'),('key1','a','key1','String','B'),('key1','b','key1','String','A'),('key1','b','key1','String','B'),('key1','c','key1','String','A'),('key1','d','key1','String','A'),('key1','d','key1','String','B'),('key1','e','key1','String','A'),('key1','e','key1','String','B'),('key1','e','key1','String','C'),('key4','f','key4','String','F'),(NULL,NULL,'key1','String','D'),(NULL,NULL,'key3','String','a3')])
+FULL | join_use_nulls	(14,[('key1','a','key1','Nullable(String)','A'),('key1','a','key1','Nullable(String)','B'),('key1','b','key1','Nullable(String)','A'),('key1','b','key1','Nullable(String)','B'),('key1','c','key1','Nullable(String)','A'),('key1','d','key1','Nullable(String)','A'),('key1','d','key1','Nullable(String)','B'),('key1','e','key1','Nullable(String)','A'),('key1','e','key1','Nullable(String)','B'),('key1','e','key1','Nullable(String)','C'),('key2','a2',NULL,'Nullable(String)',NULL),('key4','f','key4','Nullable(String)','F'),(NULL,NULL,'key1','Nullable(String)','D'),(NULL,NULL,'key3','Nullable(String)','a3')])
+INNER | join_use_nulls	(11,[('key1','a','key1','String','A'),('key1','a','key1','String','B'),('key1','b','key1','String','A'),('key1','b','key1','String','B'),('key1','c','key1','String','A'),('key1','d','key1','String','A'),('key1','d','key1','String','B'),('key1','e','key1','String','A'),('key1','e','key1','String','B'),('key1','e','key1','String','C'),('key4','f','key4','String','F')])
+ANY LEFT | join_use_nulls	(7,[('key1','a','key1','Nullable(String)',0),('key1','b','key1','Nullable(String)',0),('key1','c','key1','Nullable(String)',0),('key1','d','key1','Nullable(String)',0),('key1','e','key1','Nullable(String)',0),('key2','a2',NULL,'Nullable(String)',0),('key4','f','key4','Nullable(String)',0)])
+SEMI LEFT | join_use_nulls	(6,[('key1','a','key1','Nullable(String)',0),('key1','b','key1','Nullable(String)',0),('key1','c','key1','Nullable(String)',0),('key1','d','key1','Nullable(String)',0),('key1','e','key1','Nullable(String)',0),('key4','f','key4','Nullable(String)',0)])
+ANTI LEFT | join_use_nulls	(1,[('key2','a2',NULL,'Nullable(String)',NULL)])
 -- a build large enough to partition, and probe blocks the residual filter stops at max_joined_block_size_rows
-LEFT | large	2702138	1
-ANY LEFT | large	20000	1
-SEMI LEFT | large	18000	1
-ANTI LEFT | large	2000	1
-ANY INNER | large	18000	1
+LEFT | large	(2702138,8282803059745770850)
+ANY LEFT | large	(20000,16773256409716441479)
+SEMI LEFT | large	(18000,16012631984897818811)
+ANTI LEFT | large	(2000,15860396084011637885)
+ANY INNER | large	(18000,9258588418448783193)
 -- a shape hash rejects with a mixed condition is rejected the same way
 -- every labelled query ran the partitioned join
 1	0

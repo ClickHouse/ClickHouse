@@ -1,4 +1,4 @@
--- `join_algorithm = 'partitioned_hash'` under an automatic external-join threshold is wrapped in
+-- `join_algorithm = 'hash'` under an automatic external-join threshold is wrapped in
 -- `SpillingHashJoin`. A build that exceeds `max_bytes_before_external_join` switches to
 -- `GraceHashJoin` and still matches `hash`.
 
@@ -10,9 +10,8 @@ SET max_bytes_in_join = 0;
 SET grace_hash_join_initial_buckets = 1;
 SET grace_hash_join_max_buckets = 1024;
 
-SELECT 'spill switch', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(t2.v)) FROM (SELECT number AS k FROM numbers(20000)) AS t1 INNER JOIN (SELECT number AS k, number AS v FROM numbers(20000)) AS t2 ON t1.k = t2.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0) AS h,
-    (SELECT (count(), sum(t2.v)) FROM (SELECT number AS k FROM numbers(20000)) AS t1 INNER JOIN (SELECT number AS k, number AS v FROM numbers(20000)) AS t2 ON t1.k = t2.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 100000) AS pa)
+SELECT 'spill switch', pa FROM (SELECT
+    (SELECT (count(), sum(t2.v)) FROM (SELECT number AS k FROM numbers(20000)) AS t1 INNER JOIN (SELECT number AS k, number AS v FROM numbers(20000)) AS t2 ON t1.k = t2.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 100000) AS pa)
 SETTINGS log_comment = '05043 spill';
 
 SYSTEM FLUSH LOGS query_log;

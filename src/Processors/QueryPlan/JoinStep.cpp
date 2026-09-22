@@ -5,7 +5,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Interpreters/PasteJoin.h>
@@ -284,7 +284,7 @@ StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJo
 
     for (const auto * shard_join : shard_joins)
     {
-        const auto * hash_join = typeid_cast<const HashJoin *>(shard_join);
+        const auto * hash_join = typeid_cast<const PartitionedHashJoin *>(shard_join);
         if (!hash_join)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected join type {} in a pipeline sharded by primary key ranges", shard_join->getName());
 
@@ -296,7 +296,7 @@ StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJo
         matched_right.add(stats->getMatchedRight(right_rows));
 
         unique_keys += hash_join->getTotalRowCount();
-        memory += hash_join->getPeakBuildBytes();
+        memory += hash_join->getTotalByteCount();
     }
 
     counters.matched_left = matched_left.get();

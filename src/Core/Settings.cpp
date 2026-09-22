@@ -3931,19 +3931,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM. The right table is split into partitions that fit the CPU cache, and each partition is inserted into its own range of one shared hash table by a separate thread; the left table is probed against that table without being partitioned.
 
- Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
+ Parallelism is chosen automatically from `parallel_hash_join_threshold` and `max_threads`: a right table estimated below the threshold is built by one thread.
 
 - parallel_hash
 
- Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to prefer the parallel layout when `max_threads > 1`.
-
-- partitioned_hash
-
- An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache. A separate thread inserts each partition into its own range of one shared hash table. The left table is probed against that table and is not partitioned.
-
- The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. With `max_bytes_before_external_join` set, it spills to disk through `grace_hash` like the other hash joins. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage.
+ Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to build in parallel whenever `max_threads > 1`.
 
 - partial_merge
 
@@ -8779,10 +8773,9 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When a hash join is used, this threshold decides whether the join may run in parallel.
-If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
-At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
-`partitioned_hash` uses the same threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. At or above the threshold, the build uses at least one partition per thread.
+When a hash join is used, this threshold decides whether the join builds its hash table in parallel.
+If an estimate of the right table size is available and it is below the threshold, one thread builds the hash table as the rows arrive.
+At or above the threshold, and also when there is no row-count estimate, the build uses at least one partition per thread (when `max_threads` > 1).
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
@@ -9003,9 +8996,6 @@ Has effect for every hash-based `join_algorithm`, including `grace_hash`, provid
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
-    DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(
-Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
-)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0) \
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
@@ -9134,12 +9124,12 @@ Initial number of grace hash join buckets
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, R"(
-Maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, R"(
-Limit how many partitions a `partitioned_hash` join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
-)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, hash_join_max_fanout_per_pass, 8192, R"(
+Maximum number of partitions the hash join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
+)", 0) \
+    DECLARE(Bool, hash_join_cap_partitions_by_l1_descriptors, true, R"(
+Limit how many partitions the hash join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
+)", 0) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 )", EXPERIMENTAL) \
@@ -9548,6 +9538,7 @@ Enable experimental table function `eval`.
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true) \
+    MAKE_OBSOLETE(M, Bool, enable_join_key_only_hash_tables, true) \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \

@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is: the hash join builds one shared hash table from the right table in cache-sized partitions, in parallel when `max_threads` > 1 and the right table is not estimated below `parallel_hash_join_threshold`."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}]}]}/>
 
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
@@ -48,13 +48,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM. The right table is split into partitions that fit the CPU cache, and each partition is inserted into its own range of one shared hash table by a separate thread; the left table is probed against that table without being partitioned.
 
- Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`. `parallel_hash` is an obsolete alias of this name.
+ Parallelism is chosen automatically from `parallel_hash_join_threshold` and `max_threads`: a right table estimated below the threshold is built by one thread.
 
 - parallel_hash
 
- Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to prefer the parallel layout when `max_threads > 1`.
+ Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to build in parallel whenever `max_threads > 1`.
 
 - partial_merge
 

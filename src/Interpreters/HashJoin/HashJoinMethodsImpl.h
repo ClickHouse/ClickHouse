@@ -52,10 +52,6 @@ ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map)
 {
     if (!enable_prefetch || map == nullptr)
         return false;
-    /// Two-level maps share buckets across build threads. Summing every bucket's grower
-    /// races with a resize under another slot's lock.
-    if constexpr (Map::NUM_BUCKETS > 1)
-        return true;
     return map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
 }
 
@@ -105,12 +101,10 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
     HashJoin::Type type,
     MapsTemplate & maps,
-    BlockKeyGetter & block_key_getter,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     const ScatteredBlock::Selector & selector,
-    const Columns * dense_keys,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
     Arena & pool,
@@ -127,12 +121,10 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
             insertFromBlockImplTypeCase<KeyGetterT>( \
                 join, \
                 *maps.TYPE, \
-                block_key_getter, \
                 key_columns, \
                 key_sizes, \
                 stored_block_no, \
                 sel, \
-                dense_keys, \
                 null_map, \
                 join_mask, \
                 pool, \
@@ -279,12 +271,10 @@ template <typename KeyGetter, typename HashMap, typename Selector>
 void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
     HashJoin & join,
     HashMap & map,
-    BlockKeyGetter & block_key_getter,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     UInt32 stored_block_no,
     const Selector & selector,
-    const Columns * dense_keys,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
     Arena & pool,
@@ -309,32 +299,12 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     /// Hoisted out of the loop below, see `Inserter::insertOne`.
     [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
 
-    std::optional<KeyGetter> own_key_getter;
-    ColumnRawPtrs dense_key_ptrs;
-    KeyGetter * key_getter_ptr = nullptr;
-    if (dense_keys)
-    {
-        chassert(!dense_keys->empty() && dense_keys->front()->size() == rows);
-        dense_key_ptrs.reserve(dense_keys->size());
-        for (const auto & column : *dense_keys)
-            dense_key_ptrs.push_back(column.get());
-        key_getter_ptr = &own_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(dense_key_ptrs, key_sizes));
-    }
-    else if constexpr (share_key_getter_across_buckets<KeyGetter>)
-    {
-        key_getter_ptr
-            = &block_key_getter.getOrBuild<KeyGetter>([&] { return createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes); });
-    }
-    else
-    {
-        key_getter_ptr = &own_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes));
-    }
-    auto & key_getter = *key_getter_ptr;
+    KeyGetter key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
     /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so
-    /// unless the block has to be kept for another algorithm the caller drops it.
+    /// the caller drops it.
     if constexpr (is_set)
-        result.is_inserted = join.mustKeepRightBlocks();
+        result.is_inserted = false;
     else
         result.is_inserted = !mapped_one || is_asof_join;
 
@@ -344,13 +314,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     if constexpr (can_prefetch)
         use_prefetch = shouldUseJoinPrefetch(join.enable_prefetch, &map);
 
-    const bool keys_are_dense = dense_keys != nullptr;
-
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map.prefetch(key_getter.getKeyHolder(keys_are_dense ? k : selectorIndexAt(selector, k), pool));
+                map.prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
         });
 
     for (size_t i = 0; i < rows; ++i)
@@ -359,7 +327,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             prefetcher.prefetchAt(i);
 
         const size_t ind = selectorIndexAt(selector, i);
-        const size_t key_row = keys_are_dense ? i : ind;
+        const size_t key_row = ind;
 
         chassert(!null_map || ind < null_map->size());
         if (null_map && (*null_map)[ind])

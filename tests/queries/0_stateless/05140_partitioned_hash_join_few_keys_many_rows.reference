@@ -1,16 +1,16 @@
-inner all	3070372	1
-right all on a nullable key	2988035	1
-full all	3070848	1
-any left	2048	1
+inner all	(3070372,10688269377796864949)
+right all on a nullable key	(2988035,10165645894491911548)
+full all	(3070848,13883214392734813270)
+any left	(2048,12157847149963197725)
 -- semi and anti left
-semi left	1572	1
-anti left	476	1
-any left keeping the last row per key	2048	1
+semi left	(1572,14831974801832536464)
+anti left	(476,16866742987945449164)
+any left keeping the last row per key	(2048,12157847149963197725)
 -- string key over the same few keys
-string inner all	3070372	1
-string right all	3070372	1
-string full all	3070848	1
-below the threshold the small table keeps one partition	3070372	1
+string inner all	(3070372,3775888033390707005)
+string right all	(3070372,3775888033390707005)
+string full all	(3070848,11367942752713713000)
+below the threshold the small table keeps one partition	(3070372,10688269377796864949)
 -- partitions above the threshold: 4 (one per thread); below: 1
 05140 anti left	4	1
 05140 any left	4	1

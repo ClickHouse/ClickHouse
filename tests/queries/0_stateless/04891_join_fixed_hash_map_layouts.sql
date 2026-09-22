@@ -1,7 +1,7 @@
 -- Tags: no-random-settings
--- Serial `key8`/`key16` use a 1-bucket `JoinFixedHashMap`. Parallel fill uses
--- `two_level_key8`/`two_level_key16` (256 virtual buckets). Range maps after conversion stay
--- 1-bucket. Layout is pinned by `parallel_hash_join_threshold`, not by `join_algorithm`.
+-- `key8`/`key16` builds use a 1-bucket `JoinFixedHashMap` whatever the build parallelism: the partitioned
+-- join has one table, so the layout below and above `parallel_hash_join_threshold` is the same. A
+-- `key32`/`key64` table whose keys span a dense range is converted to a 1-bucket range map after the build.
 
 DROP TABLE IF EXISTS t_u8_l;
 DROP TABLE IF EXISTS t_u8_r;
@@ -265,7 +265,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 SELECT 'key8_parallel', count() > 0
 FROM system.text_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND message LIKE '%Join hash table type: two_level_key8%'
+      AND message LIKE '%Join hash table type: key8%' AND message NOT LIKE '%two_level_key8%'
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04891_key8_parallel' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
@@ -281,7 +281,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 SELECT 'key16_parallel', count() > 0
 FROM system.text_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND message LIKE '%Join hash table type: two_level_key16%'
+      AND message LIKE '%Join hash table type: key16%' AND message NOT LIKE '%two_level_key16%'
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04891_key16_parallel' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()

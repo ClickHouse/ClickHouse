@@ -38,7 +38,6 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
@@ -69,7 +68,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1208,22 +1206,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
 
-    const bool use_parallel_layout
-        = preferParallelHashLayout(table_join->kind(), params.rhs_size_estimation, params.parallel_hash_join_threshold);
-
     const bool spill_to_disk
         = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join);
-    /// The partitioned join serves this shape and `join_algorithm` lists it: `partitioned_hash` itself,
-    /// and the in-memory join of `auto` and the buckets of `grace_hash` when it is listed as well.
-    const bool partitioned_hash_wanted
-        = table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*table_join);
-    /// Without temporary storage, or for a shape `GraceHashJoin` declines, there is no join to spill
-    /// into. The budget stays off then: it could only refuse a table growth.
-    auto make_partitioned_join = [&]() -> std::shared_ptr<IJoin>
+    /// The estimate goes to the join as its build-rows hint: below `parallel_hash_join_threshold` it
+    /// builds on one fill thread, at or above it in parallel. Without temporary storage, or for a
+    /// shape `GraceHashJoin` declines, there is no join to spill into. The budget stays off then: it
+    /// could only refuse a table growth.
+    auto make_hash_join = [&]() -> std::shared_ptr<IJoin>
     {
         if (spill_to_disk)
             return std::make_shared<SpillingHashJoin>(
-                PartitionedCollectingTag{},
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
@@ -1265,37 +1257,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
-        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && partitioned_hash_wanted)
-            return make_partitioned_join();
-
-        if (spill_to_disk)
-        {
-            return std::make_shared<SpillingHashJoin>(
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                table_join->getTempDataOnDisk(),
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
-                stats_collecting_params,
-                params.join_any_take_last_row,
-                params.max_threads,
-                use_parallel_layout);
-        }
-
-        return std::make_shared<HashJoin>(
-            table_join,
-            right_table_expression_header,
-            params.join_any_take_last_row,
-            /*reserve_num_=*/0,
-            /*instance_id_=*/"",
-            stats_collecting_params,
-            params.max_threads,
-            use_parallel_layout);
+        if (PartitionedHashJoin::isSupported(*table_join))
+            return make_hash_join();
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
@@ -1335,29 +1300,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.join_any_take_last_row,
                 table_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : params.max_bytes_before_external_join,
-                params.max_threads,
-                /*partitioned_buckets_=*/partitioned_hash_wanted);
+                params.max_threads);
         }
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
+        if (!PartitionedHashJoin::isSupported(*table_join))
+            return nullptr;
+
         if (spill_to_disk)
-        {
-            if (partitioned_hash_wanted)
-                return make_partitioned_join();
-            return std::make_shared<SpillingHashJoin>(
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                table_join->getTempDataOnDisk(),
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
-                stats_collecting_params,
-                params.join_any_take_last_row,
-                params.max_threads,
-                use_parallel_layout);
-        }
+            return make_hash_join();
 
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(
@@ -1366,20 +1319,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.join_any_take_last_row,
                 stats_collecting_params,
                 params.max_threads,
-                use_parallel_layout,
-                partitioned_hash_wanted,
                 params.rhs_size_estimation);
-        if (partitioned_hash_wanted)
-            return make_partitioned_join();
-        return std::make_shared<HashJoin>(
-            table_join,
-            right_table_expression_header,
-            params.join_any_take_last_row,
-            /*reserve_num_=*/0,
-            /*instance_id_=*/"",
-            stats_collecting_params,
-            params.max_threads,
-            use_parallel_layout);
+        return make_hash_join();
     }
 
     return nullptr;
@@ -1395,7 +1336,6 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
     hash_table_key_hash = 0;
     join_output_key_hash = 0;
-    parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
@@ -1428,7 +1368,6 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
     join_output_key_hash = join_output_key_hash_;
-    parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 
@@ -1491,7 +1430,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled() && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Only `hash`, `parallel_hash` and `partitioned_hash` joins support multiple ORs for keys in JOIN ON section");
+            "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {

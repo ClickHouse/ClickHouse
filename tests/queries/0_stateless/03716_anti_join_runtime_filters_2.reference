@@ -14,7 +14,7 @@ Positions: 0
       Join (JOIN FillRightFirst)
       Type: RIGHT
       Strictness: ANTI
-      Algorithm: HashJoin
+      Algorithm: PartitionedHashJoin
       Clauses: [(exists(__table2).__table1.c_nationkey) = (__table1.c_nationkey)]
         Expression (Left Pre Join Actions)
         Actions: INPUT :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 0
@@ -68,7 +68,7 @@ Positions: 0
       Join (JOIN FillRightFirst)
       Type: LEFT
       Strictness: ANTI
-      Algorithm: HashJoin
+      Algorithm: PartitionedHashJoin
       Clauses: [(__table1.c_nationkey) = (exists(__table2).__table1.c_nationkey)]
         Expression (Left Pre Join Actions)
         Actions: INPUT :: 0 -> __table1.c_nationkey Int32 : 0
