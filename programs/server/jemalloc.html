@@ -2922,7 +2922,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 /// Both branches must come from the same scan of the sampled allocations: every
                 /// scan flushes a fresh profile dump, so two independent subqueries could observe
                 /// different dumps and double-count or drop a cell.
-                const query = `SELECT format('{} {}', if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))), toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste)))) FROM system.jemalloc_arena_bins AS b LEFT JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} SETTINGS allow_introspection_functions = 1`;
+                const query = `SELECT format('{} {}', if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))), toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste))))) FROM system.jemalloc_arena_bins AS b LEFT JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} SETTINGS allow_introspection_functions = 1`;
                 const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
