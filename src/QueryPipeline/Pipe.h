@@ -147,7 +147,9 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
-    using ResizeFactory = std::function<ProcessorPtr(size_t num_inputs, size_t num_outputs)>;
+    /// `num_real_inputs` is the number of inputs that carry data: `addSplitResizeTransform` pads a group whose
+    /// share of the upstream streams is short with `NullSource`s, so it can be smaller than `num_inputs`.
+    using ResizeFactory = std::function<ProcessorPtr(size_t num_inputs, size_t num_outputs, size_t num_real_inputs)>;
     void addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per_resize_after_split, const ResizeFactory & resize_factory);
 
     friend class QueryPipelineBuilder;

@@ -943,6 +943,11 @@ QueryPlan decorrelateQueryPlan(
             aggeregating_step->explicitSortingRequired()
         );
         result_step->setStepDescription(*aggeregating_step);
+        /// This is still the user's `GROUP BY`, only with the correlated columns appended to its keys, so it keeps
+        /// the gradual pre-aggregation resize the planner chose for it. The semantic constness of the keys is not
+        /// carried over: the key set has just changed, and the correlated columns are never constant.
+        if (aggeregating_step->isGradualResizeEnabled())
+            result_step->enableGradualResize();
 
         decorrelated_query_plan.addStep(std::move(result_step));
 

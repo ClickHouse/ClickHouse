@@ -8852,7 +8852,7 @@ In some cases, where the inputs/outputs are indivisible by the number of split `
 ### Purpose of the Setting
 The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
 
-The same split path is used by the `GradualResize` processor built for the `GROUP BY` pre-aggregation stage when `min_rows_per_stream_for_gradual_resize` or `min_bytes_per_stream_for_gradual_resize` is non-zero: the stage is then divided into the same number of groups, and the activation threshold is divided among them.
+The same split path is used by the `GradualResize` processor built for the `GROUP BY` pre-aggregation stage when `min_rows_per_stream_for_gradual_resize` or `min_bytes_per_stream_for_gradual_resize` is non-zero: the stage is then divided into the same number of groups, and the activation threshold is divided among them in proportion to the number of input streams each group owns.
 
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize`, `StrictResize` and `GradualResize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
@@ -8862,7 +8862,7 @@ Total number of rows that must be pushed through the `GROUP BY` pre-aggregation 
 
 The activation is a single-threshold switch from one stream to all streams, not a per-stream gradual ramp: ramping streams up one at a time would skew the data distribution across downstream aggregator hash tables and increase merge cost for heavy aggregate states such as `uniq`, `uniqExact`, or `groupArray`.
 
-When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided among the groups in proportion to the number of input streams each group owns (the groups are not equal-sized in general: the tail of the split is padded with `NullSource`s), so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
 Only affects `GROUP BY` queries with non-constant grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream. An aggregation whose keys are all constant has the same shape and is also unaffected. A key counts as constant when it is a constant column in the aggregation input (a literal or an expression folded to a constant, such as `GROUP BY 1` on a remote shard) or `materialize` applied to such a constant, possibly through aliases. Any other expression over a constant that is computed at run time, such as `GROUP BY materialize(1) + 0`, is treated as an ordinary key and takes the gradual path.
 
@@ -8873,11 +8873,13 @@ The setting takes effect only when the planner builds the hash-based pre-aggrega
 - aggregation over independent partitions (`allow_aggregate_partitions_independently`) and reads that produce a single stream, where no redistribution takes place;
 - `GROUP BY ... GROUPING SETS ...` and aggregation reading from aggregate projections, which keep the strict resize and build one partial state per stream (per grouping set, respectively);
 - the aggregations that ClickHouse plans on its own rather than from a `GROUP BY` clause, such as the deduplication of `FINAL` under `query_plan_optimize_lazy_final` or the merging of already aggregated states.
+
+A `GROUP BY` inside a correlated subquery keeps the thresholds after the subquery is decorrelated: the aggregation is rebuilt with the correlated columns appended to its keys, and it remains the user's aggregation.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
 Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams in this stage are activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate all aggregation streams in the pre-aggregation stage at once.
 
-When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided among the groups in proportion to the number of input streams each group owns (the groups are not equal-sized in general: the tail of the split is padded with `NullSource`s), so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
 Only affects `GROUP BY` queries with non-constant grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys), and aggregations whose keys are all constant, are unaffected. A key counts as constant when it is a constant column in the aggregation input or `materialize` applied to such a constant, possibly through aliases (see `min_rows_per_stream_for_gradual_resize`); other run-time expressions over constants, such as `materialize(1) + 0`, are treated as ordinary keys.
 

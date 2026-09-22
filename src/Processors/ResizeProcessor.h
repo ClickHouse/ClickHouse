@@ -151,6 +151,11 @@ public:
 
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
+    /// The thresholds this instance activates all of its outputs at. For a split pre-aggregation
+    /// resize they are the group's share of the query-level settings (see `Pipe::resizeGradual`).
+    size_t getMinRowsThreshold() const { return min_rows_per_output; }
+    size_t getMinBytesThreshold() const { return min_bytes_per_output; }
+
 private:
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;

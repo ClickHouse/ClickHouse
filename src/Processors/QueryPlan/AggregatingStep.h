@@ -112,8 +112,9 @@ public:
     /// only surface that `min_rows_per_stream_for_gradual_resize` / `min_bytes_per_stream_for_gradual_resize`
     /// are documented to affect. `AggregatingStep` is also built by ClickHouse itself for internal
     /// aggregations (the deduplication of `FINAL` in `LazyReadReplacingFinalSource`, merge-only steps over
-    /// aggregate projections or Cascades pushdown, the decorrelation of correlated subqueries); those keep the
-    /// strict resize because the bit is never set on them. Preserved by `clone` and by the query plan
+    /// aggregate projections or Cascades pushdown); those keep the strict resize because the bit is never set on
+    /// them. The decorrelation of a correlated subquery rebuilds the user's step with the correlated columns
+    /// appended to the keys and carries the bit over: that is still the user's `GROUP BY`. Preserved by `clone` and by the query plan
     /// serialization round-trip, exactly like `markGroupByKeysSemanticallyConstant`; a plan from a peer that
     /// predates the serialized bit keeps the strict resize.
     void enableGradualResize() { gradual_resize_enabled = true; }
