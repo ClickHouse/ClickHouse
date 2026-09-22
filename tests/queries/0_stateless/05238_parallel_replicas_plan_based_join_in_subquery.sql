@@ -54,6 +54,31 @@ FROM
             ON t_pr_join_fact.k = r.k)
 );
 
+-- With the sides swapped, the distributed read is the build side of the join that stays on the initiator.
+-- The runtime filter must be built on the initiator from all rows instead of on each replica from its own
+-- share of them, otherwise the probe side is pruned by a partial filter.
+SET query_plan_join_swap_table = 'true';
+SET query_plan_optimize_join_order_randomize = 0;
+SET enable_join_runtime_filters = 1;
+SET enable_join_runtime_filters_index_analysis = 1;
+SET join_runtime_filter_min_probe_rows = 0;
+
+SELECT countIf(r.k > 0) FROM t_pr_join_fact ALL LEFT JOIN
+    (SELECT k FROM t_pr_join_dim WHERE k IN (SELECT k FROM t_pr_join_allow)) AS r
+    ON t_pr_join_fact.k = r.k;
+
+SELECT
+    arrayExists(x -> x LIKE '%ReadFromParallelReplicas%', plan) AS read_distributed,
+    arrayFirstIndex(x -> x LIKE '%──BuildRuntimeFilter%', plan) < arrayFirstIndex(x -> x LIKE '%──Union%', plan) AS filter_local
+FROM
+(
+    SELECT groupArray(explain) AS plan
+    FROM (EXPLAIN optimize = 1, description = 0
+        SELECT countIf(r.k > 0) FROM t_pr_join_fact ALL LEFT JOIN
+            (SELECT k FROM t_pr_join_dim WHERE k IN (SELECT k FROM t_pr_join_allow)) AS r
+            ON t_pr_join_fact.k = r.k)
+);
+
 DROP TABLE t_pr_join_fact;
 DROP TABLE t_pr_join_dim;
 DROP TABLE t_pr_join_allow;

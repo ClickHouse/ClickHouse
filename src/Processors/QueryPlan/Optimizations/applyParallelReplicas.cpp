@@ -411,10 +411,45 @@ public:
         node->children = {&join_node};
     }
 
+    /// A split marker passes `BuildRuntimeFilterStep` on the build side of a join so that it can be lifted
+    /// above the join next. If the join stays local, the filter has to be built on the initiator from the
+    /// whole build side: inside the fragment, every replica builds a filter from its own share of the rows,
+    /// and the initiator would prune the probe side with a partial filter. Move the split back below the
+    /// lowest `BuildRuntimeFilterStep` it has passed.
+    static void moveBuildRuntimeFiltersAboveSplit(QueryPlan::Node * split_node)
+    {
+        size_t steps_to_move = 0;
+        size_t depth = 0;
+        for (const auto * node = split_node->children.front();; node = node->children.front())
+        {
+            ++depth;
+            const auto * step = node->step.get();
+            if (typeid_cast<const BuildRuntimeFilterStep *>(step))
+                steps_to_move = depth;
+            else if (!typeid_cast<const ExpressionStep *>(step) && !typeid_cast<const FilterStep *>(step))
+                break;
+        }
+
+        auto * node = split_node;
+        for (size_t i = 0; i < steps_to_move; ++i)
+        {
+            auto * child = node->children.front();
+            std::swap(node->step, child->step);
+            child->step->updateInputHeader(child->children.front()->step->getOutputHeader());
+            node = child;
+        }
+    }
+
     void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
         liftSplitsAboveUnion(current_node);
         liftSplitAboveJoin(current_node);
+
+        /// The split was not lifted above this join, so the join stays local.
+        if (typeid_cast<const JoinStepLogical *>(current_node->step.get()))
+            for (auto * child : current_node->children)
+                if (typeid_cast<const ParallelReplicasSplitStep *>(child->step.get()))
+                    moveBuildRuntimeFiltersAboveSplit(child);
 
         if (!parent_node)
             return;
@@ -429,6 +464,8 @@ public:
         /// BuildRuntimeFilterStep sits above the join's build side, which for a RIGHT join is the coordinated
         /// side, so the split step has to pass it too. The step becomes part of the plan fragment, where it
         /// does nothing: a deserialized step cannot publish its filter, so every replica builds its own.
+        /// If the split is not lifted above the join after all, it moves back below the step, see
+        /// `moveBuildRuntimeFiltersAboveSplit`.
         if (typeid_cast<const ExpressionStep *>(parent_step) || typeid_cast<const FilterStep *>(parent_step)
             || typeid_cast<const BuildRuntimeFilterStep *>(parent_step))
         {
