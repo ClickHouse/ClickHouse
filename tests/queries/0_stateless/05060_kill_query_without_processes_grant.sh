@@ -200,4 +200,11 @@ OUT=$($CLICKHOUSE_CLIENT --user "$U2" --query_id "self_$ID" -q \
     "KILL QUERY WHERE query_id = 'self_$ID' ASYNC" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 
+echo "-- 15. TEST names the match without cancelling it"
+start_victim "$U2" "test_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'test_$ID' TEST" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "victim: $(running "test_$ID")"
+drop_victim "test_$ID"
+
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"

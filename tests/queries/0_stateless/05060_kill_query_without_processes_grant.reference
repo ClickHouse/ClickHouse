@@ -44,3 +44,6 @@ refused: attempts to kill query created by another user
 victim: 1
 -- 14. a statement naming its own id skips itself instead of cancelling itself
 rows: 0
+-- 15. TEST names the match without cancelling it
+rows: 1
+victim: 1
