@@ -1,0 +1,47 @@
+partitioned_hash is selected	1
+inner all uint64	1494000	1
+left all uint64	1644000	1
+right all uint64	1494000	1
+full all uint64	1644000	1
+full all uint64 join_use_nulls	1644000	1
+inner any uint64	300000	1
+left any uint64	450000	1
+right any uint64	1494000	1
+left semi uint64	300000	1
+left anti uint64	150000	1
+right semi uint64	1494000	1
+right anti uint64	1185000	1
+inner all string	1494000	1
+right all string	1494000	1
+inner all fixedstring	1494000	1
+full all nullable	1710234	1
+inner all lowcardinality build vs plain probe	13446000	1
+inner all two keys (keys128)	1494000	1
+right all three keys (keys256)	1494000	1
+inner all string plus uint64 (hashed)	1494000	1
+inner all using	1494000	1
+left all on filter right side	788000	1
+right all on filter right side (filtered rows are non-joined)	1494000	1
+inner all uint16 (fixed map)	597600	1
+right all uint8 (fixed map)	22410	1
+asof inner >= uint16 (fixed map)	20000	1
+asof left < uint8 (fixed map)	300	1
+asof inner >=	300000	1
+asof left <	450000	1
+inner all packed keys32 (uint16, uint8)	1792800	1
+right all packed keys64 (uint32, uint16)	1494000	1
+inner all zero key with duplicates	2176220	1
+right anti zero key with duplicates	310192	1
+left all empty-string key with duplicates	2326375	1
+left all on filter left side	848000	1
+right any distinct right keys	300000	1
+left any take last row	450000	1
+asof inner >	300000	1
+asof left <=	450000	1
+asof inner >= string key	300000	1
+inner all uint64 max_threads 1	1494000	1
+right all uint64 max_threads 16	1494000	1
+empty build	450000	1
+empty probe	1494000	1
+all-miss probe	450000	1
+1	1	1	1

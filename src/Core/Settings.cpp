@@ -3939,6 +3939,12 @@ Possible values:
 
  Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to prefer the parallel layout when `max_threads > 1`.
 
+- partitioned_hash
+
+ An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache. A separate thread inserts each partition into its own range of one shared hash table. The left table is probed against that table and is not partitioned.
+
+ The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage. A query with `max_bytes_before_external_join` set also uses the next enabled algorithm, or `hash`.
+
 - partial_merge
 
  A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
@@ -8776,6 +8782,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 When a hash join is used, this threshold decides whether the join may run in parallel.
 If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
 At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
+`partitioned_hash` uses the same threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. At or above the threshold, the build uses at least one partition per thread.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
@@ -9126,6 +9133,12 @@ Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, R"(
+Maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, R"(
+Limit how many partitions a `partitioned_hash` join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys

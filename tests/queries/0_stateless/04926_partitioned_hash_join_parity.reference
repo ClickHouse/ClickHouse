@@ -1,0 +1,29 @@
+-- partitioned_hash is selected for INNER ALL
+1
+INNER ALL, UInt64 key	13500	1	1
+-- INNER ALL, UInt64 key, first rows
+0	v0
+0	v100
+0	v200
+0	v300
+0	v400
+0	v0
+0	v100
+0	v200
+0	v300
+0	v400
+0	v0
+0	v100
+0	v200
+0	v300
+0	v400
+INNER ALL, String key	22260	1	1
+INNER ALL, Nullable key (NULLs never join)	25780	1	1
+INNER ALL, LowCardinality(String) key	117847	1	1
+INNER ALL, composite key (UInt64, String)	573	1	1
+LEFT ALL, UInt64 key	14150	1	1
+-- unsupported shapes fall back at plan time and still work
+0
+mixed ON condition, planned with another algorithm	13250	1
+-- shapes beyond INNER/LEFT ALL execute under partitioned_hash (04928 and 04929 check their results)
+1
