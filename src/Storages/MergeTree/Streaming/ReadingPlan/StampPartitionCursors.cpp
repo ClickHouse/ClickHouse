@@ -37,7 +37,7 @@ class StampPartitionCursorsTransform final : public ISimpleTransform
     PartitionCursor cursorAt(const Columns & cols, size_t row) const
     {
         chassert(cols[pos_block_number]->size() == cols[pos_block_offset]->size());
-        chassert(cols[pos_block_number]->size() < row && cols[pos_block_offset]->size() < row);
+        chassert(row < cols[pos_block_number]->size() && row < cols[pos_block_offset]->size());
         return {cols[pos_block_number]->getInt(row), cols[pos_block_offset]->getInt(row)};
     }
 
