@@ -10,14 +10,13 @@
 # table stays open across the upgrade, so its cached open-time version no longer matches the
 # metadata file's, a state `OPTIMIZE` must also survive.
 #
-# The row counts are asserted on both builds - a cloud build gates `OPTIMIZE` on
-# `IcebergCompactionMetadataGenerator` and throws instead of compacting, which leaves the table
-# empty for a different reason but never resurrects rows. So that a count of zero cannot pass for
-# the wrong reason, the open-source build is additionally held to `OPTIMIZE` succeeding: without
-# that, any exception raised before the refusal would leave the table empty and the test green.
-# On a cloud build the one thing that must never be reached is the background-compaction
-# assertion, which a release build reports as an ordinary exception, so its message is rejected
-# regardless of the build.
+# The row counts are asserted on both builds, and both `CREATE`s enable compaction per table so a
+# cloud build reaches the guard instead of refusing before it. So that a count of zero cannot pass
+# for the wrong reason, `OPTIMIZE` is also held to succeeding: without that, any exception raised
+# before the refusal would leave the table empty and the test green. Only a cloud refusal naming
+# that setting is tolerated, since the flag behind it is declared outside this repository. The
+# background-compaction assertion must never be reached, and a release build reports it as an
+# ordinary exception, so its message is rejected regardless of the build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,6 +33,7 @@ for VARIANT in null negative absent empty_snapshots no_snapshots; do
         CREATE TABLE ${TABLE} (a Int32, v Int32)
         ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
         PARTITION BY (a)
+        SETTINGS allow_experimental_iceberg_compaction = 1
     "
 
     ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 \
@@ -81,6 +81,8 @@ PY
         echo "${VARIANT} FAIL: OPTIMIZE reached the background-compaction assertion: ${ERR}"
     elif [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
         echo "${VARIANT} FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
+    elif [[ "${STATUS}" -ne 0 && "${ERR}" != *"allow_experimental_iceberg_compaction"* ]]; then
+        echo "${VARIANT} FAIL: OPTIMIZE failed unexpectedly: ${ERR}"
     else
         echo "${VARIANT} before=${before} after=${after}"
     fi
@@ -103,7 +105,7 @@ ${FMT_CLIENT} --query "
     CREATE TABLE ${TABLE} (a Int32, v Int32)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
     PARTITION BY (a)
-    SETTINGS iceberg_format_version = 1
+    SETTINGS iceberg_format_version = 1, allow_experimental_iceberg_compaction = 1
 "
 
 ${FMT_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 1), (1, 2), (1, 3)"
@@ -131,6 +133,8 @@ if [[ "${ERR}" == *"Background compaction is not initialized"* ]]; then
     echo "format_upgrade FAIL: OPTIMIZE reached the background-compaction assertion: ${ERR}"
 elif [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
     echo "format_upgrade FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
+elif [[ "${STATUS}" -ne 0 && "${ERR}" != *"allow_experimental_iceberg_compaction"* ]]; then
+    echo "format_upgrade FAIL: OPTIMIZE failed unexpectedly: ${ERR}"
 else
     echo "format_upgrade before=${before} after=${after}"
 fi
