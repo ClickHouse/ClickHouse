@@ -10,7 +10,7 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge />
 
-This page covers the configuration changes you are most likely to make after installing the connector. For every key with its default and meaning, see the [configuration reference](/products/bring-your-own-cloud/connector/reference/configuration); for command flags, see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli). Creating, scaling, and deleting services is not configuration; see [managed services](/products/bring-your-own-cloud/connector/managed-services).
+This page covers the configuration changes you are most likely to make after installing the connector. Every key, with its default and meaning, is in the [configuration reference](/products/bring-your-own-cloud/connector/reference/configuration); command flags are in the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli). Creating, scaling, and deleting services is covered in [managed services](/products/bring-your-own-cloud/connector/managed-services).
 
 ## Configuration surfaces {#configuration-surfaces}
 
@@ -59,15 +59,15 @@ sudo clicklink clctl preflight
 
 ## Managed mode {#managed-mode}
 
-Managed mode runs the executor, which applies the service lifecycle that ClickHouse Cloud drives to your cluster. `init` turns it on at enrollment and fills in the cluster identity (see [enable managed mode](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); the keys below are the ones you might revisit afterwards. To change the configured posture, re-run `init` with `--force` and `--managed` or `--no-managed`. Like every `init` run this needs an entry point: `--handoff` if you kept the bundle, or `--enroll` with a fresh token, as described in [re-runs and recovery](/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+Managed mode runs the executor, which applies the service lifecycle ClickHouse Cloud drives to your cluster. `init` turns it on at enrollment and fills in the cluster identity (see [enable managed mode](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)). The keys below are the ones you might revisit afterwards. To change the posture, re-run `init` with `--force` and `--managed` or `--no-managed`. Like every `init` run, this needs an entry point: `--handoff` if you kept the bundle, or `--enroll` with a fresh token (see [re-runs and recovery](/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)).
 
-On a VM, `--no-managed` disables the executor in the configuration but does not stop or disable an already-running systemd unit. Stop it explicitly before changing the configuration:
+On a VM, `--no-managed` disables the executor in the configuration but does not stop or disable a running systemd unit. Stop it before changing the configuration:
 
 ```bash
 sudo systemctl disable --now clicklink-executor
 ```
 
-On Kubernetes, setting `executor.enabled: false` in the values and applying the change with `helm upgrade` removes the executor Deployment. On both targets the cluster grant remains until you remove it; follow [stop managed mode](/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) to remove that access too.
+On Kubernetes, set `executor.enabled: false` in the values and apply it with `helm upgrade` to remove the executor Deployment. On both targets the cluster grant remains until you remove it; see [stop managed mode](/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode).
 
 <Tabs>
 <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -107,7 +107,7 @@ executor:
   platformBundleSecret: clicklink-platform-bundle
 ```
 
-- **`cluster.namespacePrefix`** is shared by every component and is the prefix the executor's grant confines it to. Changing it after install requires re-running the grant.
+- **`cluster.namespacePrefix`** is shared by every component and is the prefix the executor's grant confines it to. Changing it after install means re-running the grant.
 - **`executor.cluster`** is exactly one cluster: `name`, `region`, `accountId`, and `inCluster: true`, which makes the executor authenticate as the pod's ServiceAccount. Other keys pass through to the executor verbatim in snake_case, such as `s3_storage`.
 - **`executor.serviceAccount`** stays `create: false`: `init` grants cluster-wide access to the `pcm-executor` ServiceAccount in the connector namespace, and the chart binds to it rather than minting an unbound one.
 - **`executor.persistence`** backs `/var/lib/clicklink`, where the executor keeps its command database and service registry; see [storage](#storage).
@@ -143,7 +143,7 @@ executor:
     health_port: 8086
 ```
 
-- **`namespace_prefix`** is a top-level key shared by every component and is the prefix the executor's grant confines it to. Changing it after install requires re-running the grant.
+- **`namespace_prefix`** is a top-level key shared by every component and is the prefix the executor's grant confines it to. Changing it after install means re-running the grant.
 - **`executor.cluster`** is exactly one cluster. The executor authenticates with the cluster-wide access bundle `init` generated under `/etc/clicklink/access/executor/_cluster`.
 - **`poll_interval`** is how often the executor retries commands it recorded but could not complete; **`sync_interval`** is how often it reconciles the state of managed services with the cluster.
 - **`api_port`** is the executor's local command API. It binds to the loopback interface only and carries no authentication of its own, which is why the `clicklink clctl` service commands run on the host.
@@ -160,11 +160,11 @@ sudo clicklink clctl preflight
 
 ## Adding or changing ClickHouse instances {#clickhouse-instances}
 
-Services the executor creates register themselves, so in managed mode you never add them here. A separate connector deployment running without the executor observes ClickHouse you run yourself; pass `--ch-user-suffix` at its `init` when the two deployments share an instance. This section applies to that deployment. Each entry under `instances` names a ClickHouse native-protocol endpoint the connector reads from: `host`, `port`, `database`, `secure`, `cluster`, and on Kubernetes `namespace`; `max_open_conns` and `max_idle_conns` cap the connection pool. Credentials never live in the configuration; each component resolves its read-only ClickHouse user from the access bundle that provisioning creates.
+Services the executor creates register themselves, so in managed mode you never add them here. This section applies to a separate connector deployment running without the executor, which observes ClickHouse you run yourself. Pass `--ch-user-suffix` at its `init` when the two deployments share an instance. Each entry under `instances` names a ClickHouse native-protocol endpoint the connector reads from: `host`, `port`, `database`, `secure`, `cluster`, and on Kubernetes `namespace`. `max_open_conns` and `max_idle_conns` cap the connection pool. Credentials never live in the configuration; each component resolves its read-only ClickHouse user from the access bundle provisioning creates.
 
 <Tabs>
 <Tab title="Kubernetes" id="instances-kubernetes">
-Add the instance to the top-level `instances` map in `clicklink-values.yaml` (the same fields as the VM registry), and add its namespace to `networkPolicy.clickhouseNamespaces`, matched by the namespace's `kubernetes.io/metadata.name` label. The chart renders the map into the `clicklink-instance-registry` ConfigMap that both daemons read. This works only while `executor.enabled` is `false`; with the executor on, the render fails because the executor owns that ConfigMap.
+Add the instance to the top-level `instances` map in `clicklink-values.yaml` (the same fields as the VM registry). Add its namespace to `networkPolicy.clickhouseNamespaces`, matched by the namespace's `kubernetes.io/metadata.name` label. The chart renders the map into the `clicklink-instance-registry` ConfigMap that both daemons read. This works only while `executor.enabled` is `false`; with the executor on, the render fails because the executor owns that ConfigMap.
 
 ```yaml
 instances:
@@ -226,7 +226,7 @@ instances:
     cluster: "default"
 ```
 
-Then provision access for each component on the host as root. On a VM the admin password is mandatory unless you pass `--ch-user-via cr`; pipe it in with `--ch-admin-password-stdin`. Each command applies the ClickHouse grants and restarts its daemon (skip the restart with `--skip-restart`):
+Then provision access for each component on the host as root. The admin password is mandatory unless you pass `--ch-user-via cr`; pipe it in with `--ch-admin-password-stdin`. Each command applies the ClickHouse grants and restarts its daemon (skip the restart with `--skip-restart`):
 
 ```bash
 printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -243,7 +243,7 @@ The same `access provision` commands with `--force` rotate an instance's ClickHo
 
 ## Operator allowlist {#operator-allowlist}
 
-An allowlist of operator email addresses gates gateway-managed sessions: every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist closes the gateway, so nobody can open a session through it. On a VM, root on the host can also manage sessions directly through the local session file; the allowlist governs the gateway path only. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for the full trust model.
+An allowlist of operator email addresses gates gateway-managed sessions. Every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist closes the gateway. On a VM, root on the host can also manage sessions directly through the local session file; the allowlist governs the gateway path only. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for the full trust model.
 
 <Tabs>
 <Tab title="Kubernetes" id="allowlist-kubernetes">
@@ -272,7 +272,7 @@ The gateway re-reads the file on the next request once 30 seconds have passed si
 
 ## Network policy and egress {#network-policy}
 
-On Kubernetes the chart ships a default-deny NetworkPolicy with an egress allowlist. NetworkPolicy objects take effect only when your CNI enforces them. Under an enforcing CNI, only cluster DNS and the ClickHouse Service namespaces are reachable until both CIDR lists are filled in. The connector has no egress to your connector endpoint or the Kubernetes API server before then. `init` therefore stages the policy enabled only when it knows the CIDRs behind your connector endpoint.
+On Kubernetes the chart ships a default-deny NetworkPolicy with an egress allowlist. NetworkPolicy objects take effect only when your CNI enforces them. Under an enforcing CNI, only cluster DNS and the ClickHouse Service namespaces are reachable until both CIDR lists are filled in. The connector has no egress to your connector endpoint or the Kubernetes API server before then. `init` stages the policy enabled only when it knows the CIDRs behind your connector endpoint.
 
 ```yaml
 networkPolicy:
@@ -296,8 +296,8 @@ networkPolicy:
 
 The two CIDR lists come from different places:
 
-- **`allowEgressCIDRs`** is yours to supply: the ranges behind your connector endpoint, given at install with `--egress-cidrs` or at the prompt. Every component needs them to reach your connector endpoint. In managed mode, when the platform charts live in Amazon ECR, add the ECR and STS ranges for your region (or your mirror's range) as well; without them the executor's chart pulls fail under the policy.
-- **`apiserverCIDRs`** is derived by `init` in managed mode from the EKS cluster's VPC (`eks:DescribeCluster` and `ec2:DescribeVpcs`). Every component issues Kubernetes token requests and the executor drives services through the API, so under an enforcing CNI they are all blocked until it is set. When the lookup fails, `init` warns and leaves the list empty for you to fill in with your VPC's CIDR blocks.
+- **`allowEgressCIDRs`** is yours to supply: the ranges behind your connector endpoint, given at install with `--egress-cidrs` or at the prompt. Every component needs them to reach your connector endpoint. In managed mode, when the platform charts live in Amazon ECR, add the ECR and STS ranges for your region (or your mirror's range). Without them the executor's chart pulls fail under the policy.
+- **`apiserverCIDRs`** is derived by `init` in managed mode from the EKS cluster's VPC (`eks:DescribeCluster` and `ec2:DescribeVpcs`). Every component issues Kubernetes token requests and the executor drives services through the API, so under an enforcing CNI all of them are blocked until it is set. If the lookup fails, `init` warns and leaves the list empty for you to fill in with your VPC's CIDR blocks.
 
 Service namespaces are selected two ways. Namespaces the executor creates carry the label `clicklink.clickhouse.com/managed-by: executor`, and the policy admits them by that label, so a managed install can leave `clickhouseNamespaces` empty. Only namespaces created outside the executor, for ClickHouse you run yourself, need listing by name.
 
@@ -318,7 +318,7 @@ Two ingress keys remain: `metricsScrapeSelector` restricts metrics-scrape ingres
 
 ## Redaction patterns {#redaction-patterns}
 
-The troubleshooter redacts its output before it leaves your boundary. Built-in patterns cover `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key`, and `connection-string-credentials`. You can add your own patterns in a YAML file. Your patterns run first, in file order, then the built-ins; an entry that reuses a built-in's `name` replaces that built-in.
+The troubleshooter redacts its output before it leaves your boundary. Built-in patterns cover `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key`, and `connection-string-credentials`. Add your own patterns in a YAML file. They run first, in file order, then the built-ins; an entry that reuses a built-in's `name` replaces it.
 
 Each pattern takes `name` (required, unique), `regex` (required, Go RE2 syntax), `replace` (default `[REDACTED]`, supports `$1` capture references), and `case_insensitive` (default `false`):
 
@@ -335,7 +335,7 @@ patterns:
     replace: '[REDACTED:ip]'
 ```
 
-On a VM the file is `/etc/clicklink/redaction-patterns.yaml`. The installer seeds it with a starter set of active patterns (third-party API keys, AWS secret keys, and so on). Trim or extend the set as you like; the installer preserves your version across upgrades. On Kubernetes, put the YAML in a ConfigMap under the key `redaction-patterns.yaml` and set `troubleshooter.redaction.patternsConfigMap` to its name; the chart mounts it at the same path.
+On a VM the file is `/etc/clicklink/redaction-patterns.yaml`. The installer seeds it with a starter set of active patterns (third-party API keys, AWS secret keys, and so on). Trim or extend the set; the installer preserves your version across upgrades. On Kubernetes, put the YAML in a ConfigMap under the key `redaction-patterns.yaml` and set `troubleshooter.redaction.patternsConfigMap` to its name; the chart mounts it at the same path.
 
 <Warning>
 The troubleshooter refuses to start when a patterns file is present but invalid, and logs the offending entry. A configured but missing file only logs a warning and uses the built-ins. `clicklink clctl preflight` validates the file, so run it before restarting the daemon.
@@ -394,7 +394,7 @@ executor:
 `init` sets both `storageClass` values to the class you chose. An empty `storageClass` uses the cluster's default StorageClass; when the cluster marks no default, `init` requires one via the prompt or `--storage-class`. The executor's claim is annotated `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it in place; see [uninstall](/products/bring-your-own-cloud/connector/operations#uninstall).
 </Tab>
 <Tab title="Linux VM" id="storage-vm">
-The scraper spools metrics under `/var/lib/clicklink/buffer` for at-least-once delivery while your connector endpoint is unreachable. It retains up to 168 hours or 1024 MB and uploads at a rate limited to 1 MB/s by default:
+The scraper spools metrics under `/var/lib/clicklink/buffer` for at-least-once delivery while your connector endpoint is unreachable. By default it retains up to 168 hours or 1024 MB and uploads at up to 1 MB/s:
 
 ```yaml
 scraper:
