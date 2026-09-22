@@ -147,21 +147,21 @@ DROP TABLE stem_test_lc;
 SELECT '- Lengthening stemmers.';
 
 SELECT '-- Turkish stems a 3-byte word to a 5-byte word, so the output is longer than the input.';
-SELECT hex(stem('uag', 'tr'));
+SELECT stem('uag', 'tr');
 
 SELECT '-- Over a multi-block scan the output must stay correct even when it overflows the input-sized estimate.';
-SELECT countIf(hex(s) != '756167C4B1')
+SELECT countIf(s != 'uagı')
 FROM (SELECT stem(materialize('uag'), 'tr') AS s FROM numbers(6800))
 SETTINGS max_block_size = 1700;
 
 SELECT '-- Turkish also lengthens via a multi-byte substitution (3 bytes to 4 bytes).';
-SELECT hex(stem('aac', 'tr'));
+SELECT stem('aac', 'tr');
 
 SELECT '-- Estonian lengthens by appending ASCII letters (4 bytes to 5 bytes), a different mechanism.';
-SELECT hex(stem('keeb', 'et'));
+SELECT stem('keeb', 'et');
 
 SELECT '-- Estonian over a multi-block scan must also stay correct past the input-sized estimate.';
-SELECT countIf(hex(s) != '6B65657369')
+SELECT countIf(s != 'keesi')
 FROM (SELECT stem(materialize('keeb'), 'et') AS s FROM numbers(6800))
 SETTINGS max_block_size = 1700;
 

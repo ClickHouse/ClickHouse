@@ -99,10 +99,10 @@ public:
     /// Rows where null_map[i] != 0 are skipped and emitted as empty strings.
     /// For FixedString, getDataAt returns the value with null-byte padding; trimRight removes it.
     /// For String, trailing zero bytes are valid data and must not be trimmed.
-    /// upper_bound is only an initial estimate: some stemmers lengthen a word (e.g. Turkish maps
-    /// the ASCII 'i' to the 2-byte 'ı'), so the loop grows res_data when the output overflows it.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
+        /// upper_bound is only an initial estimate: some stemmers lengthen a word (e.g. Turkish maps
+        /// the ASCII 'i' to the 2-byte 'ı'), so the loop grows res_data when the output overflows it.
         size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
@@ -133,8 +133,7 @@ public:
                 trimRight(word, '\0');
             std::string_view stemmed = stem(word);
 
-            /// Some stemmers lengthen the word; grow the buffer. resize is amortized O(1) and
-            /// does not invalidate stemmed, which points into the stemmer's own buffer.
+            /// Stemming can lengthen the word, grow the output buffer.
             if (data_size + stemmed.size() > res_data.size())
                 res_data.resize(data_size + stemmed.size());
 
