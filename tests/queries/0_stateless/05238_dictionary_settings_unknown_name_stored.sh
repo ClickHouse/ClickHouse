@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# A definition already stored with a name that is not a setting keeps loading and serving, because only a
+# freshly stated definition is judged. Reaching that state needs a file edit: SQL no longer writes it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

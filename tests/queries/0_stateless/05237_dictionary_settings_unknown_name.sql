@@ -10,9 +10,18 @@ CREATE DICTIONARY d_mixed (id UInt64, v UInt64) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
 SETTINGS(max_threads = 4, not_a_setting_at_all = 1); -- { serverError UNKNOWN_SETTING }
 
+-- Only `name = value` parses here, so a `param_` name is checked like any other, and `= DEFAULT` is not part of the syntax, for a real setting either.
 CREATE DICTIONARY d_param (id UInt64, v UInt64) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
 SETTINGS(param_not_a_setting = 1); -- { serverError UNKNOWN_SETTING }
+
+CREATE DICTIONARY d_default (id UInt64, v UInt64) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
+SETTINGS(not_a_setting_at_all = DEFAULT); -- { clientError SYNTAX_ERROR }
+
+CREATE DICTIONARY d_default (id UInt64, v UInt64) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
+SETTINGS(max_result_bytes = DEFAULT); -- { clientError SYNTAX_ERROR }
 
 CREATE DICTIONARY d_ok (id UInt64, v UInt64) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
@@ -50,6 +59,10 @@ SETTINGS(sql_dict_probe = 1); -- { serverError UNKNOWN_SETTING }
 CREATE OR REPLACE DICTIONARY d_ok (id UInt64, v UInt64) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0)
 SETTINGS(not_a_setting_at_all = 1); -- { serverError UNKNOWN_SETTING }
+
+-- An ATTACH states no definition, so it cannot state settings at all, valid ones included.
+ATTACH DICTIONARY d_attach (id UInt64, v UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0) SETTINGS(not_a_setting_at_all = 1); -- { clientError SYNTAX_ERROR }
+ATTACH DICTIONARY d_attach (id UInt64, v UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0) SETTINGS(max_result_bytes = 1000000); -- { clientError SYNTAX_ERROR }
 
 DROP DICTIONARY d_ok;
 DROP DICTIONARY d_accessor;
