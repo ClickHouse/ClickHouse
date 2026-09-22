@@ -1,0 +1,7 @@
+-- PromQL line comments may end at EOF
+-- EOF comments must match the shared SQL lexer prefix contract
+SYNTAX_ERROR
+CANNOT_PARSE_PROMQL_QUERY
+-- A bare '#' at EOF is an error in both PromQL entry points
+SYNTAX_ERROR
+CANNOT_PARSE_PROMQL_QUERY

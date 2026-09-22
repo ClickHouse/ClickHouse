@@ -1734,6 +1734,40 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, LineComments)
+{
+    /// A line comment is terminated either by an end of line or by the end of the query.
+    for (const auto * const query : {
+             "up # comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+             "up #!comment",
+             /// An empty comment is only accepted when an end of line terminates it.
+             "up #\n",
+             "up #\r",
+             "up #\r\n",
+         })
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
+    EXPECT_EQ(error_pos, 9);
+
+    /// EOF comments use the same `# ` / `#!` prefix contract as the shared SQL lexer.
+    for (const auto * const query : {"up #", "up #comment"})
+    {
+        error_message.clear();
+        error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, 3) << query;
+    }
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
