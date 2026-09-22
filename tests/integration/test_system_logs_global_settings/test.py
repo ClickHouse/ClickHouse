@@ -29,11 +29,15 @@ def test_system_logs_global_settings():
     node.query("SELECT 1")
     node.query("SYSTEM FLUSH LOGS")
 
-    # Global options apply to tables without their own configuration
-    for table in ["part_log", "trace_log", "text_log"]:
+    # Global options apply to tables without their own configuration,
+    # including opentelemetry_span_log, whose sorting key differs from the other logs
+    for table in ["part_log", "trace_log", "text_log", "opentelemetry_span_log"]:
         engine = engine_full(table)
         assert "TTL event_date + toIntervalDay(3)" in engine, engine
         assert "ttl_only_drop_parts = 1" in engine, engine
+
+    # The old column name of opentelemetry_span_log is still queryable
+    node.query("SELECT event_date, finish_date FROM system.opentelemetry_span_log")
 
     # Per-table option wins, the rest is still taken from the global section
     engine = engine_full("query_log")

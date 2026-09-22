@@ -4,6 +4,8 @@
         <settings>ttl_only_drop_parts = 1</settings>
     </system_tables>
 
+    <opentelemetry_span_log/>
+
     <!-- Per-table options take precedence over the global ones -->
     <query_log>
         <ttl>event_date + INTERVAL 5 DAY DELETE</ttl>

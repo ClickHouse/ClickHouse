@@ -94,8 +94,8 @@ iceberg_metadata_log:
   table: iceberg_metadata_log
   flush_interval_milliseconds: 2000
 opentelemetry_span_log:
-  partition_by: toYYYYMM(finish_date)
-  order_by: finish_date, finish_time_us
+  partition_by: toYYYYMM(event_date)
+  order_by: event_date, finish_time_us
   database: system
   table: opentelemetry_span_log
   flush_interval_milliseconds: 7500
