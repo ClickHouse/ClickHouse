@@ -163,6 +163,13 @@ public:
     /// `function_name` is either `CODEC` or `STATISTICS`. Returns nullptr when the key is absent.
     ASTPtr readSpecialFunctionChild(const char * key, const char * function_name) const;
 
+    /// Read a child AST node filling a parser-produced *expression* slot, and reject an `ASTFunction`
+    /// without an `arguments` list anywhere under its `children`: a consumer of an unanalyzed expression
+    /// dereferences that list unconditionally, while `ASTFunction::readJSON` cannot require the member,
+    /// because a function without arguments is legitimate outside an expression (a table engine, a
+    /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
+    ASTPtr readExpressionChild(const char * key) const;
+
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the
     /// `Field` value category). Slots like `COMMENT`/`COLLATE` are parser-produced via
     /// `ParserStringLiteral`; downstream code reads them as `child->as<ASTLiteral &>().value.safeGet<String>()`,
