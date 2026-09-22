@@ -25,4 +25,3 @@ LowCardinality(Nullable(...)) columns
 1
 0
 Correlated subquery: not supported
-UNIQUE is not supported with the old analyzer
