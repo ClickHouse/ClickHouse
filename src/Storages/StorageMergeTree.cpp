@@ -520,9 +520,24 @@ void StorageMergeTree::alter(
         }
 
         StartedBackgroundWorkers started_workers;
+        bool workers_disabled_for_readonly_commit = false;
         try
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+            /// The opposite transition, 0 -> 1, disables the workers before the commit as well. The
+            /// cleanup thread and the asynchronous outdated and unexpected part loaders of a writable
+            /// table are gated by `background_workers_enabled` alone, so disabling them only after
+            /// `alterTable` returned would leave a window in which a timer wake-up or a queued load
+            /// still modifies the disk of a table that is already durably read-only. Disabled here,
+            /// nothing that starts after this point touches the disk, while the workers that were
+            /// already running may finish, as documented for `table_readonly`. A failed commit
+            /// enables them again in the rollback below.
+            if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isReadonlySettingSet())
+            {
+                disableBackgroundWorkers();
+                workers_disabled_for_readonly_commit = true;
+            }
 
             if (statistics_changed)
             {
@@ -579,12 +594,16 @@ void StorageMergeTree::alter(
             }
             else
             {
-                /// A failed 0 -> 1 toggle: the table stays writable, and its workers stayed enabled,
-                /// but `changeSettings` above made `table_readonly = 1` visible to them for the
-                /// duration of the commit. An assignee that woke up in that window found nothing to do
-                /// and went into its backoff, which grows up to minutes, with merges, mutations, or
-                /// moves possibly pending. Wake the workers up, so the pending work resumes now
-                /// rather than after the backoff or a manual `SYSTEM START MERGES`.
+                /// A failed 0 -> 1 toggle: the table stays writable, but `changeSettings` above made
+                /// `table_readonly = 1` visible to its workers for the duration of the commit, and the
+                /// workers were disabled for it. An assignee that woke up in that window found nothing
+                /// to do and went into its backoff, which grows up to minutes, with merges, mutations,
+                /// or moves possibly pending, and a part loader that ran there returned without
+                /// re-arming itself, as it does for a read-only table. Enable the workers again and
+                /// wake them up, so the pending work resumes now rather than after the backoff or a
+                /// manual `SYSTEM START MERGES`, and the loaders finish loading the parts.
+                if (workers_disabled_for_readonly_commit)
+                    enableBackgroundWorkers();
                 wakeupBackgroundWorkers();
             }
             throw;
@@ -906,17 +925,12 @@ void StorageMergeTree::alter(
 
         /// Wait for an active cleanup iteration and prevent further disk cleanup while read-only.
         /// Already scheduled merges, mutations and moves may finish, as documented for `table_readonly`.
-        /// The workers of a writable table are gated by `isTableReadonly` already; disabling them as
-        /// well matters for the outdated part loader, which a writable table starts asynchronously
-        /// and which may still be pending: it detaches, removes, and prepares parts for removal, and
-        /// its only guard is `background_workers_enabled`. It suspends itself after the part it is
-        /// loading and resumes when the setting is toggled back. Done after the commit: a failed
-        /// commit leaves the table writable, with every worker enabled.
+        /// The workers were disabled before the commit (see the settings-alter branch), so a cleanup
+        /// iteration or a part load that starts after this point runs nothing even before the
+        /// cleanup thread is deactivated here; stopping it only waits for an iteration that was
+        /// already running.
         if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isReadonlySettingSet())
-        {
-            disableBackgroundWorkers();
             cleanup_thread.stop();
-        }
 
         /// The background workers were started, but kept disabled, before the settings commit above
         /// (see the settings-alter branch). Now that the table is durably writable, enable them and
@@ -930,8 +944,6 @@ void StorageMergeTree::alter(
 
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
-            /// The loaders returned without loading while disabled; they re-arm themselves, this is faster.
-            startOutdatedAndUnexpectedDataPartsLoadingTask();
 
             /// The transition is complete: the table is durably writable and every worker that a
             /// writable table runs is back, so the part loaders make progress again and the waits on
@@ -4138,12 +4150,16 @@ void StorageMergeTree::enableBackgroundWorkers() noexcept
 void StorageMergeTree::wakeupBackgroundWorkers() noexcept
 {
     /// Runs on a rollback path as well, so a failure here must not replace the exception being
-    /// propagated. A worker that was not woken up here wakes up by itself after its backoff.
+    /// propagated. A worker that was not woken up here wakes up by itself after its backoff. The
+    /// part loaders returned without loading while the workers were disabled; a loader that saw a
+    /// writable table re-arms itself, one that saw the temporary `table_readonly = 1` of a failed
+    /// 0 -> 1 commit does not, so they are scheduled again explicitly, which is also faster.
     try
     {
         background_operations_assignee.trigger();
         background_moves_assignee.trigger();
         cleanup_thread.wakeup();
+        startOutdatedAndUnexpectedDataPartsLoadingTask();
     }
     catch (...)
     {

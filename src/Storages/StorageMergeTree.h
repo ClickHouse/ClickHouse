@@ -394,10 +394,11 @@ private:
     void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
-    /// Schedules the merge/mutate and move assignees and the cleanup thread to run now instead of
-    /// after their backoff. Used after a `table_readonly` 1 -> 0 commit, and after the rollback of a
-    /// failed 0 -> 1 commit, whose temporary `table_readonly = 1` may have sent a worker that woke
-    /// up in the commit window into its backoff with work pending. Best effort, never throws.
+    /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and
+    /// unexpected part loaders to run now instead of after their backoff. Used after a
+    /// `table_readonly` 1 -> 0 commit, and after the rollback of a failed 0 -> 1 commit, whose
+    /// temporary `table_readonly = 1` may have sent a worker that woke up in the commit window into
+    /// its backoff with work pending, or a part loader into staying idle. Best effort, never throws.
     void wakeupBackgroundWorkers() noexcept;
 
     /// Whether the started background workers may do work. Every worker entry point
@@ -408,10 +409,12 @@ private:
     /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
     /// move assignee itself.
     ///
-    /// Set exactly when the table is durably writable: on the startup of a writable table and after
-    /// the commit of a `table_readonly` 1 -> 0 `ALTER`; unset after the commit of a 0 -> 1 `ALTER`, so
-    /// that the outdated part loader of a table that started writable, whose only guard this is,
-    /// stops modifying the disk once the table is read-only.
+    /// Set exactly when the table is durably writable and no `table_readonly` commit is in flight:
+    /// on the startup of a writable table and after the commit of a `table_readonly` 1 -> 0 `ALTER`;
+    /// unset for the whole commit of a 0 -> 1 `ALTER`, from the moment the new value is visible in
+    /// memory, and set again only if that commit fails. So the cleanup thread and the outdated part
+    /// loader of a table that started writable, whose only guard this is, never start modifying the
+    /// disk once the table is durably read-only.
     std::atomic<bool> background_workers_enabled {false};
 
     /// Whether a settings `ALTER` that turns `table_readonly` off is between making the new value

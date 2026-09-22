@@ -2508,8 +2508,9 @@ Background work that modifies table data is not scheduled: regular merges, TTL m
 and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
 is enabled. Cleanup is stopped, waiting for an active cleanup iteration to finish. The asynchronous loading of outdated (inactive) parts that a
 writable table performs after start is suspended if it is still pending: no further part is loaded, including the loads that were already queued
-but had not started, and the parts that remain unloaded are loaded once the setting is turned off again. Other operations already in progress,
-including the loading of the parts that had already started, may finish.
+but had not started, and the parts that remain unloaded are loaded once the setting is turned off again. The background workers are disabled
+before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
+operations already in progress, including the loading of the parts that had already started, may finish.
 
 The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
