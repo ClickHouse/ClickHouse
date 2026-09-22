@@ -11,7 +11,7 @@ WITH
         WHERE event_date >= yesterday()
             AND current_database = currentDatabase()
             AND type = 'ExceptionWhileProcessing'
-            AND query LIKE '%SELECT throwIf(number = 3, \'processors_profile_log_on_exception\')%'
+            AND log_comment = '05235_processors_profile_log_on_exception.sql-' || currentDatabase()
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     ) AS failed_query_id
