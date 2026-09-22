@@ -34,7 +34,7 @@ The pattern is not anchored. To match the entire string, anchor the pattern your
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 
-Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (PostgreSQL-style).
+Alternative operator syntax: `haystack REGEXP pattern`.
     )";
     FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {

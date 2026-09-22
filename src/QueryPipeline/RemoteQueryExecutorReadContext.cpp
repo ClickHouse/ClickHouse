@@ -1,7 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext")
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)
@@ -154,12 +153,7 @@ void RemoteQueryExecutorReadContext::cancelBefore()
             suspend_when_query_sent = true;
 
         /// Wait for current pending packet, to avoid leaving connection in unsynchronised state.
-        /// Unless the caller told us not to: a replica that has not announced yet has nothing to
-        /// send but its announcement, and waiting for it means waiting out that replica's whole
-        /// planning phase for a packet that will be discarded. The connection is disconnected by
-        /// `~RemoteQueryExecutor` in that case rather than reused, so it cannot be left
-        /// unsynchronised for anyone else.
-        while (!skip_drain_on_cancel.load(std::memory_order_relaxed) && is_in_progress.load(std::memory_order_relaxed))
+        while (is_in_progress.load(std::memory_order_relaxed))
         {
             checkTimeout(/* blocking= */ true);
             resumeUnlocked();

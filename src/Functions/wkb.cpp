@@ -49,8 +49,6 @@ public:
             transform = std::make_shared<WKBLineStringTransform>();
         else if (arguments[0].type->getName() == WKBPolygonTransform::name)
             transform = std::make_shared<WKBPolygonTransform>();
-        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
-            transform = std::make_shared<WKBMultiPointTransform>();
         else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
             transform = std::make_shared<WKBMultiLineStringTransform>();
         else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
@@ -88,9 +86,9 @@ REGISTER_FUNCTION(WKB)
              "INSERT INTO geom1 VALUES((0, 0));"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-┌─hex(wkb(a))────────────────────────────────┐
-│ 010100000000000000000000000000000000000000 │
-└────────────────────────────────────────────┘
+    ┌─hex(wkb(a))─-----------------------------------------┐
+    │ 010100000000000000000000000000000000003440           │
+    └──────────────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

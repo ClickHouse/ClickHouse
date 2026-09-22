@@ -44,7 +44,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the view finished execution with microseconds precision."},
         {"view_duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of view execution (sum of its stages) in milliseconds."},
 
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
         {"view_name", std::make_shared<DataTypeString>(), "Name of the view."},
         {"view_uuid", std::make_shared<DataTypeUUID>(), "UUID of the view."},
         {"view_type", std::move(view_type_datatype), "Type of the view. Values: 'Default' = 1 — Default views. Should not appear in this log, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views."},
