@@ -9668,6 +9668,8 @@ void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable)
     }
     catch (...)
     {
+        /// Ok: nothing is swallowed here. The caller still owns `error` and rethrows it after this call;
+        /// this block only reaches into the exception object to assign and record its final code.
         Exception * e = current_exception_cast<Exception *>();
         if (!e)
             return;
