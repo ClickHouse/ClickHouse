@@ -15,6 +15,9 @@ after the grant  accepted
 -- a SQL SECURITY NONE body runs unchecked, so rewriting it needs ALLOW SQL SECURITY NONE
 security none    ACCESS_DENIED
 after the grant  accepted
+-- ON CLUSTER must not become a way around the checks above
+cluster top level ACCESS_DENIED
+cluster subquery  ACCESS_DENIED
 -- no data leaked: none of the denied bodies was stored, so the view still reads only src
 back to src      accepted
 rows, leaked    1	0

@@ -11,6 +11,7 @@ namespace DB
 class AccessRightsElements;
 class ASTAlterCommand;
 class ASTAlterQuery;
+class ASTSelectWithUnionQuery;
 
 
 /** Allows you add or remove a column in the table.
@@ -52,6 +53,10 @@ private:
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
     void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
+
+    /// Authorizes the tables a new `MODIFY QUERY` body reads, for an `ON CLUSTER` statement, whose initiator
+    /// never analyses that body locally and whose hosts analyse it without the initiator's user.
+    void checkAccessForModifyQueryOnCluster(const ASTSelectWithUnionQuery & modify_query, const String & default_database) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 

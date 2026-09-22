@@ -18,6 +18,7 @@
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -29,6 +30,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -499,6 +501,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
+        /// The initiator returns here without ever running `AlterCommand::apply`, so the body of a
+        /// `MODIFY QUERY` would never be analysed locally, and the hosts that do analyse it execute the
+        /// DDL entry without the initiator's user unless `distributed_ddl_use_initial_user_and_roles` is
+        /// on. That leaves the new body unauthorized on every node, so check it here before dispatching.
+        if (modify_query)
+            checkAccessForModifyQueryOnCluster(
+                *modify_query, table_id ? table_id.getDatabaseName() : getContext()->getCurrentDatabase());
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -698,6 +708,25 @@ void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
 
     if (definer_name != getContext()->getUserName())
         required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
+}
+
+/** Authorize the tables a new `MODIFY QUERY` body reads, on the initiator of an `ON CLUSTER` statement.
+  * Locally that authorization is a side effect of the analysis `AlterCommand::apply` performs, which the
+  * `ON CLUSTER` path never reaches. Analysing a clone here reproduces it without altering what is dispatched.
+  * The body is prepared exactly as the local path prepares it, so the check resolves the same table names
+  * the hosts will.
+  */
+void InterpreterAlterQuery::checkAccessForModifyQueryOnCluster(
+    const ASTSelectWithUnionQuery & modify_query, const String & default_database) const
+{
+    auto select = modify_query.clone();
+    ApplyWithSubqueryVisitor::visit(select->as<ASTSelectWithUnionQuery &>());
+    AddDefaultDatabaseVisitor visitor(getContext(), default_database);
+    visitor.visit(select);
+
+    /// Called for the access check the planner performs while analysing, not for the header it returns.
+    InterpreterSelectQueryAnalyzer::getSampleBlock(
+        select, getContext(), SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const

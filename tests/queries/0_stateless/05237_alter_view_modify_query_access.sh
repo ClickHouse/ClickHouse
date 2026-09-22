@@ -28,7 +28,8 @@ run() {
         | grep -o -m1 'ACCESS_DENIED' || echo 'accepted'
 }
 
-# The author is the definer of this view, so only the table grants in the new body are under test.
+# The author is the definer of this view, so the SQL-security gate below never fires here and the
+# table grants in the new body are what is under test.
 ${CLICKHOUSE_CLIENT} --user "$author" --query "
 CREATE MATERIALIZED VIEW $db.mv_own ENGINE = MergeTree ORDER BY id
 AS SELECT id, ''::String AS secret FROM $db.src"
@@ -71,6 +72,11 @@ GRANT ALTER VIEW MODIFY QUERY, SELECT ON $db.mv_none TO $author;
 run 'security none   ' "ALTER TABLE $db.mv_none MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $author"
 run 'after the grant ' "ALTER TABLE $db.mv_none MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
+
+echo '-- ON CLUSTER must not become a way around the checks above'
+${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $author"
+run 'cluster top level' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM $db.secret"
+run 'cluster subquery ' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM (SELECT * FROM $db.secret)"
 
 echo '-- no data leaked: none of the denied bodies was stored, so the view still reads only src'
 run 'back to src     ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
