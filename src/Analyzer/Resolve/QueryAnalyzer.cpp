@@ -4246,8 +4246,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// in value and type but with different source expressions share a single map entry,
                         /// and the source expression determines the action node name (hence which aggregation
                         /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                        node->convertToNullable();
+                        auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
+                        const auto node_to_convert_type = node_to_convert->getNodeType();
+                        if (node_to_convert_type == QueryTreeNodeType::COLUMN
+                            || node_to_convert_type == QueryTreeNodeType::CONSTANT
+                            || node_to_convert_type == QueryTreeNodeType::FUNCTION)
+                        {
+                            node = node_to_convert->clone();
+                            node->convertToNullable();
+                        }
                     }
                     break;
                 }
