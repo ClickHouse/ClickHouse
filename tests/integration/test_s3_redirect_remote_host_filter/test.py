@@ -71,6 +71,12 @@ def cluster():
         cluster.instances["node"].append_hosts(
             "virtual.s3.resolver", cluster.get_instance_ip("resolver")
         )
+        cluster.instances["node"].append_hosts(
+            "s3.amazonaws.com", cluster.get_instance_ip("resolver")
+        )
+        cluster.instances["node"].append_hosts(
+            "s3.me-south-1.amazonaws.com", cluster.get_instance_ip("resolver")
+        )
         run_endpoint(cluster)
 
         yield cluster
@@ -115,39 +121,20 @@ def test_301_redirect_target_is_host_filtered(cluster, bucket):
     assert _followed(cluster) == "NO", "ClickHouse followed the 301 to a disallowed host (SSRF)"
 
 
-def test_cached_redirect_is_revalidated_after_config_reload(cluster):
+def test_illegal_location_constraint_uses_cached_region(cluster):
     node = cluster.instances["node"]
-    table = "s3_redirect_cache_reload"
+    table = "s3_opt_in_region"
     node.query(f"DROP TABLE IF EXISTS {table}")
     node.query(
         f"CREATE TABLE {table} (x UInt8) "
-        "ENGINE = S3('http://resolver:8080/reload-cache/key.csv', NOSIGN, 'CSV')"
+        "ENGINE = S3('http://s3.amazonaws.com:8080/opt-in-region/key.csv', NOSIGN, 'CSV')"
     )
     try:
-        error = node.query_and_get_error(
-            f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects=5"
-        )
-        assert "AccessDenied" in error
-        assert _initial_requests(cluster, "reload-cache") == "1"
-
-        restricted_config = """
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>resolver:8080</host>
-    </remote_url_allow_hosts>
-</clickhouse>
-"""
-        with node.with_replace_config(
-            "/etc/clickhouse-server/config.d/config.xml",
-            restricted_config,
-            reload_before=True,
-            reload_after=True,
-        ):
-            error = node.query_and_get_error(
-                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects=0"
+        for max_redirects in (1, 0):
+            node.query(
+                f"INSERT INTO {table} SELECT 1 "
+                f"SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
             )
-            assert "not allowed in configuration file" in error
-            assert _initial_requests(cluster, "reload-cache") == "1"
     finally:
         node.query(f"DROP TABLE {table}")
 

@@ -8,7 +8,7 @@
 # <remote_url_allow_hosts>. A correctly-behaving server rejects that target with
 # UNACCEPTABLE_URL before connecting. If the redirect were followed, the rewritten
 # request would land on /forbidden_hit and flip the "followed" flag -- which the test
-# asserts never happens. The `cache` and `head` buckets redirect to an allow-listed alias;
+# asserts never happens. The `head` bucket redirects to an allow-listed alias;
 # `virtual` allow-lists the attacker-provided host but not the different bucket host
 # that the AWS SDK constructs for the retry.
 import socket
@@ -23,9 +23,11 @@ ALLOWED_REDIRECT_TARGET = "redirected:8080"
 UNREACHABLE_REDIRECT_TARGET = "unreachable:8081"
 VIRTUAL_HOSTED_REDIRECT_TARGET = "bucket.s3.resolver:8080"
 VIRTUAL_HOSTED_RETRY_TARGET = "virtual.s3.resolver:8080"
+AWS_ENDPOINT = "s3.amazonaws.com:8080"
+AWS_REGION_ENDPOINT = "s3.me-south-1.amazonaws.com:8080"
 
 followed_redirect = {"hit": False}
-initial_requests = {"network": 0, "reload-cache": 0}
+initial_requests = {"network": 0}
 
 
 @route("/forbidden_hit/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
@@ -49,6 +51,20 @@ def get_initial_requests(bucket):
 @route("/<_bucket>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 def server(_bucket, _path=""):
+    if _bucket == "opt-in-region":
+        if request.urlparts.netloc == AWS_ENDPOINT:
+            response.status = 400
+            response.content_type = "application/xml"
+            response.set_header("x-amz-bucket-region", "me-south-1")
+            return (
+                "<Error><Code>IllegalLocationConstraintException</Code>"
+                "<Region>me-south-1</Region></Error>"
+            )
+
+        if request.urlparts.netloc == AWS_REGION_ENDPOINT:
+            response.set_header("ETag", '"etag"')
+            return ""
+
     if request.urlparts.netloc == VIRTUAL_HOSTED_RETRY_TARGET:
         followed_redirect["hit"] = True
         return "followed"
@@ -66,7 +82,7 @@ def server(_bucket, _path=""):
         initial_requests[_bucket] += 1
 
     suffix = _bucket if not _path else _bucket + "/" + _path
-    if _bucket in ("head", "network", "reload-cache"):
+    if _bucket in ("head", "network"):
         target = UNREACHABLE_REDIRECT_TARGET if _bucket == "network" else ALLOWED_REDIRECT_TARGET
         target_path = suffix
     elif _bucket == "virtual":

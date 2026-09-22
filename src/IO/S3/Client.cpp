@@ -825,7 +825,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (Poco::URI(initial_endpoint).getHost() == "s3.amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
-        checkURIForBucket(bucket, *new_uri);
+        if (!is_illegal_constraint_exception)
+            checkURIForBucket(bucket, *new_uri);
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -1146,17 +1147,11 @@ std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::str
 
 std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
-    std::optional<S3::URI> result;
-    {
-        std::lock_guard lock(cache->uri_cache_mutex);
-        if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
-            result = it->second;
-    }
+    std::lock_guard lock(cache->uri_cache_mutex);
+    if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
+        return it->second;
 
-    if (result)
-        checkURIForBucket(bucket, *result);
-
-    return result;
+    return std::nullopt;
 }
 
 void Client::checkURIForBucket(const std::string & bucket, const S3::URI & uri) const

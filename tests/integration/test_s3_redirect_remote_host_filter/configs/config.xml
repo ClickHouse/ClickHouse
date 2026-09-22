@@ -1,10 +1,11 @@
 <clickhouse>
-    <!-- Allow the resolver, cache-test redirect target, and normalized service endpoint. -->
+    <!-- Allow the resolver, redirect target, and initial AWS endpoint. -->
     <remote_url_allow_hosts>
         <host>resolver:8080</host>
         <host>redirected:8080</host>
         <host>unreachable:8081</host>
         <host>bucket.s3.resolver:8080</host>
+        <host>s3.amazonaws.com:8080</host>
     </remote_url_allow_hosts>
     <!-- Keep retries low so the test fails fast. -->
     <s3_retry_attempts>1</s3_retry_attempts>
