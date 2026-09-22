@@ -8,11 +8,13 @@ U1="u1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U2="u2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U3="u3_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U4="u4_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+U5="u5_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+U6="u6_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 A1="a1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 A2="a2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $U5, $U6, $A1, ${A1}_renamed, $A2, ${A2}_new"
 $CLICKHOUSE_CLIENT -q "CREATE USER $U1, $U2, $U3 IDENTIFIED WITH no_password"
 # Deliberately no SELECT on system.processes for any user under test.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U1, $U2, $U3"
@@ -208,4 +210,28 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(running "test_$ID")"
 drop_victim "test_$ID"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $A1, ${A1}_renamed, $A2, ${A2}_new"
+echo "-- 16. a partial column grant is not the grant the ordinary path needs"
+# Its holder cannot complete that read either, so narrowing a grant must not take the ability away.
+$CLICKHOUSE_CLIENT -q "CREATE USER $U5 IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U5"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user) ON system.processes TO $U5"
+OUT=$($CLICKHOUSE_CLIENT --user "$U5" -q "SELECT query_id, user, query FROM system.processes FORMAT Null" 2>&1)
+processes_grant_denial "$OUT"
+start_victim "$U5" "part_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U5" -q "KILL QUERY WHERE query_id = 'part_$ID' ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "part_$ID")"
+drop_victim "part_$ID"
+
+echo "-- 17. a grant of exactly the columns the read names keeps the ordinary path"
+$CLICKHOUSE_CLIENT -q "CREATE USER $U6 IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U6"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user, query) ON system.processes TO $U6"
+start_victim "$U2" "cols_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U6" -q "KILL QUERY WHERE query_id = 'cols_$ID' ASYNC" 2>&1)
+foreign_kill_denial "$OUT"
+echo "victim: $(running "cols_$ID")"
+drop_victim "cols_$ID"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $U5, $U6, $A1, ${A1}_renamed, $A2, ${A2}_new"

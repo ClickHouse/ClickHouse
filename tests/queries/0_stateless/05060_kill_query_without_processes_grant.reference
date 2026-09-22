@@ -48,3 +48,11 @@ rows: 0
 rows: 1
 status: unknown_status
 victim: 1
+-- 16. a partial column grant is not the grant the ordinary path needs
+needs SELECT ON system.processes
+rows: 1
+status: waiting
+victim: gone
+-- 17. a grant of exactly the columns the read names keeps the ordinary path
+refused: attempts to kill query created by another user
+victim: 1
