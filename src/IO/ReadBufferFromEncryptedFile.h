@@ -34,6 +34,9 @@ public:
 
     void prefetch(Priority priority) override;
 
+    bool supportsReadAt() override { return in->supportsReadAt(); }
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override;
+
 private:
     bool nextImpl() override;
 
