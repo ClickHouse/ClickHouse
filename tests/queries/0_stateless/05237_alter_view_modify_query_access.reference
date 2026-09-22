@@ -1,0 +1,11 @@
+-- the protected table is reachable from the new body, so every shape must be denied
+top level        ACCESS_DENIED
+from subquery    ACCESS_DENIED
+cte              ACCESS_DENIED
+join right side  ACCESS_DENIED
+union leg        ACCESS_DENIED
+-- only tables the user can read, so this must stay accepted
+own subquery     accepted
+-- no data leaked: none of the denied bodies was stored, so the view still reads only src
+back to src      accepted
+rows, leaked    1	0
