@@ -171,34 +171,20 @@ private:
         auto & res_offsets_data = res_offsets->getData();
         res_offsets_data.reserve(input_rows_count);
 
-        typename TimestampColumnType::ValueType min_time{};
-        typename TimestampColumnType::ValueType max_time{};
-        if constexpr (bounds_are_const)
-        {
-            min_time = min_time_data[0];
-            max_time = max_time_data[0];
-        }
-
-        /// The slices of consecutive rows are adjacent in the nested column if a slice reaches the end of its array
-        /// and the next slice starts at the start of its array. That is the usual case when a time range covers
-        /// whole buckets, so adjacent slices are accumulated in a pending range and copied together.
-        size_t pending_begin = 0;
-        size_t pending_end = 0;
-        size_t res_size = 0;
-
-        auto copy_pending = [&]
-        {
-            if (pending_begin < pending_end)
-                res_tuples->insertRangeFrom(source_tuples, pending_begin, pending_end - pending_begin);
-        };
-
         const auto & offsets = samples_column.getOffsets();
-        for (size_t i = 0; i < input_rows_count; ++i)
+        auto find_slice = [&](size_t i)
         {
             size_t begin = (i == 0) ? 0 : offsets[i - 1];
             size_t end = offsets[i];
 
-            if constexpr (!bounds_are_const)
+            typename TimestampColumnType::ValueType min_time;
+            typename TimestampColumnType::ValueType max_time;
+            if constexpr (bounds_are_const)
+            {
+                min_time = min_time_data[0];
+                max_time = max_time_data[0];
+            }
+            else
             {
                 min_time = min_time_data[i];
                 max_time = max_time_data[i];
@@ -222,23 +208,59 @@ private:
                 slice_end = std::max(slice_end, slice_begin);
             }
 
+            return std::pair{slice_begin, slice_end};
+        };
+
+        /// Calculate the exact result size before copying. The nested tuple columns can contain millions of samples;
+        /// reserving once avoids repeatedly reallocating and copying the already produced prefix.
+        PODArray<size_t> slice_begins;
+        slice_begins.reserve(input_rows_count);
+        size_t res_size = 0;
+        bool all_slices_are_whole = true;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const auto [slice_begin, slice_end] = find_slice(i);
+            const size_t begin = (i == 0) ? 0 : offsets[i - 1];
+            const size_t end = offsets[i];
+            all_slices_are_whole &= slice_begin == begin && slice_end == end;
+            slice_begins.push_back(slice_begin);
+            res_size += slice_end - slice_begin;
+            res_offsets_data.push_back(res_size);
+        }
+
+        /// Every slice is a whole array: the result is the source column, nothing needs to be copied.
+        if (all_slices_are_whole)
+        {
+            chassert(res_tuples->empty());
+            return samples_column_ptr;
+        }
+
+        res_tuples->reserve(res_size);
+
+        /// The slices of consecutive rows are adjacent in the nested column if a slice reaches the end of its array
+        /// and the next slice starts at the start of its array. That is the usual case when a time range covers
+        /// whole buckets, so adjacent slices are accumulated in a pending range and copied together.
+        size_t pending_begin = 0;
+        size_t pending_end = 0;
+        auto copy_pending = [&]
+        {
+            if (pending_begin < pending_end)
+                res_tuples->insertRangeFrom(source_tuples, pending_begin, pending_end - pending_begin);
+        };
+
+        size_t previous_result_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const size_t slice_begin = slice_begins[i];
+            const size_t current_result_offset = res_offsets_data[i];
+            const size_t slice_end = slice_begin + current_result_offset - previous_result_offset;
+            previous_result_offset = current_result_offset;
             if (slice_begin != pending_end)
             {
                 copy_pending();
                 pending_begin = slice_begin;
             }
             pending_end = slice_end;
-
-            res_size += slice_end - slice_begin;
-            res_offsets_data.push_back(res_size);
-        }
-
-        /// Every slice is a whole array: the result is the source column, nothing needs to be copied.
-        /// A copy moves `pending_begin` past the copied range, so nothing has been copied if it's still zero.
-        if ((pending_begin == 0) && (pending_end == source_tuples.size()))
-        {
-            chassert(res_tuples->empty());
-            return samples_column_ptr;
         }
 
         copy_pending();

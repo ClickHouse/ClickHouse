@@ -96,6 +96,8 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
             rate_function->getResultType()->getName(),
             sum_arguments.empty() ? String{"<missing>"} : sum_arguments.front()->getName());
 
+    labels_to_keep.erase(
+        std::remove(labels_to_keep.begin(), labels_to_keep.end(), TimeSeriesTagNames::MetricName), labels_to_keep.end());
     std::sort(labels_to_keep.begin(), labels_to_keep.end());
     labels_to_keep.erase(std::unique(labels_to_keep.begin(), labels_to_keep.end()), labels_to_keep.end());
 
@@ -202,8 +204,7 @@ void PromQLRangeSumByTransform::finishSeries()
 
 PromQLRangeSumByTransform::Group PromQLRangeSumByTransform::projectGroup(Group full_group)
 {
-    const Group without_metric_name = collector->removeTag(full_group, TimeSeriesTagNames::MetricName);
-    return collector->removeAllTagsExcept(without_metric_name, labels_to_keep);
+    return collector->removeAllTagsExcept(full_group, labels_to_keep);
 }
 
 AggregateDataPtr PromQLRangeSumByTransform::getOrCreateGroupState(Group group)

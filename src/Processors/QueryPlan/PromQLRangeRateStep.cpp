@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/PromQLRangeRateStep.h>
 
-#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/PromQLRangeRateMergingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Common/Exception.h>
@@ -91,18 +91,17 @@ void PromQLRangeRateStep::transformPipeline(QueryPipelineBuilder & pipeline, con
                 TimeSeriesColumnNames::Bucket,
                 pipeline.getNumStreams());
 
-        SortDescription description;
-        description.emplace_back(TimeSeriesColumnNames::ID, 1, 1);
-        description.emplace_back(TimeSeriesColumnNames::Bucket, 1, 1);
-        auto merge = std::make_shared<MergingSortedTransform>(
+        auto merge = std::make_shared<PromQLRangeRateMergingTransform>(
             pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
-            description,
+            collector,
+            rate_function,
+            max_samples_per_series,
             max_output_block_size,
-            /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns=*/std::nullopt,
-            SortingQueueStrategy::Batch);
+            raw_min_time,
+            raw_max_time);
         pipeline.addTransform(std::move(merge));
+        return;
     }
 
     pipeline.addSimpleTransform(

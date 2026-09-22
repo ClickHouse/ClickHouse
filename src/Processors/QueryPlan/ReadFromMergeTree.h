@@ -22,6 +22,7 @@ namespace DB
 
 class Pipe;
 class ParallelReadingExtension;
+struct PromQLTwoRangeRatesFusionConfig;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
@@ -461,7 +462,14 @@ public:
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
     void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
 
-    bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
+    bool supportsDataflowStatisticsCollection() const override
+    {
+        return !promql_two_range_rates_fusion && !isQueryWithFinal();
+    }
+
+    /// Replaces the exact ordered two-rate query-plan island with a typed storage-layer fusion.
+    /// The optimizer must establish every admission invariant before calling this method.
+    void enablePromQLTwoRangeRatesFusion(std::shared_ptr<const PromQLTwoRangeRatesFusionConfig> config);
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
@@ -576,7 +584,7 @@ public:
     bool supportsBucketedRead() const;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return !promql_two_range_rates_fusion; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
@@ -603,6 +611,10 @@ private:
     const MergeTreeReadTask::BlockSizeParams block_size;
 
     SortDescription result_sort_description;
+
+    /// Query-local, immutable execution contract. It is deliberately neither serialized nor
+    /// reconstructed on a remote node: only the exact local query-plan island may install it.
+    std::shared_ptr<const PromQLTwoRangeRatesFusionConfig> promql_two_range_rates_fusion;
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;

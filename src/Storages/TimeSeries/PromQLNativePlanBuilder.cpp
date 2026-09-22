@@ -48,6 +48,7 @@ namespace Setting
 {
 extern const SettingsBool enable_promql_native_parallel_processing;
 extern const SettingsBool enable_promql_native_raw_samples;
+extern const SettingsBool enable_promql_native_storage_fusion;
 extern const SettingsUInt64 max_promql_native_parallel_lanes;
 extern const SettingsUInt64 max_promql_native_rate_samples_per_series;
 extern const SettingsUInt64 max_promql_native_rate_series;
@@ -423,7 +424,8 @@ bool tryBuildPromQLTwoRangeRatesPlan(
             context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
             context->getSettingsRef()[Setting::max_promql_native_parallel_lanes],
             std::move(raw_min_time),
-            std::move(raw_max_time)));
+            std::move(raw_max_time),
+            context->getSettingsRef()[Setting::enable_promql_native_storage_fusion]));
     return true;
 }
 

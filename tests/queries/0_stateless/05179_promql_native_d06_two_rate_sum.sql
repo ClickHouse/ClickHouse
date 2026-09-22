@@ -1,14 +1,27 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-replicated-database
+-- Random settings limits: optimize_read_in_order=(1, 1); max_threads=(8, 8); max_block_size=(1, 1)
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the query checks the local hybrid plan only.
 -- Tag no-replicated-database: deferred drops of `TimeSeries` inner tables are incompatible with replicated databases.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- This test certifies the ordered-read storage-fusion path. The random-settings
+-- limits above keep its route-defining settings fixed while all unrelated
+-- settings remain randomized by the stateless runner.
+SET optimize_read_in_order = 1;
+-- Storage fusion splits selected primary-key ranges into at least two ordered
+-- layers; `max_threads = 1` intentionally disables that optimization.
+SET max_threads = 8;
+-- The production policy avoids read lanes smaller than one ordinary block.
+-- This tiny fixture uses one row per block so it still exercises that path.
+SET max_block_size = 1;
+SET enable_promql_native_storage_fusion = 1;
 
 DROP TABLE IF EXISTS promql_native_d06_two_rate_sum;
 
 CREATE TABLE promql_native_d06_two_rate_sum ENGINE = TimeSeries
+SETTINGS samples_compression_codec = 'ZSTD(3)', recent_samples_compression_codec = 'ZSTD(3)'
 SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket)
     SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
 
@@ -73,10 +86,27 @@ FROM prometheusQueryRange(
     300, 420, 60)
 SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1;
 
+-- `prometheusQueryRange` builds the selector while the table function is being
+-- analyzed, before per-query SETTINGS are installed in the outer SELECT.
+-- Set raw mode in the session so this test exercises the actual raw selector.
+SET enable_promql_native_raw_samples = 1;
+
+CREATE TEMPORARY TABLE d06_raw_hybrid AS
+SELECT tags, samples
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+    300, 420, 60)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_parallel_processing = 1;
+
+SET enable_promql_native_raw_samples = 0;
+
 -- Both rate branches and their default one-to-one addition must be installed
 -- as one fused native plan step. This positive
 -- route assertion prevents exact-result equality from hiding a SQL fallback.
-SELECT countIf(explain LIKE '%(PromQLTwoRangeRates)%') = 1
+SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') > 0
 FROM
 (
     EXPLAIN PIPELINE
@@ -87,6 +117,28 @@ FROM
         300, 420, 60)
     SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1
 );
+
+-- Raw-selector mode has a different exact source island: its carrier projection
+-- preserves `id`, `bucket`, and the storage-owned `samples` array. Certify that
+-- this shape is fused too, rather than silently falling back to the ordinary
+-- `PromQLTwoRangeRates` transform.
+SET enable_promql_native_raw_samples = 1;
+
+SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_d06_two_rate_sum,
+        'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+        300, 420, 60)
+    SETTINGS
+        enable_promql_native_plan = 1,
+        enable_promql_native_parallel_processing = 1
+);
+
+SET enable_promql_native_raw_samples = 0;
 
 -- The fused selector's canonical `reads|writes` metric union must reach primary-key analysis as
 -- two exact id ranges. The large prepared id set stays out of index analysis and in the row-level
@@ -105,9 +157,9 @@ FROM
     SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1
 );
 
--- The independent lane cap is query-scoped; zero preserves automatic
--- sharding, while a positive value can limit native primary-key range lanes
--- without reducing the read-side `max_threads` budget.
+-- The independent lane cap is query-scoped; zero chooses lanes from the read
+-- budget and selected work, while a positive value remains
+-- a hard limit without reducing the read-side `max_threads` budget.
 SELECT getSetting('max_promql_native_parallel_lanes') = 1
 SETTINGS max_promql_native_parallel_lanes = 1;
 
@@ -133,6 +185,22 @@ FROM
     SELECT tags, samples FROM d06_sql
     EXCEPT ALL
     SELECT tags, samples FROM d06_hybrid
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_raw_hybrid
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_sql
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_sql
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_raw_hybrid
 );
 
 -- Keep the SQL oracle's exact values visible in the reference output.
@@ -233,5 +301,52 @@ SETTINGS
     enable_promql_native_plan = 1,
     enable_promql_native_parallel_processing = 1,
     max_promql_native_output_groups = 1;
+
+-- Add enough matched physical series for the range splitter to expose all
+-- eight read streams. These rows are inserted after the semantic checks above
+-- and are used only to certify the lane-selection policy.
+INSERT INTO promql_native_d06_two_rate_sum (metric_name, tags, samples)
+SELECT
+    if(number % 2 = 0, 'reads', 'writes'),
+    map(
+        'instance', concat('plan-', toString(intDiv(number, 2))),
+        'namespace', 'plan',
+        'pod', concat('plan-', toString(intDiv(number, 2)))),
+    [(toDateTime64(300, 3), toFloat64(number)), (toDateTime64(360, 3), toFloat64(number + 1))]
+FROM numbers(16);
+
+-- The fused two-rate automatic policy uses four layers even when the storage
+-- read has eight streams. A positive `max_promql_native_parallel_lanes`
+-- explicitly overrides that plan-specific default while remaining bounded by
+-- the available read streams, selected work, and primary-key split points.
+SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') = 4
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_d06_two_rate_sum,
+        'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+        300, 420, 60)
+    SETTINGS
+        enable_promql_native_plan = 1,
+        enable_promql_native_parallel_processing = 1,
+        max_promql_native_parallel_lanes = 0
+);
+
+SELECT countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') > 4
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_d06_two_rate_sum,
+        'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+        300, 420, 60)
+    SETTINGS
+        enable_promql_native_plan = 1,
+        enable_promql_native_parallel_processing = 1,
+        max_promql_native_parallel_lanes = 8
+);
 
 DROP TABLE promql_native_d06_two_rate_sum;

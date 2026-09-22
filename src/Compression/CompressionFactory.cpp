@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -115,7 +116,18 @@ CompressionCodecPtr CompressionCodecFactory::get(
                     "other context where the column data type is unknown",
                     codec_family_name);
 
-            codecs.emplace_back(codec);
+            /// A typed selector can resolve one logical codec entry to an existing codec chain.
+            /// Store the stages in the outer chain directly so the on-disk representation stays
+            /// identical to spelling those codecs explicitly in `CODEC(...)`.
+            if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+            {
+                for (const auto & nested_codec : multiple->getCodecs())
+                    codecs.emplace_back(nested_codec);
+            }
+            else
+            {
+                codecs.emplace_back(std::move(codec));
+            }
         }
 
         CompressionCodecPtr res;
@@ -316,6 +328,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
+    registerCodecTimeSeriesSamples(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
     registerCodecGCD(*this);

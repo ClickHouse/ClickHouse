@@ -9453,8 +9453,12 @@ Enables primary-key range sharding for supported native PromQL plans. The sample
 Enables native PromQL `rate` fragments to read raw `samples` arrays and slice their nested timestamp/value columns directly in the native transform. Disabled preserves selector-side `timeSeriesSliceSortedArray` materialization.
 )", PRIVATE_PREVIEW) \
     \
+    DECLARE(Bool, enable_promql_native_storage_fusion, false, R"(
+Enables the experimental storage-layer fusion for supported native PromQL two-rate fragments. Disabled keeps the existing ordered read, merge, and native transform pipeline unchanged.
+)", PRIVATE_PREVIEW) \
+    \
     DECLARE(UInt64, max_promql_native_parallel_lanes, 0, R"(
-Maximum number of primary-key ID range layers used by a native PromQL plan. Zero uses the automatically selected number of read streams and does not lower `max_threads`.
+Maximum number of primary-key ID range layers used by a native PromQL plan. Zero selects the number automatically from the read-stream budget, selected work, and the native plan shape. A positive value is an explicit hard cap that overrides a plan-specific automatic default. This setting does not change `max_threads`.
 )", PRIVATE_PREVIEW) \
     \
     DECLARE(UInt64, max_promql_query_block_size, 0, R"(

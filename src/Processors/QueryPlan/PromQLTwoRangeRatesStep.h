@@ -27,7 +27,8 @@ public:
         bool parallel_processing_requested_ = false,
         size_t max_parallel_lanes_ = 0,
         std::optional<Field> raw_min_time_ = {},
-        std::optional<Field> raw_max_time_ = {});
+        std::optional<Field> raw_max_time_ = {},
+        bool storage_fusion_requested_ = false);
 
     String getName() const override { return "PromQLTwoRangeRates"; }
     bool isInputOrderDependent() const override { return true; }
@@ -36,6 +37,8 @@ public:
     bool isParallelProcessingEnabled() const { return parallel_processing_enabled; }
     size_t getMaxParallelLanes() const { return max_parallel_lanes; }
     void enableParallelProcessing() { parallel_processing_enabled = true; }
+    bool isStorageFusionRequested() const { return storage_fusion_requested; }
+    PromQLTwoRangeRatesFusionConfigPtr getFusionConfig() const;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -55,6 +58,7 @@ private:
     bool parallel_processing_enabled = false;
     std::optional<Field> raw_min_time;
     std::optional<Field> raw_max_time;
+    bool storage_fusion_requested;
 };
 
 }

@@ -6,11 +6,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/PromQLTwoRangeRatesMergingTransform.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/PromQLTwoRangeRatesStep.h>
 #include <Processors/Transforms/PromQLTwoRangeRatesTransform.h>
@@ -179,6 +182,144 @@ QueryPipeline makePipeline(
     return QueryPipeline(std::move(pipe));
 }
 
+QueryPipeline makeMaterializedMergePipeline(
+    const SharedHeader & header,
+    std::vector<Chunks> source_chunks,
+    const std::shared_ptr<Collector> & collector,
+    const AggregateFunctionPtr & rate_function,
+    size_t max_samples_per_series,
+    size_t max_output_block_size,
+    size_t max_join_groups,
+    size_t max_grid_cells)
+{
+    const size_t num_inputs = source_chunks.size();
+    Pipes pipes;
+    for (auto & chunks : source_chunks)
+        pipes.emplace_back(std::make_shared<ChunksSource>(header, std::move(chunks)));
+
+    auto builder = std::make_unique<QueryPipelineBuilder>();
+    builder->init(Pipe::unitePipes(std::move(pipes)));
+
+    SortDescription description;
+    description.emplace_back(TimeSeriesColumnNames::ID, 1, 1);
+    description.emplace_back(TimeSeriesColumnNames::Bucket, 1, 1);
+    builder->addTransform(std::make_shared<MergingSortedTransform>(
+        header,
+        num_inputs,
+        description,
+        max_output_block_size,
+        /*max_block_size_bytes=*/0,
+        /*max_dynamic_subcolumns=*/std::nullopt,
+        SortingQueueStrategy::Batch));
+    builder->addSimpleTransform(
+        [collector, rate_function, max_samples_per_series, max_output_block_size, max_join_groups, max_grid_cells](
+            const SharedHeader & transformed_header)
+        {
+            return std::make_shared<PromQLTwoRangeRatesTransform>(
+                transformed_header,
+                collector,
+                rate_function,
+                "requests_total",
+                "errors_total",
+                max_samples_per_series,
+                max_output_block_size,
+                max_join_groups,
+                max_grid_cells);
+        });
+
+    return QueryPipelineBuilder::getPipeline(std::move(*builder));
+}
+
+QueryPipeline makeFusedMergePipeline(
+    const SharedHeader & header,
+    std::vector<Chunks> source_chunks,
+    const std::shared_ptr<Collector> & collector,
+    const AggregateFunctionPtr & rate_function,
+    size_t max_samples_per_series,
+    size_t max_output_block_size,
+    size_t max_join_groups,
+    size_t max_grid_cells)
+{
+    const size_t num_inputs = source_chunks.size();
+    Pipes pipes;
+    for (auto & chunks : source_chunks)
+        pipes.emplace_back(std::make_shared<ChunksSource>(header, std::move(chunks)));
+
+    auto builder = std::make_unique<QueryPipelineBuilder>();
+    builder->init(Pipe::unitePipes(std::move(pipes)));
+
+    auto config = std::make_shared<const PromQLTwoRangeRatesFusionConfig>(
+        collector,
+        rate_function,
+        "requests_total",
+        "errors_total",
+        max_samples_per_series,
+        max_output_block_size,
+        max_join_groups,
+        max_grid_cells,
+        std::nullopt,
+        std::nullopt,
+        PromQLTwoRangeRatesTransform::transformHeader(rate_function));
+    auto group_state = std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups, max_grid_cells);
+    builder->addTransform(
+        std::make_shared<PromQLTwoRangeRatesMergingTransform>(header, num_inputs, std::move(config), std::move(group_state)));
+
+    return QueryPipelineBuilder::getPipeline(std::move(*builder));
+}
+
+QueryPipeline makeLayeredFusedPipeline(
+    const SharedHeader & header,
+    std::vector<Chunks> layer_chunks,
+    const std::shared_ptr<Collector> & collector,
+    const AggregateFunctionPtr & rate_function,
+    size_t max_samples_per_series,
+    size_t max_output_block_size,
+    size_t max_join_groups,
+    size_t max_grid_cells)
+{
+    auto config = std::make_shared<const PromQLTwoRangeRatesFusionConfig>(
+        collector,
+        rate_function,
+        "requests_total",
+        "errors_total",
+        max_samples_per_series,
+        max_output_block_size,
+        max_join_groups,
+        max_grid_cells,
+        std::nullopt,
+        std::nullopt,
+        PromQLTwoRangeRatesTransform::transformHeader(rate_function));
+    auto group_state = std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups, max_grid_cells);
+
+    Pipes pipes;
+    for (auto & chunks : layer_chunks)
+    {
+        Pipe pipe(std::make_shared<ChunksSource>(header, std::move(chunks)));
+        pipe.addTransform(std::make_shared<PromQLTwoRangeRatesMergingTransform>(
+            header, /*num_inputs=*/1, config, group_state));
+        pipes.emplace_back(std::move(pipe));
+    }
+
+    auto result = Pipe::unitePipes(std::move(pipes));
+    result.resize(1);
+    return QueryPipeline(std::move(result));
+}
+
+std::vector<Chunks> cloneSourceChunks(const std::vector<Chunks> & source_chunks)
+{
+    std::vector<Chunks> result;
+    result.reserve(source_chunks.size());
+    for (const auto & source : source_chunks)
+    {
+        Chunks cloned_source;
+        cloned_source.reserve(source.size());
+        for (const auto & chunk : source)
+            cloned_source.emplace_back(chunk.clone());
+        result.emplace_back(std::move(cloned_source));
+    }
+    return result;
+}
+
 std::vector<Chunk> pullAll(QueryPipeline pipeline)
 {
     PullingPipelineExecutor executor(pipeline);
@@ -186,6 +327,58 @@ std::vector<Chunk> pullAll(QueryPipeline pipeline)
     Chunk output;
     while (executor.pull(output))
         result.emplace_back(std::move(output));
+    return result;
+}
+
+void expectEquivalentOutput(const std::vector<Chunk> & expected, const std::vector<Chunk> & actual)
+{
+    ASSERT_EQ(expected.size(), actual.size());
+    for (size_t chunk_num = 0; chunk_num < expected.size(); ++chunk_num)
+    {
+        const auto & expected_chunk = expected[chunk_num];
+        const auto & actual_chunk = actual[chunk_num];
+        ASSERT_EQ(expected_chunk.getNumRows(), actual_chunk.getNumRows());
+        ASSERT_EQ(expected_chunk.getNumColumns(), actual_chunk.getNumColumns());
+        for (size_t column_num = 0; column_num < expected_chunk.getNumColumns(); ++column_num)
+        {
+            const auto & expected_column = expected_chunk.getColumns()[column_num];
+            const auto & actual_column = actual_chunk.getColumns()[column_num];
+            for (size_t row = 0; row < expected_chunk.getNumRows(); ++row)
+                EXPECT_EQ(expected_column->compareAt(row, row, *actual_column, 1), 0)
+                    << "chunk=" << chunk_num << " column=" << column_num << " row=" << row;
+        }
+    }
+}
+
+std::vector<std::pair<UInt64, Float64>> collectFinalRates(const std::vector<Chunk> & chunks)
+{
+    std::vector<std::pair<UInt64, Float64>> result;
+    for (const auto & chunk : chunks)
+    {
+        const auto & groups = assert_cast<const ColumnUInt64 &>(*chunk.getColumns().at(0));
+        const auto & arrays = assert_cast<const ColumnArray &>(*chunk.getColumns().at(1));
+        const auto & nullable = assert_cast<const ColumnNullable &>(arrays.getData());
+        const auto & values = assert_cast<const ColumnFloat64 &>(nullable.getNestedColumn());
+        const auto & null_map = nullable.getNullMapData();
+
+        for (size_t row = 0; row < chunk.getNumRows(); ++row)
+        {
+            const size_t begin = row == 0 ? 0 : arrays.getOffsets()[row - 1];
+            const size_t end = arrays.getOffsets()[row];
+            if (end - begin != 3)
+            {
+                ADD_FAILURE() << "expected three grid cells, got " << (end - begin);
+                continue;
+            }
+            if (null_map[begin + 2])
+            {
+                ADD_FAILURE() << "expected a non-null final grid cell";
+                continue;
+            }
+            result.emplace_back(groups.getElement(row), values.getElement(begin + 2));
+        }
+    }
+    std::sort(result.begin(), result.end());
     return result;
 }
 
@@ -444,6 +637,161 @@ TEST(PromQLTwoRangeRatesTransform, BoundsGridCellsAndSamples)
                 sample_collector,
                 makeRateFunction(samples_type),
                 2));
+        },
+        ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
+}
+
+TEST(PromQLTwoRangeRatesMergingTransform, MatchesMaterializedPathForInterleavedMetricSidesAcrossStreams)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type);
+    const auto collector = makeCollector({
+        {1, "requests_total", "a", "one"},
+        {2, "errors_total", "b", "two"},
+        {3, "errors_total", "a", "one"},
+        {4, "requests_total", "b", "two"},
+    });
+
+    std::vector<Chunks> source_chunks(2);
+    source_chunks[0].emplace_back(makeSamplesChunk(
+        samples_type,
+        {1, 2},
+        {0, 1},
+        {{{0, 0.0}}, {{10, 40.0}, {20, 80.0}}}));
+    source_chunks[0].emplace_back(makeSamplesChunk(
+        samples_type,
+        {3, 4},
+        {0, 1},
+        {{{0, 0.0}, {10, 20.0}}, {{20, 60.0}}}));
+
+    source_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type,
+        {1, 2},
+        {1, 0},
+        {{{10, 10.0}, {20, 20.0}}, {{0, 0.0}}}));
+    source_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type,
+        {3, 4},
+        {1, 0},
+        {{{20, 40.0}}, {{0, 0.0}, {10, 30.0}}}));
+
+    auto expected = pullAll(makeMaterializedMergePipeline(
+        header,
+        cloneSourceChunks(source_chunks),
+        collector,
+        makeRateFunction(samples_type),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/1,
+        /*max_join_groups=*/16,
+        /*max_grid_cells=*/64));
+    auto actual = pullAll(makeFusedMergePipeline(
+        header,
+        std::move(source_chunks),
+        collector,
+        makeRateFunction(samples_type),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/1,
+        /*max_join_groups=*/16,
+        /*max_grid_cells=*/64));
+
+    ASSERT_EQ(actual.size(), 2);
+    for (const auto & chunk : actual)
+        ASSERT_EQ(chunk.getNumRows(), 1);
+    expectEquivalentOutput(expected, actual);
+}
+
+TEST(PromQLTwoRangeRatesMergingTransform, PreservesMatchesAcrossIndependentLayerPipesAfterResize)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type);
+    const auto collector = makeCollector({
+        {1, "requests_total", "a", "one"},
+        {2, "errors_total", "a", "one"},
+        {3, "requests_total", "b", "two"},
+        {4, "errors_total", "b", "two"},
+        {5, "requests_total", "c", "three"},
+        {6, "errors_total", "c", "three"},
+    });
+
+    std::vector<Chunks> layer_chunks(2);
+    layer_chunks[0].emplace_back(makeSamplesChunk(
+        samples_type,
+        {1, 3, 5},
+        {0, 0, 0},
+        {{{0, 0.0}, {10, 10.0}, {20, 20.0}},
+         {{0, 0.0}, {10, 30.0}, {20, 60.0}},
+         {{0, 0.0}, {10, 50.0}, {20, 100.0}}}));
+    layer_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type,
+        {2, 4, 6},
+        {0, 0, 0},
+        {{{0, 0.0}, {10, 20.0}, {20, 40.0}},
+         {{0, 0.0}, {10, 40.0}, {20, 80.0}},
+         {{0, 0.0}, {10, 60.0}, {20, 120.0}}}));
+
+    const auto expected = pullAll(makeMaterializedMergePipeline(
+        header,
+        cloneSourceChunks(layer_chunks),
+        collector,
+        makeRateFunction(samples_type),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/16,
+        /*max_join_groups=*/16,
+        /*max_grid_cells=*/64));
+    const auto actual = pullAll(makeLayeredFusedPipeline(
+        header,
+        std::move(layer_chunks),
+        collector,
+        makeRateFunction(samples_type),
+        /*max_samples_per_series=*/16,
+        /*max_output_block_size=*/16,
+        /*max_join_groups=*/16,
+        /*max_grid_cells=*/64));
+
+    const auto expected_rates = collectFinalRates(expected);
+    const auto actual_rates = collectFinalRates(actual);
+    ASSERT_EQ(expected_rates.size(), 3);
+    ASSERT_EQ(actual_rates.size(), expected_rates.size());
+    for (size_t row = 0; row < expected_rates.size(); ++row)
+    {
+        EXPECT_EQ(actual_rates[row].first, expected_rates[row].first);
+        EXPECT_DOUBLE_EQ(actual_rates[row].second, expected_rates[row].second);
+    }
+}
+
+TEST(PromQLTwoRangeRatesMergingTransform, BoundsPendingGroupsAcrossStreams)
+{
+    const auto samples_type = makeSamplesType();
+    const auto header = makeInputHeader(samples_type);
+    const auto collector = makeCollector({
+        {1, "requests_total", "a", "one"},
+        {2, "errors_total", "b", "two"},
+    });
+
+    std::vector<Chunks> source_chunks(2);
+    source_chunks[0].emplace_back(makeSamplesChunk(
+        samples_type,
+        {1},
+        {0},
+        {{{0, 0.0}, {10, 10.0}, {20, 20.0}}}));
+    source_chunks[1].emplace_back(makeSamplesChunk(
+        samples_type,
+        {2},
+        {0},
+        {{{0, 0.0}, {10, 20.0}, {20, 40.0}}}));
+
+    expectExceptionCode(
+        [&]
+        {
+            pullAll(makeFusedMergePipeline(
+                header,
+                std::move(source_chunks),
+                collector,
+                makeRateFunction(samples_type),
+                /*max_samples_per_series=*/16,
+                /*max_output_block_size=*/1,
+                /*max_join_groups=*/1,
+                /*max_grid_cells=*/64));
         },
         ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }

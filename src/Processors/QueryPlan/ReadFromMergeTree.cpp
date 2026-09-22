@@ -38,6 +38,7 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/PromQLTwoRangeRatesMergingTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -1288,7 +1289,7 @@ Pipe ReadFromMergeTree::readByLayers(
                 return std::make_shared<ExpressionTransform>(header, sorting_expr);
             });
 
-            if (pipe.numOutputPorts() != 1)
+            if (!promql_two_range_rates_fusion && pipe.numOutputPorts() != 1)
             {
                 auto transform = std::make_shared<MergingSortedTransform>(
                     pipe.getSharedHeader(),
@@ -1331,7 +1332,41 @@ Pipe ReadFromMergeTree::readByLayers(
         storage_snapshot->metadata->getPrimaryKey(),
         std::move(reading_step_getter),
         context);
-    return Pipe::unitePipes(std::move(pipes));
+
+    if (!promql_two_range_rates_fusion)
+        return Pipe::unitePipes(std::move(pipes));
+
+    auto group_state = std::make_shared<PromQLTwoRangeRatesGroupState>(
+        promql_two_range_rates_fusion->max_join_groups,
+        promql_two_range_rates_fusion->max_grid_cells);
+
+    for (auto & pipe : pipes)
+    {
+        if (pipe.empty())
+            continue;
+
+        pipe.addTransform(std::make_shared<PromQLTwoRangeRatesMergingTransform>(
+            pipe.getSharedHeader(),
+            pipe.numOutputPorts(),
+            promql_two_range_rates_fusion,
+            group_state));
+    }
+
+    auto result = Pipe::unitePipes(std::move(pipes));
+    if (!result.empty())
+        result.resize(1);
+    return result;
+}
+
+void ReadFromMergeTree::enablePromQLTwoRangeRatesFusion(
+    std::shared_ptr<const PromQLTwoRangeRatesFusionConfig> config)
+{
+    if (!config)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot enable PromQL two-range-rate fusion with a null configuration");
+
+    promql_two_range_rates_fusion = std::move(config);
+    output_header = promql_two_range_rates_fusion->output_header;
+    result_sort_description.clear();
 }
 
 /// Whether the whole-part size of a column can be scaled by the fraction of selected rows.
@@ -4574,6 +4609,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    if (promql_two_range_rates_fusion)
+        cloned_step->enablePromQLTwoRangeRatesFusion(promql_two_range_rates_fusion);
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
@@ -4911,6 +4948,9 @@ Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
 
 size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & result) const
 {
+    if (promql_two_range_rates_fusion)
+        return 1;
+
     /// The layers are a static pre-split of the parts made by `optimizeJoinByShards`, and the number of
     /// output ports is a part of that plan: the JOIN above consumes exactly one port per layer and pairs
     /// the ports of its two sides positionally. The layers are built from the parts of all the sources at

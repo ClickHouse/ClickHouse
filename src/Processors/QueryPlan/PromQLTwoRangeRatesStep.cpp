@@ -45,7 +45,8 @@ PromQLTwoRangeRatesStep::PromQLTwoRangeRatesStep(
     bool parallel_processing_requested_,
     size_t max_parallel_lanes_,
     std::optional<Field> raw_min_time_,
-    std::optional<Field> raw_max_time_)
+    std::optional<Field> raw_max_time_,
+    bool storage_fusion_requested_)
     : ITransformingStep(input_header_, PromQLTwoRangeRatesTransform::transformHeader(rate_function_), getTraits())
     , collector(std::move(collector_))
     , rate_function(std::move(rate_function_))
@@ -59,6 +60,7 @@ PromQLTwoRangeRatesStep::PromQLTwoRangeRatesStep(
     , parallel_processing_requested(parallel_processing_requested_)
     , raw_min_time(std::move(raw_min_time_))
     , raw_max_time(std::move(raw_max_time_))
+    , storage_fusion_requested(storage_fusion_requested_)
 {
 }
 
@@ -159,6 +161,22 @@ void PromQLTwoRangeRatesStep::transformPipeline(QueryPipelineBuilder & pipeline,
 void PromQLTwoRangeRatesStep::updateOutputHeader()
 {
     output_header = PromQLTwoRangeRatesTransform::transformHeader(rate_function);
+}
+
+PromQLTwoRangeRatesFusionConfigPtr PromQLTwoRangeRatesStep::getFusionConfig() const
+{
+    return std::make_shared<const PromQLTwoRangeRatesFusionConfig>(
+        collector,
+        rate_function,
+        first_metric_name,
+        second_metric_name,
+        max_samples_per_series,
+        max_output_block_size,
+        max_join_groups,
+        max_grid_cells,
+        raw_min_time,
+        raw_max_time,
+        getOutputHeader());
 }
 
 }

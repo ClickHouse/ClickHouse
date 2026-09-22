@@ -32,11 +32,13 @@ namespace ErrorCodes
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_bucket_step_seconds, 3600, "The length in seconds of the time buckets of the 'samples' table: a row of the table contains the samples of one time series with timestamps in one bucket, and the 'bucket' column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time", 0) \
+    DECLARE(String, samples_compression_codec, "ZSTD(3)", "Compatibility setting for persisted TimeSeries metadata. This build supports the existing 'ZSTD(3)' payload codec", 0) \
     DECLARE(ASTFunction, samples_partition_by, String{}, "Partition key of the inner 'samples' table, for example 'toStartOfWeek(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toYYYYMM(bucket)' is used, i.e. one partition per month. Ignored for an external samples table", 0) \
     DECLARE(UInt64, samples_index_granularity, 512, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, samples_index_granularity_bytes, 524288, "Sets 'index_granularity_bytes' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity_bytes' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table always gets 'TTL bucket + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)' derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data, which is the user's responsibility. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
     DECLARE(UInt64, recent_samples_bucket_step_seconds, 900, "The length in seconds of the time buckets of the 'recent samples' table, see 'samples_bucket_step_seconds'. The default is 15 minutes; the effective value is pinned into the table definition at CREATE time. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(String, recent_samples_compression_codec, "ZSTD(3)", "Compatibility setting for persisted TimeSeries metadata. This build supports the existing 'ZSTD(3)' payload codec. Requires 'recent_samples_ttl_seconds' to be non-zero when specified", 0) \
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(bucket, toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 256, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity_bytes, 262144, "Sets 'index_granularity_bytes' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity_bytes' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
@@ -148,6 +150,9 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         if (settings[TimeSeriesSetting::recent_samples_bucket_step_seconds].isChanged())
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `recent_samples_bucket_step_seconds` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+        if (settings[TimeSeriesSetting::recent_samples_compression_codec].isChanged())
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `recent_samples_compression_codec` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
         if (settings[TimeSeriesSetting::recent_samples_partition_by].value)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `recent_samples_partition_by` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
@@ -169,6 +174,18 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
     };
     check_bucket_step(settings[TimeSeriesSetting::samples_bucket_step_seconds], "samples_bucket_step_seconds");
     check_bucket_step(settings[TimeSeriesSetting::recent_samples_bucket_step_seconds], "recent_samples_bucket_step_seconds");
+
+    auto check_payload_codec = [](const SettingFieldString & codec, std::string_view setting_name)
+    {
+        if (codec.value != "ZSTD(3)")
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting `{}` only supports `ZSTD(3)` in this build, got `{}`",
+                setting_name,
+                codec.value);
+    };
+    check_payload_codec(settings[TimeSeriesSetting::samples_compression_codec], "samples_compression_codec");
+    check_payload_codec(settings[TimeSeriesSetting::recent_samples_compression_codec], "recent_samples_compression_codec");
 
     if (!settings[TimeSeriesSetting::store_min_time_and_max_time])
     {

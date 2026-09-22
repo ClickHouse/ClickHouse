@@ -113,6 +113,150 @@ std::optional<PromQLTwoRangeRatesGroupState::Match> PromQLTwoRangeRatesGroupStat
     return std::nullopt;
 }
 
+PromQLTwoRangeRatesFusionConfig::PromQLTwoRangeRatesFusionConfig(
+    CollectorPtr collector_,
+    AggregateFunctionPtr rate_function_,
+    String first_metric_name_,
+    String second_metric_name_,
+    size_t max_samples_per_series_,
+    size_t max_output_block_size_,
+    size_t max_join_groups_,
+    size_t max_grid_cells_,
+    std::optional<Field> raw_min_time_,
+    std::optional<Field> raw_max_time_,
+    SharedHeader output_header_)
+    : collector(std::move(collector_))
+    , rate_function(std::move(rate_function_))
+    , first_metric_name(std::move(first_metric_name_))
+    , second_metric_name(std::move(second_metric_name_))
+    , max_samples_per_series(max_samples_per_series_)
+    , max_output_block_size(max_output_block_size_)
+    , max_join_groups(max_join_groups_)
+    , max_grid_cells(max_grid_cells_)
+    , raw_min_time(std::move(raw_min_time_))
+    , raw_max_time(std::move(raw_max_time_))
+    , output_header(std::move(output_header_))
+{
+    if (!collector || !rate_function || !output_header)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL fused two-rate execution contract is incomplete");
+    if (first_metric_name.empty() || second_metric_name.empty() || first_metric_name == second_metric_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL fused two-rate execution requires two different non-empty metric names");
+    if (max_samples_per_series == 0 || max_output_block_size == 0 || max_join_groups == 0 || max_grid_cells == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL fused two-rate execution requires positive resource limits");
+}
+
+PromQLTwoRangeRatesSeriesMatcher::PromQLTwoRangeRatesSeriesMatcher(
+    CollectorPtr collector_,
+    String first_metric_name_,
+    String second_metric_name_,
+    PromQLTwoRangeRatesGroupStatePtr group_state_)
+    : collector(std::move(collector_))
+    , first_metric_name(std::move(first_metric_name_))
+    , second_metric_name(std::move(second_metric_name_))
+    , group_state(std::move(group_state_))
+{
+    if (!collector)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate tags collector is null");
+    if (first_metric_name.empty() || second_metric_name.empty() || first_metric_name == second_metric_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires two different non-empty metric names");
+    if (!group_state)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate matching state is null");
+}
+
+void PromQLTwoRangeRatesSeriesMatcher::addFinishedSeries(
+    Group full_group,
+    MutableColumnPtr & rate_result,
+    MutableColumnPtr & group_column,
+    MutableColumnPtr & values_column) const
+{
+    const String metric_name = collector->extractTag(full_group, TimeSeriesTagNames::MetricName);
+    size_t side = 0;
+    if (metric_name == first_metric_name)
+        side = 0;
+    else if (metric_name == second_metric_name)
+        side = 1;
+    else
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "PromQL native two-rate transform received unexpected metric name {}",
+            metric_name.empty() ? String{"<missing>"} : metric_name);
+
+    const Group join_group = collector->removeTag(full_group, TimeSeriesTagNames::MetricName);
+    const auto * result_array = typeid_cast<const ColumnArray *>(rate_result.get());
+    if (!result_array || result_array->size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform produced an invalid one-row rate result");
+    const size_t grid_cells = result_array->getSize(0);
+    auto match = group_state->add(join_group, side, metric_name, rate_result, grid_cells);
+    if (!match)
+        return;
+
+    appendAddedGrid(*match->values, 0, *rate_result, 0, values_column);
+    group_column->insert(Field{match->group});
+}
+
+void PromQLTwoRangeRatesSeriesMatcher::appendAddedGrid(
+    const IColumn & first_column,
+    size_t first_row,
+    const IColumn & second_column,
+    size_t second_row,
+    MutableColumnPtr & output_column)
+{
+    const auto * first_array = typeid_cast<const ColumnArray *>(&first_column);
+    const auto * second_array = typeid_cast<const ColumnArray *>(&second_column);
+    auto * output_array = typeid_cast<ColumnArray *>(output_column.get());
+    if (!first_array || !second_array || !output_array || first_row >= first_array->size() || second_row >= second_array->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform received an invalid rate grid column");
+
+    const auto * first_nullable = typeid_cast<const ColumnNullable *>(&first_array->getData());
+    const auto * second_nullable = typeid_cast<const ColumnNullable *>(&second_array->getData());
+    auto * output_nullable = typeid_cast<ColumnNullable *>(&output_array->getData());
+    if (!first_nullable || !second_nullable || !output_nullable)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform requires nullable rate grid values");
+
+    const auto * first_values = typeid_cast<const ColumnFloat64 *>(&first_nullable->getNestedColumn());
+    const auto * second_values = typeid_cast<const ColumnFloat64 *>(&second_nullable->getNestedColumn());
+    auto * output_values = typeid_cast<ColumnFloat64 *>(&output_nullable->getNestedColumn());
+    if (!first_values || !second_values || !output_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform requires Float64 rate grid values");
+
+    const auto & first_offsets = first_array->getOffsets();
+    const auto & second_offsets = second_array->getOffsets();
+    const size_t first_begin = first_row == 0 ? 0 : first_offsets[first_row - 1];
+    const size_t second_begin = second_row == 0 ? 0 : second_offsets[second_row - 1];
+    const size_t first_size = first_offsets[first_row] - first_begin;
+    const size_t second_size = second_offsets[second_row] - second_begin;
+    if (first_size != second_size)
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "PromQL native two-rate transform received rate grids with different sizes: {} and {}",
+            first_size,
+            second_size);
+
+    const auto & first_null_map = first_nullable->getNullMapData();
+    const auto & second_null_map = second_nullable->getNullMapData();
+    auto & output_null_map = output_nullable->getNullMapData();
+    auto & output_offsets = output_array->getOffsets();
+    auto & output_data = output_values->getData();
+    const auto & first_data = first_values->getData();
+    const auto & second_data = second_values->getData();
+
+    const size_t previous_offset = output_offsets.empty() ? 0 : output_offsets.back();
+    output_data.resize(previous_offset + first_size);
+    output_null_map.resize(previous_offset + first_size);
+
+    for (size_t i = 0; i < first_size; ++i)
+    {
+        const size_t first_index = first_begin + i;
+        const size_t second_index = second_begin + i;
+        const size_t output_index = previous_offset + i;
+        const bool is_null = first_null_map[first_index] || second_null_map[second_index];
+        output_data[output_index] = is_null ? 0 : first_data[first_index] + second_data[second_index];
+        output_null_map[output_index] = is_null;
+    }
+
+    output_offsets.push_back(previous_offset + first_size);
+}
+
 SharedHeader PromQLTwoRangeRatesTransform::transformHeader(const AggregateFunctionPtr & rate_function)
 {
     if (!rate_function)
@@ -144,13 +288,13 @@ PromQLTwoRangeRatesTransform::PromQLTwoRangeRatesTransform(
     , output(outputs.front())
     , collector(std::move(collector_))
     , rate_function(std::move(rate_function_))
-    , first_metric_name(std::move(first_metric_name_))
-    , second_metric_name(std::move(second_metric_name_))
     , max_samples_per_series(max_samples_per_series_)
     , max_output_block_size(max_output_block_size_)
-    , max_join_groups(max_join_groups_)
-    , max_grid_cells(max_grid_cells_)
-    , group_state(group_state_ ? std::move(group_state_) : std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups_, max_grid_cells_))
+    , series_matcher(std::make_shared<PromQLTwoRangeRatesSeriesMatcher>(
+          collector,
+          std::move(first_metric_name_),
+          std::move(second_metric_name_),
+          group_state_ ? std::move(group_state_) : std::make_shared<PromQLTwoRangeRatesGroupState>(max_join_groups_, max_grid_cells_)))
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
 {
     if (!collector)
@@ -164,15 +308,13 @@ PromQLTwoRangeRatesTransform::PromQLTwoRangeRatesTransform(
             rate_function->getName());
     if (rate_function->allocatesMemoryInArena())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires an arena-independent rate state");
-    if (first_metric_name.empty() || second_metric_name.empty() || first_metric_name == second_metric_name)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires two different non-empty metric names");
     if (max_samples_per_series == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive per-series sample limit");
     if (max_output_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive output block size");
-    if (max_join_groups == 0)
+    if (max_join_groups_ == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive vector-matching group limit");
-    if (max_grid_cells == 0)
+    if (max_grid_cells_ == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PromQL native two-rate transform requires a positive grid-cell limit");
     if (!input_header->has(TimeSeriesColumnNames::ID) || !input_header->has(TimeSeriesColumnNames::Bucket))
         throw Exception(
@@ -484,7 +626,7 @@ void PromQLTwoRangeRatesTransform::finishSeries(MutableColumnPtr & group_column,
     try
     {
         rate_function->insertResultInto(rate_place.data(), *rate_result, nullptr);
-        addFinishedSeries(current_full_group, group_column, values_column);
+        series_matcher->addFinishedSeries(current_full_group, rate_result, group_column, values_column);
     }
     catch (...)
     {
@@ -503,100 +645,6 @@ void PromQLTwoRangeRatesTransform::finishSeries(MutableColumnPtr & group_column,
     current_series_samples = 0;
     if (!rate_result)
         rate_result = rate_function->getResultType()->createColumn();
-}
-
-void PromQLTwoRangeRatesTransform::addFinishedSeries(
-    Group full_group, MutableColumnPtr & group_column, MutableColumnPtr & values_column)
-{
-    const String metric_name = collector->extractTag(full_group, TimeSeriesTagNames::MetricName);
-    size_t side = 0;
-    if (metric_name == first_metric_name)
-        side = 0;
-    else if (metric_name == second_metric_name)
-        side = 1;
-    else
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "PromQL native two-rate transform received unexpected metric name {}",
-            metric_name.empty() ? String{"<missing>"} : metric_name);
-
-    const Group join_group = collector->removeTag(full_group, TimeSeriesTagNames::MetricName);
-    const auto * result_array = typeid_cast<const ColumnArray *>(rate_result.get());
-    if (!result_array || result_array->size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform produced an invalid one-row rate result");
-    const size_t grid_cells = result_array->getSize(0);
-    auto match = group_state->add(join_group, side, metric_name, rate_result, grid_cells);
-    if (!match)
-        return;
-
-    appendAddedGrid(*match->values, 0, *rate_result, 0, values_column);
-    group_column->insert(Field{match->group});
-}
-
-void PromQLTwoRangeRatesTransform::appendAddedGrid(
-    const IColumn & first_column,
-    size_t first_row,
-    const IColumn & second_column,
-    size_t second_row,
-    MutableColumnPtr & output_column)
-{
-    const auto * first_array = typeid_cast<const ColumnArray *>(&first_column);
-    const auto * second_array = typeid_cast<const ColumnArray *>(&second_column);
-    auto * output_array = typeid_cast<ColumnArray *>(output_column.get());
-    if (!first_array || !second_array || !output_array || first_row >= first_array->size() || second_row >= second_array->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform received an invalid rate grid column");
-
-    const auto * first_nullable = typeid_cast<const ColumnNullable *>(&first_array->getData());
-    const auto * second_nullable = typeid_cast<const ColumnNullable *>(&second_array->getData());
-    auto * output_nullable = typeid_cast<ColumnNullable *>(&output_array->getData());
-    if (!first_nullable || !second_nullable || !output_nullable)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform requires nullable rate grid values");
-
-    const auto * first_values = typeid_cast<const ColumnFloat64 *>(&first_nullable->getNestedColumn());
-    const auto * second_values = typeid_cast<const ColumnFloat64 *>(&second_nullable->getNestedColumn());
-    auto * output_values = typeid_cast<ColumnFloat64 *>(&output_nullable->getNestedColumn());
-    if (!first_values || !second_values || !output_values)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native two-rate transform requires Float64 rate grid values");
-
-    const auto & first_offsets = first_array->getOffsets();
-    const auto & second_offsets = second_array->getOffsets();
-    const size_t first_begin = first_row == 0 ? 0 : first_offsets[first_row - 1];
-    const size_t second_begin = second_row == 0 ? 0 : second_offsets[second_row - 1];
-    const size_t first_size = first_offsets[first_row] - first_begin;
-    const size_t second_size = second_offsets[second_row] - second_begin;
-    if (first_size != second_size)
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "PromQL native two-rate transform received rate grids with different sizes: {} and {}",
-            first_size,
-            second_size);
-
-    const auto & first_null_map = first_nullable->getNullMapData();
-    const auto & second_null_map = second_nullable->getNullMapData();
-    auto & output_null_map = output_nullable->getNullMapData();
-    auto & output_offsets = output_array->getOffsets();
-    auto & output_data = output_values->getData();
-    const auto & first_data = first_values->getData();
-    const auto & second_data = second_values->getData();
-
-    for (size_t i = 0; i < first_size; ++i)
-    {
-        const size_t first_index = first_begin + i;
-        const size_t second_index = second_begin + i;
-        if (first_null_map[first_index] || second_null_map[second_index])
-        {
-            output_data.push_back(0);
-            output_null_map.push_back(UInt8{1});
-        }
-        else
-        {
-            output_data.push_back(first_data[first_index] + second_data[second_index]);
-            output_null_map.push_back(UInt8{0});
-        }
-    }
-
-    const size_t previous_offset = output_offsets.empty() ? 0 : output_offsets.back();
-    output_offsets.push_back(previous_offset + first_size);
 }
 
 void PromQLTwoRangeRatesTransform::destroyRateState() noexcept

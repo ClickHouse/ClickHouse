@@ -63,6 +63,79 @@ private:
 
 using PromQLTwoRangeRatesGroupStatePtr = std::shared_ptr<PromQLTwoRangeRatesGroupState>;
 
+/// Immutable execution contract used when the exact two-rate island is fused
+/// into an ordered MergeTree read. This is deliberately typed: a source cannot
+/// install arbitrary pipeline callbacks while changing its declared header.
+struct PromQLTwoRangeRatesFusionConfig
+{
+    using CollectorPtr = std::shared_ptr<ContextTimeSeriesTagsCollector>;
+
+    PromQLTwoRangeRatesFusionConfig(
+        CollectorPtr collector_,
+        AggregateFunctionPtr rate_function_,
+        String first_metric_name_,
+        String second_metric_name_,
+        size_t max_samples_per_series_,
+        size_t max_output_block_size_,
+        size_t max_join_groups_,
+        size_t max_grid_cells_,
+        std::optional<Field> raw_min_time_,
+        std::optional<Field> raw_max_time_,
+        SharedHeader output_header_);
+
+    const CollectorPtr collector;
+    const AggregateFunctionPtr rate_function;
+    const String first_metric_name;
+    const String second_metric_name;
+    const size_t max_samples_per_series;
+    const size_t max_output_block_size;
+    const size_t max_join_groups;
+    const size_t max_grid_cells;
+    const std::optional<Field> raw_min_time;
+    const std::optional<Field> raw_max_time;
+    const SharedHeader output_header;
+};
+
+using PromQLTwoRangeRatesFusionConfigPtr = std::shared_ptr<const PromQLTwoRangeRatesFusionConfig>;
+
+/// Shared implementation of metric-side matching and final grid addition.
+/// Both the ordinary single-input transform and the storage-fused ordered
+/// merge use this object, so they cannot drift in label or NULL semantics.
+class PromQLTwoRangeRatesSeriesMatcher
+{
+public:
+    using Collector = ContextTimeSeriesTagsCollector;
+    using CollectorPtr = std::shared_ptr<Collector>;
+    using Group = Collector::Group;
+
+    PromQLTwoRangeRatesSeriesMatcher(
+        CollectorPtr collector_,
+        String first_metric_name_,
+        String second_metric_name_,
+        PromQLTwoRangeRatesGroupStatePtr group_state_);
+
+    void addFinishedSeries(
+        Group full_group,
+        MutableColumnPtr & rate_result,
+        MutableColumnPtr & group_column,
+        MutableColumnPtr & values_column) const;
+
+private:
+    static void appendAddedGrid(
+        const IColumn & first_column,
+        size_t first_row,
+        const IColumn & second_column,
+        size_t second_row,
+        MutableColumnPtr & output_column);
+
+    const CollectorPtr collector;
+    const String first_metric_name;
+    const String second_metric_name;
+    const PromQLTwoRangeRatesGroupStatePtr group_state;
+};
+
+using PromQLTwoRangeRatesSeriesMatcherPtr = std::shared_ptr<const PromQLTwoRangeRatesSeriesMatcher>;
+
 /// A bounded single-stream kernel for
 /// `rate(metric_a[window]) + rate(metric_b[window])`.
 ///
@@ -105,29 +178,17 @@ protected:
 private:
     void startSeries(const IColumn & id_column, size_t row, Group full_group);
     void finishSeries(MutableColumnPtr & group_column, MutableColumnPtr & values_column);
-    void addFinishedSeries(Group full_group, MutableColumnPtr & group_column, MutableColumnPtr & values_column);
     void checkAndRememberInputOrder(const IColumn & id_column, const IColumn & bucket_column, size_t row);
     void destroyRateState() noexcept;
-
-    static void appendAddedGrid(
-        const IColumn & first_column,
-        size_t first_row,
-        const IColumn & second_column,
-        size_t second_row,
-        MutableColumnPtr & output_column);
 
     InputPort & input;
     OutputPort & output;
 
     CollectorPtr collector;
     AggregateFunctionPtr rate_function;
-    const String first_metric_name;
-    const String second_metric_name;
     const size_t max_samples_per_series;
     const size_t max_output_block_size;
-    const size_t max_join_groups;
-    const size_t max_grid_cells;
-    PromQLTwoRangeRatesGroupStatePtr group_state;
+    PromQLTwoRangeRatesSeriesMatcherPtr series_matcher;
 
     size_t id_position = 0;
     size_t bucket_position = 0;
