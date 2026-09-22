@@ -151,6 +151,8 @@ protected:
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
+        /// May be null for storages that never plan direct subcolumn reads (see `prepareReadingFromFormat`).
+        const StorageSnapshotPtr & storage_snapshot,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context_,

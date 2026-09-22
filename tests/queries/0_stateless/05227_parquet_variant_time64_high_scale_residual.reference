@@ -1,0 +1,15 @@
+-- Declared `Time64(9)` typed path keeps all nine fractional digits
+00:00:00.123456789	Time64(9)
+{"t":"00:00:00.123456789"}
+-- The same file read back as plain JSON exposes the residual decimal
+{"t":0.123456789}	{'t':'Decimal(18, 9)'}
+-- Declared `Time64(7)` typed path
+12:34:56.1234567	Time64(7)
+-- `Time64(6)` still uses the `TIME(MICROS)` primitive
+12:34:56.123456	Time64(6)
+{"t":"12:34:56.123456"}	{'t':'Time64(6)'}
+-- `Dynamic` values: mixed types force the residual path; nothing is truncated
+86399.999999999	Decimal(18, 9)
+-0.000000001	Decimal(18, 9)
+00:00:01.500000	Time64(6)
+x	String
