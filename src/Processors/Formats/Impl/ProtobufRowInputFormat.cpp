@@ -19,13 +19,16 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool with_length_delimiter_,
     bool flatten_google_wrappers_,
     bool oneof_presence_,
+    Int64 input_datetime64_scale_,
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
-    , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, google_protos_path))
+    , descriptor(
+          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, google_protos_path))
     , with_length_delimiter(with_length_delimiter_)
     , flatten_google_wrappers(flatten_google_wrappers_)
     , oneof_presence(oneof_presence_)
+    , input_datetime64_scale(input_datetime64_scale_)
 {
 }
 
@@ -41,6 +44,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
         /* with_envelope = */ false,
         flatten_google_wrappers,
         oneof_presence,
+        input_datetime64_scale,
         *reader);
 }
 
@@ -172,6 +176,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     with_length_delimiter,
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
+                    settings.protobuf.input_datetime64_scale,
                     settings.protobuf.google_protos_path);
             });
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");

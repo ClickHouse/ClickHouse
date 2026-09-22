@@ -1752,6 +1752,22 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
+    DECLARE(Int64, input_format_protobuf_datetime64_scale, -1, R"(
+Precision of an integer Protobuf field read into `DateTime64`.
+
+- `-1` — the integer is Unix seconds (default). It is scaled into the column, so the same payload decodes to the same instant after the column precision changes. Subseconds are not present on this path.
+- `N` >= 0 — the integer is scaled ticks of `10^-N` seconds. `N` must equal the `DateTime64` column precision; mismatches are rejected. This preserves subseconds and requires the writer to have used the same precision.
+
+`float` and `double` fields always store fractional Unix seconds and ignore this setting. `string` and `bytes` fields stay textual.
+)", 0) \
+    DECLARE(Int64, output_format_protobuf_datetime64_scale, -1, R"(
+Precision of an integer Protobuf field written from `DateTime64`.
+
+- `-1` — write Unix seconds (default), truncating subseconds. Payload stays valid if the column precision later changes.
+- `N` >= 0 — write scaled ticks of `10^-N` seconds. `N` must equal the `DateTime64` column precision; mismatches are rejected. The reader must set `input_format_protobuf_datetime64_scale` to the same `N`.
+
+`float` and `double` fields always store fractional Unix seconds and ignore this setting. `string` and `bytes` fields stay textual.
+)", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
