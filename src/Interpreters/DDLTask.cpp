@@ -68,6 +68,8 @@ String HostID::readableString() const
 
 std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
 {
+    /// These settings are used only while parsing alternative dialects. Their values are materialized in the
+    /// normalized ClickHouse query before it is enqueued. Keep this list in sync when adding parser-only settings.
     static constexpr std::array settings{
         std::string_view{"dialect"},
         std::string_view{"allow_experimental_kusto_dialect"},
@@ -76,6 +78,10 @@ std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
         std::string_view{"polyglot_dialect"},
         std::string_view{"enable_json_ast_dialect"},
         std::string_view{"enable_trino_dialect"},
+        std::string_view{"promql_database"},
+        std::string_view{"promql_table"},
+        std::string_view{"promql_evaluation_time"},
+        std::string_view{"evaluation_time"},
     };
     return settings;
 }
