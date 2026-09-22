@@ -16,12 +16,14 @@ enum class FilterPattern
     Alternating,
     DenseWithHole,
     ShortRuns,
+    AllSelected,
+    AllRejected,
 };
 
 IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
 {
     IColumn::Filter filter;
-    const UInt8 initial_value = pattern == FilterPattern::DenseWithHole ? 1 : 0;
+    const UInt8 initial_value = pattern == FilterPattern::DenseWithHole || pattern == FilterPattern::AllSelected ? 1 : 0;
     filter.resize_fill(rows, initial_value);
 
     switch (pattern)
@@ -59,6 +61,9 @@ IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
         case FilterPattern::ShortRuns:
             for (size_t i = 0; i < rows; ++i)
                 filter[i] = (i % 14 < 3) || (i % 14 >= 7 && i % 14 < 11);
+            break;
+        case FilterPattern::AllSelected:
+        case FilterPattern::AllRejected:
             break;
     }
 
@@ -133,6 +138,8 @@ BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Random)->Arg(1 << 
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::DenseWithHole)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::ShortRuns)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::AllSelected)->Arg(1 << 20)->MinTime(1.0);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::AllRejected)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Clustered)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Random)->Arg(1 << 20)->MinTime(1.0);
 BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Alternating)->Arg(1 << 20)->MinTime(1.0);
