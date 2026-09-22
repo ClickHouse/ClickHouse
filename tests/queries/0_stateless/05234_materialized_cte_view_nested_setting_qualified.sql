@@ -54,3 +54,20 @@ SELECT * FROM (SELECT * FROM m_outer_113711b) SETTINGS enable_global_with_statem
 SELECT replaceAll(replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH'), currentDatabase(), 'db') FROM system.tables WHERE database = currentDatabase() AND name = 'v_outer_set_113711b';
 SELECT * FROM v_outer_set_113711b;
 DROP TABLE v_outer_set_113711b, m_outer_113711b;
+
+SELECT '-- a repeated setting in one clause is off if any occurrence is off';
+-- 3 distinguishes the table from the CTE's 1.
+DROP TABLE IF EXISTS v_rep_10_113711b, v_rep_01_113711b, m_rep_113711b;
+CREATE TABLE m_rep_113711b (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO m_rep_113711b VALUES (3);
+CREATE VIEW v_rep_10_113711b AS
+WITH m_rep_113711b AS MATERIALIZED (SELECT 1 AS x)
+SELECT * FROM (SELECT * FROM m_rep_113711b) SETTINGS enable_global_with_statement = 1, enable_global_with_statement = 0;
+CREATE VIEW v_rep_01_113711b AS
+WITH m_rep_113711b AS MATERIALIZED (SELECT 1 AS x)
+SELECT * FROM (SELECT * FROM m_rep_113711b) SETTINGS enable_global_with_statement = 0, enable_global_with_statement = 1;
+SELECT replaceAll(replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH'), currentDatabase(), 'db') FROM system.tables WHERE database = currentDatabase() AND name = 'v_rep_10_113711b';
+SELECT replaceAll(replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH'), currentDatabase(), 'db') FROM system.tables WHERE database = currentDatabase() AND name = 'v_rep_01_113711b';
+SELECT * FROM v_rep_10_113711b;
+SELECT * FROM v_rep_01_113711b;
+DROP TABLE v_rep_10_113711b, v_rep_01_113711b, m_rep_113711b;

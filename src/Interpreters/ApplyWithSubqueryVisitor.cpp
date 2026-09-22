@@ -68,8 +68,7 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// The CTEs this select declares itself are registered below either way: only the inherited
-    /// ones are out of scope here.
+    /// Only the inherited names are out of scope here; the select's own plain CTEs are registered below.
     std::optional<Data> scope_data;
     if (data.context)
     {

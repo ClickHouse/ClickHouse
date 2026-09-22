@@ -12,3 +12,8 @@ WITH r_plain_113711b AS (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.r_plain_
 -- a clause on the outer select hides the CTE from the nested subquery too
 WITH m_outer_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.m_outer_113711b) SETTINGS enable_global_with_statement = 0
 5
+-- a repeated setting in one clause is off if any occurrence is off
+WITH m_rep_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.m_rep_113711b) SETTINGS enable_global_with_statement = 1, enable_global_with_statement = 0
+WITH m_rep_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.m_rep_113711b) SETTINGS enable_global_with_statement = 0, enable_global_with_statement = 1
+3
+3
