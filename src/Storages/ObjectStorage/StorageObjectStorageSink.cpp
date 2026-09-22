@@ -278,9 +278,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
                 query_settings.create_new_file_on_insert,
                 getLogger("PartitionedStorageObjectStorageSink"));
 
-        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, reservations = reservations]() mutable -> String
+        get_next_path = [storage = object_storage, config = configuration, settings = query_settings, numbered_keys, sequence_number, path_reservations = reservations]() mutable -> String
         {
-            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *reservations);
+            return getNextKeyForSplittingBySize(*storage, *config, settings, numbered_keys, sequence_number, *path_reservations);
         };
     }
 

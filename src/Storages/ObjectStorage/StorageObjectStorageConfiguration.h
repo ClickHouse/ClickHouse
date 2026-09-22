@@ -190,13 +190,13 @@ public:
     bool tryReservePathForWrite(const String & path)
     {
         std::lock_guard lock(paths_mutex);
-        return paths_reserved_for_write.insert(path).second;
+        return paths_reserved_for_write.paths.insert(path).second;
     }
 
     void releasePathReservedForWrite(const String & path)
     {
         std::lock_guard lock(paths_mutex);
-        paths_reserved_for_write.erase(path);
+        paths_reserved_for_write.paths.erase(path);
     }
 
     virtual String getDataSourceDescription() const = 0;
@@ -466,12 +466,15 @@ protected:
     /// The keys of the objects that the inserts into this table are writing right now, see `tryReservePathForWrite`.
     /// Guarded by `paths_mutex`. The reservations belong to the writers of this very object, so a copy of the
     /// configuration starts with none of them, like it starts with a fresh mutex.
-    struct ReservedPaths : public std::unordered_set<String>
+    struct ReservedPaths
     {
+        std::unordered_set<String> paths;
+
         ReservedPaths() = default;
+        /// Nothing is copied: the copy starts empty, whatever the source holds.
         ReservedPaths(const ReservedPaths &) {}
         /// Nothing is copied, so self-assignment needs no special handling.
-        ReservedPaths & operator=(const ReservedPaths &) { clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
+        ReservedPaths & operator=(const ReservedPaths &) { paths.clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
     };
     ReservedPaths paths_reserved_for_write;
     void checkFormat() const;
