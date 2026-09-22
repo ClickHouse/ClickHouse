@@ -58,3 +58,46 @@ ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0;
 
 DROP TABLE test_string_filter_only;
+
+DROP TABLE IF EXISTS test_string_filter_mixed;
+CREATE TABLE test_string_filter_mixed
+(
+    id UInt64,
+    part UInt8,
+    s String
+)
+ENGINE = MergeTree
+PARTITION BY part
+ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    serialization_info_version = 'basic',
+    string_serialization_version = 'single_stream';
+
+INSERT INTO test_string_filter_mixed VALUES (0, 0, ''), (1, 0, 'legacy');
+
+ALTER TABLE test_string_filter_mixed MODIFY SETTING
+    serialization_info_version = 'with_types',
+    string_serialization_version = 'with_size_stream';
+
+INSERT INTO test_string_filter_mixed VALUES (2, 1, ''), (3, 1, 'modern');
+
+SELECT 'mixed table has legacy and size-stream parts';
+SELECT
+    countIf(not has(substreams, 's.size')),
+    countIf(has(substreams, 's.size'))
+FROM system.parts_columns
+WHERE database = currentDatabase()
+    AND table = 'test_string_filter_mixed'
+    AND active
+    AND column = 's';
+
+SELECT 'mixed legacy and size-stream parts remain correct';
+SELECT id, s
+FROM test_string_filter_mixed
+PREWHERE notEmpty(s)
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
+
+DROP TABLE test_string_filter_mixed;
