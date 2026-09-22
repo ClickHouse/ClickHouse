@@ -6,6 +6,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -309,9 +310,20 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         return res;
     chassert(table);
 
-    if (db->getUUID() == UUIDHelpers::Nil)
-        return res;
     if (table->getName() != "Dictionary")
+        return res;
+
+    /// A name written through a read-only `Overlay` facade denotes the dictionary of the source
+    /// database that the facade resolves it to. The facade owns no metadata and has no UUID of
+    /// its own, and the loader registers the dictionary under its source key only (the UUID for
+    /// an `Atomic` source, `database.name` otherwise), so the resolution has to follow the storage
+    /// the facade returned to that key; otherwise `dictGet('ov.d', ...)` and `dictionary('ov.d')`
+    /// would keep looking up the facade name and fail with "not found" for a dictionary that
+    /// `SHOW DICTIONARIES FROM ov` lists.
+    if (DatabaseOverlay::isReadonlyFacade(db.get()))
+        return table->getStorageID().getInternalDictionaryName();
+
+    if (db->getUUID() == UUIDHelpers::Nil)
         return res;
 
     return toString(table->getStorageID().uuid);

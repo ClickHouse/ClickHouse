@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Databases/DatabaseOverlay.h>
+
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -48,6 +50,10 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    /// A name written through a read-only `Overlay` facade needs the `dictGet` grant on the facade
+    /// name as well as on the source dictionary, and the check must precede the loading below.
+    DatabaseOverlay::checkDictionaryAccessIfFacade(dictionary_name, context);
+
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
     std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
     auto load_result = external_loader.load(resolved_name);

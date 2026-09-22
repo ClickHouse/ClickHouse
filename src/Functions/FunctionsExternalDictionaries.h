@@ -28,6 +28,7 @@
 
 #include <Access/Common/AccessFlags.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
@@ -95,6 +96,11 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
+        /// A name written through a read-only `Overlay` facade needs the grant on the facade name
+        /// as well, and that check must precede the loading of the source dictionary.
+        if (!access_checked)
+            DatabaseOverlay::checkDictionaryAccessIfFacade(dictionary_name, context);
+
         auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
         if (!access_checked)

@@ -255,6 +255,17 @@ public:
     /// metadata / remote error reaches a user with no grant on the source.
     static void checkSourceTableAccessIfFacade(const StorageID & table_id, ContextPtr context, AccessType access_to_check);
 
+    /// The same fail-closed dual-grant check for the dictionary consumers that take the dictionary
+    /// name as a string (`dictGet` and its family, the `dictionary` table function, the
+    /// `Dictionary` table engine): when `written_dictionary_name`, qualified against the current
+    /// database of `context` the way the dictionary loader qualifies it, names a dictionary through
+    /// a read-only `Overlay` facade, requires `dictGet` on both the written facade name and the
+    /// source dictionary it resolves to. Callers run it *before* they load the dictionary through
+    /// `ExternalDictionariesLoader`, so that a source's own loading error never reaches a caller
+    /// without the grants. Does nothing for XML dictionaries and for names in plain databases;
+    /// the caller's own check on the loaded dictionary's id covers those.
+    static void checkDictionaryAccessIfFacade(const String & written_dictionary_name, ContextPtr context);
+
     /// When `written_id` refers to a table reached through a read-only `Overlay` facade — the
     /// database of `written_id` is a read-only `Overlay` while `storage` belongs to a different
     /// table (the underlying source) — returns the id of that source table, so the caller can

@@ -2,6 +2,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Databases/DatabaseOverlay.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -214,6 +215,15 @@ Pipe StorageDictionary::read(
     const size_t threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+
+    /// A custom name (the `dictionary` table function, the `Dictionary` table engine) written
+    /// through a read-only `Overlay` facade needs the `dictGet` grant on the facade name as well,
+    /// and that check must precede the loading of the source dictionary. A dictionary read under
+    /// its own name behind a facade (`SELECT ... FROM ov.d`) was already checked by the catalog
+    /// lookup that resolved the facade name.
+    if (location != Location::SameDatabaseAndNameAsDictionary)
+        DatabaseOverlay::checkDictionaryAccessIfFacade(registered_dictionary_name, local_context);
+
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
 
     /**

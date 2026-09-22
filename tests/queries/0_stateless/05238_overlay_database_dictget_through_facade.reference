@@ -1,0 +1,34 @@
+Default user: the facade name resolves to the source dictionary in every consumer
+one	0	none
+two
+1	one
+2	two
+1	one
+2	two
+1	one
+2	two
+1	one
+2	two
+db_ovl	d
+The shadowed name denotes the table of the first source, not the dictionary of the second
+not found
+not found
+one
+Facade grant only: denied before the source dictionary is reached
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+Source grant only: denied on the facade name, and the denial does not name the source database
+ACCESS_DENIED
+0
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+one
+Both grants: every consumer works through the facade name
+one
+two
+1	one
+2	two
+1	one
+2	two

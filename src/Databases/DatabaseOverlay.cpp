@@ -20,6 +20,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -202,6 +203,16 @@ void DatabaseOverlay::checkSourceTableAccessIfFacade(const StorageID & table_id,
 {
     if (const auto facade = tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, context_, access_to_check);
+}
+
+void DatabaseOverlay::checkDictionaryAccessIfFacade(const String & written_dictionary_name, ContextPtr context_)
+{
+    /// The loader's own qualification: an XML dictionary keeps an empty database name, an
+    /// unqualified DDL dictionary name is qualified with the current database of the context.
+    const auto qualified_name = context_->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(written_dictionary_name, context_);
+    if (qualified_name.database.empty())
+        return;
+    checkSourceTableAccessIfFacade(StorageID{qualified_name.database, qualified_name.table}, std::move(context_), AccessType::dictGet);
 }
 
 bool DatabaseOverlay::areSourceDatabaseNamesVisible(const ContextPtr & context_) const
