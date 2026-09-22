@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
@@ -61,6 +62,61 @@ fs::path normalizeDirectoryPath(const fs::path & path)
     return path / "";
 }
 
+/// The pages of one listing can only be fetched one after another, so enumerating a disk that holds
+/// hundreds of thousands of objects takes hundreds of sequential requests, and no amount of threads
+/// makes it faster. Directory names in this layout are random strings produced by `getRandomASCIIString`,
+/// so grouping them by their first characters splits the key space into nearly equal parts that can be
+/// listed in parallel. This alphabet must stay in sync with `getRandomASCIIString`; names outside of it
+/// (written by another implementation) are still enumerated, by the two boundary shards below.
+constexpr std::string_view DIRECTORY_NAME_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+
+/// The point of the sharded listing is to replace many sequential pages with a few parallel ones,
+/// so it only pays off once a plain listing would need many pages. Until then a plain listing costs
+/// a single request while a sharded one costs one request per shard.
+constexpr size_t MIN_DIRECTORIES_TO_LIST_IN_PARALLEL = 4096;
+
+/// A listing returns at most `list_object_keys_size` (1000 by default) objects per request, so this
+/// is how many directories a single shard should cover for its listing to fit in about one page.
+/// It only controls how the work is split: a shard that turns out bigger is simply paginated.
+constexpr size_t DIRECTORIES_PER_LISTING_SHARD = 64;
+
+/// A longer prefix means more shards; 26^3 shards would be far more requests than pages to fetch.
+constexpr size_t MAX_SHARD_PREFIX_LENGTH = 3;
+
+/// A `__meta/{directory}/prefix.path` object, which is what makes a directory of the disk exist.
+struct DirectoryObject
+{
+    std::string object_path;
+    std::string remote_path;
+    std::optional<ObjectMetadata> metadata;
+};
+
+/// The outcome of loading one directory. `loaded` stays false for a directory that disappeared while
+/// it was being read, which is not an error: it is simply absent from the resulting layout.
+struct DirectoryLoadResult
+{
+    bool loaded = false;
+    std::string local_path;
+    DirectoryRemoteInfo info;
+};
+
+/// Split `names` into groups by their common prefix, so that listing every returned prefix in turn
+/// enumerates exactly the same objects as listing the whole directory, but in `target_count` requests
+/// that can run in parallel.
+std::vector<std::string> makeListingShards(const std::vector<std::string> & names, size_t target_count)
+{
+    std::unordered_set<std::string> prefixes;
+    for (size_t length = 1; length <= MAX_SHARD_PREFIX_LENGTH; ++length)
+    {
+        prefixes.clear();
+        for (const auto & name : names)
+            prefixes.emplace(name, 0, length);
+        if (prefixes.size() >= target_count)
+            break;
+    }
+    return {prefixes.begin(), prefixes.end()};
+}
+
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
@@ -94,7 +150,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     bool has_metadata = object_storage->existsOrHasAnyChild(layout->constructMetadataDirectoryKey());
 
-    std::mutex remote_layout_mutex;
     std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
     remote_layout[""] = DirectoryRemoteInfo{PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, "fake_etag", 0, {}};
 
@@ -123,6 +178,49 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     const auto read_snapshot = fs.takeReadOnlySnapshot();
 
+    /// Whether the disk was large enough for the listings to be split into parallel requests.
+    bool list_in_parallel = false;
+    bool files_are_prelisted = false;
+
+    /// The files of every directory of the disk, listed up front, and the slot every directory is loaded
+    /// into. Both are declared before the runner so that they outlive the tasks that write into them.
+    std::unordered_map<std::string, std::unordered_map<std::string, FileRemoteInfo>> prelisted_files;
+    std::mutex prelisted_files_mutex;
+    std::vector<DirectoryLoadResult> results;
+
+    /// Record the files of every directory whose name starts with `name_prefix`. Listing by prefix makes
+    /// one request cover many directories, and lets the listing of the disk be split into parallel parts.
+    auto list_files_shard = [this, &prelisted_files, &prelisted_files_mutex](const std::string & name_prefix)
+    {
+        const std::string metadata_directory_prefix = layout->constructMetadataDirectoryKey() + "/";
+
+        std::unordered_map<std::string, std::unordered_map<std::string, FileRemoteInfo>> shard;
+        for (auto iterator = object_storage->iterate(layout->constructFilesDirectoryKey(name_prefix), 0, /*with_tags=*/ false, std::nullopt);
+             iterator->isValid(); iterator->next())
+        {
+            const auto remote_file = iterator->current();
+            const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
+            if (!unpacked_remote_file_path.has_value())
+                continue;
+
+            const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
+            /// A listing by prefix also reaches the metadata directory when a directory name starts with
+            /// the same characters; the objects there describe directories, they are not files of one.
+            if (directory_remote_path == PlainRewritableLayout::METADATA_DIRECTORY_TOKEN
+                || remote_file->getPath().starts_with(metadata_directory_prefix))
+                continue;
+
+            shard[directory_remote_path].emplace(filename, FileRemoteInfo{
+                .bytes_size = remote_file->metadata->size_bytes,
+                .last_modified = remote_file->metadata->last_modified.epochTime(),
+            });
+        }
+
+        std::lock_guard guard(prelisted_files_mutex);
+        for (auto & [directory_remote_path, files] : shard)
+            prelisted_files[directory_remote_path].merge(files);
+    };
+
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
     {
@@ -136,21 +234,120 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             });
         }
 
-        for (auto iterator = object_storage->iterate(layout->constructMetadataDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+        /// Enumerate the directories of the disk, that is, the `__meta/{directory}/prefix.path` objects.
+        std::vector<DirectoryObject> directories;
+
+        const std::string metadata_directory_key = layout->constructMetadataDirectoryKey();
+        const bool can_list_by_prefix = object_storage->supportsPrefixListing();
+
+        auto collect_directory = [&](const RelativePathWithMetadataPtr & file)
         {
-            const auto file = iterator->current();
-            const auto remote_path = layout->parseDirectoryObjectKey(file->getPath());
-            if (!remote_path.has_value())
-                continue;
+            auto remote_path = layout->parseDirectoryObjectKey(file->getPath());
+            if (remote_path.has_value())
+                directories.emplace_back(DirectoryObject{file->getPath(), std::move(remote_path.value()), file->metadata});
+        };
+
+        /// A plain listing costs a single request for a small disk, which is the common case, so start
+        /// with one and only switch to the sharded listing once the disk turns out to be large enough
+        /// for the sequential pages to dominate the load time. The few pages read here are then re-read
+        /// by the sharded listing; that is cheaper than always paying for one request per shard.
+        for (auto iterator = object_storage->iterate(metadata_directory_key, 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+        {
+            if (can_list_by_prefix && directories.size() >= MIN_DIRECTORIES_TO_LIST_IN_PARALLEL)
+            {
+                list_in_parallel = true;
+                break;
+            }
+            collect_directory(iterator->current());
+        }
+
+        if (list_in_parallel)
+        {
+            directories.clear();
+            std::mutex directories_mutex;
+
+            auto list_shard = [&](const std::string & prefix, std::optional<std::string> start_after, bool stop_at_alphabet)
+            {
+                std::vector<DirectoryObject> shard;
+                for (auto iterator = object_storage->iterate(prefix, 0, /*with_tags=*/ false, start_after); iterator->isValid(); iterator->next())
+                {
+                    const auto file = iterator->current();
+                    auto remote_path = layout->parseDirectoryObjectKey(file->getPath());
+                    if (!remote_path.has_value())
+                        continue;
+                    /// The shard that covers everything sorting before the alphabet must not go on to read
+                    /// the whole directory once it reaches the alphabet - that is what it is splitting up.
+                    if (stop_at_alphabet && !remote_path->empty()
+                        && static_cast<unsigned char>(remote_path->front()) >= static_cast<unsigned char>(DIRECTORY_NAME_ALPHABET.front()))
+                        break;
+                    shard.emplace_back(DirectoryObject{file->getPath(), std::move(remote_path.value()), file->metadata});
+                }
+
+                std::lock_guard guard(directories_mutex);
+                directories.insert(directories.end(), std::make_move_iterator(shard.begin()), std::make_move_iterator(shard.end()));
+            };
+
+            ThreadPoolCallbackRunnerLocal<void> listing_runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
+            try
+            {
+                for (char c : DIRECTORY_NAME_ALPHABET)
+                    listing_runner.enqueueAndKeepTrack([&, c] { list_shard(fmt::format("{}/{}", metadata_directory_key, c), std::nullopt, false); });
+
+                /// Two more shards for the names that sort outside of the alphabet, so that a directory
+                /// written by another implementation is never silently dropped from the listing.
+                listing_runner.enqueueAndKeepTrack([&] { list_shard(metadata_directory_key, std::nullopt, true); });
+                listing_runner.enqueueAndKeepTrack([&]
+                {
+                    const char after_alphabet = static_cast<char>(static_cast<unsigned char>(DIRECTORY_NAME_ALPHABET.back()) + 1);
+                    list_shard(metadata_directory_key, fmt::format("{}/{}", metadata_directory_key, after_alphabet), false);
+                });
+            }
+            catch (...)
+            {
+                listing_runner.waitForAllToFinish();
+                throw;
+            }
+            listing_runner.waitForAllToFinishAndRethrowFirstError();
+        }
+
+        /// Listing the files of every directory separately costs one request per directory and dominates
+        /// the load time of a large disk. Now that the directory names are known, the same objects can be
+        /// enumerated by a few listings of the whole disk running in parallel.
+        /// A refresh is excluded on purpose: it re-reads only the directories whose `prefix.path` changed,
+        /// so it lists far fewer directories than the disk holds and listing the whole disk would be waste.
+        files_are_prelisted = list_in_parallel && !do_not_load_unchanged_directories;
+        std::vector<std::string> listing_shards;
+        if (files_are_prelisted)
+        {
+            std::vector<std::string> directory_names;
+            directory_names.reserve(directories.size());
+            for (const auto & directory : directories)
+                directory_names.push_back(directory.remote_path);
+
+            listing_shards = makeListingShards(directory_names, directories.size() / DIRECTORIES_PER_LISTING_SHARD);
+        }
+
+        /// Reading the `prefix.path` objects is independent of listing the files, and neither of the two
+        /// saturates the object storage on its own, so they are meant to run at the same time. The pool
+        /// takes tasks in the order they were scheduled, so scheduling all the listings first would make
+        /// them an earlier stage instead; the two kinds of task are interleaved to avoid that.
+        results.resize(directories.size());
+        size_t scheduled_shards = 0;
+        const size_t shard_every = listing_shards.empty() ? 0 : std::max<size_t>(1, directories.size() / listing_shards.size());
+        for (size_t i = 0; i < directories.size(); ++i)
+        {
+            if (scheduled_shards < listing_shards.size() && shard_every && i % shard_every == 0)
+                runner.enqueueAndKeepTrack([&, name_prefix = listing_shards[scheduled_shards++]] { list_files_shard(name_prefix); });
+
+            auto & directory = directories[i];
 
             /// Passing by reference:
             /// log: Created before runner, so it will be destroyed after
             /// settings: Same as log
-            /// remove_layout: Same
-            /// remote_layout_mutex: Same
+            /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, read_snapshot, do_not_load_unchanged_directories, &log, &settings, this, &remote_layout, &remote_layout_mutex]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -173,32 +370,35 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     if (do_not_load_unchanged_directories)
                     {
                         if (const auto known_info = read_snapshot->getDirectoryRemoteInfo(local_path);
-                            known_info && known_info->remote_path == remote_path.value() && known_info->etag == metadata->etag)
+                            known_info && known_info->remote_path == remote_path && known_info->etag == metadata->etag)
                         {
-                            std::lock_guard guard(remote_layout_mutex);
-                            remote_layout[local_path] = known_info.value();
+                            result = DirectoryLoadResult{true, std::move(local_path), known_info.value()};
                             return;
                         }
                     }
 
-                    /// Load the list of files inside the directory.
-                    for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false, std::nullopt); dir_iterator->isValid(); dir_iterator->next())
+                    /// Load the list of files inside the directory. When they were listed up front, the
+                    /// listing may still be running, so they are taken from `prelisted_files` afterwards.
+                    if (!files_are_prelisted)
                     {
-                        const auto remote_file = dir_iterator->current();
-                        const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
-                        if (!unpacked_remote_file_path.has_value())
+                        for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path), 0, /*with_tags=*/ false, std::nullopt); dir_iterator->isValid(); dir_iterator->next())
                         {
-                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
-                            continue;
+                            const auto remote_file = dir_iterator->current();
+                            const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
+                            if (!unpacked_remote_file_path.has_value())
+                            {
+                                LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
+                                continue;
+                            }
+
+                            const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
+                            chassert(directory_remote_path == remote_path);
+
+                            files.emplace(filename, FileRemoteInfo{
+                                .bytes_size = remote_file->metadata->size_bytes,
+                                .last_modified = remote_file->metadata->last_modified.epochTime(),
+                            });
                         }
-
-                        const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
-                        chassert(directory_remote_path == remote_path);
-
-                        files.emplace(filename, FileRemoteInfo{
-                            .bytes_size = remote_file->metadata->size_bytes,
-                            .last_modified = remote_file->metadata->last_modified.epochTime(),
-                        });
                     }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -242,10 +442,15 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     throw;
                 }
 
-                std::lock_guard guard(remote_layout_mutex);
-                remote_layout[local_path] = DirectoryRemoteInfo{remote_path.value(), metadata->etag, last_modified.epochTime(), std::move(files)};
+                result = DirectoryLoadResult{
+                    true,
+                    std::move(local_path),
+                    DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)}};
             });
         }
+
+        for (; scheduled_shards < listing_shards.size(); ++scheduled_shards)
+            runner.enqueueAndKeepTrack([&, name_prefix = listing_shards[scheduled_shards]] { list_files_shard(name_prefix); });
     }
     catch (...)
     {
@@ -255,7 +460,25 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    LOG_DEBUG(log, "Loaded metadata for {} directories", remote_layout.size());
+    /// Everything has been read by now, so the directories and their files can be put together.
+    for (auto & result : results)
+    {
+        if (!result.loaded)
+            continue;
+
+        if (files_are_prelisted)
+        {
+            if (auto it = prelisted_files.find(result.info.remote_path); it != prelisted_files.end())
+                result.info.files = std::move(it->second);
+        }
+
+        remote_layout[std::move(result.local_path)] = std::move(result.info);
+    }
+
+    LOG_DEBUG(log, "Loaded metadata for {} directories (listed {}, files listed {})",
+        remote_layout.size(),
+        list_in_parallel ? "by prefix shards" : "sequentially",
+        files_are_prelisted ? "for the whole disk at once" : "per directory");
     fs.applyLayout(std::move(remote_layout));
     previous_refresh.restart();
 }
