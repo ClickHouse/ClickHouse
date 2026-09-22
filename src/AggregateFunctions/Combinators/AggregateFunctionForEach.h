@@ -311,6 +311,28 @@ public:
                     "Arrays passed to {} aggregate function have different sizes", getName());
     }
 
+    /// The per-row body shared by the batch paths. `place` already includes any place offset.
+    void addRowToPlace(
+        AggregateDataPtr __restrict place,
+        const IColumn ** nested,
+        const IColumn::Offsets & offsets,
+        const absl::InlinedVector<const IColumn::Offsets *, 5> & trailing_offsets,
+        size_t row,
+        Arena * arena) const
+    {
+        size_t begin = offsets[row - 1];
+        size_t end = offsets[row];
+        assertArraySizesMatch(trailing_offsets, row, begin, end);
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+
+        char * nested_state = state.array_of_aggregate_datas;
+        for (size_t i = begin; i < end; ++i)
+        {
+            nested_func->add(nested_state, nested, i, arena);
+            nested_state += nested_size_of_data;
+        }
+    }
+
     /// Optimized batch aggregation for rows belonging to the same place.
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
@@ -320,13 +342,6 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            IAggregateFunctionHelper<AggregateFunctionForEach>::addBatchSinglePlace(
-                row_begin, row_end, place, columns, arena, if_argument_pos);
-            return;
-        }
-
         absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
         for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
@@ -335,19 +350,19 @@ public:
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
         const auto trailing_offsets = collectTrailingOffsets(columns);
 
-        for (size_t row = row_begin; row < row_end; ++row)
+        /// Two loops rather than one with a flag test inside, so the unfiltered path stays
+        /// branch-free; `IAggregateFunctionHelper` splits them for the same reason.
+        if (if_argument_pos >= 0)
         {
-            size_t begin = offsets[row - 1];
-            size_t end = offsets[row];
-            assertArraySizesMatch(trailing_offsets, row, begin, end);
-            AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
-
-            char * nested_state = state.array_of_aggregate_datas;
-            for (size_t i = begin; i < end; ++i)
-            {
-                nested_func->add(nested_state, nested.data(), i, arena);
-                nested_state += nested_size_of_data;
-            }
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (flags[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
         }
     }
 
@@ -361,13 +376,6 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            IAggregateFunctionHelper<AggregateFunctionForEach>::addBatch(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-            return;
-        }
-
         absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
         for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
@@ -376,23 +384,18 @@ public:
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
         const auto trailing_offsets = collectTrailingOffsets(columns);
 
-        for (size_t row = row_begin; row < row_end; ++row)
+        if (if_argument_pos >= 0)
         {
-            if (!places[row])
-                continue;
-
-            AggregateDataPtr place = places[row] + place_offset;
-            size_t begin = offsets[row - 1];
-            size_t end = offsets[row];
-            assertArraySizesMatch(trailing_offsets, row, begin, end);
-            AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
-
-            char * nested_state = state.array_of_aggregate_datas;
-            for (size_t i = begin; i < end; ++i)
-            {
-                nested_func->add(nested_state, nested.data(), i, arena);
-                nested_state += nested_size_of_data;
-            }
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (flags[row] && places[row])
+                    addRowToPlace(places[row] + place_offset, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (places[row])
+                    addRowToPlace(places[row] + place_offset, nested.data(), offsets, trailing_offsets, row, arena);
         }
     }
 

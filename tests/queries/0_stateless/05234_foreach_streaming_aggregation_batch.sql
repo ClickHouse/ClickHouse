@@ -42,5 +42,26 @@ INSERT INTO test_foreach_mismatch VALUES (1, [1.0, 2.0], [3.0, 4.0]), (1, [1.0, 
 SELECT corrForEach(a, b) FROM test_foreach_mismatch; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT grp, corrForEach(a, b) FROM test_foreach_mismatch GROUP BY grp; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
+-- A filtered-out row is not validated, exactly as the row-at-a-time path leaves it unvalidated.
+SELECT corrForEachIf(a, b, length(a) = length(b)) FROM test_foreach_mismatch;
+
 DROP TABLE test_foreach_mismatch;
+
+-- `-If` wraps `-ForEach`, so the batch paths receive a condition column. Filtered rows must neither
+-- contribute nor stretch the state: the skipped row below is longer than the ones that count.
+DROP TABLE IF EXISTS test_foreach_if;
+CREATE TABLE test_foreach_if (grp UInt32, arr Array(Float64), cond UInt8) ENGINE = Memory;
+INSERT INTO test_foreach_if VALUES (1, [1.0, 2.0, 3.0], 1), (1, [10.0, 10.0, 10.0, 10.0, 10.0], 0), (1, [4.0, 5.0, 6.0], 1), (2, [7.0, 8.0], 1), (2, [9.0, 9.0], 0);
+
+-- addBatchSinglePlace under -If, and the same answer taken the long way round.
+SELECT sumForEachIf(arr, cond) FROM test_foreach_if;
+SELECT sumForEach(arr) FROM test_foreach_if WHERE cond;
+
+-- addBatch under -If.
+SELECT grp, sumForEachIf(arr, cond) FROM test_foreach_if GROUP BY grp ORDER BY grp;
+
+-- Every row filtered out leaves an empty state, not a stretched one.
+SELECT sumForEachIf(arr, 0) FROM test_foreach_if;
+
+DROP TABLE test_foreach_if;
 DROP TABLE test_foreach_batch;
