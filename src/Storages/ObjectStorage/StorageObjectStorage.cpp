@@ -892,7 +892,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
         if (paths.size() > 1)
         {
-            /// These objects were written by this table, and are deleted whatever their keys are.
+            /// These objects were written by this table, and are deleted whatever their keys are - unless
+            /// a concurrent insert is still writing them, see `removeStaleSplitObjects`.
             std::vector<String> stale_keys;
             stale_keys.reserve(paths.size() - 1);
             for (auto it = paths.begin() + 1; it != paths.end(); ++it)
@@ -903,6 +904,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
             removeStaleSplitObjects(
                 *object_storage,
+                *configuration,
                 stale_keys,
                 [&](const String & removed_key) { configuration->retirePath(removed_key); },
                 log);
@@ -913,6 +915,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             /// on a reload. Only a truncating insert that is split by size claims the numbered sequence.
             removeStaleSplitObjectsByNumber(
                 *object_storage,
+                *configuration,
                 getNumberedFileNames(paths.front().path),
                 settings.create_new_file_on_insert,
                 log);

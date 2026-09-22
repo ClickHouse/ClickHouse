@@ -118,12 +118,22 @@ String getNextKeyForSplittingBySize(
 
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
     const std::vector<String> & stale_keys,
     const std::function<void(const String &)> & on_removed,
     const LoggerPtr & log)
 {
     for (const auto & stale_key : stale_keys)
     {
+        /// The insert writing this object is not over: it holds the reservation of every key it has generated
+        /// until it is, also of the keys it has already committed and published. The truncating insert cannot
+        /// reuse this key either - `tryReservePathForWrite` refuses a reserved key - so it steps over it.
+        if (configuration.isPathReservedForWrite(stale_key))
+        {
+            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+            continue;
+        }
+
         object_storage.removeObjectIfExists(StoredObject(stale_key));
         /// Logged here rather than left to the object storage: `S3` and `Azure` log the objects they delete, `HDFS` and `Local` do not.
         LOG_INFO(log, "Removed the object {} written by a previous insert into the table", stale_key);
@@ -138,6 +148,7 @@ void removeStaleSplitObjects(
 /// known which of the objects belong to this table - nothing is deleted in that case.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
     const LoggerPtr & log)
@@ -150,6 +161,13 @@ void removeStaleSplitObjectsByNumber(
     {
         String stale_key = numbered_keys.getName(sequence_number);
         ++sequence_number;
+
+        /// See `removeStaleSplitObjects`. The object may or may not be there yet, so the probing goes on past it.
+        if (configuration.isPathReservedForWrite(stale_key))
+        {
+            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+            continue;
+        }
 
         if (!object_storage.exists(StoredObject(stale_key)))
             break;

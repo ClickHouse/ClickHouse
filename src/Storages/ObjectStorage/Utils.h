@@ -85,8 +85,11 @@ std::string getNextKeyForSplittingBySize(
 /// retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then leaves
 /// the table reading exactly the objects that still exist, instead of the ones it has already removed.
 /// Every removal is written to `log`: not every object storage logs the objects it deletes itself.
+/// A key that another insert into the table is still writing (see `StorageObjectStorageConfiguration::isPathReservedForWrite`)
+/// is left alone, and stays in the list: it is not a leftover of a previous insert but a part of one that is not over yet.
 void removeStaleSplitObjects(
     IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
     const std::vector<std::string> & stale_keys,
     const std::function<void(const std::string &)> & on_removed,
     const LoggerPtr & log);
@@ -95,8 +98,10 @@ void removeStaleSplitObjects(
 /// a table function, or a table that was reloaded since then. The objects are written with consecutive numbers
 /// starting from `numbered_keys.start_sequence_number`, so the removal stops at the first missing number.
 /// Nothing is removed if `create_new_file_on_insert` is enabled - see the comment in the implementation.
+/// A key that another insert into the table is still writing is skipped, like in `removeStaleSplitObjects`.
 void removeStaleSplitObjectsByNumber(
     IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
     const NumberedFileNames & numbered_keys,
     bool create_new_file_on_insert,
     const LoggerPtr & log);

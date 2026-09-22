@@ -186,10 +186,19 @@ public:
     /// keys exactly like it steps over the objects that already exist. The reservations are writer-only:
     /// no read ever sees them, and they are released when the insert is over - see `WrittenPathReservations`.
     ///
-    /// Returns false when the key is already reserved by another insert into this table.
+    /// Returns false when the key is already reserved by another insert into this table, or names an object
+    /// that this table has already published. A published key is checked here as well, under the same lock, and
+    /// not only in the object storage: the insert that wrote it publishes it before it releases the reservation,
+    /// so a key is never free for a moment in between, whatever the object storage reports about a just written
+    /// object - not every S3 implementation answers `HEAD` consistently right after the `PUT` has returned.
+    /// The list is scanned once per generated key, that is once per object written, which is negligible next to
+    /// writing the object itself.
     bool tryReservePathForWrite(const String & path)
     {
         std::lock_guard lock(paths_mutex);
+        const Paths & paths = getPathsUnlocked();
+        if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path; }) != paths.end())
+            return false;
         return paths_reserved_for_write.paths.insert(path).second;
     }
 
@@ -197,6 +206,14 @@ public:
     {
         std::lock_guard lock(paths_mutex);
         paths_reserved_for_write.paths.erase(path);
+    }
+
+    /// Whether an insert into this table is writing this key right now. A truncating insert leaves such objects
+    /// alone when it deletes the objects of the previous inserts: they belong to an insert that is not over yet.
+    bool isPathReservedForWrite(const String & path) const
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_reserved_for_write.paths.contains(path);
     }
 
     virtual String getDataSourceDescription() const = 0;

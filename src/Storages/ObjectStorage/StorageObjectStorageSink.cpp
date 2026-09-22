@@ -274,6 +274,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         if (query_settings.truncate_on_insert && !names_are_generated)
             removeStaleSplitObjectsByNumber(
                 *object_storage,
+                *configuration,
                 numbered_keys,
                 query_settings.create_new_file_on_insert,
                 getLogger("PartitionedStorageObjectStorageSink"));
