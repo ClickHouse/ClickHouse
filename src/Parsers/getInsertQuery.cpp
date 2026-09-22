@@ -11,8 +11,9 @@ namespace DB
 std::string getInsertQuery(const std::string & db_name, const std::string & table_name, const ColumnsWithTypeAndName & columns, IdentifierQuotingStyle quoting)
 {
     ASTInsertQuery query;
-    query.table_id.database_name = db_name;
-    query.table_id.table_name = table_name;
+    /// The destination goes through identifier nodes, not `table_id`, so that it too is formatted in `quoting`.
+    query.setDatabase(db_name);
+    query.setTable(table_name);
     query.columns = make_intrusive<ASTExpressionList>(',');
     query.children.push_back(query.columns);
     for (const auto & column : columns)
