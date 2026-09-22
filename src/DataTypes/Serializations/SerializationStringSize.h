@@ -18,8 +18,6 @@ public:
 
     static SerializationPtr create(MergeTreeStringSerializationVersion version_);
 
-    bool hasSeparateSizeStream() const { return version == MergeTreeStringSerializationVersion::WITH_SIZE_STREAM; }
-
     size_t allocatedBytes() const override;
 
     void enumerateStreams(
