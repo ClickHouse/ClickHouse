@@ -5,9 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Each check looks only at the URI token of the message, i.e. up to the first space after
-# "Received error from remote server". The response body that follows it, and the trailing
-# "(in file/uri ...)" suffix that comes from getFileName(), are masked elsewhere and are not
-# what this test pins.
+# "Received error from remote server": that token is the argument masked here. The response body
+# and the "(in file/uri ...)" suffix are produced elsewhere and are outside this oracle.
 
 HTTP_PORT=$(python3 -c "
 import socket
@@ -117,11 +116,12 @@ check_uri()
 echo "--- query parameters, INSERT (assertResponseIsOk) ---"
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO TABLE FUNCTION
-        url('http://127.0.0.1:${HTTP_PORT}/upload?X-Amz-Signature=siguri9f2a&password=pwuri3k8&list-type=2', 'CSV', 'c0 UInt8')
+        url('http://127.0.0.1:${HTTP_PORT}/upload?X-Amz-Signature=siguri9f2a&password=pwuri3k8&GoogleAccessId=gcsidprobe4m&list-type=2', 'CSV', 'c0 UInt8')
     SELECT 1
-" 2>&1 | check_uri -siguri9f2a -pwuri3k8 'X-Amz-Signature=[HIDDEN]' 'password=[HIDDEN]' 'list-type=2'
+" 2>&1 | check_uri -siguri9f2a -pwuri3k8 -gcsidprobe4m \
+    'X-Amz-Signature=[HIDDEN]' 'password=[HIDDEN]' 'GoogleAccessId=[HIDDEN]' 'list-type=2'
 
 echo "--- userinfo, SELECT ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM url('http://leakuser:pwuri5x9@127.0.0.1:${HTTP_PORT}/download', 'CSV', 'id UInt64')
-" 2>&1 | check_uri -pwuri5x9 '[HIDDEN]@' '127.0.0.1'
+" 2>&1 | check_uri -pwuri5x9 -leakuser '[HIDDEN]@' '127.0.0.1'
