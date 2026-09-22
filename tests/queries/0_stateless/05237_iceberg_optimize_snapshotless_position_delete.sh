@@ -11,18 +11,17 @@
 # metadata file's, a state `OPTIMIZE` must also survive.
 #
 # The row counts are asserted on both builds, and both `CREATE`s enable compaction per table so a
-# cloud build reaches the guard instead of refusing before it. So that a count of zero cannot pass
-# for the wrong reason, `OPTIMIZE` is also held to succeeding: without that, any exception raised
-# before the refusal would leave the table empty and the test green. Only a cloud refusal naming
-# that setting is tolerated, since the flag behind it is declared outside this repository. The
-# background-compaction assertion must never be reached, and a release build reports it as an
-# ordinary exception, so its message is rejected regardless of the build.
+# cloud build reaches the guard instead of refusing before it. A count of zero alone cannot pass for
+# the right reason - an exception before the refusal, or a table with nothing to rewrite, also
+# leaves it empty - so `OPTIMIZE` is additionally held to succeeding and to logging the refusal it
+# is supposed to take. That log statement sits above the `#if CLICKHOUSE_CLOUD` split, so the
+# assertion holds on either build. The background-compaction assertion must never be reached, and a
+# release build reports it as an ordinary exception, so its message is rejected on every build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
 for VARIANT in null negative absent empty_snapshots no_snapshots; do
@@ -70,19 +69,20 @@ PY
     ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}"
 
     before=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
-    # The exit status, not the presence of output, is what says whether `OPTIMIZE` failed: server
-    # logs reach the client's stderr at the harness' log level, so an unrelated warning must not
-    # count as a failure. `--send_logs_level=fatal` keeps a real exception's report short.
+    # The exit status, not the presence of output, is what says whether `OPTIMIZE` failed, so an
+    # unrelated log line must not count as a failure. The level is raised to `information` for this
+    # one call because the refusal under test announces itself there: a row count cannot tell "the
+    # guard refused" from "there was nothing to rewrite".
     ERR=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_experimental_iceberg_compaction=1 \
-        --send_logs_level=fatal --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
+        --send_logs_level=information --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
     STATUS=$?
     after=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
     if [[ "${ERR}" == *"Background compaction is not initialized"* ]]; then
         echo "${VARIANT} FAIL: OPTIMIZE reached the background-compaction assertion: ${ERR}"
-    elif [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
-        echo "${VARIANT} FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
-    elif [[ "${STATUS}" -ne 0 && "${ERR}" != *"allow_experimental_iceberg_compaction"* ]]; then
-        echo "${VARIANT} FAIL: OPTIMIZE failed unexpectedly: ${ERR}"
+    elif [[ "${STATUS}" -ne 0 ]]; then
+        echo "${VARIANT} FAIL: OPTIMIZE failed: ${ERR}"
+    elif [[ "${ERR}" != *"No snapshot is a current ancestor"* ]]; then
+        echo "${VARIANT} FAIL: OPTIMIZE did not reach the snapshotless guard: ${ERR}"
     else
         echo "${VARIANT} before=${before} after=${after}"
     fi
@@ -126,15 +126,16 @@ json.dump(meta, open(path, "w"))
 PY
 
 before=$(${FMT_CLIENT} --query "SELECT count() FROM ${TABLE}")
-ERR=$(${FMT_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
+ERR=$(${FMT_CLIENT} --allow_experimental_iceberg_compaction=1 --send_logs_level=information \
+    --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
 STATUS=$?
 after=$(${FMT_CLIENT} --query "SELECT count() FROM ${TABLE}")
 if [[ "${ERR}" == *"Background compaction is not initialized"* ]]; then
     echo "format_upgrade FAIL: OPTIMIZE reached the background-compaction assertion: ${ERR}"
-elif [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
-    echo "format_upgrade FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
-elif [[ "${STATUS}" -ne 0 && "${ERR}" != *"allow_experimental_iceberg_compaction"* ]]; then
-    echo "format_upgrade FAIL: OPTIMIZE failed unexpectedly: ${ERR}"
+elif [[ "${STATUS}" -ne 0 ]]; then
+    echo "format_upgrade FAIL: OPTIMIZE failed: ${ERR}"
+elif [[ "${ERR}" != *"No snapshot is a current ancestor"* ]]; then
+    echo "format_upgrade FAIL: OPTIMIZE did not reach the snapshotless guard: ${ERR}"
 else
     echo "format_upgrade before=${before} after=${after}"
 fi
