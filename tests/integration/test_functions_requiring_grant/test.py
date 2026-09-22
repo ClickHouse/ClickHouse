@@ -191,7 +191,9 @@ def test_listed_sql_udf_requires_grant_old_analyzer():
     )
 
     instance.query("GRANT FUNCTION ON listed_udf TO A")
-    assert instance.query("SELECT listed_udf(1)", user="A", settings=old_analyzer) == "2\n"
+    assert (
+        instance.query("SELECT listed_udf(1)", user="A", settings=old_analyzer) == "2\n"
+    )
 
 
 def test_decrypt_requires_grant():
@@ -314,7 +316,8 @@ BAD_CONFIGS = [
 @pytest.mark.parametrize("body, expected_error", BAD_CONFIGS)
 def test_invalid_config_is_rejected(body, expected_error):
     """Every one of these used to be a silent no-op: the administrator would see a protected
-    function in the config while anybody could still call it. The server must refuse to start."""
+    function in the config while anybody could still call it. The server must refuse to start.
+    """
     config_path = "/etc/clickhouse-server/config.d/functions_requiring_grant.xml"
     original = instance.exec_in_container(["bash", "-c", f"cat {config_path}"])
     bad_config = f"""<clickhouse>
