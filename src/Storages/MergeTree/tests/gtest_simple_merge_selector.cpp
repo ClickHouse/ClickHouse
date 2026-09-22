@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 
 #include <base/unit.h>
 
@@ -118,6 +119,84 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
 
         ASSERT_EQ(selected.size(), 0);
     }
+}
+
+TEST(TTLIndexClearMergeSelector, SkipsIncompleteTTLMetadata)
+{
+    const time_t current_time = 100;
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/false, current_time);
+
+    PartProperties part{
+        .name = "all_0_0_0",
+        .info = MergeTreePartInfo::fromPartName("all_0_0_0", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+        .all_ttl_calculated_if_any = false,
+        .size = 100,
+        .rows = 100,
+        .next_index_clear_ttl = current_time,
+        .can_preserve_files_for_index_clear = false,
+    };
+
+    std::vector<MergeConstraint> constraints{{1000, 1000}};
+    auto selected = selector.select({PartsRange{part}}, constraints, nullptr);
+
+    EXPECT_TRUE(selected.empty());
+}
+
+TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
+{
+    const time_t current_time = 100;
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/false, current_time);
+
+    auto make_part = [&](bool can_preserve_files_for_index_clear)
+    {
+        return PartProperties
+        {
+            .name = "all_0_0_0",
+            .info = MergeTreePartInfo::fromPartName("all_0_0_0", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .all_ttl_calculated_if_any = true,
+            .size = 100,
+            .rows = 1000,
+            .next_index_clear_ttl = current_time,
+            .can_preserve_files_for_index_clear = can_preserve_files_for_index_clear,
+        };
+    };
+
+    std::vector<MergeConstraint> constraints{{1000, 100}};
+
+    for (const bool can_preserve_files_for_index_clear : {false, true})
+    {
+        auto selected = selector.select({PartsRange{make_part(can_preserve_files_for_index_clear)}}, constraints, nullptr);
+        ASSERT_TRUE(selected.empty());
+    }
+}
+
+TEST(TTLIndexClearMergeSelector, LimitsTableToOneOutstandingMerge)
+{
+    const time_t current_time = 100;
+    TTLIndexClearMergeSelector selector(/*merge_in_progress_=*/true, current_time);
+
+    const auto make_part = [&](const String & name)
+    {
+        return PartProperties{
+            .name = name,
+            .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .all_ttl_calculated_if_any = true,
+            .size = 100,
+            .rows = 100,
+            .next_index_clear_ttl = current_time,
+            .can_preserve_files_for_index_clear = true,
+        };
+    };
+
+    const PartsRanges parts_ranges{
+        PartsRange{make_part("p1_0_0_0")},
+        PartsRange{make_part("p2_0_0_0")},
+    };
+    std::vector<MergeConstraint> constraints{{1000, 1000}};
+    EXPECT_TRUE(selector.select(parts_ranges, constraints, nullptr).empty());
+
+    TTLIndexClearMergeSelector selector_after_completion(/*merge_in_progress_=*/false, current_time);
+    EXPECT_EQ(selector_after_completion.select(parts_ranges, constraints, nullptr).size(), 1);
 }
 
 TEST(SimpleMergeSelector, ForceMergeByPartitionAge)

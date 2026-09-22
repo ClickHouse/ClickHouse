@@ -590,7 +590,12 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLForColumnFromAST(
+            ast,
+            new_metadata.columns,
+            context,
+            new_metadata.primary_key,
+            TTLValidationMode::Attach /* because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -669,6 +674,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.projections = std::move(recalculated_projections);
     }
 
+    new_metadata.validateTTLIndexClearTargets();
     return new_metadata;
 }
 

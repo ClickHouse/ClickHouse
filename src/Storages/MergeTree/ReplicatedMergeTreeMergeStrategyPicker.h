@@ -42,7 +42,17 @@ struct ReplicatedMergeTreeLogEntryData;
 class ReplicatedMergeTreeMergeStrategyPicker: public boost::noncopyable
 {
 public:
+    enum class TTLClearIndexExecutionRole : uint8_t
+    {
+        NotApplicable,
+        Source,
+        WaitForSource,
+        Failover,
+    };
+
     explicit ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
+
+    TTLClearIndexExecutionRole getTTLClearIndexExecutionRole(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     /// triggers refreshing the cached state (list of replicas etc.)
     /// used when we get new merge event from the zookeeper queue ( see queueUpdatingTask() etc )

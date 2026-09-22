@@ -82,6 +82,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[{"type":"Identifier","name":"x"}]', '"group_by_key":[]')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'), '"mode":"DELETE"', '"mode":"DELETE","group_by_key":[{"type":"Identifier","name":"x"}]')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d DELETE WHERE x = 1'), '"mode":"DELETE"', '"mode":"CLEAR_INDEX","index_name":"idx"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- INTERPOLATE is parser-produced only as an `ASTExpressionList` of `ASTInterpolateElement`s under an
