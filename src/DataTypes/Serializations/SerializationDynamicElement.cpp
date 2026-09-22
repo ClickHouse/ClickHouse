@@ -138,7 +138,8 @@ UInt128 SerializationDynamicElement::getHash(
     const String & nested_subcolumn_,
     const SerializationInfoSettings & serialization_info_settings_,
     bool is_null_map_subcolumn_,
-    bool nullable_added_by_extraction_)
+    bool nullable_added_by_extraction_,
+    bool selected_subcolumn_is_null_map_)
 {
     SipHash hash;
     hash.update("DynamicElement");
@@ -151,6 +152,7 @@ UInt128 SerializationDynamicElement::getHash(
     serialization_info_settings_.updateHash(hash);
     hash.update(is_null_map_subcolumn_);
     hash.update(nullable_added_by_extraction_);
+    hash.update(selected_subcolumn_is_null_map_);
     return hash.get128();
 }
 
@@ -161,17 +163,18 @@ SerializationPtr SerializationDynamicElement::create(
     const String & nested_subcolumn_,
     const SerializationInfoSettings & serialization_info_settings_,
     bool is_null_map_subcolumn_,
-    bool nullable_added_by_extraction_)
+    bool nullable_added_by_extraction_,
+    bool selected_subcolumn_is_null_map_)
 {
     if (!nested_->supportsPooling() || !shared_variant_serialization_->supportsPooling())
         return std::shared_ptr<ISerialization>(new SerializationDynamicElement(
-            nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_));
+            nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_));
     return ISerialization::pooled(
-        getHash(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_),
+        getHash(nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_),
         [&]
         {
             return new SerializationDynamicElement(
-                nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_);
+                nested_, shared_variant_serialization_, dynamic_element_name_, nested_subcolumn_, serialization_info_settings_, is_null_map_subcolumn_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_);
         });
 }
 
@@ -309,8 +312,15 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
                 ? nullable_added_by_extraction
                 : !isNullableOrLowCardinalityNullable(reader.type)
                     && isNullableOrLowCardinalityNullable(makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type));
+            /// Only the reader of the exact requested type reads the nested subcolumn itself; a reader of a
+            /// compatible variant deserializes the whole variant value, from which the subcolumn is extracted.
             reader.serialization = SerializationVariantElement::create(
-                variant_serialization, matched_variant_name, discr, variants.size(), reader_nullable_added_by_extraction);
+                variant_serialization,
+                matched_variant_name,
+                discr,
+                variants.size(),
+                reader_nullable_added_by_extraction,
+                reader.reads_nested_subcolumn_directly && selected_subcolumn_is_null_map);
             reader.serialization->deserializeBinaryBulkStatePrefix(settings, reader.state, cache);
             reader.null_map_serialization = SerializationVariantElementNullMap::create(matched_variant_name, discr, variants.size());
             reader.null_map_serialization->deserializeBinaryBulkStatePrefix(settings, reader.null_map_state, cache);
@@ -375,7 +385,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 {
     if (!state)
     {
-        if (is_null_map_subcolumn)
+        if (is_null_map_subcolumn || selected_subcolumn_is_null_map)
         {
             auto & data = assert_cast<ColumnUInt8 &>(result_column).getData();
             data.resize_fill(data.size() + limit, 1);
@@ -577,8 +587,16 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             inserted = true;
         }
 
+        /// A bare `UInt8` null map read through the element is the one subcolumn whose value for an absent
+        /// element is not its default: the element is not there, so the extracted value is `NULL` and the
+        /// map owes 1 (see `SerializationVariantElement::insertRowsForAbsentElement`).
         if (!inserted)
-            variant_column->insertDefault();
+        {
+            if (selected_subcolumn_is_null_map)
+                assert_cast<ColumnUInt8 &>(*variant_column).insertValue(1);
+            else
+                variant_column->insertDefault();
+        }
     }
 
     result_column.insertRangeFrom(*variant_column, 0, variant_column->size());

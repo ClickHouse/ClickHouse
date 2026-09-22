@@ -25,6 +25,10 @@ private:
     /// LowCardinality(Nullable). Only forwarded to the variant element serialization of the requested
     /// type; see SerializationVariantElement::nullable_added_by_extraction.
     bool nullable_added_by_extraction;
+    /// True when `nested_subcolumn` is a bare `UInt8` null map of the requested type, e.g. `Tuple(a
+    /// Nullable(UInt32))`.a.null. Unlike `is_null_map_subcolumn`, which is the null map OF the element,
+    /// this one is read through the element; see `SerializationVariantElement`.
+    bool selected_subcolumn_is_null_map;
 
     SerializationDynamicElement(
         const SerializationPtr & nested_,
@@ -33,7 +37,8 @@ private:
         const String & nested_subcolumn_,
         const SerializationInfoSettings & serialization_info_settings_,
         bool is_null_map_subcolumn_,
-        bool nullable_added_by_extraction_)
+        bool nullable_added_by_extraction_,
+        bool selected_subcolumn_is_null_map_)
         : SerializationWrapper(nested_)
         , shared_variant_serialization(shared_variant_serialization_)
         , dynamic_element_name(dynamic_element_name_)
@@ -41,6 +46,7 @@ private:
         , serialization_info_settings(serialization_info_settings_)
         , is_null_map_subcolumn(is_null_map_subcolumn_)
         , nullable_added_by_extraction(nullable_added_by_extraction_)
+        , selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
     {
     }
 
@@ -52,7 +58,8 @@ public:
         const String & nested_subcolumn_,
         const SerializationInfoSettings & serialization_info_settings_,
         bool is_null_map_subcolumn_,
-        bool nullable_added_by_extraction_);
+        bool nullable_added_by_extraction_,
+        bool selected_subcolumn_is_null_map_);
     static SerializationPtr create(
         const SerializationPtr & nested_,
         const SerializationPtr & shared_variant_serialization_,
@@ -60,7 +67,8 @@ public:
         const String & nested_subcolumn_,
         const SerializationInfoSettings & serialization_info_settings_,
         bool is_null_map_subcolumn_,
-        bool nullable_added_by_extraction_);
+        bool nullable_added_by_extraction_,
+        bool selected_subcolumn_is_null_map_ = false);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;

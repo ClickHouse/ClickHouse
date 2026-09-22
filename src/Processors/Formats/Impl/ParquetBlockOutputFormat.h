@@ -21,6 +21,8 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+
 private:
     struct MemoryToken
     {
@@ -95,6 +97,7 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
@@ -126,6 +129,7 @@ private:
     std::vector<Parquet::ColumnChunkWriteStates> prepared_first_row_group_columns;
     std::optional<std::unordered_map<String, Int64>> column_field_ids;
     Parquet::FileWriteState file_state;
+    std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
     bool needs_file_level_variant_analysis = false;
     bool replaying_buffered_input = false;
