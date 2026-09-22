@@ -445,3 +445,37 @@ def test_restore_part_written_by_newer_server(started_cluster):
 
     node.query("DROP TABLE IF EXISTS tbl_newer_format SYNC")
     remove_from_backups_disk(bname)
+
+
+def test_restore_valid_backup_onto_failing_disk(started_cluster):
+    # A valid backup restored onto a disk that fails (full, readonly, ...) is not a damaged backup: the
+    # error of the destination must reach the client with its own code, not as `BACKUP_DAMAGED`, which
+    # would also send the user to `restore_broken_parts_as_detached` - the wrong action.
+    node.query("DROP TABLE IF EXISTS tbl_failing_disk SYNC")
+    node.query("CREATE TABLE tbl_failing_disk (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO tbl_failing_disk SELECT number FROM numbers(10)")
+
+    bname = "test_restore_valid_backup_onto_failing_disk"
+    node.query(f"BACKUP TABLE tbl_failing_disk TO Disk('backups', '{bname}')")
+    node.query("DROP TABLE tbl_failing_disk SYNC")
+
+    node.query("SYSTEM ENABLE FAILPOINT restore_part_inject_no_space_error")
+    try:
+        errors_before = get_error_counts()
+        err = node.query_and_get_error(f"RESTORE TABLE tbl_failing_disk FROM Disk('backups', '{bname}')")
+        errors_delta = get_error_counts_delta(errors_before)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT restore_part_inject_no_space_error")
+
+    assert "Injected failure to write a file of part" in err
+    assert "CANNOT_WRITE_TO_FILE_DESCRIPTOR" in err
+    assert "BACKUP_DAMAGED" not in err
+    assert errors_delta == {"CANNOT_WRITE_TO_FILE_DESCRIPTOR": 1}
+
+    # With the failure gone the same backup restores fine.
+    node.query("DROP TABLE IF EXISTS tbl_failing_disk SYNC")
+    node.query(f"RESTORE TABLE tbl_failing_disk FROM Disk('backups', '{bname}')")
+    assert node.query("SELECT count(), sum(x) FROM tbl_failing_disk") == "10\t45\n"
+
+    node.query("DROP TABLE IF EXISTS tbl_failing_disk SYNC")
+    remove_from_backups_disk(bname)

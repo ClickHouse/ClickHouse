@@ -140,6 +140,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <base/sleep.h>
@@ -451,6 +452,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
     extern const int ILLEGAL_PROJECTION;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 namespace FailPoints
@@ -465,6 +467,9 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
+    /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
+    extern const char restore_part_inject_no_space_error[];
 }
 
 namespace ErrorCodes
@@ -9657,10 +9662,24 @@ namespace
 /// has been recorded for it yet).
 ///
 /// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
-/// Everything else means the backup cannot be read: either it was written by a newer server whose format
-/// this one does not understand (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed
-/// (`BACKUP_DAMAGED`).
-void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable)
+/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
+/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
+/// cannot be read: either it was written by a newer server whose format this one does not understand
+/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
+///
+/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
+/// Whether the error describes the disk or the configuration of this server rather than the contents of
+/// the backup. The files of the part have already been copied from the backup to the destination disk, so
+/// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
+/// permissions, I/O error, ...) - except for a missing file, which means the backup does not contain it.
+bool isDestinationSideError(const Exception & e)
+{
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() != ENOENT;
+    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED;
+}
+
+void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, bool in_local_step)
 {
     try
     {
@@ -9674,7 +9693,7 @@ void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable)
         if (!e)
             return;
 
-        if (!retryable)
+        if (!retryable && !in_local_step && !isDestinationSideError(*e))
         {
             e->resetCode(
                 e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
@@ -9702,15 +9721,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     String parent_part_dir = full_part_dir.parent_path();
     String part_dir_name = full_part_dir.filename();
 
+    /// Set while `load_part` runs a step that only writes to the destination, so that its failure is not
+    /// attributed to the backup.
+    bool in_local_step = false;
+
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
+        in_local_step = true;
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
+        in_local_step = false;
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        fiu_do_on(FailPoints::restore_part_inject_no_space_error,
+        {
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, ENOSPC,
+                "Injected failure to write a file of part {} restored from backup", part_name);
+        });
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
         /// usable; a failure throws and routes the part to `mark_broken` below
@@ -9741,6 +9771,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     {
         std::exception_ptr error;
         bool retryable = false;
+        in_local_step = false;
         try
         {
             /// A failure to load a restored part is a property of the backup, not of this server, so it is
@@ -9770,7 +9801,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!error)
             return part;
 
-        classifyAndRecordRestoreError(error, retryable);
+        classifyAndRecordRestoreError(error, retryable, in_local_step);
 
         if (!retryable && detach_if_broken)
         {
