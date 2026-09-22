@@ -1731,6 +1731,10 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            if (!clickhouse_transform_name.has_value())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported Iceberg transform name '{}' in the table's sort order", iceberg_transform_name);
             /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
             /// produce a parseable ORDER BY clause.
             auto quoted_column_name = backQuoteIfNeed(column_name);
