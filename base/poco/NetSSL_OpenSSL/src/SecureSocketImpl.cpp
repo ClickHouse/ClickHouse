@@ -317,38 +317,15 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 		SSL_set_session(_pSSL, _pSession->sslSession());
 	}
 
+	SSL_set_connect_state(_pSSL);
+	_needHandshake = true;
+
 	try
 	{
 		if (performHandshake && _pSocket->getBlocking())
 		{
-			HandshakeProfileEventCounter handshakeCounter(false);
-			try
-			{
-				SSLOperationResult result;
-				Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
-				do
-				{
-					RemainingTimeCounter counter(remaining_time);
-					result = performSSLOperation(_pSSL, [this]
-					{
-						return SSL_connect(_pSSL);
-					});
-				}
-				while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
-				handleError(result.rc, result.sslError, result.socketError, result.errorCode);
-				verifyPeerCertificate();
-			}
-			catch (...)
-			{
-				handshakeCounter.failed();
-				throw;
-			}
-			handshakeCounter.succeeded();
-		}
-		else
-		{
-			SSL_set_connect_state(_pSSL);
-			_needHandshake = true;
+			if (completeHandshakeImpl(true) != 1)
+				throw SSLConnectionUnexpectedlyClosedException();
 		}
 	}
 	catch (...)

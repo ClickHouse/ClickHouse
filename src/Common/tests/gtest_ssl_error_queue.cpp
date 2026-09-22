@@ -8,11 +8,13 @@
 #include <IO/SocketPeerClosed.h>
 
 #include <Poco/Net/Context.h>
+#include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocketImpl.h>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -86,6 +88,64 @@ const BIO_METHOD * failReadBioMethod()
     }();
     return method;
 }
+
+int retryRead(BIO * bio, char *, int)
+{
+    BIO_clear_retry_flags(bio);
+    BIO_set_retry_read(bio);
+    return -1;
+}
+
+int retryWrite(BIO * bio, const char *, int)
+{
+    BIO_clear_retry_flags(bio);
+    BIO_set_retry_write(bio);
+    return -1;
+}
+
+long retryCtrl(BIO *, int command, long, void *) // NOLINT(google-runtime-int)
+{
+    if (command == BIO_CTRL_FLUSH)
+        return 1;
+    return 0;
+}
+
+int retryCreate(BIO * bio)
+{
+    BIO_set_init(bio, 1);
+    BIO_set_data(bio, nullptr);
+    return 1;
+}
+
+int retryDestroy(BIO *)
+{
+    return 1;
+}
+
+const BIO_METHOD * retryBioMethod()
+{
+    static const BIO_METHOD * method = []
+    {
+        BIO_METHOD * result = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "always-retry");
+        BIO_meth_set_read(result, retryRead);
+        BIO_meth_set_write(result, retryWrite);
+        BIO_meth_set_ctrl(result, retryCtrl);
+        BIO_meth_set_create(result, retryCreate);
+        BIO_meth_set_destroy(result, retryDestroy);
+        return result;
+    }();
+    return method;
+}
+
+class ExhaustTimeoutStreamSocketImpl final : public Poco::Net::StreamSocketImpl
+{
+public:
+    bool pollImpl(Poco::Timespan & timeout, int) override
+    {
+        timeout = 0;
+        return true;
+    }
+};
 
 class LiveTLSPair
 {
@@ -273,6 +333,22 @@ TEST(SSLErrorQueue, StaleErrnoDoesNotRetryFatalBioError)
     char byte = 0;
     EXPECT_THROW(client.receiveBytes(&byte, 1), Poco::Net::SSLConnectionUnexpectedlyClosedException);
     EXPECT_EQ(ERR_peek_error(), 0UL);
+}
+
+
+TEST(SSLErrorQueue, BlockingConnectDoesNotAcceptTimedOutHandshake)
+{
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+    EphemeralCert cert;
+    auto client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+
+    Poco::AutoPtr<Poco::Net::SecureStreamSocketImpl> client_impl
+        = new Poco::Net::SecureStreamSocketImpl(new ExhaustTimeoutStreamSocketImpl, client_context);
+    client_impl->setBioMethod(retryBioMethod());
+
+    /// The custom `BIO` keeps returning `WANT_READ` or `WANT_WRITE`. The first poll reports
+    /// readiness but consumes the entire timeout, so a blocking handshake must not be accepted.
+    EXPECT_THROW(client_impl->connect(listener.address()), Poco::TimeoutException);
 }
 
 
