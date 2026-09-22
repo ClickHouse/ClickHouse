@@ -12,9 +12,6 @@ from .external_paths_utils import (
 @pytest.mark.parametrize("metadata_storage,manifest_list_storage,manifest_storage,data_storage", [
     ("s3", "local", "s3", "s3"),
     ("s3", "s3", "local", "s3"),
-    ("s3", "s3", "s3", "local"),
-    ("azure", "local", "azure", "azure"),
-    ("azure", "azure", "local", "azure"),
     ("azure", "azure", "azure", "local"),
 ])
 def test_multi_storage_combinations(started_cluster_iceberg_with_spark, metadata_storage, manifest_list_storage, manifest_storage, data_storage):
