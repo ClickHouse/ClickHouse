@@ -1,6 +1,6 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -1062,18 +1062,47 @@ QueryPlan decorrelateQueryPlan(
             decorrelated_query_plan = addMissingCorrelatedGroupsToAggregateInput(context, std::move(decorrelated_query_plan), marker_name);
             input_header = decorrelated_query_plan.getCurrentHeader();
 
-            auto if_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("If");
-            if (!if_combinator)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function combinator -If is not registered");
+            /// An identical nested combinator (`sumIfIf`) is rejected by the aggregate function factory, so
+            /// the marker is folded into the filter of an aggregate that already ends with `-If` instead.
+            const auto & query_context = context.planner_context->getQueryContext();
+            ActionsDAG filter_dag(input_header->getNamesAndTypesList());
+            const auto * marker_node = &filter_dag.findInOutputs(marker_name);
+            bool has_folded_filters = false;
 
             auto marker_type = std::make_shared<DataTypeUInt8>();
-            for (auto & aggregate : new_aggregates)
+            for (size_t aggregate_index = 0; aggregate_index < new_aggregates.size(); ++aggregate_index)
             {
+                auto & aggregate = new_aggregates[aggregate_index];
+                if (aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty())
+                {
+                    const auto & filter_type = aggregate.function->getArgumentTypes().back();
+                    const auto & filter_node = filter_dag.findInOutputs(aggregate.argument_names.back());
+                    const auto * combined = &filter_dag.addFunction(
+                        FunctionFactory::instance().get("and", query_context), {&filter_node, marker_node}, {});
+                    String combined_name = fmt::format("{}_{}", marker_name, aggregate_index);
+                    combined = &filter_dag.addCast(*combined, filter_type, combined_name, query_context);
+                    filter_dag.getOutputs().push_back(combined);
+                    aggregate.argument_names.back() = combined_name;
+                    has_folded_filters = true;
+                    continue;
+                }
+
+                /// The factory builds the -If form with the same handling of Nullable arguments as for a user
+                /// query; wrapping an already Null-adapted function by hand breaks on Nullable arguments.
                 DataTypes argument_types = aggregate.function->getArgumentTypes();
                 argument_types.push_back(marker_type);
-                aggregate.function = if_combinator->transformAggregateFunction(
-                    aggregate.function, AggregateFunctionProperties{}, argument_types, aggregate.parameters);
+                AggregateFunctionProperties properties;
+                aggregate.function = AggregateFunctionFactory::instance().get(
+                    aggregate.function->getName() + "If", NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
                 aggregate.argument_names.push_back(marker_name);
+            }
+
+            if (has_folded_filters)
+            {
+                auto filter_step = std::make_unique<ExpressionStep>(input_header, std::move(filter_dag));
+                filter_step->setStepDescription("Fold the correlated aggregate input marker into -If filters");
+                decorrelated_query_plan.addStep(std::move(filter_step));
+                input_header = decorrelated_query_plan.getCurrentHeader();
             }
         }
 
