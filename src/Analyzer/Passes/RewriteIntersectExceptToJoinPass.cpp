@@ -189,9 +189,10 @@ bool keyBreaksMergeJoinEquivalence(const DataTypePtr & type)
 ///
 /// The walk over the list mirrors `tryCreateJoin`: an algorithm that cannot execute the join is passed over, and
 /// the set-operation step is kept where the planner would throw, since the step needs neither a spill threshold
-/// nor temporary storage.
-bool joinAlgorithmExecutesSetOperationJoin(
-    const Settings & settings, bool has_temporary_storage, JoinStrictness strictness, bool has_merge_unsafe_key)
+/// nor temporary storage. `grace_hash` with a spill threshold throws without temporary storage, and the join is
+/// built on every server that executes the plan (parallel replicas, a distributed plan) from that server's own
+/// temporary storage, which the server rewriting the query cannot see, so it keeps the set-operation step too.
+bool joinAlgorithmExecutesSetOperationJoin(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key)
 {
     const auto & algorithms = settings[Setting::join_algorithm].value;
     auto enabled = [&](JoinAlgorithm algorithm) { return TableJoin::isEnabledAlgorithm(algorithms, algorithm); };
@@ -221,15 +222,11 @@ bool joinAlgorithmExecutesSetOperationJoin(
                     return true;
                 break;
             /// Without a spill threshold, `grace_hash` is passed over when another algorithm is listed and fails
-            /// the join when listed alone. With one, it fails the join without temporary storage.
+            /// the join when listed alone. With one, it fails the join on a server without temporary storage.
             case JoinAlgorithm::GRACE_HASH:
-                if (!grace_hash_has_spill_trigger)
-                {
-                    if (algorithms.size() > 1)
-                        break;
-                    return false;
-                }
-                return has_temporary_storage;
+                if (!grace_hash_has_spill_trigger && algorithms.size() > 1)
+                    break;
+                return false;
             /// `direct` needs a key-value storage on the right, the sorting merge joins execute neither a semi
             /// nor an anti join, and the IE join needs inequality conditions.
             case JoinAlgorithm::DIRECT:
@@ -275,8 +272,7 @@ public:
         const auto result_columns = union_node->computeProjectionColumns();
         const bool has_merge_unsafe_key
             = std::ranges::any_of(result_columns, [](const auto & column) { return keyBreaksMergeJoinEquivalence(column.type); });
-        const bool has_temporary_storage = getContext()->getTempDataOnDisk() != nullptr;
-        if (!joinAlgorithmExecutesSetOperationJoin(getSettings(), has_temporary_storage, strictness, has_merge_unsafe_key))
+        if (!joinAlgorithmExecutesSetOperationJoin(getSettings(), strictness, has_merge_unsafe_key))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());

@@ -10,10 +10,8 @@ struct Settings;
 
 /// Whether the algorithms of `join_algorithm`, tried in their order the way `chooseJoinAlgorithm` tries them,
 /// execute a left join of two subqueries with this strictness the way the set operation compares its rows: the
-/// first algorithm that either runs the join or fails it decides. `has_temporary_storage` is whether the server
-/// has the temporary storage `grace_hash` needs.
-bool joinAlgorithmExecutesSetOperationJoin(
-    const Settings & settings, bool has_temporary_storage, JoinStrictness strictness, bool has_merge_unsafe_key);
+/// first algorithm that either runs the join or fails it decides.
+bool joinAlgorithmExecutesSetOperationJoin(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key);
 
 /** Rewrite `INTERSECT DISTINCT` and `EXCEPT DISTINCT` to `SELECT DISTINCT l.* FROM (arm_1) l SEMI|ANTI LEFT JOIN (arm_2) r
   * ON l.c_i <=> r.c_i ...`, folding more than two arms from the left, so that the set operations use the join
