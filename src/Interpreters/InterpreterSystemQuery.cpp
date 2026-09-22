@@ -2970,7 +2970,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::START_REPLICATED_VIEW,
         with_check_fn(
-            AccessType::SYSTEM_VIEWS,
+            std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2979,7 +2979,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::STOP_REPLICATED_VIEW,
         with_check_fn(
-            AccessType::SYSTEM_VIEWS,
+            std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2988,7 +2988,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::REFRESH_VIEW,
         with_check_fn(
-            AccessType::SYSTEM_VIEWS,
+            std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2997,7 +2997,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::WAIT_VIEW,
         with_check_fn(
-            AccessType::SYSTEM_VIEWS,
+            std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -3006,7 +3006,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::CANCEL_VIEW,
         with_check_fn(
-            AccessType::SYSTEM_VIEWS,
+            std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
