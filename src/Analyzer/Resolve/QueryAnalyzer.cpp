@@ -2837,10 +2837,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
-                const auto node_type = node->getNodeType();
-                if (node_type != QueryTreeNodeType::COLUMN
-                    && node_type != QueryTreeNodeType::CONSTANT
-                    && node_type != QueryTreeNodeType::FUNCTION)
+                /// The stored key can be a query node when an early RENAME alias points to a
+                /// scalar subquery. Such nodes are re-resolved below and do not support direct
+                /// Nullable conversion.
+                auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
+                if (!nodeSupportsConvertToNullable(node_to_convert))
                     continue;
 
                 /// Look up the projection name before the clone replaces the node: the map is keyed
@@ -2849,7 +2850,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 /// See resolveExpressionNode: for a constant keep the matched node's own source
                 /// expression instead of the stored key, which may be a different colliding constant.
-                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                node = node_to_convert->clone();
                 node->convertToNullable();
 
                 /// Keep the projection name computed for the original node, e.g. the qualified
