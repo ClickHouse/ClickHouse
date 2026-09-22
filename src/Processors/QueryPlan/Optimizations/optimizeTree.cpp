@@ -344,6 +344,7 @@ void optimizeTreeSecondPass(
         return true;
     };
     bool join_runtime_filters_were_added = false;
+    bool join_runtime_filter_plan_was_changed = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -354,8 +355,11 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(
-                    frame_node, nodes, optimization_settings, relation_stats_cache);
+            {
+                const auto result = tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings, relation_stats_cache);
+                join_runtime_filters_were_added |= result.filter_added;
+                join_runtime_filter_plan_was_changed |= result.plan_changed;
+            }
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
             /// Joins left in the outer plan are converted right after the fragment is created.
@@ -365,8 +369,8 @@ void optimizeTreeSecondPass(
 
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
     /// before; a copied predicate alone is no reason to run a rewrite the user turned off
-    const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
-    if (join_runtime_filters_were_added || predicates_were_propagated)
+    const bool rewrite_regardless_of_settings = join_runtime_filter_plan_was_changed;
+    if (join_runtime_filter_plan_was_changed || predicates_were_propagated)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)

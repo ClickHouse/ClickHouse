@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -501,7 +502,7 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
 {
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -774,6 +775,25 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     for (const auto * node : key_nodes)
         res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
+}
+
+UniqueColumnPositionIndex::UniqueColumnPositionIndex(const Block & header)
+{
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & column = header.getByPosition(position);
+        positions_by_name[column.name].emplace_back(column.type.get(), position);
+    }
+}
+
+std::optional<size_t> UniqueColumnPositionIndex::find(const String & name, const IDataType & type) const
+{
+    const auto it = positions_by_name.find(name);
+    if (it == positions_by_name.end() || it->second.size() != 1)
+        return std::nullopt;
+
+    const auto & [candidate_type, position] = it->second.front();
+    return candidate_type->equals(type) ? std::optional<size_t>{position} : std::nullopt;
 }
 
 }

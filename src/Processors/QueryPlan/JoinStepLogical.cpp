@@ -2307,7 +2307,7 @@ static bool canBeEvaluatedOnSide(
     if (constants.empty())
         return false;
 
-    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    /// Skip evaluation of equality conditions, since they are used for join key extraction
     auto [op, lhs, rhs] = condition.asBinaryPredicate();
     bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
     if (is_equality && areOppositeJoinSides(lhs, rhs))
@@ -2423,7 +2423,15 @@ static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, Acti
     remapNodes(keys, node_map);
 
     dag.getOutputs() = dag.getInputs();
-    dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
+    std::unordered_set<const ActionsDAG::Node *> output_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
+    for (const auto * key : keys)
+    {
+        /// The same computed key node can occur in multiple equality predicates. Keep each
+        /// predicate's entry in `keys`, but expose the calculation in the stream header once;
+        /// every predicate can address that one result column by name.
+        if (key->type != ActionsDAG::ActionType::INPUT && output_nodes.insert(key).second)
+            dag.getOutputs().push_back(key);
+    }
 
     return dag;
 }
@@ -2435,6 +2443,16 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
 
     ActionsDAG::NodeRawConstPtrs left_keys;
     ActionsDAG::NodeRawConstPtrs right_keys;
+    std::unordered_map<const ActionsDAG::Node *, JoinActionRef> calculated_inputs;
+    auto get_calculated_input = [&](const ActionsDAG::Node * node, size_t source_relation) -> const JoinActionRef &
+    {
+        if (auto it = calculated_inputs.find(node); it != calculated_inputs.end())
+            return it->second;
+
+        return calculated_inputs
+            .emplace(node, expression_actions.addInput(node->result_name, node->result_type, source_relation))
+            .first->second;
+    };
 
     for (auto & expr : join_expression)
     {
@@ -2466,9 +2484,9 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
             right_node->type != ActionsDAG::ActionType::INPUT)
         {
             if (left_node->type != ActionsDAG::ActionType::INPUT)
-                lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
+                lhs = get_calculated_input(left_node, lhs.fromLeft() ? 0 : 1);
             if (right_node->type != ActionsDAG::ActionType::INPUT)
-                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 1 : 0);
+                rhs = get_calculated_input(right_node, rhs.fromRight() ? 1 : 0);
             expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
         }
     }

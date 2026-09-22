@@ -50,9 +50,8 @@ FROM (
 );
 
 -- The filter must still be built when the build side has a duplicated NON-key column
--- (here the key `b` is unique and `c` is duplicated): only a duplicated KEY column breaks the
--- name-keyed filter machinery, so the guard is scoped to the join keys and must not disable the
--- filter for an unrelated duplicated column.
+-- (here the key `b` has a unique name-and-type position and `c` does not): resolving the actual
+-- key position must not disable the filter for an unrelated duplicated column.
 SELECT countIf(explain LIKE '%BuildRuntimeFilter%') > 0
 FROM (
     EXPLAIN PLAN
@@ -64,10 +63,8 @@ FROM (
 -- Post-`preCalculateKeys` shapes: when the join key is a computed expression, `preCalculateKeys`
 -- appends it to the build header under its unqualified function name (e.g. `plus(__table3.b, 1_UInt8)`),
 -- while a user projection of the same expression is qualified (`__table3.bp1`, or `__table3.`plus(b, 1)``
--- without an alias). The two names never collide, so the runtime filter is built on the single correct
--- column and results are correct (the guard checks the pre-`preCalculateKeys` build header, which is safe
--- because bailing out after `preCalculateKeys` would leave the join step's already-updated input header
--- desynced from its stream).
+-- without an alias). The two names never collide, so the runtime filter resolves the single correct
+-- name-and-type position and results are correct.
 -- { echoOn }
 SELECT * FROM (SELECT number AS a FROM numbers(100)) AS l
 ANY RIGHT JOIN (SELECT number AS b, b + 1 AS bp1 FROM numbers(3)) AS r ON l.a = r.b + 1
@@ -77,11 +74,10 @@ SELECT * FROM (SELECT number AS a FROM numbers(100)) AS l
 ANY RIGHT JOIN (SELECT *, b + 1 FROM (SELECT number AS b FROM numbers(3))) AS r ON l.a = r.b + 1
 ORDER BY 1;
 
--- The one post-`preCalculateKeys` duplicate that IS reachable: two predicates sharing the same computed
--- key append `plus(__table3.b, 1_UInt8)` to the build header twice. Unlike the plain-column crash at the
--- top of this test, this duplicate is a freshly-computed key that every build-subtree step declares
--- consistently, so there is no downstream `Block structure mismatch`; the two filters are redundant (both
--- address the first column), not wrong. Verified for `hash` and `parallel_hash`.
+-- When two predicates share the same computed key, `preCalculateKeys` keeps both predicate keys but
+-- exposes their shared calculation in the build header only once. Both predicates can therefore resolve
+-- the same unique position and retain their two redundant filters. Verify correctness with both `hash`
+-- and `parallel_hash`.
 SELECT * FROM (SELECT number AS a, number AS a2 FROM numbers(100)) AS l
 ANY RIGHT JOIN (SELECT number AS b FROM numbers(3)) AS r ON l.a = r.b + 1 AND l.a2 = r.b + 1
 ORDER BY 1;
@@ -91,6 +87,14 @@ ANY RIGHT JOIN (SELECT number AS b FROM numbers(3)) AS r ON l.a = r.b + 1 AND l.
 ORDER BY 1
 SETTINGS join_algorithm = 'parallel_hash';
 -- { echoOff }
+
+SELECT countIf(explain LIKE '%BuildRuntimeFilter%') = 2
+FROM (
+    EXPLAIN PLAN
+    SELECT * FROM (SELECT number AS a, number AS a2 FROM numbers(100)) AS l
+    ANY RIGHT JOIN (SELECT number AS b FROM numbers(3)) AS r ON l.a = r.b + 1 AND l.a2 = r.b + 1
+    SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'hash', query_plan_join_swap_table = 'false'
+);
 
 -- The runtime filter must still be built (not over-restricted) when the build side projects a copy of
 -- the computed join key: the qualified projection and the unqualified appended key do not collide.
@@ -102,10 +106,9 @@ FROM (
     SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'hash', query_plan_join_swap_table = 'false'
 );
 
--- Mixed predicates: the duplicate-key guard collects only the build column of a genuine left/right
--- equi-join pair, not the build column of a single-side local filter. Here the join key is `b` (unique)
--- and `c` is a duplicated NON-key column guarded by `r.c = 1`; the filter is only ever built on `b`, so
--- the duplicated `c` must not disable it.
+-- Mixed predicates: runtime-filter keys contain only genuine left/right equi-join pairs, not the build
+-- column of a single-side local filter. Here the join key is `b` (unique) and `c` is a duplicated NON-key
+-- column guarded by `r.c = 1`; the duplicated `c` must not disable the filter built on `b`.
 SELECT countIf(explain LIKE '%BuildRuntimeFilter%') > 0
 FROM (
     EXPLAIN PLAN
@@ -113,3 +116,23 @@ FROM (
     ANY RIGHT JOIN (SELECT number AS b, 1 AS c, c FROM numbers(3)) AS r ON l.a = r.b AND r.c = 1
     SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'hash', query_plan_join_swap_table = 'false'
 );
+
+-- A multi-key LEFT ANTI JOIN uses one tuple filter. If any build key is ambiguous, the whole tuple
+-- filter must fail closed: per-column NOT IN filters would be incorrect for a composite key.
+SELECT countIf(explain LIKE '%BuildRuntimeFilter%') = 0
+FROM (
+    EXPLAIN PLAN
+    SELECT l.a, l.a2
+    FROM (SELECT number AS a, number + 10 AS a2 FROM numbers(5)) AS l
+    LEFT ANTI JOIN (SELECT number, *, number + 10 AS c FROM numbers(3)) AS r
+        ON l.a = r.number AND l.a2 = r.c
+    SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'hash', query_plan_join_swap_table = 'false'
+);
+
+-- { echoOn }
+SELECT l.a, l.a2
+FROM (SELECT number AS a, number + 10 AS a2 FROM numbers(5)) AS l
+LEFT ANTI JOIN (SELECT number, *, number + 10 AS c FROM numbers(3)) AS r
+    ON l.a = r.number AND l.a2 = r.c
+ORDER BY l.a;
+-- { echoOff }

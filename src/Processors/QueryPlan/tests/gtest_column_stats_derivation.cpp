@@ -3,6 +3,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Core/Block.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -419,6 +420,24 @@ TEST(ColumnStatsDerivation, RemapDropsStatisticsForDuplicateOutputNames)
     EXPECT_FALSE(stats.contains("duplicate"));
     ASSERT_EQ(stats.size(), 1u);
     EXPECT_EQ(stats.at("kept").num_distinct_values, 42u);
+}
+
+TEST(ColumnStatsDerivation, UniqueColumnPositionRequiresOneNameAndTypeMatch)
+{
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    Block header({
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "duplicate"),
+        ColumnWithTypeAndName(int32_type->createColumn(), int32_type, "duplicate"),
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "duplicate"),
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "unique"),
+    });
+
+    const UniqueColumnPositionIndex index(header);
+    EXPECT_FALSE(index.find("missing", *int64_type));
+    EXPECT_FALSE(index.find("duplicate", *int64_type));
+    EXPECT_FALSE(index.find("duplicate", *int32_type));
+    EXPECT_EQ(index.find("unique", *int64_type), 3u);
 }
 
 TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputNames)

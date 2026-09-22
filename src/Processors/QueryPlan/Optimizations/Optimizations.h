@@ -218,9 +218,15 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// expression step to convert between the child's new output and the input of the parent node.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+struct RuntimeFilterPlanningResult
+{
+    bool filter_added = false;
+    bool plan_changed = false;
+};
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
-bool tryAddJoinRuntimeFilter(
+RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings,
