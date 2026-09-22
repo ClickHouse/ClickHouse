@@ -201,8 +201,8 @@ void WorkloadResourceManager::Resource::updateCurrentVersion()
     // Create a full list of constraints and queues in the current hierarchy (walk from the implicit
     // root, which owns every workload subtree of this resource).
     current_version = std::make_shared<Version>();
-    if (auto it = node_for_workload.find(""); it != node_for_workload.end())
-        it->second->addRawPointerNodes(current_version->nodes);
+    if (auto root = implicitRoot())
+        root->addRawPointerNodes(current_version->nodes);
 
     // See details in version control section of description in WorkloadResourceManager.h
     if (previous_version)

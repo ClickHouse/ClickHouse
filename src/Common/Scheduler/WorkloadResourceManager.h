@@ -193,6 +193,13 @@ private:
     private:
         void updateCurrentVersion();
 
+        /// The implicit anonymous root workload, stored in node_for_workload under the empty-string key.
+        WorkloadNodePtr implicitRoot()
+        {
+            auto it = node_for_workload.find("");
+            return it == node_for_workload.end() ? nullptr : it->second;
+        }
+
         template <class Task>
         void executeInSchedulerThread(Task && task)
         {
