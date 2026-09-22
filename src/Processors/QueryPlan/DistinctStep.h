@@ -104,6 +104,7 @@ public:
     /// few. This suits a step that only pays off on a stream of a few distinct rows, which shows at once, and
     /// that costs more per row than the consumer it spares, so that it has little to gain from a closer look.
     void abandonAfterFirstChunk() { abandon_observation_chunk_count = 1; }
+    bool abandonsAfterFirstChunk() const { return abandon_observation_chunk_count == 1; }
 
 private:
     void updateOutputHeader() override;
