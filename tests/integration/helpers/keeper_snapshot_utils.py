@@ -109,11 +109,38 @@ def stop_zk(zk):
         pass
 
 
+# A Keeper these tests have partitioned with `iptables ... DROP` can lose a response, and kazoo's
+# own pings keep the socket readable, so `KazooClient.get` and `exists` wait on an `AsyncResult`
+# that never completes. Unbounded, one lost response burns the whole 900s `pytest-timeout` budget
+# and takes the rest of the module with it, reported as a bare `Timeout (>900.0s) from
+# pytest-timeout` that names neither the request nor the node. Bound every wait instead.
+ZK_REQUEST_TIMEOUT_SEC = 60
+
+
+def zk_get(zk, path, timeout=ZK_REQUEST_TIMEOUT_SEC):
+    """`zk.get(path)`, giving up after `timeout` instead of waiting forever."""
+    return zk.retry(lambda: zk.get_async(path).get(timeout=timeout))
+
+
+def zk_exists(zk, path, timeout=ZK_REQUEST_TIMEOUT_SEC):
+    """`zk.exists(path)`, giving up after `timeout` instead of waiting forever."""
+    return zk.retry(lambda: zk.exists_async(path).get(timeout=timeout))
+
+
 def fill_test_tree(zk, base, count=300):
     import os as _os
+    from kazoo.exceptions import NodeExistsError
     zk.ensure_path(base)
     for i in range(count):
-        zk.create(f"{base}/{i}", _os.urandom(1024))  # random to resist ZSTD compression
+        data = _os.urandom(1024)  # random to resist ZSTD compression
+        try:
+            zk.create(f"{base}/{i}", data)
+        except NodeExistsError:
+            # `KazooClientWithImplicitRetries.create` retries, and `create` is not idempotent: a
+            # create whose response was lost has already taken effect, so the retry fails on a node
+            # it wrote itself. Write the data the caller asked for and carry on - the postcondition
+            # is that the node exists with that data, however many attempts it took.
+            zk.set(f"{base}/{i}", data)
     for i in range(0, count, 10):
         zk.delete(f"{base}/{i}")
 
@@ -136,9 +163,9 @@ def verify_test_tree(leader_zk, lagging_zk, base, count=300):
     lagging_zk.sync(base)
     for i in range(count):
         if i % 10 != 0:
-            assert lagging_zk.get(f"{base}/{i}")[0] == leader_zk.get(f"{base}/{i}")[0]
+            assert zk_get(lagging_zk, f"{base}/{i}")[0] == zk_get(leader_zk, f"{base}/{i}")[0]
         else:
-            assert lagging_zk.exists(f"{base}/{i}") is None
+            assert zk_exists(lagging_zk, f"{base}/{i}") is None
 
 
 def get_kill_timestamp(node):
