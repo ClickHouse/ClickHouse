@@ -2,7 +2,9 @@
 
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
+#include <Core/Settings.h>
 #include <Core/SettingsFields.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -66,6 +68,15 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     if (query.settings)
     {
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+
+        /// Is this a query another host sent us?
+        bool is_internal_query = false;
+        for (const auto & setting : settings)
+        {
+            if (setting.name == "internal")
+                is_internal_query = SettingFieldBool{setting.value}.value;
+        }
+
         for (const auto & setting : settings)
         {
             if (setting.name == "compression_level")
@@ -85,6 +96,17 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 
             LIST_OF_BACKUP_SETTINGS(GET_BACKUP_SETTINGS_FROM_QUERY)
             /// else
+            if (is_internal_query && !Settings::hasBuiltin(setting.name))
+            {
+                /// From a newer initiator, for a feature this build does not have; applying it as a
+                /// core setting would fail the query with `UNKNOWN_SETTING`. The default is fail-closed.
+                LOG_WARNING(
+                    getLogger("BackupSettings"),
+                    "Ignoring setting '{}' forwarded by the initiator: this server does not know it",
+                    setting.name);
+                continue;
+            }
+            else
             {
                 /// (if setting.name is not the name of a field of BackupSettings)
                 res.core_settings.emplace_back(setting);
