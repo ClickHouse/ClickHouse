@@ -549,10 +549,29 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     tokens_queue.push(tokens_cursors[source_num]);
 }
 
+void MergeTextIndexesTask::checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const
+{
+    if (!merged_part_offsets || row_ids.empty())
+        return;
+
+    /// The row ids are sorted by the format, so the last one bounds them all.
+    /// The offsets map has an entry per row of the part, and a row id beyond it would be looked up outside of the map.
+    size_t part_rows = merged_part_offsets->getPartRowsCount(part_index);
+
+    if (row_ids.back() >= part_rows)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in text index: row id {} exceeds the number of rows {} in the source part",
+            row_ids.back(), part_rows);
+    }
+}
+
 void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
 {
     if (!merged_part_offsets)
         return;
+
+    checkRowIdsInPart(row_ids, part_index);
 
     for (UInt32 & row_id : row_ids)
         row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
@@ -560,6 +579,7 @@ void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t p
 
 void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source)
 {
+    /// The cursor is reused across tokens: drop the state of the previous one before anything can fail.
     cursor.source = &source;
     cursor.pos = 0;
     cursor.next_segment = 0;
@@ -571,12 +591,15 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
 
     if (info.embedded_postings.empty())
     {
-        bool advanced = advancePostingsCursor(cursor);
-        chassert(advanced);
+        if (!advancePostingsCursor(cursor))
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: token with {} row ids has no posting list segments", info.cardinality);
+        }
         return;
     }
 
-    /// Embedded postings are already in memory.
+    /// Embedded postings are already in memory. The row ids are captured for the positions before they are remapped.
     cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
     captureRowIdsForPositions(cursor);
     adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
@@ -597,7 +620,7 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
     const bool has_term_frequencies = params.hasScoring() && (info.header & PostingsSerialization::Flags::HasTermFrequencies);
 
     source_postings_serializations[source.source_num].deserializeToArray(
-        *stream->getDataBuffer(), info.header, info.cardinality, row_ids, has_term_frequencies ? &tfs : nullptr);
+        *stream->getDataBuffer(), info, segment_idx, row_ids, has_term_frequencies ? &tfs : nullptr);
 }
 
 bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
@@ -615,6 +638,7 @@ bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
     ++cursor.next_segment;
     cursor.pos = 0;
 
+    /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
     chassert(!cursor.row_ids.empty());
     chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
     chassert(cursor.tfs.empty() || cursor.tfs.size() == cursor.row_ids.size());
@@ -668,12 +692,25 @@ std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindo
         const auto & row_ids = cursor.row_ids;
         size_t pos = cursor.pos;
 
-        while (pos < row_ids.size() && row_ids[pos] < window.end)
+        while (pos < row_ids.size())
         {
-            UInt32 bit = static_cast<UInt32>(row_ids[pos] - window.begin);
+            /// A row id below the window wraps around and stops the scan like a row id beyond the window.
+            UInt64 bit = row_ids[pos] - window.begin;
+            if (bit >= WINDOW_ROWS)
+                break;
+
             window_bits[bit / 64] |= 1ULL << (bit % 64);
             bits_summary |= 1ULL << (bit / 64);
             ++pos;
+        }
+
+        /// The window starts at the smallest head, so only an unsorted (corrupted) source has a row id below it.
+        /// Such a row id would address the bitset out of bounds, hence the scan above stops on it.
+        if (pos < row_ids.size() && row_ids[pos] < window.begin)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: row id {} of a source posting list is below the merge window [{}, {})",
+                row_ids[pos], window.begin, window.end);
         }
 
         /// The `(tf - 1)` of every consumed row id is stored under its bit, to be gathered along with the row id.
@@ -916,7 +953,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 {
     chassert(!postings_queue->isValid());
 
-    for (const auto & source : output_sources)
+    for (const auto & source : current_token_sources)
     {
         if (source.info.cardinality != 0)
             postings_queue->push(source);
@@ -980,12 +1017,12 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     const auto * codec = postings_serialization.getPostingListCodec();
-    auto encoder = codec->createEncoder();
+    auto encoder = codec->createEncoder(params.posting_list_block_size);
 
     const PostingListBuildContext context
     {
         .codec = *codec,
-        .segment_size = codec->getSegmentSize(params.posting_list_block_size),
+        .segment_size = params.posting_list_block_size,
         .enable_positions = params.enable_positions,
         .enable_scoring = params.hasScoring(),
         .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &merged_doc_lengths : nullptr,
@@ -1120,14 +1157,14 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
 
 void MergeTextIndexesTask::flushPostingList()
 {
-    chassert(!output_sources.empty());
+    chassert(!current_token_sources.empty());
 
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     TokenPostingsInfo token_info;
 
     /// Sources own disjoint row sets, so the cardinality of the merged posting is sum of source cardinalities.
     size_t total_cardinality = 0;
-    for (const auto & source : output_sources)
+    for (const auto & source : current_token_sources)
         total_cardinality += source.info.cardinality;
 
     if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -1140,7 +1177,7 @@ void MergeTextIndexesTask::flushPostingList()
         flushPositions(token_info);
 
     output_infos.push_back(token_info);
-    output_sources.clear();
+    current_token_sources.clear();
     output_positions.clear();
 }
 
@@ -1270,7 +1307,7 @@ bool MergeTextIndexesTask::executeStep()
         {
             if (i > 0 || first_row_is_new_token)
             {
-                if (!output_sources.empty())
+                if (!current_token_sources.empty())
                     flushPostingList();
 
                 if (output_tokens->size() >= params.dictionary_block_size)
@@ -1282,7 +1319,7 @@ bool MergeTextIndexesTask::executeStep()
 
             /// Postings and positions are decoded lazily on flush.
             /// Copy the info because the dictionary block it points into may be replaced before that.
-            output_sources.push_back({source_num, source_block.token_infos[row]});
+            current_token_sources.push_back({source_num, source_block.token_infos[row]});
         }
 
         if (!current->isLast(batch_size))
@@ -1301,7 +1338,7 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_sources.empty())
+    if (!current_token_sources.empty())
         flushPostingList();
 
     if (!output_tokens->empty())
@@ -1393,33 +1430,79 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     return storage;
 }
 
+static std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStreamImpl(
+    DataPartStoragePtr data_part_storage,
+    const String & actual_stream_name,
+    const String & extension,
+    size_t data_file_size,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    static constexpr size_t marks_count = 1;
+
+    /// Use reader stream that doesn't read marks,
+    /// because text index always has one mark.
+    return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+        data_part_storage,
+        actual_stream_name,
+        extension,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        reader_settings,
+        /*uncompressed_cache=*/ nullptr,
+        data_file_size,
+        /*marks_loader=*/ nullptr,
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+}
+
+std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
+    /// comes from checksums, and a stream with no checksums entry is resolved and sized via the storage.
+    auto data_part_storage = data_part_info.getDataPartStorage();
+    std::optional<String> actual_stream_name
+        = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info.getChecksums());
+    size_t data_file_size = 0;
+
+    if (actual_stream_name)
+    {
+        data_file_size = data_part_info.getFileSizeOrZero(*actual_stream_name + extension);
+    }
+    else
+    {
+        actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
+        if (actual_stream_name)
+            data_file_size = data_part_storage->getFileSize(*actual_stream_name + extension);
+    }
+
+    if (!actual_stream_name)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
+
+    return makeTextIndexInputStreamImpl(
+        std::move(data_part_storage), *actual_stream_name, extension, data_file_size, reader_settings);
+}
+
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,
     const String & extension,
     const MergeTreeReaderSettings & reader_settings)
 {
-    static constexpr size_t marks_count = 1;
-
     /// Check for both original and hashed filenames (hashed if the index name is too long)
     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
     if (!actual_stream_name)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
 
-    /// Use reader stream that doesn't read marks,
-    /// because text index always has one mark.
-    return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+    return makeTextIndexInputStreamImpl(
         data_part_storage,
         *actual_stream_name,
         extension,
-        marks_count,
-        MarkRanges{{0, marks_count}},
-        reader_settings,
-        /*uncompressed_cache=*/ nullptr,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        /*marks_loader=*/ nullptr,
-        ReadBufferFromFileBase::ProfileCallback{},
-        CLOCK_MONOTONIC_COARSE);
+        reader_settings);
 }
 
 }

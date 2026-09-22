@@ -153,6 +153,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (isTextIndexVirtualColumn(it->name))
             continue;
 
+        if (virtual_columns.getDefault(it->name))
+            continue;
+
         Field field;
 
         /// The `_bm25_score` column is filled by the text index reader when a scoring
@@ -268,7 +271,6 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
-    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
     return context_copy;
 }
 

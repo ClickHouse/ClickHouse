@@ -30,6 +30,8 @@ namespace fs = std::filesystem;
 namespace
 {
 
+constexpr size_t BLOCK_SIZE = IPostingListBlockCodec::BLOCK_SIZE;
+
 /// Test-local bundle of the per-row term frequencies (rows absent from `tf_overflow` have
 /// `tf == 1`) and the granule's `SmallFloat` document-length bytes, indexed by row id.
 /// Both referenced containers must outlive the bundle.
@@ -94,7 +96,7 @@ std::string encodeWith(
         tfs != nullptr ? &tfs->doc_lengths : nullptr,
     };
 
-    SegmentedPostingListCodec codec(IPostingListCodec::Type::Bitpacking);
+    SegmentedPostingListCodec codec(IPostingListCodec::Type::Bitpacking, max_rowids_in_segment);
     codec.append(row_ids, tf_minus_one, context);
     WriteBufferFromOwnString out;
     codec.serializeTo(out, info);

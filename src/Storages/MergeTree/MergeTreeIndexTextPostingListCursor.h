@@ -3,7 +3,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
 #include <Storages/MergeTree/TextIndexDocLengthsReader.h>
@@ -32,8 +31,8 @@ enum class PadOp { Or, And };
 /// Storage layout (two-level hierarchy):
 ///   Segments    — variable-size chunks of the posting list, each stored as a
 ///                 contiguous region in the .pst stream with its own Index Section.
-///   Packed blocks — fixed-size BLOCK_SIZE-element groups within a segment,
-///                   delta-encoded and compressed with Bitpacking.  The last packed
+///   Packed blocks — fixed-size groups of `IPostingListBlockCodec::BLOCK_SIZE` elements within a segment,
+///                   delta-encoded and compressed by the block codec.  The last packed
 ///                   block in a segment may be shorter (the "tail block").
 ///
 /// Each segment's Index Section (read in `prepareSegment`) stores two parallel arrays:
@@ -139,8 +138,8 @@ protected:
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
     /// point at this buffer.
     /// For shared-array cursors, `decoded_values_ptr` instead points directly
-    /// into `shared_values`, avoiding a copy and supporting arrays larger than BLOCK_SIZE.
-    alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
+    /// into `shared_values`, avoiding a copy and supporting arrays larger than a block.
+    alignas(16) uint32_t decoded_values[IPostingListBlockCodec::BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
 
     /// Per-block payload codec for the current segment's codec type; lazily created and reused across all
@@ -229,7 +228,7 @@ private:
     const TextIndexDocLengthsReader * doc_lengths = nullptr;
 
     /// Term frequencies of the current packed block, parallel to `decoded_values`.
-    alignas(16) UInt32 decoded_tfs[BLOCK_SIZE]{};
+    alignas(16) UInt32 decoded_tfs[IPostingListBlockCodec::BLOCK_SIZE]{};
 
     /// Embedded-only: the flat postings (sorted row ids with their term frequencies) the cursor iterates.
     std::shared_ptr<const ScoringPostings> embedded_scoring_postings;

@@ -36,7 +36,7 @@ public:
     virtual ~IPostingListEncoder() = default;
 
     /// Encodes a batch of sorted unique row ids (increasing across calls), appending to the open segment.
-    /// Each time the open segment reaches `context.segment_size` row ids, it is sealed and a new one is started.
+    /// Each time the open segment reaches the segment size, it is sealed and a new one is started.
     /// A non-empty `tf_minus_one` (parallel to `row_ids`) carries the per-row term frequencies
     /// on the BM25 scoring path.
     virtual void append(
@@ -60,6 +60,7 @@ public:
     {
         None,
         Bitpacking,
+        PFor,
     };
 
     IPostingListCodec() = default;
@@ -72,28 +73,39 @@ public:
 
     Type getType() const { return type; }
 
-    /// Returns the effective segment size for the requested `posting_list_block_size`.
-    /// Codecs may round the requested size.
-    virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
+    /// Creates an accumulator that encodes segments of `segment_size` row ids into this codec's format.
+    /// Codecs may round the requested size, e.g. up to a multiple of their physical block size.
+    virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const = 0;
 
-    /// Creates an accumulator that encodes segments of row ids into this codec's format.
-    virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
-
-    /// Reads a single encoded segment of a posting list, decodes it, and appends it to `postings`.
-    /// Term frequencies, if present, are skipped. `buffer` is a caller-owned scratch buffer, reused across calls.
-    virtual void decode(ReadBuffer & in, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
+    /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
+    /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.
+    /// The sizes claimed by the segment are checked against it before any buffer grows to them.
+    /// Term frequencies, if present (`has_term_frequencies`), are skipped.
+    /// `buffer` is a caller-owned scratch buffer, reused across calls.
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but appends the decoded row ids to a plain array.
-    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but also appends the exact per-row term frequencies to `tfs`, parallel to `row_ids`.
     /// Only valid for posting lists written with term frequencies.
-    virtual void decodeWithTermFrequencies(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer) const = 0;
-
+    virtual void decodeWithTermFrequencies(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer) const = 0;
 
 private:
     Type type{};
 };
+
+inline constexpr bool isValidPostingListCodecType(UInt64 value)
+{
+    return value <= static_cast<UInt64>(IPostingListCodec::Type::PFor);
+}
+
+/// `None` is excluded: an uncompressed posting list has no segments.
+inline constexpr bool isValidPostingListBlockCodecType(UInt64 value)
+{
+    return value == static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
+        || value == static_cast<UInt64>(IPostingListCodec::Type::PFor);
+}
 
 class PostingListCodecFactory : public boost::noncopyable
 {

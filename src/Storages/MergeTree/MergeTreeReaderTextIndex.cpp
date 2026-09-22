@@ -601,7 +601,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         return;
 
     positions_stream = makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
+        *data_part_info_for_read,
         index.index->getFileName() + positions_substream->suffix,
         positions_substream->extension,
         MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
@@ -764,10 +764,8 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
-    auto data_part = getDataPart();
-
     return makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
+        *data_part_info_for_read,
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));

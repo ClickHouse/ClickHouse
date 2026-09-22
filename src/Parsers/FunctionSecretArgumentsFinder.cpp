@@ -1123,6 +1123,11 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     {
         findBackupDatabaseSecretArguments();
     }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url')
+        findURLSecretArguments();
+    }
 }
 
 void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
@@ -1174,6 +1179,20 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 
     auto storage_arg = function->arguments->at(1);
     auto storage_function = storage_arg->getFunction();
+
+    /// A locator that is not a function - a string literal holding its text, or an expression - carries
+    /// the destination as text this finder cannot parse, and that text can hold an access key, a secret
+    /// access key or a presigned URL. The engine accepts such a locator only while replaying its own
+    /// metadata, but a statement carrying it is formatted before the engine rejects it: by `PARALLEL WITH`,
+    /// by the distributed DDL queue, and by `query_log`. Hide it whole rather than let it through verbatim.
+    if (!storage_function)
+    {
+        result.start = 1;
+        result.count = 1;
+        result.replacement = "'[HIDDEN]'";
+        result.quote_replacement = false;
+        return;
+    }
 
     /// The nested S3 destination is not recognized as an S3 engine when the formatter recurses into it,
     /// so its secrets must be masked here. Handle both forms:

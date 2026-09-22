@@ -119,7 +119,9 @@ private:
     /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,
     /// before token iteration. Only called on the scoring path.
     void buildDocLengthsAndStats();
-    /// Adjusts all row ids in place; no-op without merged part offsets.
+    /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
+    void checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const;
+    /// Checks and adjusts all row ids in place; no-op without merged part offsets.
     void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
 
     /// One source's posting list metadata for the current token; postings are decoded lazily on flush.
@@ -143,7 +145,7 @@ private:
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
-    /// Merges the postings of output_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
+    /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
     /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
     /// On the scoring path every chunk comes with the per-row `(tf - 1)` parallel to its row ids, otherwise with an empty span.
     /// Once a source is exhausted, its positions (if any) are appended to output_positions.
@@ -196,7 +198,7 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
 
     /// Sources of the current token's postings, one per input part or segment.
-    std::vector<TokenSource> output_sources;
+    std::vector<TokenSource> current_token_sources;
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
 
@@ -229,6 +231,14 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
+/// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
+std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeReaderSettings & reader_settings);
+
+/// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,

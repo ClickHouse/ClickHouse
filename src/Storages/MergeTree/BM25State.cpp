@@ -62,12 +62,13 @@ std::shared_ptr<const MergeTreeIndexGranuleText> loadTextIndexGranuleForStats(
     const MergeTreeReaderSettings & reader_settings)
 {
     auto substreams = text_index.getSubstreams();
-    auto data_part_storage = part->getDataPartStoragePtr();
+    LoadedMergeTreeDataPartInfoForReader part_info(part, std::make_shared<AlterConversions>());
 
+    /// The stream names and sizes come from the part's checksums, so no storage request is needed here.
     auto make_stream = [&](const MergeTreeIndexSubstream & substream)
     {
         return makeTextIndexInputStream(
-            data_part_storage,
+            part_info,
             text_index.getFileName() + substream.suffix,
             substream.extension,
             MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
@@ -83,8 +84,6 @@ std::shared_ptr<const MergeTreeIndexGranuleText> loadTextIndexGranuleForStats(
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = postings_stream.get();
-
-    LoadedMergeTreeDataPartInfoForReader part_info(part, std::make_shared<AlterConversions>());
 
     MergeTreeIndexDeserializationState state
     {

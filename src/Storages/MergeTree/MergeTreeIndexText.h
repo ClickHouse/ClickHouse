@@ -238,8 +238,8 @@ public:
     /// When positions are enabled, records the position of the token within the row.
     void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
 
-    bool hasLarge() const { return std::holds_alternative<Large>(state); }
-    bool hasInline() const { return std::holds_alternative<Inline>(state); }
+    bool isLarge() const { return std::holds_alternative<Large>(state); }
+    bool isInline() const { return std::holds_alternative<Inline>(state); }
     bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
 
     Large & getLarge() { return std::get<Large>(state); }
@@ -296,14 +296,14 @@ struct PostingsSerialization
         HasTermFrequencies = 1ULL << 6,
     };
 
-    /// Deserializes a single posting list block and adds the decoded row ids to `postings`.
-    /// If `term_frequencies` is not null, it is filled with one term frequency per decoded row id,
-    void deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingList & postings, PaddedPODArray<UInt32> * term_frequencies);
+    /// Reads the `segment_idx`-th segment of the posting list described by `info` and checks it against the metadata:
+    /// a segment cannot hold more row ids than the token or than its row range, and it starts and ends at the range bounds.
+    /// The term frequencies stored for BM25 scoring, if any, are skipped.
+    PostingListPtr deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx);
 
-    /// The same, but writes the decoded row ids to a plain array.
-    /// The previous contents of the output arrays are discarded.
-    void deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * term_frequencies);
-
+    /// The same, but appends the row ids to `row_ids`. If `term_frequencies` is not null, one exact term frequency
+    /// per decoded row id is appended to it (`1` for every row if the posting list stores no term frequencies).
+    void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * term_frequencies);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
 
@@ -381,6 +381,7 @@ public:
 
     bool empty() const { return size() == 0; }
     size_t size() const;
+    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
 
     std::string_view getToken(size_t idx) const;
@@ -731,6 +732,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,

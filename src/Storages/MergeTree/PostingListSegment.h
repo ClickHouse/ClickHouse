@@ -30,7 +30,7 @@ struct PostingListSegment
     UInt32 first_row_id = 0;
     /// Total packed blocks, including the (possibly shorter) tail block.
     size_t block_count = 0;
-    /// Element count of the tail block (< BLOCK_SIZE), 0 if the segment is block-aligned.
+    /// Element count of the tail block (< `IPostingListBlockCodec::BLOCK_SIZE`), 0 if the segment is block-aligned.
     size_t tail_size = 0;
     /// Per-segment block-max UB input for BM25 scoring.
     UInt8 min_dl_byte = 0xFF;

@@ -16,7 +16,7 @@ CREATE TABLE tab_bp_merge
     INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256,
+SETTINGS text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256,
          allow_experimental_text_index_phrase_search = 1, merge_max_block_size = 8192;
 
 SYSTEM STOP MERGES tab_bp_merge;
@@ -67,7 +67,7 @@ CREATE TABLE tab_none_merge
     INDEX idx(s) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256,
+SETTINGS text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256,
          merge_max_block_size = 8192;
 
 SYSTEM STOP MERGES tab_none_merge;
@@ -104,7 +104,7 @@ CREATE TABLE tab_bp_mat_multi
     s String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256,
+SETTINGS text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256,
          text_index_max_processed_tokens_before_flush = 10000;
 
 INSERT INTO tab_bp_mat_multi SELECT
@@ -134,7 +134,7 @@ CREATE TABLE tab_bp_mat_single
     s String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256;
+SETTINGS text_index_posting_list_codec = 'bitpacking', text_index_posting_list_block_size = 256;
 
 INSERT INTO tab_bp_mat_single SELECT
     number AS id,
@@ -161,7 +161,7 @@ CREATE TABLE tab_none_mat_single
     s String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256;
+SETTINGS text_index_posting_list_codec = 'none', text_index_posting_list_block_size = 256;
 
 INSERT INTO tab_none_mat_single SELECT
     number AS id,

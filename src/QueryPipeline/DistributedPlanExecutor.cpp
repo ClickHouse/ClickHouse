@@ -183,27 +183,26 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
-        if (input_is_serialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
 
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
@@ -277,6 +276,12 @@ public:
         std::lock_guard lock(mutex);
         return reader_detached;
     }
+
+    /// Identifies one stream of an exchange, not the whole exchange: it is
+    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
+    const String & getStreamName() const { return name; }
+
+    LoggerPtr getLog() const { return log; }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
@@ -396,18 +401,18 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        if (input_is_serialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
@@ -432,6 +437,7 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
+                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -475,6 +481,7 @@ private:
             if (!detach_notified && getPort().isFinished())
             {
                 detach_notified = true;
+                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
             return ISource::prepare();
@@ -561,19 +568,24 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, input_is_serialized);
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
     {
         return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id);
+    }
+
+    std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createDeserializer(std::move(output_header), exchange_id);
     }
 
 private:
@@ -745,8 +757,11 @@ ExchangeLookupPtr createExchangeLookup(
         if (address.port == 0)
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
+    /// The auth token this node presents when opening an outbound exchange connection, taken from
+    /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation));
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
+        streamingExchangeCompressionCodec(context->getSettingsRef()));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources, context, cancellation);
@@ -836,7 +851,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     optimization_settings.query_plan_optimize_join_order_randomize = 0;
     optimization_settings.convert_join_to_in = false;
     optimization_settings.convert_outer_join_to_inner_join = false;
-    optimization_settings.derive_not_null_filters_from_joins = false;
     optimization_settings.convert_any_join_to_semi_or_anti_join = false;
     optimization_settings.merge_filter_into_join_condition = false;
     optimization_settings.top_k_through_join = false;
