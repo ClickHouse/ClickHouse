@@ -10,15 +10,11 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-비공개 프리뷰 액세스를 요청하려면 ClickHouse 계정 담당 팀에 문의하십시오.
-
-<Note>
-  여기에서 설명하는 managed-mode workflow는 아직 공개 connector release에서는 제공되지 않습니다. 설치하기 전에 필요한 build 및 배포 지원 여부를 계정 담당 팀과 확인하십시오. [managed-mode 가용성](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)을 참조하십시오.
-</Note>
+비공개 프리뷰 액세스를 요청하려면 ClickHouse 계정 팀에 문의하십시오.
 
 ## 커넥터의 역할 {#what-the-connector-does}
 
-ClickHouse Connector는 사용자 환경 내부에 배포하는 구성 요소입니다. 이를 통해 ClickHouse Cloud는 사용자가 운영하는 Kubernetes 클러스터의 ClickHouse 서비스를 관리, 모니터링, 지원할 수 있습니다. ClickHouse Cloud가 사용자 환경으로 연결해 들어오는 일은 결코 없습니다. 커넥터는 아웃바운드 연결만 수행하며, ClickHouse 서비스로 범위가 한정된 아이덴티티로 동작합니다. 커넥터는 단일 바이너리 `clicklink`로 제공되며, 여기에는 데몬과 이를 설치·운영하는 데 사용하는 `clicklink clctl` 도구가 포함되어 있습니다.
+ClickHouse Connector는 사용자 환경에 배포하는 구성 요소입니다. 이를 통해 ClickHouse Cloud는 사용자가 운영하는 Kubernetes 클러스터의 ClickHouse 서비스를 관리, 모니터링, 지원할 수 있습니다. 커넥터는 아웃바운드 연결만 수행하며, 해당 서비스로 범위가 한정된 아이덴티티로 동작합니다. 커넥터는 단일 바이너리 `clicklink`로 제공되며, 여기에는 데몬과 이를 설치·운영하는 `clicklink clctl` 도구가 포함되어 있습니다.
 
 커넥터는 세 가지 구성 요소로 이루어져 있습니다.
 
@@ -26,36 +22,32 @@ ClickHouse Connector는 사용자 환경 내부에 배포하는 구성 요소입
 * **스크레이퍼**는 허용 목록에 등록된 ClickHouse 시스템 테이블에서 메트릭을 수집하고, 인프라 메타데이터와 상태 정보를 함께 모아 ClickHouse Cloud로 전송합니다.
 * **Troubleshooter**는 사용자가 활성화하고 언제든 종료할 수 있는 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 동안 ClickHouse 지원 엔지니어가 읽기 전용 진단을 실행할 수 있게 합니다.
 
-[관리형 모드를 지원하는 빌드](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)에서는 터미널에서 `init`을 실행하면 관리형 모드를 활성화할지 묻고 기본값으로 &#39;예&#39;가 선택되어 있습니다. 스크립트로 실행하는 `init`은 `--managed`를 지정한 경우에만 활성화합니다. 관리형 모드 없이 실행하여 직접 운영하는 클러스터에 대해 관측성과 지원 기능만 유지할 수도 있습니다. [관리형 모드 없이 실행하기](#run-without-managed-mode)를 참조하십시오.
+터미널에서 `init`을 실행하면 관리형 모드를 활성화할지 묻고 기본값으로 &#39;예&#39;가 선택되어 있습니다. 스크립트에서는 반드시 `--managed`를 전달해야 합니다. 관리형 모드가 없어도 커넥터는 사용자가 직접 운영하는 클러스터를 관측하고 지원합니다. [관리형 모드 없이 실행하기](#run-without-managed-mode)를 참조하십시오.
 
-커넥터가 수행하는 모든 연결은 아웃바운드입니다. ClickHouse Cloud가 사용자 환경으로 연결을 먼저 시도하는 일은 없습니다. [아키텍처](/ko/products/bring-your-own-cloud/connector/architecture) 페이지에서 모든 연결과 각 연결의 프로토콜, 인증 방식을 확인할 수 있습니다.
+커넥터가 수행하는 모든 연결은 아웃바운드입니다. ClickHouse Cloud가 사용자 환경으로 연결을 먼저 시도하는 일은 없습니다. [아키텍처](/ko/products/bring-your-own-cloud/connector/architecture) 페이지에서 각 연결과 해당 연결의 프로토콜, 인증 방식을 확인할 수 있습니다.
 
 ## 언제 사용해야 하는가 {#when-to-use-it}
 
 다음 제약 조건 하에서 ClickHouse Cloud가 사용자의 클라우드 계정 내에서 ClickHouse 서비스를 운영하도록 하려면 커넥터를 배포하십시오:
 
 * 모든 액세스 경로는 사용자의 경계 내부에서 시작되며, 인바운드 연결은 존재하지 않습니다.
-* 클러스터에 대한 쓰기는 ClickHouse가 관리하는 서비스의 네임스페이스로 제한됩니다. 단, 실행기 자체의 홈 네임스페이스에 있는 실행기의 토큰, 레지스트리, 갱신된 인증서는 예외입니다. 이러한 서비스가 의존하는 플랫폼 구성 요소는 사용자가 각 업데이트를 승인한 후에만 변경됩니다.
-* 데이터는 사용자가 직접 생성하고 삭제하는 버킷과 IAM 역할 뒤에 보관됩니다. 실행기는 사용자의 버킷이나 IAM 역할에 대한 자격 증명을 보유하지 않습니다.
+* 클러스터에 대한 쓰기는 ClickHouse가 관리하는 서비스의 네임스페이스와, 실행기 자체의 홈 네임스페이스에 있는 실행기의 토큰, 레지스트리, 갱신된 인증서로 제한됩니다. 이러한 서비스가 의존하는 플랫폼 구성 요소는 사용자가 각 업데이트를 승인한 후에만 변경됩니다.
+* 데이터는 사용자가 직접 생성하고 삭제하는 버킷과 IAM role 뒤에 보관됩니다. 실행기는 사용자의 버킷이나 IAM role에 대한 자격 증명을 보유하지 않습니다.
 * 지원 액세스는 시간이 제한되며, 사용자가 직접 활성화하고 언제든지 취소할 수 있습니다. 모든 지원 세션 명령은 사용자가 소유한 감사 로그에 기록됩니다.
 
 ## 작동 방식 {#how-it-works}
 
-아래의 등록 및 서비스 생성 절차는 계정 담당 팀이 확인한 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 필요하며, 공개 버전 `v0.16.0`에서는 사용할 수 없습니다.
+ClickHouse는 온보딩 과정에서 사용자 환경을 등록하고 엔드포인트와 일회용 등록 토큰을 제공합니다. `clicklink clctl init --enroll`은 한 번만 실행하면 됩니다. Kubernetes에 설치하는 경우 kubeconfig 액세스 권한이 있는 워크스테이션에서, Linux VM에 설치하는 경우 해당 호스트에서 실행합니다. 이 명령어는 토큰을 사용 처리하고, mTLS 클라이언트 인증서를 발급받으며, 데몬을 배포 및 시작하고 그 상태까지 확인합니다.
 
-ClickHouse는 온보딩 과정에서 사용자 환경을 등록하고 엔드포인트와 일회용 등록 토큰을 제공합니다. `clicklink clctl init --enroll`은 한 번만 실행하면 됩니다. Kubernetes에 설치하는 경우 kubeconfig 액세스 권한이 있는 워크스테이션에서, Linux VM에 설치하는 경우 해당 호스트에서 실행합니다. 이 명령어 하나로 토큰이 사용 처리되고, mTLS 클라이언트 인증서가 발급되며, 데몬이 배포 및 시작되고 그 상태까지 확인됩니다.
+관리형 모드를 활성화하면 실행기가 배포되고 해당 Kubernetes 액세스 권한이 적용됩니다. 이 권한은 `pcm-executor` ServiceAccount 형태로 부여됩니다. admission 정책은 실행기의 쓰기 작업을 서비스 네임스페이스(기본 접두사 `ns-`)로 제한합니다. 예외는 자체 토큰 갱신, 레지스트리 ConfigMap 하나, 그리고 Kubernetes에서는 홈 네임스페이스에 저장되는 갱신된 클라이언트 인증서입니다.
 
-`--managed`를 전달하면 `init`이 관리형 모드를 활성화합니다. 터미널에서는 활성화 여부를 묻고, 기본값은 예입니다. 활성화하면 실행기가 배포되고 해당 Kubernetes 액세스 권한이 적용됩니다. 이 권한은 `pcm-executor` ServiceAccount 형태로 부여됩니다. admission 정책은 실행기의 쓰기 작업을 서비스 네임스페이스(기본 접두사 `ns-`)로 제한하며, 자체 토큰 갱신, 레지스트리 ConfigMap 하나, 그리고 Kubernetes에서는 홈 네임스페이스에 저장되는 갱신된 클라이언트 인증서만 예외로 허용합니다.
-
-서비스를 생성하려면 두 개의 명령어가 필요합니다. `clicklink clctl executor prepare`는 사용자 소유의 AWS 자격 증명으로 해당 서비스의 버킷과 IAM role을 생성하고 default 사용자의 비밀번호를 한 번 표시합니다. `clicklink clctl instances create`는 엔드포인트를 통해 서비스 정의를 ClickHouse Cloud에 제출합니다. 이후 ClickHouse Cloud는 실행기의 아웃바운드 명령 채널을 통해 서비스를 제어합니다. 스케일링, 중지 및 시작, 재시작, 백업, 버전 업그레이드, 구성 변경이 여기에 포함됩니다. 전체 절차는 [관리형 서비스](/ko/products/bring-your-own-cloud/connector/managed-services)를 참조하십시오.
+서비스를 생성하려면 두 개의 명령어가 필요합니다. `clicklink clctl executor prepare`는 사용자의 AWS 자격 증명으로 해당 서비스의 버킷과 IAM role을 생성하고 default 사용자의 비밀번호를 한 번 표시합니다. `clicklink clctl instances create`는 엔드포인트를 통해 서비스 정의를 ClickHouse Cloud에 제출합니다. 이후 ClickHouse Cloud는 실행기의 아웃바운드 명령 채널을 통해 서비스를 제어합니다. 스케일링, 중지 및 시작, 재시작, 백업, 버전 업그레이드, 구성 변경이 여기에 포함됩니다. 전체 절차는 [관리형 서비스](/ko/products/bring-your-own-cloud/connector/managed-services)를 참조하십시오.
 
 두 가지 작업은 여전히 사용자 몫입니다. 클러스터 내 플랫폼 구성 요소의 업데이트는 사용자의 승인을 기다립니다. [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)를 참조하십시오. 서비스를 삭제하면 해당 Kubernetes 리소스만 제거되며, 버킷과 IAM role은 `clicklink clctl executor teardown`을 실행할 때까지 그대로 남아 있습니다.
 
-스크레이퍼는 허용 목록에 등록된 시스템 테이블을 일정한 인터벌로 읽어 메트릭, 메타데이터, 상태 정보를 mTLS를 통해 엔드포인트로 전송합니다. troubleshooter는 아웃바운드 명령 채널을 열어 두지만, 지원 세션을 활성화하기 전까지 해당 채널로는 아무것도 전달되지 않습니다. mTLS 인증서는 자동으로 갱신됩니다.
+스크레이퍼는 허용 목록에 등록된 시스템 테이블을 일정한 인터벌로 읽어 메트릭, 메타데이터, 상태 정보를 mTLS를 통해 엔드포인트로 전송합니다. troubleshooter는 아웃바운드 명령 채널을 열어 두지만, 지원 세션을 활성화하기 전까지 해당 채널로는 아무것도 전달되지 않습니다. mTLS 인증서는 스스로 갱신됩니다.
 
 ## 관리형 모드 없이 실행하기 {#run-without-managed-mode}
-
-아래 설치 시점 선택 항목은 [관리형 모드를 지원하는 빌드](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)가 필요합니다. 공개된 `v0.16.0`에는 `--no-managed` 플래그나 관리형 모드 프롬프트가 없습니다.
 
 `clicklink clctl init` 실행 시 `--no-managed`를 전달하거나 관련 질문에 아니오로 답하면 스크레이퍼와 Troubleshooter만 설치됩니다. 이때 커넥터는 사용자가 직접 운영하는 ClickHouse 클러스터를 관측하고 지원하며, ClickHouse는 서비스를 생성, 변경, 삭제할 수 없습니다. 이 경우에도 커넥터는 자체 배포를 수행하고 읽기 전용 ClickHouse 사용자와 ServiceAccount를 프로비저닝합니다. 자세한 내용은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model)을 참조하십시오. 관리형 모드가 지원하지 않는 대상에도 동일한 구성이 적용됩니다. 관리형 모드는 S3 저장소를 사용하는 Amazon EKS에서 실행되며, 관측성 및 지원 기능은 규격을 준수하는 모든 Kubernetes 클러스터 또는 Linux 호스트에서 실행됩니다.
 
@@ -63,11 +55,11 @@ ClickHouse는 온보딩 과정에서 사용자 환경을 등록하고 엔드포�
 
 * **배포 대상.** 관리형 모드에는 S3 저장소를 갖춘 Amazon EKS 클러스터가 필요합니다. 관측성과 지원 기능만 사용한다면 표준을 준수하는 모든 Kubernetes 클러스터(Helm 차트로 설치) 또는 amd64나 arm64 기반의 모든 systemd Linux 호스트에서 실행할 수 있습니다.
 * **ClickHouse의 등록.** ClickHouse가 관리형 모드를 위해 사용자 환경을 등록하고, 온보딩 과정에서 엔드포인트와 일회용 등록 토큰을 제공합니다.
-* **443 포트의 아웃바운드 네트워크 액세스.** 엔드포인트와 해당 등록 엔드포인트, 그리고 설치 시점에는 `releases.clicklink.clickhouse.com` 및 ECR Public에 대한 액세스가 필요합니다. 모든 단계마다 air-gapped 환경 및 미러링 대안이 마련되어 있습니다. [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오. 관리형 모드에서는 클러스터 노드가 사용자 환경이 등록된 레지스트리에서 ClickHouse image도 가져오며, 실행기가 ECR에서 플랫폼 차트를 가져올 때 Amazon ECR과 STS에 접근합니다.
+* **443 포트의 아웃바운드 네트워크 액세스.** 엔드포인트와 해당 등록 엔드포인트, 그리고 설치 시점에는 `releases.clicklink.clickhouse.com` 및 ECR Public에 대한 액세스가 필요합니다. 모든 단계마다 air-gapped 환경 및 미러링 대안이 마련되어 있습니다. [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오. 관리형 모드에서는 클러스터 노드가 사용자 환경이 등록된 레지스트리에서 ClickHouse image도 가져옵니다. 실행기는 ECR에서 플랫폼 차트를 가져올 때 Amazon ECR과 STS에 접근합니다.
 * **설정 중 클러스터 관리자 권한.** 관리형 모드를 활성화하면 실행기의 액세스 권한이 한 번 적용됩니다. 여기에는 ServiceAccount, 여기에 바인딩된 클러스터 역할, 그리고 쓰기 작업을 서비스 네임스페이스로 제한하는 admission 정책이 포함됩니다. 플랫폼 업데이트 승인 역시 클러스터 관리자 권한으로 실행됩니다. 두 설치 대상 모두에서 troubleshooter의 access bundles는 Kubernetes ServiceAccount에 고정됩니다. [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
-* **`prepare`와 `teardown`을 위한 AWS 자격 증명, 그리고 `platform approve`를 위한 레지스트리 액세스.** 서비스의 버킷과 IAM role을 생성하고 서비스 삭제 후 이를 제거하는 작업은 workstation 또는 커넥터 호스트에서 사용자의 자격 증명으로 실행됩니다. ClickHouse의 레지스트리에 직접 액세스하는 경우, 플랫폼 승인 및 동기화는 커넥터 EC2 VM의 인스턴스 프로필을 사용해 읽기 전용 pull role을 assume합니다. workstation의 AWS 프로필이나 SSO 자격 증명은 이 자격을 대체하지 않습니다. 다른 ECR 차트 레지스트리는 주변 환경의 AWS 자격 증명을 사용합니다. [레지스트리 자격 증명](/ko/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)을 참조하십시오. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 절대 보유하지 않습니다. 실행기의 클라우드 호출은 차트 가져오기와 플랫폼 image 확인을 위한 Amazon ECR 및 STS로만 이루어지며, S3나 IAM 호출은 수행하지 않습니다.
+* **`prepare`와 `teardown`을 위한 AWS 자격 증명, 그리고 `platform approve`를 위한 레지스트리 액세스.** 서비스의 버킷과 IAM role을 생성하는 작업은 사용자의 자격 증명으로 실행되며, 서비스 삭제 후 이를 제거하는 작업도 마찬가지입니다. 두 작업 모두 workstation 또는 커넥터 호스트에서 실행됩니다. ClickHouse의 레지스트리에 직접 액세스하는 경우, 플랫폼 승인 및 동기화는 커넥터 EC2 VM의 인스턴스 프로필을 통해 읽기 전용 pull role을 assume합니다. workstation의 AWS 프로필이나 SSO 자격 증명은 이 자격을 대체하지 않습니다. 다른 ECR 차트 레지스트리는 주변 환경의 AWS 자격 증명을 사용합니다. [레지스트리 자격 증명](/ko/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)을 참조하십시오. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 절대 보유하지 않습니다. 실행기의 클라우드 호출은 차트 가져오기와 플랫폼 image 확인을 위한 Amazon ECR 및 STS로만 이루어집니다.
 * **연결할 수 있는 ClickHouse native listener.** 사용자가 직접 운영하는 클러스터에 필요하며, 해당 클러스터는 실행기 없이 동작하는 별도의 커넥터 배포가 관측합니다. 스크레이퍼와 troubleshooter는 native protocol로 각 클러스터와 통신하며, Kubernetes에서는 보안(9440) 또는 plaintext(9000) 여부를 자동으로 감지합니다.
-* **설정 중 ClickHouse admin 액세스.** 사용자가 직접 운영하는 클러스터에 필요합니다. 초기 provisioning 시 커넥터의 읽기 전용 사용자가 생성됩니다. admin password가 설정되어 있다면 한 번만 입력을 요청하며 저장하지 않습니다.
+* **설정 중 ClickHouse admin 액세스.** 사용자가 직접 운영하는 클러스터에 필요합니다. 초기 프로비저닝 시 커넥터의 읽기 전용 사용자가 생성됩니다. admin password가 설정되어 있다면 한 번만 입력을 요청하며 저장하지 않습니다.
 
 ## 다음 단계 {#next-steps}
 
@@ -79,4 +71,4 @@ ClickHouse는 온보딩 과정에서 사용자 환경을 등록하고 엔드포�
 * [구성](/ko/products/bring-your-own-cloud/connector/configuration) 및 [운영](/ko/products/bring-your-own-cloud/connector/operations): 튜닝, 업그레이드 및 운영 2일 차 작업을 다룹니다.
 * [FAQ](/ko/products/bring-your-own-cloud/connector/reference/faq): 누가 서비스를 변경할 수 있는지, 데이터 이그레스 및 액세스 취소를 포함한 일반적인 질문을 다룹니다.
 
-커넥터는 사용자가 제공하고 제어하는 클러스터에서 실행되며, ClickHouse Cloud는 실행기를 통해 그 안의 서비스를 관리합니다. ClickHouse가 클라우드 계정 내에서 클러스터 자체를 프로비저닝하고 운영하도록 하려면 [BYOC](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 배포 모델을 사용하십시오. 두 모델의 차이점은 [BYOC 아키텍처](/ko/products/bring-your-own-cloud/overview/architecture) 페이지에서 설명합니다.
+커넥터는 사용자가 제공하고 제어하는 클러스터에서 실행되며, ClickHouse Cloud는 실행기를 통해 그 안의 서비스를 관리합니다. ClickHouse가 클라우드 계정에서 클러스터 자체를 프로비저닝하고 운영하도록 하려면 [BYOC](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 배포 모델을 사용하십시오. 두 모델의 차이점은 [BYOC 아키텍처](/ko/products/bring-your-own-cloud/overview/architecture) 페이지에서 설명합니다.

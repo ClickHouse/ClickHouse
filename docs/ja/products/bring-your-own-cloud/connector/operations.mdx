@@ -33,7 +33,7 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 チャートのバージョンは、先頭の `v` を除いたリリースタグです (チャート `X.Y.Z` はタグ `vX.Y.Z` に対応します) 。公開済みのチャートはすでにパブリックコンテナーイメージを参照しているため、通常のインストールやアップグレードでイメージ値を指定する必要はありません。チャートのデフォルト値を確認するには、`helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts` を実行してください。executor は `Recreate` 戦略で単一レプリカとして実行されるため、アップグレード中は短時間切断されます。その間のコマンドの扱いについては、[コネクタがオフラインのとき](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
 
-直接指定したチャート参照 (`oci://`、URL、ローカルのアーカイブまたはディレクトリ) からインストールした場合、解決に使用できるリポジトリはありません。そのため、新しいバージョンでは `helm upgrade clicklink-connector <same-chart-reference>` を再実行してください。新しい CLI で `init` を再実行しても同じ状態に収束しますが、`init` には常にいずれかのエントリポイントが必要です。バンドルを保持している場合は `--handoff` を使用し、そうでない場合は、ドキュメントに記載されたクリーンアップ後に `--force` を指定して新しい登録トークンを使用します。通常は、上記の `helm upgrade` を使用してください ([再実行と復旧](#re-runs-and-recovery)を参照) 。
+直接指定したチャート参照 (`oci://`、URL、ローカルのアーカイブまたはディレクトリ) からインストールした場合、解決に使用できるリポジトリはありません。その場合は、新しいバージョンで `helm upgrade clicklink-connector <same-chart-reference>` を再実行してください。新しい CLI で `init` を再実行しても同じ状態に収束しますが、エントリポイントが必要です。バンドルを保持している場合は `--handoff` を使用し、そうでない場合は、ドキュメントに記載されたクリーンアップ後に `--force` を指定して新しい登録トークンを使用します。通常は、上記の `helm upgrade` を使用してください ([再実行と復旧](#re-runs-and-recovery)を参照) 。
 
 ### Linux VM {#upgrades-linux-vm}
 
@@ -48,15 +48,15 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-exec
 
 ## ヘルス {#health}
 
-各デーモンは、ヘルスポートで `/livez` エンドポイントを公開します。レスポンスボディの JSON `status` フィールドがヘルス状態を示すものであり、HTTP ステータスコードではありません。したがって、`200` ではなくボディを確認してください。Prometheus メトリクスは同じポートの `/metrics` で公開され、メトリクス専用のポートはありません。両方のターゲットのデフォルトポートは次のとおりです。
+各デーモンは、ヘルスポートで `/livez` エンドポイントを公開します。ヘルス状態を示すのはレスポンスボディの JSON `status` フィールドであり、HTTP ステータスコードではありません。Prometheus メトリクスは同じポートの `/metrics` で公開され、メトリクス専用のポートはありません。両方のターゲットのデフォルトポートは次のとおりです。
 
 | コンポーネント   | ヘルスポート |
 | --------- | ------ |
-| スクレーパー    | 8082   |
+| scraper    | 8082   |
 | トラブルシューター | 8084   |
-| エグゼキューター  | 8086   |
+| executor  | 8086   |
 
-エグゼキューターは、ローカルのコマンド API を `127.0.0.1:9999` でも公開します。これ自体は認証を持たず、ホストやポッドの外部に公開されることはありません。`clicklink clctl` のサービスコマンドはローカルでこれに接続します。
+executorは、ローカルのコマンド API を `127.0.0.1:9999` でも公開します。これ自体は認証を持たず、ホストやポッドの外部に公開されることはありません。`clicklink clctl` のサービスコマンドはローカルでこれに接続します。
 
 サポートセッションが有効な場合、ゲートウェイはポート 8443 でもリッスンします。VM では自己署名 TLS を使用し、Kubernetes では `kubectl port-forward` 経由のポッドローカル HTTP、または TLS 終端イングレスを使用します。
 
@@ -88,9 +88,7 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) 認証情報 {#rotate-api-credentials}
 
-ここで説明する managed モードの動作には[サポート対象のビルド](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要です。公開されている `v0.16.0` には `--managed` も `--no-managed` もありません。
-
-ClickHouse のアカウントチームに新しい登録トークンを依頼し、元の `init` コマンドに `--enroll` と `--force` を付けて再実行します。`--force` は保持されている設定を再ステージングするため、初回インストール時に指定したターゲット固有のフラグ (`--target-namespace`、`--values`、および `--chart`、`--chart-repo`、`--chart-version` のミラーフラグ) をすべて維持してください。Managed モードは置き換え対象の設定から引き継がれるため、ここでは `--managed` は任意です。デフォルトのインストールでは、以下のようになります。
+アカウントチームに新しい登録トークンを依頼し、元の `init` コマンドに `--enroll` と `--force` を付けて再実行します。`--force` は保持されている設定を再ステージングするため、初回インストール時に指定したターゲット固有のフラグ (`--target-namespace`、`--values`、および `--chart`、`--chart-repo`、`--chart-version` のミラーフラグ) をすべて維持してください。Managed モードは置き換え対象の設定から引き継がれるため、ここでは `--managed` は任意です。デフォルトのインストールでは、以下のようになります。
 
 ```bash
 # Kubernetes, from your workstation
@@ -106,7 +104,7 @@ VM では、`init` はまだ実行されていないユニットのみを有効�
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
 ```
 
-Kubernetes では、`init` がローテーション後の `clicklink-hmac` および `clicklink-mtls` Secret を事前に作成するため、チャート側ではこれらをレンダリングしません。そのため、チャートの checksum annotation はこれらを対象に含まず、稼働中のポッドは起動時の認証情報を保持し続けます。ローテーション後は、すべてのコンポーネントを再起動してください。
+Kubernetes では、`init` がローテーション後の `clicklink-hmac` および `clicklink-mtls` Secret を事前に作成するため、チャート側ではこれらをレンダリングしません。チャートの checksum annotation はこれらを対象に含まないため、稼働中のポッドは起動時の認証情報を保持し続けます。ローテーション後は、すべてのコンポーネントを再起動してください。
 
 ```bash
 kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
@@ -142,7 +140,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --force
 ```
 
-VM では、admin パスワードをパイプで渡してホスト上で実行します。VM では、`--ch-user-via cr` を指定しない限り、パスワードは必須です：
+VM では、admin パスワードをパイプで渡してホスト上で実行します。その場合、`--ch-user-via cr` を指定しない限り、パスワードは必須です：
 
 ```bash
 printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -159,10 +157,6 @@ operator によって管理されるインスタンスでは、どちらの形�
 
 ## 再実行と復旧 {#re-runs-and-recovery}
 
-<Note>
-  公開されている `v0.16.0` の CLI には `--managed` も `--no-managed` もありません。以下で説明するmanaged モードの保持および上書きの動作には、[managed モードのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を含むビルドが必要です。復旧中にそのモードを変更する前に、account team にビルドを確認してください。
-</Note>
-
 `init` は再実行しても収束するため、まずは同じコマンドを再実行してください。`--force` を指定しない場合、既存の `/etc/clicklink/config.yaml` (VM) または `clicklink-values.yaml` オーバーレイ (Kubernetes) は保持され、既存のクライアント秘密鍵が再利用されます。`init` は認証情報と CA チェーンをアトミックに上書きします。部分的な失敗後に CLI が出力する復旧コマンドは、安全に繰り返し実行できます。
 
 `--force` は保持されている設定またはオーバーレイを上書きし、クライアント秘密鍵を再生成して、有効期限が切れていないクライアント証明書を置き換えます。新しいクラスター UUID が発行されることはないため、コネクタ&#39;のアイデンティティは保持されます。置き換えられる設定のmanaged モードの状態は、無人での再実行時には維持され、端末上ではデフォルトとして提示されます (`--managed` または `--no-managed` を指定した場合を除く) 。
@@ -175,7 +169,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 これは VM 用の形式です (root が `/etc/clicklink` を書き換え、サービスを管理します) 。Kubernetes では、CLI が `--target helm`、`--target-namespace`、`--values` を含む完全な形式を出力するため、出力されたコマンドをそのまま使用してください。
 
-**コネクタがオフラインの場合。** コネクタが停止している、または到達不能な間も、コネクタが管理する services は稼働し続けます。クラスター内の ClickHouse operator がそれらを維持し、executor はデータパス上には存在しません。ライフサイクルの変更には executor の接続が必要なため、再接続されるまで変更は一切適用されません。再起動時、executor は停止時点で処理中だったコマンドを自身のコマンドデータベースから復旧します。ClickHouse Cloud が再送したコマンドは、2 回実行されるのではなく記録済みの結果を使って応答されます。再実行されるのは失敗したコマンドのみです。executor が接続されていない間にライフサイクルコマンドがどうなるかについては、[コネクタがオフラインの場合](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
+**コネクタがオフラインの場合。** コネクタが停止している、または到達不能な間も、コネクタが管理する services は稼働し続けます。クラスター内の ClickHouse operator がそれらを維持し、executor はデータパス上には存在しません。ライフサイクルの変更には executor の接続が必要なため、再接続されるまで変更は一切適用されません。再起動時、executor は転送中だったコマンドを自身のコマンドデータベースから復旧します。ClickHouse Cloud が再送したコマンドは、記録済みの結果を使って応答されます。再実行されるのは失敗したコマンドのみです。executor が接続されていない間のライフサイクルコマンドについては、[コネクタがオフラインの場合](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
 
 ## アンインストール {#uninstall}
 
@@ -185,7 +179,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 ### Linux VM {#uninstall-linux-vm}
 
-`uninstall.sh` はリリース tarball に含まれています。ホスト上に展開済みの tarball が残っていない場合は、[手動でのダウンロードと検証](/ja/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)の手順に従って取得・展開し、展開したディレクトリから実行します。
+`uninstall.sh` はリリース tarball に含まれています。ホスト上に展開済みの tarball が残っていない場合は、取得・展開してください ([手動でのダウンロードと検証](/ja/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)を参照)。展開したディレクトリから `uninstall.sh` を実行します:
 
 ```bash
 sudo ./uninstall.sh
@@ -223,7 +217,7 @@ CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
-executor の PersistentVolumeClaim には `helm.sh/resource-policy: keep` のアノテーションが付与されているため、アンインストールしてもコマンドデータベースとサービスレジストリを保持したまま残ります。`init` が作成した Secret、プラットフォーム承認によって書き込まれたプラットフォームバンドル Secret、および executor が管理するサービスレジストリの ConfigMap も同様にチャートの管理対象外であり、アンインストール後も残ります。これらは明示的に削除してください。その際、自分で登録したすべてのインスタンス、およびトラブルシューターをプロビジョニングしたすべてのマネージドサービスに対応するアクセス Secret と ServiceAccount のペア (サービス名に基づく名前) も削除対象に含めてください。`--ignore-not-found` を指定しておけば、初回承認前のプラットフォームバンドル Secret のように、そもそも作成されていないオブジェクトがあっても問題ありません:
+executor の PersistentVolumeClaim には `helm.sh/resource-policy: keep` のアノテーションが付与されているため、アンインストールしてもコマンドデータベースとservice registryを保持したまま残ります。`init` が作成した Secret、`platform approve` によって書き込まれたプラットフォームバンドル Secret、および executor が管理するservice registryの ConfigMap も同様にチャートの管理対象外であり、アンインストール後も残ります。これらは明示的に削除してください。その際、自分で登録したすべてのインスタンス、およびトラブルシューターをプロビジョニングしたすべてのマネージドサービスに対応するアクセス Secret と ServiceAccount のペア (サービス名に基づく名前) も削除対象に含めてください。`--ignore-not-found` を指定しておけば、初回承認前のプラットフォームバンドル Secret のように、そもそも作成されていないオブジェクトがあっても問題ありません:
 
 ```bash
 kubectl delete pvc -n "${CONNECTOR_NAMESPACE}" -l app.kubernetes.io/instance=clicklink-connector --ignore-not-found
@@ -254,9 +248,7 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### プラットフォームレイヤー {#uninstall-platform-layer}
 
-公開版の `v0.16.0` CLI には `platform reset` を含む `platform` コマンドがありません。使用する前に [availability](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を確認してください。
-
-コネクタをアンインストールしても、プラットフォームレイヤーは削除されません。プラットフォームのネームスペースとワークロード、`pcm-platform` の RBAC、および承認によってインストールされた admission object はクラスター内に残り、すべてのマネージドサービスも残ったままになります。まずは service を削除してください。詳細は [delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。service が存在しないテストクラスターであれば、`clicklink clctl platform reset` でプラットフォームのリリースをアンインストールできますが、残された CustomResourceDefinition、RBAC、StorageClass は手動で削除する必要があります。詳細は [resetting a test cluster](/ja/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster) を参照してください。テストクラスター以外では、プラットフォームレイヤーに手を加える前に、ClickHouse の account team と削除計画について合意してください。
+コネクタをアンインストールしても、プラットフォームレイヤーは削除されません。プラットフォームのネームスペースとワークロード、`pcm-platform` の RBAC、および承認によってインストールされた admission object はクラスター内に残り、すべてのマネージドサービスも残ったままになります。まずは service を削除してください。詳細は [delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。service が存在しないテストクラスターであれば、`clicklink clctl platform reset` でプラットフォームのリリースをアンインストールできます。残された CustomResourceDefinition、RBAC、StorageClass は手動で削除する必要があります。詳細は [resetting a test cluster](/ja/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster) を参照してください。テストクラスター以外では、プラットフォームレイヤーに手を加える前に、アカウントチームと削除計画について合意してください。
 
 ### ClickHouse ユーザー {#uninstall-clickhouse-users}
 

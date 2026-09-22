@@ -12,19 +12,15 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-Um cluster gerenciado executa uma pequena camada de plataforma da qual os serviços ClickHouse dependem. O ClickHouse Cloud propõe atualizações para essa camada; o executor não aplica nada até que você aprove cada uma delas com suas próprias credenciais do cluster. Esta página explica o que é uma atualização de plataforma, como aprová-la em uma VM ou em uma instalação Kubernetes, por quanto tempo uma aprovação é válida e quais permissões ela concede.
+Um cluster gerenciado executa uma pequena camada de plataforma da qual os serviços ClickHouse dependem. O ClickHouse Cloud propõe atualizações para essa camada; o executor não aplica nada até que você aprove cada uma delas com suas próprias credenciais do cluster.
 
-<Note>
-  A CLI pública `v0.16.0` não possui o comando `platform`, incluindo `platform approve` e `platform reset`. Nem o fluxo de trabalho da VM Linux nem o do Kubernetes descritos abaixo estão disponíveis nesse lançamento. A aprovação no Kubernetes exige, adicionalmente, suporte na CLI e no chart do executor para o pacote de tokens baseado em Secret (`--secret-namespace`). Confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) com sua equipe de conta antes de usar qualquer um dos fluxos de trabalho.
-</Note>
+## O que é uma atualização da plataforma {#what-a-platform-update-is}
 
-## O que é uma atualização de plataforma {#what-a-platform-update-is}
+A camada de plataforma é composta por três componentes: o controlador de snapshots, o ClickHouse Operator e os coletores de monitoramento. Eles são instalados nessa ordem porque cada um depende das definições de recurso personalizado do anterior. Os serviços utilizam uma StorageClass chamada `gp3-encrypted` (volumes gp3 criptografados) que acompanha esses componentes.
 
-A camada de plataforma é composta por três componentes: o controlador de snapshots, o ClickHouse Operator e os coletores de monitoramento. Eles são instalados nessa ordem porque cada um depende das definições de recurso personalizado do anterior. Junto a eles há uma StorageClass chamada `gp3-encrypted` (volumes gp3 criptografados) utilizada pelos serviços.
+Um pacote de plataforma é o manifesto que o ClickHouse Cloud renderiza para o seu ambiente. Ele fixa as versões de chart e de imagem desses componentes e indica o registry do qual são obtidas. Todo pacote é identificado pelo sha256 desse manifesto. O ClickHouse Cloud o envia ao executor por meio do canal de comandos, e o executor o prepara para a sua aprovação.
 
-Um pacote de plataforma é o manifesto renderizado que o ClickHouse Cloud gera para o seu ambiente. Ele fixa as versões de chart e de imagem desses componentes e indica o registry do qual são obtidas. Todo pacote é identificado pelo sha256 desse manifesto. O ClickHouse Cloud envia o pacote ao executor por meio de seu canal de comandos, e o executor o prepara para a sua aprovação.
-
-A aplicação de um pacote é dividida em duas metades:
+Um pacote é aplicado em duas metades:
 
 * A **metade de permissões** é tudo o que concede ou delimita o acesso: Espaços de nomes, CustomResourceDefinitions, ServiceAccounts, ClusterRoles e ClusterRoleBindings, Roles e RoleBindings, configurações de webhook e de admission, PriorityClasses e a StorageClass. Somente você a aplica, com suas credenciais, executando `clicklink clctl platform approve`.
 * A **metade de cargas de trabalho** é o que efetivamente é executado: Deployments, Services, ConfigMaps, Secrets, Jobs e PodDisruptionBudgets. O executor a aplica sob uma identidade dedicada, `pcm-platform`, que pode escrever apenas esses tipos e nada mais, e somente enquanto o token de curta duração gerado pela sua aprovação estiver válido.
@@ -37,24 +33,22 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
 
 ### Credenciais de registry {#registry-credentials}
 
-Os dois procedimentos de aprovação abaixo exigem uma [compilação com suporte a plataforma](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); a versão pública `v0.16.0` não possui o comando `platform`. A aprovação no Kubernetes também exige suporte correspondente na CLI e no chart para a entrega de Secrets.
-
 A autenticação no registry depende do modo de distribuição de imagens registrado para o seu ambiente:
 
-* **Acesso direto ao registry da ClickHouse.** Execute a aprovação na VM EC2 do connector. Tanto o `approve` quanto a sincronização de plataforma do executor usam credenciais do instance metadata service do EC2 para assumir a função read-only de puller do ECR do seu ambiente. Essa função é usada para o login no chart e, no caso do executor, também para verificar se as imagens de plataforma existem. Perfis da AWS, credenciais de ambiente ou credenciais de SSO em uma workstation não substituem o instance profile. O seu kubeconfig continua fornecendo as credenciais separadas de cluster-admin para aplicar a metade de permissões.
+* **Acesso direto ao registry da ClickHouse.** Execute a aprovação na VM EC2 do connector. Tanto o `approve` quanto a sincronização de plataforma do executor assumem a função read-only de puller do ECR do seu ambiente com credenciais do instance metadata service do EC2. Essa função faz login no registry do chart; o executor também a usa para verificar se as imagens de plataforma existem. Perfis da AWS, credenciais de ambiente ou credenciais de SSO em uma workstation não substituem o instance profile. O seu kubeconfig continua fornecendo as credenciais separadas de cluster-admin que aplicam a metade de permissões.
 * **Charts em outro registry ECR, incluindo o seu próprio mirror.** O login no chart usa as credenciais ambient da AWS do processo que executa o `approve` ou o executor. Essas credenciais precisam ter permissão de leitura nesse registry.
 
-Use o procedimento de workstation do Kubernetes abaixo somente em deployments com registry espelhado e com a aprovação de plataforma do Kubernetes habilitada. Para acesso direto, peça à sua equipe de conta que confirme um ambiente de execução compatível com o instance profile do EC2 necessário antes de prosseguir.
+Use o procedimento de workstation do Kubernetes abaixo somente em deployments com registry espelhado e com a aprovação de plataforma do Kubernetes habilitada. Para acesso direto, peça primeiro à sua equipe de conta que confirme um ambiente de execução compatível com o instance profile do EC2 necessário.
 
 <Steps>
   <Step title="Localize o pacote preparado" id="find-the-staged-bundle">
-    O ClickHouse Cloud envia cada pacote proposto ao executor antes de qualquer outra coisa. O executor o registra como o pacote pendente e informa seu sha256 no heartbeat. Existe apenas um pacote em espera por vez; uma proposta mais recente o substitui. Em seguida, o executor recusa a sincronização e a registra como um comando com falha, cujo resultado termina com o comando a ser executado.
+    O ClickHouse Cloud envia cada pacote proposto primeiro ao executor. O executor o registra como o pacote pendente e informa seu sha256 no heartbeat. Existe apenas um pacote em espera por vez; uma proposta mais recente o substitui. Em seguida, o executor recusa a sincronização e registra um comando com falha, cujo resultado termina com o comando a ser executado.
 
     ```bash
     clicklink clctl commands list --status failed --action sync_platform
     ```
 
-    O campo `result` termina com `run: clctl platform approve (pending bundle sha <sha256>)`. No Kubernetes, a indicação é `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. Um create que esbarrou em uma definição de custom resource ausente traz a mesma linha `clctl platform approve` no próprio comando que falhou e no erro exibido por `clicklink clctl instances create --wait`. A equipe de conta da ClickHouse também avisa você quando uma atualização de plataforma é proposta.
+    O campo `result` termina com `run: clctl platform approve (pending bundle sha <sha256>)`. No Kubernetes, a indicação é `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. Um create que esbarrou em uma definição de custom resource ausente traz a mesma linha `clctl platform approve`. Ela aparece no próprio comando que falhou e no erro exibido por `clicklink clctl instances create --wait`. A sua equipe de conta também avisa você quando uma atualização de plataforma é proposta.
 
     Leia o pacote preparado antes de aprová-lo. Ele contém o manifesto e seu sha256.
 
@@ -82,7 +76,7 @@ Use o procedimento de workstation do Kubernetes abaixo somente em deployments co
   </Step>
 
   <Step title="Execute approve" id="run-approve">
-    `approve` sem flags lê o pacote preparado e calcula seu hash, de modo que o que você aprova é exatamente o que o executor recebeu. Ele renderiza cada chart do pacote exatamente como o executor fará e aplica a metade de permissões com o kube context que você escolher. Cria a identidade `pcm-platform`, se necessário, e emite seu token. Não faz nenhuma requisição ao seu connector endpoint.
+    `approve` sem flags lê o pacote preparado e calcula seu hash, de modo que você aprova exatamente o que o executor recebeu. Ele renderiza cada chart exatamente como o executor fará e aplica a metade de permissões com o kube context que você escolher. Cria a identidade `pcm-platform`, se necessário, e emite seu token. Não faz nenhuma requisição ao seu connector endpoint.
 
     `approve` precisa de um kube context com direitos de cluster-admin no cluster gerenciado (`--context <name>` quando seu kubeconfig contém vários) e das [registry credentials](#registry-credentials) referentes ao modo de distribuição de image do seu ambiente. `--dry-run` renderiza e lista a metade de permissões sem aplicar nem emitir nada; ainda assim, é necessário access ao registry para renderizar os charts.
 
@@ -98,7 +92,7 @@ Use o procedimento de workstation do Kubernetes abaixo somente em deployments co
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        Em uma implantação com registry espelhado e aprovação de plataforma no Kubernetes habilitada, `approve` lê o pacote preparado por meio do redirecionamento de porta do passo anterior. Ele entrega o pacote de token como um Secret no espaço de nomes do connector, que o chart monta no pod do Kubernetes. Execute-o a partir de uma workstation cujo kubeconfig alcance o cluster, com uma cópia da configuração do connector e access ao registry conforme descrito acima. O chart renderiza a configuração no ConfigMap do executor; `approve` precisa dela para o prefix do espaço de nomes e não lê nenhuma credential dela.
+        Em uma implantação com registry espelhado e aprovação de plataforma no Kubernetes habilitada, `approve` lê o pacote preparado por meio do redirecionamento de porta do passo anterior. Ele entrega o pacote de token como um Secret no espaço de nomes do connector, que o chart monta no pod do Kubernetes. Execute-o a partir de uma workstation cujo kubeconfig alcance o cluster, com uma cópia da configuração do connector e [access ao registry](#registry-credentials). O chart renderiza a configuração no ConfigMap do executor; `approve` precisa dela apenas para o prefix do espaço de nomes e não lê nenhuma credential dela.
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do connector que você escolheu no init
@@ -123,7 +117,7 @@ Use o procedimento de workstation do Kubernetes abaixo somente em deployments co
 
     No Kubernetes, uma terceira linha aparece em seguida: `Bundle written to Secret <namespace>/<name>; the executor pod sees it once the kubelet refreshes the mount, within about a minute.`
 
-    O ClickHouse Cloud reenvia a sincronização assim que o próximo heartbeat do executor indicar a aprovação. Ele aguarda até 20 minutos por uma sincronização já em andamento e ignora executores cujo último heartbeat tenha mais de 5 minutos. Após 3 tentativas para um mesmo pacote, o processo é interrompido, e o seu account team o reaciona. O executor aplica a metade referente ao workload e informa a plataforma como `synced`. Acompanhe a conclusão da sincronização com:
+    O ClickHouse Cloud reenvia a sincronização assim que o próximo heartbeat do executor indicar a aprovação. Ele aguarda até 20 minutos por uma sincronização já em andamento e ignora executores cujo último heartbeat tenha mais de 5 minutos. Após 3 tentativas para um mesmo pacote, o processo é interrompido, e a sua equipe de conta o reaciona. O executor aplica a metade de cargas de trabalho e informa a plataforma como `synced`. Acompanhe a conclusão da sincronização com:
 
     ```bash
     clicklink clctl commands list --action sync_platform
@@ -135,7 +129,7 @@ Use o procedimento de workstation do Kubernetes abaixo somente em deployments co
 
 ## A janela de aprovação {#the-approval-window}
 
-Uma aprovação emite um token para a identidade `pcm-platform` válido por 2 horas por padrão (`--ttl` altera esse valor). O executor nunca renova esse token. Quando ele expira, o executor não consegue mais atuar sobre a camada de plataforma e recusa a próxima sincronização de plataforma, exibindo novamente a mensagem de aprovação. Esse é o comportamento esperado, não uma falha, e não depende de conectividade: uma aprovação concedida enquanto o connector está offline expira igualmente conforme seu próprio relógio.
+Uma aprovação emite um token para a identidade `pcm-platform`, válido por 2 horas por padrão (`--ttl` altera esse valor). O executor nunca o renova. Quando ele expira, o executor não consegue mais atuar sobre a camada de plataforma e recusa a próxima sincronização de plataforma, exibindo novamente a mensagem de aprovação. Isso é intencional e não depende de conectividade: uma aprovação concedida enquanto o connector está offline expira igualmente conforme seu próprio relógio.
 
 Execute `approve` novamente sempre que:
 
@@ -147,7 +141,7 @@ Aprovar o mesmo pacote novamente é seguro e substitui o token. O pacote prepara
 
 ## O que a aprovação concede {#what-the-approval-grants}
 
-Você aplica a metade de permissões, portanto ela carrega a sua autoridade. O `approve` a carimba com o sha256 do pacote, e o executor verifica, antes de tocar em qualquer coisa, se todos os objetos de permissão do pacote que lhe foi enviado estão presentes e aprovados. O executor não aplica nada dela.
+Você aplica a metade de permissões, portanto ela carrega a sua autoridade; o executor não aplica nada dela. O `approve` a carimba com o sha256 do pacote, e, antes de tocar em qualquer coisa, o executor verifica se todos os objetos de permissão do pacote que lhe foi enviado estão presentes e aprovados.
 
 O executor aplica a metade de cargas de trabalho como `pcm-platform`. Essa identidade pode criar e atualizar Secrets, ConfigMaps, Services, Deployments, Jobs e PodDisruptionBudgets, apenas dentro dos espaços de nomes da plataforma, o que é imposto por uma política de admissão. Ela pode ler os objetos de que precisa para seu preflight (pods, eventos, espaços de nomes, ServiceAccounts, os kinds de permissão acima). Ela não pode:
 
@@ -159,11 +153,9 @@ A identidade de ciclo de vida de serviço do executor, `pcm-executor`, é separa
 
 ## Redefinindo um cluster de teste {#resetting-a-test-cluster}
 
-A CLI pública `v0.16.0` não possui o comando `platform reset`; confirme a [disponibilidade](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usar este procedimento.
-
 O `clicklink clctl platform reset` existe para clusters de teste: ele desinstala os componentes da plataforma para que a primeira instalação possa ser testada novamente. Antes de alterar qualquer coisa, ele lista os clusters ClickHouse nos espaços de nomes pertencentes a este connector e recusa a operação caso exista algum serviço.
 
-Em um cluster vazio, ele desinstala os lançamentos da plataforma na ordem inversa de dependência. Em seguida, remove o pacote de tokens de plataforma do executor: o diretório local em uma VM ou o Secret indicado por `--secret-namespace <connector-namespace>` no Kubernetes. As definições de recursos personalizados, o RBAC e a StorageClass permanecem intactos. Execute `approve` novamente antes da próxima sincronização da plataforma.
+Em um cluster vazio, ele desinstala os lançamentos da plataforma na ordem inversa de dependência. Em seguida, remove o pacote de tokens de plataforma do executor: o diretório local em uma VM ou o Secret indicado por `--secret-namespace <connector-namespace>` no Kubernetes. As CustomResourceDefinitions, o RBAC e a StorageClass permanecem intactos. Execute `approve` novamente antes da próxima sincronização da plataforma.
 
 ```bash
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run

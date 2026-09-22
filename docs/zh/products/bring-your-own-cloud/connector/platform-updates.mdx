@@ -2,7 +2,7 @@
 title: '平台更新'
 sidebarTitle: '平台更新'
 slug: /products/bring-your-own-cloud/connector/platform-updates
-description: '批准 ClickHouse Cloud 为托管 cluster 提出的平台支持包：什么是支持包、批准流程如何运作，以及它会授予哪些权限'
+description: '批准 ClickHouse Cloud 为托管集群提出的平台支持包：什么是支持包、批准流程如何运作，以及它会授予哪些权限'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor', 'platform']
 doc_type: 'guide'
 ---
@@ -12,24 +12,20 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-托管集群会运行一个小型平台层，ClickHouse 服务依赖于该层。ClickHouse Cloud 会为该层提出更新建议；在您使用自己的集群凭证逐项批准之前，executor不会应用任何更新。本页将说明什么是平台更新、如何在 VM 或 Kubernetes 安装环境中批准更新、一次批准的有效期有多长，以及批准所授予的权限范围。
-
-<Note>
-  公开发布的 `v0.16.0` 命令行客户端不包含 `platform` 命令，也不包含 `platform approve` 和 `platform reset`。下文中的 Linux VM 和 Kubernetes 工作流在该版本中均不可用。此外，Kubernetes 批准流程还需要命令行客户端和 executor chart 支持基于 Secret 的标记支持包 (`--secret-namespace`) 。在使用上述任一工作流之前，请与您的客户团队确认 [managed 模式可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)。
-</Note>
+托管集群会运行一个小型平台层，ClickHouse 服务依赖于该层。ClickHouse Cloud 会为该层提出更新建议；在您使用自己的集群凭证逐项批准之前，executor不会应用任何更新。
 
 ## 什么是平台更新 {#what-a-platform-update-is}
 
-平台层由三个组件构成：snapshot controller、ClickHouse operator 以及监控 collector。三者必须按此顺序安装，因为每个组件都依赖前一个组件的自定义资源定义。与它们相伴的还有一个名为 `gp3-encrypted` 的 StorageClass (加密的 gp3 卷) ，供各 service 使用。
+平台层由三个组件构成：snapshot controller、ClickHouse operator 以及监控 collector。三者必须按此顺序安装，因为每个组件都依赖前一个组件的自定义资源定义。各服务使用随之一同提供的、名为 `gp3-encrypted` 的 StorageClass (加密的 gp3 卷) 。
 
-平台支持包是 ClickHouse Cloud 为你的环境渲染生成的清单。它锁定了这些组件的 chart 与镜像版本，并指明从哪个 registry 拉取。每个支持包都以该清单的 sha256 作为标识。ClickHouse Cloud 通过其命令通道将支持包下发给 executor，executor 会将其暂存，等待你批准。
+平台支持包是 ClickHouse Cloud 为你的环境渲染生成的清单。它锁定了这些组件的 chart 与镜像版本，并指明从哪个 registry 拉取。每个支持包都以该清单的 sha256 作为标识。ClickHouse Cloud 通过命令通道将其下发给 executor，executor 会将其暂存，等待你批准。
 
-应用支持包分为两部分：
+支持包分为两部分应用：
 
 * **权限部分**涵盖所有授予或限定访问权限的内容：Namespace、CustomResourceDefinition、ServiceAccount、ClusterRole 与 ClusterRoleBinding、Role 与 RoleBinding、webhook 与 admission 配置、PriorityClass 以及 StorageClass。这部分只能由你使用自己的凭据，通过运行 `clicklink clctl platform approve` 来应用。
 * **工作负载部分**是实际运行的内容：Deployment、Service、ConfigMap、Secret、Job 和 PodDisruptionBudget。executor 以专用的 `pcm-platform` 身份应用这部分，该身份只能写入上述类型的资源，且仅在你批准时签发的短期 token 有效期内可用。
 
-executor 绝不会应用未经你批准的支持包。若某次平台同步缺少权限部分、其 sha256 与已批准的不一致，或其 token 已过期，executor 都会拒绝该同步。拒绝信息会说明需要批准，并给出已暂存支持包的 sha256。若创建 service 时需要当前平台所缺少的自定义资源定义，也会以同样的方式失败，并提示运行同样的命令。
+executor 绝不会应用未经你批准的支持包。若某次平台同步缺少权限部分、其 sha256 与已批准的不一致，或其 token 已过期，executor 都会拒绝该同步。拒绝信息会说明需要批准，并给出已暂存支持包的 sha256。若创建服务时需要当前平台所缺少的自定义资源定义，也会以同样的方式失败，并提示运行同样的命令。
 
 ## 批准平台更新 {#approve-a-platform-update}
 
@@ -37,24 +33,22 @@ executor 绝不会应用未经你批准的支持包。若某次平台同步缺�
 
 ### Registry 凭证 {#registry-credentials}
 
-下面两种批准流程都需要[支持平台功能的 build](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)；公开发布的 `v0.16.0` 不包含 `platform` 命令。Kubernetes 批准还要求 命令行客户端 与 chart 均支持 Secret 分发。
-
 Registry 身份验证方式取决于为你的环境注册的镜像分发模式：
 
-* **直接访问 ClickHouse 的 registry。** 在连接器的 EC2 VM 上执行批准。`approve` 与 executor 的平台同步都会使用来自 EC2 instance metadata service 的凭证，assume 你所在环境的只读 ECR puller role，并使用该 role 登录 chart；executor 还会用它 check 平台镜像是否存在。工作站上的 AWS profiles、环境凭证或 SSO 凭证均无法替代 instance profile。用于应用 权限部分 的 cluster-admin 凭证仍由你的 kubeconfig 单独提供。
+* **直接访问 ClickHouse 的 registry。** 在连接器的 EC2 VM 上执行批准。`approve` 与 executor 的平台同步都会使用来自 EC2 instance metadata 服务的凭证，assume 你所在环境的只读 ECR puller role。该 role 用于登录 chart registry；executor 还会用它 check 平台镜像是否存在。工作站上的 AWS profiles、环境凭证或 SSO 凭证均无法替代 instance profile。用于应用 权限部分 的 cluster-admin 凭证仍由你的 kubeconfig 单独提供。
 * **Charts 位于其他 ECR registry，包括你自建的 mirror。** Chart 登录使用运行 `approve` 或 executor 的进程所具备的 ambient AWS 凭证，这些凭证必须有权读取该 registry。
 
-只有在启用了 Kubernetes 平台批准的 mirror registry 部署中，才需要使用下面的 Kubernetes 工作站流程。若采用直接访问方式，请先联系你的客户团队，确认执行环境受支持并具备所需的 EC2 instance profile，然后再继续。
+只有在启用了 Kubernetes 平台批准的 mirror registry 部署中，才需要使用下面的 Kubernetes 工作站流程。若采用直接访问方式，请先联系你的客户团队，确认执行环境受支持并具备所需的 EC2 instance profile。
 
 <Steps>
   <Step title="查找已暂存的支持包" id="find-the-staged-bundle">
-    在执行其他任何操作之前，ClickHouse Cloud 会先将每个提议的 bundle 发送给 executor。executor 会将其暂存为待处理 bundle，并在心跳中上报其 sha256。同一时刻只存在一个暂存的 bundle，较新的提议会将其覆盖。随后，executor 会拒绝本次同步，并将其记录为一条失败的命令，该命令的结果以需要运行的命令结尾。
+    ClickHouse Cloud 会先将每个提议的 bundle 发送给 executor。executor 会将其暂存为待处理 bundle，并在心跳中上报其 sha256。同一时刻只存在一个暂存的 bundle，较新的提议会将其覆盖。随后，executor 会拒绝本次同步，并记录一条失败的命令，该命令的结果以需要运行的命令结尾。
 
     ```bash
     clicklink clctl commands list --status failed --action sync_platform
     ```
 
-    `result` 字段以 `run: clctl platform approve (pending bundle sha <sha256>)` 结尾。在 Kubernetes 上，该提示内容为 `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`。如果某次创建操作因缺少 custom resource definition 而失败，失败的命令本身以及 `clicklink clctl instances create --wait` 输出的错误信息中，都会包含同样的 `clctl platform approve` 这一行。此外，当有平台更新待批准时，ClickHouse 客户团队也会通知你。
+    `result` 字段以 `run: clctl platform approve (pending bundle sha <sha256>)` 结尾。在 Kubernetes 上，该提示内容为 `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`。如果某次创建操作因缺少 custom resource definition 而失败，也会包含同样的 `clctl platform approve` 这一行。它会出现在失败的命令本身以及 `clicklink clctl instances create --wait` 输出的错误信息中。此外，当有平台更新待批准时，你的客户团队也会通知你。
 
     批准之前，请先查看已暂存的支持包，其中包含清单及其 sha256。
 
@@ -82,7 +76,7 @@ Registry 身份验证方式取决于为你的环境注册的镜像分发模式�
   </Step>
 
   <Step title="运行 approve" id="run-approve">
-    不带任何 flags 执行 `approve` 时，它会读取暂存的 bundle 并计算其 hash，因此你批准的内容与 executor 收到的内容完全一致。它会以与 executor 完全相同的方式渲染 bundle 中的每个图表，并使用你选择的 kube context 应用其中的权限部分。如有需要，它会创建 `pcm-platform` identity 并签发对应的 token。它不会向你的连接器端点发出任何 request。
+    不带任何 flags 执行 `approve` 时，它会读取暂存的 bundle 并计算其 hash，因此你批准的内容与 executor 收到的内容完全一致。它会以与 executor 相同的方式渲染每个图表，并使用你选择的 kube context 应用其中的权限部分。如有需要，它会创建 `pcm-platform` identity 并签发对应的 token。它不会向你的连接器端点发出任何 request。
 
     `approve` 需要一个在受管 cluster 上具有 cluster-admin 权限的 kube context (如果你的 kubeconfig 中包含多个 context，请使用 `--context <name>` 指定) ，以及与你的环境所用镜像分发模式相匹配的 [registry 凭证](#registry-credentials)。`--dry-run` 只会渲染并列出权限部分，不会实际应用或签发任何内容；但渲染图表时仍需具备 registry 的 access。
 
@@ -98,7 +92,7 @@ Registry 身份验证方式取决于为你的环境注册的镜像分发模式�
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        对于启用了 Kubernetes 平台批准的 mirror registry 部署，`approve` 会通过上一步建立的端口转发读取暂存的 bundle，并将 token bundle 以 Secret 的形式投递到连接器命名空间中，再由图表 mount 进 pod (容器组) 。请在 kubeconfig 能够访问该 cluster 的 workstation 上运行，并准备一份连接器 configuration 以及上文所述的 registry access。图表会将该 configuration 渲染到 executor 的 ConfigMap 中；`approve` 需要它来获取命名空间 prefix，不会从中读取任何 credentials。
+        对于启用了 Kubernetes 平台批准的 mirror registry 部署，`approve` 会通过上一步建立的端口转发读取暂存的 bundle，并将 token bundle 以 Secret 的形式投递到连接器命名空间中，再由图表 mount 进 pod (容器组) 。请在 kubeconfig 能够访问该 cluster 的 workstation 上运行，并准备一份连接器 configuration 以及 [registry access](#registry-credentials)。图表会将该 configuration 渲染到 executor 的 ConfigMap 中；`approve` 仅需要它来获取命名空间 prefix，不会从中读取任何 credentials。
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # 你在 init 时选择的连接器命名空间
@@ -135,19 +129,19 @@ Registry 身份验证方式取决于为你的环境注册的镜像分发模式�
 
 ## 批准时间窗 {#the-approval-window}
 
-一次批准会为 `pcm-platform` identity 签发一个 token，默认有效期为 2 小时 (可通过 `--ttl` 修改) 。executor 不会续期该 token。token 过期后，executor 就无法再操作平台层，并会在下一次平台同步时再次给出批准提示并拒绝执行。这是预期的形态，而非故障，且与网络连通性无关：即便批准是在 connector 离线时给出的，它仍按自己的时钟到期。
+一次批准会为 `pcm-platform` identity 签发一个 token，默认有效期为 2 小时 (可通过 `--ttl` 修改) 。executor 不会对其续期。token 一旦过期，executor 就无法再操作平台层，并会在下一次平台同步时再次给出批准提示并拒绝执行。这是有意设计的行为，且与网络连通性无关：即便批准是在连接器离线时给出的，它仍按自己的时钟到期。
 
 遇到以下情况时，请重新运行 `approve`：
 
 * token 在同步完成前已过期；
 * ClickHouse Cloud 提出了不同的支持包。你批准过的 sha256 会记录在 `pcm-platform` ServiceAccount 上，在你批准新的支持包之前，executor 会拒绝针对其他任何支持包的同步；
-* service 创建过程中报告缺少自定义资源定义。
+* 服务创建过程中报告缺少自定义资源定义。
 
 重复批准同一个支持包是安全的，并会替换原有 token。同步完成后，已暂存的支持包仍会保留，因此重复批准无需重新提案。
 
 ## 该批准授予了哪些权限 {#what-the-approval-grants}
 
-权限部分由你来应用，因此它携带的是你的权限。`approve` 会为其打上该支持包的 sha256 标记，executor 在执行任何操作之前都会先校验：所收到支持包中的每一个权限对象都已存在且已获批准。executor 本身不会应用其中的任何内容。
+权限部分由你来应用，因此它携带的是你的权限；executor 本身不会应用其中的任何内容。`approve` 会为其打上该支持包的 sha256 标记，executor 在执行任何操作之前都会先校验：所收到支持包中的每一个权限对象都已存在且已获批准。
 
 executor 以 `pcm-platform` 身份应用工作负载部分。该 identity 可以 create 和 update Secrets、ConfigMaps、Services、Deployments、Jobs 以及 PodDisruptionBudgets，且仅限于平台命名空间内，这一限制由 admission 策略强制执行。它可以读取 preflight 所需的对象 (pods、events、命名空间、ServiceAccounts，以及上述权限类 kind) 。它不能：
 
@@ -159,14 +153,12 @@ executor 的服务生命周期 identity `pcm-executor` 则是独立的，仅限�
 
 ## 重置测试集群 {#resetting-a-test-cluster}
 
-公开的 `v0.16.0` 命令行客户端没有 `platform reset` 命令；在使用此步骤之前，请先确认[可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)。
-
 `clicklink clctl platform reset` 专为测试集群设计：它会卸载平台组件，以便重新演练一次首次安装流程。在做出任何更改之前，它会先列出该连接器所管辖命名空间中的 ClickHouse 集群，若存在任何 service，则拒绝执行。
 
-在空集群上，它会按依赖关系的逆序卸载平台 releases，随后移除 executor 的平台 标记 支持包：在 VM 上为本地 directory，在 Kubernetes 上则为由 `--secret-namespace <connector-namespace>` 指定的 Secret。CustomResourceDefinitions、RBAC 和 StorageClass 保持不变。在下一次平台同步之前，请再次运行 `approve`。
+在空集群上，它会按依赖关系的逆序卸载平台 releases，随后移除 executor 的平台 token 支持包：在 VM 上为本地 directory，在 Kubernetes 上则为由 `--secret-namespace <connector-namespace>` 指定的 Secret。CustomResourceDefinitions、RBAC 和 StorageClass 保持不变。在下一次平台同步之前，请再次运行 `approve`。
 
 ```bash
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
 ```
 
-`reset` 以文件形式接收渲染后的平台清单 (`--bundle`) ，而不会读取已暂存的支持包。`--dry-run` 会检查 services 并打印执行计划，但不会对 集群 做任何更改。
+`reset` 以文件形式接收渲染后的平台清单 (`--bundle`) ，而不会读取已暂存的支持包。`--dry-run` 会检查 services 并打印执行计划，但不会对 cluster 做任何更改。

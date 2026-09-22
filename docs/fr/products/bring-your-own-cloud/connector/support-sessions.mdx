@@ -11,11 +11,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-Les sessions d’assistance vous permettent d’accorder à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les ingénieurs du support ClickHouse peuvent faire pendant celle-ci et comment l’auditer.
+Une session d’assistance accorde à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les ingénieurs du support ClickHouse peuvent faire pendant celle-ci et comment l’auditer.
 
 ## Qu&#39;est-ce qu&#39;une session d&#39;assistance ? {#what-a-support-session-is}
 
-Une session d&#39;assistance est une fenêtre de temps limitée pendant laquelle l&#39;outil de diagnostic accepte les commandes des ClickHouse support engineers. En dehors d&#39;une session, l&#39;outil de diagnostic refuse toute commande, même lorsque son WebSocket sortant est connecté. Il n&#39;existe aucune autre voie d&#39;exécution : l&#39;outil de diagnostic n&#39;exécute rien sans session, et ClickHouse ne peut pas en ouvrir une à votre place. ClickHouse Cloud ne se connecte jamais à votre environnement ; il reçoit uniquement ce que l&#39;outil de diagnostic envoie sur son canal sortant.
+Une session d&#39;assistance est une fenêtre de temps limitée pendant laquelle l&#39;outil de diagnostic accepte les commandes des ingénieurs du support ClickHouse. En dehors d&#39;une session, il refuse toute commande, même lorsque son WebSocket sortant est connecté. Il n&#39;existe aucune autre voie d&#39;exécution, et ClickHouse ne peut pas ouvrir une session à votre place. ClickHouse Cloud ne se connecte jamais à votre environnement ; il reçoit uniquement ce que l&#39;outil de diagnostic envoie sur son canal sortant.
 
 Les sessions ne régissent que les diagnostics. Les commandes de cycle de vie des services en mode managé transitent par le canal distinct de l&#39;executor, qu&#39;une session d&#39;assistance n&#39;ouvre ni ne contrôle ; voir [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
@@ -57,7 +57,7 @@ Vous définissez votre posture de session, y compris la liste d’autorisation d
     clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
     ```
 
-    L’identité OIDC de l’appelant doit figurer dans la liste d’autorisation des opérateurs. Les appelants non authentifiés ou non autorisés reçoivent une erreur 401 ou 403, et la passerelle consigne la tentative. Pour éviter d’exiger des identifiants de cluster, exposez la passerelle via l’Ingress facultatif du chart, qui termine TLS à l’aide d’un certificat émis par une CA ; consultez la [configuration](/fr/products/bring-your-own-cloud/connector/configuration).
+    L’identité OIDC de l’appelant doit figurer dans la liste d’autorisation des opérateurs. Les appelants non authentifiés ou non autorisés reçoivent une erreur 401 ou 403, et la passerelle consigne la tentative. Pour permettre aux opérateurs de travailler sans identifiants de cluster, exposez la passerelle via l’Ingress facultatif du chart, qui termine TLS à l’aide d’un certificat émis par une CA ; consultez la [configuration](/fr/products/bring-your-own-cloud/connector/configuration).
   </Tab>
 
   <Tab title="VM Linux" id="sessions-vm">
@@ -83,16 +83,16 @@ Vous définissez votre posture de session, y compris la liste d’autorisation d
 
 ## Expiration de la session {#session-expiry}
 
-Les sessions expirent automatiquement. La durée par défaut est de 4 heures ; `session enable --duration` accepte une durée pouvant aller jusqu’à 24 heures. Lorsque la session expire ou dès que vous exécutez `session disable`, l’outil de diagnostic cesse d’accepter les commandes. La désactivation constitue la voie de révocation immédiate : aucun redémarrage ni aucune coordination avec ClickHouse.
+Les sessions expirent automatiquement. La durée par défaut est de 4 heures ; `session enable --duration` accepte une durée pouvant aller jusqu’à 24 heures. À l’expiration ou dès que vous exécutez `session disable`, l’outil de diagnostic cesse d’accepter les commandes. La désactivation révoque l’accès immédiatement : aucun redémarrage ni aucune coordination avec ClickHouse.
 
 ## Liste d’autorisation des opérateurs {#operator-allowlist}
 
-Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mail d’opérateurs. La comparaison porte sur l’adresse e-mail attestée par le jeton OIDC validé, et jamais sur ce que le client déclare à son sujet.
+Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mail d’opérateurs. La comparaison porte sur l’adresse e-mail attestée par le jeton OIDC validé, et jamais sur une valeur fournie par le client.
 
-* **Kubernetes :** définissez `clctl.gateway.allowedOperators` dans votre fichier de surcharge de valeurs. Le chart génère la liste dans une ConfigMap ; ainsi, une modification des valeurs suivie de `helm upgrade` renouvelle la liste d’autorisation sans redémarrer le pod.
+* **Kubernetes :** définissez `clctl.gateway.allowedOperators` dans votre superposition de values. Le chart génère la liste dans une ConfigMap ; ainsi, une modification des valeurs suivie de `helm upgrade` renouvelle la liste d’autorisation sans redémarrer le pod.
 * **VM Linux :** la liste d’autorisation se trouve dans `/etc/clicklink/allowed-operators.txt`, écrit par `clicklink clctl init` à partir des adresses e-mail d’opérateurs que vous fournissez.
 
-Sur les deux cibles, la passerelle relit le fichier lors de la requête suivante dès que 30 secondes se sont écoulées depuis la dernière lecture ; les modifications prennent donc effet sans redémarrage.
+Sur les deux cibles, la passerelle relit le fichier lors de la requête suivante dès que 30 secondes se sont écoulées depuis la dernière lecture. Les modifications prennent effet sans redémarrage.
 
 ## Ce que les opérateurs peuvent faire pendant une session {#what-operators-can-do}
 
@@ -100,7 +100,7 @@ Tant qu&#39;une session est active, les ingénieurs du support ClickHouse peuven
 
 **Le SQL en lecture seule** s&#39;exécute sur vos clusters sous l&#39;utilisateur `pcm_troubleshooter`, dont les grants sont limités à la liste d’autorisation de tables de la session. L&#39;outil de diagnostic rejette par ailleurs tout statement qui ne commence pas par `SELECT`, `WITH`, `SHOW`, `DESCRIBE` ou `EXPLAIN`. Cet utilisateur ne dispose que de grants `SELECT` table par table, sans aucun privilège d&#39;écriture, de DDL ni d&#39;administration.
 
-La liste d’autorisation par défaut couvre les tables `system` telles que `system.parts`, `system.merges`, `system.replicas`, `system.metrics` et `system.settings`. `system.query_log` et `system.text_log` ne peuvent pas y être ajoutées : le daemon refuse toute configuration qui les mentionne, de sorte qu&#39;aucun grant n&#39;est jamais provisionné sur ces tables. La liste d’autorisation par défaut inclut en revanche `system.processes`, dont la colonne `query` affiche le texte des statements en cours d&#39;exécution à cet instant. Retirez-la de `troubleshooter.allowedTables` (surcouche Helm) ou de `troubleshooter.allowed_tables` (configuration file de la VM) si le texte des requêtes en cours ne doit jamais être visible pendant une session.
+La liste d’autorisation par défaut couvre les tables `system` telles que `system.parts`, `system.merges`, `system.replicas`, `system.metrics` et `system.settings`. `system.query_log` et `system.text_log` ne peuvent pas y être ajoutées : le démon refuse toute configuration qui les mentionne, de sorte qu&#39;aucun grant n&#39;est jamais provisionné sur ces tables. La liste d’autorisation par défaut inclut en revanche `system.processes`, dont la colonne `query` affiche le texte des statements en cours d&#39;exécution. Retirez-la de `troubleshooter.allowedTables` (surcouche Helm) ou de `troubleshooter.allowed_tables` (configuration file de la VM) si le texte des requêtes en cours ne doit jamais être visible pendant une session.
 
 **Les vues Kubernetes en lecture seule** correspondent aux verbes `get`, `list` et `watch` sur les pods, le statut des pods, les logs des pods, les services, les configmaps, les événements, les PersistentVolumeClaims, les deployments, les statefulsets et les replicasets dans les namespaces accordés. Les ensembles d&#39;accès sont rattachés aux ServiceAccounts Kubernetes sur les deux cibles d&#39;installation. En l&#39;absence d&#39;ensemble provisionné, l&#39;outil de diagnostic refuse purement et simplement les commandes de type kubectl. L&#39;executor provisionne le scraper pour un service managé, mais pas l&#39;outil de diagnostic ; voir [sessions d&#39;assistance pour un service managé](/fr/products/bring-your-own-cloud/connector/managed-services#support-sessions).
 
@@ -108,7 +108,7 @@ Le RBAC de l&#39;outil de diagnostic ne contient aucune permission `exec`, `dele
 
 ## Audit log {#audit-log}
 
-Chaque commande exécutée pendant une session est ajoutée à `/var/log/clicklink/troubleshoot-audit.log` sous la forme d&#39;un objet JSON par ligne (NDJSON). Les commandes bloquées sont elles aussi enregistrées, le champ `blocked_by` en précisant la raison (par exemple `session inactive`). `submitted_by` correspond à l&#39;Organization ID sur le canal de commande, c&#39;est-à-dire votre propre org ID. L&#39;ingénieur ClickHouse concerné est enregistré côté ClickHouse Cloud, et non dans ce fichier. Une entrée de commande de session se présente ainsi :
+Chaque commande exécutée pendant une session est ajoutée à `/var/log/clicklink/troubleshoot-audit.log` sous la forme d&#39;un objet JSON par ligne (NDJSON). Les commandes bloquées sont elles aussi enregistrées, le champ `blocked_by` en précisant la raison (par exemple `session inactive`). `submitted_by` correspond à l&#39;Organization ID sur le canal de commande : votre propre org ID. L&#39;ingénieur ClickHouse concerné est enregistré côté ClickHouse Cloud, et non dans ce fichier. Une entrée de commande de session se présente ainsi :
 
 ```json
 {
@@ -126,7 +126,7 @@ Chaque commande exécutée pendant une session est ajoutée à `/var/log/clickli
 
 `status` indique le résultat de la commande : `completed`, `error` ou `rejected`.
 
-Les appels passant par la passerelle sont journalisés séparément. Chaque appel, y compris ceux qui sont rejetés, est émis sous la forme d&#39;une ligne structurée `clctl.gateway` dans le log propre de l&#39;outil de diagnostic : le journal sur une VM, le log du conteneur sur Kubernetes. Cette ligne contient `submitted_by` (l&#39;e-mail attesté par le jeton validé, jamais une valeur fournie par le client), `command_type` (`clctl.session.enable`, `clctl.session.disable` ou `clctl.session.status`), `reason` (le `--reason` passé à l&#39;activation), `remote_addr` et `status`. `status` vaut `ok`, `unauthorized`, `forbidden`, `rate_limited`, `bad_request`, `conflict` ou `error` : les accès refusés apparaissent donc eux aussi dans le log.
+Les appels passant par la passerelle sont journalisés séparément. Chaque appel, y compris ceux qui sont rejetés, est émis sous la forme d&#39;une ligne structurée `clctl.gateway` dans le log propre de l&#39;outil de diagnostic : le journal sur une VM, le log du conteneur sur Kubernetes. Cette ligne contient `submitted_by` (l&#39;e-mail attesté par le jeton validé, jamais une valeur fournie par le client) et `command_type` (`clctl.session.enable`, `clctl.session.disable` ou `clctl.session.status`). Elle contient également `reason` (le `--reason` passé à l&#39;activation), `remote_addr` et `status`. `status` vaut `ok`, `unauthorized`, `forbidden`, `rate_limited`, `bad_request`, `conflict` ou `error` : les accès refusés apparaissent donc eux aussi dans le log.
 
 Les modifications locales de session sur une VM ne constituent pas des entrées d&#39;audit log. L&#39;utilisateur hôte à l&#39;origine de l&#39;appel est enregistré dans `enabled_by` au sein de `/var/lib/clicklink/session.json` et affiché par `session status`.
 

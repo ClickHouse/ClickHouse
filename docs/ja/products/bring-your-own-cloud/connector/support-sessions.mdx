@@ -11,11 +11,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-サポートセッションでは、ClickHouse Connector を介して ClickHouse への一時的な診断アクセスを付与できます。このページでは、セッションの概要、有効化と無効化の方法、セッション中に ClickHouse Support エンジニアが実行できる操作、およびその監査方法について説明します。
+サポートセッションは、ClickHouse Connector を介して ClickHouse に一時的な診断アクセスを付与します。このページでは、セッションの概要、有効化と無効化の方法、セッション中に ClickHouse Support エンジニアが実行できる操作、およびその監査方法について説明します。
 
 ## サポートセッションとは {#what-a-support-session-is}
 
-サポートセッションとは、トラブルシューターが ClickHouse Support エンジニアからのコマンドを受け付ける、時間制限付きの期間です。セッション外では、送信方向の WebSocket が接続されていても、トラブルシューターはあらゆるコマンドを拒否します。これ以外の実行経路はありません。トラブルシューターはセッションなしでは何も実行せず、ClickHouse が代わりにセッションを開くこともできません。ClickHouse Cloud がお客様の環境へ接続することは一切なく、受け取るのはトラブルシューターが送信方向のチャネルを通じて送信した内容のみです。
+サポートセッションとは、トラブルシューターが ClickHouse Support エンジニアからのコマンドを受け付ける、時間制限付きの期間です。セッション外では、送信方向の WebSocket が接続されていても、あらゆるコマンドを拒否します。これ以外の実行経路はなく、ClickHouse が代わりにセッションを開くこともできません。ClickHouse Cloud がお客様の環境へ接続することは一切なく、受け取るのはトラブルシューターが送信方向のチャネルを通じて送信した内容のみです。
 
 セッションが制御するのは診断のみです。managed モードのサービスに対するライフサイクルコマンドは executor の別チャネルを経由し、このチャネルはサポートセッションによって開かれることも制御されることもありません。[managed services](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle) を参照してください。
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
     ```
 
-    呼び出し元の OIDC アイデンティティは、オペレーター の許可リストに含まれている必要があります。認証されていない呼び出し元や許可リストにない呼び出し元には 401 または 403 が返され、ゲートウェイがその試行をログに記録します。クラスター認証情報を必須にしたくない場合は、チャート のオプトインのイングレスを介してゲートウェイを公開してください。このイングレスは CA 発行の証明書で TLS を終端します。詳細は[設定](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+    呼び出し元の OIDC アイデンティティは、オペレーター許可リストに含まれている必要があります。認証されていない呼び出し元や許可リストにない呼び出し元には 401 または 403 が返され、ゲートウェイがその試行をログに記録します。オペレーター がクラスター認証情報なしで作業できるようにするには、チャート のオプトインのイングレスを介してゲートウェイを公開してください。このイングレスは CA 発行の証明書で TLS を終端します。詳細は[設定](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
   </Tab>
 
   <Tab title="Linux VM" id="sessions-vm">
@@ -83,16 +83,16 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ## セッションの有効期限 {#session-expiry}
 
-セッションは自動的に期限切れになります。デフォルトの有効期間は4時間で、`session enable --duration` は最大24時間まで指定できます。セッションの期限が切れるか、`session disable` を実行した時点で、トラブルシューターはコマンドを受け付けなくなります。無効化は即時の失効手段です。再起動やClickHouseとの協調は必要ありません。
+セッションは自動的に期限切れになります。デフォルトの有効期間は4時間で、`session enable --duration` は最大24時間まで指定できます。期限が切れるか、`session disable` を実行した時点で、トラブルシューターはコマンドを受け付けなくなります。無効化するとアクセスは即座に取り消されます。再起動やClickHouseとの協調は必要ありません。
 
-## オペレーターの許可リスト {#operator-allowlist}
+## オペレーター許可リスト {#operator-allowlist}
 
-すべてのゲートウェイ呼び出しは、オペレーターのメールアドレスの許可リストに基づき認可されます。照合は検証済みの OIDC トークンで証明されたメールアドレスに対して行われ、クライアントが自身について申告した内容に基づいて照合されることはありません。
+すべてのゲートウェイ呼び出しは、オペレーターのメールアドレスの許可リストに基づき認可されます。照合には検証済みの OIDC トークンで証明されたメールアドレスが使用され、クライアントが提供した値が使われることはありません。
 
 * **Kubernetes:** values オーバーレイで `clctl.gateway.allowedOperators` を設定します。チャートはリストを ConfigMap にレンダリングするため、values を変更して `helm upgrade` を実行すると、ポッドを再起動せずに許可リストを更新できます。
 * **Linux VM:** 許可リストは `/etc/clicklink/allowed-operators.txt` にあり、指定したオペレーターのメールアドレスに基づいて `clicklink clctl init` により書き込まれます。
 
-いずれの環境でも、ゲートウェイは前回の読み取りから 30 秒が経過すると次のリクエスト時にファイルを再読み込みするため、編集内容は再起動なしで反映されます。
+いずれの環境でも、ゲートウェイは前回の読み取りから 30 秒が経過すると次のリクエスト時にファイルを再読み込みします。編集内容は再起動なしで反映されます。
 
 ## セッション中にオペレーターが実行できること {#what-operators-can-do}
 
@@ -100,7 +100,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 **読み取り専用 SQL** は、`pcm_troubleshooter` ユーザーとしてクラスターに対して実行されます。このユーザーに付与される grants は、セッションのテーブル 許可リスト の範囲に限定されます。さらにトラブルシューターは、`SELECT`、`WITH`、`SHOW`、`DESCRIBE`、`EXPLAIN` のいずれでも始まらないステートメントをすべて拒否します。このユーザーが持つのはテーブル単位の `SELECT` grant のみで、書き込み、DDL、管理系の権限は一切ありません。
 
-デフォルトの 許可リスト には、`system.parts`、`system.merges`、`system.replicas`、`system.metrics`、`system.settings` などの `system` テーブルが含まれます。`system.query_log` と `system.text_log` は 許可リスト に追加できません。これらを列挙した設定はデーモンが拒否するため、これらに対する grant がプロビジョニングされることはありません。デフォルトの 許可リスト には `system.processes` も含まれており、その `query` 列にはその時点で実行中のステートメントのテキストが表示されます。実行中のクエリテキストをセッション中に一切表示させたくない場合は、`troubleshooter.allowedTables` (Helm overlay) または `troubleshooter.allowed_tables` (VM 設定ファイル) から削除してください。
+デフォルトの 許可リスト には、`system.parts`、`system.merges`、`system.replicas`、`system.metrics`、`system.settings` などの `system` テーブルが含まれます。`system.query_log` と `system.text_log` は 許可リスト に追加できません。これらを列挙した設定はデーモンが拒否するため、これらに対する grant がプロビジョニングされることはありません。デフォルトの 許可リスト には `system.processes` も含まれており、その `query` 列には実行中のステートメントのテキストが表示されます。実行中のクエリテキストをセッション中に一切表示させたくない場合は、`troubleshooter.allowedTables` (Helm overlay) または `troubleshooter.allowed_tables` (VM 設定ファイル) から削除してください。
 
 **読み取り専用の Kubernetes ビュー** とは、付与されたネームスペース内のポッド、ポッドステータス、ポッドログ、サービス、configmap、イベント、PersistentVolumeClaim、デプロイメント、statefulset、replicaset に対する `get`、`list`、`watch` を指します。access bundles は、いずれのインストール対象でも Kubernetes ServiceAccount に紐付けられます。bundle がプロビジョニングされていない場合、トラブルシューターは kubectl 系のコマンドを一切受け付けません。executor が managed service 向けにプロビジョニングするのは scraper であり、トラブルシューターはプロビジョニングしません。[managed service の support sessions](/ja/products/bring-your-own-cloud/connector/managed-services#support-sessions) を参照してください。
 
@@ -108,7 +108,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ## 監査ログ {#audit-log}
 
-セッション中に実行されたすべてのコマンドは、1行につき1つのJSONオブジェクト (NDJSON) の形式で `/var/log/clicklink/troubleshoot-audit.log` に追記されます。ブロックされたコマンドも記録され、`blocked_by` にその理由 (例: `session inactive`) が示されます。`submitted_by` はコマンドチャネル上の組織IDで、これはご自身の組織IDです。個々のClickHouseエンジニアは、このファイルではなくClickHouse Cloud側に記録されます。セッションコマンドのエントリは次のようになります:
+セッション中に実行されたすべてのコマンドは、1行につき1つのJSONオブジェクト (NDJSON) の形式で `/var/log/clicklink/troubleshoot-audit.log` に追記されます。ブロックされたコマンドも記録され、`blocked_by` にその理由 (例: `session inactive`) が示されます。`submitted_by` はコマンドチャネル上の組織ID、すなわちご自身の組織IDです。個々のClickHouseエンジニアは、このファイルではなくClickHouse Cloud側に記録されます。セッションコマンドのエントリは次のようになります:
 
 ```json
 {
@@ -126,7 +126,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 `status` にはコマンドの結果が入ります。`completed`、`error`、`rejected` のいずれかです。
 
-ゲートウェイの呼び出しは別途記録されます。拒否されたものも含め、すべての呼び出しは構造化された `clctl.gateway` 行としてトラブルシューター自身のログ (VM ではジャーナル、Kubernetes ではコンテナーログ) に出力されます。この行には、`submitted_by` (検証済みトークンによって証明されたメールアドレスであり、クライアントから渡された値ではありません) 、`command_type` (`clctl.session.enable`、`clctl.session.disable`、`clctl.session.status`) 、`reason` (enable 時の `--reason`) 、`remote_addr`、`status` が含まれます。`status` は `ok`、`unauthorized`、`forbidden`、`rate_limited`、`bad_request`、`conflict`、`error` のいずれかであるため、拒否されたアクセスもログで確認できます。
+ゲートウェイの呼び出しは別途記録されます。拒否されたものも含め、すべての呼び出しは構造化された `clctl.gateway` 行としてトラブルシューター自身のログ (VM ではジャーナル、Kubernetes ではコンテナーログ) に出力されます。この行には、`submitted_by` (検証済みトークンによって証明されたメールアドレスであり、クライアントから渡された値ではありません) と `command_type` (`clctl.session.enable`、`clctl.session.disable`、`clctl.session.status`) が含まれます。さらに、`reason` (enable 時の `--reason`) 、`remote_addr`、`status` も含まれます。`status` は `ok`、`unauthorized`、`forbidden`、`rate_limited`、`bad_request`、`conflict`、`error` のいずれかであるため、拒否されたアクセスもログで確認できます。
 
 VM 上のローカルセッションの変更は監査ログのエントリにはなりません。実行したホストユーザーは `/var/lib/clicklink/session.json` に `enabled_by` として記録され、`session status` で表示されます。
 

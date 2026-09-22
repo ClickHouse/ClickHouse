@@ -14,8 +14,6 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ### 누가, 언제 내 서비스를 변경할 수 있습니까? {#who-can-change-my-services}
 
-관리형 모드 온보딩(enrollment), 고객 생성, 플랫폼 승인 워크플로는 [계정 담당 팀이 확인한 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 필요하며, 공개된 `v0.16.0`에서는 사용할 수 없습니다.
-
 관리형 모드에서 ClickHouse Cloud는 관리하도록 요청한 서비스만 변경합니다. 실행기 호스트나 파드에 액세스할 수 있는 사람은 로컬 `clicklink clctl instances` 명령어로도 해당 서비스를 제어할 수 있습니다. [서비스 수명 주기](/ko/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)를 참조하십시오. ClickHouse Cloud는 실행기의 아웃바운드 채널을 통해 다음과 같은 수명 주기 명령어를 전송합니다:
 
 * 생성: 제출한 정의를 기반으로 수행
@@ -26,17 +24,17 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 버전 업그레이드와 구성 변경도 동일한 방식으로, 서비스 정의를 다시 적용하는 형태로 전달되며, 이에 대한 고객 승인 단계는 없습니다. 지원 세션은 관여하지 않습니다. 실행기의 채널은 Troubleshooter의 채널과 분리되어 있으며 세션 상태의 제약을 받지 않습니다.
 
-반면 사용자의 조치를 기다리는 작업이 두 가지 있습니다. 첫째, 서비스 생성에는 `clicklink clctl executor prepare`와 `clicklink clctl instances create`가 필요합니다. 버킷과 IAM role은 사용자만 생성할 수 있기 때문입니다. 둘째, 클러스터 내 플랫폼 구성 요소의 업데이트 역시 사용자의 조치를 기다립니다. 실행기가 제안된 각 bundle을 스테이징하면, `clicklink clctl platform approve`로 스테이징된 bundle을 승인하고 해당 bundle에 대한 2시간짜리 토큰을 발급합니다. [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)를 참조하십시오.
+반면 사용자의 조치를 기다리는 작업이 두 가지 있습니다. 첫째, 서비스 생성에는 `clicklink clctl executor prepare`와 `clicklink clctl instances create`가 필요합니다. 버킷과 IAM role은 사용자만 생성할 수 있기 때문입니다. 둘째, 클러스터 내 플랫폼 구성 요소의 업데이트 역시 사용자의 조치를 기다립니다. 실행기가 제안된 각 bundle을 스테이징하면, `clicklink clctl platform approve`로 이를 승인하고 2시간짜리 토큰을 발급합니다. [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)를 참조하십시오.
 
-실행기가 수행하는 모든 작업은 Kubernetes API를 통해 이루어집니다. 실행기의 쓰기는 admission 정책에 의해 서비스 접두사(기본값 `ns-`)가 붙은 네임스페이스로 제한되며, 여기에 자체 네임스페이스 내 세 가지가 추가됩니다: 토큰 갱신, 서비스 registry ConfigMap, 그리고 Kubernetes에서는 `clicklink-mtls` 시크릿에 저장된 갱신된 클라이언트 인증서입니다. 동일한 리소스 계열에 대한 읽기는 클러스터 전체를 대상으로 합니다. 승인된 플랫폼 업데이트는 플랫폼 네임스페이스로 제한된 별도의 `pcm-platform` 아이덴티티로 실행됩니다. 사용자가 직접 운영하는 클러스터는 절대 변경되지 않습니다. 스크레이퍼와 Troubleshooter는 읽기 전용입니다. 정확한 범위는 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 페이지에서 확인할 수 있습니다.
+실행기가 수행하는 모든 작업은 Kubernetes API를 통해 이루어집니다. admission 정책은 실행기의 쓰기를 서비스 접두사(기본값 `ns-`)가 붙은 네임스페이스로 제한합니다. 또한 실행기 자체 네임스페이스 내에서 세 가지 쓰기를 허용합니다: 토큰 갱신, 서비스 registry ConfigMap, 그리고 Kubernetes에서는 `clicklink-mtls` 시크릿에 저장된 갱신된 클라이언트 인증서입니다. 동일한 리소스 계열에 대한 읽기는 클러스터 전체를 대상으로 합니다. 승인된 플랫폼 업데이트는 플랫폼 네임스페이스로 제한된 별도의 `pcm-platform` 아이덴티티로 실행됩니다. 사용자가 직접 운영하는 클러스터는 절대 변경되지 않습니다. 스크레이퍼와 Troubleshooter는 읽기 전용입니다. 정확한 범위는 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 페이지에서 확인할 수 있습니다.
 
 ### 어떤 데이터가 환경 외부로 전송됩니까? {#what-data-leaves-my-environment}
 
 데이터를 외부로 전송하는 경로는 세 가지이며, 모두 커넥터가 직접 여는 아웃바운드 연결을 통해 이루어집니다: 스크레이프 경로, 실행기, 그리고 사용자가 활성화한 지원 세션입니다.
 
-스크레이퍼는 고정된 system tables 집합에서 조회한 결과를 전송합니다. 기본값은 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`입니다. 또한 헬스 및 상태 하트비트, instance 및 Backup 상태, 그리고 커넥터 자체의 메트릭을 전송합니다. 기본 스크레이프 집합에는 `system.query_log`가 포함되지 않으므로, 원시 SQL 텍스트와 그 안에 포함된 literals 또는 개인 데이터는 사용자가 직접 추가하지 않는 한 스크레이프 경로를 통해 외부로 전송되지 않습니다. 세션 중에는 기본 테이블 허용 목록에 `system.processes`가 포함되며, 이 테이블은 실행 중인 query text를 노출합니다. 해당 정보가 노출되지 않아야 한다면 허용 목록에서 제거하십시오.
+스크레이퍼는 고정된 system tables 집합에서 조회한 결과를 전송합니다. 기본값은 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`입니다. 또한 헬스 및 상태 하트비트, 서비스 및 Backup 상태, 그리고 커넥터 자체의 메트릭을 전송합니다. 기본 스크레이프 집합에는 `system.query_log`가 포함되지 않습니다. 원시 SQL 텍스트와 그 안에 포함된 literals 또는 개인 데이터는 사용자가 해당 테이블을 직접 추가하지 않는 한 스크레이프 경로를 통해 외부로 전송되지 않습니다. 세션 중에는 기본 테이블 허용 목록에 `system.processes`가 포함되며, 이 테이블은 실행 중인 query text를 노출합니다. 해당 정보가 노출되지 않아야 한다면 허용 목록에서 제거하십시오.
 
-실행기는 자신이 실행한 각 명령의 결과와 각 managed service의 state 및 레플리카 수를 전송합니다. 실행기의 하트비트는 명령 채널의 연결 여부, 플랫폼 구성 요소 버전, 마지막으로 적용한 bundle의 다이제스트, 그리고 마지막 플랫폼 업데이트의 결과를 보고합니다. VM 설치 환경에서는 하트비트가 Kubernetes 액세스 bundle이 `ok`, `expiring`, `expired` 중 어떤 상태인지도 함께 보고합니다. service를 생성하면 `clicklink clctl instances create`가 환경 ID, 클라우드 및 리전, service name, 그리고 버킷 이름과 IAM role ARN을 전송합니다. 또한 default user의 password에 대한 두 개의 해시를 전송하며, password 자체는 절대 외부로 전송되지 않습니다.
+실행기는 자신이 실행한 각 명령의 결과와 각 managed 서비스의 state 및 레플리카 수를 전송합니다. 실행기의 하트비트는 명령 채널의 연결 여부를 보고합니다. 또한 플랫폼 구성 요소 버전, 마지막으로 적용한 bundle의 다이제스트, 그리고 마지막 플랫폼 업데이트의 결과도 함께 전달합니다. VM 설치 환경에서는 하트비트가 Kubernetes 액세스 bundle이 `ok`, `expiring`, `expired` 중 어떤 상태인지 또는 존재하지 않는지도 함께 보고합니다. 서비스를 생성하면 `clicklink clctl instances create`가 환경 ID, 클라우드 및 리전, 서비스 name, 그리고 버킷 이름과 IAM role ARN을 전송합니다. 또한 default user의 password에 대한 두 개의 해시를 전송하며, password 자체는 절대 외부로 전송되지 않습니다.
 
 활성 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 중에는 Troubleshooter가 명령 출력도 반환합니다. 이 출력은 허용 목록에 등록된 ClickHouse 테이블과 파드 logs를 포함한 읽기 전용 Kubernetes 뷰로 제한됩니다. 출력은 전송되기 전에 마스킹(IP, credentials, 토큰, 키에 대한 내장 패턴과 사용자가 직접 정의한 패턴)을 거칩니다. 사용자의 테이블 데이터, Backup, query history(`system.query_log`, `system.text_log`)는 사용자 환경 내에 그대로 유지됩니다. 다만 다음 세 가지는 외부로 전송됩니다:
 
@@ -47,10 +45,6 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 전체 아웃바운드 연결 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 페이지에서 확인할 수 있습니다.
 
 ### ClickHouse가 클러스터를 변경하지 못하게 하려면 어떻게 해야 합니까? {#stop-managed-mode}
-
-<Note>
-  공개된 `v0.16.0` CLI에는 `--managed`도 `--no-managed`도 없습니다. 아래의 설치 시점 선택은 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 포함된 build가 필요합니다. 이미 실행 중인 실행기를 중지하는 작업은 아래의 Helm 또는 systemd 안내를 따르며, 두 init 플래그 중 어느 것도 필요하지 않습니다.
-</Note>
 
 관리형 모드를 사용하지 않고 실행하십시오. 설치 시 `clicklink clctl init`에 `--no-managed`를 전달하거나, 관련 질문이 표시되면 &#39;아니오&#39;로 답하십시오. 이 경우 스크레이퍼와 troubleshooter만 배포되므로 ClickHouse는 서비스를 생성, 변경, 삭제할 수 없습니다. 다만 커넥터는 여전히 읽기 전용 ClickHouse 사용자와 ServiceAccount를 프로비저닝합니다. 자세한 내용은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model)을 참고하십시오.
 
@@ -64,7 +58,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
-ClickHouse가 생성한 서비스는 계속 실행되지만, ClickHouse Cloud는 더 이상 해당 서비스를 확장, 업그레이드, Backup, 삭제할 수 없으며 해당 서비스에 대한 대기 중인 명령어는 실패합니다. `clicklink clctl platform approve`를 실행하지 않으면 플랫폼 업데이트는 적용되지 않습니다. 이 명령어를 실행하지 않은 상태로 두면 관리형 모드의 나머지 기능은 그대로 작동하지만 플랫폼 계층은 동결됩니다.
+ClickHouse가 생성한 서비스는 계속 실행되지만, ClickHouse Cloud는 더 이상 해당 서비스를 확장, 업그레이드, Backup, 삭제할 수 없으며 해당 서비스에 대한 대기 중인 명령어는 실패합니다. 플랫폼 업데이트도 중단됩니다. 워크로드 부분은 실행기가 적용하는데, 실행기가 더 이상 실행되고 있지 않기 때문입니다.
 
 ### 커넥터가 오프라인이 되면 어떻게 됩니까? {#connector-down}
 
@@ -76,15 +70,13 @@ VM에서는 엔드포인트에 연결할 수 없을 때마다 스크레이퍼가
 
 진단하려면 각 컴포넌트의 `/livez` 엔드포인트를 확인하고(HTTP 코드가 아니라 JSON `status` 필드가 신호입니다) `clicklink clctl preflight`를 실행하십시오(VM 호스트에서는 `sudo`와 함께 실행). Preflight는 구성, 연결성, ClickHouse 연결 가능 여부, 액세스, 디스크를 한 번에 검사합니다. [운영](/ko/products/bring-your-own-cloud/connector/operations)을 참조하십시오. 커넥터가 계속 비정상 상태라면 ClickHouse 지원팀에 문의하십시오.
 
-### service를 삭제하면 무엇이 삭제됩니까? {#what-is-deleted}
+### 서비스를 삭제하면 무엇이 삭제됩니까? {#what-is-deleted}
 
-실행기는 service를 중지하고 해당 Kubernetes resources를 제거한 뒤 네임스페이스를 삭제합니다. 네임스페이스가 사라지면 service가 종료된 것으로 보고합니다. Kubernetes 외부의 항목은 모두 그대로 남습니다. 즉, 데이터 버킷, Backup 버킷, service의 IAM role은 유지됩니다. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 보유하지 않으므로 Kubernetes 외부의 어떤 것도 변경되지 않습니다.
+실행기는 서비스를 중지하고 해당 Kubernetes resources를 제거한 뒤 네임스페이스를 삭제합니다. 네임스페이스가 사라지면 서비스가 종료된 것으로 보고합니다. Kubernetes 외부의 항목은 모두 그대로 남습니다. 즉, 데이터 버킷, Backup 버킷, 서비스의 IAM role은 유지됩니다. 실행기는 사용자의 버킷이나 IAM에 대한 자격 증명을 보유하지 않으므로 이들에 접근할 수 없습니다.
 
-나머지는 사용자의 자격 증명으로 `clicklink clctl executor teardown`을 실행하여 제거합니다. 기본적으로 IAM role은 제거하고 데이터와 Backup은 유지하며, 이를 삭제하려면 명시적인 flags를 지정해야 합니다. [Delete a service](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오.
+나머지는 사용자의 자격 증명으로 `clicklink clctl executor teardown`을 실행하여 제거합니다. 기본적으로 IAM role은 제거하고 데이터와 Backup은 유지하며, 이를 삭제하려면 명시적인 flags를 지정해야 합니다. [Delete a 서비스](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오.
 
 ### default 사용자 비밀번호는 어디에서 확인합니까? {#default-user-password}
-
-고객 서비스 생성에는 [CLI와 배포 지원이 일치](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)해야 하며, 공개 버전 `v0.16.0`에서는 사용할 수 없습니다.
 
 `clicklink clctl executor prepare`는 사용자 측에서 비밀번호를 생성하며 단 한 번만 출력합니다. `--from-prepare` 대신 개별 플래그로 제출하면, `clicklink clctl instances create`가 `--default-user-password-file`에서 비밀번호를 읽거나 새로 생성하여 출력합니다. ClickHouse Cloud에는 해시만 제출되므로 커넥터나 ClickHouse가 비밀번호를 다시 보여줄 수는 없습니다. 비밀번호가 표시될 때 반드시 저장하십시오.
 
@@ -93,7 +85,7 @@ VM에서는 엔드포인트에 연결할 수 없을 때마다 스크레이퍼가
 조치 강도 순서대로:
 
 1. **대화형 액세스를 종료합니다.** VM 호스트에서 `sudo clicklink clctl troubleshoot session disable` 명령어로 세션을 비활성화하거나, Kubernetes에서는 포트 포워딩을 통해 `--gateway-url`을 추가하여 동일한 명령어를 실행합니다(정확한 명령어는 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 페이지 참조). 활성 세션이 없으면 troubleshooter는 연결된 상태에서도 모든 명령어 실행을 거부합니다.
-2. **관리형 모드를 중지합니다.** [ClickHouse가 내 클러스터를 변경하지 못하게 하려면 어떻게 합니까?](#stop-managed-mode)에 설명된 대로 실행기를 중지하고 해당 grant를 제거합니다. 플랫폼 업데이트는 이미 건별로 승인이 필요하므로, 승인을 보류하면 업데이트가 중단됩니다.
+2. **관리형 모드를 중지합니다.** [ClickHouse가 내 클러스터를 변경하지 못하게 하려면 어떻게 합니까?](#stop-managed-mode)에 설명된 대로 실행기를 중지하고 해당 권한 부여를 제거합니다. 플랫폼 업데이트는 이미 승인이 필요하므로, 승인을 보류하면 업데이트가 중단됩니다.
 3. **향후 세션을 차단합니다.** 연산자 허용 목록을 비우거나(허용 목록가 비어 있으면 gateway가 닫힘) gateway를 비활성화합니다. VM에서는 호스트의 root 사용자가 로컬 세션 관리를 계속 사용할 수 있습니다. [구성 가이드](/ko/products/bring-your-own-cloud/connector/configuration)를 참조하십시오.
 4. **ClickHouse Cloud 연결을 차단합니다.** 네트워크 계층에서 커넥터 엔드포인트로의 egress를 차단하거나, 강제 적용되는 CNI에서 `networkPolicy.allowEgressCIDRs`를 비웁니다. 커넥터는 아웃바운드 전용이므로 ClickHouse Cloud에는 연결을 복원할 인바운드 경로가 없습니다. 워크로드를 중지하거나 제거할 때까지 ClickHouse에 대한 로컬 읽기는 계속됩니다. 이를 중지하거나 제거하는 것이 완전한 차단 방법입니다.
 5. **자격 증명을 철회합니다.** `pcm_scraper` 및 `pcm_troubleshooter` ClickHouse 사용자를 삭제하고 커넥터의 시크릿(Kubernetes) 또는 `/etc/clicklink` 아래의 파일(VM)을 삭제합니다.
@@ -107,14 +99,14 @@ VM에서는 엔드포인트에 연결할 수 없을 때마다 스크레이퍼가
 * `--chart`에 `oci://` 참조, URL 또는 로컬 아카이브를 전달하십시오. `--chart-version`의 기본값은 CLI 자체 버전입니다.
 * 엔드포인트가 사설 CA 뒤에서 경계 내부에 제공되는 경우, `--api-private-ca`(Kubernetes) 또는 `api.tls.ca_file`(VM)이 enrollment bundle의 CA 체인을 시스템 루트에 추가합니다.
 * 직접 연결 없이 등록해야 하는 경우, `init --handoff`가 대역 외로 확보한 bundle을 사용하며, `--no-auto-sign`과 `init --signed-cert`를 함께 사용하면 대역 외에서 인증서 서명을 완료할 수 있습니다.
-* 관리형 모드에서는 서비스 및 플랫폼 구성 요소용 ClickHouse image를 자체 registry로 가져온 후 해당 registry에서 제공할 수 있습니다. ClickHouse가 해당 registry를 사용자 환경에 등록합니다.
-* [플랫폼 승인을 지원하는 build](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)에서는 플랫폼 bundle을 대역 외로 전달한 뒤 파일 형태로 `clicklink clctl platform approve --bundle`에 전달할 수 있습니다. 공개 `v0.16.0`에는 `platform` 명령이 없습니다.
+* 관리형 모드에서는 services 및 플랫폼 구성 요소용 ClickHouse image를 자체 registry로 가져온 후 해당 registry에서 제공할 수 있습니다. ClickHouse가 해당 registry를 사용자 환경에 등록합니다.
+* 플랫폼 bundle은 대역 외로 전달한 뒤 파일 형태로 `clicklink clctl platform approve --bundle`에 전달할 수 있습니다.
 
 [프라이빗 미러](/ko/products/bring-your-own-cloud/connector/configuration)와 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)의 에어갭 섹션을 참조하십시오. 다만 커넥터는 런타임에 엔드포인트로 향하는 경로가 반드시 필요합니다. 경로가 없으면 ClickHouse Cloud는 telemetry를 수신하지 못하고, 어떤 수명 주기 명령도 실행기에 도달하지 못합니다.
 
 ### 지원 세션은 어떻게 감사되나요? {#support-session-auditing}
 
-세션 중 실행된 모든 명령어는 허용되었든 차단되었든 newline-delimited JSON 형식으로 `/var/log/clicklink/troubleshoot-audit.log`에 추가됩니다. 각 항목에는 `submitted_by`(명령 채널의 조직 ID), 명령어 텍스트, 대상 instance, 결과, 그리고 거부된 명령어의 경우 `blocked_by`가 기록됩니다. 거부된 호출을 포함한 gateway 호출은 troubleshooter 자체 로그에 structured `clctl.gateway` 라인으로 기록되며, 자체 입력한 이름이 아니라 토큰으로 검증된 연산자 이메일이 출처로 기록됩니다. VM의 로컬 세션 변경은 이를 호출한 host 사용자를 `/var/lib/clicklink/session.json`의 `enabled_by`에 기록합니다.
+세션 중 실행된 모든 명령어는 허용되었든 차단되었든 newline-delimited JSON 형식으로 `/var/log/clicklink/troubleshoot-audit.log`에 추가됩니다. 각 항목에는 `submitted_by`(명령 채널의 조직 ID), 명령어 텍스트, 대상 instance, 결과, 그리고 거부된 명령어의 경우 `blocked_by`가 기록됩니다. 거부된 호출을 포함한 gateway 호출은 troubleshooter 자체 로그에 structured `clctl.gateway` 라인으로 기록됩니다. 이러한 호출은 자체 입력한 이름이 아니라 토큰으로 검증된 연산자 이메일이 출처로 기록됩니다. VM의 로컬 세션 변경은 이를 호출한 host 사용자를 `/var/lib/clicklink/session.json`의 `enabled_by`에 기록합니다.
 
 세션에는 시간 제한이 적용됩니다(기본 4시간, 최대 24시간). 활성화할 때마다 활성화한 주체, 만료 시점, 선택적 사유가 기록되며, 이 정보는 `clicklink clctl troubleshoot session status`에서 표시됩니다.
 

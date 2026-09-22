@@ -12,19 +12,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-관리형 클러스터에는 ClickHouse 서비스가 의존하는 소규모 플랫폼 계층이 함께 실행됩니다. ClickHouse Cloud는 이 계층에 대한 업데이트를 제안하지만, 사용자가 자신의 클러스터 자격 증명으로 각 업데이트를 승인하기 전까지 실행기는 어떤 변경도 적용하지 않습니다. 이 페이지에서는 플랫폼 업데이트란 무엇인지, VM 또는 Kubernetes 설치 환경에서 업데이트를 승인하는 방법, 승인의 유효 기간, 그리고 승인으로 부여되는 권한을 설명합니다.
-
-<Note>
-  공개된 `v0.16.0` CLI에는 `platform approve` 및 `platform reset`을 포함한 `platform` 명령이 없습니다. 따라서 아래의 Linux VM 워크플로와 Kubernetes 워크플로 모두 해당 릴리스에서는 사용할 수 없습니다. Kubernetes 승인에는 추가로 Secret 기반 토큰 번들(`--secret-namespace`)에 대한 CLI 및 실행기 차트 지원이 필요합니다. 두 워크플로 중 어느 것이든 사용하기 전에 계정 담당 팀에 [관리형 모드 사용 가능 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하십시오.
-</Note>
+관리형 클러스터에는 ClickHouse 서비스가 의존하는 소규모 플랫폼 계층이 함께 실행됩니다. ClickHouse Cloud는 이 계층에 대한 업데이트를 제안하지만, 사용자가 자신의 클러스터 자격 증명으로 각 업데이트를 승인하기 전까지 실행기는 어떤 변경도 적용하지 않습니다.
 
 ## 플랫폼 업데이트란 {#what-a-platform-update-is}
 
-플랫폼 계층은 snapshot controller, ClickHouse Operator, 모니터링 collector의 세 가지 구성 요소로 이루어집니다. 각 구성 요소가 이전 구성 요소의 사용자 지정 리소스 정의를 필요로 하므로 이 순서대로 설치됩니다. 이와 함께 서비스가 사용하는 `gp3-encrypted`라는 이름의 StorageClass(암호화된 gp3 volume)가 함께 배치됩니다.
+플랫폼 계층은 snapshot controller, ClickHouse Operator, 모니터링 collector의 세 가지 구성 요소로 이루어집니다. 각 구성 요소가 이전 구성 요소의 사용자 지정 리소스 정의를 필요로 하므로 이 순서대로 설치됩니다. 서비스는 이들과 함께 제공되는 `gp3-encrypted`라는 이름의 StorageClass(암호화된 gp3 volume)를 사용합니다.
 
-플랫폼 번들은 ClickHouse Cloud가 사용자 환경에 맞게 렌더링한 매니페스트입니다. 번들은 해당 구성 요소들의 chart 및 image 버전을 고정하고, 이들을 가져올 registry를 지정합니다. 모든 번들은 해당 매니페스트의 sha256으로 식별됩니다. ClickHouse Cloud는 명령 채널을 통해 번들을 실행기로 전송하며, 실행기는 승인을 받기 위해 번들을 대기 상태로 준비합니다.
+플랫폼 번들은 ClickHouse Cloud가 사용자 환경에 맞게 렌더링하는 매니페스트입니다. 번들은 해당 구성 요소들의 차트 및 image 버전을 고정하고, 이들을 가져올 registry를 지정합니다. 모든 번들은 해당 매니페스트의 sha256으로 식별됩니다. ClickHouse Cloud는 명령 채널을 통해 번들을 실행기로 전송하며, 실행기는 승인을 받기 위해 번들을 대기 상태로 준비합니다.
 
-번들 적용은 두 부분으로 나뉩니다.
+번들은 두 부분으로 나뉘어 적용됩니다.
 
 * **권한 부분**은 액세스를 부여하거나 그 형태를 지정하는 모든 것입니다. 네임스페이스, CustomResourceDefinition, ServiceAccount, 클러스터 역할 및 ClusterRoleBinding, 역할 및 RoleBinding, 웹훅 및 admission 구성, PriorityClass, StorageClass가 여기에 해당합니다. 이 부분은 `clicklink clctl platform approve`를 실행하여 사용자 본인의 자격 증명으로 직접 적용해야 합니다.
 * **워크로드 부분**은 실제로 실행되는 것입니다. 배포, Service, ConfigMap, Secret, Job, 파드 중단 예산이 여기에 해당합니다. 실행기는 이러한 종류만 기록할 수 있는 전용 `pcm-platform` 아이덴티티로 이 부분을 적용하며, 승인 시 발급된 단기 토큰이 유효한 동안에만 적용합니다.
@@ -37,24 +33,22 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ### 레지스트리 자격 증명 {#registry-credentials}
 
-아래 두 승인 절차 모두 [플랫폼 지원이 포함된 빌드](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)가 필요하며, 공개 버전 `v0.16.0`에는 `platform` 명령이 없습니다. Kubernetes 승인에는 Secret 전달을 지원하는 CLI와 차트도 함께 필요합니다.
-
 레지스트리 인증 방식은 해당 환경에 등록된 image 배포 모드에 따라 달라집니다.
 
-* **ClickHouse 레지스트리에 직접 액세스.** 커넥터의 EC2 VM에서 승인을 실행하십시오. `approve`와 실행기의 플랫폼 동기화는 모두 EC2 instance metadata service에서 가져온 자격 증명으로 해당 환경의 읽기 전용 ECR 풀러 역할을 assume합니다. 차트 로그인에 이 역할을 사용하며, 실행기는 플랫폼 image의 존재 여부를 확인할 때도 이 역할을 사용합니다. workstation의 AWS 프로필, 환경 자격 증명, SSO 자격 증명으로는 인스턴스 프로필을 대체할 수 없습니다. 권한 부분을 적용하는 데 필요한 별도의 cluster-admin 자격 증명은 여전히 kubeconfig에서 제공됩니다.
-* **자체 미러를 포함한 다른 ECR 레지스트리의 차트.** 차트 로그인은 `approve` 또는 실행기를 실행하는 프로세스의 ambient AWS credentials를 사용합니다. 해당 자격 증명에 그 레지스트리를 읽을 수 있는 권한이 부여되어 있어야 합니다.
+* **ClickHouse 레지스트리에 직접 액세스.** 커넥터의 EC2 VM에서 승인을 실행하십시오. `approve`와 실행기의 플랫폼 동기화는 모두 EC2 instance metadata service에서 가져온 자격 증명으로 해당 환경의 읽기 전용 ECR 풀러 역할을 assume합니다. 이 역할이 차트 레지스트리에 로그인하며, 실행기는 플랫폼 image의 존재 여부를 확인할 때도 이 역할을 사용합니다. workstation의 AWS 프로필, 환경 자격 증명, SSO 자격 증명으로는 인스턴스 프로필을 대체할 수 없습니다. 권한 부분을 적용하는 별도의 cluster-admin 자격 증명은 여전히 kubeconfig에서 제공됩니다.
+* **자체 미러를 포함한 다른 ECR 레지스트리의 차트.** 차트 로그인은 `approve` 또는 실행기를 실행하는 프로세스의 ambient AWS 자격 증명을 사용합니다. 해당 자격 증명에 그 레지스트리를 읽을 수 있는 권한이 부여되어 있어야 합니다.
 
-아래 Kubernetes workstation 절차는 Kubernetes 플랫폼 승인이 활성화된 미러 레지스트리 배포에서만 사용하십시오. 직접 액세스 방식이라면 진행하기 전에 계정 담당 팀에 필요한 EC2 인스턴스 프로필을 갖춘 지원되는 실행 환경인지 확인을 요청하십시오.
+아래 Kubernetes workstation 절차는 Kubernetes 플랫폼 승인이 활성화된 미러 레지스트리 배포에서만 사용하십시오. 직접 액세스 방식이라면 먼저 계정 담당 팀에 필요한 EC2 인스턴스 프로필을 갖춘 지원되는 실행 환경인지 확인을 요청하십시오.
 
 <Steps>
   <Step title="스테이징된 번들을 찾으십시오" id="find-the-staged-bundle">
-    ClickHouse Cloud는 다른 작업에 앞서 제안된 각 bundle을 실행기로 전송합니다. 실행기는 이를 pending bundle로 스테이징하고 하트비트에 해당 sha256을 보고합니다. 스테이징된 bundle은 항상 정확히 하나만 존재하며, 더 새로운 제안이 기존 것을 대체합니다. 이어서 실행기는 동기화를 거부하고 이를 실패한 명령으로 기록하며, 그 결과의 마지막에는 실행해야 할 명령이 포함됩니다.
+    ClickHouse Cloud는 제안된 각 bundle을 먼저 실행기로 전송합니다. 실행기는 이를 pending bundle로 스테이징하고 하트비트에 해당 sha256을 보고합니다. 스테이징된 bundle은 한 번에 하나만 존재하며, 더 새로운 제안이 기존 것을 대체합니다. 이어서 실행기는 동기화를 거부하고 실패한 명령을 기록하며, 그 결과의 마지막에는 실행해야 할 명령이 포함됩니다.
 
     ```bash
     clicklink clctl commands list --status failed --action sync_platform
     ```
 
-    `result` 필드는 `run: clctl platform approve (pending bundle sha <sha256>)`로 끝납니다. Kubernetes에서는 힌트가 `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`로 표시됩니다. 사용자 지정 리소스 정의가 없어 실패한 create 작업의 경우, 실패한 명령 자체와 `clicklink clctl instances create --wait`가 출력하는 오류에 모두 동일한 `clctl platform approve` 줄이 포함됩니다. 또한 플랫폼 업데이트가 제안되면 ClickHouse 어카운트 팀에서도 알려 줍니다.
+    `result` 필드는 `run: clctl platform approve (pending bundle sha <sha256>)`로 끝납니다. Kubernetes에서는 힌트가 `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`로 표시됩니다. 사용자 지정 리소스 정의가 없어 실패한 create 작업에도 동일한 `clctl platform approve` 줄이 포함됩니다. 이 줄은 실패한 명령 자체와 `clicklink clctl instances create --wait`가 출력하는 오류에 모두 나타납니다. 또한 플랫폼 업데이트가 제안되면 계정 담당 팀에서도 알려 줍니다.
 
     승인하기 전에 스테이징된 번들을 확인하십시오. 번들에는 매니페스트와 해당 sha256이 들어 있습니다.
 
@@ -82,7 +76,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 
   <Step title="승인 실행" id="run-approve">
-    플래그 없이 `approve`를 실행하면 스테이징된 번들을 읽어 해시를 계산하므로, 승인하는 대상은 실행기가 수신한 것과 정확히 동일합니다. 번들에 포함된 모든 chart를 실행기와 동일한 방식으로 렌더링하고, 선택한 kube context로 permission 부분을 적용합니다. 필요한 경우 `pcm-platform` 아이덴티티를 생성하고 해당 토큰을 발급합니다. 커넥터 엔드포인트로는 어떠한 요청도 보내지 않습니다.
+    플래그 없이 `approve`를 실행하면 스테이징된 번들을 읽어 해시를 계산하므로, 실행기가 수신한 것과 정확히 동일한 대상을 승인하게 됩니다. 모든 chart를 실행기와 동일한 방식으로 렌더링하고, 선택한 kube context로 permission 부분을 적용합니다. 필요한 경우 `pcm-platform` 아이덴티티를 생성하고 해당 토큰을 발급합니다. 커넥터 엔드포인트로는 어떠한 요청도 보내지 않습니다.
 
     `approve`에는 관리형 클러스터에 대한 cluster-admin 권한을 가진 kube context(kubeconfig에 여러 개가 있는 경우 `--context <name>` 사용)와 사용 환경의 image 배포 모드에 맞는 [레지스트리 자격 증명](#registry-credentials)이 필요합니다. `--dry-run`은 아무것도 적용하거나 발급하지 않고 permission 부분을 렌더링하여 나열하지만, chart를 렌더링하려면 여전히 레지스트리 액세스가 필요합니다.
 
@@ -98,7 +92,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        Kubernetes 플랫폼 승인이 활성화된 미러링 레지스트리 배포에서는 `approve`가 이전 단계에서 설정한 포트 포워딩을 통해 스테이징된 번들을 읽습니다. 토큰 번들은 커넥터 네임스페이스의 Secret으로 전달되며, chart가 이를 파드에 mount합니다. kubeconfig로 클러스터에 접근할 수 있는 workstation에서 커넥터 구성 사본과 위에서 설명한 레지스트리 액세스를 갖춘 상태로 실행하십시오. chart가 실행기의 ConfigMap에 구성을 렌더링해 두며, `approve`는 네임스페이스 접두사를 확인하는 데 이 구성이 필요할 뿐 여기에서 자격 증명을 읽지는 않습니다.
+        Kubernetes 플랫폼 승인이 활성화된 미러링 레지스트리 배포에서는 `approve`가 이전 단계에서 설정한 포트 포워딩을 통해 스테이징된 번들을 읽습니다. 토큰 번들은 커넥터 네임스페이스의 Secret으로 전달되며, chart가 이를 파드에 mount합니다. kubeconfig로 클러스터에 접근할 수 있는 workstation에서 커넥터 구성 사본과 [레지스트리 액세스](#registry-credentials)를 갖춘 상태로 실행하십시오. chart가 실행기의 ConfigMap에 구성을 렌더링해 두며, `approve`는 네임스페이스 접두사를 확인하는 데에만 이 구성이 필요할 뿐 여기에서 자격 증명을 읽지는 않습니다.
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # init 단계에서 선택한 커넥터 네임스페이스
@@ -135,7 +129,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## 승인 윈도우 {#the-approval-window}
 
-승인 시 `pcm-platform` 아이덴티티에 대한 토큰이 발급되며, 이 토큰은 기본적으로 2시간 동안 유효합니다(`--ttl`로 변경 가능). 실행기는 이 토큰을 갱신하지 않습니다. 토큰이 만료되면 실행기는 더 이상 플랫폼 계층을 변경할 수 없으며, 다음 플랫폼 동기화 요청을 다시 승인 메시지와 함께 거부합니다. 이는 실패가 아니라 의도된 동작이며, 네트워크 연결 여부와는 무관합니다. 커넥터가 오프라인인 상태에서 부여된 승인도 자체 시계에 따라 만료됩니다.
+승인 시 `pcm-platform` 아이덴티티에 대한 토큰이 발급되며, 이 토큰은 기본적으로 2시간 동안 유효합니다(`--ttl`로 변경 가능). 실행기는 이 토큰을 갱신하지 않습니다. 토큰이 만료되면 실행기는 더 이상 플랫폼 계층을 변경할 수 없으며, 다음 플랫폼 동기화 요청을 다시 승인 메시지와 함께 거부합니다. 이는 의도된 설계이며 네트워크 연결 여부와는 무관합니다. 커넥터가 오프라인인 상태에서 부여된 승인도 자체 시계에 따라 만료됩니다.
 
 다음과 같은 경우에는 `approve`를 다시 실행하십시오.
 
@@ -147,9 +141,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## 승인이 부여하는 권한 {#what-the-approval-grants}
 
-권한 부분은 사용자가 직접 적용하므로 사용자의 권한으로 수행됩니다. `approve`는 여기에 번들의 sha256을 새기며, 실행기는 어떤 작업을 수행하기 전에 전달받은 번들의 모든 권한 객체가 존재하고 승인되었는지 검증합니다. 실행기는 그중 어떤 것도 적용하지 않습니다.
+권한 부분은 사용자가 직접 적용하므로 사용자의 권한으로 수행되며, 실행기는 그중 어떤 것도 적용하지 않습니다. `approve`는 여기에 번들의 sha256을 새기며, 실행기는 어떤 작업을 수행하기 전에 전달받은 번들의 모든 권한 객체가 존재하고 승인되었는지 검증합니다.
 
-실행기는 워크로드 부분을 `pcm-platform`으로 적용합니다. 이 아이덴티티는 Secret, ConfigMap, Service, Deployment, Job, 파드 중단 예산을 생성하고 업데이트할 수 있으며, 그 범위는 플랫폼 네임스페이스 내부로 한정되고 이는 admission 정책으로 강제됩니다. preflight에 필요한 객체(파드, 이벤트, 네임스페이스, ServiceAccount, 위에 나열된 권한 kind)는 읽을 수 있습니다. 다만 다음은 할 수 없습니다.
+실행기는 워크로드 부분을 `pcm-platform`으로 적용합니다. 이 아이덴티티는 Secret, ConfigMap, Service, 배포, Job, 파드 중단 예산을 생성하고 업데이트할 수 있으며, 그 범위는 플랫폼 네임스페이스 내부로 한정되고 이는 admission 정책으로 강제됩니다. preflight에 필요한 객체(파드, 이벤트, 네임스페이스, ServiceAccount, 위에 나열된 권한 kind)는 읽을 수 있습니다. 다만 다음은 할 수 없습니다.
 
 * 클러스터 범위의 kind나 RBAC 객체에 대한 쓰기
 * `escalate`, `bind`, `impersonate`
@@ -159,11 +153,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## 테스트 클러스터 재설정 {#resetting-a-test-cluster}
 
-공개된 `v0.16.0` CLI에는 `platform reset` 명령이 없습니다. 이 절차를 사용하기 전에 [가용성](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)을 확인하십시오.
-
 `clicklink clctl platform reset`은 테스트 클러스터를 위한 명령입니다. 플랫폼 구성 요소를 제거하여 최초 설치 과정을 다시 수행해 볼 수 있도록 합니다. 변경 작업을 시작하기 전에 이 커넥터가 소유한 네임스페이스의 ClickHouse 클러스터 목록을 나열하며, 서비스가 하나라도 존재하면 실행을 거부합니다.
 
-비어 있는 클러스터에서는 플랫폼 릴리스를 의존성 역순으로 제거합니다. 그런 다음 실행기의 플랫폼 토큰 번들을 제거합니다. VM에서는 로컬 디렉터리를, Kubernetes에서는 `--secret-namespace <connector-namespace>`로 지정된 Secret을 제거합니다. 사용자 지정 리소스 정의, RBAC, StorageClass는 그대로 유지됩니다. 다음 플랫폼 동기화 전에 `approve`를 다시 실행하십시오.
+비어 있는 클러스터에서는 플랫폼 릴리스를 의존성 역순으로 제거합니다. 그런 다음 실행기의 플랫폼 토큰 번들을 제거합니다. VM에서는 로컬 디렉터리를, Kubernetes에서는 `--secret-namespace <connector-namespace>`로 지정된 Secret을 제거합니다. CustomResourceDefinition, RBAC, StorageClass는 그대로 유지됩니다. 다음 플랫폼 동기화 전에 `approve`를 다시 실행하십시오.
 
 ```bash
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run

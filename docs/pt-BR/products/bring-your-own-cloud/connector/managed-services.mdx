@@ -12,42 +12,34 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-No modo managed, o connector executa um terceiro componente, o executor. É por meio dele que o ClickHouse Cloud opera os serviços ClickHouse no seu cluster do Kubernetes. Esta página aborda como criar um serviço, como consultar seu status, o que o ClickHouse Cloud faz depois que um serviço passa a existir e como um serviço é desativado.
+No modo managed, o connector executa um terceiro componente, o executor. É por meio dele que o ClickHouse Cloud opera os serviços ClickHouse no seu cluster do Kubernetes. Esta página aborda como criar um serviço, como consultar seu status, o que o ClickHouse Cloud faz com ele e como ele é desativado.
 
-<Note>
-  Habilitar o modo managed e criar um serviço exigem suporte que ainda não está no lançamento público. A CLI pública `v0.16.0` não possui as flags de init `--managed` e `--no-managed` nem o workflow de criação pelo cliente descrito abaixo. Confirme a [disponibilidade do modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) com o seu account team antes de fazer o enroll ou preparar recursos; a criação de serviços também requer suporte correspondente no seu connector endpoint e no ClickHouse Cloud.
-</Note>
+## O que o modo managed faz {#what-managed-mode-does}
 
-## O que o modo gerenciado faz {#what-managed-mode-does}
+O executor é um daemon no mesmo binary `clicklink` que o scraper e o solucionador de problemas. Ele mantém um canal WebSocket de saída até o connector endpoint e recebe comandos de ciclo de vida do ClickHouse Cloud. Ele aplica cada comando ao único cluster do Kubernetes para o qual está configurado e informa o resultado por esse canal. Assim como os demais componentes, ele estabelece apenas connections de saída: o ClickHouse Cloud nunca se conecta ao seu cluster, e a API local do executor faz bind no loopback.
 
-O executor é um daemon no mesmo binary `clicklink` que o scraper e o solucionador de problemas. Ele mantém um canal WebSocket de saída até o connector endpoint e recebe comandos de ciclo de vida do ClickHouse Cloud. Ele aplica cada comando ao único cluster do Kubernetes para o qual está configurado e informa o resultado por esse mesmo canal. Assim como os demais componentes, ele estabelece apenas connections de saída: o ClickHouse Cloud nunca se conecta ao seu cluster, e a API local do executor faz bind no loopback.
+O modo managed está disponível no Amazon EKS com armazenamento S3 durante o private preview. Sua equipe de conta o habilita ao registrar seu ambiente. O `init` recusa um kube context que não aponte para um EKS cluster.
 
-O modo gerenciado está disponível no Amazon EKS com S3 storage, como parte do private preview. Sua account team da ClickHouse o habilita ao registrar seu ambiente. O `init` recusa um kube context que não aponte para um EKS cluster.
+Cada serviço precisa de três cloud resources de sua propriedade: um bucket de dados, um bucket de Backup e uma IAM role que os pods do ClickHouse assumem para acessá-los. Você os cria com suas próprias credenciais antes de o serviço existir e os remove depois que ele deixa de existir. O executor não guarda credenciais dos seus buckets nem do IAM e nunca exclui dados. Suas únicas chamadas à nuvem vão para o Amazon ECR e o STS. Ele faz login no registry quando uma sincronização de plataforma ou uma criação baixa um chart e verifica as imagens usando a role de pull read-only durante uma atualização de plataforma. Ele não faz chamadas ao S3 nem ao IAM. Para cada serviço, ele cria um `Service` do Kubernetes do tipo LoadBalancer, que o controller de load-balancer do seu cluster materializa como um NLB interno na sua conta.
 
-Cada serviço precisa de três cloud resources de sua propriedade: um bucket de dados, um bucket de Backup e uma IAM role que os pods do ClickHouse assumem para acessá-los. Você os cria com suas próprias credentials antes de o serviço existir e os remove depois que ele deixa de existir. O executor não guarda credentials dos seus buckets nem do IAM e nunca exclui dados. Suas únicas chamadas à nuvem vão para o Amazon ECR e o STS. Ele faz login no registry quando uma sincronização de plataforma ou uma criação baixa um chart. Durante uma atualização de plataforma, ele verifica as imagens usando a role de pull read-only. Ele não faz chamadas ao S3 nem ao IAM. Para cada serviço, ele cria um `Service` do Kubernetes do tipo LoadBalancer, que o controller de load-balancer do seu cluster materializa como um NLB interno na sua conta.
+Em uma VM, o executor roda como o systemd unit `clicklink-executor`, ao lado dos outros dois. No Kubernetes, ele é uma Implantação de réplica única no Espaço de nomes do connector. Ele expõe health e metrics na porta 8086 e sua API local em `127.0.0.1:9999`.
 
-Em uma VM, o executor roda como o systemd unit `clicklink-executor`, ao lado dos outros dois. No Kubernetes, ele é uma Implantação de réplica única no namespace do connector. Ele expõe health e metrics na porta 8086 e sua API local em `127.0.0.1:9999`.
+## Habilitar o modo gerenciado {#enable-managed-mode}
 
-## Habilitar o modo managed {#enable-managed-mode}
-
-<Note>
-  A CLI pública `v0.16.0` não oferece suporte a `init --managed` nem ao prompt de modo managed descrito abaixo. Primeiro, obtenha uma compilação e uma implantação com [suporte a modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) junto ao seu account team.
-</Note>
-
-Você escolhe o modo managed no momento do enroll: passe `--managed` para `clicklink clctl init` ou responda ao prompt em um terminal. Em uma VM, o `init` obtém o cluster a partir do kubeconfig deste host (use `--cluster-name` quando ele contiver mais de um EKS cluster) e concede o acesso cluster-wide do executor de forma inline. No Kubernetes, passe `--egress-cidrs` com os CIDRs do seu connector endpoint para que o chart prepare sua NetworkPolicy de negação padrão já habilitada.
+Você escolhe o modo gerenciado no momento do enroll: passe `--managed` para `clicklink clctl init` ou responda ao prompt em um terminal. Em uma VM, o `init` obtém o cluster a partir do kubeconfig deste host (use `--cluster-name` quando ele contiver mais de um EKS cluster) e concede o acesso cluster-wide do executor de forma inline. No Kubernetes, passe `--egress-cidrs` com os CIDRs do seu connector endpoint para que o chart prepare sua NetworkPolicy de negação padrão já habilitada.
 
 A instalação em si permanece inalterada. Consulte o [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) para ver o fluxo completo e a [CLI reference](/pt-BR/products/bring-your-own-cloud/connector/reference/cli#init) para os flags.
 
 ## Criar um serviço {#create-a-service}
 
-Este workflow não está disponível na versão pública `v0.16.0`. Antes de preparar os recursos, confirme a [disponibilidade de criação de serviço](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) para sua CLI, connector endpoint e implantação do ClickHouse Cloud.
+A criação de serviços por meio do connector endpoint é habilitada por ambiente; verifique com sua equipe de conta antes de começar.
 
 Criar um serviço exige dois comandos. O `prepare` cria tudo do seu lado; o `instances create` submete a criação ao ClickHouse Cloud por meio do connector endpoint. O ClickHouse Cloud monta a definição do serviço e envia a criação ao executor pelo seu canal de saída. O executor a aplica ao seu cluster e retorna o resultado.
 
-Apenas o `prepare` precisa de AWS credentials: é ele que cria os S3 buckets e o IAM role. O `instances create` precisa da configuração e das credentials do connector, e acessa a API local do executor somente no caso de `--wait`. Em uma VM, execute ambos como root no host do connector. No Kubernetes, execute ambos a partir de uma workstation com um contexto kube para o cluster gerenciado:
+Apenas o `prepare` precisa de credenciais AWS: é ele que cria os S3 buckets e o IAM role. O `instances create` precisa da configuração e das credenciais do connector, e acessa a API local do executor somente no caso de `--wait`. Em uma VM, execute ambos como root no host do connector. No Kubernetes, execute ambos a partir de uma workstation com um contexto kube para o cluster gerenciado:
 
-* O `prepare` precisa de uma cópia da configuração do connector (`--config`), de um `kubectl port-forward` para a API local do executor e de `--output-dir` apontando para um diretório gravável. Ele valida o service name junto ao executor e se recusa a executar quando não consegue alcançá-lo.
-* O `instances create` lê os arquivos de credencial indicados na configuração a partir dos Secrets `clicklink-hmac` e `clicklink-mtls` quando este host não os possui, e informa cada leitura. Adicione `--connector-namespace` quando o espaço de nomes do connector não for `clicklink`. Somente o `instances create` conta com esse fallback.
+* O `prepare` precisa de uma cópia da configuração do connector (`--config`), de um `kubectl port-forward` para a API local do executor e de um `--output-dir` gravável. Ele valida o service name junto ao executor e se recusa a executar quando não consegue alcançá-lo.
+* Quando este host não possui os arquivos de credencial indicados na configuração, o `instances create` os lê a partir dos Secrets `clicklink-hmac` e `clicklink-mtls` e informa cada leitura. Adicione `--connector-namespace` quando o Espaço de nomes do connector não for `clicklink`. Somente o `instances create` conta com esse fallback.
 
 <Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Ciclo de vida do serviço do ClickHouse Connector no modo gerenciado" />
 
@@ -78,10 +70,10 @@ Apenas o `prepare` precisa de AWS credentials: é ele que cria os S3 buckets e o
     1. **Nome.** Escolhe um nome de serviço ou valida o que você informar com `--instance <name>`. O nome gerado é registrado em `<output-dir>/_prepare/<eks-cluster-name>.name` e retomado pela execução seguinte, de modo que um retry reaproveita os buckets e a role da primeira execução. Use `--new-name` para escolher outro. O comando recusa um nome que o executor ainda mantenha ou cujo namespace já contenha um ClickHouse cluster.
     2. **Armazenamento.** Cria os buckets de dados e de backup e a IAM role `CH-S3-<name>-<region>-00-Role`. Os nomes de bucket padrão são `<cluster>-clickhouse-data-<rand>` e `<cluster>-clickhouse-backup-<rand>`; `--data-bucket` e `--backup-bucket` os sobrescrevem. Com `--role-arn`, ele verifica a role que você fornecer e não grava nada no IAM.
     3. **Conceder e aplicar.** Em uma VM, renderiza o pacote de acesso do executor para o namespace do serviço (`ns-<name>`), aplica seu RBAC e registra o serviço no registry do executor. No Kubernetes essa etapa é ignorada: o executor roda como o ServiceAccount do seu pod e registra o serviço por conta própria quando a criação chega.
-    4. **Resumo.** Gera a senha do usuário `default` e grava o corpo de criação em `<output-dir>/_prepare/<name>.create.json` (mode `0600`; ele carrega apenas os hashes da senha). Imprime o próximo comando exato em uma linha `Next:`.
+    4. **Resumo.** Gera a senha do usuário `default` e grava o corpo de criação em `<output-dir>/_prepare/<name>.create.json` (mode `0600`; ele carrega apenas os hashes da senha). Imprime o próximo comando em uma linha `Next:`.
 
     <Warning>
-      O `prepare` imprime a senha do usuário `default` uma única vez, em stderr, e nunca mais. Nem o corpo de criação nem o `--output json` a contêm, e o ClickHouse Cloud recebe apenas seus hashes. Guarde-a antes de prosseguir. Uma reexecução que encontre o corpo de criação mantém os hashes já gravados e informa isso.
+      O `prepare` imprime a senha do usuário `default` uma única vez, em stderr. Nem o corpo de criação nem o `--output json` a contêm, e o ClickHouse Cloud recebe apenas seus hashes. Guarde-a antes de prosseguir. Uma reexecução que encontre o corpo de criação mantém os hashes já gravados e informa isso.
     </Warning>
 
     Passe `--context <name>` quando seu kubeconfig tiver vários contextos; o contexto deve apontar para o EKS cluster indicado em `executor.cluster` na config. O `--dry-run` executa todas as etapas sem criar nem gravar nada. A etapa de hashing usa SHA-1, que o Go recusa sob `GODEBUG=fips140=only`; execute o `prepare` em um host sem essa configuração.
@@ -128,7 +120,7 @@ Apenas o `prepare` precisa de AWS credentials: é ele que cria os S3 buckets e o
 
 ## Status {#status}
 
-O executor responde a consultas de status por meio de sua API local. A API escuta em `127.0.0.1:9999` e não possui autenticação própria. Em uma VM, execute os comandos no host. No Kubernetes, abra primeiro um redirecionamento de porta e aponte os comandos para ele:
+O executor responde a consultas de status por meio de sua API local, que escuta em `127.0.0.1:9999` e não possui autenticação própria. Em uma VM, execute os comandos no host. No Kubernetes, abra primeiro um redirecionamento de porta e aponte os comandos para ele:
 
 ```bash
 kubectl -n <connector-namespace> port-forward deployment/clicklink-connector-executor 9999:9999
@@ -141,7 +133,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 * `running`: todas as réplicas de servidor esperadas estão prontas
 * `degraded`: algumas réplicas de servidor estão prontas, mas não todas
 * `terminating`: o executor está desinstalando o serviço
-* `terminated`: o espaço de nomes do serviço não existe mais
+* `terminated`: o Espaço de nomes do serviço não existe mais
 * `stale`: o serviço foi removido do registry do executor sem uma exclusão; `--wait` e `teardown` o tratam como `terminated`
 
 Um serviço encerrado continua aparecendo na listagem, com seu armazenamento, até que o [teardown](#delete-a-service) remova seus cloud resources.
@@ -152,10 +144,10 @@ O executor registra todos os comandos que o ClickHouse Cloud envia a ele. `click
 
 Depois que um serviço existe, o ClickHouse Cloud o opera por meio do executor. Os comandos que ele envia são:
 
-* **Scale.** Um serviço tem um número fixo de réplicas definido pelo ClickHouse Cloud, limitado por uma configuração do ClickHouse Cloud (20 na configuração padrão). Não há autoscaling.
+* **Scale.** O ClickHouse Cloud define um número fixo de réplicas, limitado por uma configuração do ClickHouse Cloud (20 na configuração padrão). Não há autoscaling.
 * **Stop e start.** Parar reduz os servidores a zero e mantém o Keeper; iniciar restaura o número de réplicas. Os dados permanecem nos seus buckets durante todo o processo.
 * **Restart.** O serviço inteiro, seu Keeper ou um único pod do Kubernetes.
-* **Backups.** Os backups são executados quando o ClickHouse Cloud os aciona e são gravados no seu bucket de backup; a exclusão do backup os remove.
+* **Backups.** O ClickHouse Cloud os aciona; eles são gravados no seu bucket de backup, e a exclusão do backup os remove.
 * **Upgrades de versão e alterações de configuração.** O ClickHouse Cloud gera novamente a definição do serviço com a nova versão ou configuração. Ela chega como um comando `create_instance`, portanto `commands list --action create_instance` também exibe upgrades. O executor a aplica e aguarda até que as réplicas fiquem prontas novamente.
 * **Delete.** Descrito em [excluir um serviço](#delete-a-service).
 
@@ -163,13 +155,13 @@ Depois que um serviço existe, o ClickHouse Cloud o opera por meio do executor. 
   Upgrades de versão e alterações de configuração não têm etapa de aprovação do cliente. O ClickHouse Cloud os aplica a um serviço gerenciado da mesma forma que aplica um scale ou um restart: reenvia a definição e o executor faz o cluster convergir para ela.
 </Warning>
 
-As operações de criação, scale e start são concluídas de forma assíncrona. O executor reporta o comando como em execução assim que aplica a definição e envia um relatório de progresso a cada 2 minutos. Ele reporta o resultado final assim que as réplicas do servidor ficam prontas. Se elas não ficarem prontas em até 2 horas, ele reporta o comando como falho. Caso as réplicas fiquem disponíveis depois, ele retorna o serviço para `running`.
+As operações de criação, scale e start são concluídas de forma assíncrona. O executor reporta o comando como em execução assim que aplica a definição e envia um relatório de progresso a cada 2 minutos. Ele reporta o resultado final assim que as réplicas do servidor ficam prontas. Se elas não ficarem prontas em até 2 horas, ele reporta o comando como falho; se ficarem disponíveis depois, ele retorna o serviço para `running`.
 
-Os subcomandos `instances scale`, `instances patch` e `instances delete` enviam comandos diretamente para a API local do executor, sem o envolvimento do ClickHouse Cloud. Não os utilize, a menos que o account team do ClickHouse peça que você execute algum deles; a [CLI reference](/pt-BR/products/bring-your-own-cloud/connector/reference/cli#instances-scale) descreve o que cada um faz.
+Os subcomandos `instances scale`, `instances patch` e `instances delete` enviam comandos diretamente para a API local do executor, ignorando o ClickHouse Cloud. Execute-os apenas quando o seu equipe de conta pedir; a [CLI reference](/pt-BR/products/bring-your-own-cloud/connector/reference/cli#instances-scale) descreve cada um deles.
 
 ## Sessões de suporte para um serviço gerenciado {#support-sessions}
 
-O executor integra o scraper a cada serviço que cria. Ele não provisiona o solucionador de problemas, portanto uma [sessão de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) não consegue executar diagnósticos em um serviço gerenciado enquanto você não fizer isso. Provisione-o uma vez por serviço, com o espaço de nomes do serviço `ns-<name>`, da mesma forma que faria para uma instância registrada por você:
+O executor integra o scraper a cada serviço que cria. Ele não provisiona o solucionador de problemas, portanto uma [sessão de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) não consegue executar diagnósticos em um serviço gerenciado enquanto você não fizer isso. Provisione-o uma vez por serviço, com o Espaço de nomes do serviço `ns-<name>`, da mesma forma que faria para uma instância registrada por você:
 
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
@@ -181,7 +173,7 @@ O executor integra o scraper a cada serviço que cria. Ele não provisiona o sol
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    `$CH_DEFAULT_PASSWORD` é a senha do usuário `default` exibida pelo `prepare`. O comando precisa dela para autenticar antes de aplicar os grants SQL; ele não a solicita. Em seguida, adicione o par Secret e ServiceAccount a `troubleshooter.accessBundles` e execute `helm upgrade`, conforme mostrado em [adicionar instâncias do ClickHouse](/pt-BR/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+    `$CH_DEFAULT_PASSWORD` é a senha do usuário `default` exibida pelo `prepare`. O comando autentica com ela para aplicar os grants SQL e não a solicita. Em seguida, adicione o par Secret e ServiceAccount a `troubleshooter.accessBundles` e execute `helm upgrade`, conforme mostrado em [adicionar instâncias do ClickHouse](/pt-BR/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
   </Tab>
 
   <Tab title="Linux VM" id="troubleshooter-vm">
@@ -195,13 +187,13 @@ O executor integra o scraper a cada serviço que cria. Ele não provisiona o sol
   </Tab>
 </Tabs>
 
-Conceda as permissões ao usuário do ClickHouse via SQL, como acima, e não com `--ch-user-via cr`: a definição do serviço pertence ao ClickHouse Cloud, que a reaplica, removendo qualquer usuário adicionado ali. Quando o serviço é excluído, o executor remove o pacote do solucionador de problemas em uma VM. No Kubernetes, o Secret do pacote e o ServiceAccount permanecem até que você os exclua, conforme listado em [desinstalação](/pt-BR/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
+Conceda as permissões ao usuário do ClickHouse via SQL, como acima. Um usuário adicionado com `--ch-user-via cr` não sobreviveria: a definição do serviço pertence ao ClickHouse Cloud, que a reaplica. Quando o serviço é excluído, o executor remove o pacote do solucionador de problemas em uma VM. No Kubernetes, o Secret do pacote e o ServiceAccount permanecem até que você os exclua, conforme listado em [desinstalação](/pt-BR/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
 
 ## Excluir um serviço {#delete-a-service}
 
-Não há um comando de exclusão disponível ao cliente por meio do connector endpoint: peça ao seu account team da ClickHouse para excluir o serviço. O ClickHouse Cloud o encerra, e o executor exclui o workload e seu espaço de nomes (`terminating`, depois `terminated`). Nada na AWS é afetado: os buckets, seus dados e a IAM role permanecem até que você os remova.
+Não há um comando de exclusão disponível ao cliente por meio do connector endpoint: peça ao seu equipe de conta para excluir o serviço. O ClickHouse Cloud o encerra, e o executor exclui o workload e seu Espaço de nomes (`terminating`, depois `terminated`). Nada na AWS é afetado: os buckets, seus dados e a IAM role permanecem até que você os remova.
 
-Assim que o serviço reportar `terminated`, desfaça o que o `prepare` criou. Execute o comando no mesmo lugar em que executou o `prepare`, com as mesmas AWS credentials. No Kubernetes, isso significa a mesma workstation, a mesma cópia de configuração e o mesmo diretório de saída, além de um redirecionamento de porta aberto para o executor:
+Assim que o serviço reportar `terminated`, desfaça o que o `prepare` criou. Execute o `teardown` no mesmo lugar em que executou o `prepare`, com as mesmas credenciais AWS. No Kubernetes, isso significa a mesma workstation, a mesma cópia de configuração e o mesmo diretório de saída, além de um redirecionamento de porta aberto para o executor:
 
 <Tabs>
   <Tab title="Kubernetes" id="teardown-kubernetes">
@@ -226,14 +218,14 @@ Por padrão, ele preserva os dados e os backups do serviço. A tag de um bucket 
   `--delete-data` e `--delete-backups` esvaziam e excluem os buckets que indicam; não há recuperação depois disso. Confirme os nomes dos buckets na etapa de registro antes de adicionar `--yes`.
 </Warning>
 
-Sem `--yes`, a execução para após a etapa de registro e lista os buckets que seriam esvaziados. `--dry-run` lê tudo e não grava nada. A execução informa como preservados uma role que você trouxe com `--role-arn` ou um bucket que o `prepare` não criou, e nunca os altera. A execução é recusada enquanto o espaço de nomes do serviço ainda contiver um ClickHouse cluster. Ela lê tudo antes de excluir qualquer coisa, portanto uma execução recusada não altera nada.
+Sem `--yes`, a execução para após a etapa de registro e lista os buckets que seriam esvaziados. `--dry-run` lê tudo e não grava nada. Uma role que você trouxe com `--role-arn`, ou um bucket que o `prepare` não criou, é informada como preservada e nunca é alterada. A execução é recusada enquanto o Espaço de nomes do serviço ainda contiver um ClickHouse cluster. Ela lê tudo antes de excluir qualquer coisa, portanto uma execução recusada não altera nada.
 
 ## Quando o connector está offline {#when-the-connector-is-offline}
 
 Os serviços em execução não dependem do executor. O ClickHouse Operator no seu cluster os mantém em funcionamento, e um connector desconectado não interrompe nada que já esteja atendendo consultas.
 
-Enquanto nenhum executor estiver conectado, o ClickHouse Cloud não tem como repassar novos trabalhos a ele. Uma criação, exclusão ou sincronização de plataforma já aceita é mantida e repetida. Uma criação é repetida por 30 minutos a partir do último relatório de progresso, uma exclusão por 2 horas e uma sincronização de plataforma por até 10 tentativas. Ultrapassado esse limite, o seu connector endpoint marca o comando como falho. Todos os demais comandos de ciclo de vida (scale, stop, start, restart, backup, exclusão de backup) são recusados enquanto nenhum executor estiver conectado, e não enfileirados. Uma criação ou exclusão enviada enquanto nenhum executor estiver conectado é recusada da mesma forma; apenas os comandos já aceitos são repetidos.
+Enquanto nenhum executor estiver conectado, o ClickHouse Cloud não tem como repassar novos trabalhos a ele. Uma criação, exclusão ou sincronização de plataforma já aceita é mantida e repetida. Uma criação é repetida por 30 minutos a partir do último relatório de progresso, uma exclusão por 2 horas e uma sincronização de plataforma por até 10 tentativas. Ultrapassado esse limite, o seu connector endpoint marca o comando como falho. Todos os demais comandos de ciclo de vida (scale, stop, start, restart, backup, exclusão de backup) são recusados em vez de enfileirados. Uma criação ou exclusão enviada enquanto nenhum executor estiver conectado é recusada da mesma forma; apenas os comandos já aceitos são repetidos.
 
-Um comando que o executor já aceitou continua executando até a conclusão, e o executor envia na próxima conexão o resultado que não conseguiu reportar.
+Um comando que o executor já aceitou é executado até a conclusão; um resultado que ele não conseguiu reportar é enviado na próxima conexão.
 
-Os dois comandos de cliente têm suas próprias dependências. `instances create` exige que o seu connector endpoint esteja acessível a partir do host em que ele é executado. `--wait`, `instances list`, `instances get` e `commands list` precisam da API local do executor, portanto exigem que o executor esteja em execução. O token de uma aprovação de plataforma expira conforme o próprio relógio, independentemente da conectividade; consulte [a janela de aprovação](/pt-BR/products/bring-your-own-cloud/connector/platform-updates#the-approval-window).
+`instances create` exige que o seu connector endpoint esteja acessível a partir do host em que ele é executado. `--wait`, `instances list`, `instances get` e `commands list` precisam da API local do executor, portanto o executor deve estar em execução. O token de uma aprovação de plataforma expira conforme o próprio relógio, independentemente da conectividade; consulte [a janela de aprovação](/pt-BR/products/bring-your-own-cloud/connector/platform-updates#the-approval-window).

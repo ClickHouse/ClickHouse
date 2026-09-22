@@ -12,24 +12,20 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-マネージドクラスターでは、ClickHouse のサービスが依存する小規模なプラットフォームレイヤーが動作しています。ClickHouse Cloud はそのレイヤーに対するプラットフォーム更新を提案しますが、各更新をご自身のクラスターの認証情報で承認するまで、executor は何も適用しません。このページでは、プラットフォーム更新とは何か、VM または Kubernetes インストール環境で更新を承認する方法、承認の有効期間、そして承認によって付与される権限について説明します。
-
-<Note>
-  公開されている `v0.16.0` の CLI には、`platform approve` や `platform reset` を含む `platform` コマンドがありません。以下の Linux VM のワークフローも Kubernetes のワークフローも、そのリリースでは利用できません。さらに Kubernetes での承認には、Secret ベースのトークンバンドル (`--secret-namespace`) に対する CLI および executor チャートのサポートが必要です。いずれかのワークフローを使用する前に、[マネージドモードの利用可否](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)をアカウントチームにご確認ください。
-</Note>
+マネージドクラスターでは、ClickHouse のサービスが依存する小規模なプラットフォームレイヤーが動作しています。ClickHouse Cloud はそのレイヤーに対するプラットフォーム更新を提案しますが、各更新をご自身のクラスターの認証情報で承認するまで、executor は何も適用しません。
 
 ## プラットフォーム更新とは {#what-a-platform-update-is}
 
-プラットフォームレイヤーは、snapshot controller、ClickHouse operator、監視 collectors の3つのコンポーネントで構成されます。各コンポーネントは直前のコンポーネントの custom resource definitions を必要とするため、この順序でインストールされます。これらと併せて、services が使用する `gp3-encrypted` という名前の StorageClass (暗号化された gp3 volume) も配置されます。
+プラットフォームレイヤーは、snapshot controller、ClickHouse operator、監視 collectors の3つのコンポーネントで構成されます。各コンポーネントは直前のコンポーネントの custom resource definitions を必要とするため、この順序でインストールされます。サービス は、これらと併せて提供される `gp3-encrypted` という名前の StorageClass (暗号化された gp3 volume) を使用します。
 
-プラットフォーム バンドルとは、ClickHouse Cloud がお使いの環境向けに生成したレンダリング済み マニフェスト です。対象コンポーネントの chart バージョンと image バージョンを固定し、それらの取得元となる registry を指定します。各 バンドル は、その マニフェスト の sha256 によって識別されます。ClickHouse Cloud はコマンドチャネル経由で バンドル を executor に送信し、executor は承認待ちの状態でこれをステージングします。
+プラットフォーム バンドルとは、ClickHouse Cloud がお使いの環境向けにレンダリングする マニフェスト です。対象コンポーネントの チャート バージョンと イメージ バージョンを固定し、それらの取得元となる レジストリ を指定します。各 バンドル は、その マニフェスト の sha256 によって識別されます。ClickHouse Cloud はコマンドチャネル経由でこれを executor に送信し、executor は承認待ちの状態でこれをステージングします。
 
-バンドル の適用は、次の2つの部分に分かれます:
+バンドル は、次の2つの部分に分かれて適用されます:
 
-* **権限側の半分** は、アクセスを付与または規定するすべての要素です: Namespaces、CustomResourceDefinitions、ServiceAccounts、ClusterRoles と ClusterRoleBindings、Roles と RoleBindings、webhook および admission configurations、PriorityClasses、そして StorageClass です。これを適用できるのはユーザー自身のみで、`clicklink clctl platform approve` を実行し、自身の 認証情報 を使用します。
-* **ワークロード側の半分** は、実際に稼働する要素です: Deployments、Services、ConfigMaps、Secrets、Jobs、PodDisruptionBudgets です。executor はこれらの種類のみを書き込める専用の `pcm-platform` identity として適用し、しかも承認によって発行された短命の トークン が有効な間に限られます。
+* **権限側の半分** は、アクセスを付与または規定するすべての要素です: ネームスペース、CustomResourceDefinitions、ServiceAccounts、ClusterRoles と ClusterRoleBindings、Roles と RoleBindings、webhook および admission configurations、PriorityClasses、そして StorageClass です。これを適用できるのはユーザー自身のみで、`clicklink clctl platform approve` を実行し、自身の 認証情報 を使用します。
+* **ワークロード側の半分** は、実際に稼働する要素です: Deployments、サービス、ConfigMaps、Secrets、Jobs、PodDisruptionBudgets です。executor はこれらの種類のみを書き込める専用の `pcm-platform` identity として適用し、しかも承認によって発行された短命の トークン が有効な間に限られます。
 
-executor が未承認の バンドル を適用することは決してありません。権限側の半分 が欠けている場合、sha256 が承認済みのものと異なる場合、または トークン が期限切れの場合、プラットフォーム同期は拒否されます。拒否時には承認が必要である旨と、ステージングされている バンドル の sha256 が示されます。現在のプラットフォームに存在しない custom resource definition を必要とする service の作成も同様に失敗し、実行すべきコマンドも同じものが示されます。
+executor が未承認の バンドル を適用することは決してありません。権限側の半分 が欠けている場合、sha256 が承認済みのものと異なる場合、または トークン が期限切れの場合、プラットフォーム同期は拒否されます。拒否時には承認が必要である旨と、ステージングされている バンドル の sha256 が示されます。現在のプラットフォームに存在しない custom resource definition を必要とする サービス の作成も同様に失敗し、実行すべきコマンドも同じものが示されます。
 
 ## プラットフォーム更新の承認 {#approve-a-platform-update}
 
@@ -37,24 +33,22 @@ executor が未承認の バンドル を適用することは決してありま
 
 ### レジストリ認証情報 {#registry-credentials}
 
-以下のどちらの承認手順でも、[プラットフォームサポートを含むビルド](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要です。公開版の `v0.16.0` には `platform` コマンドがありません。Kubernetes での承認では、Secret の配信に対応した CLI とチャートのサポートも必要です。
-
 レジストリの認証方式は、環境に登録されているイメージの配布モードによって異なります。
 
-* **ClickHouse のレジストリへの直接アクセス。** 承認はコネクタの EC2 VM 上で実行します。`approve` と executor の platform sync はいずれも、EC2 instance metadata service から取得した認証情報を使用して、環境の読み取り専用 ECR プラーロールを assume します。チャートへのログインにはこのロールを使用し、executor はプラットフォームイメージの存在確認にもこのロールを使用します。ワークステーション上の AWS プロファイル、環境変数による認証情報、SSO 認証情報は instance profile の代わりにはなりません。権限側の半分を適用するためのクラスター管理者の認証情報は、引き続き kubeconfig から提供されます。
+* **ClickHouse のレジストリへの直接アクセス。** 承認はコネクタの EC2 VM 上で実行します。`approve` と executor の プラットフォーム同期 はいずれも、EC2 instance metadata サービス から取得した認証情報を使用して、環境の読み取り専用 ECR プラーロールを assume します。このロールでチャートレジストリにログインし、executor はプラットフォームイメージの存在確認にもこのロールを使用します。ワークステーション上の AWS プロファイル、環境変数による認証情報、SSO 認証情報は instance profile の代わりにはなりません。権限側の半分を適用するクラスター管理者の認証情報は、引き続き kubeconfig から提供されます。
 * **自前のミラーを含む、別の ECR レジストリ上のチャート。** チャートへのログインには、`approve` または executor を実行しているプロセスの ambient な AWS 認証情報が使用されます。これらの認証情報には、そのレジストリへの読み取り権限が必要です。
 
-以下の Kubernetes ワークステーション手順は、Kubernetes プラットフォーム承認を有効にしたミラーレジストリ構成のデプロイメントでのみ使用してください。直接アクセスの場合は、作業を進める前に、必要な EC2 instance profile を備えたサポート対象の実行環境であることを account team に確認してください。
+以下の Kubernetes ワークステーション手順は、Kubernetes プラットフォーム承認を有効にしたミラーレジストリ構成のデプロイメントでのみ使用してください。直接アクセスの場合は、まず必要な EC2 instance profile を備えたサポート対象の実行環境であることを account team に確認してください。
 
 <Steps>
   <Step title="ステージング済みのバンドルを確認する" id="find-the-staged-bundle">
-    ClickHouse Cloud は、他の処理に先立って、提案された各 bundle を executor に送信します。executor はこれを pending bundle としてステージングし、その sha256 をハートビートで報告します。ステージングされる bundle は常に 1 つのみで、より新しい提案が届くと置き換えられます。その後 executor は同期を拒否し、これを failed コマンドとして記録します。その結果の末尾には、実行すべきコマンドが示されます。
+    ClickHouse Cloud は、提案された各 bundle をまず executor に送信します。executor はこれを pending bundle としてステージングし、その sha256 をハートビートで報告します。ステージングされる bundle は常に 1 つのみで、より新しい提案が届くと置き換えられます。その後 executor は同期を拒否し、failed コマンドとして記録します。その結果の末尾には、実行すべきコマンドが示されます。
 
     ```bash
     clicklink clctl commands list --status failed --action sync_platform
     ```
 
-    `result` フィールドは `run: clctl platform approve (pending bundle sha <sha256>)` で終わります。Kubernetes の場合、ヒントは `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)` となります。カスタムリソース定義が見つからずに失敗した作成処理でも、失敗したコマンド自体の出力と `clicklink clctl instances create --wait` が表示するエラーの両方に、同じ `clctl platform approve` の行が含まれます。プラットフォーム更新が提案された際には、ClickHouse のアカウントチームからも連絡があります。
+    `result` フィールドは `run: clctl platform approve (pending bundle sha <sha256>)` で終わります。Kubernetes の場合、ヒントは `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)` となります。カスタムリソース定義が見つからずに失敗した作成処理にも、同じ `clctl platform approve` の行が含まれます。この行は、失敗したコマンド自体の出力と、`clicklink clctl instances create --wait` が表示するエラーの両方に現れます。プラットフォーム更新が提案された際には、担当のアカウントチームからも連絡があります。
 
     承認する前に、ステージングされたバンドルを確認してください。バンドルにはマニフェストとその sha256 が含まれています。
 
@@ -82,7 +76,7 @@ executor が未承認の バンドル を適用することは決してありま
   </Step>
 
   <Step title="承認を実行" id="run-approve">
-    フラグなしの `approve` は、ステージングされたバンドルを読み取ってハッシュ化するため、承認する内容はエグゼキューターが受け取ったものと完全に一致します。バンドル内のすべてのチャートをエグゼキューターとまったく同じようにレンダリングし、選択した kube コンテキストで権限側の適用を行います。必要に応じて `pcm-platform` アイデンティティを作成し、そのトークンを発行します。コネクタのエンドポイントへのリクエストは一切行いません。
+    フラグなしの `approve` は、ステージングされたバンドルを読み取ってハッシュ化するため、エグゼキューターが受け取ったものとまったく同じ内容を承認することになります。すべてのチャートをエグゼキューターとまったく同じようにレンダリングし、選択した kube コンテキストで権限側の適用を行います。必要に応じて `pcm-platform` アイデンティティを作成し、そのトークンを発行します。コネクタのエンドポイントへのリクエストは一切行いません。
 
     `approve` には、マネージドクラスターに対する cluster-admin 権限を持つ kube コンテキスト(kubeconfig に複数含まれる場合は `--context <name>` を指定します)と、環境のイメージ配布モードに応じた[レジストリ認証情報](#registry-credentials)が必要です。`--dry-run` を指定すると、適用や発行は行わず、レンダリングと権限側の一覧表示のみを実行します。ただし、チャートをレンダリングするためにレジストリへのアクセスは必要です。
 
@@ -98,7 +92,7 @@ executor が未承認の バンドル を適用することは決してありま
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        ミラーレジストリを使用するデプロイメントで Kubernetes のプラットフォーム承認が有効になっている場合、`approve` は前の手順で設定したポートフォワード経由でステージングされたバンドルを読み取ります。トークンバンドルはコネクタのネームスペース内の Secret として配信され、チャートがそれをポッドにマウントします。kubeconfig からクラスターに到達できるワークステーションで、コネクタの設定のコピーと上記のレジストリへのアクセスを用意して実行してください。チャートはエグゼキューターの ConfigMap に設定をレンダリングします。`approve` はネームスペースのプレフィックスを得るためにこれを必要としますが、そこから認証情報を読み取ることはありません。
+        ミラーレジストリを使用するデプロイメントで Kubernetes のプラットフォーム承認が有効になっている場合、`approve` は前の手順で設定したポートフォワード経由でステージングされたバンドルを読み取ります。トークンバンドルはコネクタのネームスペース内の Secret として配信され、チャートがそれをポッドにマウントします。kubeconfig からクラスターに到達できるワークステーションで、コネクタの設定のコピーと[レジストリへのアクセス](#registry-credentials)を用意して実行してください。チャートはエグゼキューターの ConfigMap に設定をレンダリングします。`approve` はネームスペースのプレフィックスを得るためだけにこれを必要とし、そこから認証情報を読み取ることはありません。
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # init 時に選択したコネクタのネームスペース
@@ -135,19 +129,19 @@ executor が未承認の バンドル を適用することは決してありま
 
 ## 承認ウィンドウ {#the-approval-window}
 
-承認を行うと、`pcm-platform` identity 向けのトークンが発行されます。このトークンの有効期間はデフォルトで 2 時間です (`--ttl` で変更できます) 。executor がこのトークンを更新することはありません。有効期限が切れると、executor はプラットフォームレイヤーを操作できなくなり、次回のプラットフォーム同期は再び承認メッセージを表示して拒否されます。これは想定どおりの動作であり、障害ではありません。また接続状態にも依存せず、コネクタがオフラインの間に与えた承認も、それ自身の時計に従って期限切れになります。
+承認を行うと、`pcm-platform` identity 向けのトークンが発行されます。このトークンの有効期間はデフォルトで 2 時間です (`--ttl` で変更できます) 。executor がこれを更新することはありません。有効期限が切れると、executor はプラットフォームレイヤーを操作できなくなり、次回のプラットフォーム同期は再び承認メッセージを表示して拒否されます。これは設計どおりの動作であり、接続状態にも依存しません。コネクタがオフラインの間に与えた承認も、それ自身の時計に従って期限切れになります。
 
 次の場合は、あらためて `approve` を実行してください。
 
 * 同期が完了する前にトークンの有効期限が切れた場合
 * ClickHouse Cloud が別の バンドル を提案した場合。承認した sha256 は `pcm-platform` ServiceAccount に記録され、executor はその バンドル を承認するまで他の バンドル の同期を拒否します
-* service の作成時に custom resource definition が見つからないと報告された場合
+* サービス の作成時に custom resource definition が見つからないと報告された場合
 
 同じ バンドル を再度承認しても問題はなく、トークンは置き換えられます。ステージングされた バンドル は同期後もそのまま残るため、再承認にあたって新たな提案は不要です。
 
 ## 承認によって与えられる権限 {#what-the-approval-grants}
 
-権限側の半分を適用するのはあなた自身であるため、そこにはあなたの権限が伴います。`approve` はそこにバンドルの sha256 を刻印し、executor は何かに手を加える前に、送信されたバンドルのすべての権限オブジェクトが存在し、かつ承認済みであることを検証します。executor 自身はその中身を一切適用しません。
+権限側の半分を適用するのはあなた自身であるため、そこにはあなたの権限が伴います。executor 自身はその中身を一切適用しません。`approve` はそこにバンドルの sha256 を刻印し、executor は何かに手を加える前に、送信されたバンドルのすべての権限オブジェクトが存在し、かつ承認済みであることを検証します。
 
 executor はワークロード側の半分を `pcm-platform` として適用します。この identity は Secret、ConfigMap、Service、Deployment、Job、PodDisruptionBudget を作成・更新できますが、その範囲はプラットフォームのネームスペース内に限られ、これは admission ポリシーによって強制されます。preflight に必要なオブジェクト (ポッド、イベント、ネームスペース、ServiceAccount、上記の権限 kind) は読み取れます。一方、次の操作はできません。
 
@@ -158,8 +152,6 @@ executor はワークロード側の半分を `pcm-platform` として適用し�
 executor のサービスライフサイクル用 identity である `pcm-executor` はこれとは別個のもので、サービスのネームスペースに限定されています。プラットフォームのネームスペースへは書き込めませんが、読み取りはプレフィックスガードによる制限を受けません。両方の identity の完全な一覧については、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
 
 ## テストクラスターのリセット {#resetting-a-test-cluster}
-
-公開されている `v0.16.0` の CLI には `platform reset` コマンドはありません。この手順を使用する前に[利用可否](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を確認してください。
 
 `clicklink clctl platform reset` はテストクラスター向けのコマンドです。プラットフォームのコンポーネントをアンインストールし、初回インストールを再度実行できる状態に戻します。変更を加える前に、このコネクタが所有するネームスペース内の ClickHouse クラスターを一覧表示し、サービスが 1 つでも存在する場合は処理を中止します。
 

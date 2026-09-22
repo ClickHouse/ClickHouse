@@ -31,13 +31,13 @@ helm upgrade --install clicklink-connector clicklink-connector \
   -f clicklink-values.yaml
 ```
 
-إصدارات Chart هي وسوم الإصدار من دون بادئة `v` (يتوافق Chart بالإصدار `X.Y.Z` مع الوسم `vX.Y.Z`). يشير Chart المنشور مسبقاً إلى image الحاوية العامة، لذا لا تتطلب عمليات التثبيت والترقية العادية قيماً لـ image. وللاطلاع على القيم الافتراضية لـ Chart، شغّل `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. يعمل executor بنسخة replica واحدة باستخدام strategy الخاصة بـ `Recreate`، لذا تؤدي الترقية إلى قطع اتصاله لفترة وجيزة. راجع [عندما يكون connector غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) لمعرفة ما يحدث للأوامر خلال تلك المدة.
+إصدارات مخطط هي وسوم الإصدار من دون بادئة `v` (يتوافق مخطط بالإصدار `X.Y.Z` مع الوسم `vX.Y.Z`). يشير مخطط المنشور مسبقاً إلى image الحاوية العامة، لذا لا تتطلب عمليات التثبيت والترقية العادية قيماً لـ image. وللاطلاع على القيم الافتراضية لـ مخطط، شغّل `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. يعمل المنفّذ بنسخة replica واحدة باستخدام strategy الخاصة بـ `Recreate`، لذا تؤدي الترقية إلى قطع اتصاله لفترة وجيزة. راجع [عندما يكون موصل غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) لمعرفة ما يحدث للأوامر خلال تلك المدة.
 
-لا يتوفر لعملية التثبيت من مرجع Chart مباشر (`oci://` أو URL أو أرشيف أو دليل محلي) repository يمكن الرجوع إليه لحل المرجع؛ لذا أعد تشغيل `helm upgrade clicklink-connector <same-chart-reference>` بالإصدار الجديد بدلاً من ذلك. كما أن إعادة تشغيل `init` باستخدام واجهة سطر الأوامر أحدث توصل إلى الحالة المطلوبة، لكن `init` يحتاج دائماً إلى إحدى نقاط الدخول الخاصة به: `--handoff` إذا احتفظت بـ bundle، أو رمز تسجيل جديد مع `--force` بعد التنظيف الموثّق. ويُعد `helm upgrade` المذكور أعلاه المسار المعتاد (راجع [إعادة التشغيل والتعافي](#re-runs-and-recovery)).
+لا يتوفر لعملية التثبيت من مرجع مخطط مباشر (`oci://` أو URL أو أرشيف أو دليل محلي) repository يمكن الرجوع إليه لحل المرجع. أعد تشغيل `helm upgrade clicklink-connector <same-chart-reference>` بالإصدار الجديد بدلاً من ذلك. كما أن إعادة تشغيل `init` باستخدام واجهة سطر أوامر أحدث توصل إلى الحالة المطلوبة، لكنها تحتاج إلى نقطة دخول: `--handoff` إذا احتفظت بـ bundle، أو رمز تسجيل جديد مع `--force` بعد التنظيف الموثّق. ويُعد `helm upgrade` المذكور أعلاه المسار المعتاد (راجع [إعادة التشغيل والتعافي](#re-runs-and-recovery)).
 
 ### Linux VM {#upgrades-linux-vm}
 
-أعِد تشغيل برنامج التثبيت على المضيف. إذ سيُنزّل الإصدار الأحدث ويتحقق منه بالطريقة نفسها المتبعة أثناء [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding). وسيُنشئ نسخة احتياطية من الملف التنفيذي السابق، ويثبّت وحدات systemd الحالية، مع الاحتفاظ بأنماط الإخفاء وملف البيئة النشطين لديك. ثم أعد تشغيل الخدمات:
+أعِد تشغيل برنامج التثبيت على المضيف. إذ سيُنزّل الإصدار الأحدث ويتحقق منه كما فعل أثناء [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding). وسيُنشئ نسخة احتياطية من الملف التنفيذي السابق، ويثبّت وحدات systemd الحالية، مع الاحتفاظ بأنماط الإخفاء وملف البيئة النشطين لديك. ثم أعد تشغيل البرامج الخفية:
 
 ```bash
 curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
@@ -48,7 +48,7 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-exec
 
 ## الحالة الصحية {#health}
 
-توفّر كل عملية خفية نقطة نهاية `/livez` على منفذ الحالة الصحية الخاص بها. يُعد حقل JSON ‏`status` في جسم الاستجابة مؤشر الحالة الصحية، وليس رمز حالة HTTP، لذا تحقّق من الجسم بدلًا من الرمز `200`. تُوفَّر مقاييس Prometheus على المسار `/metrics` على المنفذ نفسه؛ ولا يوجد منفذ مقاييس منفصل. المنافذ الافتراضية لكلا الهدفين:
+توفّر كل برنامج خفي نقطة نهاية `/livez` على منفذ الحالة الصحية الخاص بها. ومؤشر الحالة الصحية هو حقل JSON ‏`status` في جسم الاستجابة، وليس رمز حالة HTTP. تُوفَّر مقاييس Prometheus على المسار `/metrics` على المنفذ نفسه؛ ولا يوجد منفذ مقاييس منفصل. المنافذ الافتراضية لكلا الهدفين:
 
 | المكوّن                | منفذ الحالة الصحية |
 | ---------------------- | ------------------ |
@@ -60,7 +60,7 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-exec
 
 عند تمكين جلسات الدعم، تستمع البوابة أيضًا على المنفذ 8443: باستخدام TLS موقّع ذاتيًا على جهاز افتراضي، أو HTTP محلي ضمن الـpod خلف `kubectl port-forward`، أو Ingress ينهي TLS على Kubernetes.
 
-على جهاز افتراضي، يمكنك تشغيل مجموعة الفحوصات الكاملة في أي وقت:
+على جهاز افتراضي، شغّل مجموعة الفحوصات الكاملة في أي وقت:
 
 ```bash
 sudo clicklink clctl preflight
@@ -88,9 +88,7 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### بيانات اعتماد واجهة برمجة التطبيقات (HMAC) {#rotate-api-credentials}
 
-يتطلب سلوك وضع مُدار الموضّح هنا [إصدارًا مدعومًا](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ فالإصدار العام `v0.16.0` لا يتضمن `--managed` ولا `--no-managed`.
-
-اطلب رمز تسجيل جديدًا من فريق حساب ClickHouse، ثم أعد تشغيل أمر `init` الأصلي مع `--enroll` و`--force`. احتفظ بجميع الرايات الخاصة بالهدف المستخدمة في التثبيت الأول (`--target-namespace` و`--values` وأي رايات mirror مثل `--chart` أو `--chart-repo` أو `--chart-version`)، لأن `--force` يعيد إعداد التهيئة المحفوظة. ينتقل وضع مُدار من التهيئة التي يجري استبدالها، لذا فإن `--managed` اختياري هنا. في تثبيت default:
+اطلب رمز تسجيل جديدًا من فريق حسابك، ثم أعد تشغيل أمر `init` الأصلي مع `--enroll` و`--force`. احتفظ بجميع الرايات الخاصة بالهدف المستخدمة في التثبيت الأول (`--target-namespace` و`--values` وأي رايات mirror مثل `--chart` أو `--chart-repo` أو `--chart-version`)، لأن `--force` يعيد إعداد التهيئة المحفوظة. ينتقل وضع مُدار من التهيئة التي يجري استبدالها، لذا فإن `--managed` اختياري هنا. في تثبيت default:
 
 ```bash
 # Kubernetes, from your workstation
@@ -100,13 +98,13 @@ clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target he
 sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force
 ```
 
-على جهاز افتراضي، يقتصر `init` على تمكين وبدء الوحدات التي لا تعمل بعد، لذا أعد تشغيل الخدمات الخفية بعد التدوير:
+على جهاز افتراضي، يقتصر `init` على تمكين وبدء الوحدات التي لا تعمل بعد، لذا أعد تشغيل البرامج الخفية بعد التدوير:
 
 ```bash
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
 ```
 
-في Kubernetes، ينشئ `init` مسبقًا Secretَي `clicklink-hmac` و`clicklink-mtls` المُدوَّرين؛ ولا ينشئهما المخطط. ولذلك لا يشملهما التعليق التوضيحي لقيمة التحقق الخاص بالمخطط، وتحتفظ البودات قيد التشغيل ببيانات الاعتماد التي بدأت بها. أعد تشغيل كل مكوّن بعد التدوير:
+في Kubernetes، ينشئ `init` مسبقًا Secretَي `clicklink-hmac` و`clicklink-mtls` المُدوَّرين؛ ولا ينشئهما المخطط. ولا يشملهما التعليق التوضيحي لقيمة التحقق الخاص به، لذا تحتفظ وحدات pod قيد التشغيل ببيانات الاعتماد التي بدأت بها. أعد تشغيل كل مكوّن بعد التدوير:
 
 ```bash
 kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
@@ -142,7 +140,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --force
 ```
 
-على جهاز افتراضي، نفِّذها على المضيف مع تمرير كلمة مرور المستخدم الإداري عبر pipe؛ وعلى الجهاز الافتراضي تكون كلمة المرور إلزامية إلا إذا مرّرت `--ch-user-via cr`:
+على جهاز افتراضي، نفِّذها على المضيف مع تمرير كلمة مرور المستخدم الإداري عبر pipe؛ وهناك تكون كلمة المرور إلزامية إلا إذا مرّرت `--ch-user-via cr`:
 
 ```bash
 printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -159,11 +157,7 @@ printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access pr
 
 ## إعادة التشغيل والاسترداد {#re-runs-and-recovery}
 
-<Note>
-  لا تتضمّن واجهة سطر الأوامر العامة `v0.16.0` الخيار `--managed` ولا `--no-managed`. ويتطلب سلوك الحفاظ على وضع مُدار وتجاوزه المذكور أدناه إصدارًا مبنيًا يدعم [وضع مُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ تأكّد من إصدارك مع فريق حسابك قبل تغيير ذلك الوضع أثناء الاسترداد.
-</Note>
-
-تتقارب عمليات إعادة تشغيل `init`، لذا تكون إعادة تنفيذ الأمر نفسه دائمًا هي الخطوة الأولى. من دون `--force`، يُحتفَظ بملف `/etc/clicklink/config.yaml` الموجود (VM) أو تراكب `clicklink-values.yaml` (Kubernetes)، ويُعاد استخدام مفتاح العميل الموجود؛ ويستبدل `init` بيانات الاعتماد وسلسلة CA بصورة ذرية. ويمكن تكرار أوامر الاسترداد التي تطبعها CLI بعد فشل جزئي بأمان.
+تتقارب عمليات إعادة تشغيل `init`، لذا تكون إعادة تنفيذ الأمر نفسه دائمًا هي الخطوة الأولى. من دون `--force`، يُحتفَظ بملف `/etc/clicklink/config.yaml` الموجود (VM) أو تراكب `clicklink-values.yaml` (Kubernetes)، ويُعاد استخدام مفتاح العميل الموجود؛ ويستبدل `init` بيانات الاعتماد وسلسلة CA بصورة ذرية. ويمكن تكرار أوامر الاسترداد التي تطبعها واجهة سطر الأوامر بعد فشل جزئي بأمان.
 
 يستبدل `--force` الإعداد أو التراكب المحتفَظ به، ويُعيد إنشاء مفتاح العميل، ويحل محل شهادة العميل غير منتهية الصلاحية. ولا ينشئ مطلقًا معرّف UUID جديدًا للعنقود، لذا تُحفظ هوية الموصل. ويُحتفظ بوضع مُدار الخاص بالتهيئة المستبدلة في عمليات إعادة التشغيل غير المراقَبة، ويُعرض بوصفه الخيار الافتراضي على الطرفية، ما لم تمرّر `--managed` أو `--no-managed`.
 
@@ -175,7 +169,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 هذا هو الشكل الخاص بالآلة الافتراضية (يعيد المستخدم الجذر كتابة `/etc/clicklink` ويدير الخدمات). في Kubernetes، تطبع واجهة سطر الأوامر الصيغة الكاملة، بما في ذلك `--target helm` و`--target-namespace` و`--values`؛ استخدم الأمر المطبوع كما هو.
 
-**الموصل غير متصل.** أثناء تعطل الموصل أو تعذّر الوصول إليه، تستمر الخدمات التي يديرها في العمل. إذ يبقيها ClickHouse Operator في العنقود الخاص بك قيد التشغيل، كما أن المنفّذ ليس ضمن مسار البيانات. تحتاج تغييرات دورة الحياة إلى اتصال المنفّذ، لذا لا يُطبَّق أي منها حتى يعيد الاتصال. وعند إعادة التشغيل، يستعيد المنفّذ من قاعدة بيانات الأوامر الخاصة به الأوامرَ التي كانت قيد التنفيذ عند توقفه. ويُجاب عن أي أمر تعيد ClickHouse Cloud تسليمه من النتيجة المسجَّلة بدلًا من تنفيذه مرتين؛ ولا يُعاد تنفيذ سوى الأمر الفاشل. لمعرفة ما يحدث لأوامر دورة الحياة في حال عدم اتصال أي منفّذ، راجع [عندما يكون الموصل غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
+**الموصل غير متصل.** أثناء تعطل الموصل أو تعذّر الوصول إليه، تستمر الخدمات التي يديرها في العمل. إذ يبقيها ClickHouse Operator في العنقود الخاص بك قيد التشغيل، كما أن المنفّذ ليس ضمن مسار البيانات. تحتاج تغييرات دورة الحياة إلى اتصال المنفّذ، لذا لا يُطبَّق أي منها حتى يعيد الاتصال. وعند إعادة التشغيل، يستعيد المنفّذ الأوامر قيد الإرسال من قاعدة بيانات الأوامر الخاصة به. ويُجاب عن أي أمر تعيد ClickHouse Cloud تسليمه من النتيجة المسجَّلة؛ ولا يُعاد تنفيذ سوى الأمر الفاشل. لمعرفة ما يحدث لأوامر دورة الحياة في حال عدم اتصال أي منفّذ، راجع [عندما يكون الموصل غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
 
 ## إلغاء التثبيت {#uninstall}
 
@@ -185,13 +179,13 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 ### Linux VM {#uninstall-linux-vm}
 
-يتوفر `uninstall.sh` ضمن أرشيف tar الخاص بالإصدار. إذا لم يتبقَّ على المضيف أي أرشيف tar مستخرج، فاجلب أرشيفًا واستخرجه كما هو موضح في [التنزيل والتحقق اليدويين](/ar/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)، ثم شغّله من الدليل المستخرج:
+يتوفر `uninstall.sh` ضمن أرشيف tar الخاص بالإصدار. إذا لم يتبقَّ على المضيف أي أرشيف tar مستخرج، فاجلب أرشيفًا واستخرجه (انظر [التنزيل والتحقق اليدويين](/ar/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)). شغّل `uninstall.sh` من الدليل المستخرج:
 
 ```bash
 sudo ./uninstall.sh
 ```
 
-يؤدي ذلك إلى إيقاف وتعطيل وحدات `clicklink-scraper` و`clicklink-troubleshooter` و`clicklink-executor` وإزالة وحدات systemd والملف التنفيذي. ويُبقي على ما يلي، بحيث تستخدم إعادة التثبيت لاحقًا التكوين الحالي:
+يؤدي ذلك إلى إيقاف وتعطيل وحدات `clicklink-scraper` و`clicklink-troubleshooter` و`clicklink-executor` وإزالة وحدات systemd والملف التنفيذي. ويُبقي على ما يلي، بحيث تستخدم إعادة التثبيت لاحقًا التهيئة الحالية:
 
 * `/etc/clicklink`، بما في ذلك حزم وصول المنفّذ ضمن `/etc/clicklink/access/executor`
 * `/var/lib/clicklink`، بما في ذلك قاعدة بيانات أوامر المنفّذ `executor.db` وسجل الخدمات
@@ -214,7 +208,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n clicklink-system
 ```
 
-أنشأ الـ grant أيضًا مساحة الأسماء `clicklink-system`؛ احذفها عندما لا يستخدمها أي شيء آخر.
+أنشأت الأذونات أيضًا مساحة الأسماء `clicklink-system`؛ احذفها عندما لا يستخدمها أي شيء آخر.
 
 ### Kubernetes {#uninstall-kubernetes}
 
@@ -223,7 +217,7 @@ CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
-يحمل PersistentVolumeClaim الخاص بالـ executor التعليق التوضيحي `helm.sh/resource-policy: keep`، لذا يُبقيه إلغاء التثبيت قائمًا ومعه قاعدة بيانات الأوامر وسجل الخدمات. كذلك فإن الـ Secrets التي أنشأها `init`، وSecret حزمة المنصة الذي كتبته موافقة المنصة، وConfigMap سجل الخدمات الذي يتولاه الـ executor ليست مملوكة للمخطط، وتبقى هي الأخرى بعد إلغاء التثبيت. احذفها صراحةً، بما في ذلك زوج Secret الوصول وServiceAccount لكل instance سجّلته بنفسك ولكل خدمة مُدارة جهّزت لها مستكشف الأخطاء ومصلحها (ويحمل اسم الخدمة). ويغطي `--ignore-not-found` الكائنات التي لم تُنشأ أصلًا، مثل Secret حزمة المنصة قبل أول موافقة:
+يحمل PersistentVolumeClaim الخاص بالـ المنفّذ التعليق التوضيحي `helm.sh/resource-policy: keep`، لذا يُبقيه إلغاء التثبيت قائمًا ومعه قاعدة بيانات الأوامر وسجل الخدمات. كذلك فإن الـ Secrets التي أنشأها `init`، وSecret حزمة المنصة الذي كتبه `platform approve`، وConfigMap سجل الخدمات الذي يتولاه الـ المنفّذ ليست مملوكة للمخطط، وتبقى هي الأخرى بعد إلغاء التثبيت. احذفها صراحةً. وضمّن زوج Secret الوصول وServiceAccount لكل instance سجّلته بنفسك، ولكل خدمة مُدارة جهّزت لها مستكشف الأخطاء ومصلحها (ويحمل اسم الخدمة). ويغطي `--ignore-not-found` الكائنات التي لم تُنشأ أصلًا، مثل Secret حزمة المنصة قبل أول موافقة:
 
 ```bash
 kubectl delete pvc -n "${CONNECTOR_NAMESPACE}" -l app.kubernetes.io/instance=clicklink-connector --ignore-not-found
@@ -242,7 +236,7 @@ for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
 done
 ```
 
-طبّق `init` صلاحية executor على مستوى العنقود بأكمله، وليس المخطط. أزِلها بصفتك مسؤول العنقود بعد ألّا تبقى أي خدمات مُدارة:
+طبّق `init` أذونات المنفّذ على مستوى العنقود بأكمله، وليس المخطط. أزِلها بصفتك مسؤول العنقود بعد ألّا تبقى أي خدمات مُدارة:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -254,9 +248,7 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### طبقة المنصة {#uninstall-platform-layer}
 
-لا تتضمن واجهة سطر الأوامر العامة `v0.16.0` أي أمر `platform`، بما في ذلك `platform reset`؛ تأكد من [التوافر](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدامه.
-
-لا يؤدي إلغاء تثبيت الـ connector إلى إزالة طبقة المنصة. فمساحات أسماء المنصة وأعباء العمل، و RBAC الخاص بـ `pcm-platform`، وكائنات الـ admission التي ثبّتتها موافقاتك تبقى جميعها في العنقود، وكذلك كل خدمة مُدارة. احذف الخدمات أولًا؛ انظر [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service). في عنقود اختباري خالٍ من الخدمات، يزيل الأمر `clicklink clctl platform reset` إصدارات المنصة، أما ما يتركه من CustomResourceDefinitions و RBAC و StorageClass فيلزم حذفه يدويًا؛ انظر [إعادة تعيين عنقود اختباري](/ar/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). أما خارج العناقيد الاختبارية، فاتفق على خطة إزالة مع فريق حسابك في ClickHouse قبل المساس بطبقة المنصة.
+لا يؤدي إلغاء تثبيت الـ موصل إلى إزالة طبقة المنصة. فمساحات أسماء المنصة وأعباء العمل، و RBAC الخاص بـ `pcm-platform`، وكائنات الـ admission التي ثبّتتها موافقاتك تبقى جميعها في العنقود، وكذلك كل خدمة مُدارة. احذف الخدمات أولًا؛ انظر [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service). في عنقود اختباري خالٍ من الخدمات، يزيل الأمر `clicklink clctl platform reset` إصدارات المنصة. أما ما يتركه من CustomResourceDefinitions و RBAC و StorageClass فيلزم حذفه يدويًا؛ انظر [إعادة تعيين عنقود اختباري](/ar/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). أما خارج العناقيد الاختبارية، فاتفق على خطة إزالة مع فريق حسابك قبل المساس بطبقة المنصة.
 
 ### مستخدمو ClickHouse {#uninstall-clickhouse-users}
 

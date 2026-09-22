@@ -11,15 +11,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-이 페이지에서는 등록 토큰을 사용해 관리형 모드에서 검증된 커넥터를 구성하는 방법을 안내합니다. 관리형 모드에서는 실행기가 ClickHouse Cloud가 주도하는 서비스 수명 주기를 적용합니다. 커넥터는 Kubernetes 클러스터(Helm) 또는 Linux VM(systemd)에 설치할 수 있습니다. 토큰 등록이 표준 절차이며, 환경에서 엔드포인트에 직접 연결할 수 없는 경우 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오. 실행기 없이 직접 운영하는 ClickHouse를 관찰하려면 `--no-managed`를 전달하십시오.
-
-## 관리형 모드 지원 여부 {#managed-mode-availability}
-
-<Warning>
-  2026-09-22 기준 공개 설치 프로그램은 `v0.16.0`을 제공하는데, 이 버전에는 `init --managed` 및 `init --no-managed` 플래그도, `platform` 명령어도 포함되어 있지 않습니다. Linux VM과 Kubernetes 설치 환경 모두에서 플랫폼 승인 및 고객 서비스 생성(`instances create --from-prepare`)은 아직 공개 릴리스에서 제공되지 않습니다. 또한 Kubernetes 플랫폼 승인에는 `platform approve --secret-namespace`에 대한 CLI 및 차트 지원이 필요합니다.
-
-  관리형 모드 워크플로를 진행하기 전에 ClickHouse 계정 담당 팀에 문의하여 사용 중인 배포 대상이 지원되는지 확인하고, 그에 맞는 CLI와 커넥터 차트 또는 이미지, 설치 지침을 받으십시오. 고객 서비스 생성에는 커넥터 엔드포인트와 ClickHouse Cloud 양쪽의 지원도 필요하므로, 최신 CLI만으로는 충분하지 않습니다. 아래의 공개 설치 명령어로는 현재 이러한 워크플로를 지원하는 릴리스가 설치되지 않습니다.
-</Warning>
+이 페이지에서는 등록 토큰을 사용해 관리형 모드에서 검증된 커넥터를 구성하는 방법을 안내합니다. 관리형 모드에서는 실행기가 ClickHouse Cloud가 주도하는 서비스 수명 주기를 적용합니다. 커넥터는 Kubernetes 클러스터(Helm) 또는 Linux VM(systemd)에 설치할 수 있습니다. 토큰 등록이 표준 절차입니다. 환경에서 엔드포인트에 직접 연결할 수 없는 경우 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오. 실행기 없이 직접 운영하는 ClickHouse를 관찰하려면 `--no-managed`를 전달하십시오.
 
 ## 사전 요구 사항 {#prerequisites}
 
@@ -33,16 +25,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 서비스의 네임스페이스 접두사(기본값 `ns-`)
 * 클러스터가 ClickHouse 이미지를 가져오는 방식: ClickHouse Cloud가 사용자 계정을 위해 설정한 레지스트리 액세스를 통하는지, 아니면 자체 미러를 사용하는지
 
-그러면 ClickHouse Cloud가 엔드포인트와 일회용 등록 토큰을 발급합니다. 이 토큰이 사용자의 환경을 식별하므로 등록 시 추가 ID를 입력할 필요가 없습니다.
+그러면 ClickHouse Cloud가 엔드포인트와 일회용 등록 토큰을 발급합니다. 이 토큰이 사용자의 환경을 식별하므로 등록 시 추가 ID가 필요하지 않습니다.
 
 ### 모든 설치에 공통 {#prerequisites-every-install}
 
-* 아래의 관리형 모드 지침을 따르려면 **[관리형 모드를 지원하는](#managed-mode-availability) 빌드**가 필요합니다. 공개된 `v0.16.0`에는 `--managed`도 `--no-managed`도 없습니다.
+* **커넥터 v0.17.0 이상.** 이전 릴리스에는 관리형 모드, `platform` 명령어, `instances create`가 없습니다. 설치 프로그램은 `--version`을 전달하지 않는 한 최신 릴리스를 제공합니다.
 * **[등록](#registration) 과정에서 제공된 엔드포인트와 등록 토큰**.
 * **443 포트 egress**: `https://<subdomain>.<connector-domain>` 및 `https://<subdomain>.enroll.<connector-domain>`, 그리고 설치 시점에는 `releases.clicklink.clickhouse.com`과 Amazon ECR Public으로의 연결이 필요합니다. 관리형 모드에서는 플랫폼 동기화 또는 생성 작업이 ECR에서 차트를 가져올 때 실행기가 Amazon ECR 및 STS에도 접근합니다. 이 중 하나라도 연결할 수 없다면 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오.
-* 관리형 모드에는 **Amazon EKS 클러스터**가 필요합니다. `init`은 그 외의 클러스터에서는 관리형 모드를 거부하며, 실행기 없이 설치하는 방법으로 `--no-managed`를 안내합니다.
-* **실행기 권한 부여를 위한 클러스터 관리자 권한.** 이 권한 부여는 실행기를 사용자 접두사 하위의 네임스페이스로 제한하는 클러스터 역할, ClusterRoleBinding, ValidatingAdmissionPolicy를 생성합니다. Kubernetes에서는 `init`을 실행하는 데 사용하는 kubeconfig에 이 권한이 있어야 합니다. VM에서는 호스트의 kubeconfig에 이 권한이 있어야 하며, 호스트에 관리자 권한이 없으면 `init`이 권한을 가진 호스트에서 실행할 명령을 출력합니다.
-* **아직 ClickHouse가 없어야 합니다.** 관리형 설치는 서비스 없이 시작하며, 실행기가 생성한 서비스들이 스스로 등록됩니다. 관리형 모드의 `init`은 사용자가 직접 운영하는 ClickHouse를 등록하지 않습니다(Kubernetes에서는 `--instance`와 `--instance-namespace`를 거부합니다). 이러한 클러스터를 관찰하려면 `--no-managed`로 별도의 커넥터 배포를 설치하십시오. `--ch-user-suffix`를 사용하면 두 배포가 커넥터의 USER 충돌 없이 하나의 instance를 공유할 수 있습니다. 해당 배포에는 연결할 수 있는 네이티브 listener가 필요합니다. 보안 포트 9440 또는 plaintext 포트 9000이며, Kubernetes에서는 자동으로 감지됩니다. 또한 provisioning을 위한 ClickHouse admin 액세스가 필요합니다. 비밀번호가 없는 `default` USER, `--ch-admin-password-stdin` 또는 프롬프트로 전달하는 password, 혹은 연산자 관리형 instance의 CR injection 중 하나를 사용합니다.
+* 관리형 모드에는 **Amazon EKS 클러스터**가 필요합니다. `init`은 그 외의 클러스터에서는 관리형 모드를 거부하며, 실행기 없이 설치하려면 `--no-managed`를 사용하도록 안내합니다.
+* **실행기 grant를 위한 클러스터 관리자 권한.** 이 권한 부여는 실행기를 사용자 접두사 하위의 네임스페이스로 제한하는 클러스터 역할, ClusterRoleBinding, ValidatingAdmissionPolicy를 생성합니다. Kubernetes에서는 `init`을 실행하는 데 사용하는 kubeconfig에 이 권한이 있어야 합니다. VM에서는 호스트의 kubeconfig에 이 권한이 있어야 하며, 호스트에 관리자 권한이 없으면 `init`이 권한을 가진 호스트에서 실행할 명령을 출력합니다.
+* **아직 ClickHouse가 없어야 합니다.** 관리형 설치는 서비스 없이 시작하며, 실행기가 생성한 서비스들이 스스로 등록됩니다. 관리형 모드에서 `init`은 사용자가 직접 운영하는 ClickHouse를 등록하지 않습니다(Kubernetes에서는 `--instance`와 `--instance-namespace`를 거부합니다). 이러한 클러스터를 관찰하려면 `--no-managed`로 별도의 커넥터 배포를 설치하십시오. `--ch-user-suffix`를 사용하면 두 배포가 커넥터의 USER 충돌 없이 하나의 instance를 공유할 수 있습니다. 해당 배포에는 연결할 수 있는 네이티브 listener가 필요합니다. 보안 포트 9440 또는 plaintext 포트 9000이며, Kubernetes에서는 자동으로 감지됩니다. 또한 provisioning을 위한 ClickHouse admin 액세스가 필요합니다. 비밀번호가 없는 `default` USER, `--ch-admin-password-stdin` 또는 프롬프트로 전달하는 password, 혹은 연산자 관리형 instance의 CR injection 중 하나를 사용합니다.
 * 릴리스 아티팩트를 내려받는 모든 환경에는 **cosign**이 필요합니다. 설치 프로그램은 항상 SHA-256 체크섬을 검증합니다. cosign이 설치되어 있으면 릴리스 서명도 함께 검증하며, `CLICKLINK_REQUIRE_COSIGN=1`이 설정된 경우 cosign 없이는 진행을 거부합니다.
 
 ### Kubernetes(Helm) 설치 시 {#prerequisites-kubernetes}
@@ -51,22 +43,20 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * **AWS 자격 증명**: 워크스테이션(환경 변수 또는 프로필)에 `eks:DescribeCluster` 및 `ec2:DescribeVpcs` 권한이 있어야 합니다. `init`은 이 권한으로 NetworkPolicy에 필요한 클러스터 VPC의 CIDR 블록을 읽습니다. 조회에 실패하면 경고를 출력하고, 해당 목록은 직접 입력하도록 비워 둡니다.
 * **엔드포인트 뒤의 CIDR**: 설치 시점에 차트의 기본 거부(default-deny) NetworkPolicy를 활성화하는 데 필요합니다. 이 값이 없으면 `init`은 정책을 비활성화된 상태로 준비하고, 나중에 활성화하는 방법을 출력합니다.
 * **기본 StorageClass** 또는 `--storage-class`로 전달할 클래스: Troubleshooter와 실행기는 PersistentVolumeClaim에 상태를 유지합니다.
-* **이미지 풀 액세스**: 클러스터 노드가 퍼블릭 ECR 이미지 또는 직접 호스팅하는 미러에서 이미지를 가져올 수 있어야 합니다.
+* **image 풀 액세스**: 클러스터 노드가 퍼블릭 ECR image 또는 직접 호스팅하는 미러에서 image를 가져올 수 있어야 합니다.
 
 ### Linux VM(systemd) 설치 {#prerequisites-vm}
 
 * **systemd를 사용하는 모든 Linux 호스트**, amd64 또는 arm64. Linux 빌드는 FIPS 모드로 실행됩니다.
 * 설치 관리자와 `init` 실행에 필요한 **루트 액세스**.
 * **사용 가능한 포트**: health 및 메트릭용 8082, 8084, 8086, 실행기의 로컬 API용 루프백 인터페이스의 9999, 지원 세션 게이트웨이를 활성화한 경우 8443.
-* provisioning과 실행기의 grant에 필요한 **Kubernetes API server 관리자 액세스**: 호스트의 kubeconfig, `--server` 및 `--ca-data`, 또는 프롬프트 입력 중 하나를 사용합니다. 액세스 번들은 양쪽 대상 모두에서 Kubernetes ServiceAccount에 연결됩니다. 관리형 모드에서는 kubeconfig의 현재 context가 관리 중인 EKS 클러스터를 가리켜야 하며, 다른 context를 통한 grant는 `init`이 거부합니다.
+* provisioning과 실행기의 grant에 필요한 **Kubernetes API 서버 관리자 액세스**: 호스트의 kubeconfig, `--server` 및 `--ca-data`, 또는 프롬프트 입력 중 하나를 사용합니다. 액세스 번들은 양쪽 대상 모두에서 Kubernetes ServiceAccount에 연결됩니다. 관리형 모드에서는 kubeconfig의 현재 context가 관리 중인 EKS 클러스터를 가리켜야 하며, 다른 context를 통한 grant는 `init`이 거부합니다.
 
 <Note>
-  VM에서 Kubernetes API server 요구 사항을 우회하는 유일한 방법은 `--skip-provision`이며, 이는 stage 전용입니다. 이 옵션은 ClickHouse 사용자 provisioning, 실행기의 grant, 유닛 활성화, 검증을 모두 건너뛰므로 이것만으로는 커넥터가 실행 상태가 되지 않습니다. Kubernetes에서는 ClickHouse 사용자 provisioning만 건너뜁니다. 차트의 실행기는 grant된 ServiceAccount 없이는 스케줄링될 수 없으므로 실행기의 grant는 그대로 적용됩니다.
+  VM에서 Kubernetes API 서버 요구 사항을 우회하는 유일한 방법은 `--skip-provision`이며, 이는 stage 전용입니다. 이 옵션은 ClickHouse 사용자 provisioning, 실행기의 grant, 유닛 활성화, 검증을 모두 건너뛰므로 이것만으로는 실행 중인 커넥터가 생성되지 않습니다. Kubernetes에서는 ClickHouse 사용자 provisioning만 건너뜁니다. 차트의 실행기는 grant된 ServiceAccount 없이는 스케줄링될 수 없으므로 실행기의 grant는 그대로 적용됩니다.
 </Note>
 
 ## 설치 및 등록 {#install-and-enroll}
-
-먼저 계정 담당 팀에 [관리형 모드 사용 가능 여부](#managed-mode-availability)를 확인하십시오. 아래의 공개 설치 프로그램은 `v0.16.0`을 제공하며, 이 버전에서는 본 가이드에서 사용하는 관리형 모드 등록 명령어를 실행할 수 없습니다.
 
 <Steps>
   <Step title="커넥터 엔드포인트 및 등록 토큰 확인" id="get-endpoint-and-token">
@@ -76,17 +66,17 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     https://<subdomain>.<connector-domain>
     ```
 
-    토큰은 일회용이며 빠르게 만료되므로, 토큰을 받은 직후에 등록을 진행하십시오. 토큰은 시크릿으로 취급해야 합니다. CLI는 화면에 표시되지 않는 프롬프트나 stdin의 첫 번째 줄에서만 토큰을 읽으며, 명령줄 인수나 디스크, 로그에서는 읽지 않습니다. 토큰이 먼저 만료된 경우 ClickHouse 계정 담당 팀에 새 토큰을 요청하십시오.
+    토큰은 일회용이며 빠르게 만료되므로, 토큰을 받은 직후에 등록을 진행하십시오. 토큰은 시크릿으로 취급해야 합니다. CLI는 화면에 표시되지 않는 프롬프트나 stdin의 첫 번째 줄에서만 토큰을 읽으며, 명령줄 인수나 디스크, 로그에서는 읽지 않습니다. 등록 전에 토큰이 만료된 경우 계정 담당 팀에 새 토큰을 요청하십시오.
   </Step>
 
   <Step title="CLI 설치 및 확인" id="install-and-verify-the-cli">
-    명령 한 번으로 검증된 `clicklink` 바이너리를 설치합니다. 플랫폼(macOS 또는 Linux, amd64 또는 arm64)을 자동으로 감지해 현재 릴리스를 내려받고 SHA-256 체크섬을 검증하며, cosign이 설치되어 있으면 릴리스 서명까지 검증합니다. 바이너리는 `/usr/local/bin`에 쓰기가 가능하면 해당 위치에, 그렇지 않으면 `~/.local/bin`에 설치됩니다(필요하면 해당 경로를 `PATH`에 추가하십시오. `--bin-dir`로 재정의할 수 있습니다). Kubernetes에 설치하는 경우 클러스터에 대한 kubeconfig 액세스 권한이 있는 워크스테이션이라면 어디서든 다음을 실행하십시오:
+    명령 한 번으로 검증된 `clicklink` 바이너리를 설치합니다. 플랫폼(macOS 또는 Linux, amd64 또는 arm64)을 자동으로 감지해 현재 릴리스를 내려받고 SHA-256 체크섬을 검증합니다. cosign이 설치되어 있으면 릴리스 서명까지 검증합니다. `/usr/local/bin`에 쓰기가 가능하면 해당 위치에, 그렇지 않으면 `~/.local/bin`에 설치됩니다(필요하면 해당 경로를 `PATH`에 추가하십시오. `--bin-dir`로 재정의할 수 있습니다). Kubernetes에 설치하는 경우 클러스터에 대한 kubeconfig 액세스 권한이 있는 워크스테이션이라면 어디서든 다음을 실행하십시오:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
     ```
 
-    VM에 설치할 때는 호스트에서 `--host` 옵션을 붙여 동일한 스크립트를 실행하십시오. 검증된 다운로드가 끝나면 `clicklink` 시스템 사용자, `/etc/clicklink`, `/var/lib/clicklink`, `/var/log/clicklink` 디렉터리, 그리고 세 구성 요소 모두에 대한 systemd 유닛이 함께 생성됩니다. 또한 `/etc/clicklink/redaction-patterns.yaml`에 기본 패턴 세트를 채워 넣으므로(이미 파일이 있으면 그대로 유지됩니다), 다음 단계는 등록부터 시작하면 됩니다:
+    VM에 설치할 때는 호스트에서 `--host` 옵션을 붙여 동일한 스크립트를 실행하십시오. 검증된 다운로드가 끝나면 `clicklink` 시스템 사용자, `/etc/clicklink`, `/var/lib/clicklink`, `/var/log/clicklink` 디렉터리, 그리고 세 구성 요소 모두에 대한 systemd 유닛을 생성합니다. 또한 `/etc/clicklink/redaction-patterns.yaml`에 기본 패턴 세트를 채워 넣으므로(기존 파일이 있으면 그대로 유지됩니다), 다음 단계는 등록입니다:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
@@ -96,9 +86,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 
   <Step title="커넥터 등록 및 설치" id="enroll-and-install">
-    이 명령어를 사용하려면 [관리형 모드 가용성](#managed-mode-availability)에 설명된 빌드 및 배포 지원이 필요합니다. 공개 릴리스인 `v0.16.0`에는 `--managed`와 `--no-managed`가 모두 없습니다.
-
-    등록은 단일 명령으로 완료됩니다. 토큰을 사용 처리하고, 서명된 클라이언트 인증서와 실행기의 cluster-wide grant를 획득한 다음, 커넥터를 설치하고 검증합니다.
+    `init --enroll`는 토큰을 사용 처리하고, 서명된 클라이언트 인증서와 실행기의 cluster-wide grant를 획득한 다음, 커넥터를 설치하고 검증합니다.
 
     <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector 등록 흐름" />
 
@@ -142,7 +130,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
         숨김 프롬프트에 등록 토큰을 붙여넣으십시오. `init`은 인스턴스 메타데이터에서 클라우드를, 호스트의 kubeconfig에서 EKS cluster를 감지합니다. cluster의 리전과 AWS account는 해당 cluster의 ARN에서 가져오며, 인스턴스 메타데이터가 대체 수단으로 사용됩니다. 터미널에서는 찾아낸 cluster 이름을 확인받고(`EKS cluster to manage`), kubeconfig에 이름이 없을 때만 이름을 묻습니다. `--cluster-name`을 전달하면 해당 프롬프트를 건너뜁니다. 이어서 지원 세션 정책을 묻습니다.
 
-        `init`은 토큰을 사용 처리하고 등록 번들을 `handoff.yaml`로 저장합니다. `executor` 블록이 포함된 `/etc/clicklink/config.yaml`을 작성하고 API 자격 증명과 CA 체인을 설치합니다. private key와 CSR을 생성하고 ClickHouse Cloud가 클라이언트 인증서에 서명하도록 합니다. `/etc/clicklink/access/executor/_cluster` 아래에 실행기의 cluster-wide 액세스 번들을 생성하고 호스트의 kubeconfig를 통해 적용합니다. 마지막으로 `clicklink-scraper`, `clicklink-troubleshooter`, `clicklink-executor` 유닛을 활성화하고 시작한 뒤, 각각이 정상 동작을 보고할 때까지 기다리고 전체 프리플라이트 점검 모음을 실행합니다.
+        `init`은 토큰을 사용 처리하고 등록 번들을 `handoff.yaml`로 저장합니다. `executor` 블록이 포함된 `/etc/clicklink/config.yaml`을 작성하고 API 자격 증명과 CA 체인을 설치합니다. private key와 CSR을 생성하고 ClickHouse Cloud가 클라이언트 인증서에 서명하도록 합니다. `/etc/clicklink/access/executor/_cluster` 아래에 실행기의 cluster-wide 액세스 번들을 생성하고 호스트의 kubeconfig를 통해 적용합니다. 그런 다음 `clicklink-scraper`, `clicklink-troubleshooter`, `clicklink-executor` 유닛을 활성화하고 시작한 뒤, 각각이 정상 동작을 보고할 때까지 기다리고 전체 프리플라이트 점검 모음을 실행합니다.
       </Tab>
     </Tabs>
 
@@ -171,14 +159,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 
   <Step title="정리" id="clean-up">
-    등록 번들(enrollment bundle)인 `handoff.yaml`(권한 `0600`, 작업 디렉터리에 위치)은 설치 도중 재실행이나 복구가 필요하더라도 토큰을 다시 발급받지 않아도 되도록 제공됩니다. 이 파일에는 커넥터의 API 시크릿이 평문으로 저장되어 있으므로, 설치가 정상적으로 확인되면 삭제하십시오:
+    등록 번들(enrollment bundle)인 `handoff.yaml`(권한 `0600`, 작업 디렉터리에 위치)을 통해 설치 도중 재실행이나 복구를 토큰을 다시 발급받지 않고도 진행할 수 있습니다. 이 파일에는 커넥터의 API 시크릿이 평문으로 저장되어 있으므로, 설치가 정상적으로 확인되면 삭제하십시오:
 
     ```bash
     rm handoff.yaml        # workstation (Kubernetes installs)
     sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
     ```
 
-    실행 중인 커넥터는 자격 증명 사본을 자체적으로 보유하므로, 운영상 해당 파일에 의존하는 부분은 없습니다. 업그레이드나 구성 변경 시에도 이 파일은 필요하지 않습니다. 이후 `init`을 다시 실행해야 하는 경우, ClickHouse 계정 담당팀에 새 등록 토큰을 요청한 뒤 `init --enroll --force`를 실행하십시오.
+    실행 중인 커넥터는 자격 증명 사본을 자체적으로 보유하므로, 업그레이드나 구성 변경 시에도 이 파일은 필요하지 않습니다. 이후 `init`을 다시 실행해야 하는 경우, 계정 담당팀에 새 등록 토큰을 요청한 뒤 `init --enroll --force`를 실행하십시오.
   </Step>
 </Steps>
 
@@ -200,7 +188,7 @@ Kubernetes에서 `--chart`에는 `--chart-repo`를 통해 해석되는 차트 �
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
-# Or pin a specific release: CLICKLINK_VERSION='v0.16.0'
+# Or pin a specific release: CLICKLINK_VERSION='v0.17.0'
 CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
 for suffix in '' .sha256 .sig .crt; do
   curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
@@ -234,15 +222,13 @@ VM에서는 tarball의 압축을 풀고 추출한 디렉터리에서 `sudo ./ins
 
 ## 문제가 발생한 경우 {#if-something-fails}
 
-`init`이 `--managed` 또는 `--no-managed`를 알 수 없는 플래그로 거부한다면 CLI 버전을 확인하십시오. 공개된 `v0.16.0`은 두 플래그를 모두 지원하지 않습니다. 아래의 관리형 모드 복구 절차를 따르기 전에 계정 담당 팀으로부터 [관리형 모드를 지원하는 빌드](#managed-mode-availability)를 받으십시오.
+동일한 명령을 다시 실행하십시오. `init`은 멱등적입니다. 다시 실행해도 동일한 상태로 수렴하며, 기존 구성과 스테이징된 파일을 그대로 유지하고 이미 완료된 작업은 건너뜁니다. 어떤 단계가 도중에 실패하면 CLI가 복구 명령어를 정확히 출력하며, 이 명령어는 반복 실행해도 안전합니다.
 
-동일한 명령을 다시 실행하십시오. `init`은 멱등적입니다. 다시 실행해도 동일한 상태로 수렴하며, 기존 구성과 스테이징된 파일을 그대로 유지하고 이미 완료된 작업은 건너뜁니다. 어떤 단계가 도중에 실패하면 CLI가 해당 상황에 맞는 복구 명령어를 정확히 출력하며, 이 명령어는 반복 실행해도 안전합니다.
-
-등록이 거부되었다면 해당 토큰이 이미 사용되었거나, 유효하지 않거나 만료된 것입니다. 이미 사용된 토큰이라면 `--handoff handoff.yaml`을 지정해 다시 실행하십시오. 이 파일은 정리 단계 전까지 존재합니다. 그 외에는 ClickHouse 계정 담당 팀에 새 토큰을 요청하십시오. 등록이 전송 오류로 실패하면 동일한 명령을 다시 실행하십시오. 재실행도 거부된다면 첫 번째 시도에서 토큰이 이미 소진된 것이므로 새 토큰을 요청하십시오.
+등록이 거부되었다면 해당 토큰이 이미 사용되었거나, 유효하지 않거나 만료된 것입니다. 이미 사용된 토큰이라면 `--handoff handoff.yaml`을 지정해 다시 실행하십시오. 이 파일은 정리 단계 전까지 존재합니다. 그 외에는 계정 담당 팀에 새 토큰을 요청하십시오. 등록이 전송 오류로 실패하면 동일한 명령을 다시 실행하십시오. 재실행이 거부된다면 첫 번째 시도에서 토큰이 이미 소진된 것이므로 새 토큰을 요청하십시오.
 
 클러스터가 EKS가 아니어서 관리형 모드가 거부되면 `--no-managed`를 지정해 다시 실행하여 실행기 없이 설치하십시오. VM에서는 현재 컨텍스트가 다른 곳을 가리키는 kubeconfig도 거부됩니다. 이때는 `kubectl config use-context`로 컨텍스트를 전환한 뒤 다시 실행하십시오.
 
-권한 부여를 적용할 수 없는 경우:
+실행기의 grant를 적용할 수 없는 경우:
 
 * **VM에서는** `init`이 실패하지 않습니다. 번들을 스테이징한 뒤, 클러스터 관리자 권한이 있는 kubeconfig에서 실행해야 할 명령어를 정확히 담은 경고를 출력합니다. 검증 프리플라이트는 실행기의 상태를 있는 그대로 보고합니다. 출력된 명령어를 실행한 다음, 동일한 `init` 명령을 다시 실행하여 검증하십시오:
 
@@ -257,4 +243,4 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-`--force`는 일상적인 재시도가 아니라 명시적인 초기화입니다. 보존된 구성이나 values overlay를 덮어쓰고, client key를 재생성하며, 아직 만료되지 않은 클라이언트 인증서를 대체합니다(서명 엔드포인트에서 `409`가 반환되면 인증서가 이미 존재한다는 의미입니다). 커넥터의 클러스터 UUID는 `--force` 실행 후에도 유지되며, 관리형 모드 설정 역시 그대로 유지됩니다. 무인 재실행 시에도 기존 설정이 유지되고, 터미널에서는 프롬프트의 기본값으로 해당 설정이 제시됩니다. 단, `--managed` 또는 `--no-managed`를 전달한 경우는 예외입니다. 자격 증명을 교체하거나 인증서를 대체할 때 `--force`를 사용하고, 전체 재실행 및 복구 모델은 [operations](/ko/products/bring-your-own-cloud/connector/operations)를 참조하십시오.
+`--force`는 명시적인 초기화입니다. 일상적인 재시도에는 필요하지 않습니다. 보존된 구성이나 values overlay를 덮어쓰고, client key를 재생성하며, 아직 만료되지 않은 클라이언트 인증서를 대체합니다(서명 엔드포인트에서 `409`가 반환되면 인증서가 이미 존재한다는 의미입니다). 커넥터의 클러스터 UUID와 관리형 모드 설정은 그대로 유지합니다. 무인 재실행 시에도 기존 설정이 유지되고, 터미널에서는 프롬프트의 기본값으로 해당 설정이 제시됩니다. 단, `--managed` 또는 `--no-managed`를 전달한 경우는 예외입니다. 자격 증명을 교체하거나 인증서를 대체할 때 `--force`를 사용하십시오. 전체 재실행 및 복구 모델은 [operations](/ko/products/bring-your-own-cloud/connector/operations)를 참조하십시오.

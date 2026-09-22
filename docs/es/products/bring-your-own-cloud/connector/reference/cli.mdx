@@ -18,15 +18,11 @@ Los comandos `instances` y `commands`, así como `executor teardown`, leen la AP
 
 ## clicklink clctl init {#init}
 
-<Note>
-  La CLI pública `v0.16.0` no incluye ni `--managed` ni `--no-managed`. Los indicadores y el comportamiento del modo gestionado que se describen a continuación requieren un build más reciente y un soporte de despliegue compatible confirmado por tu account team; consulta [disponibilidad del modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
-</Note>
-
-Inicializa el conector a partir de un token de inscripción, un paquete de inscripción guardado o un certificado firmado fuera de banda. Una sola invocación prepara la configuración, aprovisiona el acceso a ClickHouse, obtiene el certificado mTLS del client, despliega (un gráfico de Helm o unidades systemd) y verifica el estado. Con `--managed` también habilita el executor para el EKS cluster que detecte y le concede al executor el acceso a todo el cluster. Es seguro volver a ejecutarlo: `init` conserva la configuración y el UUID del cluster, sobrescribe las credenciales de forma atómica y reutiliza una clave de client existente, a menos que se indique `--force`. Consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding) para ver el flujo completo y [servicios gestionados](/es/products/bring-your-own-cloud/connector/managed-services) para saber qué hace el executor.
+Inicializa el conector a partir de un token de inscripción, un paquete de inscripción guardado o un certificado firmado fuera de banda. Una sola invocación prepara la configuración, aprovisiona el acceso a ClickHouse, obtiene el certificado mTLS del client, despliega (un gráfico de Helm o unidades systemd) y verifica el estado. Con `--managed` también habilita el executor para el EKS cluster que detecte y le concede al executor el acceso a todo el cluster. Es seguro volver a ejecutarlo: `init` conserva la configuración y el UUID del cluster, sobrescribe las credenciales de forma atómica y reutiliza una clave de client existente, a menos que se indique `--force`. Consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding) para ver el flujo completo y [managed services](/es/products/bring-your-own-cloud/connector/managed-services) para saber qué hace el executor.
 
 ### Puntos de entrada {#init-entry-points}
 
-Se requiere exactamente uno de los tres puntos de entrada; son mutuamente excluyentes.
+Se requiere exactamente un punto de entrada.
 
 | Indicador              | Descripción                                                                                                                                                                                                                                                                                                                                                                                           |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,11 +39,11 @@ Se requiere exactamente uno de los tres puntos de entrada; son mutuamente excluy
 | `--env <label>`             | Etiqueta de entorno inyectada en cada métrica emitida como `scraper.labels.env` (`production` por omisión). Pase `staging` para una instalación de staging.                                                                                                                                                                                                                            |
 | `--operators <emails>`      | Correos electrónicos de operadores, separados por comas, autorizados a abrir sesiones de soporte; habilita el gateway de sesión y omite el prompt.                                                                                                                                                                                                                                     |
 | `--no-gateway`              | Deshabilita el gateway de sesión (sin sesiones gestionadas por OIDC); omite el prompt. En una VM, root en el host sigue pudiendo administrar sesiones mediante el archivo de sesión local.                                                                                                                                                                                             |
-| `--managed`                 | Habilita el modo gestionado: ejecuta el executor para que ClickHouse Cloud gestione el ciclo de vida de los servicios de ClickHouse en este cluster; omite el prompt. Requiere un cluster de Amazon EKS. No disponible en la versión pública `v0.16.0`; consulte [disponibilidad](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).                      |
-| `--no-managed`              | Deja desactivado el modo gestionado (el executor); omite el prompt. No disponible en la versión pública `v0.16.0`; consulte [disponibilidad](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).                                                                                                                                                           |
+| `--managed`                 | Habilita el modo gestionado: ejecuta el executor para que ClickHouse Cloud gestione el ciclo de vida de los servicios de ClickHouse en este cluster; omite el prompt. Requiere un cluster de Amazon EKS.                                                                                                                                                                               |
+| `--no-managed`              | Deja desactivado el modo gestionado (el executor); omite el prompt.                                                                                                                                                                                                                                                                                                                    |
 | `--force`                   | Sobrescribe una configuración u overlay existentes y regenera la client key; también confirma la sustitución de un certificado autofirmado aún vigente. El UUID del cluster se conserva incluso con `--force`.                                                                                                                                                                         |
 | `--skip-provision`          | Solo preparación: omite el aprovisionamiento de acceso a ClickHouse por rol (y, en el destino systemd, la habilitación y verificación de la unidad). Ejecute `clicklink clctl {scraper,troubleshoot} access provision` por separado. Con `--target helm` se sigue aplicando el permiso del executor; en una VM también se omite.                                                       |
-| `--ch-user-suffix <suffix>` | Sufijo opcional para los nombres de usuario de ClickHouse aprovisionados (`pcm_scraper` pasa a ser `pcm_scraper_<suffix>`), de modo que una segunda implementación del conector pueda compartir una instancia sin colisionar con los usuarios de la primera.                                                                                                                           |
+| `--ch-user-suffix <suffix>` | Sufijo opcional para los nombres de usuario de ClickHouse aprovisionados (`pcm_scraper` pasa a ser `pcm_scraper_<suffix>`), de modo que una segunda implementación del conector pueda compartir una instancia sin colisionar con los usuarios de la primera.                                                                                                                          |
 | `--ch-admin-password-stdin` | Lee la contraseña del administrador de ClickHouse desde stdin cuando el aprovisionamiento SQL la requiere; en una ejecución en terminal, se solicita de forma interactiva.                                                                                                                                                                                                             |
 
 ### Indicadores de firma (solo en la fase 1) {#init-signing-flags}
@@ -97,28 +93,28 @@ Válidos únicamente con `--target systemd`.
 
 ## clicklink clctl preflight {#preflight}
 
-Ejecuta el conjunto de comprobaciones del conector, agrupadas por categoría: configuración, archivos, red, clickhouse, systemd, acceso, disco y redacción. Cada comprobación indica si se superó, generó una advertencia, falló o se omitió. El código de salida 0 indica que todas las comprobaciones se superaron (las advertencias no bloquean); el código de salida 2 indica que una o más comprobaciones fallaron.
+Ejecuta el conjunto de comprobaciones del conector, agrupadas por categoría: configuración, archivos, red, clickhouse, systemd, acceso, disco y redacción. Cada comprobación indica si se superó, generó una advertencia, falló o se omitió. El código de salida 0 indica que todas las comprobaciones se superaron (las advertencias no bloquean); el código de salida 2 indica que al menos una falló.
 
 De forma predeterminada, el comando se ejecuta localmente. Con `--k8s-namespace`, ejecuta el propio binario del pod de Kubernetes del conector mediante `kubectl exec` y muestra el informe localmente (las comprobaciones de systemd siempre se omiten en los pods de Kubernetes). Con los [indicadores de canal remoto](#channel-flags), ejecuta en su lugar el binario instalado en una VM remota.
 
-| Indicador                | Descripción                                                                                                             |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`        | Ruta al archivo de configuración del conector; para un destino remoto, la ruta en ese host.                             |
-| `--output <fmt>`, `-o`   | Formato de salida: `text` (predeterminado) o `json`.                                                                    |
-| `--timeout <dur>`        | Tiempo de espera total para todas las comprobaciones (predeterminado: `30s`).                                           |
-| `--skip-systemd`         | Omite las comprobaciones del estado de las unidades de systemd (hosts sin systemd).                                     |
+| Indicador                | Descripción                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>`        | Ruta al archivo de configuración del conector; para un destino remoto, la ruta en ese host.                                           |
+| `--output <fmt>`, `-o`   | Formato de salida: `text` (predeterminado) o `json`.                                                                                  |
+| `--timeout <dur>`        | Tiempo de espera total para todas las comprobaciones (predeterminado: `30s`).                                                         |
+| `--skip-systemd`         | Omite las comprobaciones del estado de las unidades de systemd (hosts sin systemd).                                                   |
 | `--k8s-namespace <ns>`   | Espacio de nombres del chart del conector; ejecuta preflight dentro del pod de Kubernetes del conector mediante `kubectl exec`.       |
 | `--k8s-component <name>` | pod de Kubernetes del conector en el que se ejecutará: `scraper` (predeterminado) o `troubleshooter`.                                 |
 | `--k8s-pod <ref>`        | Nombre del pod de Kubernetes o sobrescritura del selector de etiquetas `k=v` (predeterminado: las etiquetas de componente del chart). |
-| `--k8s-container <name>` | Contenedor en el que ejecutar el comando (predeterminado: el nombre del componente).                                    |
+| `--k8s-container <name>` | Contenedor en el que ejecutar el comando (predeterminado: el nombre del componente).                                                  |
 
 Los indicadores `--k8s-*` y los indicadores de canal remoto son mutuamente excluyentes; elija un único destino.
 
 ## clicklink clctl troubleshoot session {#troubleshoot-session}
 
-Habilita, deshabilita e inspecciona la sesión de soporte: la ventana de tiempo durante la cual el solucionador de problemas acepta comandos. Cuando no hay ninguna sesión activa, el demonio rechaza todos los comandos, aunque su WebSocket esté conectado. Consulte las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
+Habilita, deshabilita e inspecciona la sesión de soporte: la ventana de tiempo durante la cual el solucionador de problemas acepta comandos. Sin una sesión activa, el demonio rechaza todos los comandos, aunque su WebSocket esté conectado. Consulte las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
 
-Los comandos funcionan en uno de dos modos:
+Los comandos se ejecutan en uno de dos modos:
 
 * **Archivo local** (predeterminado): lee y escribe el archivo de estado de la sesión en el host donde se ejecuta el solucionador de problemas (de forma predeterminada, `/var/lib/clicklink/session.json`).
 * **Gateway**: con `--gateway-url`, obtiene un token de ID de OIDC y, desde su estación de trabajo, llama en su lugar al gateway de sesiones del solucionador de problemas.
@@ -187,7 +183,7 @@ En Kubernetes, no se usa el pinning: exponga el gateway mediante un Ingreso con 
 
 ## clicklink clctl troubleshoot audit tail {#audit-tail}
 
-Imprime las últimas entradas del registro de auditoría del solucionador de problemas: JSON delimitado por saltos de línea, una entrada por cada comando que el daemon aceptó o bloqueó. El comando abre el registro en modo de solo lectura y nunca lo modifica.
+Imprime las últimas entradas del registro de auditoría del solucionador de problemas: JSON delimitado por saltos de línea, una entrada por cada comando que el daemon aceptó o bloqueó. Abre el registro en modo de solo lectura.
 
 | Indicador           | Descripción                                                                                                         |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -228,7 +224,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
 | `--skip-restart`                                                     | Omite reiniciar el componente después del aprovisionamiento.                                                                                                                                                                                                                            |
 | `--dry-run`                                                          | Imprime el plan y sale; no realiza escrituras en Kubernetes, sistemas remotos ni ClickHouse.                                                                                                                                                                                            |
 
-Rote las credenciales de una instancia para un componente:
+Rote las credenciales de un componente para una instancia:
 
 ```bash
 clicklink clctl scraper access provision --target helm \
@@ -241,9 +237,7 @@ clicklink clctl scraper access provision --target helm \
 
 ## clicklink clctl executor access {#executor-access}
 
-El flujo de trabajo `init --managed` que se describe a continuación requiere un [build con soporte de modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); la versión pública `v0.16.0` no expone ese indicador.
-
-`init --managed` aplica el grant a todo el cluster del executor con tus credenciales. Cuando no puede hacerlo, `init` muestra los comandos que debes ejecutar desde un kubeconfig con permisos de admin del cluster: `access apply` por sí solo en una VM (el paquete ya está preparado) o `access grant` seguido de `access apply` en Kubernetes. Consulta el [onboarding](/es/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
+`init --managed` aplica el grant a todo el cluster del executor con tus credentials. Cuando no puede hacerlo, `init` muestra los commands que debes ejecutar desde un kubeconfig con permisos de admin del cluster: `access apply` por sí solo en una VM (el bundle ya está preparado) o `access grant` seguido de `access apply` en Kubernetes. Consulta el [onboarding](/es/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
 ### executor access grant {#executor-access-grant}
 
@@ -262,7 +256,7 @@ Genera el paquete de acceso a nivel de cluster del executor en `<output-dir>/_cl
 
 ### executor access apply {#executor-access-apply}
 
-Aplica el paquete `grant` renderizado a nivel de cluster: el Espacio de nombres principal de la ServiceAccount, la ServiceAccount, el Rol de clúster y el ClusterRoleBinding, y la política de admission. A continuación, genera el token de la ServiceAccount dentro del paquete. No registra ningún service.
+Aplica el paquete `grant` renderizado a nivel de cluster: el Espacio de nombres principal de la ServiceAccount, la ServiceAccount, el Rol de clúster y el ClusterRoleBinding, y la política de admission, y a continuación genera el token de la ServiceAccount dentro del paquete. No registra ningún service.
 
 | Indicador                | Descripción                                                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
@@ -280,7 +274,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ## clicklink clctl executor prepare {#executor-prepare}
 
-Prepara todo lo necesario de tu lado para crear un managed service, en una única ejecución idempotente que se detiene ante el primer fallo. Elige o valida el nombre del service, crea los buckets de datos y de copia de seguridad y el IAM role (o verifica el role que aportes) y, en una VM, genera y aplica el paquete de acceso del executor para el espacio de nombres del service. En Kubernetes omite el paquete: el executor se ejecuta con el ServiceAccount de su pod. A continuación genera la contraseña del usuario `default` (que se muestra una sola vez) y escribe el cuerpo de creación para [`instances create`](#instances-create). Consulta [managed services](/es/products/bring-your-own-cloud/connector/managed-services#create-a-service).
+Prepara todo lo necesario de tu lado para crear un managed service, en una única ejecución idempotente que se detiene ante el primer fallo. Elige o valida el nombre del service y crea los buckets de datos y de copia de seguridad y el IAM role (o verifica el role que aportes). En una VM también genera y aplica el paquete de acceso del executor para el espacio de nombres del service; en Kubernetes omite el paquete porque el executor se ejecuta con el ServiceAccount de su pod. A continuación genera la contraseña del usuario `default` (que se muestra una sola vez) y escribe el cuerpo de creación para [`instances create`](#instances-create). Consulta [managed services](/es/products/bring-your-own-cloud/connector/managed-services#create-a-service).
 
 En una VM se ejecuta en el host del connector. En una instalación de Kubernetes se ejecuta en una workstation con credenciales de AWS y un contexto de kube para el cluster gestionado. Esa workstation también necesita una copia de la configuración del connector (`--config`), un reenvío de puertos a la API local del executor y un `--output-dir` con permisos de escritura.
 
@@ -304,7 +298,7 @@ En una VM se ejecuta en el host del connector. En una instalación de Kubernetes
 
 ## clicklink clctl executor teardown {#executor-teardown}
 
-Elimina lo que `prepare` creó para un servicio que ClickHouse Cloud ha borrado. Es decir, el IAM role, los buckets que creó `prepare`, el nombre registrado, el registro del servicio en el executor y, en una VM, el Rol de clúster y el ClusterRoleBinding del servicio, el paquete de acceso local y la entrada del registry. El executor debe estar en ejecución y el servicio debe estar `terminated` (o `stale`); la ejecución se rechaza mientras el espacio de nombres del servicio siga alojando un cluster de ClickHouse. Los datos y las copias de seguridad se conservan salvo que se indique lo contrario, y los buckets conservados se vuelven a etiquetar como `clicklink:retained-from=<instance>`. El comando lo lee todo antes de borrar nada. Consulte [Delete a service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
+Elimina lo que `prepare` creó para un servicio que ClickHouse Cloud ha borrado. Es decir, el IAM role, el nombre registrado y el registro del servicio en el executor; en una VM, también el Rol de clúster y el ClusterRoleBinding del servicio, el paquete de acceso local y la entrada del registry. El executor debe estar en ejecución y el servicio debe estar `terminated` (o `stale`); la ejecución se rechaza mientras el espacio de nombres del servicio siga alojando un cluster de ClickHouse. Los buckets que creó `prepare`, con sus datos y copias de seguridad, se conservan salvo que solicite su eliminación, y los buckets conservados se vuelven a etiquetar como `clicklink:retained-from=<name>`. El comando lo lee todo antes de borrar nada. Consulte [Delete a service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 | Indicador                                        | Descripción                                                                                                                                                                                                |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -326,9 +320,7 @@ Elimina lo que `prepare` creó para un servicio que ClickHouse Cloud ha borrado.
 
 ### instances create {#instances-create}
 
-Este flujo de trabajo de creación por parte del cliente aún no está disponible en la versión pública y requiere soporte en la CLI, el endpoint del connector y ClickHouse Cloud. Confirma la [disponibilidad del modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usarlo.
-
-Envía una creación preparada a ClickHouse Cloud a través del endpoint del connector, con las credenciales propias del connector. Imprime el nombre hablado que asignó ClickHouse Cloud, el estado y una sugerencia `watch:` que usa el nombre de tu service. El cuerpo de la creación proviene del archivo que escribió `prepare`, o bien de los cuatro indicadores `--deployed-name`, `--data-bucket`, `--backup-bucket` e `--irsa-role-arn` en conjunto. Un reintento con las mismas entradas devuelve la primera creación.
+Envía una creación preparada a ClickHouse Cloud a través del endpoint del connector, con las credenciales propias del connector. La creación se habilita por entorno; consulta [crear un service](/es/products/bring-your-own-cloud/connector/managed-services#create-a-service). Imprime el nombre hablado que asignó ClickHouse Cloud, el estado y una sugerencia `watch:` que usa el nombre de tu service. El cuerpo de la creación proviene del archivo que escribió `prepare`, o bien de los cuatro indicadores `--deployed-name`, `--data-bucket`, `--backup-bucket` e `--irsa-role-arn` en conjunto. Un reintento con las mismas entradas devuelve la primera creación.
 
 | Indicador                                                                                           | Descripción                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -352,7 +344,7 @@ Imprime en formato JSON todos los servicios que conoce el executor. `--cluster <
 
 Imprime un service, en formato JSON, con el storage con el que se creó. `--name <name>` es obligatorio, y el cluster también: pasa `--cluster`, define `CLCTL_CLUSTER` o inclúyelo en `~/.clicklink/clctl.yaml`.
 
-Los tres subcomandos siguientes envían comandos directamente a la API local del executor, sin que intervenga ClickHouse Cloud. Ejecútalos únicamente cuando el account team de ClickHouse te lo indique. Cada uno requiere `--name <name>` y el cluster (`--cluster`, `CLCTL_CLUSTER` o `~/.clicklink/clctl.yaml`), e imprime el comando en formato JSON. Pasa su `id` a [`commands get`](#commands-get) para hacerle seguimiento; el `result` de un comando fallido contiene su error.
+Los tres subcomandos siguientes envían comandos directamente a la API local del executor, omitiendo ClickHouse Cloud. Ejecútalos únicamente cuando tu account team te lo indique. Cada uno requiere `--name <name>` y el cluster (`--cluster`, `CLCTL_CLUSTER` o `~/.clicklink/clctl.yaml`), e imprime el comando en formato JSON. Pasa su `id` a [`commands get`](#commands-get) para hacerle seguimiento; el `result` de un comando fallido contiene su error.
 
 ### instances scale {#instances-scale}
 
@@ -360,7 +352,7 @@ Establece el número de réplicas de servidor de un service mediante un `Scaling
 
 ### instances patch {#instances-patch}
 
-Modifica un servicio in situ. `--create-nlb` es el único patch disponible. Aprovisiona un NLB interno, en forma de `Service` de Kubernetes, para que un scraper externo al cluster pueda alcanzar los servidores; solo en AWS. El executor completa por backfill el host del scraper a partir del balanceador de carga en su siguiente sincronización. Sin `--create-nlb`, el comando se rechaza con `nothing to patch`.
+Modifica un servicio in situ. `--create-nlb` es el único patch disponible; sin él, el comando se rechaza con `nothing to patch`. Aprovisiona un NLB interno, en forma de `Service` de Kubernetes, solo en AWS, para que un scraper externo al cluster pueda alcanzar los servidores. El executor completa por backfill el host del scraper a partir del balanceador de carga en su siguiente sincronización.
 
 ### instances delete {#instances-delete}
 
@@ -384,9 +376,7 @@ Imprime los comandos que ha registrado el executor, en formato JSON y empezando 
 
 ## clicklink clctl platform approve {#platform-approve}
 
-La CLI pública `v0.16.0` no incluye el comando `platform`, por lo que en esa versión no está disponible el flujo de trabajo de aprobación ni para VM ni para Kubernetes. La aprobación en Kubernetes requiere además el soporte de la CLI y del chart para la entrega mediante secreto que se describe a continuación. Confirma la [disponibilidad del modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usar cualquiera de los dos flujos de trabajo.
-
-Autoriza un cambio de plataforma con tus propias credenciales del cluster. Lee el paquete que preparó el executor, calcula su hash y renderiza cada chart que contiene exactamente igual que lo hará el executor. Aplica la mitad de permisos con el contexto de kube que elijas, garantiza la identidad `pcm-platform` del executor y emite su token. No realiza ninguna petición a tu endpoint del connector. La mitad de permisos comprende Espacios de nombres, CustomResourceDefinitions, ServiceAccounts, Roles de clúster y sus bindings, Roles y sus bindings, configuraciones de webhook y admission, PriorityClasses y la clase de almacenamiento. Después, el executor aplica únicamente la mitad de workload, y solo mientras ese token siga siendo válido. Consulta [actualizaciones de plataforma](/es/products/bring-your-own-cloud/connector/platform-updates).
+Autoriza un cambio de plataforma con tus propias credenciales del cluster. Lee el paquete que preparó el executor, calcula su hash y renderiza cada chart que contiene exactamente igual que lo hará el executor. Aplica la mitad de permisos con el contexto de kube que elijas, crea la identidad `pcm-platform` del executor si es necesario y emite su token. No realiza ninguna petición a tu endpoint del connector. La mitad de permisos comprende Espacios de nombres, CustomResourceDefinitions, ServiceAccounts, Roles de clúster y sus bindings, Roles y sus bindings, configuraciones de webhook y admission, PriorityClasses y la clase de almacenamiento. Después, el executor aplica únicamente la mitad de workload, y solo mientras ese token siga siendo válido. Consulta [actualizaciones de plataforma](/es/products/bring-your-own-cloud/connector/platform-updates).
 
 Para acceder directamente al registry de ClickHouse, ejecuta la aprobación en la VM EC2 del connector: la CLI usa su perfil de instancia para asumir el rol de descarga de solo lectura, con independencia de las credenciales de tu kubeconfig. Otros registries de charts en ECR utilizan las AWS credentials del entorno. Consulta [credenciales del registry](/es/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 
@@ -396,15 +386,13 @@ Para acceder directamente al registry de ClickHouse, ejecuta la aprobación en l
 | `--context <name>`        | Contexto de kubeconfig del cluster gestionado, con derechos de cluster-admin; un nombre o un patrón (variable de entorno `CLCTL_CONTEXT`). Valor predeterminado: el único contexto disponible; en caso contrario, un picker. |
 | `--ttl <dur>`             | Duración del token de plataforma (valor predeterminado `2h`). El executor nunca lo renueva.                                                                                                                                  |
 | `--output-dir <path>`     | Raíz de acceso: desde ella se lee el paquete preparado y bajo ella se escribe el token, en `_platform` (valor predeterminado `/etc/clicklink/access/executor`; variable de entorno `CLCTL_EXECUTOR_OUTPUT_DIR`).             |
-| `--secret-namespace <ns>` | Instalaciones de Kubernetes: lee el paquete preparado desde la API local del executor y entrega el paquete del token como un secreto en este espacio de nombres (el del connector) en lugar de en `<output-dir>/_platform`.   |
-| `--secret-name <name>`    | Nombre del secreto para `--secret-namespace` (valor predeterminado `clicklink-platform-bundle`); debe coincidir con `executor.platformBundleSecret` del chart.                                                                |
+| `--secret-namespace <ns>` | Instalaciones de Kubernetes: lee el paquete preparado desde la API local del executor y entrega el paquete del token como un secreto en este espacio de nombres (el del connector) en lugar de en `<output-dir>/_platform`.  |
+| `--secret-name <name>`    | Nombre del secreto para `--secret-namespace` (valor predeterminado `clicklink-platform-bundle`); debe coincidir con `executor.platformBundleSecret` del chart.                                                               |
 | `--endpoint <url>`        | Instalaciones de Kubernetes: la API local del executor, accesible mediante un `kubectl port-forward` (valor predeterminado `http://127.0.0.1:9999`; variable de entorno `CLCTL_ENDPOINT`).                                   |
 | `--bundle <path>`         | Sobrescritura: un manifiesto de plataforma ya renderizado y entregado por otra vía, que se lee en lugar del paquete preparado. Normalmente se omite.                                                                         |
 | `--dry-run`               | Renderiza y lista la mitad de permisos sin aplicarla ni emitir el token.                                                                                                                                                     |
 
 ## clicklink clctl platform reset {#platform-reset}
-
-La CLI pública `v0.16.0` no tiene el comando `platform`, incluido `platform reset`; consulte [disponibilidad del modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
 
 Para clusters de prueba sin servicios: desinstala los releases de la plataforma en orden inverso de dependencias y elimina el paquete de tokens de plataforma del executor, de modo que se pueda volver a probar la primera instalación. Antes de modificar nada, lista los ClickHouse clusters de los espacios de nombres que pertenecen a este connector y rechaza la operación si existe alguno. Las CustomResourceDefinitions, el RBAC y la clase de almacenamiento se conservan. Ejecute `platform approve` de nuevo antes de la siguiente sincronización de la plataforma.
 
@@ -414,16 +402,16 @@ Para clusters de prueba sin servicios: desinstala los releases de la plataforma 
 | `--config <path>`                                 | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`).                                                                                            |
 | `--context <name>`                                | Contexto de kubeconfig del cluster gestionado, con permisos de cluster-admin.                                                                                                    |
 | `--output-dir <path>`                             | Raíz de acceso cuyo paquete `_platform` se elimina (valor predeterminado `/etc/clicklink/access/executor`).                                                                      |
-| `--secret-namespace <ns>`, `--secret-name <name>` | Instalaciones en Kubernetes: elimina en su lugar el secreto del paquete de plataforma en el espacio de nombres del connector (nombre predeterminado `clicklink-platform-bundle`). |
+| `--secret-namespace <ns>`, `--secret-name <name>` | Instalaciones en Kubernetes: elimina en su lugar el Secret del paquete de plataforma en el espacio de nombres del connector (nombre predeterminado `clicklink-platform-bundle`). |
 | `--dry-run`                                       | Comprueba si hay servicios e imprime el plan de restablecimiento sin modificar el cluster.                                                                                       |
 
 ## Indicadores de canales remotos {#channel-flags}
 
-`preflight`, `gateway trust` y `access provision` aceptan un conjunto común de indicadores que determinan cómo se accede a una VM de destino:
+`preflight`, `gateway trust` y `access provision` comparten un conjunto de indicadores que determinan cómo se accede a una VM de destino:
 
-| Indicador                                                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--provider <name>`                                                                         | Canal de ejecución: `ssh`, `aws` (SSM) o `gcp` (IAP) para VM remotas, o `local` cuando se ejecuta en la propia VM de destino. Se infiere a partir de los indicadores específicos de cada proveedor si no se establece explícitamente. De forma predeterminada se usa `aws` cuando no se establece ningún indicador de canal, y `local` nunca se infiere, por lo que en la propia VM siempre debes pasar `--provider local`. |
-| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | Datos de conexión SSH (`--provider ssh`); el usuario, el puerto y la clave toman de forma predeterminada los valores de tu configuración SSH.                                                                                                                                                                                                                                                                               |
-| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | Instancia EC2, región (predeterminada `us-east-1`) y perfil de configuración compartida para SSM (`--provider aws`).                                                                                                                                                                                                                                                                                                        |
-| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | Proyecto, zona e instancia para la tunelización mediante IAP (`--provider gcp`).                                                                                                                                                                                                                                                                                                                                            |
+| Indicador                                                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | Canal de ejecución: `ssh`, `aws` (SSM) o `gcp` (IAP) para VM remotas, o `local` cuando se ejecuta en la propia VM de destino. Se infiere a partir de los indicadores específicos de cada proveedor si no se establece; de forma predeterminada se usa `aws` cuando no se establece ninguno. `local` nunca se infiere, por lo que en la propia VM siempre debes pasar `--provider local`. |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | Datos de conexión SSH (`--provider ssh`); el usuario, el puerto y la clave toman de forma predeterminada los valores de tu configuración SSH.                                                                                                                                                                                                                                            |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | Instancia EC2, región (predeterminada `us-east-1`) y perfil de configuración compartida para SSM (`--provider aws`).                                                                                                                                                                                                                                                                     |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | Proyecto, zona e instancia para la tunelización mediante IAP (`--provider gcp`).                                                                                                                                                                                                                                                                                                         |

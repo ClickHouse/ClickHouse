@@ -33,7 +33,7 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 차트 버전은 앞의 `v`를 제외한 릴리스 태그입니다(차트 `X.Y.Z`는 태그 `vX.Y.Z`에 해당합니다). 게시된 차트는 이미 공개 컨테이너 이미지를 가리키므로 일반 설치 및 업그레이드에는 이미지 values를 지정할 필요가 없습니다. 차트 기본값을 확인하려면 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`를 실행하십시오. 실행기는 `Recreate` strategy를 사용하는 단일 레플리카로 동작하므로 업그레이드 시 잠시 연결이 끊어집니다. 해당 구간 동안 명령어가 어떻게 처리되는지는 [커넥터가 오프라인일 때](/ko/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)를 참조하십시오.
 
-직접 차트 참조(`oci://`, URL 또는 로컬 아카이브나 디렉터리)로 설치한 경우에는 확인할 리포지토리가 없습니다. 대신 새 버전에서 `helm upgrade clicklink-connector <same-chart-reference>`를 다시 실행하십시오. 최신 CLI로 `init`를 다시 실행해도 원하는 상태로 수렴하지만, `init`에는 항상 진입점 중 하나가 필요합니다. 번들을 보관한 경우에는 `--handoff`를 사용하고, 문서화된 정리 후에는 `--force`와 함께 새 등록 토큰을 사용하십시오. 위의 `helm upgrade`가 일반적인 방법입니다([재실행 및 복구](#re-runs-and-recovery) 참조).
+직접 차트 참조(`oci://`, URL 또는 로컬 아카이브나 디렉터리)로 설치한 경우에는 확인할 리포지토리가 없습니다. 대신 새 버전에서 `helm upgrade clicklink-connector <same-chart-reference>`를 다시 실행하십시오. 최신 CLI로 `init`를 다시 실행해도 원하는 상태로 수렴하지만, 진입점이 필요합니다. 번들을 보관한 경우에는 `--handoff`를 사용하고, 문서화된 정리 후에는 `--force`와 함께 새 등록 토큰을 사용하십시오. 위의 `helm upgrade`가 일반적인 방법입니다([재실행 및 복구](#re-runs-and-recovery) 참조).
 
 ### Linux VM {#upgrades-linux-vm}
 
@@ -48,19 +48,19 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-exec
 
 ## 상태 {#health}
 
-각 데몬은 상태 확인 포트에서 `/livez` 엔드포인트를 제공합니다. 응답 본문의 JSON `status` 필드는 HTTP 상태 코드가 아닌 상태 신호이므로, `200`이 아닌 본문을 확인하십시오. Prometheus 메트릭은 동일한 포트의 `/metrics`에서 제공되며, 별도의 메트릭 포트는 없습니다. 두 대상의 기본 포트는 다음과 같습니다.
+각 데몬은 상태 확인 포트에서 `/livez` 엔드포인트를 제공합니다. 상태 신호는 HTTP 상태 코드가 아닌 응답 본문의 JSON `status` 필드입니다. Prometheus 메트릭은 동일한 포트의 `/metrics`에서 제공되며, 별도의 메트릭 포트는 없습니다. 두 대상의 기본 포트는 다음과 같습니다.
 
 | 구성 요소          | 상태 확인 포트 |
 | -------------- | -------- |
-| 스크레이퍼        | 8082     |
+| 스크레이퍼          | 8082     |
 | Troubleshooter | 8084     |
-| 실행기       | 8086     |
+| 실행기            | 8086     |
 
 실행기는 또한 `127.0.0.1:9999`에서 로컬 명령 API를 제공합니다. 자체 인증은 없으며 호스트나 파드 외부로 노출되지 않습니다. `clicklink clctl` 서비스 명령어가 로컬에서 이 API에 접근합니다.
 
 지원 세션이 활성화되면 gateway는 추가로 포트 8443에서 수신 대기합니다. VM에서는 자체 서명 TLS를 사용하며, Kubernetes에서는 `kubectl port-forward`를 통한 파드 로컬 HTTP 또는 TLS 종료 인그레스를 사용합니다.
 
-VM에서는 언제든지 전체 검사 모음을 실행할 수 있습니다.
+VM에서는 언제든지 전체 검사 모음을 실행하십시오.
 
 ```bash
 sudo clicklink clctl preflight
@@ -88,9 +88,7 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) 자격 증명 {#rotate-api-credentials}
 
-여기서 설명하는 관리형 모드 동작에는 [지원되는 빌드](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)가 필요합니다. 공개된 `v0.16.0`에는 `--managed`와 `--no-managed`가 모두 없습니다.
-
-ClickHouse 계정 담당 팀에 새 등록 토큰을 요청한 후, `--enroll` 및 `--force`를 지정하여 기존 `init` 명령을 다시 실행하십시오. `--force`는 기존 구성을 다시 준비하므로, 최초 설치 시 사용한 모든 대상별 플래그(`--target-namespace`, `--values` 및 모든 `--chart`, `--chart-repo`, `--chart-version` 미러 플래그)를 그대로 유지하십시오. 관리형 모드는 대체되는 구성에서 그대로 이어지므로 여기서 `--managed`는 선택 사항입니다. 기본 설치에서는 다음과 같습니다:
+계정 담당 팀에 새 등록 토큰을 요청한 후, `--enroll` 및 `--force`를 지정하여 기존 `init` 명령을 다시 실행하십시오. `--force`는 기존 구성을 다시 준비하므로, 최초 설치 시 사용한 모든 대상별 플래그(`--target-namespace`, `--values` 및 모든 `--chart`, `--chart-repo`, `--chart-version` 미러 플래그)를 그대로 유지하십시오. 관리형 모드는 대체되는 구성에서 그대로 이어지므로 여기서 `--managed`는 선택 사항입니다. 기본 설치에서는 다음과 같습니다:
 
 ```bash
 # Kubernetes, from your workstation
@@ -106,7 +104,7 @@ VM에서 `init`은 아직 실행되고 있지 않은 유닛만 활성화하고 �
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
 ```
 
-Kubernetes에서는 `init`이 교체된 `clicklink-hmac` 및 `clicklink-mtls` 시크릿을 미리 생성하며, 차트는 이를 렌더링하지 않습니다. 따라서 차트의 체크섬 annotation에도 이들 시크릿이 포함되지 않으며, 실행 중인 파드는 시작 시점의 자격 증명을 계속 사용합니다. 교체 후에는 모든 구성 요소를 다시 시작하십시오:
+Kubernetes에서는 `init`이 교체된 `clicklink-hmac` 및 `clicklink-mtls` 시크릿을 미리 생성하며, 차트는 이를 렌더링하지 않습니다. 차트의 체크섬 annotation에도 이들 시크릿이 포함되지 않으므로, 실행 중인 파드는 시작 시점의 자격 증명을 계속 사용합니다. 교체 후에는 모든 구성 요소를 다시 시작하십시오:
 
 ```bash
 kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
@@ -124,7 +122,7 @@ kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
 
 ### ClickHouse 사용자 {#rotate-clickhouse-users}
 
-직접 등록한 각 인스턴스에 대해 connector의 읽기 전용 사용자를 다시 프로비저닝합니다. Kubernetes에서는 워크스테이션에서 명령어를 실행하십시오. `--apply-ch-grants`는 재생성된 권한을 파드 내에서 다시 적용하여 새 자격 증명이 ClickHouse에 반영되도록 합니다. admin user에 password가 설정되어 있으면 `--ch-admin-password-stdin`을 추가하고 파이프로 전달하십시오:
+직접 등록한 각 인스턴스에 대해 connector의 읽기 전용 사용자를 다시 프로비저닝합니다. Kubernetes에서는 워크스테이션에서 명령어를 실행하십시오. `--apply-ch-grants`는 재생성된 권한 부여를 파드 내에서 다시 적용하여 새 자격 증명이 ClickHouse에 반영되도록 합니다. 관리자 user에 password가 설정되어 있으면 `--ch-admin-password-stdin`을 추가하고 파이프로 전달하십시오:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -142,7 +140,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --force
 ```
 
-VM에서는 admin password를 파이프로 전달하여 호스트에서 실행하십시오. VM에서는 `--ch-user-via cr`을 전달하지 않는 한 password가 필수입니다:
+VM에서는 관리자 password를 파이프로 전달하여 호스트에서 실행하십시오. 이 경우 `--ch-user-via cr`을 전달하지 않는 한 password가 필수입니다:
 
 ```bash
 printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -159,10 +157,6 @@ printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access pr
 
 ## 재실행 및 복구 {#re-runs-and-recovery}
 
-<Note>
-  공개된 `v0.16.0` CLI에는 `--managed`와 `--no-managed`가 모두 없습니다. 아래에 설명된 관리형 모드 유지 및 재정의 동작에는 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 포함된 빌드가 필요합니다. 복구 중에 해당 모드를 변경하기 전에 계정 담당 팀에 빌드를 확인하십시오.
-</Note>
-
 `init`은 재실행해도 동일한 상태로 수렴하므로, 먼저 같은 명령어를 다시 실행해 보십시오. `--force` 없이 실행하면 기존 `/etc/clicklink/config.yaml`(VM) 또는 `clicklink-values.yaml` 오버레이(Kubernetes)는 유지되고, 기존 클라이언트 키는 재사용됩니다. `init`은 자격 증명과 CA 체인을 원자적으로 덮어씁니다. 부분 실패 후 CLI가 출력하는 복구 명령어는 반복 실행해도 안전합니다.
 
 `--force`는 유지된 구성 또는 오버레이를 덮어쓰고, 클라이언트 키를 다시 생성하며, 아직 만료되지 않은 클라이언트 인증서를 대체합니다. 새 클러스터 UUID를 발급하지는 않으므로 connector의 아이덴티티는 유지됩니다. 대체된 구성의 관리형 모드 설정은 무인 재실행 시 그대로 유지되며, 터미널에서는 기본값으로 제시됩니다. 단, `--managed` 또는 `--no-managed`를 전달한 경우는 예외입니다.
@@ -175,7 +169,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 이는 VM용 형식입니다(root가 `/etc/clicklink`를 재작성하고 서비스를 관리합니다). Kubernetes에서는 CLI가 `--target helm`, `--target-namespace`, `--values`를 포함한 전체 형식을 출력하므로, 출력된 명령을 그대로 사용하세요.
 
-**커넥터 오프라인.** 커넥터가 중단되었거나 연결할 수 없는 동안에도 커넥터가 관리하는 서비스는 계속 실행됩니다. 클러스터의 ClickHouse Operator가 서비스를 유지하며, 실행기는 데이터 경로에 포함되지 않습니다. 라이프사이클 변경에는 실행기 연결이 필요하므로, 다시 연결될 때까지는 어떤 변경도 적용되지 않습니다. 재시작 시 실행기는 중지 시점에 진행 중이던 명령어를 자체 명령 데이터베이스에서 복구합니다. ClickHouse Cloud가 다시 전달하는 명령어는 두 번 실행되지 않고 기록된 결과로 응답합니다. 실패한 명령어만 다시 실행됩니다. 연결된 실행기가 없는 동안 라이프사이클 명령어에 어떤 일이 발생하는지는 [커넥터가 오프라인일 때](/ko/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)를 참조하십시오.
+**커넥터 오프라인.** 커넥터가 중단되었거나 연결할 수 없는 동안에도 커넥터가 관리하는 서비스는 계속 실행됩니다. 클러스터의 ClickHouse Operator가 서비스를 유지하며, 실행기는 데이터 경로에 포함되지 않습니다. 수명 주기 변경에는 실행기 연결이 필요하므로, 다시 연결될 때까지는 어떤 변경도 적용되지 않습니다. 재시작 시 실행기는 진행 중이던 명령어를 자체 명령 데이터베이스에서 복구합니다. ClickHouse Cloud가 다시 전달하는 명령어는 기록된 결과로 응답합니다. 실패한 명령어만 다시 실행됩니다. 연결된 실행기가 없는 동안의 수명 주기 명령어에 대해서는 [커넥터가 오프라인일 때](/ko/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)를 참조하십시오.
 
 ## 제거 {#uninstall}
 
@@ -185,7 +179,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 ### Linux VM {#uninstall-linux-vm}
 
-`uninstall.sh`는 릴리스 tarball에 포함되어 있습니다. 호스트에 추출된 tarball이 남아 있지 않으면 [수동 다운로드 및 검증](/ko/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)에 설명된 대로 tarball을 가져와 추출한 다음, 추출된 디렉터리에서 실행하십시오:
+`uninstall.sh`는 릴리스 tarball에 포함되어 있습니다. 호스트에 추출된 tarball이 남아 있지 않으면 tarball을 가져와 추출하십시오([수동 다운로드 및 검증](/ko/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification) 참조). 추출된 디렉터리에서 `uninstall.sh`를 실행하십시오:
 
 ```bash
 sudo ./uninstall.sh
@@ -204,7 +198,7 @@ sudo ./uninstall.sh
 sudo ./uninstall.sh --purge
 ```
 
-실행기의 클러스터 전체 grant는 호스트가 아니라 클러스터에 존재합니다. 관리형 서비스가 더 이상 남아 있지 않으면 클러스터 관리자 권한으로 이를 제거하십시오:
+실행기의 클러스터 전체 권한 부여는 호스트가 아니라 클러스터에 존재합니다. 관리형 서비스가 더 이상 남아 있지 않으면 클러스터 관리자 권한으로 이를 제거하십시오:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -214,7 +208,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n clicklink-system
 ```
 
-이 grant는 `clicklink-system` 네임스페이스도 생성했으므로, 다른 곳에서 사용하지 않는다면 삭제하십시오.
+이 권한 부여는 `clicklink-system` 네임스페이스도 생성했으므로, 다른 곳에서 사용하지 않는다면 삭제하십시오.
 
 ### Kubernetes {#uninstall-kubernetes}
 
@@ -223,7 +217,7 @@ CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
-실행기의 PersistentVolumeClaim에는 `helm.sh/resource-policy: keep` 어노테이션이 지정되어 있으므로, 제거(uninstall) 후에도 명령 데이터베이스와 서비스 레지스트리를 담은 채로 남아 있습니다. `init`이 생성한 시크릿, 플랫폼 승인 과정에서 기록된 플랫폼 번들 시크릿, 실행기가 유지 관리하는 서비스 레지스트리 ConfigMap도 차트 소유 리소스가 아니므로 제거 후에도 그대로 남습니다. 이러한 리소스는 직접 등록한 모든 인스턴스와 Troubleshooter를 프로비저닝한 모든 관리형 서비스의 액세스 시크릿 및 ServiceAccount 쌍(서비스 이름을 따서 명명됨)까지 포함하여 명시적으로 삭제하십시오. `--ignore-not-found`를 사용하면 최초 승인 이전의 플랫폼 번들 시크릿처럼 생성된 적이 없는 객체도 문제없이 처리됩니다:
+실행기의 PersistentVolumeClaim에는 `helm.sh/resource-policy: keep` 어노테이션이 지정되어 있으므로, 제거(uninstall) 후에도 명령 데이터베이스와 서비스 레지스트리를 담은 채로 남아 있습니다. `init`이 생성한 시크릿, `platform approve`가 기록한 플랫폼 번들 시크릿, 실행기가 유지 관리하는 서비스 레지스트리 ConfigMap도 차트 소유 리소스가 아니므로 제거 후에도 그대로 남습니다. 이러한 리소스는 명시적으로 삭제하십시오. 직접 등록한 모든 인스턴스와 Troubleshooter를 프로비저닝한 모든 관리형 서비스의 액세스 시크릿 및 ServiceAccount 쌍(서비스 이름을 따서 명명됨)도 포함하십시오. `--ignore-not-found`를 사용하면 최초 승인 이전의 플랫폼 번들 시크릿처럼 생성된 적이 없는 객체도 문제없이 처리됩니다:
 
 ```bash
 kubectl delete pvc -n "${CONNECTOR_NAMESPACE}" -l app.kubernetes.io/instance=clicklink-connector --ignore-not-found
@@ -242,7 +236,7 @@ for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
 done
 ```
 
-`init`은 차트가 아니라 실행기의 클러스터 전역 grant를 적용했습니다. 남아 있는 관리형 서비스가 없으면 클러스터 관리자 권한으로 해당 grant를 제거하십시오:
+`init`은 차트가 아니라 실행기의 클러스터 전체 권한 부여를 적용했습니다. 남아 있는 관리형 서비스가 없으면 클러스터 관리자 권한으로 해당 권한 부여를 제거하십시오:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -254,9 +248,7 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### 플랫폼 레이어 {#uninstall-platform-layer}
 
-공개된 `v0.16.0` CLI에는 `platform reset`을 포함한 `platform` 명령이 없습니다. 사용하기 전에 [제공 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하십시오.
-
-커넥터를 제거해도 플랫폼 레이어는 삭제되지 않습니다. 플랫폼 네임스페이스와 워크로드, `pcm-platform` RBAC, 승인을 통해 설치된 admission 객체는 클러스터에 그대로 남으며, 모든 관리형 서비스도 마찬가지입니다. 먼저 서비스를 삭제하십시오. [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오. 서비스가 없는 테스트 클러스터에서는 `clicklink clctl platform reset` 명령으로 플랫폼 릴리스를 제거할 수 있으며, 이때 남는 CustomResourceDefinition, RBAC, StorageClass는 직접 삭제해야 합니다. [테스트 클러스터 초기화](/ko/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster)를 참조하십시오. 테스트 클러스터가 아닌 환경에서는 플랫폼 레이어를 변경하기 전에 ClickHouse 계정 담당 팀과 삭제 계획을 협의하십시오.
+커넥터를 제거해도 플랫폼 레이어는 삭제되지 않습니다. 플랫폼 네임스페이스와 워크로드, `pcm-platform` RBAC, 승인을 통해 설치된 admission 객체는 클러스터에 그대로 남으며, 모든 관리형 서비스도 마찬가지입니다. 먼저 서비스를 삭제하십시오. [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오. 서비스가 없는 테스트 클러스터에서는 `clicklink clctl platform reset` 명령으로 플랫폼 릴리스를 제거할 수 있습니다. 이때 남는 CustomResourceDefinition, RBAC, StorageClass는 직접 삭제해야 합니다. [테스트 클러스터 초기화](/ko/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster)를 참조하십시오. 테스트 클러스터가 아닌 환경에서는 플랫폼 레이어를 변경하기 전에 계정 담당 팀과 삭제 계획을 협의하십시오.
 
 ### ClickHouse 사용자 {#uninstall-clickhouse-users}
 

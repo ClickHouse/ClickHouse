@@ -33,11 +33,11 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 Las versiones del chart son las etiquetas de versión sin la `v` inicial (el chart `X.Y.Z` corresponde a la etiqueta `vX.Y.Z`). El chart publicado ya apunta a la imagen de contenedor pública, por lo que las instalaciones y actualizaciones normales no requieren valores de imagen. Para inspeccionar los valores predeterminados del chart, ejecute `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. El executor se ejecuta como una única réplica con la estrategia `Recreate`, por lo que una actualización lo desconecta brevemente. Consulte [cuando el connector está sin conexión](/es/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) para saber qué ocurre con los comandos durante esa ventana.
 
-Una instalación desde una referencia directa al chart (`oci://`, una URL o un archivo o directorio local) no tiene ningún repositorio frente al que resolverla: en su lugar, vuelva a ejecutar `helm upgrade clicklink-connector <same-chart-reference>` con la nueva versión. Volver a ejecutar `init` con una CLI más reciente también permite alcanzar el estado deseado, pero `init` siempre requiere uno de sus puntos de entrada: `--handoff` si conservó el paquete, o un token de inscripción nuevo con `--force` tras la limpieza documentada. El `helm upgrade` anterior es el procedimiento habitual (consulte [repeticiones y recuperación](#re-runs-and-recovery)).
+Una instalación desde una referencia directa al chart (`oci://`, una URL o un archivo o directorio local) no tiene ningún repositorio frente al que resolverla. En su lugar, vuelva a ejecutar `helm upgrade clicklink-connector <same-chart-reference>` con la nueva versión. Volver a ejecutar `init` con una CLI más reciente también permite alcanzar el estado deseado, pero requiere un punto de entrada: `--handoff` si conservó el paquete, o un token de inscripción nuevo con `--force` tras la limpieza documentada. El `helm upgrade` anterior es el procedimiento habitual (consulte [repeticiones y recuperación](#re-runs-and-recovery)).
 
 ### Máquina virtual Linux {#upgrades-linux-vm}
 
-Vuelva a ejecutar el instalador en el host. Descargará y verificará la nueva versión del mismo modo que durante la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding). Hará una copia de seguridad del binario anterior, instalará las unidades de systemd actuales y conservará los patrones activos de redacción y el archivo de entorno. A continuación, reinicie los demonios:
+Vuelva a ejecutar el instalador en el host. Descargará y verificará la nueva versión igual que durante la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding). Hará una copia de seguridad del binario anterior, instalará las unidades de systemd actuales y conservará los patrones activos de redacción y el archivo de entorno. A continuación, reinicie los demonios:
 
 ```bash
 curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
@@ -48,7 +48,7 @@ Para cambiar a una versión específica en lugar de la más reciente, añada `--
 
 ## Estado de salud {#health}
 
-Cada demonio expone un endpoint `/livez` en su puerto de estado de salud. El campo JSON `status` del cuerpo de la respuesta indica el estado de salud, no el código de estado HTTP; por tanto, compruebe el cuerpo en lugar del `200`. Las métricas de Prometheus se exponen en `/metrics` en el mismo puerto; no hay un puerto de métricas separado. Puertos predeterminados en ambos destinos:
+Cada demonio expone un endpoint `/livez` en su puerto de estado de salud. El indicador de estado de salud es el campo JSON `status` del cuerpo de la respuesta, no el código de estado HTTP. Las métricas de Prometheus se exponen en `/metrics` en el mismo puerto; no hay un puerto de métricas separado. Puertos predeterminados en ambos destinos:
 
 | Componente                | Puerto de estado de salud |
 | ------------------------- | ------------------------- |
@@ -60,7 +60,7 @@ El executor también expone su API de comandos local en `127.0.0.1:9999`. No cue
 
 Cuando las sesiones de soporte están habilitadas, el gateway también escucha en el puerto 8443: TLS autofirmado en una VM, HTTP local al pod mediante `kubectl port-forward` o un Ingreso de Kubernetes con terminación TLS.
 
-En una VM, puede ejecutar el conjunto completo de comprobaciones en cualquier momento:
+En una VM, ejecute el conjunto completo de comprobaciones en cualquier momento:
 
 ```bash
 sudo clicklink clctl preflight
@@ -88,9 +88,7 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### Credenciales de API (HMAC) {#rotate-api-credentials}
 
-El comportamiento en modo administrado que se describe aquí requiere un [build compatible](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); la versión pública `v0.16.0` no incluye ni `--managed` ni `--no-managed`.
-
-Solicite un token de inscripción nuevo a su account team de ClickHouse y vuelva a ejecutar el comando `init` original con `--enroll` y `--force`. Conserve todos los indicadores específicos del destino de la primera instalación (`--target-namespace`, `--values` y cualquier indicador de mirror como `--chart`, `--chart-repo` o `--chart-version`), ya que `--force` vuelve a preparar la configuración conservada. El modo Managed se hereda de la configuración que se está reemplazando, por lo que `--managed` es opcional aquí. En una instalación predeterminada:
+Solicite un token de inscripción nuevo a su account team y vuelva a ejecutar el comando `init` original con `--enroll` y `--force`. Conserve todos los indicadores específicos del destino de la primera instalación (`--target-namespace`, `--values` y cualquier indicador de mirror como `--chart`, `--chart-repo` o `--chart-version`), ya que `--force` vuelve a preparar la configuración conservada. El modo Managed se hereda de la configuración que se está reemplazando, por lo que `--managed` es opcional aquí. En una instalación predeterminada:
 
 ```bash
 # Kubernetes, from your workstation
@@ -106,7 +104,7 @@ En una VM, `init` solo habilita e inicia las unidades que aún no están en ejec
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
 ```
 
-En Kubernetes, `init` crea de antemano los secretos `clicklink-hmac` y `clicklink-mtls` rotados; el chart no los genera. Por lo tanto, la anotación de suma de comprobación del chart no los incluye, y los pods en ejecución conservan las credenciales con las que se iniciaron. Reinicie todos los componentes después de la rotación:
+En Kubernetes, `init` crea de antemano los secretos `clicklink-hmac` y `clicklink-mtls` rotados; el chart no los genera. Su anotación de suma de comprobación no los incluye, por lo que los pods en ejecución conservan las credenciales con las que se iniciaron. Reinicie todos los componentes después de la rotación:
 
 ```bash
 kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
@@ -124,7 +122,7 @@ kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
 
 ### Usuarios de ClickHouse {#rotate-clickhouse-users}
 
-Vuelva a aprovisionar los usuarios de solo lectura del connector en cada instancia que haya registrado usted mismo. En Kubernetes, ejecute los comandos desde su estación de trabajo. `--apply-ch-grants` vuelve a aplicar los grants regenerados dentro del pod para que las nuevas credenciales lleguen a ClickHouse; si el usuario admin tiene una password, añada `--ch-admin-password-stdin` y canalícela:
+Vuelva a aprovisionar los usuarios de solo lectura del connector en cada instancia que haya registrado usted mismo. En Kubernetes, ejecute los comandos desde su estación de trabajo. `--apply-ch-grants` vuelve a aplicar los grants regenerados dentro del pod para que las nuevas credenciales lleguen a ClickHouse; si el usuario admin tiene una contraseña, añada `--ch-admin-password-stdin` y canalícela:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -142,7 +140,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --force
 ```
 
-En una VM, ejecútelos en el host canalizando la password del usuario admin; en una VM la password es obligatoria a menos que pase `--ch-user-via cr`:
+En una VM, ejecútelos en el host canalizando la contraseña del usuario admin; ahí la contraseña es obligatoria a menos que pase `--ch-user-via cr`:
 
 ```bash
 printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -159,10 +157,6 @@ La renovación es automática (consulta [certificados](#certificates)). Para sus
 
 ## Reejecuciones y recuperación {#re-runs-and-recovery}
 
-<Note>
-  La CLI pública `v0.16.0` no tiene ni `--managed` ni `--no-managed`. El comportamiento de conservación y sobrescritura del modo Managed que se describe a continuación requiere un build con [soporte de modo Managed](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); confirme su build con su account team antes de cambiar ese modo durante la recuperación.
-</Note>
-
 Las reejecuciones de `init` son convergentes, por lo que volver a ejecutar el mismo comando siempre es el primer paso. Sin `--force`, se conserva el archivo `/etc/clicklink/config.yaml` (VM) o la superposición `clicklink-values.yaml` (Kubernetes) existentes, y se reutiliza una clave de Client existente; `init` sobrescribe las credenciales y la cadena de la CA de forma atómica. Los comandos de recuperación que imprime la CLI tras un error parcial se pueden repetir sin problemas.
 
 `--force` sobrescribe la configuración o superposición conservada, regenera la clave de Client y reemplaza un certificado de Client no expirado. Nunca genera un UUID de cluster nuevo, por lo que la identidad del connector se conserva. La postura de modo Managed de la configuración reemplazada se mantiene en las reejecuciones desatendidas y se ofrece como valor predeterminado en un terminal, salvo que pase `--managed` o `--no-managed`.
@@ -175,7 +169,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 Esa es la variante para VM (root reescribe `/etc/clicklink` y administra los servicios). En Kubernetes, la CLI imprime el formulario completo, incluidos `--target helm`, `--target-namespace` y `--values`; use el comando impreso tal cual.
 
-**Connector sin conexión.** Mientras el connector está caído o inaccesible, los servicios que administra siguen funcionando. El ClickHouse Operator de su cluster los mantiene activos, y el executor no está en el data path. Los cambios de ciclo de vida requieren que el executor esté conectado, por lo que ninguno se aplica hasta que se reconecte. Al reiniciarse, el executor recupera de su base de datos de comandos aquellos que estaban en curso cuando se detuvo. Un comando que ClickHouse Cloud vuelve a entregar se responde con el resultado registrado en lugar de ejecutarse dos veces; solo se vuelve a ejecutar un comando fallido. Para saber qué ocurre con los comandos de ciclo de vida cuando no hay ningún executor conectado, consulte [cuando el connector está sin conexión](/es/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
+**Connector sin conexión.** Mientras el connector está caído o inaccesible, los servicios que administra siguen funcionando. El ClickHouse Operator de su cluster los mantiene activos, y el executor no está en el data path. Los cambios de ciclo de vida requieren que el executor esté conectado, por lo que ninguno se aplica hasta que se reconecte. Al reiniciarse, el executor recupera de su base de datos de comandos aquellos que estaban en curso. Un comando que ClickHouse Cloud vuelve a entregar se responde con el resultado registrado; solo se vuelve a ejecutar un comando fallido. Para los comandos de ciclo de vida cuando no hay ningún executor conectado, consulte [cuando el connector está sin conexión](/es/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
 
 ## Desinstalar {#uninstall}
 
@@ -185,7 +179,7 @@ Esa es la variante para VM (root reescribe `/etc/clicklink` y administra los ser
 
 ### Linux VM {#uninstall-linux-vm}
 
-`uninstall.sh` se incluye en el archivo tar de la versión. Si no queda ningún archivo tar extraído en el host, descargue y extraiga uno como se muestra en la [descarga y verificación manuales](/es/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification) y ejecútelo desde el directorio extraído:
+`uninstall.sh` se incluye en el archivo tar de la versión. Si no queda ningún archivo tar extraído en el host, descargue y extraiga uno (consulte la [descarga y verificación manuales](/es/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)). Ejecute `uninstall.sh` desde el directorio extraído:
 
 ```bash
 sudo ./uninstall.sh
@@ -223,7 +217,7 @@ CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
-El PersistentVolumeClaim del executor está anotado con `helm.sh/resource-policy: keep`, por lo que la desinstalación lo deja intacto junto con la base de datos de comandos y el registry de servicios que contiene. Los secretos creados por `init`, el secreto del paquete de plataforma que escribió la aprobación de plataforma y el ConfigMap del registry de servicios que mantiene el executor tampoco pertenecen al chart y sobreviven a la desinstalación. Elimínalos de forma explícita, incluido el par de secreto de acceso y ServiceAccount de cada instancia que hayas registrado tú mismo y de cada managed service para el que hayas aprovisionado el solucionador de problemas (con el nombre del service). `--ignore-not-found` contempla los objetos que nunca llegaron a crearse, como el secreto del paquete de plataforma antes de una primera aprobación:
+El PersistentVolumeClaim del executor está anotado con `helm.sh/resource-policy: keep`, por lo que la desinstalación lo deja intacto junto con la base de datos de comandos y el registry de servicios que contiene. Los secretos que creó `init`, el secreto del paquete de plataforma que escribió `platform approve` y el ConfigMap del registry de servicios que mantiene el executor tampoco pertenecen al chart y sobreviven a la desinstalación. Elimínalos de forma explícita. Incluye el par de secreto de acceso y ServiceAccount de cada instancia que hayas registrado tú mismo y de cada managed service para el que hayas aprovisionado el solucionador de problemas (con el nombre del service). `--ignore-not-found` contempla los objetos que nunca llegaron a crearse, como el secreto del paquete de plataforma antes de una primera aprobación:
 
 ```bash
 kubectl delete pvc -n "${CONNECTOR_NAMESPACE}" -l app.kubernetes.io/instance=clicklink-connector --ignore-not-found
@@ -254,9 +248,7 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### La capa de plataforma {#uninstall-platform-layer}
 
-La CLI pública `v0.16.0` no tiene el comando `platform`, incluido `platform reset`; confirma su [disponibilidad](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usarlo.
-
-Desinstalar el connector no elimina la capa de plataforma. Los espacios de nombres y los workloads de la plataforma, el RBAC `pcm-platform` y los objetos de admission que instalaron tus aprobaciones permanecen en el cluster, al igual que todos los managed services. Elimina primero los services; consulta [eliminar un service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service). En un cluster de pruebas sin services, `clicklink clctl platform reset` desinstala los releases de la plataforma, y las CustomResourceDefinitions, el RBAC y la clase de almacenamiento que quedan deben eliminarse manualmente; consulta [restablecer un cluster de pruebas](/es/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). Fuera de un cluster de pruebas, acuerda un plan de eliminación con tu account team de ClickHouse antes de modificar la capa de plataforma.
+Desinstalar el connector no elimina la capa de plataforma. Los espacios de nombres y los workloads de la plataforma, el RBAC `pcm-platform` y los objetos de admission que instalaron tus aprobaciones permanecen en el cluster, al igual que todos los managed services. Elimina primero los services; consulta [eliminar un service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service). En un cluster de pruebas sin services, `clicklink clctl platform reset` desinstala los releases de la plataforma. Las CustomResourceDefinitions, el RBAC y la clase de almacenamiento que quedan deben eliminarse manualmente; consulta [restablecer un cluster de pruebas](/es/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). Fuera de un cluster de pruebas, acuerda un plan de eliminación con tu account team antes de modificar la capa de plataforma.
 
 ### Usuarios de ClickHouse {#uninstall-clickhouse-users}
 

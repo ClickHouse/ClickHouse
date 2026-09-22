@@ -14,31 +14,29 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 ### 谁可以更改我的服务，以及何时更改？ {#who-can-change-my-services}
 
-托管模式的 enrollment、客户创建以及平台批准流程需要[由你的客户团队确认支持](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)；在公开发布的 `v0.16.0` 中尚不可用。
-
 在托管模式下，ClickHouse Cloud 只会更改你交由它管理的服务。任何能访问 executor 主机或 pod (容器组)  的人也可以通过本地 `clicklink clctl instances` 命令来操作这些服务；参见[服务生命周期](/zh/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)。ClickHouse Cloud 通过 executor 的出站通道下发生命周期命令：
 
 * 创建，依据你提交的定义
 * 扩缩容，调整为 ClickHouse Cloud 设定的固定副本数 (上限由 ClickHouse Cloud 设置控制，默认配置为 20)
 * 停止、启动和重启
-* 备份以及删除备份
+* Backup以及删除Backup
 * 删除
 
 版本升级和配置变更也以同样的方式下发，即重新应用服务定义；这类操作没有客户审批环节，也不涉及支持会话：executor 的通道与故障排查工具的通道相互独立，不受 session state 的限制。
 
-有两件事需要你来操作。创建服务需要你执行 `clicklink clctl executor prepare` 和 `clicklink clctl instances create`，因为只有你才能创建桶和 IAM role。集群中平台组件的更新同样要等你操作：executor 会暂存每个待批的支持包，你执行 `clicklink clctl platform approve` 批准已暂存的支持包，并为其签发一个有效期 2 小时的 token；参见[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)。
+有两件事需要你来操作。创建服务需要你执行 `clicklink clctl executor prepare` 和 `clicklink clctl instances create`，因为只有你才能创建桶和 IAM role。集群中平台组件的更新同样要等你操作。executor 会暂存每个待批的支持包；你执行 `clicklink clctl platform approve` 予以批准，并签发一个有效期 2 小时的标记。参见[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)。
 
-executor 的所有操作都通过 Kubernetes API 完成。其写入受 admission 策略限制，只能作用于带服务前缀 (默认为 `ns-`) 的命名空间，以及自身命名空间中的三项内容：续订自己的 token、服务 registry ConfigMap，以及在 Kubernetes 上存放于 `clicklink-mtls` Secret 中的已续订客户端证书。而它对同类资源的读取则是集群级的。已批准的平台更新以独立的 `pcm-platform` 身份运行，仅限于平台命名空间。你自行运维的集群绝不会被更改：scraper 和 故障排查工具均为只读。确切的作用域参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
+executor 的所有操作都通过 Kubernetes API 完成。admission 策略将其写入限制在带服务前缀 (默认为 `ns-`) 的命名空间内。它还允许在 executor 自身命名空间中进行三项写入：续订标记、服务 registry ConfigMap，以及在 Kubernetes 上存放于 `clicklink-mtls` Secret 中的已续订客户端证书。而它对同类资源的读取则是集群级的。已批准的平台更新以独立的 `pcm-platform` 身份运行，仅限于平台命名空间。你自行运维的集群绝不会被更改：scraper 和 故障排查工具均为只读。确切的作用域参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
 
 ### 哪些数据会离开我的环境？ {#what-data-leaves-my-environment}
 
 共有三个出口会向外发送数据，且全部通过连接器自行建立的出站连接：抓取路径、executor，以及你启用的 支持会话。
 
-抓取器会发送一组固定系统表的查询结果：默认包括 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。它还会发送健康与状态心跳、instance 与 backup 状态，以及连接器自身的 metrics。默认抓取集合不包含 `system.query_log`，因此除非你主动添加，否则原始 SQL 文本及其中的任何 literals 或个人数据都不会经由抓取路径外发。在 session 期间，默认的表 允许列表 包含 `system.processes`，它会显示正在执行的查询文本；如果这些内容必须保密，请将其从 允许列表 中移除。
+抓取器会发送一组固定系统表的查询结果：默认包括 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。它还会发送健康与状态心跳、服务 与 Backup 状态，以及连接器自身的 metrics。默认抓取集合不包含 `system.query_log`。除非你主动添加该表，否则原始 SQL 文本及其中的任何 literals 或个人数据都不会经由抓取路径外发。在 session 期间，默认的表 允许列表 包含 `system.processes`，它会显示正在执行的查询文本；如果这些内容必须保密，请将其从 允许列表 中移除。
 
-executor 会发送它执行的每条命令的结果，以及每个 managed service 的 state 和副本数量。其心跳会报告命令通道是否已连接、平台 component versions、最后应用的 bundle 摘要，以及最近一次平台更新的结果。在 VM 安装方式下，心跳还会报告其 Kubernetes 访问 bundle 处于 `ok`、`expiring` 还是 `expired` 状态。当你创建 service 时，`clicklink clctl instances create` 会发送你的环境 ID、云与区域、service name，以及其存储桶名称和 IAM role ARN。它会发送 default user 密码的两个哈希值；密码本身绝不会外发。
+executor 会发送它执行的每条命令的结果，以及每个 managed 服务 的 state 和副本数量。其心跳会报告命令通道是否已连接。它还会携带平台 组件 versions、最后应用的 支持包 摘要，以及最近一次平台更新的结果。在 VM 安装方式下，心跳还会报告其 Kubernetes 访问 支持包 处于 `ok`、`expiring`、`expired` 还是缺失状态。当你创建 服务 时，`clicklink clctl instances create` 会发送你的环境 ID、云与区域、服务 name，以及其存储桶名称和 IAM role ARN。它会发送 default user 密码的两个哈希值；密码本身绝不会外发。
 
-在 [支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions) 处于活跃状态时，故障排查工具 还会返回命令输出。该输出仅限于 允许列表 中的 ClickHouse 表和 只读 Kubernetes 视图，其中包括 pod (容器组) logs。输出在发送前会先经过 redaction (内置的 IP、credentials、令牌和密钥 patterns，以及你自定义的规则) 。你的表数据、backups 和 query history (`system.query_log`、`system.text_log`) 始终保留在你的环境中。确实会外发的有三类：
+在 [支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions) 处于活跃状态时，故障排查工具 还会返回命令输出。该输出仅限于 允许列表 中的 ClickHouse 表和 只读 Kubernetes 视图，其中包括 pod (容器组) logs。输出在发送前会先经过 redaction (内置的 IP、凭证、令牌和密钥 patterns，以及你自定义的规则) 。你的表数据、Backups 和 query history (`system.query_log`、`system.text_log`) 始终保留在你的环境中。确实会外发的有三类：
 
 * 允许列表 中的 metric-history 表 (`system.metric_log`、`system.asynchronous_metric_log`) 的行，会随每次抓取一同发送
 * 在 session 中，正在执行的查询文本可通过 `system.processes` 看到，除非你将其从 允许列表 中移除
@@ -48,13 +46,9 @@ executor 会发送它执行的每条命令的结果，以及每个 managed servi
 
 ### 如何阻止 ClickHouse 更改我的集群？ {#stop-managed-mode}
 
-<Note>
-  公开发布的 `v0.16.0` 命令行客户端既不支持 `--managed` 也不支持 `--no-managed`。下文提到的安装时选项需要使用带有[托管模式支持](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)的 build。停止已有的 executor 只需按照下文的 Helm 或 systemd 指令操作，无需上述任何 init 标志。
-</Note>
+以非托管模式运行。安装时向 `clicklink clctl init` 传入 `--no-managed`，或在出现提示时选择否。这样只会部署抓取器和故障排查工具，ClickHouse 便无法创建、更改或删除 服务。连接器仍会预置只读 ClickHouse 用户和 ServiceAccount；参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。
 
-以非托管模式运行。安装时向 `clicklink clctl init` 传入 `--no-managed`，或在出现提示时选择否。这样只会部署抓取器和故障排查工具，ClickHouse 便无法创建、更改或删除 service。连接器仍会预置只读 ClickHouse 用户和 ServiceAccount；参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。
-
-对于已完成的安装，请停止 executor 并撤销其集群管理员授权。要停止它，可在 Helm values 中设置 `executor.enabled: false` 并运行 `helm upgrade`，或在 VM 上运行 `systemctl disable --now clicklink-executor`。随后撤销该授权。最后一条命令会删除 ServiceAccount 本身；VM 安装对应的命名空间为 `clicklink-system`，Kubernetes 安装则为连接器所在的命名空间：
+对于已完成的安装，请停止 executor 并撤销其集群管理员权限。要停止它，可在 Helm values 中设置 `executor.enabled: false` 并运行 `helm upgrade`，或在 VM 上运行 `systemctl disable --now clicklink-executor`。随后撤销该授权。最后一条命令会删除 ServiceAccount 本身；VM 安装对应的命名空间为 `clicklink-system`，Kubernetes 安装则为连接器所在的命名空间：
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -64,7 +58,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
-ClickHouse 已创建的 service 会继续运行，但 ClickHouse Cloud 无法再对其进行扩缩容、升级、备份或删除，针对它们的待处理命令也会失败。除非你运行 `clicklink clctl platform approve`，否则平台更新将始终不会生效。该命令未执行时，平台 layer 会处于冻结状态，而托管模式的其余部分仍照常运行。
+ClickHouse 已创建的 服务 会继续运行，但 ClickHouse Cloud 无法再对其进行扩缩容、升级、Backup或删除，针对它们的待处理命令也会失败。平台更新同样会停止：其工作负载部分由 executor 应用，而 executor 已不再运行。
 
 ### 连接器离线时会发生什么？ {#connector-down}
 
@@ -76,15 +70,13 @@ ClickHouse 已创建的 service 会继续运行，但 ClickHouse Cloud 无法再
 
 诊断时，请检查各组件的 `/livez` 端点 (判断依据是 JSON 中的 `status` 字段，而非 HTTP 状态码) ，并运行 `clicklink clctl preflight` (在 VM 主机上需加 `sudo`) 。预检会一次性检查配置、连通性、ClickHouse 可达性、访问权限和磁盘。参见[运维](/zh/products/bring-your-own-cloud/connector/operations)；如果连接器持续处于不健康状态，请联系 ClickHouse 支持团队。
 
-### 删除某个 service 时会删除哪些内容？ {#what-is-deleted}
+### 删除某个 服务 时会删除哪些内容？ {#what-is-deleted}
 
-executor 会停止该 service、移除其 Kubernetes 资源，并删除其命名空间。命名空间被删除后，executor 即报告该 service 已终止。Kubernetes 之外的一切都会保留：数据桶、备份桶以及该 service 的 IAM role。executor 不持有你的桶或 IAM 的任何 credentials，因此不会改动 Kubernetes 之外的任何内容。
+executor 会停止该 服务、移除其 Kubernetes 资源，并删除其命名空间。命名空间被删除后，executor 即报告该 服务 已终止。Kubernetes 之外的一切都会保留：数据桶、Backup桶以及该 服务 的 IAM role。executor 不持有你的桶或 IAM 的任何 凭证，因此无法改动它们。
 
-其余部分需要你使用自己的 credentials 运行 `clicklink clctl executor teardown` 来清除。默认情况下，该命令会移除 IAM role，但保留数据和备份；如需删除它们，必须显式指定相应 flags。参见 [delete a service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
+其余部分需要你使用自己的 凭证 运行 `clicklink clctl executor teardown` 来清除。默认情况下，该命令会移除 IAM role，但保留数据和Backup；如需删除它们，必须显式指定相应 flags。参见 [delete a service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
 
 ### 我的 default 用户密码在哪里？ {#default-user-password}
-
-创建客户服务需要[匹配的 命令行客户端 与部署支持](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)，在公开发布的 `v0.16.0` 中不可用。
 
 `clicklink clctl executor prepare` 会在本地生成该密码，并且仅打印一次。如果你不使用 `--from-prepare`，而是通过各个单独的 flag 提交，则 `clicklink clctl instances create` 会从 `--default-user-password-file` 读取密码，或者生成并打印一个新密码。提交到 ClickHouse Cloud 的只有密码的哈希，因此连接器和 ClickHouse 都无法再次向你显示该密码。请在密码显示时及时保存。
 
@@ -93,7 +85,7 @@ executor 会停止该 service、移除其 Kubernetes 资源，并删除其命名
 按措施强度递增的顺序：
 
 1. **终止交互式访问。** 禁用会话：在 VM 主机上运行 `sudo clicklink clctl troubleshoot session disable`，或在 Kubernetes 中通过端口转发运行同一命令并添加 `--gateway-url` (具体命令请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)页面) 。没有活动会话时，即使仍处于连接状态，故障排查工具 也会拒绝执行所有命令。
-2. **停止托管模式。** 按照[如何阻止 ClickHouse 更改我的集群？](#stop-managed-mode)中的说明停止 executor 并撤销其 grant。平台更新本身就需要你逐项批准，因此不予批准即可使其停止。
+2. **停止托管模式。** 按照[如何阻止 ClickHouse 更改我的集群？](#stop-managed-mode)中的说明停止 executor 并撤销其 授权。平台更新本身就需要你的批准，因此不予批准即可使其停止。
 3. **阻止后续会话。** 清空 操作员 允许列表 (空允许列表会关闭 网关) ，或禁用 网关；在 VM 上，主机的 root 用户仍可进行本地会话管理。请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
 4. **切断与 ClickHouse Cloud 的连接。** 在网络层阻止到连接器端点的出站流量，或在实施网络策略的 CNI 中清空 `networkPolicy.allowEgressCIDRs`。连接器仅发起出站连接，因此 ClickHouse Cloud 没有可用于恢复连接的入站路径。对 ClickHouse 的本地读取仍会继续，直到停止或卸载工作负载；这才是彻底停止。
 5. **撤销凭据。** 删除 `pcm_scraper` 和 `pcm_troubleshooter` 这两个 ClickHouse 用户，并删除连接器的 Secrets (Kubernetes) 或 `/etc/clicklink` 下的文件 (VM) 。
@@ -108,13 +100,13 @@ executor 会停止该 service、移除其 Kubernetes 资源，并删除其命名
 * 如果你的连接器端点部署在边界内部，并由 private CA 签发证书，则 `--api-private-ca` (Kubernetes) 或 `api.tls.ca_file` (VM) 会将 enrollment bundle 的 CA 证书链追加到系统信任根中。
 * 在无法直连的情况下完成 enrollment 时，`init --handoff` 会读取通过带外方式获取的 bundle，`--no-auto-sign` 配合 `init --signed-cert` 则可在带外完成证书签发。
 * 在托管模式下，你的 services 和平台组件所用的 ClickHouse 镜像可在导入自有 registry 后从该 registry 获取；ClickHouse 会为你的环境注册该 registry。
-* 如果使用[支持平台批准的 build](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)，平台 bundle 可通过带外方式移交，并以文件形式传递给 `clicklink clctl platform approve --bundle`。公开的 `v0.16.0` 不包含 `platform` 命令。
+* 平台 bundle 可通过带外方式移交，并以文件形式传递给 `clicklink clctl platform approve --bundle`。
 
 参见 [私有镜像](/zh/products/bring-your-own-cloud/connector/configuration) 以及 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding) 中的隔离网络章节。连接器在 runtime 仍需有通往连接器端点的网络路径；否则 ClickHouse Cloud 收不到任何遥测数据，生命周期命令也无法抵达 executor。
 
 ### 如何审计支持会话？ {#support-session-auditing}
 
-会话期间执行的每条命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。每条记录都会记录 `submitted_by` (命令通道上的 Organization ID) 、命令文本、目标 instance、执行结果，以及被拒绝命令的 `blocked_by`。网关调用 (包括被拒绝的调用) 会以结构化的 `clctl.gateway` 行记录在 故障排查工具 自身的日志中，并归属于由令牌验证的操作员邮箱地址，绝不采用自行申报的姓名。VM 上的本地会话变更会将发起调用的主机用户记录为 `/var/lib/clicklink/session.json` 中的 `enabled_by`。
+会话期间执行的每条命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。每条记录都会记录 `submitted_by` (命令通道上的 Organization ID) 、命令文本、目标 instance、执行结果，以及被拒绝命令的 `blocked_by`。网关调用 (包括被拒绝的调用) 会以结构化的 `clctl.gateway` 行记录在 故障排查工具 自身的日志中。它们归属于由标记验证的操作员邮箱地址，绝不采用自行申报的姓名。VM 上的本地会话变更会将发起调用的主机用户记录为 `/var/lib/clicklink/session.json` 中的 `enabled_by`。
 
 会话设有时限 (默认 4 小时，最长 24 小时) 。每次启用都会记录启用者、到期时间及可选原因，`clicklink clctl troubleshoot session status` 会显示这些信息。
 

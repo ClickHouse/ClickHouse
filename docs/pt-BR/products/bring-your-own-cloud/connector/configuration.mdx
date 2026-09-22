@@ -1,8 +1,8 @@
 ---
 title: 'Configuração'
 sidebarTitle: 'Configuração'
-description: 'Configure o ClickHouse Connector: modo gerenciado, instâncias do ClickHouse, listas de permissões de operadores, políticas de rede, redação, espelhos privados e armazenamento'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'conector', 'configuração', 'modo gerenciado']
+description: 'Configure o ClickHouse connector: modo managed, instâncias do ClickHouse, listas de permissões de operadores, políticas de rede, redação, espelhos privados e armazenamento'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuração', 'modo managed']
 doc_type: 'guide'
 ---
 
@@ -10,7 +10,7 @@ import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBa
 
 <PrivatePreviewBadge />
 
-Esta página aborda as alterações de configuração que você provavelmente fará após instalar o conector. Para ver todas as chaves, seus valores padrão e significados, consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration); para flags de comando, consulte a [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli). Criar, escalar e excluir serviços não é configuração; consulte [serviços gerenciados](/pt-BR/products/bring-your-own-cloud/connector/managed-services).
+Esta página aborda as alterações de configuração que você provavelmente fará após instalar o connector. Todas as chaves, com seus valores padrão e significados, estão na [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration); as flags de comando estão na [referência da CLI](/pt-BR/products/bring-your-own-cloud/connector/reference/cli). Criar, escalar e excluir serviços é abordado em [serviços gerenciados](/pt-BR/products/bring-your-own-cloud/connector/managed-services).
 
 ## Superfícies de configuração {#configuration-surfaces}
 
@@ -58,21 +58,17 @@ O conector tem uma superfície de configuração para cada destino de instalaç�
   </Tab>
 </Tabs>
 
-## Modo gerenciado {#managed-mode}
+## modo managed {#managed-mode}
 
-<Note>
-  A CLI pública `v0.16.0` não possui nem `--managed` nem `--no-managed`. Antes de usar qualquer uma dessas flags para alterar a configuração, confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) e obtenha a compilação correspondente com sua account team.
-</Note>
+O modo managed executa o executor, que aplica ao seu cluster o lifecycle de serviço conduzido pelo ClickHouse Cloud. O `init` o ativa na inscrição e preenche a identity do cluster (consulte [habilitar modo managed](/pt-BR/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)). As keys abaixo são as que você talvez queira revisar depois. Para alterar a postura, execute o `init` novamente com `--force` e `--managed` ou `--no-managed`. Como em toda execução do `init`, é preciso um entry point: `--handoff`, caso você tenha guardado o pacote, ou `--enroll` com um token novo (consulte [novas execuções e recovery](/pt-BR/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)).
 
-O modo gerenciado executa o executor, que aplica ao seu cluster o ciclo de vida de serviço conduzido pelo ClickHouse Cloud. O `init` o ativa no momento da inscrição e preenche a identidade do cluster (consulte [habilitar o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); as chaves abaixo são as que você talvez precise revisitar depois. Para alterar a postura configurada, execute novamente o `init` com `--force` e `--managed` ou `--no-managed`. Como toda execução do `init`, esta precisa de um entry point: `--handoff`, caso você tenha mantido o pacote, ou `--enroll` com um token novo, conforme descrito em [reexecuções e recuperação](/pt-BR/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
-
-Em uma VM, o `--no-managed` desativa o executor na configuração, mas não interrompe nem desabilita um systemd unit já em execução. Interrompa-o explicitamente antes de alterar a configuração:
+Em uma VM, `--no-managed` desabilita o executor na configuração, mas não interrompe nem desabilita um systemd unit em execução. Pare-o antes de alterar a configuração:
 
 ```bash
 sudo systemctl disable --now clicklink-executor
 ```
 
-No Kubernetes, definir `executor.enabled: false` nos values e aplicar a alteração com `helm upgrade` remove a Implantação do executor. Em ambos os destinos, o grant no cluster permanece até que você o remova; siga [interromper o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) para remover também esse acesso.
+No Kubernetes, defina `executor.enabled: false` nos values e aplique com `helm upgrade` para remover a Implantação do executor. Em ambos os targets, a concessão no cluster permanece até que você a remova; consulte [interromper o modo managed](/pt-BR/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode).
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -112,7 +108,7 @@ No Kubernetes, definir `executor.enabled: false` nos values e aplicar a alteraç
       platformBundleSecret: clicklink-platform-bundle
     ```
 
-    * **`cluster.namespacePrefix`** é compartilhado por todos os componentes e é o prefixo ao qual o grant do executor o restringe. Alterá-lo após a instalação exige executar o grant novamente.
+    * **`cluster.namespacePrefix`** é compartilhado por todos os componentes e é o prefixo ao qual o grant do executor o restringe. Alterá-lo após a instalação significa executar o grant novamente.
     * **`executor.cluster`** é exatamente um cluster: `name`, `region`, `accountId` e `inCluster: true`, o que faz o executor se autenticar como o ServiceAccount do pod do Kubernetes. As demais chaves são repassadas ao executor literalmente em snake&#95;case, como `s3_storage`.
     * **`executor.serviceAccount`** permanece com `create: false`: o `init` concede acesso cluster-wide ao ServiceAccount `pcm-executor` no espaço de nomes do connector, e o chart vincula-se a ele em vez de criar um novo sem vínculo.
     * **`executor.persistence`** dá suporte a `/var/lib/clicklink`, onde o executor mantém seu banco de dados de comandos e o registry de serviços; consulte [armazenamento](#storage).
@@ -149,7 +145,7 @@ No Kubernetes, definir `executor.enabled: false` nos values e aplicar a alteraç
         health_port: 8086
     ```
 
-    * **`namespace_prefix`** é uma chave de nível superior compartilhada por todos os componentes e é o prefixo ao qual o grant do executor o restringe. Alterá-la após a instalação exige executar o grant novamente.
+    * **`namespace_prefix`** é uma chave de nível superior compartilhada por todos os componentes e é o prefixo ao qual o grant do executor o restringe. Alterá-la após a instalação significa executar o grant novamente.
     * **`executor.cluster`** é exatamente um cluster. O executor se autentica com o pacote de acesso cluster-wide gerado pelo `init` em `/etc/clicklink/access/executor/_cluster`.
     * **`poll_interval`** define com que frequência o executor tenta novamente os comandos que registrou, mas não conseguiu concluir; **`sync_interval`** define com que frequência ele reconcilia o state dos serviços managed com o cluster.
     * **`api_port`** é a API local de comandos do executor. Ela faz bind somente na interface de loopback e não possui authentication própria, e é por isso que os comandos de serviço `clicklink clctl` são executados no host.
@@ -166,11 +162,11 @@ No Kubernetes, definir `executor.enabled: false` nos values e aplicar a alteraç
 
 ## Adicionando ou alterando instâncias do ClickHouse {#clickhouse-instances}
 
-Os serviços criados pelo executor se registram automaticamente, portanto, no modo gerenciado, você nunca os adiciona aqui. Uma implantação separada do connector, executando sem o executor, monitora o ClickHouse que você mesmo executa; passe `--ch-user-suffix` no `init` dela quando as duas implantações compartilharem uma instância. Esta seção se aplica a essa implantação. Cada entrada em `instances` nomeia um endpoint de protocolo nativo do ClickHouse do qual o connector lê: `host`, `port`, `database`, `secure`, `cluster` e, no Kubernetes, `namespace`; `max_open_conns` e `max_idle_conns` limitam o connection pool. As credenciais nunca ficam na configuração; cada componente obtém seu usuário read-only do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
+Os serviços criados pelo executor se registram automaticamente, portanto, no modo gerenciado, você nunca os adiciona aqui. Esta seção se aplica a uma implantação separada do connector, executando sem o executor, que monitora o ClickHouse que você mesmo executa. Passe `--ch-user-suffix` no `init` dela quando as duas implantações compartilharem uma instância. Cada entrada em `instances` nomeia um endpoint de protocolo nativo do ClickHouse do qual o connector lê: `host`, `port`, `database`, `secure`, `cluster` e, no Kubernetes, `namespace`. `max_open_conns` e `max_idle_conns` limitam o connection pool. As credenciais nunca ficam na configuração; cada componente obtém seu usuário read-only do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
-    Adicione a instância ao map `instances` de nível superior em `clicklink-values.yaml` (os mesmos campos do registro da VM) e adicione o respectivo espaço de nomes a `networkPolicy.clickhouseNamespaces`, correspondente ao label `kubernetes.io/metadata.name` do espaço de nomes. O chart renderiza o map no ConfigMap `clicklink-instance-registry` que ambos os daemons leem. Isso funciona apenas enquanto `executor.enabled` for `false`; com o executor ativo, a renderização falha porque o executor é o proprietário desse ConfigMap.
+    Adicione a instância ao map `instances` de nível superior em `clicklink-values.yaml` (os mesmos campos do registro da VM). Adicione o respectivo espaço de nomes a `networkPolicy.clickhouseNamespaces`, correspondente ao label `kubernetes.io/metadata.name` do espaço de nomes. O chart renderiza o map no ConfigMap `clicklink-instance-registry` que ambos os daemons leem. Isso funciona apenas enquanto `executor.enabled` for `false`; com o executor ativo, a renderização falha porque o executor é o proprietário desse ConfigMap.
 
     ```yaml
     instances:
@@ -187,10 +183,10 @@ Os serviços criados pelo executor se registram automaticamente, portanto, no mo
         - "clickhouse"
     ```
 
-    Provisione acesso somente leitura para cada componente a partir da sua estação de trabalho. `--apply-ch-grants` aplica as permissões geradas do ClickHouse no pod usando `kubectl exec`; sem essa opção, o comando cria apenas os recursos do Kubernetes e deixa `ch-grants.sql` no disco para que você o aplique. Se o usuário administrador tiver senha, adicione `--ch-admin-password-stdin` e forneça-a por pipe.
+    Provisione acesso read-only para cada componente a partir da sua estação de trabalho. `--apply-ch-grants` aplica as permissões geradas do ClickHouse no pod usando `kubectl exec`; sem essa opção, o comando cria apenas os recursos do Kubernetes e deixa `ch-grants.sql` no disco para que você o aplique. Se o usuário administrador tiver senha, adicione `--ch-admin-password-stdin` e forneça-a por pipe.
 
     ```bash
-    CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do conector escolhido durante a inicialização
+    CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do connector escolhido durante a inicialização
     clicklink clctl scraper access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance analytics --instance-namespace clickhouse \
@@ -233,7 +229,7 @@ Os serviços criados pelo executor se registram automaticamente, portanto, no mo
         cluster: "default"
     ```
 
-    Em seguida, provisione o acesso para cada componente no host como root. Em uma VM, a senha do administrador é obrigatória, a menos que você use `--ch-user-via cr`; forneça-a por pipe com `--ch-admin-password-stdin`. Cada comando aplica as permissões do ClickHouse e reinicia o respectivo daemon (omita a reinicialização com `--skip-restart`):
+    Em seguida, provisione o acesso para cada componente no host como root. A senha do administrador é obrigatória, a menos que você use `--ch-user-via cr`; forneça-a por pipe com `--ch-admin-password-stdin`. Cada comando aplica as permissões do ClickHouse e reinicia o respectivo daemon (omita a reinicialização com `--skip-restart`):
 
     ```bash
     printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
@@ -250,7 +246,7 @@ Os serviços criados pelo executor se registram automaticamente, portanto, no mo
 
 ## Lista de permissões de operadores {#operator-allowlist}
 
-Uma lista de permissões de endereços de e-mail de operadores controla as sessões gerenciadas pelo gateway: cada solicitação ao gateway de sessão deve incluir um token de ID OIDC de curta duração cujo e-mail atestado conste na lista. Uma lista de permissões vazia fecha o gateway, impedindo que qualquer pessoa abra uma sessão por meio dele. Em uma VM, o usuário root no host também pode gerenciar sessões diretamente pelo arquivo de sessão local; a lista de permissões controla apenas o acesso pelo gateway. Consulte [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.
+Uma lista de permissões de endereços de e-mail de operadores controla as sessões gerenciadas pelo gateway. Cada solicitação ao gateway de sessão deve incluir um token de ID OIDC de curta duração cujo e-mail atestado conste na lista. Uma lista de permissões vazia fecha o gateway. Em uma VM, o usuário root no host também pode gerenciar sessões diretamente pelo arquivo de sessão local; a lista de permissões controla apenas o acesso pelo gateway. Consulte [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.
 
 <Tabs>
   <Tab title="Kubernetes" id="allowlist-kubernetes">
@@ -280,7 +276,7 @@ Uma lista de permissões de endereços de e-mail de operadores controla as sess�
 
 ## Política de rede e egress {#network-policy}
 
-No Kubernetes, o chart inclui uma NetworkPolicy de negação padrão com uma lista de permissões de egress. Objetos NetworkPolicy só entram em vigor quando o seu CNI os aplica. Com um CNI que aplica essas regras, apenas o DNS do cluster e os espaços de nomes do ClickHouse Service ficam acessíveis até que ambas as listas de CIDRs sejam preenchidas. Até lá, o conector não tem egress para o seu conector endpoint nem para o Kubernetes API server. Por isso, o `init` só prepara a policy como enabled quando conhece os CIDRs por trás do seu conector endpoint.
+No Kubernetes, o chart inclui uma NetworkPolicy de negação padrão com uma lista de permissões de egress. Objetos NetworkPolicy só entram em vigor quando o seu CNI os aplica. Com um CNI que aplica essas regras, apenas o DNS do cluster e os espaços de nomes do ClickHouse Service ficam acessíveis até que ambas as listas de CIDRs sejam preenchidas. Até lá, o connector não tem egress para o seu connector endpoint nem para o Kubernetes API server. O `init` só prepara a policy como enabled quando conhece os CIDRs por trás do seu connector endpoint.
 
 ```yaml
 networkPolicy:
@@ -304,8 +300,8 @@ networkPolicy:
 
 As duas listas de CIDR vêm de lugares diferentes:
 
-* **`allowEgressCIDRs`** cabe a você fornecer: são os intervalos por trás do seu conector endpoint, informados na instalação com `--egress-cidrs` ou no prompt. Todos os componentes precisam deles para alcançar o seu conector endpoint. No modo gerenciado, quando os charts da plataforma ficam no Amazon ECR, adicione também os intervalos do ECR e do STS da sua region (ou o intervalo do seu mirror); sem eles, o download dos charts pelo executor falha sob a policy.
-* **`apiserverCIDRs`** é derivado pelo `init`, no modo gerenciado, a partir da VPC do EKS cluster (`eks:DescribeCluster` e `ec2:DescribeVpcs`). Todos os componentes emitem requisições de token do Kubernetes e o executor opera os serviços pela API, portanto, sob um CNI que aplica as regras, todos ficam bloqueados até que ela seja definida. Quando o lookup falha, o `init` emite um aviso e deixa a lista vazia para que você a preencha com os blocos CIDR da sua VPC.
+* **`allowEgressCIDRs`** cabe a você fornecer: são os intervalos por trás do seu connector endpoint, informados na instalação com `--egress-cidrs` ou no prompt. Todos os componentes precisam deles para alcançar o seu connector endpoint. No modo gerenciado, quando os charts da plataforma ficam no Amazon ECR, adicione os intervalos do ECR e do STS da sua region (ou o intervalo do seu mirror). Sem eles, o download dos charts pelo executor falha sob a policy.
+* **`apiserverCIDRs`** é derivado pelo `init`, no modo gerenciado, a partir da VPC do EKS cluster (`eks:DescribeCluster` e `ec2:DescribeVpcs`). Todos os componentes emitem requisições de token do Kubernetes e o executor opera os serviços pela API, portanto, sob um CNI que aplica as regras, todos ficam bloqueados até que ela seja definida. Se o lookup falhar, o `init` emite um aviso e deixa a lista vazia para que você a preencha com os blocos CIDR da sua VPC.
 
 Os espaços de nomes de serviço são selecionados de duas maneiras. Os espaços de nomes criados pelo executor recebem o rótulo `clicklink.clickhouse.com/managed-by: executor`, e a policy os admite por esse rótulo, de modo que uma instalação gerenciada pode deixar `clickhouseNamespaces` vazio. Somente os espaços de nomes criados fora do executor, para o ClickHouse que você mesmo executa, precisam ser listados pelo nome.
 
@@ -326,7 +322,7 @@ Restam duas chaves de entrada: `metricsScrapeSelector` restringe a entrada de sc
 
 ## Padrões de redação {#redaction-patterns}
 
-O solucionador de problemas redige sua saída antes que ela saia do seu ambiente. Os padrões integrados abrangem `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` e `connection-string-credentials`. Você pode adicionar seus próprios padrões em um arquivo YAML. Eles são executados primeiro, na ordem em que aparecem no arquivo, seguidos pelos padrões integrados; uma entrada que reutiliza o `name` de um padrão integrado o substitui.
+O solucionador de problemas redige sua saída antes que ela saia do seu ambiente. Os padrões integrados abrangem `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` e `connection-string-credentials`. Adicione seus próprios padrões em um arquivo YAML. Eles são executados primeiro, na ordem em que aparecem no arquivo, seguidos pelos padrões integrados; uma entrada que reutiliza o `name` de um padrão integrado o substitui.
 
 Cada padrão aceita `name` (obrigatório, único), `regex` (obrigatório, sintaxe RE2 do Go), `replace` (o padrão é `[REDACTED]`, com suporte a referências de captura `$1`) e `case_insensitive` (o padrão é `false`):
 
@@ -343,7 +339,7 @@ patterns:
     replace: '[REDACTED:ip]'
 ```
 
-Em uma VM, o arquivo é `/etc/clicklink/redaction-patterns.yaml`. O instalador o inicializa com um conjunto inicial de padrões ativos (API keys de terceiros, AWS secret keys e assim por diante). Reduza ou amplie o conjunto como preferir; o instalador preserva sua versão durante os upgrades. No Kubernetes, coloque o YAML em um ConfigMap com a chave `redaction-patterns.yaml` e defina `troubleshooter.redaction.patternsConfigMap` como o nome dele; o chart o monta no mesmo caminho.
+Em uma VM, o arquivo é `/etc/clicklink/redaction-patterns.yaml`. O instalador o inicializa com um conjunto inicial de padrões ativos (API keys de terceiros, AWS secret keys e assim por diante). Reduza ou amplie o conjunto; o instalador preserva sua versão durante os upgrades. No Kubernetes, coloque o YAML em um ConfigMap com a chave `redaction-patterns.yaml` e defina `troubleshooter.redaction.patternsConfigMap` como o nome dele; o chart o monta no mesmo caminho.
 
 <Warning>
   O solucionador de problemas se recusa a iniciar se houver um arquivo de padrões inválido e registra nos logs a entrada problemática. Um arquivo configurado, mas ausente, apenas gera um aviso nos logs e utiliza os padrões integrados. `clicklink clctl preflight` valida o arquivo; portanto, execute-o antes de reiniciar o daemon.
@@ -368,8 +364,6 @@ image:
 ```
 
 Para instalar o próprio chart a partir de um espelho, `init` aceita `--chart` como o nome de um chart resolvido a partir de `--chart-repo` ou como uma referência `oci://` direta, uma URL, um arquivo compactado local ou um diretório local. Por padrão, `--chart-version` usa a própria versão da CLI, para que o binário e o chart sejam atualizados juntos.
-
-O exemplo de modo gerenciado abaixo requer uma compilação com `--managed`, que a versão pública `v0.16.0` não possui. Confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usá-lo; espelhar o lançamento público não adiciona esse suporte.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \
@@ -405,7 +399,7 @@ Quando o endpoint do connector estiver por trás de uma CA privada dentro da sua
   </Tab>
 
   <Tab title="VM Linux" id="storage-vm">
-    O scraper acumula métricas em `/var/lib/clicklink/buffer` para garantir a entrega at-least-once enquanto o endpoint do seu conector estiver inacessível. Ele retém até 168 horas ou 1024 MB de dados e faz o upload a uma taxa limitada a 1 MB/s por padrão:
+    O scraper acumula métricas em `/var/lib/clicklink/buffer` para garantir a entrega at-least-once enquanto o endpoint do seu connector estiver inacessível. Por padrão, ele retém até 168 horas ou 1024 MB de dados e faz o upload a até 1 MB/s:
 
     ```yaml
     scraper:

@@ -14,9 +14,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 ### 誰が、いつサービスを変更できますか？ {#who-can-change-my-services}
 
-managed モードの登録、顧客による作成、プラットフォーム承認の各ワークフローには、[account team による確認済みのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要です。これらは公開版の `v0.16.0` では使用不可です。
-
-managed モードでは、ClickHouse Cloud は管理を委任されたサービスのみを変更します。executor ホストまたは ポッド にアクセスできるユーザーであれば、ローカルの `clicklink clctl instances` コマンドで操作することも可能です。[サービスライフサイクル](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)を参照してください。ClickHouse Cloud は、executor のアウトバウンドチャネルを介してライフサイクルコマンドを送信します:
+managed モードでは、ClickHouse Cloud はマネージドサービスのみを変更します。executor ホストまたは ポッド にアクセスできるユーザーであれば、ローカルの `clicklink clctl instances` コマンドで操作することも可能です。[サービスライフサイクル](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)を参照してください。ClickHouse Cloud は、executor のアウトバウンドチャネルを介してライフサイクルコマンドを送信します:
 
 * create (送信されたサービス定義に基づく)
 * scale (ClickHouse Cloud が指定する固定のレプリカ数へ。ClickHouse Cloud の設定による上限があり、デフォルト設定では 20)
@@ -26,17 +24,17 @@ managed モードでは、ClickHouse Cloud は管理を委任されたサービ�
 
 バージョンのアップグレードや設定変更も、サービス定義の再適用として同じ経路で届きます。これらに顧客による承認ステップはありません。サポートセッション は関与しません: executor のチャネルはトラブルシューターのチャネルとは別であり、セッション状態による制御は受けません。
 
-一方、ユーザーの操作を待つものが 2 つあります。1 つはサービスの作成で、`clicklink clctl executor prepare` と `clicklink clctl instances create` の実行が必要です。バケットと IAM role を作成できるのはユーザーだけだからです。もう 1 つはクラスター内のプラットフォームコンポーネントの更新です: executor が提案された各バンドルをステージングし、`clicklink clctl platform approve` によってステージング済みバンドルが承認され、そのための 2 時間有効なトークンが発行されます。[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)を参照してください。
+一方、ユーザーの操作を待つものが 2 つあります。1 つはサービスの作成で、`clicklink clctl executor prepare` と `clicklink clctl instances create` の実行が必要です。バケットと IAM role を作成できるのはユーザーだけだからです。もう 1 つはクラスター内のプラットフォームコンポーネントの更新です。executor が提案された各バンドルをステージングし、`clicklink clctl platform approve` によってそれが承認され、2 時間有効なトークンが発行されます。[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)を参照してください。
 
-executor の操作はすべて Kubernetes API を経由します。書き込みは admission ポリシーによって、サービスプレフィックス (デフォルトでは `ns-`) を持つネームスペースに限定され、加えて自身のネームスペース内の 3 つ、すなわちトークンの更新、サービスレジストリの ConfigMap、そして Kubernetes における `clicklink-mtls` Secret 内の更新されたクライアント証明書に限定されます。一方、同じリソースファミリーに対する読み取りはクラスター全体に及びます。承認されたプラットフォーム更新は、プラットフォームネームスペースに限定された別の `pcm-platform` identity として実行されます。ユーザー自身が運用するクラスターが変更されることは一切ありません: scraper とトラブルシューターは読み取り専用です。正確なスコープについては[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページを参照してください。
+executor の操作はすべて Kubernetes API を経由します。admission ポリシーは、書き込みをサービスプレフィックス (デフォルトでは `ns-`) を持つネームスペースに限定します。加えて、executor 自身のネームスペース内では 3 つの書き込み、すなわちトークンの更新、サービスレジストリの ConfigMap、そして Kubernetes における `clicklink-mtls` Secret 内の更新されたクライアント証明書が許可されます。一方、同じリソースファミリーに対する読み取りはクラスター全体に及びます。承認されたプラットフォーム更新は、プラットフォームネームスペースに限定された別の `pcm-platform` identity として実行されます。ユーザー自身が運用するクラスターが変更されることは一切ありません: scraper とトラブルシューターは読み取り専用です。正確なスコープについては[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページを参照してください。
 
 ### 環境から外部に出るデータは何ですか？ {#what-data-leaves-my-environment}
 
 データが外部に出る経路は 3 つあり、いずれもコネクタ自身が開くアウトバウンド接続を経由します。スクレイプ経路、executor、そして有効化したサポートセッションです。
 
-scraper は、デフォルトでは固定されたシステムテーブル群 (`metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings`) の結果を送信します。あわせて、ヘルスおよびステータスのハートビート、インスタンスとバックアップの状態、コネクタ自身のメトリクスも送信します。デフォルトのスクレイプ対象に `system.query_log` は含まれないため、生の SQL テキストやその中のリテラル、個人データが、明示的に追加しない限りスクレイプ経路から外部に出ることはありません。セッション中は、デフォルトのテーブル許可リストに `system.processes` が含まれており、実行中のクエリテキストが表示されます。これを秘匿する必要がある場合は、許可リストから削除してください。
+scraper は、デフォルトでは固定されたシステムテーブル群 (`metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings`) の結果を送信します。あわせて、ヘルスおよびステータスのハートビート、サービスとバックアップの状態、コネクタ自身のメトリクスも送信します。デフォルトのスクレイプ対象に `system.query_log` は含まれません。生の SQL テキストやその中のリテラル、個人データが、そのテーブルを明示的に追加しない限りスクレイプ経路から外部に出ることはありません。セッション中は、デフォルトのテーブル許可リストに `system.processes` が含まれており、実行中のクエリテキストが表示されます。これを秘匿する必要がある場合は、許可リストから削除してください。
 
-executor は、実行した各コマンドの結果と、各マネージドサービスの状態およびレプリカ数を送信します。そのハートビートでは、コマンドチャネルが接続されているかどうか、プラットフォームのコンポーネントバージョン、最後に適用したバンドルのダイジェスト、最後のプラットフォーム更新の結果が報告されます。VM インストールの場合は、Kubernetes アクセスバンドルが `ok`、`expiring`、`expired` のいずれであるかもハートビートで報告されます。サービスを作成すると、`clicklink clctl instances create` が環境 ID、クラウドとリージョン、サービス名、バケット名、IAM role ARN を送信します。また、デフォルトユーザーのパスワードのハッシュを 2 つ送信しますが、パスワード自体が外部に出ることはありません。
+executor は、実行した各コマンドの結果と、各マネージドサービスの状態およびレプリカ数を送信します。そのハートビートでは、コマンドチャネルが接続されているかどうかが報告されます。あわせて、プラットフォームのコンポーネントバージョン、最後に適用したバンドルのダイジェスト、最後のプラットフォーム更新の結果も伝達されます。VM インストールの場合は、Kubernetes アクセスバンドルが `ok`、`expiring`、`expired`、または存在しないかのいずれであるかもハートビートで報告されます。サービスを作成すると、`clicklink clctl instances create` が環境 ID、クラウドとリージョン、サービス名、バケット名、IAM role ARN を送信します。また、デフォルトユーザーのパスワードのハッシュを 2 つ送信しますが、パスワード自体が外部に出ることはありません。
 
 [サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)が有効な間は、トラブルシューターがコマンド出力も返します。この出力は、許可リストに登録された ClickHouse テーブルと、ポッドログを含む読み取り専用の Kubernetes ビューに限定されます。また、送信前にマスキング (IP、認証情報、トークン、キーに対する組み込みパターンと、独自に定義したパターン) を通過します。テーブルデータ、バックアップ、クエリ履歴 (`system.query_log`、`system.text_log`) は環境内に留まります。外部に出るのは次の 3 つです。
 
@@ -48,11 +46,7 @@ executor は、実行した各コマンドの結果と、各マネージドサ�
 
 ### ClickHouse によるクラスターの変更を止めるには？ {#stop-managed-mode}
 
-<Note>
-  公開されている `v0.16.0` の CLI には `--managed` も `--no-managed` もありません。以下のインストール時の選択には、[managed モードのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を含む build が必要です。既存の executor を停止する場合は以下の Helm または systemd の手順を使用し、いずれの init フラグも必要ありません。
-</Note>
-
-managed モードを使わずに実行してください。インストール時に `clicklink clctl init` へ `--no-managed` を渡すか、確認を求められた際に「いいえ」と回答します。デプロイされるのは scraper と トラブルシューター のみになるため、ClickHouse は service を作成・変更・削除できません。ただし、コネクタは引き続き読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
+managed モードを使わずに実行してください。インストール時に `clicklink clctl init` へ `--no-managed` を渡すか、確認を求められた際に「いいえ」と回答します。デプロイされるのは scraper と トラブルシューター のみになるため、ClickHouse はサービスを作成・変更・削除できません。ただし、コネクタは引き続き読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
 
 既存のインストール環境では、executor を停止し、cluster admin としての権限を削除します。停止するには、Helm values で `executor.enabled: false` を設定して `helm upgrade` を実行するか、VM 上で `systemctl disable --now clicklink-executor` を実行します。その後、権限を削除してください。最後のコマンドは ServiceAccount 自体を削除します。そのネームスペースは、VM へのインストールの場合は `clicklink-system`、Kubernetes へのインストールの場合はコネクタのネームスペースです。
 
@@ -64,7 +58,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
-ClickHouse が作成した services は稼働し続けますが、ClickHouse Cloud からはスケール、アップグレード、バックアップ、削除を実行できなくなり、これらに対する pending 状態のコマンドは失敗します。`clicklink clctl platform approve` を実行しない限り、プラットフォーム更新が適用されることはありません。このコマンドを実行しないままにすると、managed モードのその他の機能は動作を継続する一方で、プラットフォーム層は凍結されます。
+ClickHouse が作成したサービスは稼働し続けますが、ClickHouse Cloud からはスケール、アップグレード、バックアップ、削除を実行できなくなり、これらに対する pending 状態のコマンドは失敗します。プラットフォーム更新も停止します。ワークロード側の半分を適用するのは executor であり、その executor がすでに稼働していないためです。
 
 ### コネクタがオフラインになった場合はどうなりますか？ {#connector-down}
 
@@ -78,13 +72,11 @@ VM 上では、connector endpoint が reachable でない間、scraper は scrap
 
 ### サービスを削除すると何が削除されますか？ {#what-is-deleted}
 
-executor はサービスを停止し、その Kubernetes リソースを削除したうえで、ネームスペースを削除します。ネームスペースが消えた時点で、サービスは終了したと報告されます。Kubernetes の外にあるものはすべて残ります。データ用 bucket、バックアップ用 bucket、およびサービスの IAM role です。executor はお客様の bucket や IAM に対する認証情報を保持していないため、Kubernetes 外のリソースには一切変更を加えません。
+executor はサービスを停止し、その Kubernetes リソースを削除したうえで、ネームスペースを削除します。ネームスペースが消えた時点で、サービスは終了したと報告されます。Kubernetes の外にあるものはすべて残ります。データ用 バケット、バックアップ用 バケット、およびサービスの IAM role です。executor はお客様の バケット や IAM に対する認証情報を保持していないため、それらに触れることはできません。
 
-残りは、お客様の認証情報を用いて実行する `clicklink clctl executor teardown` で削除します。デフォルトでは IAM role を削除し、データと backup は保持します。これらを削除するには明示的な flag の指定が必要です。[サービスの削除](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service)を参照してください。
+残りは、お客様の認証情報を用いて実行する `clicklink clctl executor teardown` で削除します。デフォルトでは IAM role を削除し、データと バックアップ は保持します。これらを削除するには明示的な flag の指定が必要です。[サービスの削除](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service)を参照してください。
 
 ### default ユーザーのパスワードはどこで確認できますか？ {#default-user-password}
-
-顧客サービスの作成には[対応する CLI とデプロイメントのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要であり、公開版の `v0.16.0` では使用できません。
 
 `clicklink clctl executor prepare` がユーザー側で生成し、一度だけ出力します。`--from-prepare` ではなく個別のフラグを指定して送信する場合は、`clicklink clctl instances create` が `--default-user-password-file` から読み取るか、新たに生成して出力します。ClickHouse Cloud に送信されるのはそのハッシュのみであるため、コネクタも ClickHouse も再度表示することはできません。表示されたら必ず保存してください。
 
@@ -93,7 +85,7 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 影響が小さい順に説明します。
 
 1. **対話型アクセスを終了します。** VM ホストで `sudo clicklink clctl troubleshoot session disable` を実行してセッションを無効にするか、Kubernetes ではポートフォワード経由で `--gateway-url` を指定して同じコマンドを実行します (正確なコマンドについては[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)ページを参照) 。アクティブなセッションがない場合、トラブルシューターは接続中であってもすべてのコマンドを拒否します。
-2. **マネージドモードを停止します。** [ClickHouse が自分のクラスターを変更しないようにするにはどうすればよいですか？](#stop-managed-mode) の説明に従って、executorを停止し、その権限を削除します。プラットフォームの更新は個別に承認が必要なため、承認を保留すれば更新は停止します。
+2. **managed モードを停止します。** [ClickHouse が自分のクラスターを変更しないようにするにはどうすればよいですか？](#stop-managed-mode) の説明に従って、executorを停止し、その権限を削除します。プラットフォームの更新はもともと承認が必要なため、承認を保留すれば更新は停止します。
 3. **今後のセッションを防止します。** オペレーターの許可リストを空にする (許可リストを空にするとゲートウェイが閉じます) か、ゲートウェイを無効にします。VM では、ホスト上の root は引き続きローカルセッション管理を利用できます。[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
 4. **ClickHouse Cloud との接続を遮断します。** ネットワーク層でコネクタエンドポイントへの送信トラフィックをブロックするか、強制適用される CNI で `networkPolicy.allowEgressCIDRs` を空にします。コネクタは送信専用のため、ClickHouse Cloud には接続を復旧するための受信経路がありません。ワークロードを停止またはアンインストールするまで、ClickHouse に対するローカル読み取りは継続します。これが完全な停止です。
 5. **認証情報を取り消します。** `pcm_scraper` と `pcm_troubleshooter` の ClickHouse ユーザーを削除し、コネクタの Secret (Kubernetes) または `/etc/clicklink` 配下のファイル (VM) を削除します。
@@ -108,13 +100,13 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 * コネクタエンドポイントが自組織の境界内でプライベート CA の背後に配置されている場合、`--api-private-ca` (Kubernetes) または `api.tls.ca_file` (VM) により、登録バンドルの CA チェーンがシステムのルート証明書に追加されます。
 * 直接接続できない環境で登録する場合は、`init --handoff` が帯域外で取得したバンドルを消費し、`--no-auto-sign` と `init --signed-cert` の組み合わせで証明書の署名を帯域外で完了できます。
 * マネージドモードでは、サービスおよびプラットフォームコンポーネント向けの ClickHouse イメージを、自組織のレジストリにインポートしたうえでそこから取得できます。ClickHouse はそのレジストリをお客様の環境に登録します。
-* [プラットフォーム承認をサポートするビルド](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)では、プラットフォームバンドルを帯域外で受け渡し、ファイルとして `clicklink clctl platform approve --bundle` に渡すことができます。パブリックの `v0.16.0` には `platform` コマンドはありません。
+* プラットフォームバンドルは帯域外で受け渡し、ファイルとして `clicklink clctl platform approve --bundle` に渡すことができます。
 
 [プライベートミラー](/ja/products/bring-your-own-cloud/connector/configuration) および [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding) のエアギャップに関するセクションを参照してください。ただし、コネクタは実行時にコネクタエンドポイントへの経路を必要とします。経路がない場合、ClickHouse Cloud はテレメトリーを受信できず、ライフサイクルコマンドもexecutorに届きません。
 
 ### サポートセッションはどのように監査されますか？ {#support-session-auditing}
 
-セッション中に実行されたすべてのコマンドは、許可されたものもブロックされたものも、newline-delimited JSON形式で`/var/log/clicklink/troubleshoot-audit.log`に追記されます。各エントリには、`submitted_by` (コマンドチャネル上の組織ID) 、コマンドのテキスト、対象インスタンス、結果、および拒否されたコマンドの場合は`blocked_by`が記録されます。ゲートウェイ呼び出しは、拒否されたものも含め、トラブルシューター自身のログに構造化された`clctl.gateway`行として記録され、トークンによって証明されたオペレーターのメールアドレスに帰属されます (自己申告の名前は使用されません) 。VM上のローカルセッションの変更では、実行元のホストユーザーが`/var/lib/clicklink/session.json`の`enabled_by`として記録されます。
+セッション中に実行されたすべてのコマンドは、許可されたものもブロックされたものも、newline-delimited JSON形式で`/var/log/clicklink/troubleshoot-audit.log`に追記されます。各エントリには、`submitted_by` (コマンドチャネル上の組織ID) 、コマンドのテキスト、対象インスタンス、結果、および拒否されたコマンドの場合は`blocked_by`が記録されます。ゲートウェイ呼び出しは、拒否されたものも含め、トラブルシューター自身のログに構造化された`clctl.gateway`行として記録されます。これらはトークンによって証明されたオペレーターのメールアドレスに帰属され、自己申告の名前は使用されません。VM上のローカルセッションの変更では、実行元のホストユーザーが`/var/lib/clicklink/session.json`の`enabled_by`として記録されます。
 
 セッションには時間制限があります (デフォルトでは4時間、最長24時間) 。有効化のたびに、有効化したユーザー、有効期限、任意の理由が記録され、これらは`clicklink clctl troubleshoot session status`で表示できます。
 

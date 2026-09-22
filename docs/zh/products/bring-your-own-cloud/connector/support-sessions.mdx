@@ -11,11 +11,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-support session 用于通过 ClickHouse 连接器向 ClickHouse 授予临时诊断访问权限。本页介绍会话的定义、如何启用和禁用会话、会话期间 ClickHouse 支持工程师可执行的操作，以及如何对其进行审计。
+support session 通过 ClickHouse 连接器向 ClickHouse 授予临时诊断访问权限。本页介绍会话的定义、如何启用和禁用会话、会话期间 ClickHouse 支持工程师可执行的操作，以及如何对其进行审计。
 
 ## 什么是 support session {#what-a-support-session-is}
 
-support session 是一段有时限的窗口期，在此期间故障排查工具会接受 ClickHouse 支持工程师下发的命令。在会话之外，即使故障排查工具的 outbound WebSocket 仍处于连接状态，它也会拒绝一切命令。除此之外没有其他执行路径：没有会话，故障排查工具不会执行任何操作，而 ClickHouse 也无法替你开启会话。ClickHouse Cloud 绝不会主动连入你的环境；它只接收故障排查工具通过其 outbound 通道发送的内容。
+support session 是一段有时限的窗口期，在此期间故障排查工具会接受 ClickHouse 支持工程师下发的命令。在会话之外，即使其 outbound WebSocket 仍处于连接状态，它也会拒绝一切命令。除此之外没有其他执行路径，而 ClickHouse 也无法替你开启会话。ClickHouse Cloud 绝不会主动连入你的环境；它只接收故障排查工具通过其 outbound 通道发送的内容。
 
 会话仅管辖诊断操作。managed 模式下 services 的生命周期命令通过 executor 的独立通道传输，support session 既不会开启该通道，也不会对其进行 gate；参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)。
 
@@ -57,7 +57,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
     clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
     ```
 
-    调用方的 OIDC 身份必须在 操作员 允许列表中。未经身份验证或不在允许列表中的调用方将收到 401 或 403，且 gateway 会将此次尝试记录到日志中。若不想要求集群凭据，可通过 chart 中选择性启用的入口公开 gateway，它会使用 CA 签发的证书终止 TLS；请参阅[配置](/zh/products/bring-your-own-cloud/connector/configuration)。
+    调用方的 OIDC 身份必须在 操作员 允许列表中。未经身份验证或不在允许列表中的调用方将收到 401 或 403，且 gateway 会将此次尝试记录到日志中。若要让 操作员 无需集群凭据即可工作，可通过 chart 中选择性启用的入口公开 gateway，它会使用 CA 签发的证书终止 TLS；请参阅[配置](/zh/products/bring-your-own-cloud/connector/configuration)。
   </Tab>
 
   <Tab title="Linux VM" id="sessions-vm">
@@ -83,24 +83,24 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 ## 会话过期 {#session-expiry}
 
-会话会自动过期。默认时长为 4 小时；`session enable --duration` 最长可接受 24 小时。会话过期后，或运行 `session disable` 后，故障排查工具将不再接受命令。禁用即可立即撤销访问权限：无需重启，也无需与 ClickHouse 协调。
+会话会自动过期。默认时长为 4 小时；`session enable --duration` 最长可接受 24 小时。过期时，或运行 `session disable` 后，故障排查工具将不再接受命令。禁用即可立即撤销访问权限：无需重启，也无需与 ClickHouse 协调。
 
 ## 操作员允许列表 {#operator-allowlist}
 
-每次gateway调用都会依据操作员电子邮件允许列表进行授权。匹配依据是经验证的 OIDC 标记中验证的电子邮件，绝不采信客户端对自身提出的任何声明。
+每次gateway调用都会依据操作员电子邮件允许列表进行授权。匹配使用的是经验证的 OIDC 标记中验证的电子邮件，绝不使用客户端提供的值。
 
 * **Kubernetes：**在配置值覆盖中设置 `clctl.gateway.allowedOperators`。chart 会将该列表渲染为 ConfigMap，因此修改配置值后执行 `helm upgrade` 即可轮换允许列表，无需重启 pod (容器组) 。
 * **Linux VM：**允许列表位于 `/etc/clicklink/allowed-operators.txt`，由 `clicklink clctl init` 根据您提供的操作员电子邮件写入。
 
-在这两种目标上，gateway都会在距上次读取超过 30 秒后的下一次请求时重新读取该文件，因此修改无需重启即可生效。
+在这两种目标上，gateway都会在距上次读取超过 30 秒后的下一次请求时重新读取该文件。修改无需重启即可生效。
 
 ## 操作员在会话期间可以执行哪些操作 {#what-operators-can-do}
 
 会话处于活动状态期间，ClickHouse 支持工程师可以运行两类命令。
 
-**只读 SQL** 以 `pcm_troubleshooter` 用户身份在你的 cluster 上执行，该用户的授权仅限于会话表允许列表。故障排查工具还会拒绝任何不以 `SELECT`、`WITH`、`SHOW`、`DESCRIBE` 或 `EXPLAIN` 开头的语句。该用户仅持有按表粒度的 `SELECT` 授权，不具备任何写入、DDL 或管理类特权。
+**只读 SQL** 以 `pcm_troubleshooter` 用户身份在你的 集群 上执行，该用户的授权仅限于会话表允许列表。故障排查工具还会拒绝任何不以 `SELECT`、`WITH`、`SHOW`、`DESCRIBE` 或 `EXPLAIN` 开头的语句。该用户仅持有按表粒度的 `SELECT` 授权，不具备任何写入、DDL 或管理类特权。
 
-默认允许列表涵盖 `system.parts`、`system.merges`、`system.replicas`、`system.metrics`、`system.settings` 等 `system` 表。`system.query_log` 和 `system.text_log` 无法加入该列表：守护进程会拒绝列出这两张表的配置，因此永远不会为它们配置任何授权。默认允许列表中确实包含 `system.processes`，其 `query` 列会显示当时正在运行的语句文本。如果不希望实时查询文本在会话中被看到，请将其从 `troubleshooter.allowedTables` (Helm 覆盖文件) 或 `troubleshooter.allowed_tables` (VM 配置文件) 中移除。
+默认允许列表涵盖 `system.parts`、`system.merges`、`system.replicas`、`system.metrics`、`system.settings` 等 `system` 表。`system.query_log` 和 `system.text_log` 无法加入该列表：守护进程会拒绝列出这两张表的配置，因此永远不会为它们配置任何授权。默认允许列表中确实包含 `system.processes`，其 `query` 列会显示正在运行的语句文本。如果不希望实时查询文本在会话中被看到，请将其从 `troubleshooter.allowedTables` (Helm 覆盖文件) 或 `troubleshooter.allowed_tables` (VM 配置文件) 中移除。
 
 **只读 Kubernetes 视图**指在已授权的命名空间中，对 pod (容器组) 、pod 状态、pod 日志、service、configmap、event、PersistentVolumeClaim、deployment、statefulset 和 replicaset 执行 `get`、`list` 和 `watch`。在两种安装目标上，访问包均绑定到 Kubernetes ServiceAccount。若未配置访问包，故障排查工具会直接拒绝 kubectl 类命令。executor 只会为 managed service 配置抓取器，不会配置故障排查工具；参见 [managed service 的 support sessions](/zh/products/bring-your-own-cloud/connector/managed-services#support-sessions)。
 
@@ -108,7 +108,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 ## 审计日志 {#audit-log}
 
-会话期间执行的每条命令都会以每行一个 JSON 对象 (NDJSON) 的形式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。被阻止的命令同样会被记录，并由 `blocked_by` 说明原因 (例如 `session inactive`) 。`submitted_by` 是命令通道上的组织 ID，也就是你自己的组织 ID。具体是哪位 ClickHouse 工程师，记录在 ClickHouse Cloud 一侧，而不在该文件中。一条会话命令记录如下所示：
+会话期间执行的每条命令都会以每行一个 JSON 对象 (NDJSON) 的形式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。被阻止的命令同样会被记录，并由 `blocked_by` 说明原因 (例如 `session inactive`) 。`submitted_by` 是命令通道上的组织 ID：也就是你自己的组织 ID。具体是哪位 ClickHouse 工程师，记录在 ClickHouse Cloud 一侧，而不在该文件中。一条会话命令记录如下所示：
 
 ```json
 {
@@ -126,7 +126,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 `status` 表示命令执行结果：`completed`、`error` 或 `rejected`。
 
-Gateway 调用会单独记录。每次调用 (包括被拒绝的调用) 都会以结构化的 `clctl.gateway` 行写入故障排查工具自身的日志：在 VM 上是 journal，在 Kubernetes 上是容器日志。该行包含 `submitted_by` (由已校验标记证明的邮箱地址，绝不会采用客户端提供的值) 、`command_type` (`clctl.session.enable`、`clctl.session.disable` 或 `clctl.session.status`) 、`reason` (启用时传入的 `--reason`) 、`remote_addr` 和 `status`。`status` 的取值为 `ok`、`unauthorized`、`forbidden`、`rate_limited`、`bad_request`、`conflict` 或 `error`，因此被拒绝的访问同样会出现在日志中。
+Gateway 调用会单独记录。每次调用 (包括被拒绝的调用) 都会以结构化的 `clctl.gateway` 行写入故障排查工具自身的日志：在 VM 上是 journal，在 Kubernetes 上是容器日志。该行包含 `submitted_by` (由已校验标记证明的邮箱地址，绝不会采用客户端提供的值) 和 `command_type` (`clctl.session.enable`、`clctl.session.disable` 或 `clctl.session.status`) 。该行还包含 `reason` (启用时传入的 `--reason`) 、`remote_addr` 和 `status`。`status` 的取值为 `ok`、`unauthorized`、`forbidden`、`rate_limited`、`bad_request`、`conflict` 或 `error`，因此被拒绝的访问同样会出现在日志中。
 
 VM 上的本地会话变更不属于审计日志条目。发起操作的主机用户会以 `enabled_by` 的形式记录在 `/var/lib/clicklink/session.json` 中，并通过 `session status` 显示。
 
