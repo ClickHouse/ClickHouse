@@ -251,10 +251,10 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     ASTPtr regression = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesLinearRegressionToGrid", std::move(aggregate_function_arguments)),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
 
     std::optional<HorizonShift> horizon_shift;
     if (fixed_at_node)
@@ -266,8 +266,8 @@ SQLQueryPiece applyFunctionPredictLinear(
         /// Predicting further ahead by distance to step moves origin there.
         horizon_shift = HorizonShift{
             .shift_at_start = DecimalUtils::convertTo<Float64>(
-                DurationType{start_time.value - aggregation_range.start_time.value}, context.timestamp_scale),
-            .step_in_seconds = DecimalUtils::convertTo<Float64>(step, context.timestamp_scale),
+                DurationType{start_time.value - aggregation_range.start_time.value}, context.result_timestamp_scale),
+            .step_in_seconds = DecimalUtils::convertTo<Float64>(step, context.result_timestamp_scale),
             .grid_size = result_grid_size};
     }
 
