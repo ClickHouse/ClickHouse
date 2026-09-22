@@ -1,0 +1,7 @@
+create_default_rejected
+create_parameter_rejected
+attach_rejected
+add_column_rejected
+modify_column_rejected
+reset_setting_rejected
+accepted	1

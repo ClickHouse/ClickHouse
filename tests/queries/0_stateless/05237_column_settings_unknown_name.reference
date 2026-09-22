@@ -1,0 +1,15 @@
+-- CREATE --
+-- TimeSeries regenerates its outer columns, so no spelling is screened there --
+1
+1
+-- ADD COLUMN --
+-- MODIFY COLUMN ... SETTINGS (...) --
+-- MODIFY COLUMN ... MODIFY SETTING --
+-- MODIFY COLUMN ... RESET SETTING --
+-- an ignored IF [NOT] EXISTS command stays a no-op, in every payload --
+-- every reset spelling still resets a settable name --
+0
+0
+0
+-- a short ATTACH replays a stored definition and is not screened --
+1
