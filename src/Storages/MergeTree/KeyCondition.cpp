@@ -1612,6 +1612,54 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
+/// Whether a float is reachable by descending `Tuple` elements and the `Nullable` / `LowCardinality`
+/// wrappers. `Array` and `Map` are not descended: an equal-type comparison of those is `compareAt`-based
+/// and orders a NaN exactly where the index does, so their bounds and their rows already agree.
+static bool floatReachableThroughTupleElements(const DataTypePtr & type)
+{
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    if (WhichDataType(unwrapped).isFloat())
+        return true;
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
+    if (!tuple)
+        return false;
+
+    const auto & elements = tuple->getElements();
+    return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
+}
+
+static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
+}
+
+/// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
+/// between two granule bounds that hold none, while every row comparison against it is false, and the
+/// bounds therefore cannot answer `can_be_false` for a range atom over such a key column. Only a range
+/// that reaches the top of the order can hold such a value: one bounded above by an ordinary value
+/// excludes it, because a row whose first differing position holds a NaN compares greater than the
+/// constant. `can_be_true` is left alone, so every pruning decision is unchanged.
+void KeyCondition::relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types)
+{
+    for (auto & element : rpn)
+    {
+        if (element.function != RPNElement::FUNCTION_IN_RANGE || element.key_columns.size() != 1)
+            continue;
+
+        const size_t key_column = element.getKeyColumn();
+        if (key_column >= key_types.size() || !typeCanHideNaNInsideTuple(key_types[key_column]))
+            continue;
+
+        if (element.range.right.isPositiveInfinity())
+            element.relaxed = true;
+    }
+}
+
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
     if (!key_columns.contains(column))
@@ -2877,6 +2925,77 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+namespace
+{
+
+bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    if (field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : field.safeGet<Array>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+/** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
+  * works with ranges produced by `IColumn::getExtremes`, which deliberately skips `NaN`. A part or
+  * granule that holds `NaN` next to finite values therefore gets a `NaN`-free range, the set-vs-range
+  * intersection finds no overlap, and it is pruned even though row-wise evaluation of the same filter
+  * matches the `NaN` rows. The set atom serves every index at once, so it has to be declined outright;
+  * `has` declines floating-point arrays for a closely related mismatch.
+  */
+bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_types)
+{
+    if (std::none_of(key_types.begin(), key_types.end(), typeContainsFloat))
+        return false;
+
+    for (const auto & column : set_columns)
+    {
+        const size_t size = column->size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            Field field;
+            column->get(i, field);
+            if (fieldContainsNaN(field))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
 /// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
 /// converts the elements to the key type with an accurate cast. The two agree only when the raw
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
@@ -3187,6 +3306,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
         return false;
 
+    if (setElementsContainNaN(set_columns, data_types))
+        return false;
+
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
@@ -3462,6 +3584,13 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        /// `toDayOfWeek` declares that it is monotonic inside the enclosing Monday-based week: its factor
+        /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
+        /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
+        /// interval. Pruning a key range with the unsound claim silently loses matching rows.
+        if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
+            return {};
+
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
@@ -3493,6 +3622,25 @@ public:
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
+    /// Whether the constant argument is a `toDayOfWeek` mode that numbers the week from Monday.
+    /// A mode of an unexpected shape is reported as not Monday-first, which only declines monotonicity.
+    bool isMondayFirstDayOfWeekMode() const
+    {
+        const Field mode = (*const_arg.column)[0];
+
+        UInt64 mode_value = 0;
+        if (mode.getType() == Field::Types::UInt64)
+            mode_value = mode.safeGet<UInt64>();
+        else if (mode.getType() == Field::Types::Int64)
+            mode_value = static_cast<UInt64>(mode.safeGet<Int64>());
+        else
+            return false;
+
+        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
+        /// and the second one selects the Sunday-first numbering.
+        return (mode_value & 2) == 0;
+    }
+
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
