@@ -43,7 +43,7 @@ Positions: 6 0 1 2 3 4
         Join (JOIN FillRightFirst)
         Type: INNER
         Strictness: ALL
-        Algorithm: ConcurrentHashJoin
+        Algorithm: HashJoin
         Clauses: [(__table2.age) = (__table3.age)]
           Expression (Left Pre Join Actions)
           Actions: INPUT :: 0 -> __table2.age Int16 : 0
@@ -126,7 +126,7 @@ Positions: 6 0 1 2 3 4
         Join (JOIN FillRightFirst)
         Type: INNER
         Strictness: ALL
-        Algorithm: ConcurrentHashJoin
+        Algorithm: HashJoin
         Clauses: [(__table2.age) = (__table3.age)]
           Expression (Left Pre Join Actions)
           Actions: INPUT :: 0 -> __table2.age Int16 : 0

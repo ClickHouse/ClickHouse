@@ -926,7 +926,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/ja/reference/data-types/int-uint)) — 集計中に上限付き Top-K ヒープから追い出されたグループ化キーの数 (`enable_group_by_top_k_optimization` を参照)。
 * `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ja/reference/data-types/int-uint)) — 中間ハッシュテーブルからも削除され、aggregate states が破棄された追い出し済みグループ化キーの数 (`enable_group_by_top_k_optimization` を参照)。集計メソッドでキーを削除できない場合、またはキーのプレフィックスのみがランク付けされる場合は、`AggregationTopKKeysEvicted` より少なくなります。この場合でもヒープは行をスキップしますが、ハッシュテーブルは受け入れたすべてのグループを保持します。
 * `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ja/reference/data-types/int-uint)) — 通常の集計にフォールバックするためにフリーズされた Top-K 集計ヒープの数。観測ウィンドウ内でヒープがほとんど何も拒否しなかった場合 (例: 個別のグループ化キー数が LIMIT を超えない場合)、または追い出すことのできないヒープ境界の同順位セットがヒープを超過して増大した場合です (`enable_group_by_top_k_optimization` を参照)。
+* `ProfileEvent_HashJoinBuildInsertMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.
+* `ProfileEvent_HashJoinBuildLockWaitMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — HashJoin build-side: time spent yielding in insertIntoSlots while waiting for a slot mutex. A subset of HashJoinBuildInsertMicroseconds.
+* `ProfileEvent_HashJoinBuildMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Time spent in the HashJoin build phase (adding right-side blocks plus onBuildPhaseFinish), summed over all build threads.
+* `ProfileEvent_HashJoinBuildScatterMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ja/reference/data-types/int-uint)) — ハッシュ結合用の hash table で事前割り当てされた要素数。
+* `ProfileEvent_HashJoinProbeGatherMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.
+* `ProfileEvent_HashJoinProbeLookupMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
+* `ProfileEvent_HashJoinProbeMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求が、Keeper に要求を送らずに cache から処理された回数。
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ja/reference/data-types/int-uint)) — object storage のメタデータ要求を Keeper から取得して処理する必要があった回数。
 * `ProfileEvent_MetadataFromKeeperCacheTooManyInvalidated` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルシステムキャッシュが無効化されたエントリを多すぎる数返した回数。
@@ -1736,9 +1743,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `CurrentMetric_DestroyAggregatesThreads` ([Int64](/ja/reference/data-types/int-uint)) — aggregate state を破棄するためのスレッドプール内のスレッド数。
 * `CurrentMetric_DestroyAggregatesThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — aggregate state を破棄するためのスレッドプール内でタスクを実行中のスレッド数。
 * `CurrentMetric_DestroyAggregatesThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — aggregate state を破棄するためのスレッドプール内でキューに入っているジョブまたは実行中のジョブの数。
-* `CurrentMetric_ConcurrentHashJoinPoolThreads` ([Int64](/ja/reference/data-types/int-uint)) — 同時実行ハッシュ結合用スレッドプール内のスレッド数。
-* `CurrentMetric_ConcurrentHashJoinPoolThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — 同時実行ハッシュ結合用スレッドプール内でタスクを実行中のスレッド数。
-* `CurrentMetric_ConcurrentHashJoinPoolThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — 同時実行ハッシュ結合用スレッドプール内でキューに入っているジョブまたは実行中のジョブの数。
 * `CurrentMetric_HashedDictionaryThreads` ([Int64](/ja/reference/data-types/int-uint)) — HashedDictionary スレッドプール内のスレッド数。
 * `CurrentMetric_HashedDictionaryThreadsActive` ([Int64](/ja/reference/data-types/int-uint)) — HashedDictionary スレッドプール内でタスクを実行中のスレッド数。
 * `CurrentMetric_HashedDictionaryThreadsScheduled` ([Int64](/ja/reference/data-types/int-uint)) — HashedDictionary スレッドプール内でキューに入っているジョブまたは実行中のジョブの数。

@@ -3,7 +3,7 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'Minimizar y optimizar JOINs'
 title: 'Minimizar y optimizar JOINs'
 description: 'Documento que describe las buenas prácticas para usar JOINs en ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -50,7 +50,7 @@ Siga estas buenas prácticas para mejorar el rendimiento de los JOINs:
 
 ClickHouse admite varios algoritmos JOIN que ofrecen distintas compensaciones entre velocidad y uso de memoria:
 
-* **Parallel Hash JOIN (default):** Rápido para tablas del lado derecho de tamaño pequeño o mediano que caben en memoria.
+* **Hash JOIN (default):** Rápido para tablas del lado derecho de tamaño pequeño o mediano que caben en memoria.
 * **Direct JOIN:** Ideal al usar diccionarios (u otros motores de tabla con características de clave-valor) con `INNER` o `LEFT ANY JOIN` — el método más rápido para búsquedas puntuales, ya que elimina la necesidad de construir una tabla hash.
 * **Full Sorting Merge JOIN:** Eficiente cuando ambas tablas están ordenadas por la clave de JOIN.
 * **Partial Merge JOIN:** Minimiza el uso de memoria, pero es más lento; es la mejor opción para unir tablas grandes con memoria limitada.
@@ -62,7 +62,7 @@ ClickHouse admite varios algoritmos JOIN que ofrecen distintas compensaciones en
   Cada algoritmo ofrece un nivel de compatibilidad distinto con los tipos de JOIN. Puedes encontrar una lista completa de los tipos de JOIN compatibles con cada algoritmo [aquí](/es/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 </Note>
 
-Puedes dejar que ClickHouse elija el mejor algoritmo configurando `join_algorithm = 'auto'`, o controlarlo explícitamente según tu workload. El valor predeterminado es `direct,parallel_hash,hash`, por lo que ClickHouse usa un Direct JOIN cuando el lado derecho es un diccionario o un motor de clave-valor y, en caso contrario, recurre primero a parallel hash y luego a hash. Si necesitas seleccionar un algoritmo JOIN para optimizar el rendimiento o el uso de memoria, te recomendamos [esta guía](/es/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+Puedes dejar que ClickHouse elija el mejor algoritmo configurando `join_algorithm = 'auto'`, o controlarlo explícitamente según tu workload. El valor predeterminado es `direct,parallel_hash,hash`, por lo que ClickHouse usa un Direct JOIN cuando el lado derecho es un diccionario o un motor de clave-valor y, en caso contrario, usa el hash join (`hash` y `parallel_hash` nombran la misma clase y no seleccionan el paralelismo). Si necesitas seleccionar un algoritmo JOIN para optimizar el rendimiento o el uso de memoria, te recomendamos [esta guía](/es/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
 Para un rendimiento óptimo:
 
