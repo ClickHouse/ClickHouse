@@ -1934,14 +1934,11 @@ std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string &
     Poco::Dynamic::Var json = parser.parse(json_str);
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-    if (!object->has("properties"))
+    auto properties = object->getObject("properties");
+    if (!properties || properties->isNull("location"))
         return std::nullopt;
 
-    auto properties = object->get("properties").extract<Poco::JSON::Object::Ptr>();
-    if (!properties || !properties->has("location"))
-        return std::nullopt;
-
-    return properties->get("location").extract<String>();
+    return properties->getValue<String>("location");
 }
 
 std::optional<std::string> RestCatalog::getDefaultTableLocation(

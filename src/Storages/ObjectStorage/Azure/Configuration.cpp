@@ -855,12 +855,15 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
 
 std::string StorageAzureConfiguration::getMetadataLocationURI() const
 {
-    static constexpr std::string_view blob_suffix = ".blob.fabric.microsoft.com";
-    static constexpr std::string_view dfs_suffix = ".dfs.fabric.microsoft.com";
+    /// `abfss://` is served by the Data Lake Storage endpoint of the same account, both for
+    /// Fabric (`onelake.dfs.fabric.microsoft.com`) and for regular storage accounts
+    /// (`account.dfs.core.windows.net`), so the Blob label of the configured endpoint is rewritten.
+    static constexpr std::string_view blob_label = ".blob.";
+    static constexpr std::string_view dfs_label = ".dfs.";
 
     std::string host = Poco::URI(connection_params.endpoint.storage_account_url).getHost();
-    if (host.ends_with(blob_suffix))
-        host = host.substr(0, host.size() - blob_suffix.size()) + std::string(dfs_suffix);
+    if (const auto blob_label_pos = host.find(blob_label); blob_label_pos != std::string::npos)
+        host.replace(blob_label_pos, blob_label.size(), dfs_label);
 
     return fmt::format("abfss://{}@{}/{}", getNamespace(), host, getRawPath().path);
 }
