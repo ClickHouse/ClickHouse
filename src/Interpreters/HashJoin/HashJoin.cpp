@@ -965,10 +965,20 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
                 /// Intersect with the original selector to keep only rows that
                 /// both belong to this partition and have a non-NULL ASOF key
-                /// A right-side column can carry the lazy replication wrapper, whose isNullAt() resolves the logical row.
-                for (size_t r : selector)
-                    if (!asof_column.column->isNullAt(r))
-                        new_selector_data.push_back(r);
+                if (const auto * asof_column_nullable = checkAndGetColumn<ColumnNullable>(asof_column.column.get()))
+                {
+                    const auto & null_map = asof_column_nullable->getNullMapData();
+                    for (size_t r : selector)
+                        if (!null_map[r])
+                            new_selector_data.push_back(r);
+                }
+                else
+                {
+                    /// A right-side column can carry the lazy replication wrapper, whose isNullAt() resolves the logical row.
+                    for (size_t r : selector)
+                        if (!asof_column.column->isNullAt(r))
+                            new_selector_data.push_back(r);
+                }
 
                 selector = ScatteredBlock::Selector(std::move(new_selector));
             }
