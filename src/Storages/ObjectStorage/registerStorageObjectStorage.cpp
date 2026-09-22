@@ -52,15 +52,13 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Use format settings from global server context + settings from
-    // the SETTINGS clause of the create query. Settings from current
-    // session and user are ignored.
+    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
         Settings settings = context->getSettingsCopy();
 
-        // Apply changes from SETTINGS clause, with validation.
+        // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(context, settings);
@@ -133,6 +131,7 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -756,6 +755,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -799,6 +799,7 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -1296,9 +1297,10 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-
-The following deletion method is **not supported**:
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
+Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
+`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 ```sql
@@ -1968,7 +1970,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 
 | Paimon Data Type | ClickHouse Data Type |
 |-------|--------|
-|BOOLEAN     |Int8      |
+|BOOLEAN     |Bool      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
