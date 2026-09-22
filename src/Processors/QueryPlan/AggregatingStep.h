@@ -115,8 +115,9 @@ public:
     /// aggregate projections or Cascades pushdown); those keep the strict resize because the bit is never set on
     /// them. The decorrelation of a correlated subquery rebuilds the user's step with the correlated columns
     /// appended to the keys and carries the bit over: that is still the user's `GROUP BY`. Preserved by `clone` and by the query plan
-    /// serialization round-trip, exactly like `markGroupByKeysSemanticallyConstant`; a plan from a peer that
-    /// predates the serialized bit keeps the strict resize.
+    /// serialization round-trip, exactly like `markGroupByKeysSemanticallyConstant`, but dropped by `rebaseOntoInput`:
+    /// Cascades pushdown clones the user's step and rebases the clone onto the join keys, and that clone is an
+    /// internal aggregation. A plan from a peer that predates the serialized bit keeps the strict resize.
     void enableGradualResize() { gradual_resize_enabled = true; }
     bool isGradualResizeEnabled() const { return gradual_resize_enabled; }
     /// The source storage reads evenly into its streams (`IStorage::hasEvenlyDistributedRead`), so the step

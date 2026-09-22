@@ -12,6 +12,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -83,11 +84,13 @@ bool buildsGradualResize(AggregatingStep & step, const SharedHeader & header, Co
 }
 
 /// `AggregationPushdown` clones the planned `GROUP BY` step and rebases it onto the join keys it
-/// pushes the aggregation below. `group_by_keys_semantically_constant` was decided for the original
-/// key set (`GROUP BY materialize(1)`), so carrying it over would keep claiming a single group for
-/// a step that now groups by the join keys, and the gradual pre-aggregation resize the user opted
-/// into with `min_rows_per_stream_for_gradual_resize` would silently stop applying on that carrier.
-TEST(AggregatingStep, RebaseOntoInputClearsSemanticallyConstantKeys)
+/// pushes the aggregation below. The rebased copy is an internal aggregation, not the user's
+/// `GROUP BY` that `min_rows_per_stream_for_gradual_resize` is documented to affect, so it must keep
+/// the strict pre-aggregation resize even though `clone` carried `gradual_resize_enabled` over. The
+/// original post-join step is planned with `storage_has_evenly_distributed_read = false`, so without
+/// this the copy would build a `GradualResize` even over an evenly distributed (`Memory`) pushed side.
+/// The stale `group_by_keys_semantically_constant` decision is dropped by the same rebase.
+TEST(AggregatingStep, RebaseOntoInputClearsGradualResize)
 {
     MainThreadStatus::getInstance();
     tryRegisterFunctions();
@@ -99,7 +102,14 @@ TEST(AggregatingStep, RebaseOntoInputClearsSemanticallyConstantKeys)
 
     auto header = makeHeader();
 
-    /// Control: the mark alone keeps the step on the strict resize.
+    /// Control: the user's step builds the gradual resize.
+    {
+        auto step = makeStep(header, Names{"k"});
+        step->enableGradualResize();
+        EXPECT_TRUE(buildsGradualResize(*step, header, context));
+    }
+
+    /// Control: the constant-keys mark alone keeps the step on the strict resize.
     {
         auto step = makeStep(header, Names{"k"});
         step->enableGradualResize();
@@ -107,12 +117,22 @@ TEST(AggregatingStep, RebaseOntoInputClearsSemanticallyConstantKeys)
         EXPECT_FALSE(buildsGradualResize(*step, header, context));
     }
 
-    /// Rebasing onto another key set drops the stale mark.
+    /// The rebased copy (as built by `AggregationPushdown`: clone, then rebase) keeps the strict resize.
+    {
+        auto step = makeStep(header, Names{"k"});
+        step->enableGradualResize();
+        auto cloned = step->clone();
+        auto & rebased = typeid_cast<AggregatingStep &>(*cloned);
+        rebased.rebaseOntoInput(header, Names{"j"});
+        EXPECT_FALSE(buildsGradualResize(rebased, header, context));
+    }
+
+    /// Same with the constant-keys mark set before the rebase.
     {
         auto step = makeStep(header, Names{"k"});
         step->enableGradualResize();
         step->markGroupByKeysSemanticallyConstant();
         step->rebaseOntoInput(header, Names{"j"});
-        EXPECT_TRUE(buildsGradualResize(*step, header, context));
+        EXPECT_FALSE(buildsGradualResize(*step, header, context));
     }
 }

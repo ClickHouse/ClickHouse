@@ -1448,6 +1448,13 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
     /// directions, so drop it here, exactly like the hash-table stats identity the caller resets: the
     /// remaining header-based `ColumnConst` check still catches keys that are constant in the new input.
     group_by_keys_semantically_constant = false;
+    /// `gradual_resize_enabled` marks the pre-aggregation of the user's `GROUP BY`, the only surface the
+    /// `*_for_gradual_resize` settings are documented to affect. The rebased copy is a new internal
+    /// aggregation below a join (`AggregationPushdown`), so it keeps the strict resize, like every other
+    /// internal `AggregatingStep`. This matters beyond the documentation: the original post-join step was
+    /// planned with `storage_has_evenly_distributed_read = false`, so over a `Memory` / `numbers_mt` pushed
+    /// side the copy would reach the resize branch and build a `GradualResize` for an evenly distributed source.
+    gradual_resize_enabled = false;
     params.keys = std::move(new_keys);
     params.keys_size = params.keys.size();
     updateInputHeader(new_input_header);
