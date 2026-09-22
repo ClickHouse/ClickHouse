@@ -199,9 +199,7 @@ private:
         RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
-    /// See the definitions: how a `FixedString` needle (or a needle for a `FixedString` column) is spelled for the lookup.
-    std::optional<Field> needleForFixedStringComparison(const Field & value, const DataTypePtr & value_type, bool value_padding_ignored) const;
-    bool strippedTermsCoverPaddedSpellings(const String & stripped, size_t padding_size) const;
+    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
@@ -223,6 +221,8 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
+    std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     NameSet columns_shadowing_map_subcolumns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
