@@ -607,6 +607,19 @@ def test_statement_query_type_metadata(where_clause):
                 assert catalog_names.count(type_name.decode()) == 1
 
 
+def test_statement_string_replaces_invalid_utf8():
+    """Flight SQL keeps its `String` text mapping while producing valid Arrow `utf8`."""
+    client = get_client()
+    table = client.do_get(
+        client.execute("SELECT unhex('FF') AS string_col").endpoints[0].ticket
+    ).read_all()
+
+    field = table.schema.field("string_col")
+    assert field.type == pa.string()
+    assert _field_metadata(field)[FLIGHT_SQL_TYPE_NAME] == b"String"
+    assert table.column("string_col").to_pylist() == ["\ufffd"]
+
+
 def test_wrapped_and_parameterized_type_metadata():
     """Wrappers are removed only from the standard type family metadata."""
     client = get_client()

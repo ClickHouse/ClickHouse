@@ -45,6 +45,9 @@ public:
         /// Carries an initializer like every other member, so that a caller listing only the leading fields
         /// positionally does not trip `-Wmissing-field-initializers`.
         FormatSettings format_settings{};
+
+        /// Replace invalid UTF-8 sequences when a String or FixedString column is written as Arrow::String.
+        bool replace_invalid_utf8_in_strings = false;
     };
 
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(

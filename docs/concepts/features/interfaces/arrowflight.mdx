@@ -417,7 +417,7 @@ The one exception is a type with no Arrow equivalent at all, such as `JSON`, `Dy
 
 An `AggregateFunction` column is the one type that stays an Arrow `Binary` column even in `text` mode: its text form is the raw aggregate state, which is not valid UTF-8, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` if you want a readable value.
 
-For the same reason, ClickHouse replaces every invalid UTF-8 sequence in a `text` value with U+FFFD (`�`) before writing it into the `Utf8` column. A `Dynamic` holding a `String` serializes those bytes verbatim, and they can be arbitrary, so without this the column would violate the Arrow specification and could be rejected by a strict client. Only values that are already not valid text change. Use `binary` mode where the bytes have to be preserved exactly.
+Arrow `Utf8` columns must contain valid UTF-8, so ClickHouse replaces every invalid sequence with U+FFFD (`�`) before writing one. This applies both to real `String` columns, which Arrow Flight exposes as text, and to opaque columns using `text` mode. Consequently, the text mapping is not byte-exact for the complete ClickHouse `String` value domain. Only values that are already not valid text change. For opaque columns, use `binary` mode where the bytes have to be preserved exactly.
 
 `output_format_arrow_string_as_string` never applies to these columns, in `FORMAT Arrow` either — it governs only real `String` and `FixedString` columns. So the Arrow type of a `clickhouse.opaque` column always states which encoding it holds: `Utf8` for the text form, `Binary` for the binary one.
 
@@ -429,7 +429,7 @@ The older boolean `output_format_arrow_unsupported_types_as_binary` still works 
 
 Flight SQL statement and prepared-statement results include column metadata that preserves the ClickHouse type identity. The schemas embedded by `CommandGetTables` when `include_schema=true` contain the same metadata:
 
-- `ARROW:FLIGHT:SQL:TYPE_NAME` contains the stable ClickHouse type family registered by `CommandGetXdbcTypeInfo`, such as `Date32` or `Decimal`. Top-level `Nullable` and `LowCardinality` wrappers are omitted. Types without a lossless standard Arrow interpretation do not set this key. For example, enums expose numeric codes and wide integers expose fixed-size binary values, so `Enum8`, `Enum16`, `Int128`, `UInt128`, `Int256`, and `UInt256` only use `CLICKHOUSE:TYPE_NAME`.
+- `ARROW:FLIGHT:SQL:TYPE_NAME` contains the stable ClickHouse type family registered by `CommandGetXdbcTypeInfo`, such as `Date32` or `Decimal`. Top-level `Nullable` and `LowCardinality` wrappers are omitted. Enums expose numeric codes and wide integers expose implementation-specific fixed-size binary values, so `Enum8`, `Enum16`, `Int128`, `UInt128`, `Int256`, and `UInt256` do not set this key and only use `CLICKHOUSE:TYPE_NAME`. `String` is registered as the standard text family and uses Arrow `utf8`; its handling of invalid UTF-8 is described above.
 - `CLICKHOUSE:TYPE_NAME` contains the complete ClickHouse type expression, including wrappers, parameters, enum labels, and time zones.
 - `ARROW:FLIGHT:SQL:PRECISION` and `ARROW:FLIGHT:SQL:SCALE` are included when they can be determined exactly from the ClickHouse type.
 

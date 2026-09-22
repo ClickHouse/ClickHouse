@@ -64,7 +64,8 @@ CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & conte
     return {
         .output_string_as_string = true,
         .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
-        .format_settings = getFormatSettings(context)};
+        .format_settings = getFormatSettings(context),
+        .replace_invalid_utf8_in_strings = true};
 }
 
 static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)

@@ -1115,11 +1115,23 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder* array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool replace_invalid_utf8)
     {
         const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
+        String valid_utf8_scratch;
+
+        auto append_string = [&](std::string_view value)
+        {
+            if constexpr (std::is_same_v<ArrowBuilder, arrow::StringBuilder>)
+            {
+                if (replace_invalid_utf8)
+                    value = makeValidUTF8View(value, valid_utf8_scratch);
+            }
+            return builder.Append(value.data(), static_cast<int>(value.size()));
+        };
 
         if (null_bytemap)
         {
@@ -1132,7 +1144,7 @@ namespace DB
                 else
                 {
                     std::string_view string_ref = internal_column.getDataAt(string_i);
-                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                    status = append_string(string_ref);
                 }
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1142,7 +1154,7 @@ namespace DB
             for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i);
-                status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                status = append_string(string_ref);
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
@@ -1461,9 +1473,11 @@ namespace DB
             case TypeIndex::String:
             {
                 if (settings.output_string_as_string && !array_builder->type()->Equals(arrow::binary()))
-                    fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 else
-                    fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 break;
             }
             case TypeIndex::FixedString:
@@ -1471,9 +1485,11 @@ namespace DB
                 if (settings.output_fixed_string_as_fixed_byte_array)
                     fillArrowArrayWithFixedStringColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 else if (settings.output_string_as_string)
-                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 else
-                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 break;
             }
             case TypeIndex::IPv6:
