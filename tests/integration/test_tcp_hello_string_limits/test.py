@@ -453,6 +453,7 @@ def test_slowloris_handshake_timeout(started_cluster):
 
 def test_silent_client_handshake_timeout(started_cluster):
     """A client that connects and then says nothing must be cut off by the handshake timeout."""
+    seen = int(node.count_in_log("Timeout exceeded while reading from socket"))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(DISCONNECT_DEADLINE)
     try:
@@ -478,7 +479,7 @@ def test_silent_client_handshake_timeout(started_cluster):
     finally:
         sock.close()
 
-    node.wait_for_log_line("Timeout exceeded while reading from socket")
+    node.wait_for_log_line("Timeout exceeded while reading from socket", repetitions=seen + 1)
 
 
 def test_server_healthy_after_rejections(started_cluster):

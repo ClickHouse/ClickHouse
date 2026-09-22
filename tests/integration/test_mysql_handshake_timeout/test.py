@@ -21,6 +21,9 @@ DISCONNECT_DEADLINE = 4 * HANDSHAKE_TIMEOUT
 TRICKLE_INTERVAL = 0.2
 TRICKLE_STEPS = 40
 
+# Both silence cases log this, so each one waits for one more than the log already holds.
+SOCKET_TIMEOUT_LINE = "Timeout exceeded while reading from socket"
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -90,6 +93,7 @@ def test_trickled_handshake_is_disconnected(started_cluster):
 
 def test_silence_after_packet_header_is_disconnected(started_cluster):
     """A client that promises a payload and then goes quiet must be cut off by the receive timeout."""
+    seen = int(node.count_in_log(SOCKET_TIMEOUT_LINE))
     sock = connect_and_read_greeting()
     try:
         # Declare a 16 KiB payload and send none of it.
@@ -99,8 +103,7 @@ def test_silence_after_packet_header_is_disconnected(started_cluster):
     finally:
         sock.close()
 
-    # The shortened socket receive timeout, not the wall-clock deadline: no read ever completed.
-    node.wait_for_log_line("Timeout exceeded while reading from socket")
+    node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
 
 
 def test_silence_before_any_bytes_is_disconnected(started_cluster):
@@ -109,6 +112,7 @@ def test_silence_before_any_bytes_is_disconnected(started_cluster):
     `finishHandshake` reads its first bytes with raw `socket().receiveBytes`, which never reaches the
     read buffer, so only the timeout armed on the socket itself bounds this.
     """
+    seen = int(node.count_in_log(SOCKET_TIMEOUT_LINE))
     sock = connect_and_read_greeting()
     try:
         elapsed = wait_for_disconnect(sock)
@@ -116,7 +120,7 @@ def test_silence_before_any_bytes_is_disconnected(started_cluster):
     finally:
         sock.close()
 
-    node.wait_for_log_line("Timeout exceeded while reading from socket")
+    node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
 
 
 def test_server_healthy_after_disconnects(started_cluster):

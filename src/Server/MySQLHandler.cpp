@@ -727,6 +727,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
+            /// These reads bypass `in`, so re-apply its deadline here: `receiveBytes` restarts the
+            /// socket timeout, which would otherwise give the phase one budget per call.
+            if (const UInt64 left = in->handshakeMillisecondsLeft())
+                socket().setReceiveTimeout(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(left) * 1000));
+
             int ret = 0;
             try
             {
@@ -1080,6 +1085,12 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     secure_connection = true;
 
     const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
+
+    /// `attach` negotiates TLS inline, before the new buffer exists, and Poco drives that loop
+    /// itself. Give it what is left of the budget: it bounds each read there, not their total.
+    if (handshake_milliseconds_left)
+        socket().setReceiveTimeout(
+            Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(handshake_milliseconds_left) * 1000));
 
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
     /// Not from the plaintext socket: the deadline clamped that one.
