@@ -131,7 +131,13 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                 case ViewTarget::Tags:
                 {
-                    parsed |= tryParseViewTarget(kind, Keyword::TAGS, pos, expected, res);
+                    /// `TAGS` is a prefix of `TAGS MIN MAX`. Without this check the fallback to a
+                    /// compound identifier below would read `MIN` as the name of an external tags
+                    /// table and leave `MAX` behind, which is a misparse rather than an error.
+                    auto lookahead = pos;
+                    Expected lookahead_expected;
+                    if (!ParserKeyword{Keyword::TAGS_MIN_MAX}.ignore(lookahead, lookahead_expected))
+                        parsed |= tryParseViewTarget(kind, Keyword::TAGS, pos, expected, res);
                     break;
                 }
 
