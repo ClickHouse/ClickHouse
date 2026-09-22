@@ -8,6 +8,7 @@
 
 
 #include <Common/quoteString.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
@@ -185,6 +186,8 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
 
 static bool containsBareSelectQuery(const IAST * node)
 {
+    checkStackSize();
+
     const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
     if (!list)
         return false;
