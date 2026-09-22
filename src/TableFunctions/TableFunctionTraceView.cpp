@@ -550,7 +550,10 @@ Example:
 [example:trace_view]
 )",
         .examples = {{"trace_view", "SELECT span, status, duration, timeline FROM traceView('5c9e4a3b-2f61-4d6e-8b7a-90c1d2e3f405')", ""}},
-        .category = FunctionDocumentation::Category::TableFunction});
+        .category = FunctionDocumentation::Category::TableFunction},
+        /// A read-only wrapper over the span log: the caller's SELECT access is checked by the
+        /// query it runs, no CREATE TEMPORARY TABLE is needed, and it works under readonly = 1.
+        {.allow_readonly = true});
 }
 
 }
