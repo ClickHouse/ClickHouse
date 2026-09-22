@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/Serializations/SerializationStringSize.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -505,8 +505,13 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 continue;
 
             auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
-            const auto * string_size_serialization = typeid_cast<const SerializationStringSize *>(serialization.get());
-            if (!string_size_serialization || string_size_serialization->hasSeparateSizeStream())
+            bool has_separate_size_stream = false;
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
+            {
+                for (const auto & substream : path)
+                    has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
+            });
+            if (has_separate_size_stream)
                 continue;
 
             String parent_name = name.substr(0, name.size() - string_size_suffix_length);
