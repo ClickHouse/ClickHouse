@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -43,24 +42,12 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/misc.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Analyzer/TableNode.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/UsedServerLocalObjects.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Storages/StorageDummy.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <unordered_set>
-#include <Common/quoteString.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
@@ -80,85 +67,36 @@ namespace QueryPlanOptimizations
 
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
-#if 0
-std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
-std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr & node);
-bool isDictionaryFunction(const String & name, const DataTypes & argument_types);
-#endif
 std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings);
-
-/// Superseded by the record of server-local objects the query resolved (`UsedServerLocalObjects`, read in
-/// `getReasonPlanCannotBeDistributed`). Kept disabled for comparison; delete once the record has proven itself.
-#if 0
-/// The functions that resolve an object of the initiator by name: the `dictGet` family (a dictionary), `joinGet` (a
-/// `Join` table), `assignCentroid` in its dictionary form, the `region*` functions (the embedded dictionaries of the
-/// server configuration) and the AI functions (a named collection with the credentials). `assignCentroid` takes a
-/// dictionary only with a `String` second argument; the inline form passes the centroids as an array and ships fine.
-/// The function sees the name unwrapped (the default `Nullable` / `LowCardinality` handling), while the plan node
-/// keeps the type as written, so unwrap here too.
-bool isDictionaryFunction(const String & name, const DataTypes & argument_types)
-{
-    static const std::unordered_set<String> embedded_dictionary_functions
-        = {"regionToCity", "regionToArea", "regionToDistrict", "regionToCountry", "regionToContinent",
-           "regionToTopContinent", "regionToPopulation", "regionIn", "regionHierarchy", "regionToName"};
-    static const std::unordered_set<String> ai_functions
-        = {"aiEmbed", "aiExtract", "aiGenerate", "aiFilter", "aiClassify", "aiTranslate", "aiRedact", "aiSimilarity"};
-
-    if (name == "assignCentroid")
-        return argument_types.size() == 2 && isString(removeLowCardinalityAndNullable(argument_types[1]));
-    return functionIsDictGet(name) || functionIsJoinGet(name) || embedded_dictionary_functions.contains(name)
-        || ai_functions.contains(name);
-}
-
-/// The predicate over a resolved query tree, where argument types are known. A call folded into a constant keeps the
-/// call as the constant's source expression, and `ConstantNode` reports no children, so that branch is explicit.
-std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return std::nullopt;
-    if (const auto * function = node->as<FunctionNode>())
-        if (isDictionaryFunction(function->getFunctionName(), function->getArgumentTypes()))
-            return function->getFunctionName();
-    if (const auto * constant = node->as<ConstantNode>())
-        return findDictionaryFunctionInQueryTree(constant->getSourceExpression());
-    for (const auto & child : node->getChildren())
-        if (auto name = findDictionaryFunctionInQueryTree(child))
-            return name;
-    return std::nullopt;
-}
-
-#endif
 
 /// A `DEFAULT` / `MATERIALIZED` column that a part lacks is computed by the reader from the table metadata
 /// (`IMergeTreeReader::evaluateMissingDefaults`), i.e. on the worker, while the plan carries only `INPUT <column>`,
-/// so nothing in the query's analysis touched the objects those defaults use. The reader's own
-/// `defaultRequiredExpressions` lists what it would compute, including the defaults of the columns a default reads;
-/// an empty block stands for a part that has none of the columns, the worst case. Resolving that list the way the
-/// reader resolves it (`createExpressionsAnalyzer`) makes every resolver record the objects it reached, exactly as
-/// for the query text; the record grew if any did. Whether some part actually lacks a column is not checked, and a
-/// list that fails to resolve counts as a reference: a needless local run is accepted over a worker task failing,
-/// and the local run reports the real error where the reader evaluates the default.
+/// so nothing in the query's analysis touched the objects those defaults use. Resolving the same defaults here, with
+/// the reader's own routine, makes every resolver record the objects it reaches; the record grew if any did. The part
+/// is assumed to hold every column without a default and none with one: the worst case for the reader, and the
+/// identifiers of the defaults then resolve to columns, so no call folds into a constant that would run here. Whether
+/// some part actually lacks a column is not checked, and a list that fails to resolve counts as a reference: a needless
+/// local run is accepted over a worker task failing, and the local run reports the real error where the reader
+/// evaluates the default.
 std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & columns = read.getStorageMetadata()->getColumns();
+    Block columns_without_default;
+    for (const auto & column : columns.getAllPhysical())
+        if (!columns.getDefault(column.name))
+            columns_without_default.insert({column.type->createColumn(), column.type, column.name});
     NamesAndTypesList required_columns;
     for (const auto & name : read.getAllColumnNames())
         if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
             required_columns.push_back(*column);
 
-    auto defaults = defaultRequiredExpressions(Block{}, required_columns, columns, /*null_as_default*/ false);
-    if (!defaults)
-        return std::nullopt;
-
     const auto & used = optimization_settings.used_server_local_objects;
     size_t used_before = used ? used->size() : 0;
     try
     {
-        auto context = Context::createCopy(read.getContext());
-        auto dummy_table = std::make_shared<TableNode>(std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns), context);
-        auto resolved = buildQueryTree(defaults, context);
-        QueryAnalyzer(/*only_analyze*/ true).resolve(resolved, dummy_table, context);
+        if (!resolveMissingDefaults(columns_without_default, required_columns, columns, read.getContext()))
+            return std::nullopt;
     }
     catch (const Exception & e)
     {
@@ -174,106 +112,15 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     return std::nullopt;
 }
 
-
-/// Superseded by the record of server-local objects the query resolved (`UsedServerLocalObjects`, read in
-/// `getReasonPlanCannotBeDistributed`). Kept disabled for comparison; delete once the record has proven itself.
-#if 0
-/// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
-/// worker resolves `db.dict` in its own catalog, which is not the initiator's. `joinGet` does the same with a
-/// `Join` table. The step is serializable, so `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
-/// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
-/// Every serializable step that carries an `ActionsDAG` is scanned: expression, filter, the join expression,
-/// the filters pushed into a source read, `LIMIT AFTER/UNTIL` boundaries, `INTERPOLATE`, the element filter
-/// fused into `ARRAY JOIN`, and the `DEFAULT` / `MATERIALIZED` expressions a read may have to compute
-/// (`findDictionaryFunctionInColumnDefaults`). `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
-/// `ObjectFilterStep` exists only in the old interpreter, which `make_distributed_plan` does not use.
-/// The check goes away once the workers receive the dictionaries a distributed plan reads.
-std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
-{
-    auto find_in_dag = [](const ActionsDAG & dag) -> std::optional<String>
-    {
-        std::optional<String> found;
-        auto is_dictionary_function = [&](const IFunctionBase & function)
-        {
-            if (!isDictionaryFunction(function.getName(), function.getArgumentTypes()))
-                return false;
-            found = function.getName();
-            return true;
-        };
-
-        for (const auto & node : dag.getNodes())
-        {
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && is_dictionary_function(*node.function_base))
-                return found;
-            if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_dictionary_function))
-                return found;
-        }
-        return std::nullopt;
-    };
-
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        return find_in_dag(expression->getExpression());
-    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        return find_in_dag(filter->getExpression());
-    if (const auto * join = typeid_cast<const JoinStepLogical *>(&step))
-        return find_in_dag(join->getActionsDAG());
-    if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(&step))
-        return find_in_dag(limit_range->getConditions());
-    if (const auto * filling = typeid_cast<const FillingStep *>(&step))
-    {
-        if (const auto & interpolate = filling->getInterpolateDescription())
-            return find_in_dag(interpolate->actions);
-        return std::nullopt;
-    }
-    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
-    {
-        if (const auto & element_filter = array_join->getElementFilter())
-            return find_in_dag(*element_filter);
-        return std::nullopt;
-    }
-    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
-    {
-        if (const auto & prewhere = source->getPrewhereInfo())
-            if (auto name = find_in_dag(prewhere->prewhere_actions))
-                return name;
-        if (const auto & row_level_filter = source->getRowLevelFilter())
-            if (auto name = find_in_dag(row_level_filter->actions))
-                return name;
-        if (const auto & filter_dag = source->getFilterActionsDAG())
-            if (auto name = find_in_dag(*filter_dag))
-                return name;
-        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
-        {
-            if (const auto & prewhere = read->getDeferredPrewhereInfo())
-                if (auto name = find_in_dag(prewhere->prewhere_actions))
-                    return name;
-            if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
-                if (auto name = find_in_dag(row_level_filter->actions))
-                    return name;
-            if (auto name = findDictionaryFunctionInColumnDefaults(*read))
-                return name;
-        }
-    }
-    return std::nullopt;
-}
-#endif
-
 /// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
-/// connection: its callback holds the connection's protocol version and codec. A step that calls a
-/// dictionary function refers to a dictionary of the initiator (`findDictionaryFunction`). A `ReadFromMergeTree`
+/// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-#if 0 /// Superseded by the record of used server-local objects; see `getReasonPlanCannotBeDistributed`.
-    if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
-        return PreformattedMessage::create(
-            "make_distributed_plan does not support the function {}: it reads an object of the initiator (a dictionary, a Join table, the embedded dictionaries or a named collection)",
-            *dictionary_function);
-#endif
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return std::nullopt;

@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Common/COW.h>
 #include <Storages/ColumnDefault.h>
 
@@ -24,10 +24,16 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class ActionsDAG;
 
-/// The default expressions the reader has to evaluate for the `required_columns` that `block` does not provide, as an
-/// expression list of `_CAST(<default>, '<type>') AS <column>`; the defaults of the columns a default reads are
-/// included recursively. Return nullptr if none is needed.
-ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default);
+/// The default expressions the reader has to evaluate for the `required_columns` that `header` does not provide (the
+/// defaults of the columns a default reads included), resolved by the analyzer against a table of `header`'s columns,
+/// exactly as `evaluateMissingDefaults` resolves them before building its actions. Every object a default refers to
+/// (a dictionary, a `Join` table) is resolved on the way. Return nullptr if nothing has to be evaluated.
+QueryTreeNodePtr resolveMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool null_as_default = false);
 
 /// Create actions which adds missing defaults to block according to required_columns using columns description
 /// or substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
