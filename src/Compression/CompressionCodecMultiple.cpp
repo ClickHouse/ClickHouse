@@ -7,6 +7,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <base/arithmeticOverflow.h>
+#include <base/defines.h>
 
 #include <array>
 #include <cstring>
@@ -114,9 +115,25 @@ UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    const auto chain = getCodecs();
     /// The caller sized dest from getMaxCompressedDataSize(source_size).
-    const UInt32 dest_size = getMaxCompressedDataSize(source_size);
+    return compressBody(/*completed_stages=*/0, source, source_size, getMaxCompressedDataSize(source_size), dest);
+}
+
+UInt32 CompressionCodecMultiple::compressRemainingStages(
+    size_t completed_stages, const char * input, UInt32 input_size, UInt32 source_size, char * dest) const
+{
+    chassert(input != nullptr && dest != nullptr);
+
+    const UInt32 body_size
+        = compressBody(completed_stages, input, input_size, getMaxCompressedDataSize(source_size), &dest[getHeaderSize()]);
+    return writeHeader(dest, body_size, source_size);
+}
+
+UInt32
+CompressionCodecMultiple::compressBody(size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest) const
+{
+    const auto chain = getCodecs();
+    chassert(completed_stages <= chain.size());
 
     dest[0] = static_cast<UInt8>(chain.size());
     for (size_t idx = 0; idx < chain.size(); ++idx)
@@ -127,9 +144,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
 
     /// Stage outputs alternate between two buffers. The last stage writes into `dest` when its reserve fits there.
     std::array<PODArray<char>, 2> buffers;
-    const char * input = source;
-    UInt32 input_size = source_size;
-    for (size_t idx = 0; idx < chain.size(); ++idx)
+    for (size_t idx = completed_stages; idx < chain.size(); ++idx)
     {
         const auto & codec = chain[idx];
         const UInt32 reserve = getCheckedReserveSize(codec, input_size, idx, chain.size());
@@ -149,7 +164,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
 
     const size_t written_size = payload_offset + input_size;
 
-    /// The result is in a buffer after an empty chain or a last stage whose reserve did not fit. If so, memcpy it to `dest`.
+    /// The result is in a buffer after no stage was left to run or a last stage whose reserve did not fit. If so, memcpy it to `dest`.
     if (input != payload)
     {
         if (written_size > dest_size)
