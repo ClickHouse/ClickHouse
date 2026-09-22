@@ -1,0 +1,5 @@
+mutations left after the kill	0
+part shape	Wide	Full
+part column type	Array(String)
+metadata column type	Array(Nullable(String))
+data	['a','b']
