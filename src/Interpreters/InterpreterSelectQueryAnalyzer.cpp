@@ -192,21 +192,21 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
             logger,
             "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
             "replicas.");
-        return {};
+        return QueryPlanPtr{};
     }
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
-        return {};
+        return QueryPlanPtr{};
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
         LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
-        return {};
+        return QueryPlanPtr{};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        return {};
+        return QueryPlanPtr{};
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
@@ -250,7 +250,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
         LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
-        return {};
+        return QueryPlanPtr{};
     }
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -378,10 +378,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
               const BuiltSetsByHashPtr & built_sets)
-          {
-              return buildQueryPlanForAutomaticParallelReplicas(
-                  ast, ctx, select_options, built_sets, column_names);
-          })
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -404,10 +401,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            storage = storage_,
            select_options = select_query_options_,
            column_names](const BuiltSetsByHashPtr & built_sets)
-          {
-              return buildQueryPlanForAutomaticParallelReplicas(
-                  ast, ctx, select_options, built_sets, storage, column_names);
-          })
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -423,10 +417,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
               const BuiltSetsByHashPtr & built_sets)
-          {
-              return buildQueryPlanForAutomaticParallelReplicas(
-                  tree->toAST(), ctx, select_options, built_sets);
-          })
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }

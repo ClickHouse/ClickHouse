@@ -396,8 +396,7 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
-    auto built_sets = collectBuiltSets(query_plan);
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets);
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
@@ -535,13 +534,9 @@ void considerEnablingParallelReplicas(
                 /// keep its own analysis instead of overwriting it: it is the same parallelized table
                 /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
                 /// swap_streams case is already diverted to the throw above), so the existing result is
-                /// equivalent.
-                ///
-                /// The table check guards the assignment, so it comes first. Handing a read the ranges
-                /// selected for another table's predicates would execute and return wrong rows, and the read
-                /// with no analysis yet is precisely the one about to be given `analysis`. A different table
-                /// means the two plans diverged at the matched node - which the rebuild above can do, since
-                /// it replaces the replicas plan - so fail loudly rather than read the wrong ranges.
+                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
+                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
+                /// apply a mismatched analysis.
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
