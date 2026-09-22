@@ -2074,7 +2074,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             definition_context = context_copy;
         }
         ApplyWithSubqueryVisitor::visit(*create.select, definition_context);
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database, false, false, /* global_with_enabled_ = */ true);
         visitor.visit(*create.select);
     }
 

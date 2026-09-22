@@ -9,3 +9,6 @@ WITH r_nested_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT a.x AS from_cte, b.
 WITH r_plain_113711b AS (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.r_plain_113711b SETTINGS enable_global_with_statement = 0)
 9
 9
+-- a clause on the outer select hides the CTE from the nested subquery too
+WITH m_outer_113711b AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM (SELECT * FROM db.m_outer_113711b) SETTINGS enable_global_with_statement = 0
+5

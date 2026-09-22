@@ -42,3 +42,15 @@ SELECT * FROM v_plain_set_113711b;
 WITH r_plain_113711b AS (SELECT 1 AS x) SELECT * FROM (SELECT * FROM r_plain_113711b SETTINGS enable_global_with_statement = 0);
 
 DROP TABLE v_plain_set_113711b, v_mixed_set_113711b, v_nested_set_113711b, r_plain_113711b, r_nested_113711b;
+
+SELECT '-- a clause on the outer select hides the CTE from the nested subquery too';
+-- 5 distinguishes the table from the CTE's 1.
+DROP TABLE IF EXISTS v_outer_set_113711b, m_outer_113711b;
+CREATE TABLE m_outer_113711b (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO m_outer_113711b VALUES (5);
+CREATE VIEW v_outer_set_113711b AS
+WITH m_outer_113711b AS MATERIALIZED (SELECT 1 AS x)
+SELECT * FROM (SELECT * FROM m_outer_113711b) SETTINGS enable_global_with_statement = 0;
+SELECT replaceAll(replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH'), currentDatabase(), 'db') FROM system.tables WHERE database = currentDatabase() AND name = 'v_outer_set_113711b';
+SELECT * FROM v_outer_set_113711b;
+DROP TABLE v_outer_set_113711b, m_outer_113711b;

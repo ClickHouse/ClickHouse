@@ -558,7 +558,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    /// A new definition is classified with global `WITH` on, like `ApplyWithSubqueryVisitor` above; mutations follow the session.
+    AddDefaultDatabaseVisitor visitor(
+        getContext(), table_id.getDatabaseName(), false, false, modify_query ? std::optional<bool>(true) : std::nullopt);
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

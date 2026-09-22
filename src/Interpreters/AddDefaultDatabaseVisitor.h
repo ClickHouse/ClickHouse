@@ -25,6 +25,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <optional>
 #include <set>
 #include <unordered_set>
 
@@ -38,24 +39,13 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
+    /// `global_with_enabled_` defaults to the context's `enable_global_with_statement`.
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false)
-        : context(context_)
-        , database_name(database_name_)
-        , only_replace_current_database_function(only_replace_current_database_function_)
-        , only_replace_in_join(only_replace_in_join_)
-    {
-        if (!context->isGlobalContext())
-        {
-            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
-            {
-                external_tables.insert(table_name);
-            }
-        }
-    }
+        bool only_replace_in_join_ = false,
+        std::optional<bool> global_with_enabled_ = std::nullopt);
 
     void visitDDL(ASTPtr & ast) const
     {
@@ -131,6 +121,8 @@ private:
     mutable std::unordered_set<String> with_aliases;
     /// Names of the `MATERIALIZED` CTEs visible in the select being visited.
     mutable std::unordered_set<String> materialized_cte_names;
+    /// The inherited `enable_global_with_statement` of the select being visited.
+    mutable bool global_with_enabled;
     mutable std::unordered_set<String> expression_aliases;
 
     bool only_replace_current_database_function = false;
@@ -150,9 +142,13 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// `MATERIALIZED` CTEs stay references in a stored query: a bare identifier with such a name is not a table.
-        /// Nested selects inherit the names, unless their own `SETTINGS` clause turns global `WITH` off.
+        /// Nested selects inherit the names while global `WITH` is on; a select's own `SETTINGS` clause overrides
+        /// the inherited value for itself and everything nested in it, like the analyzer applies the clause.
         auto enclosing_cte_names = materialized_cte_names;
-        if (turnsGlobalWithOff(select))
+        const bool enclosing_global_with = global_with_enabled;
+        if (auto literal = globalWithSettingOf(select))
+            global_with_enabled = *literal;
+        if (!global_with_enabled)
             materialized_cte_names.clear();
         const auto base_cte_names = materialized_cte_names;
 
@@ -204,21 +200,23 @@ private:
 
         expression_aliases = std::move(enclosing_query_aliases);
         materialized_cte_names = std::move(enclosing_cte_names);
+        global_with_enabled = enclosing_global_with;
     }
 
-    /// Whether the select's own `SETTINGS` clause sets `enable_global_with_statement` to false.
-    static bool turnsGlobalWithOff(const ASTSelectQuery & select)
+    /// The value of `enable_global_with_statement` in the select's own `SETTINGS` clause, if it is there.
+    static std::optional<bool> globalWithSettingOf(const ASTSelectQuery & select)
     {
         const auto settings = select.settings();
         if (!settings)
-            return false;
+            return std::nullopt;
         const auto * set_query = settings->as<ASTSetQuery>();
         if (!set_query)
-            return false;
+            return std::nullopt;
+        std::optional<bool> result;
         for (const auto & change : set_query->changes)
-            if (change.name == "enable_global_with_statement" && !SettingFieldBool(change.value).value)
-                return true;
-        return false;
+            if (change.name == "enable_global_with_statement")
+                result = SettingFieldBool(change.value).value;
+        return result;
     }
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:

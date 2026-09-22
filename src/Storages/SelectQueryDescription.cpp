@@ -259,7 +259,7 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     ASTSelectQuery & new_inner_query = query.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
 
     /// Qualify the stored first SELECT as before, keeping references to MATERIALIZED CTEs unqualified.
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(), false, false, /* global_with_enabled_ = */ true);
     ApplyWithSubqueryVisitor::visit(query);
     visitor.visit(new_inner_query);
 
