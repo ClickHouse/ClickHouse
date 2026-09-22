@@ -70,11 +70,25 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+}
+
+namespace
+{
+
+/// Whether listing the path failed because the reader refuses the path itself - a malformed or an
+/// unbounded glob, or a glob whose regexp RE2 cannot compile - rather than because of the endpoint.
+/// Such a path fails the same way whenever the table is read.
+bool isPathRefusedByReader(int code)
+{
+    return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
+}
+
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -294,10 +308,11 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
-            /// A path the reader refuses - a malformed or an unbounded `{a,b,c}` glob - fails the
-            /// same way whenever the table is read, so it is reported here as well instead of being
-            /// downgraded to a listing failure that only leaves the hive columns unresolved.
-            if (getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS)
+            /// A path the reader refuses - a malformed or an unbounded glob, or one whose regexp
+            /// cannot be compiled - fails the same way whenever the table is read, so it is reported
+            /// here as well instead of being downgraded to a listing failure that only leaves the
+            /// hive columns unresolved.
+            if (isPathRefusedByReader(getCurrentExceptionCode()))
                 throw;
 
             LOG_WARNING(
@@ -553,7 +568,7 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
 
         /// A path the reader refuses is not an endpoint failure: reading the table fails the same
         /// way, so the refusal is reported here rather than retried by every next query.
-        if (getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS)
+        if (isPathRefusedByReader(getCurrentExceptionCode()))
             throw;
 
         /// An endpoint failure degrades only the triggering query and is retried by the next one.
