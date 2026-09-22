@@ -46,7 +46,7 @@ ASTPtr parseFilter(const String & filter, const String & policy_name)
     }
 }
 
-/// Don't touch subqueries, their columns belong to another table.
+/// Don't go into subqueries, that's a different table.
 void renameOutsideSubqueries(ASTPtr & ast, const RenameColumnData & rename)
 {
     if (ast->as<ASTSubquery>())
@@ -60,7 +60,7 @@ void renameOutsideSubqueries(ASTPtr & ast, const RenameColumnData & rename)
         renameOutsideSubqueries(child, rename);
 }
 
-/// Policies on the table and on its database, with the columns they use.
+/// All policies that apply to this table and which columns they mention.
 std::vector<BoundPolicy> collectBoundPolicies(const StorageID & table_id, const AccessControl & access_control)
 {
     std::vector<BoundPolicy> result;
@@ -139,7 +139,7 @@ void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands 
     if (renames.empty())
         return;
 
-    /// Access entities are global, a const query context can still change them.
+    /// The query context is const, but access entities are global anyway.
     auto & access_control = context->getGlobalContext()->getAccessControl();
     for (const auto & bound : collectBoundPolicies(table_id, access_control))
     {
@@ -148,7 +148,7 @@ void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands 
         if (std::none_of(renames.begin(), renames.end(), [&](const auto & r) { return bound.columns.contains(r.column_name); }))
             continue;
 
-        /// Work on the current entity, another replica may have renamed it already.
+        /// Another replica may have done it already, so start from the current version.
         access_control.update(bound.id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());

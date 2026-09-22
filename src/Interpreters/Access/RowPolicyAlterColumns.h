@@ -8,11 +8,10 @@ namespace DB
 
 class AlterCommands;
 
-/// Refuses an ALTER that would break a row policy: dropping a column it uses, or renaming one
-/// used by a `db.*` policy or a policy in a read-only storage.
+/// Throws if the ALTER would break a row policy of the table (e.g. drops a column it uses).
 void checkRowPoliciesBeforeAlter(const StorageID & table_id, const AlterCommands & commands, const ContextPtr & context);
 
-/// Applies RENAME COLUMN to the table's row policies. Idempotent, so every replica may run it.
+/// Renames columns in the row policies of the table. Safe to run on every replica.
 void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands & commands, const ContextPtr & context);
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RENAME COLUMN must follow into row policies; DROP COLUMN of a used column must be refused.
+# Row policies should survive RENAME COLUMN, and dropping a column they use should not be allowed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
