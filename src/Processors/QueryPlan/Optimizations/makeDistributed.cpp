@@ -53,6 +53,7 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/UsedServerLocalObjects.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/ColumnsDescription.h>
@@ -79,11 +80,16 @@ namespace QueryPlanOptimizations
 
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+#if 0
 std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
-std::optional<String> findDictionaryFunctionInColumnDefaults(const ReadFromMergeTree & read);
 std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr & node);
 bool isDictionaryFunction(const String & name, const DataTypes & argument_types);
+#endif
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Superseded by the record of server-local objects the query resolved (`UsedServerLocalObjects`, read in
+/// `getReasonPlanCannotBeDistributed`). Kept disabled for comparison; delete once the record has proven itself.
+#if 0
 /// The functions that resolve an object of the initiator by name: the `dictGet` family (a dictionary), `joinGet` (a
 /// `Join` table), `assignCentroid` in its dictionary form, the `region*` functions (the embedded dictionaries of the
 /// server configuration) and the AI functions (a named collection with the credentials). `assignCentroid` takes a
@@ -121,15 +127,19 @@ std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr &
     return std::nullopt;
 }
 
+#endif
+
 /// A `DEFAULT` / `MATERIALIZED` column that a part lacks is computed by the reader from the table metadata
 /// (`IMergeTreeReader::evaluateMissingDefaults`), i.e. on the worker, while the plan carries only `INPUT <column>`,
-/// so the DAG walk cannot see the function. The reader's own `defaultRequiredExpressions` lists what it would compute,
-/// including the defaults of the columns a default reads; an empty block stands for a part that has none of the
-/// columns, the worst case. The list is resolved the way the reader resolves it (`createExpressionsAnalyzer`), so the
-/// argument types are known and a call folded into a constant is still visible. Whether some part actually lacks a
-/// column is not checked, and a list that fails to resolve counts as a reference: a needless local run is accepted
-/// over a worker task failing, and the local run reports the real error where the reader evaluates the default.
-std::optional<String> findDictionaryFunctionInColumnDefaults(const ReadFromMergeTree & read)
+/// so nothing in the query's analysis touched the objects those defaults use. The reader's own
+/// `defaultRequiredExpressions` lists what it would compute, including the defaults of the columns a default reads;
+/// an empty block stands for a part that has none of the columns, the worst case. Resolving that list the way the
+/// reader resolves it (`createExpressionsAnalyzer`) makes every resolver record the objects it reached, exactly as
+/// for the query text; the record grew if any did. Whether some part actually lacks a column is not checked, and a
+/// list that fails to resolve counts as a reference: a needless local run is accepted over a worker task failing,
+/// and the local run reports the real error where the reader evaluates the default.
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
+    const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & columns = read.getStorageMetadata()->getColumns();
     NamesAndTypesList required_columns;
@@ -141,26 +151,33 @@ std::optional<String> findDictionaryFunctionInColumnDefaults(const ReadFromMerge
     if (!defaults)
         return std::nullopt;
 
-    QueryTreeNodePtr resolved;
+    const auto & used = optimization_settings.used_server_local_objects;
+    size_t used_before = used ? used->size() : 0;
     try
     {
         auto context = Context::createCopy(read.getContext());
         auto dummy_table = std::make_shared<TableNode>(std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns), context);
-        resolved = buildQueryTree(defaults, context);
+        auto resolved = buildQueryTree(defaults, context);
         QueryAnalyzer(/*only_analyze*/ true).resolve(resolved, dummy_table, context);
     }
     catch (const Exception & e)
     {
-        return fmt::format("<unresolvable column default: {}>", e.message());
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: a column default of table {} does not resolve ({})",
+            read.getStorageID().getFullTableName(), e.message());
     }
 
-    /// One `... AS <column>` per default the reader would evaluate.
-    for (const auto & default_expression : resolved->getChildren())
-        if (auto name = findDictionaryFunctionInQueryTree(default_expression))
-            return fmt::format("{} (in the default expression of column {})", *name, backQuote(default_expression->getAlias()));
+    if (auto entry = used ? used->at(used_before) : std::nullopt)
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
+            UsedServerLocalObjects::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
     return std::nullopt;
 }
 
+
+/// Superseded by the record of server-local objects the query resolved (`UsedServerLocalObjects`, read in
+/// `getReasonPlanCannotBeDistributed`). Kept disabled for comparison; delete once the record has proven itself.
+#if 0
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
 /// worker resolves `db.dict` in its own catalog, which is not the initiator's. `joinGet` does the same with a
 /// `Join` table. The step is serializable, so `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
@@ -239,6 +256,7 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
     }
     return std::nullopt;
 }
+#endif
 
 /// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
@@ -250,10 +268,12 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
 /// to those two.
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
+#if 0 /// Superseded by the record of used server-local objects; see `getReasonPlanCannotBeDistributed`.
     if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
         return PreformattedMessage::create(
             "make_distributed_plan does not support the function {}: it reads an object of the initiator (a dictionary, a Join table, the embedded dictionaries or a named collection)",
             *dictionary_function);
+#endif
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return std::nullopt;
@@ -506,6 +526,9 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
         if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
             return reason;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+        if (auto reason = getReasonColumnDefaultsCannotBeShipped(*read, optimization_settings); reason.has_value())
+            return reason;
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
     /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
@@ -591,6 +614,15 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         for (auto * child : node->children)
             stack.push_back(child);
     }
+
+    /// Every dictionary, embedded dictionary and `Join` table the query resolved by name while it was analyzed exists
+    /// on the initiator, not necessarily on a worker, and the fragment ships only the name. Read after the walk: the
+    /// column-default analysis above resolves during it.
+    if (const auto & used = optimization_settings.used_server_local_objects)
+        if (auto entry = used->first())
+            return PreformattedMessage::create(
+                "make_distributed_plan does not support {} {}: it is an object of the initiator",
+                UsedServerLocalObjects::kindName(entry->kind), entry->name);
     return std::nullopt;
 }
 

@@ -3087,6 +3087,22 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
+void Context::addUsedServerLocalObject(UsedServerLocalObjects::Kind kind, const String & name) const
+{
+    /// Introspection (`system.functions`) instantiates every function resolver; that is not a use by a query.
+    if (suppress_query_factories_info || !hasQueryContext())
+        return;
+    if (const auto & objects = getQueryContext()->used_server_local_objects)
+        objects->add(kind, name);
+}
+
+std::shared_ptr<const UsedServerLocalObjects> Context::getUsedServerLocalObjects() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->used_server_local_objects;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (suppress_query_factories_info)
@@ -3979,6 +3995,7 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
+    used_server_local_objects = std::make_shared<UsedServerLocalObjects>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4088,11 +4105,14 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
+    /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
+    addUsedServerLocalObject(UsedServerLocalObjects::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
+    addUsedServerLocalObject(UsedServerLocalObjects::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 

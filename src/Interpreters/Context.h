@@ -20,6 +20,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/UsedServerLocalObjects.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -593,6 +594,8 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Set on the query context by `makeQueryContext`; sub-contexts reach it through `getQueryContext`.
+    UsedServerLocalObjectsPtr used_server_local_objects;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
@@ -1171,6 +1174,11 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
+    /// Records that the query resolved an object of this server by name (see `UsedServerLocalObjects`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addUsedServerLocalObject(UsedServerLocalObjects::Kind kind, const String & name) const;
+    std::shared_ptr<const UsedServerLocalObjects> getUsedServerLocalObjects() const;
 
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating

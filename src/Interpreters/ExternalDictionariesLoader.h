@@ -38,6 +38,9 @@ public:
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// Records the query's use of the dictionary (`UsedServerLocalObjects`) under its qualified name.
+    void recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const;
+
     /// The same, but resolving an unqualified name against the given database rather than the
     /// current database of a context. Used when the name has to resolve against the database
     /// owning the definition, e.g. when the metadata of a table is loaded.

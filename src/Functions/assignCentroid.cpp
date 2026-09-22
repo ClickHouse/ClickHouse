@@ -3,6 +3,8 @@
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -325,7 +327,7 @@ class FunctionAssignCentroid : public IFunction
 public:
     static constexpr auto name = "assignCentroid";
 
-    explicit FunctionAssignCentroid(ContextPtr context_) : dict_helper(std::move(context_)) {}
+    explicit FunctionAssignCentroid(ContextPtr context_) : context(context_), dict_helper(std::move(context_)) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAssignCentroid>(context_); }
 
     String getName() const override { return name; }
@@ -338,23 +340,27 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments: assignCentroid(vec, centroids | dict_name)", name);
 
-        const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get());
         if (!vec_type || !isFloat(vec_type->getNestedType()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of {} must be an array of floats", name);
 
-        /// `make_distributed_plan` relies on "second argument is a `String`" meaning the dictionary form
-        /// (`findDictionaryFunction` in `makeDistributed.cpp`); keep that check in step with any change here.
-        if (!isCentroidsArray(arguments[1]) && !isString(arguments[1]))
+        if (!isCentroidsArray(arguments[1].type) && !isString(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument of {} must be a constant array of float arrays (the centroids) "
                 "or a constant String (a dictionary name)", name);
+
+        /// The dictionary is read only when the first block arrives (see `executeImpl`), so its use is recorded here,
+        /// while the query is analyzed: the `make_distributed_plan` fallback decision needs to know before the plan
+        /// ships. Qualifying the name records without loading anything.
+        if (const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
 
         return std::make_shared<DataTypeUInt32>();
     }
@@ -402,6 +408,7 @@ private:
         return castColumn(full, target);
     }
 
+    ContextPtr context;
     mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
     /// A `weak_ptr`, not a raw pointer: expression actions can outlive a query, and comparing raw addresses

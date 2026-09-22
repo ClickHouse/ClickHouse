@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/UsedServerLocalObjects.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -937,6 +938,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
             reason->text);
+    if (const auto & used = optimization_settings.used_server_local_objects)
+        if (auto entry = used->first())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
+                UsedServerLocalObjects::kindName(entry->kind), entry->name);
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.

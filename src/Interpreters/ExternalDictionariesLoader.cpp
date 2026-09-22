@@ -94,8 +94,18 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
     dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
 }
 
+/// Every path by which a query reaches a dictionary by name passes here, so this is where a query's use of a
+/// dictionary is recorded for the `make_distributed_plan` fallback decision, under the qualified name.
+void ExternalDictionariesLoader::recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const
+{
+    local_context->addUsedServerLocalObject(
+        UsedServerLocalObjects::Kind::Dictionary,
+        qualifyDictionaryNameWithDatabase(dictionary_name, local_context->getCurrentDatabase()).getFullName());
+}
+
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
+    recordUse(dictionary_name, local_context);
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
 
     /// Check if we have a cancellable query context
@@ -138,6 +148,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
+    recordUse(dictionary_name, local_context);
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
@@ -179,6 +190,7 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
+    recordUse(dictionary_name, query_context);
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
 
     auto load_result = getLoadResult(resolved_name);
@@ -197,6 +209,7 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
 {
+    recordUse(dictionary_name, query_context);
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
 
     auto load_result = getLoadResult(resolved_name);
@@ -222,6 +235,9 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
+    /// The analyzer qualifies the name of every `dictGet`-family call through here, `dictHas` included, whose return
+    /// type never touches the loader.
+    recordUse(dictionary_name, query_context);
     return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
 }
 
