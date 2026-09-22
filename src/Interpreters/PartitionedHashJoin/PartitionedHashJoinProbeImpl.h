@@ -255,7 +255,8 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename
 size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
-    /// The joins that keep used flags per row take the delegated standard path instead.
+    /// One clause addresses its flags per cell; the mixed ON condition of a RIGHT or FULL join, which
+    /// marks per row, takes the filter path below.
     constexpr bool flag_per_row = false;
 
     const auto & join_keys = added_columns.join_on_keys.at(0);
@@ -278,9 +279,11 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
 
     /// A mixed ON condition is decided per candidate pair, over the right rows themselves, so the
     /// probe cannot record matches by cell word. The standard filter path runs over the shared
-    /// table instead: it finds through the same key getter and marks the per-cell used flags
-    /// through the same `FindResult`. Only `RowRefList` maps hold every right row of a key, which is
-    /// why `preferUseMapsAll` chose them for the build.
+    /// table instead: it finds through the same key getter and marks the used flags through the same
+    /// `FindResult` - per cell, or per right-table row on a RIGHT or FULL join, whose non-joined
+    /// output needs to know which rows of a key the condition let through (`used_flags_per_row`). Only
+    /// `RowRefList` maps hold every right row of a key, which is why `preferUseMapsAll` chose them for
+    /// the build.
     if constexpr (join_features.is_maps_all)
     {
         if (added_columns.additional_filter_expression)
@@ -294,7 +297,7 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
                 used_flags,
                 selector,
                 added_columns.need_filter,
-                /*flag_per_row=*/false);
+                /*flag_per_row=*/join_features.right || join_features.full);
         }
     }
 
@@ -334,12 +337,12 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
     constexpr bool flat_lookup_supported = can_prefetch && is_hash_join_table<MapNonConst>;
     bool use_amac = false;
     if constexpr (amac_supported)
-        use_amac = clause.amacEnabled() && added_columns.enable_prefetch && clause.tableBytes() >= getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
+        use_amac = clauses.front().amacEnabled() && added_columns.enable_prefetch && clauses.front().tableBytes() >= getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
 
     /// Mutually exclusive with the find pass, on the same threshold.
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = !use_amac && added_columns.enable_prefetch && clause.tableBytes() >= getMinBytesForPrefetchInJoin();
+        use_prefetch = !use_amac && added_columns.enable_prefetch && clauses.front().tableBytes() >= getMinBytesForPrefetchInJoin();
 
     /// Used only by `loop`'s plain path; `flat_loop` builds its own over the flat lookup.
     auto prefetcher = makeJoinPrefetcher(
@@ -848,6 +851,135 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
     return rows;
 }
 
+/** The probe over the tables of several ON clauses (`ON a OR b`): the multi-map `joinRightColumns` of
+  * `HashJoin`. Per probe row the clauses are walked in order; `KnownRowsHolder` keeps a right row an
+  * earlier clause emitted from being emitted again, the last clause skips that bookkeeping, and ANY and
+  * SEMI stop at the first clause that matches - except RIGHT and FULL ANY, which mark every clause's
+  * rows. The used flags are kept per right-table row, since one row is reachable through several keys.
+  * No find ring and no flat lookup: their out-of-order results could not be deduplicated across the
+  * clauses, and `HashJoin` has neither on this path.
+  */
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
+size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block)
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
+    if constexpr (join_features.is_asof_join)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: an ASOF join has exactly one ON clause");
+    }
+    else
+    {
+        constexpr bool flag_per_row = true;
+        const auto & selector = block.getSelector();
+        const size_t rows = selector.size();
+        const size_t num_clauses = tables.size();
+        chassert(added_columns.join_on_keys.size() == num_clauses);
+        JoinStuff::JoinUsedFlags & used_flags = *hash_join->used_flags;
+
+        std::vector<KeyGetter> key_getters;
+        key_getters.reserve(num_clauses);
+        for (const auto & join_keys : added_columns.join_on_keys)
+            key_getters.push_back(
+                createKeyGetter<KeyGetter, /*is_asof_join=*/false>(join_keys.key_columns, join_keys.key_sizes, hash_join->data->key_range));
+
+        /// See the one-clause probe: the standard filter path, over every clause's table.
+        if constexpr (join_features.is_maps_all)
+        {
+            if (added_columns.additional_filter_expression)
+                return HashJoinMethods<KIND, STRICTNESS, MapsShape>::template joinRightColumnsWithAdditionalFilter<KeyGetter, Map>(
+                    std::move(key_getters), tables, added_columns, used_flags, selector, added_columns.need_filter, flag_per_row);
+        }
+
+        /// One byte per row and clause merging the clause's null map and ON mask, as `joinRightColumns`
+        /// builds it; null for a clause that skips no row.
+        std::vector<const UInt8 *> skip_datas(num_clauses, nullptr);
+        std::vector<IColumn::Filter> skip_buffers(num_clauses);
+        for (size_t clause_idx = 0; clause_idx < num_clauses; ++clause_idx)
+        {
+            const auto & join_keys = added_columns.join_on_keys[clause_idx];
+            if (!join_keys.null_map && join_keys.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
+                continue;
+            if (selector.isContinuousRange())
+                skip_datas[clause_idx] = join_keys.buildRowSkipData(skip_buffers[clause_idx], selector.getRange().first, rows);
+            else
+                skip_datas[clause_idx] = join_keys.buildRowSkipData(skip_buffers[clause_idx], selector.getIndexes());
+        }
+
+        if constexpr (join_features.need_replication)
+            added_columns.offsets_to_replicate = IColumn::Offsets(rows);
+
+        Arena pool;
+
+        /// The look-ahead prefetch of the first clause's table only, as `HashJoin` prefetches its first map.
+        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
+        bool use_prefetch = false;
+        if constexpr (can_prefetch)
+            use_prefetch = added_columns.enable_prefetch && clauses.front().tableBytes() >= getMinBytesForPrefetchInJoin();
+        auto prefetcher = makeJoinPrefetcher(
+            use_prefetch,
+            rows,
+            [&](size_t k) __attribute__((always_inline))
+            {
+                if constexpr (can_prefetch)
+                    tables[0]->prefetch(key_getters[0].getKeyHolder(selector[k], pool));
+            });
+
+        auto loop = [&]<bool need_filter>()
+        {
+            if constexpr (need_filter)
+            {
+                added_columns.filter = IColumn::Filter(rows, 0);
+                added_columns.matched_rows.reserve(rows);
+            }
+
+            IColumn::Offset current_offset = 0;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                if constexpr (can_prefetch)
+                    prefetcher.prefetchAt(i);
+
+                const size_t ind = selector[i];
+
+                bool right_row_found = false;
+                KnownRowsHolder<flag_per_row> known_rows;
+                for (size_t clause_idx = 0; clause_idx < num_clauses; ++clause_idx)
+                {
+                    if (skip_datas[clause_idx] && skip_datas[clause_idx][ind])
+                        continue;
+
+                    auto find_result = key_getters[clause_idx].findKey(*tables[clause_idx], ind, pool);
+                    if (!find_result.isFound())
+                        continue;
+
+                    right_row_found = true;
+                    const bool is_last_disjunct = clause_idx + 1 == num_clauses;
+                    processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
+                        find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct);
+
+                    if constexpr (join_features.is_any_or_semi_join && !(join_features.is_any_join && (join_features.right || join_features.full)))
+                        break;
+                }
+
+                if (!right_row_found)
+                {
+                    if constexpr (join_features.is_anti_join && join_features.left)
+                        setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+                    addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+                }
+
+                if constexpr (join_features.need_replication)
+                    added_columns.offsets_to_replicate[i] = current_offset;
+            }
+        };
+
+        if (added_columns.need_filter)
+            loop.template operator()<true>();
+        else
+            loop.template operator()<false>();
+        return rows;
+    }
+}
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
 JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Block * join_get_columns)
 {
@@ -867,19 +999,23 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
     }
     ScatteredBlock scattered_block{std::move(block)};
 
-    if (!clause.hasTable() && scattered_block.rows() > 0)
+    if (!clauses.front().hasTable() && scattered_block.rows() > 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: probe started before the build phase finished");
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
 
-    const auto & on_clause = table_join->getOnlyClause();
     std::vector<JoinOnKeyColumns> join_on_keys;
-    join_on_keys.emplace_back(
-        scattered_block,
-        is_join_get ? on_clause.key_names_right : on_clause.key_names_left,
-        on_clause.condColumnNames().first,
-        join.key_sizes[0],
-        HashJoin::isLowCardinalityType(join.data->type));
+    join_on_keys.reserve(clauses.size());
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+    {
+        const auto & on_clause = table_join->getClauses()[clause_idx];
+        join_on_keys.emplace_back(
+            scattered_block,
+            is_join_get ? on_clause.key_names_right : on_clause.key_names_left,
+            on_clause.condColumnNames().first,
+            join.key_sizes[clause_idx],
+            HashJoin::isLowCardinalityType(join.data->type));
+    }
 
     /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
     /// exact right rows. The residual-filter path marks its right matches itself, as in
@@ -915,14 +1051,24 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
         /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
         ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::HashJoinPartitionedProbeLookupMicroseconds);
-        const auto & tables = std::get<HashJoinTables>(clause.tableMaps().maps);
+        /// Every clause's table has the one merged type (`HashJoin::mergeJoinMethods`), so one switch serves all.
         switch (join.data->type)
         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map, join_features.need_flags>::Type; \
-        processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
+        if (clauses.size() == 1) \
+            processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>( \
+                *std::get<HashJoinTables>(clauses.front().tableMaps().maps).TYPE, added_columns, scattered_block, lane); \
+        else \
+        { \
+            std::vector<const Map *> tables; \
+            tables.reserve(clauses.size()); \
+            for (const auto & clause : clauses) \
+                tables.push_back(std::get<HashJoinTables>(clause.tableMaps().maps).TYPE.get()); \
+            processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(tables, added_columns, scattered_block); \
+        } \
         break; \
     }
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)

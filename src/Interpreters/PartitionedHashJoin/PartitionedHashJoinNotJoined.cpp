@@ -23,11 +23,14 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
-/** RIGHT/FULL non-joined rows of the shared table; counterpart of `NotJoinedHash` with per-offset
-  * used flags. Stream `i` of `n` owns cell positions `[i * cells / n, (i + 1) * cells / n)`. A
+/** RIGHT/FULL non-joined rows of the shared table; counterpart of `NotJoinedHash`. With per-offset
+  * used flags, stream `i` of `n` owns cell positions `[i * cells / n, (i + 1) * cells / n)`. A
   * cell's used flag is its position plus one. Stream 0 also emits the zero-value cell and rows
-  * whose keys were never inserted (saved null maps). Several disjuncts run on the delegated
-  * `HashJoin` and its `NotJoinedHash`.
+  * whose keys were never inserted (saved null maps). With per-row used flags (`used_flags_per_row`:
+  * several ON clauses, or a mixed ON condition on a RIGHT or FULL join) the stored blocks are walked
+  * instead, row by row; the streams take the blocks round-robin by block number. A row nothing
+  * marked is emitted whether or not its key ever entered a table, so no null maps are kept for that
+  * shape.
   *
   * Fixed-width payload is in a row store; remaining columns stay columnar. Output is filled
   * through the join's access indexes, never by position.
@@ -65,6 +68,12 @@ public:
         dispatchStorage(
             [&]<bool with_row_store, bool with_columns>()
             {
+                if (parent.used_flags_per_row)
+                {
+                    rows_added = fillFromStoredBlocks<with_row_store, with_columns>(columns_right);
+                    return;
+                }
+
                 const HashJoin::Type type = parent.storedData().type;
                 rows_added = std::visit(
                     [&](const auto & shape)
@@ -82,7 +91,7 @@ public:
                                     type);
                         }
                     },
-                    parent.clause.tableMaps().maps);
+                    parent.clauses.front().tableMaps().maps);
 
                 fillNullsFromBlocks<with_row_store, with_columns>(columns_right, rows_added);
             });
@@ -115,6 +124,8 @@ private:
     /// The fixed-map cursor, resumable across calls.
     std::any fixed_position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
+    /// The stored-block cursor of the per-row scan, resumable across calls.
+    std::optional<HashJoin::StoredBlocksList::const_iterator> stored_position;
 
     /// The rows one call collected: encoded ref words for the columnar part, row pointers for the
     /// row store part.
@@ -255,6 +266,33 @@ private:
         return collected.rows;
     }
 
+    /// Per-row used flags: every stored row nothing marked, whether it entered a table or not, as
+    /// `NotJoinedHash` walks them. The streams take the stored blocks round-robin by block number.
+    template <bool with_row_store, bool with_columns>
+    size_t fillFromStoredBlocks(MutableColumns & columns_right)
+    {
+        const auto & stored_blocks = parent.storedBlocks();
+        if (!stored_position.has_value())
+            stored_position = stored_blocks.begin();
+
+        Collected collected;
+        collected.reserve<with_row_store, with_columns>(max_block_size);
+
+        const auto end = stored_blocks.end();
+        for (auto & it = *stored_position; it != end && collected.rows < max_block_size; ++it)
+        {
+            if (it->block_no % num_streams != stream_idx)
+                continue;
+            const size_t rows = it->blockRows();
+            for (size_t row = 0; row < rows; ++row)
+                if (!parent.hash_join->isUsed(it->block_no, row))
+                    collectRow<with_row_store, with_columns>(it->block_no, static_cast<UInt32>(row), collected);
+        }
+
+        fillOutput(columns_right, collected);
+        return collected.rows;
+    }
+
     /// The rows that never entered the table, from the null maps saved when the build ended; as
     /// `NotJoinedHash::fillNullsFromBlocks` does. Not partitioned, so exactly one stream emits them.
     template <bool with_row_store, bool with_columns>
@@ -291,8 +329,11 @@ private:
 
 bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
-    return !delegate_mode && table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join)
-        && !table_join->getOnlyClause().key_names_right.empty();
+    /// Without equi keys nothing reaches a table, so no right row is ever marked used and the scan cannot
+    /// be split (`HashJoin::anyClauseHasRightKeys`).
+    const bool any_clause_has_right_keys = std::ranges::any_of(
+        table_join->getClauses(), [](const TableJoin::JoinOnClause & on_clause) { return !on_clause.key_names_right.empty(); });
+    return table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join) && any_clause_has_right_keys;
 }
 
 IBlocksStreamPtr
@@ -308,27 +349,18 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
     size_t stream_idx,
     size_t num_streams) const
 {
-    if (delegate_mode)
-    {
-        /// `supportParallelNonJoinedBlocksProcessing` keeps this path single-stream, so only the
-        /// first stream has anything to emit.
-        if (stream_idx != 0)
-            return {};
-        return hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-    }
-
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    /// The same check `HashJoin::getNonJoinedBlocks` makes; the shapes that would break the
-    /// invariant took the delegated branch above.
+    /// The same check `HashJoin::getNonJoinedBlocks` makes, and skipped for the same shape: with several
+    /// clauses every right key is among the columns to add, so the invariant does not hold.
     size_t left_columns_count = left_sample_block.columns();
     if (hash_join->canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     const size_t expected_columns_count
         = left_columns_count + hash_join->required_right_keys.columns() + hash_join->sample_block_with_columns_to_add.columns();
-    if (expected_columns_count != result_sample_block.columns())
+    if (!used_flags_per_row && expected_columns_count != result_sample_block.columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",

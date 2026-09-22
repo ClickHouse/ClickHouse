@@ -14,10 +14,10 @@ partition plans
 04929 asof inner le	1	1
 04929 asof inner nullable	1	1
 04929 asof left gt string	1	1
-04929 or inner	1	1
-04929 or left join_use_nulls	1	1
-04929 or right	1	1
 04929 filter full both	1	1
 04929 filter inner lhs	1	1
 04929 filter left rhs	1	1
 04929 filter right rhs	1	1
+04929 or inner	1	1
+04929 or left join_use_nulls	1	1
+04929 or right	1	1
