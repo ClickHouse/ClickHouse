@@ -7008,9 +7008,15 @@ void StorageReplicatedMergeTree::alter(
     /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
     /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
     /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    /// A reset (`RESET SETTING table_readonly`, or its `MODIFY SETTING table_readonly = DEFAULT` spelling)
+    /// is rejected too: the setting does not exist for this engine in either direction.
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+        const bool touches_table_readonly
+            = (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+            || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("table_readonly"));
+
+        if (touches_table_readonly)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
     }
 
