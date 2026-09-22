@@ -1022,8 +1022,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             parents_list[snapshot_id] = 0;
     }
 
-    /// For empty table we may have no snapshots
-    if (metadata_object->has(f_current_snapshot_id))
+    /// For empty table we may have no snapshots. `has` is true for a JSON null, which
+    /// `getValue<Int64>` cannot convert, and which means "no current snapshot" like an absent key.
+    if (metadata_object->has(f_current_snapshot_id) && !metadata_object->isNull(f_current_snapshot_id))
     {
         auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         /// Add current snapshot-id to ancestors list

@@ -3,10 +3,9 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
 # A table whose `current-snapshot-id` says "no current snapshot" reads as empty, and plain
-# `OPTIMIZE` must not bring its historical rows back. Four spellings of that state are exercised:
-# `current-snapshot-id` set to `-1` or absent, and - since `snapshots` is itself optional - an
-# empty and an absent snapshot set. JSON `null` fails earlier, inside the metadata readers, so it
-# is out of scope here.
+# `OPTIMIZE` must not bring its historical rows back. Five spellings of that state are exercised:
+# `current-snapshot-id` set to `null`, to `-1`, or absent, and - since `snapshots` is itself
+# optional - an empty and an absent snapshot set.
 #
 # The row counts are asserted on both builds - a cloud build gates `OPTIMIZE` on
 # `IcebergCompactionMetadataGenerator` and throws instead of compacting, which leaves the table
@@ -22,8 +21,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
+trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
-for VARIANT in negative absent empty_snapshots no_snapshots; do
+for VARIANT in null negative absent empty_snapshots no_snapshots; do
     TABLE="t_${CLICKHOUSE_DATABASE}_${VARIANT}_${RANDOM}"
     TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
@@ -48,7 +48,9 @@ import json, sys
 path, variant = sys.argv[1], sys.argv[2]
 meta = json.load(open(path))
 assert meta.get("current-snapshot-id") not in (None, -1), "expected a live current snapshot to remove"
-if variant == "negative":
+if variant == "null":
+    meta["current-snapshot-id"] = None
+elif variant == "negative":
     meta["current-snapshot-id"] = -1
 else:
     meta.pop("current-snapshot-id", None)
