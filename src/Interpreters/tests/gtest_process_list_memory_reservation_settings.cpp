@@ -93,8 +93,8 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     query_context->getClientInfo().current_query_id = "process_list_memory_settings";
 
     {
-        auto query_scope = QueryScope::create(query_context);
         ProcessList process_list;
+        auto query_scope = QueryScope::create(query_context);
         auto entry = process_list.insert(
             "SELECT 1",
             0,
