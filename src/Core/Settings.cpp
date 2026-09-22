@@ -2075,6 +2075,8 @@ For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): w
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
+It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.
+
 Possible values:
 
 - 0 — Disabled.
