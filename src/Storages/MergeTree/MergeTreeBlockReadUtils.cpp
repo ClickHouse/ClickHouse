@@ -644,8 +644,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 step_column_names.push_back(name);
         }
 
-        addLegacyStringParentIfNeeded(step_column_names);
-
         const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
 
         /// If part has non-adaptive granularity we always have to read at least one column
