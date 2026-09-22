@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
@@ -19,7 +18,6 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
-    const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
@@ -32,7 +30,6 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         max_loading_retries_,
         metadata_ref_count_,
         use_persistent_processing_nodes_,
-        processing_state_cache_ttl_seconds_,
         log_)
 {
     LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
@@ -76,7 +73,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
 
     Coordination::Responses responses;
-    Coordination::Error code = {};
+    Coordination::Error code;
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
@@ -178,42 +175,6 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
         i += 2;
     }
     paths = std::move(result);
-}
-
-ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetadata::getPathState(
-    std::string & failure_message) const
-{
-    const std::vector<std::string> paths = {processed_node_path, failed_node_path};
-
-    zkutil::ZooKeeper::MultiTryGetResponse responses;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        responses = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(paths);
-    });
-
-    if (responses.size() != paths.size())
-        throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-            "Unexpected size of Keeper response: expected {}, got {}",
-            paths.size(), responses.size());
-
-    for (size_t i = 0; i < responses.size(); ++i)
-    {
-        const auto err = responses[i].error;
-        if (err != Coordination::Error::ZOK && err != Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException::fromPath(err, paths[i]);
-    }
-
-    if (responses[0].error == Coordination::Error::ZOK)
-        return PathState::Processed;
-
-    if (responses[1].error == Coordination::Error::ZOK)
-    {
-        if (!responses[1].data.empty())
-            failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
-        return PathState::Failed;
-    }
-
-    return PathState::Unknown;
 }
 
 }

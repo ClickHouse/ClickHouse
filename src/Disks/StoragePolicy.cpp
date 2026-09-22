@@ -1,5 +1,4 @@
 #include <Disks/StoragePolicy.h>
-#include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/createVolume.h>
@@ -90,7 +89,7 @@ StoragePolicy::StoragePolicy(
                 ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps");
 
-        ::stableSort(
+        std::stable_sort(
             volumes.begin(), volumes.end(),
             [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
     }

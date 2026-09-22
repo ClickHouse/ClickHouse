@@ -3,11 +3,14 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include "config.h"
 
 namespace DB
 {
@@ -20,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathBinaryFloat64 final : public IFunction
+class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -39,7 +42,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!isNativeNumber(arg) && !isDecimal(arg) && !WhichDataType(arg).isBFloat16())
+            if (!isNativeNumber(arg) && !isDecimal(arg))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                     arg->getName(), getName());
         };
