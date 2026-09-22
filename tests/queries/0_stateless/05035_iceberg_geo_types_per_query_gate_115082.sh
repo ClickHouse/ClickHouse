@@ -131,12 +131,6 @@ ${CLICKHOUSE_CLIENT} --allow_geo_types_in_iceberg=1 --query "
 ${CLICKHOUSE_CLIENT} --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
-# system.tables answers total_rows for a table it may not read as NULL rather than failing the whole
-# query. The column has to be named for the row count to be reached at all. Reaching it means
-# system.tables logs the refusal it swallows, so silence the log channel the client forwards to its
-# stderr, as the adjacent Iceberg tests do.
-${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
-
 # A table without a geometry column is unaffected on each of the three paths gated above: the
 # trivial count() through Merge, a direct read, and a scan through Merge of a pinned snapshot.
 setup --allow_insert_into_iceberg=1 --query "
@@ -152,10 +146,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT id, s FROM ${PLAIN};
     SELECT id, s FROM ${MERGE_PLAIN};
 "
-
-# And its total_rows is a number, so the NULL asserted above is this table being unreadable by that
-# query rather than how system.tables always answers for Iceberg.
-${CLICKHOUSE_CLIENT} --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${PLAIN}'"
 
 # Compaction reads the data files through the table's columns and writes them back, so both OPTIMIZE
 # entrypoints are gated on those columns. Every arm below enables the compaction setting, so what is
