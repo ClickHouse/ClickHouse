@@ -145,7 +145,22 @@ mkdir tmp_stress_output
 # are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
 # default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
 # coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+#
+# `05079_parse_aggregate_function_typed_param` is skipped while the previous release's copy of it persists
+# `AggregateFunction(quantile(0.5::Decimal32(1)), Float64)` as `quantile('0.5')`: that release printed a
+# `Decimal`, wide-integer, `UUID` or IP level with `FieldVisitorToString`, so the stored spelling reparses
+# as a `String` and the level check rejects it (fixed at the producer by #119810, which does not repair
+# metadata already written that way). `--upgrade-check` implies `--fake-drop`, so such a table survives
+# into the upgrade restart, where the new server refuses it with `Code: 70 CANNOT_CONVERT_TYPE` and logs
+# an `<Error>`, and where a failed load also makes every `system.mutations` query throw
+# `ASYNC_LOAD_WAIT_FAILED` and fail the mutation check below. The skip is keyed on the cloned reference
+# still carrying the untyped spelling, so it stops applying once the previous release prints the type.
+skip_func_tests=()
+previous_release_05079=previous_release_repository/tests/queries/0_stateless/05079_parse_aggregate_function_typed_param.reference
+if [ -f "$previous_release_05079" ] && grep -qF "quantile(\\'0.5\\'), Float64" "$previous_release_05079"; then
+    skip_func_tests=(--skip-func-tests="--skip 05079_parse_aggregate_function_typed_param")
+fi
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" "${skip_func_tests[@]}" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
