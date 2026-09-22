@@ -7,6 +7,7 @@ import pytest
 from helpers.s3_tools import S3Uploader
 from helpers.iceberg_utils import default_upload_directory, get_uuid_str
 from .external_paths_utils import (
+    ALL_ROWS,
     create_and_upload_table,
     _create_iceberg_s3_table,
     _distribute_table_components,
@@ -208,3 +209,24 @@ def test_cluster_function_reads_external_delete_file(started_cluster_iceberg_wit
 
     args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
     assert instance.query(f"SELECT * FROM icebergS3Cluster('cluster_simple', {args}) ORDER BY id") == "1\talpha\n3\tgamma\n"
+
+
+@pytest.mark.parametrize("metadata_storage,manifest_list_storage,manifest_storage,data_storage", [
+    ("s3", "local", "s3", "s3"),
+    ("s3", "s3", "local", "s3"),
+    ("azure", "azure", "azure", "local"),
+])
+def test_multi_storage_combinations(started_cluster_iceberg_with_spark, metadata_storage, manifest_list_storage, manifest_storage, data_storage):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_combo_{get_uuid_str()}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    base_path = _distribute_table_components(started_cluster_iceberg_with_spark, TABLE_NAME, metadata_storage,
+                                             manifest_list_storage, manifest_storage, data_storage)
+
+    func = {"s3": "icebergS3", "azure": "icebergAzure", "local": "icebergLocal"}[metadata_storage.split(":")[0]]
+    args = get_query_args(metadata_storage, started_cluster_iceberg_with_spark, base_path)
+
+    assert instance.query(f"SELECT * FROM {func}({args}) ORDER BY id") == ALL_ROWS
