@@ -9,3 +9,8 @@
 1
 8. An existing index stays readable without the privilege: it is authorized when defined, not per reader.
 1
+9. An unrelated ALTER on such a table does not re-authorize the index.
+1
+10. Nor does detaching and attaching the stored definition.
+1
+11. Redeclaring the index with a privileged function is still denied.

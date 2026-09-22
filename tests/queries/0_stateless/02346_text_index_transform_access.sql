@@ -90,4 +90,21 @@ SET allow_introspection_functions = 0;
 
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
+SELECT '9. An unrelated ALTER on such a table does not re-authorize the index.';
+
+ALTER TABLE tab ADD COLUMN extra UInt8 DEFAULT 0;
+ALTER TABLE tab RENAME COLUMN val TO val2;
+SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
+
+SELECT '10. Nor does detaching and attaching the stored definition.';
+
+DETACH TABLE tab;
+ATTACH TABLE tab;
+SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
+
+SELECT '11. Redeclaring the index with a privileged function is still denied.';
+
+ALTER TABLE tab DROP INDEX idx,
+                ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
 DROP TABLE tab;

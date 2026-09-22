@@ -1915,6 +1915,7 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
+        bool defining_indices,
         const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
@@ -1925,11 +1926,14 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         ContextPtr local_context) const;
 
+    /// `defining_indices` marks a statement that introduces the whole index set (`CREATE`/`ATTACH`),
+    /// as opposed to an `ALTER` that revalidates indices it does not touch.
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        bool defining_indices = false);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 

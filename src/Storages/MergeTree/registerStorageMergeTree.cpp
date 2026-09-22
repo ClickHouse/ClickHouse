@@ -714,10 +714,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const bool is_shared_catalog_replay = false;
 #endif
 
+    /// True only for a definition this user is submitting now, as opposed to one replayed, restored or
+    /// read back from stored metadata. User-supplied expressions in index arguments are authorised
+    /// against the submitter only in the former case; see `MergeTreeData::checkProperties`.
+    const bool is_submitted_definition
+        = is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay;
+
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_submitted_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
@@ -1222,6 +1228,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.allow_tuple_element_aggregation = false;
     }
 
+    /// Global context for anything that is not being submitted now: a replayed or restored definition
+    /// was authorised where it was submitted, and re-checking it here would break the replay.
+    ContextPtr authorization_context = is_submitted_definition ? ContextPtr(args.getLocalContext()) : ContextPtr(context);
+
     if (replicated)
     {
         bool need_check_table_structure = true;
@@ -1241,7 +1251,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.relative_data_path,
             metadata,
             context,
-            args.getLocalContext(),
+            authorization_context,
             date_column_name,
             merging_params,
             std::move(storage_settings),
@@ -1255,7 +1265,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata,
         args.mode,
         context,
-        args.getLocalContext(),
+        authorization_context,
         date_column_name,
         merging_params,
         std::move(storage_settings));
