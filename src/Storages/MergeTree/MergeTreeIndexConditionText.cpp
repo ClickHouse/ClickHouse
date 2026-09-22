@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -1100,23 +1101,18 @@ static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
         || type == ITokenizer::Type::AsciiCJK;
 }
 
-static std::string_view withoutTrailingZeros(std::string_view value)
-{
-    return value.substr(0, value.find_last_not_of('\0') + 1);
-}
-
 /// Strips or re-pads the needle's trailing zero bytes in place to the form the index stores; false when no single form covers every match.
 static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_string, const FixedStringNeedleContext & context)
 {
     const bool both_stripped = context.semantics == FixedStringPaddingSemantics::BothStripped;
-    const size_t stripped_size = withoutTrailingZeros(needle).size();
+    const size_t stripped_size = stripTrailingZeros(needle).size();
 
     if (context.indexed_fixed_string_size)
     {
         /// The column stores its values padded to N and compares them without the padding.
         if (both_stripped || needle_is_fixed_string)
             needle.resize(stripped_size);
-        /// A `String` needle keeps its zero bytes for these functions and then matches nothing.
+        /// A `String` needle ending in a zero byte: not every function treats it as padding, so decline.
         else if (needle.ends_with('\0'))
             return false;
 
@@ -1160,6 +1156,16 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
+/// Whether the values that become terms in this index are variable-length `String`s, in which case
+/// one logical value can be stored under several spellings differing in trailing zero bytes.
+static bool indexedTermTypeIsVariableLengthString(const Block & header, const String & column_name)
+{
+    if (!header.has(column_name))
+        return true;
+
+    return isString(indexedElementType(header.getByName(column_name).type));
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -1179,6 +1185,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+
+    /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
+    /// matches multiple `String` values ('ab', 'ab\0', 'ab\0\0'). A term-preserving tokenizer
+    /// keeps those as distinct terms so we must fall back to a scan instead of pruning matching granules.
+    /// A `FixedString` index col is unambiguous and unaffected, as are `equals`, the token functions
+    /// and the `Like`/`match` variants, which compare exactly. See `zeroPaddedStringConstant` and
+    /// https://github.com/ClickHouse/ClickHouse/issues/118669.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    {
+        const auto searched_column = has_map_keys_column
+            ? fmt::format("mapKeys({})", index_column_name)
+            : (has_map_values_column ? fmt::format("mapValues({})", index_column_name) : index_column_name);
+        if (zeroPaddedStringConstant(value_type) && indexedTermTypeIsVariableLengthString(header, searched_column))
+            return false;
+    }
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
