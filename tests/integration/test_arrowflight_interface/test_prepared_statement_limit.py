@@ -23,8 +23,9 @@ node = cluster.add_instance(
 )
 
 
-def get_client(username=None, password=None):
-    session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+def get_client(username=None, password=None, session_id=None):
+    if session_id is None:
+        session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
     return FlightSQLClient(
         host=node.ip_address,
         port=8888,
@@ -324,8 +325,11 @@ def test_prepared_statement_schema_reflects_table_changes():
 
 def test_prepared_statement_schema_uses_current_session_settings():
     """`GetSchema` uses the caller's current Arrow unsupported-type setting."""
-    creator_client = get_client()
-    schema_client = get_client()
+    # Explicit distinct session IDs for the same (default) user, so the test
+    # proves the schema is re-evaluated in the caller's session rather than
+    # reusing the creator session's settings.
+    creator_client = get_client(session_id='ps_schema_creator')
+    schema_client = get_client(session_id='ps_schema_caller')
     setting = "output_format_arrow_unsupported_types_as_binary"
 
     set_result = creator_client.set_session_options({setting: "1"})
