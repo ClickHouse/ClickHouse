@@ -9,6 +9,12 @@ own subquery     accepted
 -- a column grant must not be rejected just because the read sits inside a subquery
 granted column   accepted
 ungranted column ACCESS_DENIED
+-- rewriting the body of a view owned by another definer needs SET DEFINER on that definer
+foreign definer  ACCESS_DENIED
+after the grant  accepted
+-- a SQL SECURITY NONE body runs unchecked, so rewriting it needs ALLOW SQL SECURITY NONE
+security none    ACCESS_DENIED
+after the grant  accepted
 -- no data leaked: none of the denied bodies was stored, so the view still reads only src
 back to src      accepted
 rows, leaked    1	0

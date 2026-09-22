@@ -3,6 +3,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -663,14 +664,56 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 
+/** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does
+  * not run with the caller's privileges. Writing it is therefore the same act that `CREATE` and
+  * `MODIFY SQL SECURITY` already gate in `processSQLSecurityOption`, so demand the same grants here.
+  * Without this, `ALTER VIEW MODIFY QUERY` alone lets a user author code that runs as a principal they may not
+  * impersonate, which bypasses that principal's row policies even when every table grant checks out.
+  */
+void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
+    AccessRightsElements & required_access, const StoragePtr & storage) const
+{
+    if (!storage)
+        return;
+
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot->sql_security_type)
+        return;
+
+    if (*metadata_snapshot->sql_security_type == SQLSecurityType::NONE)
+    {
+        required_access.emplace_back(AccessType::ALLOW_SQL_SECURITY_NONE);
+        return;
+    }
+
+    if (*metadata_snapshot->sql_security_type != SQLSecurityType::DEFINER || !metadata_snapshot->definer)
+        return;
+
+    /// An ephemeral definer is stored as `<user>:definer` (see `processSQLSecurityOption`), but the grant is
+    /// held on the user it was cloned from, so authorise against that base name.
+    std::string_view definer_name = *metadata_snapshot->definer;
+    static constexpr std::string_view ephemeral_suffix = ":definer";
+    if (definer_name.ends_with(ephemeral_suffix))
+        definer_name.remove_suffix(ephemeral_suffix.size());
+
+    if (definer_name != getContext()->getUserName())
+        required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
+}
+
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+
+        if (command.type == ASTAlterCommand::MODIFY_QUERY)
+            addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
+    }
 
     return required_access;
 }
