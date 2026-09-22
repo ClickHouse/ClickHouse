@@ -45,7 +45,8 @@ ColumnPtr castColumnAccurateSkipNulls(
 /// Mark non-NULL values whose `DateTime64` components lose fractional seconds, exceed the destination
 /// `DateTime` range, or do not convert back from a floating-point destination to the same timestamp.
 /// The cast must have validated all non-NULL source values first.
-/// Follow the cast's structural element mapping and return no column when no check is needed.
+/// Follow the cast's structural element mapping, including the active alternative of a `Variant`, and return
+/// no column when no check is needed.
 /// SQL NULLs are never marked, including all-NULL columns whose payload conversion was skipped.
 ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const DataTypePtr & target_type);
 

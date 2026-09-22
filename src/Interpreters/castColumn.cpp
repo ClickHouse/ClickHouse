@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
@@ -16,6 +17,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -25,6 +27,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -143,6 +146,36 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
         const auto & nulls = nullable.getNullMapData();
         for (size_t row = 0; row < values.size(); ++row)
             values[row] &= !nulls[row];
+        return result;
+    }
+
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_type.get()))
+    {
+        /// The cast converts every variant on its own and takes each row from its active variant, as
+        /// `createVariantToColumnWrapper` does, so the loss maps of the variants are read back through the
+        /// discriminators. A NULL row has no variant.
+        const auto & column_variant = assert_cast<const ColumnVariant &>(*column);
+        const auto & variant_types = from_variant->getVariants();
+
+        Columns variant_loss_maps(variant_types.size());
+        for (size_t global_discriminator = 0; global_discriminator < variant_types.size(); ++global_discriminator)
+            variant_loss_maps[global_discriminator] = getDateTime64CastLossMap(
+                {column_variant.getVariantPtrByGlobalDiscriminator(global_discriminator), variant_types[global_discriminator], source.name},
+                to_type);
+        if (std::ranges::none_of(variant_loss_maps, [](const ColumnPtr & loss_map) { return loss_map != nullptr; }))
+            return {};
+
+        auto result = ColumnUInt8::create(column_variant.size(), UInt8(0));
+        auto & loss_map = result->getData();
+        for (size_t row = 0; row < column_variant.size(); ++row)
+        {
+            const auto global_discriminator = column_variant.globalDiscriminatorAt(row);
+            if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR || !variant_loss_maps[global_discriminator])
+                continue;
+
+            const auto & variant_loss_map = assert_cast<const ColumnUInt8 &>(*variant_loss_maps[global_discriminator]).getData();
+            loss_map[row] = variant_loss_map[column_variant.offsetAt(row)];
+        }
         return result;
     }
 
