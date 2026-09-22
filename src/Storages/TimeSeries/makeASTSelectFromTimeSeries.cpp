@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 
 #include <Access/Common/RowPolicyDefs.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -173,9 +174,7 @@ namespace
         /// A row policy and the `additional_table_filters` setting are not part of the query tree, so their
         /// expressions are scanned separately. (`additional_result_filter` needs no scan: it sees only the
         /// query's result columns, so any use of `tags` in it is already visible to the query tree scan.)
-        auto storage_id = storage.getStorageID();
-        auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        auto row_policy_filter = getRowPolicyFilterForStorage(storage, context);
         if (row_policy_filter
             && (!row_policy_filter->expression || !findRequestedTagsInAST(*row_policy_filter->expression, requested_tags)))
             return {};
@@ -189,20 +188,18 @@ namespace
         return requested_tags;
     }
 
-    /// Builds the `arrayZip(groupArray(timestamp), groupArray(value)) AS <samples_outer_column_name>` expression used by
-    /// the samples-side branches. Both `groupArray` states are filled by the same aggregation in the same
-    /// row order, so element i of both arrays comes from the same sample.
-    /// This form is used instead of `groupArray(tuple(timestamp, value))` because `arrayZip` makes tuples
-    /// without element names regardless of the `enable_named_columns_in_function_tuple` setting (which
-    /// would give `tuple` named elements, mismatching the declared type of the outer column with samples),
-    /// and because `groupArray` over a plain column is faster than over tuples.
-    ASTPtr makeGroupArrayOfSamples(const String & samples_outer_column_name)
+    /// Builds `CAST(groupArray((timestamp, value)), '<type of the outer column>') AS <name of the outer column>`.
+    /// One `groupArray` of tuples keeps each timestamp with its value (two `groupArray` calls can order the rows differently),
+    /// and the cast removes the element names given by the setting `enable_named_columns_in_function_tuple`.
+    ASTPtr makeGroupArrayOfSamples(const NameAndTypePair & samples_outer_column_name_and_type)
     {
-        auto array_zip = makeASTFunction("arrayZip",
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-        array_zip->setAlias(samples_outer_column_name);
-        return array_zip;
+        auto sample = makeASTFunction("tuple",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+        auto group_array = makeASTFunction("groupArray", std::move(sample));
+        auto cast = makeASTFunction("CAST", std::move(group_array),
+            make_intrusive<ASTLiteral>(samples_outer_column_name_and_type.type->getName()));
+        cast->setAlias(samples_outer_column_name_and_type.name);
+        return cast;
     }
 
     /// Returns an expression for the value of the tag `tag_name`.
@@ -336,17 +333,17 @@ namespace
 
     /// Builds a subquery to read from the "samples" table:
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
+    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
-    ASTPtr makeSamplesTableElement(const StorageID & samples_table_id, const String & samples_outer_column_name)
+    ASTPtr makeSamplesTableElement(const StorageID & samples_table_id, const NameAndTypePair & samples_outer_column_name_and_type)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
 
         auto select_list = make_intrusive<ASTExpressionList>();
         select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-        select_list->children.push_back(makeGroupArrayOfSamples(samples_outer_column_name));
+        select_list->children.push_back(makeGroupArrayOfSamples(samples_outer_column_name_and_type));
         inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
         inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(samples_table_id));
@@ -518,7 +515,7 @@ namespace
     /// SELECT samples
     /// FROM
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
+    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
@@ -526,13 +523,13 @@ namespace
     /// Unlike the joined read (where the `INNER ANY JOIN` with the "tags" table drops them), this branch also returns
     /// samples whose id has no "tags" row - possible only after direct writes into the inner "samples" table.
     ASTPtr buildSelectQueryFromSamplesOnly(
-        const StorageID & samples_table_id, const NameSet & requested_columns, const String & samples_outer_column_name)
+        const StorageID & samples_table_id, const NameSet & requested_columns, const NameAndTypePair & samples_outer_column_name_and_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
 
-        if (requested_columns.contains(samples_outer_column_name))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(samples_outer_column_name));
+        if (requested_columns.contains(samples_outer_column_name_and_type.name))
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(samples_outer_column_name_and_type.name));
 
         /// This branch is only taken when the column with samples is requested (see makeASTSelectFromTimeSeries).
         chassert(!select_list->children.empty());
@@ -540,7 +537,7 @@ namespace
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(makeSamplesTableElement(samples_table_id, samples_outer_column_name));
+        tables->children.push_back(makeSamplesTableElement(samples_table_id, samples_outer_column_name_and_type));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -635,7 +632,7 @@ namespace
     ///        type, unit, help
     /// FROM
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
+    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
@@ -664,18 +661,18 @@ namespace
         const NameSet & requested_columns,
         const NameSet & requested_tags,
         const std::unordered_map<String, String> & columns_by_tags,
-        const String & samples_outer_column_name,
+        const NameAndTypePair & samples_outer_column_name_and_type,
         bool deduplicate_tags_by_id)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         select_query->setExpression(ASTSelectQuery::Expression::SELECT,
-            makeJoinedSelectList(requested_columns, requested_tags, columns_by_tags, samples_outer_column_name));
+            makeJoinedSelectList(requested_columns, requested_tags, columns_by_tags, samples_outer_column_name_and_type.name));
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         if (samples_table_id)
         {
             /// Samples-anchored: samples are the (streamed) probe side, tags/metric families the smaller build sides.
-            tables->children.push_back(makeSamplesTableElement(*samples_table_id, samples_outer_column_name));
+            tables->children.push_back(makeSamplesTableElement(*samples_table_id, samples_outer_column_name_and_type));
             tables->children.push_back(makeTagsJoinElement(tags_table_id));
         }
         else
@@ -699,6 +696,11 @@ ASTPtr makeASTSelectFromTimeSeries(
 {
     const String samples_outer_column_name = TimeSeriesColumnNames::getOuterSamples(storage.getVersion());
     bool need_samples = requested_columns.contains(samples_outer_column_name);
+
+    /// The samples are read with the declared type of the outer column, see makeGroupArrayOfSamples.
+    auto storage_metadata = storage.getInMemoryMetadataPtr(context, false);
+    const NameAndTypePair samples_outer_column_name_and_type{
+        samples_outer_column_name, storage_metadata->columns.get(samples_outer_column_name).type};
 
     bool need_tags = requested_columns.contains(TimeSeriesColumnNames::MetricName)
                   || requested_columns.contains(TimeSeriesColumnNames::Tags);
@@ -748,7 +750,7 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     /// Single-table reads (no join).
     if (need_samples && !need_tags && !need_metric_families)
-        return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns, samples_outer_column_name);
+        return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns, samples_outer_column_name_and_type);
 
     if (need_tags && !need_samples && !need_metric_families)
         return buildSelectQueryFromTagsOnly(*tags_table_id, requested_columns, requested_tags, columns_by_tags,
@@ -760,7 +762,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     /// Multi-table reads: anchored on "samples" when it is read, otherwise on "tags".
     chassert(need_tags);
     return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id, requested_columns,
-                                           requested_tags, columns_by_tags, samples_outer_column_name, deduplicate_tags_by_id);
+                                              requested_tags, columns_by_tags, samples_outer_column_name_and_type, deduplicate_tags_by_id);
 }
 
 SettingsChanges getSettingsForSelectFromTimeSeries()

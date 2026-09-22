@@ -1034,7 +1034,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
-            if (table_function_name == "view" || table_function_name == "viewIfPermitted")
+            if (table_function_name == "view" || table_function_name == "viewIfPermitted" || table_function_name == "eval")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__view");
             else if (table_function_name == "merge")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__merge");

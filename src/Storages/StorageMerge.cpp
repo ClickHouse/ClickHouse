@@ -3,7 +3,7 @@
 #include <iterator>
 #include <span>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -130,6 +130,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int ACCESS_DENIED;
 extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
@@ -316,6 +317,16 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             return false;
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
+
+        /// An `Alias` reports its target's columns, so reading them needs the same privilege on the
+        /// target that a `DESCRIBE` of the target requires.
+        if (const auto * alias = t->template as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to access the table that {} points to",
+                storage_id.getNameForLogs());
+
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         auto structure = table_metadata->getColumns();
         String prev_column_name;
@@ -678,9 +689,15 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     try
     {
         const auto & access = query_context->getAccess();
-        if (auto first_table = traverseTablesUntil([access](auto && table)
+        if (auto first_table = traverseTablesUntil([&access, &query_context](auto && table)
         {
             if (!table)
+                return false;
+
+            /// An `Alias` reports its target's virtual columns, so inheriting them needs the
+            /// privilege on the target that reading the target's columns requires.
+            if (const auto * alias = table->template as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
                 return false;
 
             auto id = table->getStorageID();
@@ -1242,26 +1259,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// We should remember it to not include this column in the result.
             bool is_smallest_column_requested = false;
 
-            const auto & database_name = std::get<0>(table);
-            const auto & table_name = std::get<3>(table);
-            auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
-                database_name,
-                table_name,
-                RowPolicyFilterType::SELECT_FILTER);
-            /// `Merge` reads matched tables directly, so include the target policy when a matched table is an `Alias`.
-            if (const auto * alias = storage->as<StorageAlias>())
+            auto row_policy_filter_ptr = getEffectiveRowPolicyFilter(*storage, modified_context);
+            if (row_policy_filter_ptr)
             {
-                const auto target_storage_id = alias->getTargetTable()->getStorageID();
-                auto target_row_policy_filter = modified_context->getRowPolicyFilter(
-                    target_storage_id.getDatabaseName(),
-                    target_storage_id.getTableName(),
-                    RowPolicyFilterType::SELECT_FILTER);
-                row_policy_filter_ptr = combineRowPolicyFilters(
-                    std::move(row_policy_filter_ptr), std::move(target_row_policy_filter));
-            }
+                /// The outer planner only sees this `Merge`, so a child's policy is recorded here or nowhere.
+                if (modified_context->hasQueryContext())
+                    for (const auto & row_policy : row_policy_filter_ptr->policies)
+                        modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
-            {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
@@ -2579,7 +2584,12 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    /// A child's row policy is only applied when its rows are actually read, so counting one from
+    /// metadata would return rows the policy hides.
+    return traverseTablesUntil([&](const auto & table)
+    {
+        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+    }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
