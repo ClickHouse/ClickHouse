@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/IDataType.h>
 #include <base/EnumReflection.h>
 
 #include <string_view>
@@ -41,87 +43,100 @@ struct TimeSeriesHistogramsColumnDefinition
     std::string_view description;
 };
 
-/// The trailing `ZSTD(3)` is explicit in every codec: the offsets of an array receive only the generic tail of a codec
-/// pipeline, and the size-aware default codec would give small parts `LZ4`.
-constexpr TimeSeriesHistogramsColumnDefinition getTimeSeriesHistogramsColumnDefinition(TimeSeriesHistogramsColumn column)
+/// The registry of the payload columns of the "histograms" inner table and of the outer columns mirroring them.
+///
+/// The outer columns of a TimeSeries table representing histogram samples are the flattened form of
+/// `histograms Nested(timestamp <timestamp_type>, is_float Bool, ...)`, i.e. `histograms.timestamp Array(<timestamp_type>)`,
+/// `histograms.is_float Array(Bool)`, ... Element k of every array is histogram sample k of the row. The names mirror the columns
+/// of the "histograms" inner table (with `timestamp` in place of `id`), so both writing and reading map the columns by name.
+class TimeSeriesHistogramsColumns
 {
-    switch (column)
+public:
+    /// All the payload columns in the canonical order.
+    static constexpr auto getAll()
     {
-        case TimeSeriesHistogramsColumn::IsFloat:
-            return {"is_float", "Bool", "CODEC(ZSTD(3))",
-                "`false` for an integer histogram, `true` for a float histogram: it tells which of the two typed column sets a row uses, the other set is zero or empty"};
-        case TimeSeriesHistogramsColumn::CounterResetHint:
-            return {"counter_reset_hint", "UInt8", "CODEC(ZSTD(3))",
-                "0 - unknown, 1 - a counter reset happened, 2 - no counter reset, 3 - a gauge histogram"};
-        case TimeSeriesHistogramsColumn::Schema:
-            return {"schema", "Int8", "CODEC(ZSTD(3))",
-                "The bucket schema: from -4 to 8 for exponential buckets, -53 for custom buckets"};
-        case TimeSeriesHistogramsColumn::ZeroThreshold:
-            return {"zero_threshold", "Float64", "CODEC(ZSTD(3))",
-                "The width of the zero bucket"};
-        case TimeSeriesHistogramsColumn::Sum:
-            return {"sum", "Float64", "CODEC(ZSTD(3))",
-                "The sum of the observations; the stale marker `NaN` when the series went stale"};
-        case TimeSeriesHistogramsColumn::PositiveSpans:
-            return {"positive_spans", "Array(Tuple(offset Int32, length UInt32))", "CODEC(ZSTD(3))",
-                "The layout of the positive buckets, as Prometheus sends it"};
-        case TimeSeriesHistogramsColumn::NegativeSpans:
-            return {"negative_spans", "Array(Tuple(offset Int32, length UInt32))", "CODEC(ZSTD(3))",
-                "The layout of the negative buckets, as Prometheus sends it"};
-        case TimeSeriesHistogramsColumn::CustomValues:
-            return {"custom_values", "Array(Float64)", "CODEC(ZSTD(3))",
-                "The upper bounds of the custom buckets (`schema = -53`), empty otherwise"};
-        case TimeSeriesHistogramsColumn::CountInt:
-            return {"count_int", "UInt64", "CODEC(DoubleDelta, ZSTD(3))",
-                "The total count of the observations of an integer histogram"};
-        case TimeSeriesHistogramsColumn::ZeroCountInt:
-            return {"zero_count_int", "UInt64", "CODEC(DoubleDelta, ZSTD(3))",
-                "The count of the zero bucket of an integer histogram"};
-        case TimeSeriesHistogramsColumn::PositiveValuesInt:
-            return {"positive_values_int", "Array(UInt64)", "CODEC(T64, ZSTD(3))",
-                "The absolute counts of the positive buckets of an integer histogram"};
-        case TimeSeriesHistogramsColumn::NegativeValuesInt:
-            return {"negative_values_int", "Array(UInt64)", "CODEC(T64, ZSTD(3))",
-                "The absolute counts of the negative buckets of an integer histogram"};
-        case TimeSeriesHistogramsColumn::CountFloat:
-            return {"count_float", "Float64", "CODEC(ZSTD(3))",
-                "The total count of the observations of a float histogram"};
-        case TimeSeriesHistogramsColumn::ZeroCountFloat:
-            return {"zero_count_float", "Float64", "CODEC(ZSTD(3))",
-                "The count of the zero bucket of a float histogram"};
-        case TimeSeriesHistogramsColumn::PositiveValuesFloat:
-            return {"positive_values_float", "Array(Float64)", "CODEC(Delta, ZSTD(3))",
-                "The counts of the positive buckets of a float histogram"};
-        case TimeSeriesHistogramsColumn::NegativeValuesFloat:
-            return {"negative_values_float", "Array(Float64)", "CODEC(Delta, ZSTD(3))",
-                "The counts of the negative buckets of a float histogram"};
+        return magic_enum::enum_values<TimeSeriesHistogramsColumn>();
     }
-}
 
-constexpr std::string_view getTimeSeriesHistogramsColumnName(TimeSeriesHistogramsColumn column)
-{
-    return getTimeSeriesHistogramsColumnDefinition(column).name;
-}
+    /// The trailing `ZSTD(3)` is explicit in every codec: the offsets of an array receive only the generic tail of a codec
+    /// pipeline, and the size-aware default codec would give small parts `LZ4`.
+    static constexpr TimeSeriesHistogramsColumnDefinition getDefinition(TimeSeriesHistogramsColumn column)
+    {
+        switch (column)
+        {
+            case TimeSeriesHistogramsColumn::IsFloat:
+                return {"is_float", "Bool", "CODEC(ZSTD(3))",
+                    "`false` for an integer histogram, `true` for a float histogram: it tells which of the two typed column sets a row uses, the other set is zero or empty"};
+            case TimeSeriesHistogramsColumn::CounterResetHint:
+                return {"counter_reset_hint", "UInt8", "CODEC(ZSTD(3))",
+                    "0 - unknown, 1 - a counter reset happened, 2 - no counter reset, 3 - a gauge histogram"};
+            case TimeSeriesHistogramsColumn::Schema:
+                return {"schema", "Int8", "CODEC(ZSTD(3))",
+                    "The bucket schema: from -4 to 8 for exponential buckets, -53 for custom buckets"};
+            case TimeSeriesHistogramsColumn::ZeroThreshold:
+                return {"zero_threshold", "Float64", "CODEC(ZSTD(3))",
+                    "The width of the zero bucket"};
+            case TimeSeriesHistogramsColumn::Sum:
+                return {"sum", "Float64", "CODEC(ZSTD(3))",
+                    "The sum of the observations; the stale marker `NaN` when the series went stale"};
+            case TimeSeriesHistogramsColumn::PositiveSpans:
+                return {"positive_spans", "Array(Tuple(offset Int32, length UInt32))", "CODEC(ZSTD(3))",
+                    "The layout of the positive buckets, as Prometheus sends it"};
+            case TimeSeriesHistogramsColumn::NegativeSpans:
+                return {"negative_spans", "Array(Tuple(offset Int32, length UInt32))", "CODEC(ZSTD(3))",
+                    "The layout of the negative buckets, as Prometheus sends it"};
+            case TimeSeriesHistogramsColumn::CustomValues:
+                return {"custom_values", "Array(Float64)", "CODEC(ZSTD(3))",
+                    "The upper bounds of the custom buckets (`schema = -53`), empty otherwise"};
+            case TimeSeriesHistogramsColumn::CountInt:
+                return {"count_int", "UInt64", "CODEC(DoubleDelta, ZSTD(3))",
+                    "The total count of the observations of an integer histogram"};
+            case TimeSeriesHistogramsColumn::ZeroCountInt:
+                return {"zero_count_int", "UInt64", "CODEC(DoubleDelta, ZSTD(3))",
+                    "The count of the zero bucket of an integer histogram"};
+            case TimeSeriesHistogramsColumn::PositiveValuesInt:
+                return {"positive_values_int", "Array(UInt64)", "CODEC(T64, ZSTD(3))",
+                    "The absolute counts of the positive buckets of an integer histogram"};
+            case TimeSeriesHistogramsColumn::NegativeValuesInt:
+                return {"negative_values_int", "Array(UInt64)", "CODEC(T64, ZSTD(3))",
+                    "The absolute counts of the negative buckets of an integer histogram"};
+            case TimeSeriesHistogramsColumn::CountFloat:
+                return {"count_float", "Float64", "CODEC(ZSTD(3))",
+                    "The total count of the observations of a float histogram"};
+            case TimeSeriesHistogramsColumn::ZeroCountFloat:
+                return {"zero_count_float", "Float64", "CODEC(ZSTD(3))",
+                    "The count of the zero bucket of a float histogram"};
+            case TimeSeriesHistogramsColumn::PositiveValuesFloat:
+                return {"positive_values_float", "Array(Float64)", "CODEC(Delta, ZSTD(3))",
+                    "The counts of the positive buckets of a float histogram"};
+            case TimeSeriesHistogramsColumn::NegativeValuesFloat:
+                return {"negative_values_float", "Array(Float64)", "CODEC(Delta, ZSTD(3))",
+                    "The counts of the negative buckets of a float histogram"};
+        }
+    }
 
-constexpr std::string_view getTimeSeriesHistogramsColumnType(TimeSeriesHistogramsColumn column)
-{
-    return getTimeSeriesHistogramsColumnDefinition(column).type;
-}
+    static constexpr std::string_view getName(TimeSeriesHistogramsColumn column) { return getDefinition(column).name; }
+    static constexpr std::string_view getType(TimeSeriesHistogramsColumn column) { return getDefinition(column).type; }
+    static constexpr std::string_view getCodec(TimeSeriesHistogramsColumn column) { return getDefinition(column).codec; }
+    static constexpr std::string_view getDescription(TimeSeriesHistogramsColumn column) { return getDefinition(column).description; }
 
-constexpr std::string_view getTimeSeriesHistogramsColumnCodec(TimeSeriesHistogramsColumn column)
-{
-    return getTimeSeriesHistogramsColumnDefinition(column).codec;
-}
+    /// The data type of a payload column, parsed from its definition once.
+    static const DataTypePtr & getDataType(TimeSeriesHistogramsColumn column);
 
-constexpr std::string_view getTimeSeriesHistogramsColumnDescription(TimeSeriesHistogramsColumn column)
-{
-    return getTimeSeriesHistogramsColumnDefinition(column).description;
-}
+    /// Returns the name of the outer column mirroring a column of the "histograms" inner table:
+    /// `histograms.<inner_column_name>`, e.g. `histograms.timestamp` or `histograms.count_int`.
+    static String getOuterColumnName(std::string_view inner_column_name);
 
-/// All the payload columns of the "histograms" inner table in the canonical order.
-constexpr auto getTimeSeriesHistogramsColumns()
-{
-    return magic_enum::enum_values<TimeSeriesHistogramsColumn>();
-}
+    /// Returns the name of the column of the "histograms" inner table mirrored by an outer column of the `histograms` group,
+    /// or an empty string if the name isn't such a column.
+    static std::string_view getInnerColumnName(std::string_view outer_column_name);
+
+    /// The outer column `histograms.timestamp`, whose type depends on the timestamp type of the table.
+    static NameAndTypePair getOuterTimestampColumn(const DataTypePtr & timestamp_type);
+
+    /// The outer columns mirroring the payload columns, in the canonical order: `histograms.is_float Array(Bool)`, ...
+    /// Their types don't depend on the table, so the list is built once.
+    static const NamesAndTypesList & getOuterPayloadColumns();
+};
 
 }

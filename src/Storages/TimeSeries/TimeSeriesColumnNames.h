@@ -42,6 +42,12 @@ struct TimeSeriesColumnNames
     static constexpr const char * Samples = "samples";
     static constexpr const char * TimeSeries = "time_series";
 
+    /// The outer group of columns with the histogram samples of a time series: `histograms.timestamp`, `histograms.is_float`, ...
+    /// It's the flattened form of `histograms Nested(...)`, one array per column of the "histograms" inner table with `timestamp`
+    /// in place of `id`, see class TimeSeriesHistogramsColumns.
+    /// Tables of versions before `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` have no such columns.
+    static constexpr const char * Histograms = "histograms";
+
     /// Internal columns used by steps of prometheus query evaluation.
     /// The function prometheusQuery() doesn't output them.
     static constexpr const char * Group = "group";

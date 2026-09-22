@@ -37,6 +37,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
@@ -548,8 +549,12 @@ namespace
         if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
             old_settings.removeSetting("id_type");
 
+        /// The settings of the histograms table aren't copied into a table pinned to a version without that table.
         if (const auto * value = get_new_value("version"); value && !versionSupportsHistograms(SettingFieldUInt64{*value}.value))
-            old_settings.removeSetting("histograms_index_granularity");
+        {
+            const auto & names = TimeSeriesHistogramsSettings::getNames();
+            old_settings.removeSettings(Strings{names.begin(), names.end()});
+        }
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
@@ -792,9 +797,9 @@ namespace
                     return false;
 
                 /// The payload columns are generated with fixed types and codecs.
-                for (const auto & histograms_column : getTimeSeriesHistogramsColumns())
+                for (const auto & histograms_column : TimeSeriesHistogramsColumns::getAll())
                 {
-                    const auto & definition = getTimeSeriesHistogramsColumnDefinition(histograms_column);
+                    const auto & definition = TimeSeriesHistogramsColumns::getDefinition(histograms_column);
                     if (name == definition.name)
                         return (type_name == definition.type) && codec
                             && (codec->formatWithSecretsOneLine() == parseCodec(definition.codec)->formatWithSecretsOneLine());
@@ -1148,11 +1153,11 @@ namespace
             {
                 add_id_and_timestamp_columns();
 
-                for (const auto & column : getTimeSeriesHistogramsColumns())
+                for (const auto & column : TimeSeriesHistogramsColumns::getAll())
                 {
-                    const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
-                    if (auto * decl = add_column_if_missing(String{definition.name}, dataTypeToAST(DataTypeFactory::instance().get(String{definition.type}))))
-                        decl->setCodec(parseCodec(definition.codec));
+                    if (auto * decl = add_column_if_missing(
+                            String{TimeSeriesHistogramsColumns::getName(column)}, dataTypeToAST(TimeSeriesHistogramsColumns::getDataType(column))))
+                        decl->setCodec(parseCodec(TimeSeriesHistogramsColumns::getCodec(column)));
                 }
                 break;
             }
@@ -1952,11 +1957,8 @@ namespace
             case ViewTarget::Histograms:
             {
                 check_id_and_timestamp_columns();
-                for (const auto & column : getTimeSeriesHistogramsColumns())
-                {
-                    const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
-                    check_column_type(definition.name, DataTypeFactory::instance().get(String{definition.type}));
-                }
+                for (const auto & column : TimeSeriesHistogramsColumns::getAll())
+                    check_column_type(TimeSeriesHistogramsColumns::getName(column), TimeSeriesHistogramsColumns::getDataType(column));
                 break;
             }
 
@@ -2143,7 +2145,8 @@ namespace
     }
 
     /// Generates the canonical outer columns from the resolved types.
-    /// The name of the column with samples depends on the version of the table (see TimeSeriesVersion.h).
+    /// The name of the column with samples and the presence of the `histograms` group depend on the version of the table
+    /// (see TimeSeriesVersion.h).
     ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version)
     {
         ColumnsDescription result;
@@ -2160,6 +2163,16 @@ namespace
 
         add_column(TimeSeriesColumnNames::getOuterSamples(version),
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type})));
+
+        /// The `histograms` group is generated in its flattened form regardless of the `flatten_nested` setting,
+        /// so the definition doesn't depend on a query-level setting.
+        if (versionSupportsHistograms(version))
+        {
+            const auto timestamp_column = TimeSeriesHistogramsColumns::getOuterTimestampColumn(timestamp_type);
+            add_column(timestamp_column.name, timestamp_column.type);
+            for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
+                add_column(column.name, column.type);
+        }
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());

@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <gtest/gtest.h>
@@ -198,9 +199,9 @@ namespace
     String histogramsColumns(const String & id_type, const String & timestamp_type)
     {
         String result = "`id` " + id_type + ", `timestamp` " + timestamp_type + " CODEC(Delta, T64, ZSTD(3))";
-        for (const auto & column : getTimeSeriesHistogramsColumns())
+        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
         {
-            const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
+            const auto & definition = TimeSeriesHistogramsColumns::getDefinition(column);
             result += fmt::format(", `{}` {} {}", definition.name, definition.type, definition.codec);
         }
         return result;
@@ -210,6 +211,15 @@ namespace
     String histogramsEngine(UInt64 index_granularity = 8192)
     {
         return "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = " + std::to_string(index_granularity);
+    }
+
+    /// The generated outer columns of the `histograms` group for the specified type of `timestamp`.
+    String histogramsOuterColumns(const String & timestamp_type)
+    {
+        String result = "`histograms.timestamp` Array(" + timestamp_type + ")";
+        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
+            result += fmt::format(", `histograms.{}` Array({})", TimeSeriesHistogramsColumns::getName(column), TimeSeriesHistogramsColumns::getType(column));
+        return result;
     }
 }
 
@@ -497,10 +507,15 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, OuterColumns)
         "`id` " + default_id_type + ", `timestamp` UInt32 CODEC(Delta, T64, ZSTD(3)), `value` Float32 CODEC(ALP, ZSTD(3))");
 
     /// The outer columns are an IO interface which stores no data, so the declared ones are replaced with the canonical list.
-    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String) ENGINE = TimeSeries");
+    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String, `histograms.is_float` Array(UInt64)) ENGINE = TimeSeries");
     EXPECT_EQ(extractOuterColumns(definition),
         "`metric_name` String, `tags` Map(String, String), `samples` Array(Tuple(DateTime64(3), Float64)), "
+        + histogramsOuterColumns("DateTime64(3)") + ", "
         "`metric_family` String, `type` String, `unit` String, `help` String");
+
+    /// The `histograms` group takes the timestamp type of the table.
+    definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
+    EXPECT_TRUE(definition.contains(histogramsOuterColumns("UInt32"))) << definition;
 }
 
 
@@ -642,6 +657,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetIsAbsentInEarlierVersi
     {
         auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version));
         EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
+        EXPECT_FALSE(definition.contains("`histograms.")) << definition;
         EXPECT_EQ(normalizeExistingTable(definition), definition);
     }
 }
@@ -667,11 +683,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetCannotBeCustomizedYet)
 
     /// An external table is rejected even if its columns match the generated ones.
     std::vector<ColumnDescription> external_columns{makeColumn("id", default_id_type), makeColumn("timestamp", default_timestamp_type)};
-    for (const auto & column : getTimeSeriesHistogramsColumns())
-    {
-        const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
-        external_columns.push_back(makeColumn(String{definition.name}, String{definition.type}));
-    }
+    for (const auto & column : TimeSeriesHistogramsColumns::getAll())
+        external_columns.push_back(makeColumn(String{TimeSeriesHistogramsColumns::getName(column)}, String{TimeSeriesHistogramsColumns::getType(column)}));
     NormalizeTimeSeriesDefinitionParams params;
     params.external_target_columns[ViewTarget::Histograms] = makeColumns(external_columns);
     EXPECT_EQ(getExceptionCode([&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries HISTOGRAMS db.ext_histograms", params); }), ErrorCodes::NOT_IMPLEMENTED);
@@ -700,13 +713,16 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsIndexGranularitySetting)
 }
 
 
-TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsIndexGranularitySettingRequiresHistogramsTarget)
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSettingsRequireHistogramsTarget)
 {
-    EXPECT_EQ(getExceptionCode([]
+    for (const auto & setting_name : TimeSeriesHistogramsSettings::getNames())
     {
-        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096, "
-            + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1));
-    }), ErrorCodes::INVALID_SETTING_VALUE);
+        EXPECT_EQ(getExceptionCode([&]
+        {
+            normalizeNewTable(fmt::format("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS {} = 4096, {}",
+                setting_name, versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1)));
+        }), ErrorCodes::INVALID_SETTING_VALUE) << setting_name;
+    }
 }
 
 
@@ -740,11 +756,14 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithHistogramsTargetRegen
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHistogramsTarget)
 {
-    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096");
+    const String src = normalizeNewTable(
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096, histograms_max_buckets = 1000");
     auto definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1), src);
     EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
-    EXPECT_FALSE(definition.contains("histograms_index_granularity")) << definition;
+    EXPECT_FALSE(definition.contains("`histograms.")) << definition;
+    for (const auto & setting_name : TimeSeriesHistogramsSettings::getNames())
+        EXPECT_FALSE(definition.contains(setting_name)) << definition;
 }
 
 

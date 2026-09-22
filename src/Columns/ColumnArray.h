@@ -148,6 +148,8 @@ public:
 
     size_t getSize(size_t n) const { return sizeAt(n); }
 
+    size_t getOffset(size_t n) const { return offsetAt(n); }
+
     IColumn & getOffsetsColumn() { return *offsets; }
     const IColumn & getOffsetsColumn() const { return *offsets; }
 

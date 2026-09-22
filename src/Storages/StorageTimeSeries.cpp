@@ -802,9 +802,9 @@ namespace
     String makeHistogramsColumnsDocs()
     {
         String result;
-        for (const auto & column : getTimeSeriesHistogramsColumns())
+        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
         {
-            const auto & definition = getTimeSeriesHistogramsColumnDefinition(column);
+            const auto & definition = TimeSeriesHistogramsColumns::getDefinition(column);
             result += fmt::format("| `{}` | `{}` | `{}` | {} |\n", definition.name, definition.type, definition.codec, definition.description);
         }
         return result;
@@ -896,6 +896,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
+| `histograms.timestamp`, `histograms.is_float`, ..., `histograms.negative_values_float` | `Array(DateTime64(3))` by default, `Array(Bool)`, ... | The native histogram samples of a time series as the flattened form of `histograms Nested(...)`: one array per column of the [histograms](#histograms-table) table (with `timestamp` in place of `id`), element k of every array being histogram sample k. The arrays of a row must have the same length. Tables of [version](#schema-versioning) 5 and earlier have no such columns |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -1045,7 +1046,35 @@ The generated columns get compression codecs; the trailing `ZSTD(3)` is explicit
 )DOCS_MD"
         + makeHistogramsColumnsDocs()
         + R"DOCS_MD(
-Writing and reading histograms isn't supported yet: the table is created empty.
+The histogram samples are written and read through the `histograms.*` [outer columns](#outer-columns), which mirror the columns
+of this table by name. Every histogram is validated on insertion the way Prometheus validates it (the spans must describe the
+buckets, an integer histogram's buckets must sum up to its count, a histogram with custom buckets must have increasing bounds and
+no negative side, and so on); the columns of the flavour a histogram doesn't use (see `is_float`) are ignored. An insert with an invalid
+histogram is rejected as a whole. The number of buckets of one histogram can be limited by the [histograms_max_buckets](#settings) setting.
+
+The columns of the group that an `INSERT` doesn't mention get default values aligned with the mentioned ones, so an integer histogram
+with exponential buckets needs only its own columns, for example a histogram with `schema = 3` and four positive buckets with the
+indexes -2, -1, 0, 1 (one span starting at -2 of length 4):
+
+```sql
+INSERT INTO my_table (metric_name, tags,
+                      histograms.timestamp, histograms.schema, histograms.zero_threshold,
+                      histograms.count_int, histograms.zero_count_int, histograms.sum,
+                      histograms.positive_spans, histograms.positive_values_int)
+VALUES ('http_request_duration_seconds', {'job': 'api'},
+        [now64(3)], [3], [exp2(-128)],
+        [42], [0], [12.5],
+        [[(-2, 4)]], [[3, 10, 20, 9]])
+```
+
+A row may carry both float samples in `samples` and histogram samples in `histograms.*` for the same time series.
+Reading the group returns the histogram samples of every time series, for example the buckets of every histogram:
+
+```sql
+SELECT metric_name, ts, spans, counts
+FROM my_table
+ARRAY JOIN histograms.timestamp AS ts, histograms.positive_spans AS spans, histograms.positive_values_int AS counts
+```
 
 ## Creation {#creation}
 
@@ -1064,6 +1093,23 @@ CREATE TABLE my_table
     `metric_name` String,
     `tags` Map(String, String),
     `samples` Array(Tuple(DateTime64(3), Float64)),
+    `histograms.timestamp` Array(DateTime64(3)),
+    `histograms.is_float` Array(Bool),
+    `histograms.counter_reset_hint` Array(UInt8),
+    `histograms.schema` Array(Int8),
+    `histograms.zero_threshold` Array(Float64),
+    `histograms.sum` Array(Float64),
+    `histograms.positive_spans` Array(Array(Tuple(offset Int32, length UInt32))),
+    `histograms.negative_spans` Array(Array(Tuple(offset Int32, length UInt32))),
+    `histograms.custom_values` Array(Array(Float64)),
+    `histograms.count_int` Array(UInt64),
+    `histograms.zero_count_int` Array(UInt64),
+    `histograms.positive_values_int` Array(Array(UInt64)),
+    `histograms.negative_values_int` Array(Array(UInt64)),
+    `histograms.count_float` Array(Float64),
+    `histograms.zero_count_float` Array(Float64),
+    `histograms.positive_values_float` Array(Array(Float64)),
+    `histograms.negative_values_float` Array(Array(Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
@@ -1103,16 +1149,38 @@ METRIC FAMILIES INNER COLUMNS
     `help` String
 )
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
+HISTOGRAMS INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `is_float` Bool CODEC(ZSTD(3)),
+    `counter_reset_hint` UInt8 CODEC(ZSTD(3)),
+    `schema` Int8 CODEC(ZSTD(3)),
+    `zero_threshold` Float64 CODEC(ZSTD(3)),
+    `sum` Float64 CODEC(ZSTD(3)),
+    `positive_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `negative_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `custom_values` Array(Float64) CODEC(ZSTD(3)),
+    `count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `zero_count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `positive_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `negative_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `count_float` Float64 CODEC(ZSTD(3)),
+    `zero_count_float` Float64 CODEC(ZSTD(3)),
+    `positive_values_float` Array(Float64) CODEC(Delta, ZSTD(3)),
+    `negative_values_float` Array(Float64) CODEC(Delta, ZSTD(3))
+)
+HISTOGRAMS INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 8192
 ```
 
-So the columns were generated automatically and also there are four inner target tables with their own column definitions
+So the columns were generated automatically and also there are five inner target tables with their own column definitions
 stored in the `INNER COLUMNS` clauses. The `recent_samples_ttl_seconds` setting was written into the `SETTINGS` clause
 with its default value: the setting defines the TTL of the recent samples table, so its effective value is fixed at creation.
 Also the latest schema version was pinned into the `version` setting (see [Schema versioning](#schema-versioning)).
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.histograms.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 and each target table has its own set of columns:
 
 ```sql
@@ -1167,6 +1235,33 @@ CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family
+SETTINGS index_granularity = 8192
+```
+
+```sql
+CREATE TABLE default.`.inner_id.histograms.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `is_float` Bool CODEC(ZSTD(3)),
+    `counter_reset_hint` UInt8 CODEC(ZSTD(3)),
+    `schema` Int8 CODEC(ZSTD(3)),
+    `zero_threshold` Float64 CODEC(ZSTD(3)),
+    `sum` Float64 CODEC(ZSTD(3)),
+    `positive_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `negative_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `custom_values` Array(Float64) CODEC(ZSTD(3)),
+    `count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `zero_count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `positive_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `negative_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `count_float` Float64 CODEC(ZSTD(3)),
+    `zero_count_float` Float64 CODEC(ZSTD(3)),
+    `positive_values_float` Array(Float64) CODEC(Delta(8), ZSTD(3)),
+    `negative_values_float` Array(Float64) CODEC(Delta(8), ZSTD(3))
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp)
 SETTINGS index_granularity = 8192
 ```
 
@@ -1373,7 +1468,8 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `version` to be at least 6 |
+| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `version` to be at least 7 |
+| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least 7 |
 | `version` | UInt64 | 7 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
