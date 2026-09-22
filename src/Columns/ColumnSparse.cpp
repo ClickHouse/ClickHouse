@@ -1101,8 +1101,9 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
     if (!column)
         return column;
 
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    /// Order matters: the BLOB holds the serialized form of everything below it, and we can have
+    /// only Replicated(Sparse) but not Sparse(Replicated).
+    return recursiveRemoveSparse(column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated());
 }
 
 }
