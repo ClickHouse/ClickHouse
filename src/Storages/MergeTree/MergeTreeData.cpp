@@ -5860,7 +5860,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (new_type && it != old_types.end())
                 {
                     checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
-                    if (is_direct_integer_key_widening(command))
+                    if (is_direct_integer_key_widening(command)
+                        && columns_alter_type_check_safe_for_partition.contains(command.column_name))
                         check_integer_key_widening(command);
                 }
 
