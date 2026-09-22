@@ -13,6 +13,14 @@ import { Image } from "/snippets/components/Image.jsx";
 
 This page takes you from an enrollment token to a verified connector in managed mode, where the executor applies the service lifecycle that ClickHouse Cloud drives. The connector installs on a Kubernetes cluster (Helm) or a Linux VM (systemd). Token enrollment is the standard flow; when your environment cannot reach your connector endpoint directly, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs). To observe ClickHouse you run yourself without the executor, pass `--no-managed`.
 
+## Managed-mode availability {#managed-mode-availability}
+
+<Warning>
+As of 2026-09-22, the public installer serves `v0.16.0`, which has neither the `init --managed` and `init --no-managed` flags nor the `platform` command. Platform approval on both Linux VM and Kubernetes installs, and customer service creation (`instances create --from-prepare`), are not yet available in a public release. Kubernetes platform approval additionally requires CLI and chart support for `platform approve --secret-namespace`.
+
+Before following the managed-mode workflows, ask your ClickHouse account team to confirm support for your deployment target and provide the matching CLI, connector chart or image, and installation instructions. Customer service creation also requires support on your connector endpoint and in ClickHouse Cloud; a newer CLI alone is not sufficient. The public installation commands below do not currently install a release that supports these workflows.
+</Warning>
+
 ## Prerequisites {#prerequisites}
 
 ### Register your environment {#registration}
@@ -29,6 +37,7 @@ ClickHouse Cloud then issues your connector endpoint and a single-use enrollment
 
 ### For every install {#prerequisites-every-install}
 
+- **A build with [managed-mode support](#managed-mode-availability)** for the managed-mode instructions below. Public `v0.16.0` has neither `--managed` nor `--no-managed`.
 - **Your connector endpoint and enrollment token**, provided during [registration](#registration).
 - **Egress on port 443** to `https://<subdomain>.<connector-domain>` and `https://<subdomain>.enroll.<connector-domain>`, plus `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time. In managed mode the executor also reaches Amazon ECR and STS when a platform sync or create pulls a chart from ECR. When any of these are unreachable, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs).
 - **An Amazon EKS cluster** for managed mode. `init` refuses managed mode on any other cluster and names `--no-managed` as the way to install without the executor.
@@ -56,6 +65,8 @@ On a VM, `--skip-provision` is the only way around the Kubernetes API server req
 </Note>
 
 ## Install and enroll {#install-and-enroll}
+
+First confirm [managed-mode availability](#managed-mode-availability) with your account team. The public installer below serves `v0.16.0`, which cannot run the managed-mode enrollment commands in this walkthrough.
 
 <Steps>
 <Step title="Get your connector endpoint and enrollment token" id="get-endpoint-and-token">
@@ -85,6 +96,8 @@ Both forms accept `--version vX.Y.Z` to pin a release. Re-running either is safe
 </Step>
 
 <Step title="Enroll and install the connector" id="enroll-and-install">
+These commands require the build and deployment support described under [managed-mode availability](#managed-mode-availability). Public `v0.16.0` has neither `--managed` nor `--no-managed`.
+
 Enrollment is a single command. It redeems your token, obtains a signed client certificate and the executor's cluster-wide grant, then installs and verifies the connector.
 
 <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector enrollment flow" />
@@ -219,6 +232,8 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 On a VM, extract the tarball and run `sudo ./install.sh` from the extracted directory. Next to its release artifacts, it performs the same host install as `--host`.
 
 ## If something fails {#if-something-fails}
+
+If `init` rejects `--managed` or `--no-managed` as an unknown flag, check your CLI version: public `v0.16.0` supports neither. Obtain a [build with managed-mode support](#managed-mode-availability) from your account team before following the managed-mode recovery instructions below.
 
 Re-run the same command. `init` is idempotent: re-runs converge on the same state, keep your existing config and staged files, and skip completed work. When a step fails partway through, the CLI prints the exact recovery commands for your situation; they are safe to repeat.
 
