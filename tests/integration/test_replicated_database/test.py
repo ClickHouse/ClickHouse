@@ -18,6 +18,17 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
+# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
+# transaction, and TransactionManager refuses to start unless Keeper advertises the three
+# transaction flags. The harness randomizes flags that a test does not pin.
+KEEPER_FEATURE_FLAGS = [
+    "multi_read",
+    "create_if_not_exists",
+    "list_with_stat_and_data",
+    "check_stat",
+    "filtered_list",
+]
+
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -27,7 +38,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -36,7 +47,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -45,7 +56,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -53,14 +64,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 all_nodes = [
@@ -77,7 +88,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -2197,6 +2208,64 @@ def test_alias_with_dropped_target(started_cluster):
     )
 
     # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_remote_engine_over_table_function_with_dropped_target(started_cluster):
+    db_name = "test_remote_dropped_target"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        CREATE TABLE {db_name}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+        CREATE TABLE {db_name}.remote_over_merge (x UInt64)
+            ENGINE = Remote('127.0.0.1', merge('{db_name}', '^src$'));
+        DROP TABLE {db_name}.src;
+        """
+    )
+
+    errors_before = int(
+        dummy_node.count_in_log(f"Error on initialization of {db_name}")
+    )
+
+    # A second replica holds no local metadata, so it instantiates every table of the ZooKeeper
+    # snapshot, including the `Remote` one whose `merge('...', '^src$')` target now matches
+    # nothing. The stored definition carries its own columns and must be accepted as it is.
+    dummy_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' ORDER BY name",
+        "remote_over_merge\n",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert (
+        dummy_node.query(
+            f"SELECT name, type FROM system.columns "
+            f"WHERE database = '{db_name}' AND table = 'remote_over_merge'"
+        )
+        == "x\tUInt64\n"
+    )
+    errors_after = int(dummy_node.count_in_log(f"Error on initialization of {db_name}"))
+    assert errors_after == errors_before, (
+        f"replica recovery logged {errors_after - errors_before} initialization error(s) "
+        f"for {db_name}"
+    )
+
+    # DDL accepted and replicated from the recovered replica: its DDLWorker is running.
+    dummy_node.query(
+        f"CREATE TABLE {db_name}.after_recovery (y UInt64) ENGINE = MergeTree ORDER BY y"
+    )
+    main_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    assert main_node.query(f"EXISTS TABLE {db_name}.after_recovery") == "1\n"
+
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
