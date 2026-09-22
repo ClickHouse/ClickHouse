@@ -1,0 +1,4 @@
+-- with no SHOW COLUMNS privileges:
+Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ts_src
+-- with SHOW COLUMNS ON ts_src:
+`id` UUID, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3))	`id` UUID, `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000	UUID	reinterpretAsUUID(sipHash128(tags))

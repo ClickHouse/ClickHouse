@@ -15,23 +15,24 @@
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/QueryPlanVisitor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -239,11 +240,16 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     bool do_optimize)
 {
     checkInitialized();
-    if (do_optimize)
-        optimize(optimization_settings);
 
-    if (optimization_settings.make_distributed_plan)
-        convertToDistributed(optimization_settings);
+    /// The universal decision point for `make_distributed_plan`:
+    QueryPlanOptimizationSettings effective_settings = optimization_settings;
+    applyDistributedPlanFallbackToLocal(effective_settings);
+
+    if (do_optimize)
+        optimize(effective_settings);
+
+    if (effective_settings.make_distributed_plan)
+        convertToDistributed(effective_settings);
 
     struct Frame
     {
@@ -664,6 +670,7 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
+        .inside_explain_analyze = steps_to_stats != nullptr,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
@@ -811,29 +818,99 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
+
+namespace QueryPlanOptimizations
+{
+
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
+DistributedQueryPlan
+makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage>
+getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
+}
+
+
+/// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
+/// served from a projection; the implicit count/minmax projection would also be counted once per
+/// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
+/// Call this only after the decision on whether the plan is distributed: a plan that fell back to
+/// local execution keeps the projection settings the query asked for and runs the ordinary local
+/// plan, projections included.
+static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings & settings)
+{
+    settings.optimize_projection = false;
+    settings.optimize_use_implicit_projections = false;
+    settings.force_use_projection = false;
+    settings.force_projection_name = {};
+}
+
+
+bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings)
+{
+    if (!settings.make_distributed_plan)
+        return false;
+
+    /// A decision recorded on this object is only re-applied to the given settings, never
+    /// re-verified: the caller may construct fresh settings for every call, i.e.: ReadFromMerge.
+    if (distributed_plan_decision == DistributedPlanDecision::FellBack)
+    {
+        settings.make_distributed_plan = false;
+        return true;
+    }
+    /// Logical exchanges mark an accepted decision made on another object (e.g. a deserialized
+    /// fragment).
+    if (distributed_plan_decision == DistributedPlanDecision::Distributed
+        || QueryPlanOptimizations::planContainsLogicalExchange(*root))
+        return false;
+
+    /// A bad bucket-count setting is a user error and throws regardless of the fallback setting.
+    /// It goes before the plan check because `tryMakeDistributed*` sizes exchange fan-outs and
+    /// read-bucket vectors from the raw values.
+    QueryPlanOptimizations::validateDistributedPlanBucketCounts(settings);
+
+    const auto reason = QueryPlanOptimizations::getReasonPlanCannotBeDistributed(*root, settings);
+    if (!reason.has_value())
+    {
+        distributed_plan_decision = DistributedPlanDecision::Distributed;
+        return false;
+    }
+
+    if (!settings.distributed_plan_fallback_to_local_execution)
+        throw Exception(*reason, ErrorCodes::SUPPORT_IS_DISABLED);
+
+    LOG_INFO(
+        getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
+    settings.make_distributed_plan = false;
+    distributed_plan_decision = DistributedPlanDecision::FellBack;
+    return true;
+}
+
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
-    /// Reject unsupported sets before the optimization passes: second-pass index analysis can
-    /// synchronously execute a set subquery, and no set should be built for a rejected query.
-    if (optimization_settings.make_distributed_plan)
-        validateSetsForDistributedPlan(*root);
+    QueryPlanOptimizationSettings effective_settings = optimization_settings;
+
+    if (effective_settings.make_distributed_plan)
+        disableProjectionsForDistributedPlan(effective_settings);
 
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
-    if (optimization_settings.remove_redundant_sorting)
+    if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
     /// their values with the worker tasks, so the non-serializable `CreatingSetsStep` expansion
     /// must not reach the fragment cut. `convertToDistributed` adds the sets back to the
     /// initiator plan (or to the collapsed plan when it becomes a single local stage).
-    if (optimization_settings.make_distributed_plan)
+    if (effective_settings.make_distributed_plan)
         return;
 
     /// `addStepsToBuildSets` is invoked before `resolveMaterializingCTEs` so
@@ -844,50 +921,22 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// `forceMaterializeCTE` before the outer `DelayedMaterializingCTEsStep`
     /// in this plan is claimed. `resolveMaterializingCTEs` then only
     /// materializes the CTEs that were not already materialized inplace.
-    if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
-    if (optimization_settings.materialize_ctes)
-        QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
+    if (effective_settings.build_sets)
+        QueryPlanOptimizations::addStepsToBuildSets(effective_settings, *this, *root, nodes);
+    if (effective_settings.materialize_ctes)
+        QueryPlanOptimizations::resolveMaterializingCTEs(effective_settings, *this, *root, nodes);
 }
 
-namespace QueryPlanOptimizations
-{
-
-bool canExecuteRemotely(const QueryPlan::Node & node);
-bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-
-}
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
-    {
-        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
-        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
-        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
-        /// exchange runs correctly on one node, so fall back to it.
-        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
-                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
-                "if executed locally (producing wrong results)");
-        /// Joins were kept logical for distributed planning; running locally needs them physical.
-        QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
-        /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
-        /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
-        /// The expansion must use local settings: the set build plans execute in this process,
-        /// and with `make_distributed_plan` kept on, their own optimization would try to
-        /// distribute them again.
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        if (local_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
-        if (local_settings.materialize_ctes)
-            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
-        return;
-    }
+    /// A non-serializable step found here
+    /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
+    /// the plan was accepted. Neither may silently fall back, so abort the plan.
+    if (auto reason = QueryPlanOptimizations::getReasonPlanUnsupportedForRemoteExecution(*root); reason.has_value())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
+            reason->text);
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.
@@ -963,8 +1012,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
         UUID unique_query_id = UUIDHelpers::generateV4();
 
+        /// Shared by the source driving the plan and the source reading the result, so the client gets
+        /// the failure that stopped the query and not one it caused.
+        auto cancellation = std::make_shared<DistributedQueryCancellation>();
+
         /// Make plan stub that reads from the executor that executes the distributed plan
-        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
+        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(
+            result_header, unique_query_id, std::move(distributed_plan), task_to_host_map, cancellation));
         Pipes pipes;
         pipes.emplace_back(std::move(run_distributed_plan));
 
@@ -982,16 +1036,24 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
             context,
-            execute_locally);
+            execute_locally,
+            cancellation);
 
-        auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
+        /// The result must keep the order the main task sends it in (an `ORDER BY` result arrives
+        /// sorted), so it stays on one stream: the source hands its packets to one deserializer behind
+        /// it, and reading overlaps with deserializing. An exchange kind without a deserializer keeps
+        /// its plain-row source.
+        auto lazily_create_result_reader
+            = [result_header, exchange_lookup, result_stream_id, exchange_name = final_result_exchange.name, context]() -> QueryPipelineBuilder
         {
-            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            BuildQueryPipelineSettings settings(context);
+            settings.exchange_lookup = exchange_lookup;
+            VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
+            stream_ids.push_back(result_stream_id);
+            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
-            QueryPipelineBuilder builder;
-            builder.init(std::move(read_result_from));
+            builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });
             return builder;
         };
         pipes.emplace_back(createDelayedPipe(result_header, lazily_create_result_reader, false, false));

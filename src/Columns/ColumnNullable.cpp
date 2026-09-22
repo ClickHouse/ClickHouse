@@ -931,8 +931,10 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
             "Null map of size {} at offset {} does not match ColumnNullable of size {}",
             map.size(), offset, arr.size());
 
+    /// Any non-zero byte means NULL, so reduce the map before negating it: `negative ^ 2` would
+    /// yield 3 and mark a row the map leaves present.
     for (size_t i = 0, size = map.size(); i < size; ++i)
-        arr[offset + i] |= negative ^ map[i];
+        arr[offset + i] |= negative ^ !!map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)

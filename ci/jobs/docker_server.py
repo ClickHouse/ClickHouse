@@ -3,14 +3,13 @@ import atexit
 import json
 import logging
 import os
-import shlex
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.docker_server.docker_library import test_docker_library
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -20,7 +19,6 @@ ARCH = ("amd64", "arm64")
 
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 with tempfile.NamedTemporaryFile("w", delete=False) as f:
     GIT_KNOWN_HOSTS_FILE = f.name
     GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
@@ -46,62 +44,6 @@ class DockerImageData:
         self.name = name
         assert not path.startswith("/")
         self.path = path
-
-
-def is_distroless_image(docker_image: str) -> bool:
-    _, tag = docker_image.rsplit(":", 1)
-    return "distroless" in tag.split("-")
-
-
-def get_official_images_variant(docker_image: str) -> str:
-    # The official-images test runner derives its lookup variant from the final
-    # tag suffix. For example, head-distroless-amd64 is looked up as repo:amd64.
-    _, tag = docker_image.rsplit(":", 1)
-    return tag.rsplit("-", 1)[-1]
-
-
-def write_distroless_docker_library_config(docker_image: str, config_dir: Path) -> Path:
-    """Map arch-suffixed distroless tags to the distroless-safe config tests."""
-    # Generate a short config fragment for local arch-suffixed distroless CI tags.
-    # The runner derives tags like head-distroless-amd64 as repo:amd64; map that
-    # derived key to the distroless-safe tests because this helper is only used
-    # for images already identified as distroless.
-    repo, _ = docker_image.rsplit(":", 1)
-    variant = get_official_images_variant(docker_image)
-    image_variant = shlex.quote(f"{repo}:{variant}")
-    tests_var = (
-        "keeperDistrolessSafeTests"
-        if "clickhouse-keeper" in repo
-        else "clickhouseDistrolessSafeTests"
-    )
-
-    generated_config = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            prefix="docker-library-distroless-",
-            suffix=".sh",
-            dir=config_dir,
-            delete=False,
-            encoding="utf-8",
-        ) as f:
-            generated_config = Path(f.name)
-            f.write(
-                "#!/usr/bin/env bash\n"
-                "\n"
-                "explicitTests+=(\n"
-                f"\t[{image_variant}]=1\n"
-                ")\n"
-                "\n"
-                "imageTests+=(\n"
-                f"\t[{image_variant}]=\"${{{tests_var}}}\"\n"
-                ")\n"
-            )
-            return generated_config
-    except Exception:
-        if generated_config:
-            generated_config.unlink(missing_ok=True)
-        raise
 
 
 class DelOS(argparse.Action):
@@ -699,63 +641,6 @@ def build_and_push_image(
             f"{image.name}:{tag}-$arch",
         )
     return result
-
-
-def test_docker_library(test_results) -> None:
-    """we test our images vs the official docker library repository to track integrity"""
-    arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
-    if not check_images:
-        return
-    test_name = "docker library image test"
-    try:
-        repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
-        repo_path = temp_path / repo
-        config_override = (
-            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
-        ).absolute()
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
-        run_sh = (repo_path / "test/run.sh").absolute()
-        for image in check_images:
-            generated_config = None
-            try:
-                configs = [repo_path / "test/config.sh", config_override]
-                if is_distroless_image(image):
-                    generated_config = write_distroless_docker_library_config(
-                        image, config_override.parent
-                    )
-                    configs.append(generated_config)
-                config_args = " ".join(
-                    f"-c {shlex.quote(config.as_posix())}" for config in configs
-                )
-                cmd = (
-                    f"{shlex.quote(run_sh.as_posix())} "
-                    f"{shlex.quote(image)} {config_args}"
-                )
-                test_results.append(
-                    Result.from_commands_run(
-                        name=f"{test_name} ({image})", command=cmd
-                    )
-                )
-            finally:
-                if generated_config:
-                    generated_config.unlink(missing_ok=True)
-
-    except Exception as e:
-        logging.error("Failed while testing the docker library image: %s", e)
-        test_results.append(
-            Result(
-                name=test_name,
-                status=Result.Status.FAIL,
-                info=f"Exception while testing docker library: {traceback.format_exc()}",
-            )
-        )
 
 
 def check_server_readme(image_path: str) -> Result:
