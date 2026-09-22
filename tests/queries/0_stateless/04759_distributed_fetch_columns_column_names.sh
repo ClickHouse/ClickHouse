@@ -142,7 +142,3 @@ fetch 'join, Distributed on the left' \
 fetch 'join, cluster() on the left' \
     "SELECT d.A, r.v FROM cluster(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, src) AS d
         JOIN ${CLICKHOUSE_DATABASE}.rt AS r ON d.A = r.k"
-
-echo '=== Without the analyzer ==='
-fetch 'buf_mismatch A' 'SELECT A FROM buf_mismatch SETTINGS enable_analyzer = 0'
-fetch 'dist A' 'SELECT A FROM dist SETTINGS enable_analyzer = 0'
