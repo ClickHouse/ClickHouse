@@ -12,6 +12,8 @@
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -79,6 +81,25 @@ namespace FailPoints
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
     extern const char remote_query_executor_local_packet_processing_error[];
+}
+
+/// True if any step of the plan pre-serializes the result blocks. Child plans are not walked: a
+/// `BlocksMarshalling` step is only ever put on the root of a plan that is sent back over the network.
+static bool planMarshallsBlocks(const QueryPlan & query_plan)
+{
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{query_plan.getRootNode()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !node->step)
+            continue;
+        if (typeid_cast<const BlocksMarshallingStep *>(node->step.get()))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -611,6 +632,25 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             log,
             "Sending query as SQL because a replica does not support query-plan serialization version {} required for execution limits",
             DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
+
+    /// `BlocksMarshalling` is registered only from version 21, so an older peer would accept the plan
+    /// version and then fail on the step name. The planner puts the step on the plan of a secondary
+    /// query, which is exactly the plan a shard gets under `serialize_query_plan`, so send SQL instead
+    /// and let the shard add the step itself. A plan fragment for parallel replicas never reaches this:
+    /// a replica below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS` is dropped
+    /// while the connections are established, and that fragment has no SQL to fall back to.
+    if (query_plan
+        && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP)
+        && planMarshallsBlocks(*query_plan))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required for the "
+            "BlocksMarshalling step",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP);
         query_plan.reset();
         stage = query_plan_fallback_stage;
     }

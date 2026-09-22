@@ -218,7 +218,10 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     if (const auto * root = query_plan->getRootNode())
     {
         if (typeid_cast<const BlocksMarshallingStep *>(root->step.get()))
+        {
+            chassert(root->children.size() == 1, "BlocksMarshalling is a unary step");
             root = root->children.front();
+        }
 
         if (const auto * agg = typeid_cast<const AggregatingStep *>(root->step.get()))
             add_agg_info = !agg->getFinal();

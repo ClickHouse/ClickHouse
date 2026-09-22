@@ -18,6 +18,7 @@ CLIENT="$CLICKHOUSE_CLIENT --compression 1 --enable_analyzer 1"
 PARALLEL_REPLICAS="parallel_replicas_plan_based = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1"
 
 $CLIENT -q "
+    DROP TABLE IF EXISTS tab;
     CREATE TABLE tab (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO tab SELECT number % 7, number FROM numbers(1000);
 "
@@ -47,7 +48,11 @@ marshalling_counts_query() {
 }
 
 AGGREGATING_QUERY="SELECT x, sum(y) FROM tab GROUP BY x ORDER BY x"
-PLAIN_QUERY="SELECT x, y FROM tab ORDER BY x, y LIMIT 5"
+# No `LIMIT`: with a full top-N sort above it (which is what the plan looks like once the randomized
+# `optimize_read_in_order = 0` of the flaky check removes the read-in-order plan), `use_top_k_dynamic_filtering`
+# selects the read for the Top-K filter optimization, and `mergeTreeReadCanBeShipped` then keeps that read
+# local - leaving no remote fragment to assert about.
+PLAIN_QUERY="SELECT x, y FROM tab WHERE y % 250 = 0 ORDER BY x, y"
 
 # Exactly one `BlocksMarshalling` (the fragment is serialized once and reused for every replica), and
 # it must be under the remote step: the branch executed in this process is united into the parent

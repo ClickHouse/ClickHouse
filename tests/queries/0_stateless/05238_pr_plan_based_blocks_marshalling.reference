@@ -21,10 +21,9 @@
 6	70929
 -- plain, local plan, marshalling on
 0	0
-0	7
-0	14
-0	21
-0	28
+1	750
+3	500
+5	250
 -- aggregating, no local plan, marshalling on
 0	71071
 1	71214

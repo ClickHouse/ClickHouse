@@ -133,6 +133,10 @@ static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers a `BlocksMarshalling` step. It is the step's
+/// introduction version in the registry, so it cannot be written into an older stream at all, and the
+/// sender falls back to SQL for a peer below it (`RemoteQueryExecutor::sendQuery`).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP = 21;
 /// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
 /// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores

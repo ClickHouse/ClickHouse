@@ -30,7 +30,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
@@ -392,17 +391,14 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
 {
     /// The replica runs this fragment from the plan alone, so nothing there repeats the decision
     /// `Planner::buildPlanForQueryNode` makes for a shard that plans its own secondary query: the step
-    /// has to be put on the fragment here. Two of the conditions of that gate are implied by the shape
-    /// of this fragment rather than checked: it always runs as a secondary query on a replica, and its
-    /// blocks always go back to the initiator over the network. The branch that is executed in this
-    /// process, where nothing unmarshalls the blocks, is the sibling `createLocalPlanFragmentForParallelReplicas`.
+    /// has to be put on the fragment here. The structural conditions of that gate hold by construction:
+    /// this fragment always runs as a secondary query on a replica, and its blocks always go back to the
+    /// initiator over the network. The branch that is executed in this process, where nothing unmarshalls
+    /// the blocks, is the sibling `createLocalPlanFragmentForParallelReplicas`.
     ///
     /// `context` is the per-replica context, and parallel replicas do not increase the distributed
-    /// depth, so the depth read here is the one the replica will see.
-    const auto & client_info = context->getClientInfo();
-    if (context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
-        && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
-        && !client_info.is_replicated_database_internal)
+    /// depth, so the depth `contextAllowsBlocksMarshalling` reads is the one the replica will see.
+    if (contextAllowsBlocksMarshalling(*context))
         plan_fragment->addStep(std::make_unique<BlocksMarshallingStep>(plan_fragment->getCurrentHeader()));
 
     /// Serialize the fragment now, while a referenced `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`)
