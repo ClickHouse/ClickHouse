@@ -275,6 +275,19 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
     if (object.bytes_size == 0 && !object.etag.empty())
         getObjectMetadataOfListedGeneration(object);
 
+    /// The size of the object recorded in the metadata is a locally known bound, so it is used
+    /// as the right bound of the read rather than trusting the length of whatever the endpoint
+    /// answers with. `UnknownSize` is the only sentinel for "the size was never determined":
+    /// it is the default-constructed value, so a caller that does not know the size leaves it
+    /// there, and `bytes_size == 0` means a genuinely empty object, which must read as empty
+    /// rather than unbounded.
+    /// `S3ObjectStorage::readObject` maps `0` to "no bound" as well, because
+    /// `ReadBufferFromS3::read_until_position` is a plain `size_t` whose `0` already means
+    /// "unbounded" and therefore cannot express the empty range at all.
+    const std::optional<size_t> known_size = object.bytes_size != StoredObject::UnknownSize
+        ? std::optional<size_t>(object.bytes_size)
+        : std::nullopt;
+
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
@@ -283,24 +296,18 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /// The size of the object recorded in the metadata is a locally known bound, so it is used
-        /// as the right bound of the read rather than trusting the length of whatever the endpoint
-        /// answers with. `UnknownSize` is the only sentinel for "the size was never determined":
-        /// it is the default-constructed value, so a caller that does not know the size leaves it
-        /// there, and `bytes_size == 0` means a genuinely empty object, which must read as empty
-        /// rather than unbounded.
-        /// `S3ObjectStorage::readObject` maps `0` to "no bound" as well, because
-        /// `ReadBufferFromS3::read_until_position` is a plain `size_t` whose `0` already means
-        /// "unbounded" and therefore cannot express the empty range at all.
-        object.bytes_size != StoredObject::UnknownSize
-            ? std::optional<size_t>(object.bytes_size)
-            : std::nullopt,
+        /* read_until_position */ known_size,
         std::move(blob_storage_log),
         connection_params.get()->getContainer(),
         /// The size is only a correct bound for the generation of the object it was recorded for,
         /// so the read is pinned to that generation when the caller has recorded its `ETag`, and
         /// a replaced object is rejected instead of being truncated to the stale size.
-        object.etag);
+        object.etag,
+        /// The same size is what the buffer reports as the size of the file, so that a wrapper
+        /// that sizes itself by `getFileSize` (`CachedInMemoryReadBufferFromFile` does, and treats
+        /// an earlier end of the file as corruption) sees the bound the read has, and not the size
+        /// of whatever generation a live `GetProperties` request would meet.
+        /* file_size */ known_size);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

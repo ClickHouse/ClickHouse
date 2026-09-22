@@ -295,6 +295,9 @@ public:
     /// that allows no bytes at all does not go to the endpoint in the first place.
     size_t getDownloadCount() const { return downloads; }
 
+    /// How many `GetProperties` (`HEAD`) requests the reader has issued.
+    size_t getPropertiesCount() const { return properties_requests; }
+
     /// The `If-Match` condition of the last download, or empty if it had none.
     const std::string & getLastIfMatch() const { return last_if_match; }
 
@@ -302,6 +305,8 @@ public:
         Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
         const bool is_download = request.GetMethod() == Azure::Core::Http::HttpMethod::Get;
+        if (request.GetMethod() == Azure::Core::Http::HttpMethod::Head)
+            ++properties_requests;
         if (is_download)
         {
             ++downloads;
@@ -381,6 +386,7 @@ private:
     std::string etag;
     bool honours_if_match;
     size_t downloads = 0;
+    size_t properties_requests = 0;
     std::string last_if_match;
 };
 
@@ -866,6 +872,44 @@ TEST(AzureReadObject, EmptyObjectAcceptsTheUnquotedETagOfAListing)
     ASSERT_TRUE(result.data.empty());
     ASSERT_EQ(result.metadata.etag, listed_etag);
     ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(0));
+}
+
+/// `readObject` bounds the read by the size the caller recorded, so the buffer must report that
+/// very size as the size of the file. Before the recorded size was handed to the buffer as its
+/// `file_size`, `getFileSize` asked the endpoint with a live `GetProperties` request, whose answer
+/// describes whatever generation the blob has by now: `CachedInMemoryReadBufferFromFile` sizes
+/// itself by that answer in its constructor and throws `UNEXPECTED_END_OF_FILE` when the inner
+/// buffer ends earlier, so a blob grown since it was listed turned a bounded read into an exception.
+/// Here the endpoint reports the blob as empty on `HEAD`, while the caller has listed it as 100
+/// bytes: the size the caller knows must win, and no request is needed to learn it.
+TEST(AzureReadObject, FileSizeIsTheListedSize)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    ASSERT_EQ(buffer->getFileSize(), static_cast<size_t>(100));
+    ASSERT_EQ(transport->getPropertiesCount(), static_cast<size_t>(0));
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+}
+
+/// Without a recorded size there is nothing local to report, so the size is still learned from
+/// the endpoint, as before.
+TEST(AzureReadObject, UnknownObjectSizeIsAskedFromTheEndpoint)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ DB::StoredObject::UnknownSize);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    ASSERT_EQ(buffer->getFileSize(), static_cast<size_t>(0));
+    ASSERT_EQ(transport->getPropertiesCount(), static_cast<size_t>(1));
 }
 
 TEST(AzureQuotedETag, Spellings)

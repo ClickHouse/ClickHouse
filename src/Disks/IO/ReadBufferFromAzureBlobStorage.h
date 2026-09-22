@@ -36,7 +36,12 @@ public:
         std::optional<size_t> read_until_position_ = {},
         BlobStorageLogWriterPtr blob_storage_log_ = {},
         String container_for_logging_ = {},
-        String expected_etag_ = {});
+        String expected_etag_ = {},
+        /// The size of the blob as the caller knows it, when the caller knows it. It is reported by
+        /// `tryGetFileSize` instead of the size a live `GetProperties` request would return, so that
+        /// a wrapper that sizes itself by `getFileSize` (the page cache, for one) sees the very size
+        /// the read is bounded by, rather than that of a generation the caller has never seen.
+        std::optional<size_t> file_size_ = {});
 
     /// The `ETag` of one generation of a blob arrives in two spellings: quoted in HTTP headers
     /// (`ETag: "0x8DA..."`), as RFC 9110 requires, and unquoted in the XML body of a blob listing

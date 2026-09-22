@@ -76,7 +76,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     std::optional<size_t> read_until_position_,
     BlobStorageLogWriterPtr blob_storage_log_,
     String container_for_logging_,
-    String expected_etag_)
+    String expected_etag_,
+    std::optional<size_t> file_size_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -92,6 +93,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , blob_storage_log(std::move(blob_storage_log_))
     , container_for_logging(std::move(container_for_logging_))
 {
+    file_size = file_size_;
+
     if (!use_external_buffer)
     {
         tmp_buffer.resize(tmp_buffer_size);
