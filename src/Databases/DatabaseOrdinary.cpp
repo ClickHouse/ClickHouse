@@ -447,6 +447,15 @@ static bool isPushSourceEngine(const String & engine_name)
     return push_source_engines.contains(engine_name);
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -464,6 +473,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
     /// metadata could be read without a grant on the target. Load it eagerly, as for views.
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
