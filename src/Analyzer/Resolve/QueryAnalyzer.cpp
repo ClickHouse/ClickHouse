@@ -7063,13 +7063,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
         if (!cte_nodes.empty())
         {
-            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_cte_redefinition])
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_allow_cte_redefinition "
-                    "to let a later definition shadow the earlier one. In scope {}",
-                    cte_name,
-                    scope.scope_node->formatASTForErrorMessage());
-
             if (query_node_typed.isRecursiveWith())
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "CTE with name {} already exists and cannot be redefined in a recursive WITH clause. In scope {}",
@@ -7080,6 +7073,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             if (isMaterializedCTEDefinition(node) || isMaterializedCTEDefinition(cte_nodes.front()))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "CTE with name {} already exists and cannot be redefined because it is declared as MATERIALIZED. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// Checked last, so the hint is given only when enabling the setting would help.
+            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_cte_redefinition])
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_allow_cte_redefinition "
+                    "to let a later definition shadow the earlier one. In scope {}",
                     cte_name,
                     scope.scope_node->formatASTForErrorMessage());
         }
