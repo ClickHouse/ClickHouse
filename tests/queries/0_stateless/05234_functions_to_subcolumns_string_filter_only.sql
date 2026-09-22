@@ -72,19 +72,22 @@ ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
-    serialization_info_version = 'basic',
-    string_serialization_version = 'single_stream';
+    serialization_info_version = 'with_types',
+    string_serialization_version = 'single_stream',
+    ratio_of_defaults_for_sparse_serialization = 0.8;
 
-INSERT INTO test_string_filter_mixed VALUES (0, 0, ''), (1, 0, 'legacy');
+INSERT INTO test_string_filter_mixed
+SELECT number, 0, if(number = 9, 'legacy', '')
+FROM numbers(10);
 
 ALTER TABLE test_string_filter_mixed MODIFY SETTING
-    serialization_info_version = 'with_types',
     string_serialization_version = 'with_size_stream';
 
-INSERT INTO test_string_filter_mixed VALUES (2, 1, ''), (3, 1, 'modern');
+INSERT INTO test_string_filter_mixed VALUES (10, 1, ''), (11, 1, 'modern');
 
-SELECT 'mixed table has legacy and size-stream parts';
+SELECT 'mixed table has sparse legacy and size-stream parts';
 SELECT
+    countIf(serialization = 'Sparse'),
     countIf(not has(substreams, 's.size')),
     countIf(has(substreams, 's.size'))
 FROM system.parts_columns
@@ -93,7 +96,7 @@ WHERE database = currentDatabase()
     AND active
     AND column = 's';
 
-SELECT 'mixed legacy and size-stream parts remain correct';
+SELECT 'mixed sparse legacy and size-stream parts remain correct';
 SELECT id, s
 FROM test_string_filter_mixed
 PREWHERE notEmpty(s)
