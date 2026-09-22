@@ -95,9 +95,8 @@ struct MergeListElement : boost::noncopyable
     std::atomic<Float64> progress{};
     std::atomic<bool> is_cancelled{};
 
-    /// Whether the merge settled on removing expired values, published once `MergeTask::prepare` has
-    /// decided. A regular merge doing TTL removal is cancellable by `SYSTEM STOP TTL MERGES`; one that
-    /// had it disabled up front is not.
+    /// Set once `MergeTask::prepare` has settled it: a regular merge that removes expired values is
+    /// cancellable by `SYSTEM STOP TTL MERGES`, one that had removal disabled up front is not.
     std::atomic<bool> is_removing_expired_values{};
 
     UInt64 total_size_bytes_compressed{};

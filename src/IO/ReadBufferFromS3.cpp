@@ -360,9 +360,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
-    /// Retrying a cancelled read only postpones the cancellation, and this loop sleeps between attempts.
-    /// Throw the cancellation cause rather than letting the caller rethrow the stale S3 error, matching
-    /// `Client::HeadObject`. Asking the thread covers every cause and stays quiet for a network error.
+    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
     CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())

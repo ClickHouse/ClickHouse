@@ -457,9 +457,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         metadata_snapshot = future_part->parts.front()->getMetadataSnapshot();
     }
 
-    /// Root merges only: a projection sub-merge re-enters this from a running merge whose group is already
+    /// Root merges only: a projection sub-merge re-enters this under a running merge whose group is already
     /// attached, and an attach copies `shared_data` once, so a write here would not reach its threads.
-    /// The enclosing merge's predicate covers it.
     if (!projection_merge_list_element)
     {
         auto entry_context = (*merge_entry)->thread_group->query_context.lock();
@@ -470,13 +469,10 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
                 "whole merge",
                 future_part->name);
 
-        /// `optimizeDryRun` passes a user query's context and runs the task inline under that query's
-        /// group, so its entry group is never attached and its cancellation is already the query's.
+        /// `optimizeDryRun` runs the task inline under a user query's group, whose cancellation already applies.
         if (entry_context->isBackgroundContext())
         {
-            /// Same latch as `MergeTask::GlobalRuntimeContext::isCancelled`: the IO layer and the merge's own
-            /// checks poll independently, so a blocker released in between must not resurrect the read.
-            /// The TTL term mirrors both of `MergeTask`'s conditions: assigned, or actually removing.
+            /// Latched, because a blocker released between two independent polls must not resurrect the read.
             auto is_cancelled = [&blocker = merges_blocker,
                                  &ttl_blocker = ttl_merges_blocker,
                                  is_ttl_merge = isTTLMergeType(future_part->merge_type),
@@ -498,9 +494,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
                 return false;
             };
 
-            /// The IO layer polls the thread's cancellation predicates, which are constant `false` for a
-            /// merge/mutate group because they resolve through a process-list element it does not have.
-            /// Installed here because a root merge creates its entry and calls this in one un-attached step.
+            /// The IO layer polls the thread's cancellation predicates, which resolve through a process-list
+            /// element a merge/mutate group does not have. A root merge is still un-attached here.
             (*merge_entry)->thread_group->setCancellationPredicates(
                 is_cancelled,
                 [is_cancelled]
@@ -557,8 +552,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const String partition_id = future_part->part_info.getPartitionId();
     auto is_cancelled = [&blocker = merges_blocker, merge_entry, partition_id]()
     {
-        /// Persist a detected cancellation: the IO layer and the interactive-cancel callback poll this
-        /// independently, so a blocker released in between must not resurrect the read.
+        /// Latched, because a blocker released between two independent polls must not resurrect the read.
         if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
             return true;
 
@@ -584,9 +578,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
             return false;
         });
 
-    /// The IO layer does not observe the callback above; it polls the thread's cancellation predicates,
-    /// which are constant `false` for a merge/mutate group because they resolve through a process-list
-    /// element it does not have. Installed here because this runs before the group's first attach.
+    /// The IO layer does not observe the callback above; it polls the thread's cancellation predicates, which
+    /// resolve through a process-list element a merge/mutate group does not have.
     (*merge_entry)->thread_group->setCancellationPredicates(is_cancelled, throw_if_cancelled);
 
     return std::make_shared<MutateTask>(

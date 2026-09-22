@@ -130,9 +130,9 @@ public:
         return shared_data;
     }
 
-    /// Overrides both cancellation predicates, for groups whose context has no process-list element and
-    /// whose constructor-installed predicates are therefore constant `false`. Must be called before the
-    /// group's first attach, which copies `shared_data` into the thread's `local_data` once.
+    /// The constructor-installed predicates resolve through the context's process-list element, so a group
+    /// without one polls constant `false`. Must be called before the group's first attach, which copies
+    /// `shared_data` into the thread's `local_data` once.
     void setCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
 
     /// Mutation shared data
