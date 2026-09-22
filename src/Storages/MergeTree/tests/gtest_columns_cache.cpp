@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/ColumnsCache.h>
@@ -50,6 +51,17 @@ ColumnsCache::MappedPtr makeEntry(const TestColumn & c, size_t stripe, size_t fi
     entry->row_begin = first_mark * ROWS_PER_MARK;
     entry->rows = (end_mark - first_mark) * ROWS_PER_MARK;
     entry->key = ColumnsCacheKey{c.identity, stripe};
+    return entry;
+}
+
+/// The same entry with its rows in a `ColumnSparse`, as a read of a sparsely serialized column
+/// of the part produces. Mark 0 is filled with zeroes, so the sparse form is not degenerate.
+ColumnsCache::MappedPtr makeSparseEntry(const TestColumn & c, size_t stripe, size_t first_mark, size_t end_mark)
+{
+    auto entry = makeEntry(c, stripe, first_mark, end_mark);
+    auto sparse = ColumnSparse::create(entry->column->cloneEmpty());
+    sparse->insertRangeFrom(*entry->column, 0, entry->column->size());
+    entry->column = std::move(sparse);
     return entry;
 }
 
@@ -333,6 +345,47 @@ TEST(ColumnsCache, ClearAllLandingMidInsertRemovesTheStaleWrite)
     EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
     EXPECT_EQ(cache.count(), 0u);
     EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
+}
+
+TEST(ColumnsCache, AdjacentRunsOfDifferentRepresentationsMerge)
+{
+    /// The copy a read accumulates for the cache is a clone of the column the read produced, so
+    /// the same column of the same part reaches the cache as a `ColumnSparse` under one set of
+    /// settings and as a full column under another - the case
+    /// `MergeTreeReaderWide::serveRowsFromColumnsCache` handles when it serves rows. Two adjacent
+    /// runs of a stripe have to merge across that difference: a full column cannot take rows
+    /// from a `ColumnSparse`.
+    auto cache = makeCache();
+    const auto expect_whole_stripe = [](const ColumnsCache::MappedPtr & entry)
+    {
+        ASSERT_TRUE(entry);
+        EXPECT_EQ(entry->first_mark, 0u);
+        EXPECT_EQ(entry->end_mark, 8u);
+        ASSERT_EQ(entry->column->size(), 8 * ROWS_PER_MARK);
+        for (size_t mark = 0; mark < 8; ++mark)
+            EXPECT_EQ(entry->column->getUInt(mark * ROWS_PER_MARK + 1), mark);
+    };
+
+    /// A full run extended by a sparse one.
+    TestColumn full_first(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto full_first_generation = cache.getInvalidationGeneration(full_first.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(full_first, 0, 0, 4)}, full_first_generation), 0u);
+    EXPECT_GT(cache.setMany({makeSparseEntry(full_first, 0, 4, 8)}, full_first_generation), 0u);
+    expect_whole_stripe(getOne(cache, full_first, 0));
+
+    /// And a sparse run extended by a full one.
+    TestColumn sparse_first(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto sparse_first_generation = cache.getInvalidationGeneration(sparse_first.table_uuid);
+    EXPECT_GT(cache.setMany({makeSparseEntry(sparse_first, 0, 0, 4)}, sparse_first_generation), 0u);
+    EXPECT_GT(cache.setMany({makeEntry(sparse_first, 0, 4, 8)}, sparse_first_generation), 0u);
+    expect_whole_stripe(getOne(cache, sparse_first, 0));
+
+    /// The run on the left of the resident one goes through the same copy.
+    TestColumn on_the_left(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto on_the_left_generation = cache.getInvalidationGeneration(on_the_left.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(on_the_left, 0, 4, 8)}, on_the_left_generation), 0u);
+    EXPECT_GT(cache.setMany({makeSparseEntry(on_the_left, 0, 0, 4)}, on_the_left_generation), 0u);
+    expect_whole_stripe(getOne(cache, on_the_left, 0));
 }
 
 TEST(ColumnsCache, IndexIsErasedForAPartWhoseEntriesAreAllGone)
