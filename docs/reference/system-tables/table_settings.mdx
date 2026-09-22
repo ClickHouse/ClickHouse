@@ -22,7 +22,7 @@ Which values of `source` can appear depends on the engine: only `MergeTree` fami
 A value an engine adjusts while it runs, and does not write back to its settings, is reported as `other`.
 
 A table is shown to a user who has the `SHOW TABLES` privilege on it.
-The [`SHOW TABLE SETTINGS`](/reference/statements/show#show-table-settings) statement reads this table for one table.
+The [`SHOW TABLE SETTINGS`](/reference/statements/show) statement reads this table for one table.
 
 ## Columns {#columns}
 
@@ -38,4 +38,4 @@ SELECT name, value, source FROM system.table_settings WHERE database = currentDa
 ## See also {#see-also}
 
 - [`system.engine_settings`](/reference/system-tables/engine_settings)
-- [`SHOW TABLE SETTINGS`](/reference/statements/show#show-table-settings)
+- [`SHOW TABLE SETTINGS`](/reference/statements/show)
