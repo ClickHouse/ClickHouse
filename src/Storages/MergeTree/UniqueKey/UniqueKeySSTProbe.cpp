@@ -317,24 +317,15 @@ void SSTProbeTargetPart::findRowIndexBatch(
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader)");
 
-    /// Input is sorted within each `PROBE_BATCH_SIZE` window (interface
-    /// contract), so every chunk covers a contiguous key range.
-#ifndef NDEBUG
-    for (size_t begin = 0; begin < encoded_keys.size(); begin += PROBE_BATCH_SIZE)
-    {
-        const size_t end = std::min(begin + PROBE_BATCH_SIZE, encoded_keys.size());
-        chassert(std::is_sorted(encoded_keys.begin() + begin, encoded_keys.begin() + end));
-    }
-#endif
-
     /// Chunk buffers are reused across chunks; all state is call-local.
     std::vector<rocksdb::Slice> chunk_keys;
     chunk_keys.reserve(PROBE_BATCH_SIZE);
     std::vector<String> chunk_values;
 
-    for (size_t begin = 0; begin < encoded_keys.size(); begin += PROBE_BATCH_SIZE)
+    const size_t n = encoded_keys.size();
+    for (size_t begin = 0; begin < n; begin += PROBE_BATCH_SIZE)
     {
-        const size_t end = std::min(begin + PROBE_BATCH_SIZE, encoded_keys.size());
+        const size_t end = std::min(begin + PROBE_BATCH_SIZE, n);
         chunk_keys.clear();
         for (size_t i = begin; i < end; ++i)
             chunk_keys.emplace_back(encoded_keys[i].data(), encoded_keys[i].size());

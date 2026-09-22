@@ -6,10 +6,7 @@
 
 #include <Common/Exception.h>
 
-#include <algorithm>
-#include <numeric>
 #include <string_view>
-#include <vector>
 
 namespace DB
 {
@@ -54,21 +51,10 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
     VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, /*permutation=*/nullptr, max_encoded_size, encoded);
 
-    /// Sort each `PROBE_BATCH_SIZE` window by encoded key (contract of
-    /// `findRowIndexBatch`); `perm` maps sorted positions back to input rows.
-    std::vector<size_t> perm(n);
-    std::iota(perm.begin(), perm.end(), 0);
-    for (size_t begin = 0; begin < n; begin += PROBE_BATCH_SIZE)
-    {
-        const size_t end = std::min(begin + PROBE_BATCH_SIZE, n);
-        std::sort(perm.begin() + begin, perm.begin() + end,
-            [&](size_t a, size_t b) { return encoded[a] < encoded[b]; });
-    }
-
     std::vector<std::string_view> views;
     views.reserve(n);
-    for (size_t i : perm)
-        views.emplace_back(encoded[i].data(), encoded[i].size());
+    for (const auto & e : encoded)
+        views.emplace_back(e.data(), e.size());
 
     /// Snapshot captured once — the caller holds the active-parts list stable
     /// for the batch. Walk newest-first: the first live hit per key wins;
@@ -89,11 +75,8 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
 
         for (size_t i = 0; i < n; ++i)
         {
-            /// `batch_out[i]` aligns with sorted `views[i]`; map back to the input row.
-            const size_t row = perm[i];
-
             /// See `probe_validates_single_live_part`: release skips, debug does not.
-            if (resolved[row] && !probe_validates_single_live_part)
+            if (resolved[i] && !probe_validates_single_live_part)
                 continue;
 
             const auto & row_opt = batch_out[i];
@@ -102,22 +85,22 @@ std::vector<ProbeResult> UniqueKeyProbeSimple::probeBatch(const Block & keys, co
 
             if (!target->isRowDead(*row_opt))
             {
-                if (resolved[row])
+                if (resolved[i])
                 {
                     /// Debug-only: a second live hit violates the single-live-part invariant.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "UNIQUE KEY probe invariant violated: key at batch row {} is live in more "
-                        "than one part (partition '{}')", row, partition_id);
+                        "than one part (partition '{}')", i, partition_id);
                 }
 
-                results[row].outcome = ProbeOutcome::FOUND_LIVE;
-                results[row].part = underlying;
-                results[row].row_number = *row_opt;
-                resolved[row] = 1;
+                results[i].outcome = ProbeOutcome::FOUND_LIVE;
+                results[i].part = underlying;
+                results[i].row_number = *row_opt;
+                resolved[i] = 1;
             }
             else
             {
-                any_dead[row] = 1;
+                any_dead[i] = 1;
             }
         }
     }

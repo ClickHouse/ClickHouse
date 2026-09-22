@@ -271,8 +271,7 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
     EXPECT_EQ(batch[2].outcome, ProbeOutcome::NOT_FOUND);
 }
 
-/// The driver sorts the encoded batch per window for all targets; results
-/// must map back to the input row order.
+/// Results must map back to the input row order regardless of input key order.
 TEST_F(UniqueKeyProbeTest, ProbeBatchMapsUnsortedRowsBack)
 {
     auto t = makeTarget({{1, 10}, {2, 20}, {50, 30}});
@@ -343,9 +342,9 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchOutOfRangeKeysMiss)
     EXPECT_FALSE(out[3].has_value()) << "above-max key must miss";
 }
 
-/// A batch past the 32-key `MultiGet` cap is chunked; every key still maps to
-/// its own row, misses interleaved (globally sorted input also satisfies the
-/// per-window contract).
+/// A batch past the 32-key `MultiGet` cap is chunked internally; every key
+/// still maps to its own row, misses interleaved. Input order is arbitrary
+/// (descending here) - results must stay aligned with it.
 TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
 {
     constexpr UInt64 N = 100; /// past the 32-key limit
@@ -356,22 +355,22 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
     auto t = makeTarget(std::move(kv));
     ASSERT_NE(t, nullptr);
 
-    /// Sorted: below-min miss first, hits and in-range misses ascending,
-    /// above-max miss last.
+    /// Descending input: above-max miss first, hits and in-range misses
+    /// descending, below-min miss last.
     std::vector<String> storage;
     std::vector<std::optional<UInt64>> expected;
     storage.reserve(2 * N + 2);
     expected.reserve(2 * N + 2);
-    storage.push_back(encodeKey(50));   /// below min, misses
+    storage.push_back(encodeKey(2000)); /// above max, misses
     expected.push_back(std::nullopt);
-    for (UInt64 i = 0; i < N; ++i)
+    for (UInt64 i = N; i-- > 0;)
     {
-        storage.push_back(encodeKey(100 + i * 10));
-        expected.emplace_back(i);
         storage.push_back(encodeKey(100 + i * 10 + 5));
         expected.push_back(std::nullopt);
+        storage.push_back(encodeKey(100 + i * 10));
+        expected.emplace_back(i);
     }
-    storage.push_back(encodeKey(2000)); /// above max, misses
+    storage.push_back(encodeKey(50));   /// below min, misses
     expected.push_back(std::nullopt);
 
     std::vector<std::string_view> views;

@@ -156,7 +156,6 @@ namespace
              | (static_cast<UInt32>(static_cast<UInt8>(value[2])) << 8)
              |  static_cast<UInt32>(static_cast<UInt8>(value[3]));
     }
-
 }
 
 /// Smoke: write 10K sorted UInt64 keys, read back via `SstFileReader`,

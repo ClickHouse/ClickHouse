@@ -28,6 +28,9 @@ namespace DB
 class IMergeTreeDataPart;
 class DeleteBitmap;
 
+/// Probe window size, matching RocksDB's per-call `MultiGet` cap.
+constexpr size_t PROBE_BATCH_SIZE = 32;
+
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
 /// RocksDB `Env`, so remote (S3 etc.) disks work as well. Block
 /// cache is disabled: load-time validation would only pollute it.
@@ -36,8 +39,10 @@ class SSTFileReader
 public:
     SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings);
 
-    /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys. One status per
-    /// key: a miss is `NotFound`, other errors throw (fail closed).
+    /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys. Keys may be in
+    /// any order - RocksDB sorts them internally and both outputs stay aligned
+    /// with `keys`. One status per key: a miss is `NotFound`, other errors
+    /// throw (fail closed).
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const;
 
     std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
@@ -62,8 +67,8 @@ SSTFileReaderPtr openSSTReaderFromStorage(
     const String & sst_file_name,
     const ReadSettings & read_settings);
 
-/// `IProbeTargetPart` backed by `unique_key_index.sst`. Absent keys are
-/// short-circuited by the bloom filter.
+/// `IProbeTargetPart` backed by `unique_key_index.sst`. The SST's embedded
+/// bloom filter short-circuits absent keys.
 class SSTProbeTargetPart : public IProbeTargetPart
 {
 public:
