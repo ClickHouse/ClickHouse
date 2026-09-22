@@ -14,6 +14,10 @@ import { Image } from "/snippets/components/Image.jsx";
 
 A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; the executor applies nothing until you approve each one with your own cluster credentials. This page explains what a platform update is, how to approve one on a VM or a Kubernetes install, how long an approval lasts, and what it grants.
 
+<Note>
+The public `v0.16.0` CLI has no `platform` command, including `platform approve` and `platform reset`. Neither the Linux VM nor the Kubernetes workflow below is available in that release. Kubernetes approval additionally requires CLI and executor-chart support for the Secret-based token bundle (`--secret-namespace`). Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team before using either workflow.
+</Note>
+
 ## What a platform update is {#what-a-platform-update-is}
 
 The platform layer is three components: the snapshot controller, the ClickHouse operator, and the monitoring collectors. They install in this order because each needs the previous one's custom resource definitions. Alongside them sits a StorageClass named `gp3-encrypted` (encrypted gp3 volumes) that the services use.
@@ -30,6 +34,17 @@ The executor never applies a bundle you have not approved. It refuses a platform
 ## Approve a platform update {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector platform approval flow" />
+
+### Registry credentials {#registry-credentials}
+
+Both approval procedures below require a [build with platform support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` has no `platform` command. Kubernetes approval also needs matching CLI and chart support for Secret delivery.
+
+Registry authentication depends on the image distribution mode registered for your environment:
+
+- **Direct access to ClickHouse's registry.** Run approval on the connector's EC2 VM. Both `approve` and the executor's platform sync use credentials from the EC2 instance metadata service to assume your environment's read-only ECR puller role. They use that role for chart login; the executor also uses it to check that the platform images exist. AWS profiles, environment credentials, or SSO credentials on a workstation do not replace the instance profile. Your kubeconfig still supplies the separate cluster-admin credentials for applying the permission half.
+- **Charts in another ECR registry, including your own mirror.** Chart login uses the ambient AWS credentials of the process running `approve` or the executor. Those credentials must be allowed to read that registry.
+
+Use the Kubernetes workstation procedure below only for mirrored-registry deployments with Kubernetes platform approval enabled. For direct access, ask your account team to confirm a supported execution environment with the required EC2 instance profile before proceeding.
 
 <Steps>
 <Step title="Find the staged bundle" id="find-the-staged-bundle">
@@ -68,7 +83,7 @@ The API answers `404` with `no platform bundle is staged` until the first propos
 <Step title="Run approve" id="run-approve">
 `approve` with no flags reads the staged bundle and hashes it, so what you approve is exactly what the executor received. It renders every chart in the bundle exactly as the executor will and applies the permission half with the kube context you choose. It creates the `pcm-platform` identity if needed and mints its token. It makes no request to your connector endpoint.
 
-`approve` needs a kube context with cluster-admin rights on the managed cluster (`--context <name>` when your kubeconfig holds several). When a chart lives in Amazon ECR it also needs AWS credentials that can read it. `--dry-run` renders and lists the permission half without applying or minting anything.
+`approve` needs a kube context with cluster-admin rights on the managed cluster (`--context <name>` when your kubeconfig holds several) and the [registry credentials](#registry-credentials) for your environment's image distribution mode. `--dry-run` renders and lists the permission half without applying or minting anything; it still needs registry access to render the charts.
 
 <Tabs>
 <Tab title="Linux VM" id="approve-vm">
@@ -81,7 +96,7 @@ sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml
 `approve` writes the token to `/etc/clicklink/access/executor/_platform`, next to the executor's other credentials. It builds the new bundle beside the live one and swaps it in only once its token exists, so a failed approve leaves a still-valid token alone.
 </Tab>
 <Tab title="Kubernetes" id="approve-kubernetes">
-`approve` reads the staged bundle over the port-forward from the previous step. It delivers the token bundle as a Secret in the connector namespace, which the chart mounts into the pod. Run it from a workstation whose kubeconfig reaches the cluster, with a copy of the connector configuration. The chart renders one into the executor's ConfigMap; `approve` needs it for the namespace prefix and reads no credentials from it.
+For a mirrored-registry deployment with Kubernetes platform approval enabled, `approve` reads the staged bundle over the port-forward from the previous step. It delivers the token bundle as a Secret in the connector namespace, which the chart mounts into the pod. Run it from a workstation whose kubeconfig reaches the cluster, with a copy of the connector configuration and registry access as described above. The chart renders the configuration into the executor's ConfigMap; `approve` needs it for the namespace prefix and reads no credentials from it.
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -141,6 +156,8 @@ The executor applies the workload half as `pcm-platform`. That identity can crea
 The executor's service-lifecycle identity, `pcm-executor`, is separate and confined to the service namespaces. It cannot write to the platform namespaces; its reads are not confined by the prefix guard. For the complete listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ## Resetting a test cluster {#resetting-a-test-cluster}
+
+The public `v0.16.0` CLI has no `platform reset` command; confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using this procedure.
 
 `clicklink clctl platform reset` exists for test clusters: it uninstalls the platform components so their first installation can be exercised again. Before changing anything it lists the ClickHouse clusters in the namespaces this connector owns and refuses if any service exists.
 
