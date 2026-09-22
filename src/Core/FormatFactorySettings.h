@@ -898,7 +898,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
+Such integers are output without quotes by default. Enabling this setting encloses them in quotes, which is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -1649,7 +1649,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 

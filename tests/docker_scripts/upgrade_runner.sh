@@ -11,11 +11,11 @@ set -ex
 # we mount tests folder from repo to /usr/share
 ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
-ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
-ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
+ln -s /repo/ci/tools/download_release_packages.py /usr/bin/download_release_packages
+ln -s /repo/ci/tools/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 # Stress tests and upgrade check uses similar code that was placed
-# in a separate bash library. See tests/ci/stress_tests.lib
+# in a separate bash library. See tests/docker_scripts/stress_tests.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
@@ -652,6 +652,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `StorageFileLog` + `The absolute data path should be inside` is expected:
+#       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -740,6 +742,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
