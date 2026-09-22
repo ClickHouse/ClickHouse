@@ -298,18 +298,28 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     hashing.set.prepareForInsert(input_chunk);
 
-    /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation
-    /// and its row masks. Generic spill input also needs a fingerprint column.
-    /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs uncompressed,
-    /// compressed, and file buffers. Oversized values and codec overhead can exceed this estimate.
-    const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128
-        ? input_chunk.getNumRows() * sizeof(UInt128) : 0;
+    /// Hashing releases its row masks and packed keys before spilling starts.
+    const size_t filtering_memory = hashing.set.estimateFilteringMemory(input_chunk);
+    const size_t input_bytes = input_chunk.allocatedBytes();
+    const size_t service_columns_bytes = DistinctSpillLayout::estimateServiceColumnsMemory(
+        input_chunk.getNumRows(), hashing.set.getKeyRepresentation(), preserve_input_order);
+    /// Reserve space for a suppression run's extracted columns and their sorted copies.
     const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
-    const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
+    /// Ordinary sorting keeps the added columns alongside their permuted copies. The input columns
+    /// already count towards query memory, but their copies do not.
+    const size_t ordinary_columns_bytes = input_bytes + 2 * service_columns_bytes;
+    const size_t sort_rows = std::max<size_t>(max_block_size_rows, input_chunk.getNumRows());
+    using Permutation = IColumn::Permutation;
+    const size_t sort_permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+        sort_rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
+    /// Writing needs uncompressed, compressed, and file buffers. Oversized values and codec overhead
+    /// can exceed this estimate.
     const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
-    const size_t spill_headroom_bytes
-        = hashing.set.estimateFilteringMemory(input_chunk) + fingerprint_bytes
-            + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
+    /// A filtered output copy can remain pending during suppression extraction, and the original
+    /// input can remain shared upstream. Ordinary-input sorting runs separately from suppression.
+    const size_t spill_memory
+        = std::max(input_bytes + suppression_columns_bytes, ordinary_columns_bytes) + sort_permutation_bytes + write_buffers_bytes;
+    const size_t workspace_memory = std::max(filtering_memory, spill_memory);
 
     /// The threshold applies to total query memory, so current usage reduces the budget for growth.
     /// Query accounting can briefly become negative while a concurrent free saturates its counter.
@@ -318,7 +328,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
         = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
 
     const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
-    if (spill_headroom_bytes > available_memory || growth_memory > available_memory - spill_headroom_bytes)
+    if (workspace_memory > available_memory || growth_memory > available_memory - workspace_memory)
     {
         LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
             "(query memory: {}, spill threshold: {}, "
@@ -329,7 +339,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
             formatReadableSizeWithBinarySuffix(query_memory_usage),
             formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
             formatReadableSizeWithBinarySuffix(growth_memory),
-            formatReadableSizeWithBinarySuffix(spill_headroom_bytes));
+            formatReadableSizeWithBinarySuffix(workspace_memory));
 
         startSpilling(hashing);
         return;

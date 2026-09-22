@@ -434,3 +434,61 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
         }
     }).join();
 }
+
+TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFilteredOutput)
+{
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
+        constexpr UInt64 threshold = 256 << 20;
+        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+            threshold, tmp_data, /*min_free_disk_space_=*/ 0,
+            /*max_block_size_rows_=*/ 8, /*preserve_input_order_=*/ false);
+        OutputPort upstream{header};
+        InputPort downstream{header};
+        connect(upstream, transform.getInputs().front());
+        connect(transform.getOutputs().front(), downstream);
+        downstream.setNeeded();
+
+        /// Retain a key so switching to spilling must prepare a suppression run.
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        auto first = makeChunk({0});
+        auto first_payload = ColumnString::create();
+        first_payload->insertDefault();
+        first.addColumn(std::move(first_payload));
+        upstream.push(std::move(first));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        ASSERT_TRUE(downstream.hasData());
+        EXPECT_EQ(downstream.pull().getNumRows(), 1);
+        downstream.setNeeded();
+
+        auto input = makeChunk({1, 2, 3, 4, 5, 6, 7, 7});
+        auto payload = ColumnString::create();
+        payload->insertMany(Field(String(4 << 20, 'x')), input.getNumRows());
+        /// Keep the original payload alive independently of the transform. Filtering the duplicate
+        /// row allocates output columns without releasing this shared input storage.
+        ColumnPtr shared_payload = std::move(payload);
+        input.addColumn(shared_payload);
+        const size_t input_bytes = input.allocatedBytes();
+        upstream.push(std::move(input));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+
+        /// Either the filtering copy or suppression workspace fits on its own, but the copy can stay
+        /// in the pending output while suppression starts. Reserve room for both before inserting.
+        const Int64 pressure = threshold - query.get() - static_cast<Int64>(input_bytes + (16 << 20));
+        ASSERT_GT(pressure, 0);
+        std::ignore = CurrentMemoryTracker::alloc(pressure);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+        ASSERT_NO_THROW(transform.work());
+        EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        EXPECT_FALSE(downstream.hasData());
+    }).join();
+}
