@@ -187,6 +187,13 @@ rows: 200
 18446744073709551517	990
 18446744073709551518	980
 18446744073709551519	970
+-- global join, cluster() on the left
+header: __table1.A	__table2.v	__table2.v
+rows: 10
+-1	1	1
+-2	2	2
+-3	3	3
+-4	4	4
 === Plan serialization ===
 -- buf_mismatch, serialize_query_plan
 header: __table1.A

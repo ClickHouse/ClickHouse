@@ -123,6 +123,11 @@ fetch 'in, distributed_product_mode=local' \
     "SELECT A, B FROM buf_mismatch WHERE B IN (SELECT v FROM dist_keys) SETTINGS distributed_product_mode = 'local'"
 fetch 'in, distributed_product_mode=global' \
     "SELECT A, B FROM buf_mismatch WHERE B IN (SELECT v FROM dist_keys) SETTINGS distributed_product_mode = 'global'"
+# A GLOBAL JOIN ships its right table as a temporary table too, so its joined columns arrive after the
+# same extra clone. The left side is a table function; the plain join below covers the table spelling.
+fetch 'global join, cluster() on the left' \
+    "SELECT d.A, r.v FROM cluster(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, src) AS d
+        GLOBAL JOIN ${CLICKHOUSE_DATABASE}.rt AS r ON d.A = r.k"
 
 # Plan serialization reads a remote storage through its own FetchColumns interpreter, which renames
 # in the opposite direction. CI does not randomize that setting, so the test has to set it.
