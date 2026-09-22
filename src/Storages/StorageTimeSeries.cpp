@@ -117,7 +117,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::findTargets(const ASTC
             continue;
 
         /// Same for the tags min/max target: `store_min_time_and_max_time` reads as its `true` default on a
-        /// table of version 5 or earlier, which keeps `min_time`/`max_time` in its tags table instead.
+        /// table of version 6 or earlier, which keeps `min_time`/`max_time` in its tags table instead.
         if ((target_kind == ViewTarget::TagsMinMax)
             && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
             continue;
@@ -814,6 +814,10 @@ void StorageTimeSeries::readImpl(
 
     auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
     query_plan = QueryPlan();
+    /// The generated plan joins the outer plan only during optimization, after the outer plan has decided
+    /// on distribution, so its contexts must be handed over now for a fallback to reach them.
+    query_plan.takeContextsFrom(*generated_plan);
+    query_plan.addDistributedPlanDecisionContext(read_context);
     query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
@@ -995,7 +999,7 @@ with the difference that a materialized view has one target table
 whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metric families](#metric-families-table),
 and two optional target tables: [recent samples](#recent-samples-table), which is enabled by default
 (see the [recent_samples_ttl_seconds](#settings) setting), and [tags min max](#tags-min-max-table),
-which a table of [version](#schema-versioning) 6 or later has when [store_min_time_and_max_time](#settings) is enabled.
+which a table of [version](#schema-versioning) 7 or later has when [store_min_time_and_max_time](#settings) is enabled.
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
@@ -1048,8 +1052,8 @@ The _tags_ table must have columns:
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
-| `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` and the table's [version](#schema-versioning) is 5 or earlier; from version 6 it's stored in the [tags min max](#tags-min-max-table) table instead |
-| `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` and the table's [version](#schema-versioning) is 5 or earlier; from version 6 it's stored in the [tags min max](#tags-min-max-table) table instead |
+| `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` and the table's [version](#schema-versioning) is 6 or earlier; from version 7 it's stored in the [tags min max](#tags-min-max-table) table instead |
+| `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` and the table's [version](#schema-versioning) is 6 or earlier; from version 7 it's stored in the [tags min max](#tags-min-max-table) table instead |
 
 New inner tags tables of [version](#schema-versioning) 5 and later with a `MergeTree` family engine have an inverted text index on `tags`:
 `INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`. It accelerates exact label matches such as
@@ -1063,7 +1067,7 @@ tags tables keep their indexes; add and materialize the index on their tags targ
 
 The _tags min max_ table keeps the minimum and the maximum timestamp of each time series, used to skip series
 which have no samples in the time range of a query (see the [filter_by_min_time_and_max_time](#settings) setting).
-A table of [version](#schema-versioning) 6 and later has this target when [store_min_time_and_max_time](#settings)
+A table of [version](#schema-versioning) 7 and later has this target when [store_min_time_and_max_time](#settings)
 is `true`; a table of version 5 and earlier keeps `min_time` and `max_time` in its [tags](#tags-table) table instead.
 
 The _tags min max_ table must have columns:
@@ -1084,7 +1088,7 @@ The _metric families_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `metric_family_name` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family |
+| `metric_family` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family. In tables of versions before 6 this column is named `metric_family_name` (see [Version history](#version-history)) |
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
@@ -1112,7 +1116,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 6, recent_samples_ttl_seconds = 345600
+SETTINGS version = 7, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1145,12 +1149,12 @@ TAGS MIN MAX INNER COLUMNS
 TAGS MIN MAX INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
 METRIC FAMILIES INNER COLUMNS
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
 So the columns were generated automatically and also there are five inner target tables with their own column definitions
@@ -1220,13 +1224,13 @@ SETTINGS index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family_name
+ORDER BY metric_family
 SETTINGS index_granularity = 8192
 ```
 
@@ -1251,7 +1255,8 @@ The types of the `id`, timestamp and value columns and the replication type of t
 The outer column list is regenerated and not copied.
 
 A table created by an older version of ClickHouse can be used as `existing_table`: the new table gets the current
-structure, e.g. the current `id` type and default identifier expression.
+structure, e.g. the current `id` type and default identifier expression, and the customized parts copied from
+`existing_table` are adjusted to it.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
@@ -1429,7 +1434,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically. For an external tags table the setting is recorded automatically at `CREATE` time if `version` is at least 2 (see [External target tables](#external-target-tables)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | false | Obsolete setting, does nothing |
-| `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series. A table of [version](#schema-versioning) 6 and later stores them in a separate [tags min max](#tags-min-max-table) target table, an earlier one in columns of the [tags](#tags-table) table |
+| `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series. A table of [version](#schema-versioning) 7 and later stores them in a separate [tags min max](#tags-min-max-table) target table, an earlier one in columns of the [tags](#tags-table) table |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
@@ -1437,16 +1442,16 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `tags_cache_max_series` | UInt64 | 0 | Maximum number of active time series IDs cached in memory to skip redundant inserts into the inner `tags` table during ingest. The cache is active only for an inner `tags` table whose rows never change, i.e. when `store_min_time_and_max_time = 0` or the table's [version](#schema-versioning) is 6 or later, which keeps `min_time` and `max_time` in the [tags min max](#tags-min-max-table) table. Default is 0 (disabled). Set to a nonzero value to enable. Can be altered after CREATE |
+| `tags_cache_max_series` | UInt64 | 0 | Maximum number of active time series IDs cached in memory to skip redundant inserts into the inner `tags` table during ingest. The cache is active only for an inner `tags` table whose rows never change, i.e. when `store_min_time_and_max_time = 0` or the table's [version](#schema-versioning) is 7 or later, which keeps `min_time` and `max_time` in the [tags min max](#tags-min-max-table) table. Default is 0 (disabled). Set to a nonzero value to enable. Can be altered after CREATE |
 | `tags_cache_ttl_seconds` | UInt64 | 1800 | Time-to-live in seconds for series IDs in the active series cache before they must be re-validated or written to the `tags` table again. Default is 1800 (30 minutes). Can be altered after CREATE |
-| `version` | UInt64 | 6 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 7 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 6) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 7) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1473,7 +1478,8 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 3 | The outer column `time_series` was renamed to `samples` (see [Outer columns](#outer-columns)). Tables of earlier versions keep the old name of the column, and the [prometheusQuery](/reference/functions/table-functions/prometheusQuery) and [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table functions return the column under the name the table uses. The stored data didn't change |
 | 4 | The `metrics` target table was renamed to `metric families`: the inner table is named `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`. The stored data didn't change |
 | 5 | New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index on the `tags` map by default (see [Tags table](#tags-table)) |
-| 6 | The `min_time` and `max_time` columns moved out of the [tags](#tags-table) table into a separate optional [tags min max](#tags-min-max-table) target table, created when [store_min_time_and_max_time](#settings) is `true`. Tables of earlier versions keep those columns in their tags table |
+| 6 | The column `metric_family_name` of the [metric families](#metric-families-table) table was renamed to `metric_family`, the name of the corresponding outer column. Tables of earlier versions keep the old name of the column, and the [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetrics) table function returns the column under the name the table uses. An external metric families table must name the column the way the version of the `TimeSeries` table does |
+| 7 | The `min_time` and `max_time` columns moved out of the [tags](#tags-table) table into a separate optional [tags min max](#tags-min-max-table) target table, created when [store_min_time_and_max_time](#settings) is `true`. Tables of earlier versions keep those columns in their tags table |
 
 # Functions {#functions}
 

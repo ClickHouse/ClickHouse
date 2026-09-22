@@ -80,7 +80,7 @@ namespace
 {
     /// All target kinds of a TimeSeries table.
     /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
-    /// The TagsMinMax target exists from version 6 and only while `store_min_time_and_max_time` is enabled.
+    /// The TagsMinMax target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
     constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TagsMinMax, ViewTarget::MetricFamilies};
@@ -108,6 +108,14 @@ namespace
     bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
     {
         return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+    }
+
+    /// Returns the name of the column with the name of a metric family in the "metric families" table used by the versions
+    /// of TimeSeries tables other than `version` (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+    const char * getInnerMetricFamilyOfOtherVersions(UInt64 version)
+    {
+        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
+            ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -537,7 +545,7 @@ namespace
     void removeInnerColumnsDisabledByNewSettings(
         ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & old_settings, const TimeSeriesSettings & new_settings)
     {
-        if ((inner_table_kind != ViewTarget::Tags) || !inner_table_columns.columns)
+        if (!inner_table_columns.columns)
             return;
 
         auto & columns = inner_table_columns.columns->children;
@@ -547,7 +555,18 @@ namespace
             columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
         };
 
-        /// The columns "min_time" and "max_time" are not stored, or (from version 6) are stored in the
+        if (inner_table_kind == ViewTarget::MetricFamilies)
+        {
+            /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
+            /// so a column under the name used by the other versions isn't kept.
+            remove_column(getInnerMetricFamilyOfOtherVersions(new_settings[TimeSeriesSetting::version]));
+            return;
+        }
+
+        if (inner_table_kind != ViewTarget::Tags)
+            return;
+
+        /// The columns "min_time" and "max_time" are not stored, or (from version 7) are stored in the
         /// separate "tags min max" table instead.
         if (!new_settings[TimeSeriesSetting::store_min_time_and_max_time]
             || (new_settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
@@ -741,7 +760,7 @@ namespace
                 if (has_default || codec)
                     return false;
 
-                if ((name == TimeSeriesColumnNames::MetricFamilyName) || (name == TimeSeriesColumnNames::Help))
+                if ((name == TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version])) || (name == TimeSeriesColumnNames::Help))
                     return type_name == "String";
 
                 if ((name == TimeSeriesColumnNames::Type) || (name == TimeSeriesColumnNames::Unit))
@@ -800,6 +819,32 @@ namespace
             return isGeneratedInnerColumn(column->as<ASTColumnDeclaration &>(), inner_table_kind, settings);
         };
         columns.erase(std::remove_if(columns.begin(), columns.end(), is_generated), columns.end());
+    }
+
+    /// Removes the keys of an inner table's engine copied from the old table which refer to a column this table names
+    /// differently. `new_settings` are the settings of this table.
+    void removeInnerEngineKeysDisabledByNewSettings(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & new_settings)
+    {
+        if (inner_table_kind != ViewTarget::MetricFamilies)
+            return;
+
+        /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
+        /// so the keys referring to it under the name used by the other versions can't be kept.
+        const char * other_name = getInnerMetricFamilyOfOtherVersions(new_settings[TimeSeriesSetting::version]);
+        auto references_other_name = [&](const IAST * key)
+        {
+            IdentifierNameSet identifiers;
+            if (key)
+                key->collectIdentifierNames(identifiers);
+            return identifiers.contains(other_name);
+        };
+
+        if (references_other_name(inner_engine.order_by))
+            inner_engine.reset(inner_engine.order_by);
+        if (references_other_name(inner_engine.primary_key))
+            inner_engine.reset(inner_engine.primary_key);
+        if (references_other_name(inner_engine.partition_by))
+            inner_engine.reset(inner_engine.partition_by);
     }
 
     /// Removes the parts of an inner table's engine declaration which look like generated by `normalizeInnerEngine`
@@ -898,7 +943,7 @@ namespace
             case ViewTarget::Tags:
             {
                 /// The generated engine kind follows the `aggregate_min_time_and_max_time` setting of the old table.
-                /// From version 6 the aggregated columns live in the separate "tags min max" table.
+                /// From version 7 the aggregated columns live in the separate "tags min max" table.
                 const bool separate_tags_min_max
                     = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
                 std::string_view generated_engine_name
@@ -965,7 +1010,7 @@ namespace
             {
                 if (engine_name != "ReplacingMergeTree")
                     return;
-                if (sorting_key_equals("metric_family_name"))
+                if (sorting_key_equals(TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version])))
                     inner_engine.reset(inner_engine.order_by);
                 break;
             }
@@ -1076,7 +1121,7 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::Tags,
                     makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
 
-                /// Columns "min_time" and "max_time". From version 6 they live in the "tags min max" table.
+                /// Columns "min_time" and "max_time". From version 7 they live in the "tags min max" table.
                 if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time]
                     && (time_series_settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
                 {
@@ -1146,7 +1191,17 @@ namespace
 
             case ViewTarget::MetricFamilies:
             {
-                add_column_if_missing(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
+                /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
+                /// a declaration under the name used by the other versions is a mistake: nothing would write to that column.
+                UInt64 version = time_series_settings[TimeSeriesSetting::version];
+                const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(version);
+                const char * other_name = getInnerMetricFamilyOfOtherVersions(version);
+                if (original.contains(other_name))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "{}: Column {} of the inner metric families table must be named {} in TimeSeries tables of version {}",
+                        table_id.getNameForLogs(), other_name, metric_family_column_name, version);
+
+                add_column_if_missing(metric_family_column_name, makeASTDataType("String"));
                 add_column_if_missing(TimeSeriesColumnNames::Type, makeASTDataType("LowCardinality", makeASTDataType("String")));
                 add_column_if_missing(TimeSeriesColumnNames::Unit, makeASTDataType("LowCardinality", makeASTDataType("String")));
                 add_column_if_missing(TimeSeriesColumnNames::Help, makeASTDataType("String"));
@@ -1491,7 +1546,7 @@ namespace
         /// A declared MergeTree engine without keys gets the same keys as a generated one.
         auto needs_sorting_key = [&] { return is_merge_tree() && !inner_engine.order_by && !inner_engine.primary_key; };
 
-        /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family_name`.
+        /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family`.
         auto set_sorting_key = [&](ASTs key_columns)
         {
             ASTPtr sorting_key;
@@ -1605,7 +1660,7 @@ namespace
 
             case ViewTarget::Tags:
             {
-                /// From version 6 `min_time` and `max_time` live in the separate "tags min max" table, so the tags
+                /// From version 7 `min_time` and `max_time` live in the separate "tags min max" table, so the tags
                 /// table stores no aggregate states and `aggregate_min_time_and_max_time` doesn't apply to it.
                 const bool separate_tags_min_max
                     = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
@@ -1642,7 +1697,7 @@ namespace
                 /// by default (see the `allow_dimensions_outside_sorting_key` setting and
                 /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
                 /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-                /// From version 6 the tags table has no aggregate states, so the setting is not needed there.
+                /// From version 7 the tags table has no aggregate states, so the setting is not needed there.
                 if (!separate_tags_min_max && inner_engine.engine->name.contains("Aggregating")
                     && !has_engine_setting("allow_dimensions_outside_sorting_key"))
                 {
@@ -1687,7 +1742,7 @@ namespace
                     set_engine("ReplacingMergeTree");
 
                 if (needs_sorting_key())
-                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName)});
+                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version]))});
                 break;
             }
 
@@ -1810,6 +1865,25 @@ namespace
                 resolved_types.timestamp_type->getName());
         };
 
+        auto check_metric_family_column = [&](std::string_view column_name)
+        {
+            UInt64 version = time_series_settings[TimeSeriesSetting::version];
+            const char * other_name = getInnerMetricFamilyOfOtherVersions(version);
+            if (!target_table_columns.has(String(column_name)) && target_table_columns.has(other_name))
+            {
+                String other_versions = (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
+                    ? fmt::format("before {}", TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
+                    : fmt::format("{} and later", TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN);
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                    "{}: Column {} is required for the metric families table used by TimeSeries table engine (version {}), "
+                    "but the table has column {} instead, which is the name used by TimeSeries tables of versions {}. "
+                    "Rename the column: ALTER TABLE {} RENAME COLUMN {} TO {}",
+                    table_id.getNameForLogs(), column_name, version, other_name, other_versions,
+                    table_id.getNameForLogs(), other_name, column_name);
+            }
+            check_column_is_string(column_name);
+        };
+
         switch (target_kind)
         {
             case ViewTarget::Samples:
@@ -1857,7 +1931,7 @@ namespace
 
             case ViewTarget::MetricFamilies:
             {
-                check_column_is_string(TimeSeriesColumnNames::MetricFamilyName);
+                check_metric_family_column(TimeSeriesColumnNames::getInnerMetricFamily(time_series_settings[TimeSeriesSetting::version]));
                 check_column_is_string(TimeSeriesColumnNames::Type);
                 check_column_is_string(TimeSeriesColumnNames::Unit);
                 check_column_is_string(TimeSeriesColumnNames::Help);
@@ -2040,6 +2114,7 @@ namespace
                 else if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
                 {
                     auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
+                    removeInnerEngineKeysDisabledByNewSettings(*new_inner_engine, kind, new_settings);
                     removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
                     create_query.setTargetInnerEngine(kind, new_inner_engine);
                 }
@@ -2207,7 +2282,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         }
 
         /// Pin `store_min_time_and_max_time`, so that the table keeps its layout if a future version changes
-        /// the default: from version 6 the setting decides whether the "tags min max" target table exists.
+        /// the default: from version 7 the setting decides whether the "tags min max" target table exists.
         if (!settings[TimeSeriesSetting::store_min_time_and_max_time].isChanged() && create_query.storage)
         {
             setEngineSettings(*create_query.storage, "store_min_time_and_max_time",
@@ -2228,7 +2303,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 create_query.targets->removeTarget(ViewTarget::RecentSamples);
         }
 
-        /// The tags min max target exists from version 6 and only while `store_min_time_and_max_time` is enabled.
+        /// The tags min max target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
         /// An external tags table is supplied by the user and keeps carrying `min_time` and `max_time` itself,
         /// so the split applies only to a table whose tags target is an inner one.
         const bool tags_min_max_enabled

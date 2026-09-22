@@ -170,7 +170,7 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
         {.description = R"DOCS_MD(
 `timeSeriesTagsMinMax(db_name.time_series_table)` - Returns the [tags min max](/reference/engines/table-engines/integrations/time-series#tags-min-max-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
-That table exists from [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 6 and only while
+That table exists from [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 and only while
 `store_min_time_and_max_time` is enabled; an earlier table keeps `min_time` and `max_time` in its tags table, where
 [timeSeriesTags](/reference/table-functions/timeSeriesTags) returns them.
 

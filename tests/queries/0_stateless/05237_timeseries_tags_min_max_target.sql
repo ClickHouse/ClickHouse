@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: the selector below parses PromQL, which needs ANTLR4, disabled in the fast-test build.
 --
--- Version 6 moves `min_time` / `max_time` out of the tags target into a separate `TAGS MIN MAX`
+-- Version 7 moves `min_time` / `max_time` out of the tags target into a separate `TAGS MIN MAX`
 -- target. The tags target then holds only identity columns, so it no longer needs an aggregating
--- engine nor `allow_dimensions_outside_sorting_key`. A table pinned to version 5 keeps the old
+-- engine nor `allow_dimensions_outside_sorting_key`. A table pinned to version 6 keeps the old
 -- single-table layout forever. The exact generated DDL is asserted in
 -- gtest_normalize_time_series_definition; this test checks the tables a server really creates and
 -- that the bounds are written and read back through the new target.
@@ -11,17 +11,17 @@
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
+DROP TABLE IF EXISTS ts_v7;
 DROP TABLE IF EXISTS ts_v6;
-DROP TABLE IF EXISTS ts_v5;
-DROP TABLE IF EXISTS ts_v5_copy;
+DROP TABLE IF EXISTS ts_v6_copy;
 DROP TABLE IF EXISTS ts_no_bounds;
 
 SELECT '-- a new table is split, and its tags target loses the engine that carried the bounds';
 
-CREATE TABLE ts_v6 ENGINE = TimeSeries;
+CREATE TABLE ts_v7 ENGINE = TimeSeries;
 
 SELECT extract(create_table_query, 'version = (\d+)')
-FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v6';
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v7';
 
 SELECT countIf(name IN ('min_time', 'max_time')) FROM system.columns
 WHERE database = currentDatabase() AND table LIKE '.inner\_id.tags.%';
@@ -39,40 +39,40 @@ FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.
 
 SELECT '-- an insert fills both targets and the bounds follow the samples';
 
-INSERT INTO ts_v6 (metric_name, tags, samples) VALUES
+INSERT INTO ts_v7 (metric_name, tags, samples) VALUES
     ('http_requests', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0), (toDateTime64(1060, 3), 2.0)]),
     ('http_requests', {'job': 'web'}, [(toDateTime64(5000, 3), 3.0)]);
 
-SELECT count() FROM timeSeriesTags(currentDatabase(), 'ts_v6');
-SELECT count() FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_v6');
-SELECT min_time, max_time FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_v6') ORDER BY min_time;
+SELECT count() FROM timeSeriesTags(currentDatabase(), 'ts_v7');
+SELECT count() FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_v7');
+SELECT min_time, max_time FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_v7') ORDER BY min_time;
 
 SELECT '-- a range query still returns exactly the series it must';
 
-SELECT count() FROM timeSeriesSelector(ts_v6, 'http_requests', toDateTime64(900, 3), toDateTime64(1100, 3));
-SELECT count() FROM timeSeriesSelector(ts_v6, 'http_requests', toDateTime64(0, 3), toDateTime64(500, 3));
-SELECT count() FROM timeSeriesSelector(ts_v6, 'http_requests', toDateTime64(0, 3), toDateTime64(9000, 3));
+SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(900, 3), toDateTime64(1100, 3));
+SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(0, 3), toDateTime64(500, 3));
+SELECT count() FROM timeSeriesSelector(ts_v7, 'http_requests', toDateTime64(0, 3), toDateTime64(9000, 3));
 
 SELECT '-- a series whose bounds row is missing must not vanish from a read';
 
 -- Written straight into the tags target, so the sink never gave it a bounds row. A read that joined
 -- the two targets the wrong way round would drop the series entirely.
-INSERT INTO FUNCTION timeSeriesTags(currentDatabase(), 'ts_v6') (metric_name, tags)
+INSERT INTO FUNCTION timeSeriesTags(currentDatabase(), 'ts_v7') (metric_name, tags)
     VALUES ('orphan_series', {'job': 'api'});
-INSERT INTO FUNCTION timeSeriesSamples(currentDatabase(), 'ts_v6') (id, timestamp, value)
-    SELECT id, toDateTime64(1000, 3), 9.0 FROM timeSeriesTags(currentDatabase(), 'ts_v6')
+INSERT INTO FUNCTION timeSeriesSamples(currentDatabase(), 'ts_v7') (id, timestamp, value)
+    SELECT id, toDateTime64(1000, 3), 9.0 FROM timeSeriesTags(currentDatabase(), 'ts_v7')
     WHERE metric_name = 'orphan_series';
 
-SELECT count() FROM timeSeriesSelector(ts_v6, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
+SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
 
-DROP TABLE ts_v6;
+DROP TABLE ts_v7;
 
-SELECT '-- a table pinned to version 5 keeps the old single-table layout';
+SELECT '-- a table pinned to version 6 keeps the old single-table layout';
 
-CREATE TABLE ts_v5 ENGINE = TimeSeries SETTINGS version = 5;
+CREATE TABLE ts_v6 ENGINE = TimeSeries SETTINGS version = 6;
 
 SELECT position(create_table_query, 'TAGS MIN MAX') > 0 AS has_tags_min_max_clause
-FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v5';
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v6';
 
 SELECT countIf(name IN ('min_time', 'max_time')) FROM system.columns
 WHERE database = currentDatabase() AND table LIKE '.inner\_id.tags.%';
@@ -80,19 +80,19 @@ WHERE database = currentDatabase() AND table LIKE '.inner\_id.tags.%';
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.tagsminmax.%';
 
-SELECT '-- `AS` a version 5 table produces a version 6 split copy';
+SELECT '-- `AS` a version 6 table produces a version 7 split copy';
 
-CREATE TABLE ts_v5_copy AS ts_v5;
+CREATE TABLE ts_v6_copy AS ts_v6;
 
 SELECT extract(create_table_query, 'version = (\d+)')
-FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v5_copy';
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v6_copy';
 
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = concat('.inner_id.tagsminmax.',
-    (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v5_copy'));
+    (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v6_copy'));
 
-DROP TABLE ts_v5_copy;
-DROP TABLE ts_v5;
+DROP TABLE ts_v6_copy;
+DROP TABLE ts_v6;
 
 SELECT '-- without stored bounds there is no tags min max target at all';
 

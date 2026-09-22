@@ -1,5 +1,5 @@
 -- a new table is split, and its tags target loses the engine that carried the bounds
-6
+7
 0
 ReplacingMergeTree	0
 -- the tags min max target carries them, keyed the same way
@@ -19,12 +19,12 @@ AggregatingMergeTree	1
 3
 -- a series whose bounds row is missing must not vanish from a read
 1
--- a table pinned to version 5 keeps the old single-table layout
+-- a table pinned to version 6 keeps the old single-table layout
 0
 2
 0
--- `AS` a version 5 table produces a version 6 split copy
-6
+-- `AS` a version 6 table produces a version 7 split copy
+7
 1
 -- without stored bounds there is no tags min max target at all
 0

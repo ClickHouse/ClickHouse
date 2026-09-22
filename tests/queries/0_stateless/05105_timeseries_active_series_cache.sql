@@ -128,7 +128,7 @@ SELECT 'after reset to defaults (tags insert resumes):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
--- 5. The point of the split: from version 6 a table which stores min_time / max_time gets the cache
+-- 5. The point of the split: from version 7 a table which stores min_time / max_time gets the cache
 -- too. The bounds live in their own target and are written on every block, cache hit or not, so
 -- skipping the repeat tags write no longer freezes the bounds a query prunes series by.
 DROP TABLE IF EXISTS ts_bounds;

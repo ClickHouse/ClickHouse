@@ -554,7 +554,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     {
         tags_min_max_table_id = time_series_storage->getTargetTableID(ViewTarget::TagsMinMax, getContext());
     }
-    /// Without a separate target, the bounds remain in the tags table, including external tags at version 6.
+    /// Without a separate target, the bounds remain in the tags table, including external tags at version 7.
 
     auto tags_table_id = tags_table->getStorageID();
 
@@ -700,6 +700,8 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
+    const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage->getVersion());
+
     /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
@@ -723,13 +725,15 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (limit_per_metric > 0)
         group_uniq_array = addParametersToAggregateFunction(std::move(group_uniq_array), make_intrusive<ASTLiteral>(limit_per_metric));
 
-    auto metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
-    metric_family->setAlias("metric_family");
+    /// The alias must differ from the names of the columns of the metric families target table, otherwise the GROUP BY key
+    /// below would refer to the alias instead of the column.
+    auto metric_family = normalize_column(metric_family_column_name);
+    metric_family->setAlias("__metric_family");
     auto metadata_entries = makeASTFunction("arraySort", std::move(group_uniq_array));
     metadata_entries->setAlias("metadata");
 
-    /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family_name = metric]
+    /// SELECT ifNull(toString(metric_family), '') AS __metric_family, arraySort(groupUniqArray(...)) AS metadata
+    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
@@ -743,11 +747,11 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTIdentifier>(metric_family_column_name),
             make_intrusive<ASTLiteral>(metric_param));
 
-    builder.group_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
-    builder.order_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.group_by.push_back(normalize_column(metric_family_column_name));
+    builder.order_by.push_back(normalize_column(metric_family_column_name));
     builder.order_direction = 1;
 
     /// LIMIT 0 returns an empty result, matching how Prometheus handles `limit=0`.
@@ -782,7 +786,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
         auto write_block = [&](const Block & result_block)
         {
-            const auto & metric_family_column = *result_block.getByName("metric_family").column;
+            const auto & metric_family_column = *result_block.getByName("__metric_family").column;
             const auto & metadata_column = typeid_cast<const ColumnArray &>(*result_block.getByName("metadata").column);
             const auto & offsets = metadata_column.getOffsets();
             const auto & entry_column = typeid_cast<const ColumnTuple &>(metadata_column.getData());

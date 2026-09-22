@@ -166,6 +166,19 @@ namespace
         return 0;
     }
 
+    String getExceptionMessage(const std::function<void()> & function)
+    {
+        try
+        {
+            function();
+        }
+        catch (const Exception & e)
+        {
+            return e.message();
+        }
+        return "";
+    }
+
     const String default_id_type = "Tuple(UInt64, LowCardinality(UUID))";
     const String default_tags_index = ", INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000";
     const String default_id_generator = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
@@ -188,7 +201,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 5")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -200,18 +213,23 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), samples_columns);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), "
-        "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
+        "`tags` Map(LowCardinality(String), String)" + default_tags_index);
+    EXPECT_EQ(extractInnerColumns(definition, "TAGS MIN MAX"),
+        "`id` " + default_id_type + ", `metric_name` LowCardinality(String), "
+        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+        "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))");
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
-        "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
+        "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
 
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"),
         "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
-        "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+        "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192");
+    EXPECT_EQ(extractInnerEngine(definition, "TAGS MIN MAX"),
+        "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
 }
 
 
@@ -223,25 +241,27 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultTableEngineChoosesInnerEngineFa
     auto definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("ReplicatedMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "RECENT SAMPLES").starts_with("ReplicatedMergeTree ")) << definition;
-    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("ReplicatedAggregatingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("ReplicatedReplacingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS MIN MAX").starts_with("ReplicatedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "METRIC FAMILIES").starts_with("ReplicatedReplacingMergeTree ")) << definition;
 
     query_settings[Setting::default_table_engine] = DefaultTableEngine::SharedMergeTree;
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("SharedMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "RECENT SAMPLES").starts_with("SharedMergeTree ")) << definition;
-    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("SharedAggregatingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("SharedReplacingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS MIN MAX").starts_with("SharedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "METRIC FAMILIES").starts_with("SharedReplacingMergeTree ")) << definition;
 
     /// A declared inner engine chooses the family of the other inner engines.
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES ENGINE = MergeTree", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("MergeTree ")) << definition;
-    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("AggregatingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("ReplacingMergeTree ")) << definition;
 
     query_settings[Setting::default_table_engine] = DefaultTableEngine::MergeTree;
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES ENGINE = SharedMergeTree", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("SharedMergeTree ")) << definition;
-    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("SharedAggregatingMergeTree ")) << definition;
+    EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("SharedReplacingMergeTree ")) << definition;
 
     /// Only the MergeTree families can be the engines of the inner tables.
     query_settings[Setting::default_table_engine] = DefaultTableEngine::Memory;
@@ -263,7 +283,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TypesDeclaredInInnerColumns)
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"),
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "TAGS").contains("`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6)))")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "TAGS MIN MAX").contains("`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6)))")) << definition;
 
     /// The same type declared in several places must be the same everywhere.
     EXPECT_EQ(getExceptionCode([]
@@ -376,7 +396,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
         {makeColumn("id", "UInt64"), makeColumn("timestamp", "DateTime64(6)"), makeColumn("value", "Float32")});
     params.external_target_columns[ViewTarget::Tags] = external_tags_columns("UInt64");
     params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns(
-        {makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+        {makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
 
     auto definition = normalizeNewTable(
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRIC FAMILIES db.ext_metric_families", params);
@@ -398,17 +418,17 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, MetricsKeywordIsAliasOfMetricFamilies)
     /// The "metric families" target was named "metrics" before, the old keyword is still accepted
     /// but a normalized definition is always written with the new keyword.
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS INNER ENGINE = ReplacingMergeTree");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
     EXPECT_FALSE(definition.contains("METRICS")) << definition;
 
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS INNER COLUMNS (extra UInt8)");
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
-        "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt8");
+        "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt8");
 
     /// An external metric families table can be specified with either keyword.
     NormalizeTimeSeriesDefinitionParams params;
     params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns(
-        {makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+        {makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS db.ext_metric_families", params);
     EXPECT_TRUE(definition.contains(" METRIC FAMILIES db.ext_metric_families")) << definition;
     EXPECT_FALSE(definition.contains("METRICS")) << definition;
@@ -496,6 +516,60 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesOuterColumnNameDependsOnVersion
 }
 
 
+TEST_F(NormalizeTimeSeriesDefinitionTest, MetricFamilyInnerColumnNameDependsOnVersion)
+{
+    /// The column of the inner metric families table with the name of a metric family is named `metric_family` from version 6
+    /// and `metric_family_name` in the earlier versions (see TimeSeriesVersion.h). The default definition is checked in DefaultDefinition.
+    const String old_columns = "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String";
+    const String new_columns = "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String";
+
+    const String stored_definition_of_version_5 = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5");
+    EXPECT_EQ(extractInnerColumns(stored_definition_of_version_5, "METRIC FAMILIES"), old_columns);
+    EXPECT_EQ(extractInnerEngine(stored_definition_of_version_5, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(normalizeExistingTable(stored_definition_of_version_5), stored_definition_of_version_5);
+
+    /// A declaration under the name used by the other versions is rejected: nothing would write to that column.
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRIC FAMILIES INNER COLUMNS (metric_family_name LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree ORDER BY metric_family_name");
+    }), ErrorCodes::INCORRECT_QUERY);
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES INNER COLUMNS (metric_family LowCardinality(String))");
+    }), ErrorCodes::INCORRECT_QUERY);
+
+    /// An external metric families table must name the column the way the version does, the error suggests renaming the column otherwise.
+    NormalizeTimeSeriesDefinitionParams params;
+    params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns({makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES db.ext_metrics", params).contains("db.ext_metrics"));
+    auto create_with_new_version = [&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRIC FAMILIES db.ext_metrics", params); };
+    EXPECT_EQ(getExceptionCode(create_with_new_version), ErrorCodes::THERE_IS_NO_COLUMN);
+    EXPECT_TRUE(getExceptionMessage(create_with_new_version).contains("ALTER TABLE db.ext_metrics RENAME COLUMN metric_family_name TO metric_family"))
+        << getExceptionMessage(create_with_new_version);
+
+    params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns({makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+    auto create_with_old_version = [&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES db.ext_metrics", params); };
+    EXPECT_EQ(getExceptionCode(create_with_old_version), ErrorCodes::THERE_IS_NO_COLUMN);
+    EXPECT_TRUE(getExceptionMessage(create_with_old_version).contains("ALTER TABLE db.ext_metrics RENAME COLUMN metric_family TO metric_family_name"))
+        << getExceptionMessage(create_with_old_version);
+
+    /// The clause `AS <other_table>` doesn't copy a customized column and the engine keys under the name of the other versions:
+    /// they are generated again for the version of the new table, while the other customized parts are copied.
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES INNER COLUMNS (metric_family_name LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree PARTITION BY substring(metric_family_name, 1, 1) ORDER BY (metric_family_name, type) SETTINGS index_granularity = 1024"));
+    EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"), new_columns);
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family SETTINGS index_granularity = 1024");
+
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 5",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries METRIC FAMILIES INNER COLUMNS (metric_family LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree ORDER BY (metric_family, type)"));
+    EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"), old_columns);
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+}
+
+
 TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGeneratedKeys)
 {
     auto definition = normalizeNewTable(
@@ -506,14 +580,17 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
         "MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) "
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
-        "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+        "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
 }
 
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 {
     /// An explicit supported version is accepted, an unknown one is rejected.
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6").contains("version = 6"));
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5").contains("version = 5"));
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 4").contains("version = 4"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3").contains("version = 3"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2").contains("version = 2"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1").contains("version = 1"));
@@ -523,7 +600,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 5")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
 }
 
@@ -543,6 +620,10 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
     const std::vector<std::pair<String, NormalizeTimeSeriesDefinitionParams>> definitions =
     {
         {"CREATE TABLE db.ts ENGINE = TimeSeries", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 4", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0, recent_samples_ttl_seconds = 0", {}},
@@ -563,12 +644,13 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
 {
+    /// Version 6 keeps the bounds in the tags table and honors `aggregate_min_time_and_max_time`.
     /// The clause `AS <other_table>` copies the inner columns and engines of the other table, except the parts generated
     /// for the other table: they are generated again for the new table from its settings, while the customized parts are copied.
 
     /// A customized `min_time` column is not copied if the new table doesn't store `min_time`/`max_time`.
-    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0",
-        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries TAGS INNER COLUMNS (min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))) CODEC(ZSTD(1)))"));
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, store_min_time_and_max_time = 0",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6 TAGS INNER COLUMNS (min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))) CODEC(ZSTD(1)))"));
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String)" + default_tags_index);
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
@@ -577,8 +659,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     /// `tags_to_columns` written in the query replaces the copied one: the column of a removed tag is not copied,
     /// the column of an added tag is generated.
     definition = normalizeNewTableAs(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS tags_to_columns = {'instance': 'instance', 'region': 'region'}",
-        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job', 'instance': 'instance'}"));
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, tags_to_columns = {'instance': 'instance', 'region': 'region'}",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6, tags_to_columns = {'job': 'job', 'instance': 'instance'}"));
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), `instance` String, `region` String, "
         "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
@@ -587,12 +669,12 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     /// The source customizes the codec of `timestamp` and adds an extra column in the samples table, sets the `id` type,
     /// and adds settings to the tags engine; everything else is generated.
     const String src = normalizeNewTable(
-        "CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, ZSTD(1)), extra UInt8) "
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6 SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(Delta, ZSTD(1)), extra UInt8) "
         "TAGS INNER COLUMNS (id UInt64) TAGS ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0");
 
     /// The customized parts are copied, the generated parts follow the settings of the new table: `min_time`/`max_time`
     /// are not aggregated, so the tags engine is ReplacingMergeTree with them in the sorting key, and keeps its settings.
-    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS aggregate_min_time_and_max_time = 0", src);
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, aggregate_min_time_and_max_time = 0", src);
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, ZSTD(1)), `value` Float64 CODEC(ALP, ZSTD(3)), `extra` UInt8");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
@@ -604,7 +686,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
 
     /// A type declared in the query wins over the type of the other table, the other types are inherited: `value` is
     /// Float32 as declared, `timestamp` is DateTime64(6) as in the source. The declared samples columns replace the copied ones.
-    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (value Float32)", src);
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6 SAMPLES INNER COLUMNS (value Float32)", src);
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float32");
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
@@ -616,8 +698,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     NormalizeTimeSeriesDefinitionParams params;
     params.external_target_columns[ViewTarget::Samples] = makeColumns(
         {makeColumn("id", "UInt64"), makeColumn("timestamp", "DateTime64(6)"), makeColumn("value", "Float64")});
-    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SAMPLES db.ext_data",
-        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(ZSTD(5)))"), params);
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6 SAMPLES db.ext_data",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6 SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(ZSTD(5)))"), params);
     EXPECT_FALSE(definition.contains("ext_data SAMPLES INNER COLUMNS")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3))");
 }
@@ -625,24 +707,25 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsMergesSettings)
 {
+    /// Version 6 keeps the bounds in the tags table and honors `aggregate_min_time_and_max_time`.
     /// The clause `AS <other_table>` copies the settings of the other table. A `SETTINGS` clause written in the query
     /// doesn't replace them: the settings are merged by name, so a written setting overrides the copied one, a written
     /// setting the other table doesn't have is added, and the rest of the other table's settings are still copied.
     const String src = normalizeNewTable(
-        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0");
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6, tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0");
 
     const String tags_without_min_max = "`id` " + default_id_type + " DEFAULT " + default_id_generator
         + ", `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String)";
 
-    /// Without a `SETTINGS` clause: `job` comes from the copied `tags_to_columns`,
+    /// Without overriding the copied settings: `job` comes from the copied `tags_to_columns`,
     /// and there is no `min_time`/`max_time` because the copied `store_min_time_and_max_time` is 0.
-    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", src);
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_without_min_max + default_tags_index);
 
     /// The written `store_min_time_and_max_time` overrides the copied one so `min_time`/`max_time` appear,
     /// the written `tags_index_granularity` is added, and `tags_to_columns` is still copied.
     definition = normalizeNewTableAs(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 1, tags_index_granularity = 4096", src);
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, store_min_time_and_max_time = 1, tags_index_granularity = 4096", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         tags_without_min_max + ", `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
     EXPECT_TRUE(extractInnerEngine(definition, "TAGS").contains("index_granularity = 4096")) << definition;
@@ -650,12 +733,12 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsMergesSettings)
     /// A setting written as `name = DEFAULT` is a mention of that setting too, so the value of the other table is not
     /// copied for it: the setting gets its default value and `min_time`/`max_time` appear, while `tags_to_columns` is still copied.
     definition = normalizeNewTableAs(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS aggregate_min_time_and_max_time = 0, store_min_time_and_max_time = DEFAULT", src);
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, aggregate_min_time_and_max_time = 0, store_min_time_and_max_time = DEFAULT", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_without_min_max + ", `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))" + default_tags_index);
 
     /// A written value wins over a reset of the same setting, so there is no `min_time`/`max_time`.
     definition = normalizeNewTableAs(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0, store_min_time_and_max_time = DEFAULT", src);
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6, store_min_time_and_max_time = 0, store_min_time_and_max_time = DEFAULT", src);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"), tags_without_min_max + default_tags_index);
 }
 
@@ -680,8 +763,10 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithExternalTargetTables)
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3)), `extra` UInt8");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
-        "`id` UInt64, `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
-        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6))), `extra` UInt8" + default_tags_index);
+        "`id` UInt64, `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `extra` UInt8" + default_tags_index);
+    EXPECT_EQ(extractInnerColumns(definition, "TAGS MIN MAX"),
+        "`id` UInt64, `metric_name` LowCardinality(String), "
+        "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))");
     EXPECT_FALSE(definition.contains("ext_")) << definition;
 
     /// The external target tables of the other table are not copied, the new table must declare its own targets.
