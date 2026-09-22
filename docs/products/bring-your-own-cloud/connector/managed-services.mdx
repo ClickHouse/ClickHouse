@@ -14,6 +14,10 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In managed mode the connector runs a third component, the executor. ClickHouse Cloud operates ClickHouse services in your Kubernetes cluster through it. This page covers creating a service, reading its status, what ClickHouse Cloud does once a service exists, and how a service is retired.
 
+<Note>
+Enabling managed mode and creating a service require support that is not yet in the public release. The public `v0.16.0` CLI has neither the `--managed` and `--no-managed` init flags nor the customer-create workflow below. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team before enrolling or preparing resources; service creation also needs matching support in your connector endpoint and ClickHouse Cloud.
+</Note>
+
 ## What managed mode does {#what-managed-mode-does}
 
 The executor is a daemon in the same `clicklink` binary as the scraper and the troubleshooter. It holds an outbound WebSocket channel to your connector endpoint and receives lifecycle commands from ClickHouse Cloud. It applies each command to the one Kubernetes cluster it is configured for and reports the outcome over the same channel. Like the other components it makes only outbound connections: ClickHouse Cloud never connects into your cluster, and the executor's local API binds to loopback.
@@ -26,11 +30,17 @@ On a VM the executor runs as the `clicklink-executor` systemd unit next to the o
 
 ## Enable managed mode {#enable-managed-mode}
 
+<Note>
+The public `v0.16.0` CLI does not support `init --managed` or the managed-mode prompt described below. First obtain a build and deployment with [managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) from your account team.
+</Note>
+
 You choose managed mode when you enroll: pass `--managed` to `clicklink clctl init`, or answer the prompt on a terminal. On a VM, `init` takes the cluster from this host's kubeconfig (`--cluster-name` when it holds more than one EKS cluster) and grants the executor's cluster-wide access inline. On Kubernetes, pass `--egress-cidrs` with the CIDRs of your connector endpoint so the chart stages its default-deny NetworkPolicy enabled.
 
 The install itself is unchanged. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) for the full flow and the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli#init) for the flags.
 
 ## Create a service {#create-a-service}
+
+This workflow is unavailable in public `v0.16.0`. Before preparing resources, confirm [service-creation availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) for your CLI, connector endpoint, and ClickHouse Cloud deployment.
 
 Creating a service takes two commands. `prepare` creates everything on your side; `instances create` submits the create to ClickHouse Cloud through your connector endpoint. ClickHouse Cloud renders the service definition and sends the create to the executor over its outbound channel. The executor applies it to your cluster and reports back.
 
@@ -165,14 +175,14 @@ The executor wires the scraper into each service it creates. It does not provisi
 <Tabs>
 <Tab title="Kubernetes" id="troubleshooter-kubernetes">
 ```bash
-clicklink clctl troubleshoot access provision --target helm \
+printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance <name> --instance-namespace ns-<name> \
-  --server <kubernetes-api-server-url> \
+  --server <kubernetes-api-server-url> --ch-admin-password-stdin \
   --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
 ```
 
-Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` and run `helm upgrade`, as shown under [adding ClickHouse instances](/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+`$CH_DEFAULT_PASSWORD` is the `default` user's password that `prepare` printed. The command needs it to authenticate before applying the SQL grants; it does not prompt for it. Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` and run `helm upgrade`, as shown under [adding ClickHouse instances](/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
 </Tab>
 <Tab title="Linux VM" id="troubleshooter-vm">
 ```bash

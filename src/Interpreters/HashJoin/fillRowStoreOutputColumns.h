@@ -10,14 +10,13 @@
 namespace DB
 {
 
-/// Fills join output columns by dispatching on `ColumnAccessIndex::Type`:
-/// RowStore columns are filled from `row_store_ptrs`, the rest from `columns_with_row_numbers`.
-void fillJoinOutputColumns(
+/// Fills the row-store output columns of a join from `row_store_ptrs`, sweeping all of them per
+/// L2-sized batch so one pass over a batch of rows serves every field.
+void fillRowStoreOutputColumns(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
     const RowStorePointers & row_store_ptrs,
     std::optional<size_t> row_store_batch_size,
-    const ColumnsWithRowNumbers & columns_with_row_numbers,
     const NamesAndTypes & type_name);
 
 }
