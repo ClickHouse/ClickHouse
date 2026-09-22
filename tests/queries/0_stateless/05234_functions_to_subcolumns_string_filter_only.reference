@@ -11,8 +11,8 @@ optimization disabled keeps the original filter
 1
 1	hello
 3	world
-mixed table has legacy and size-stream parts
-1	1
-mixed legacy and size-stream parts remain correct
-1	legacy
-3	modern
+mixed table has sparse legacy and size-stream parts
+1	1	1
+mixed sparse legacy and size-stream parts remain correct
+9	legacy
+11	modern
