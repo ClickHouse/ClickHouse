@@ -488,68 +488,147 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
-    auto addLegacyStringParentIfNeeded = [&](Names & step_column_names)
+    PrewhereExprInfo prewhere_actions;
+    if (prewhere_info || row_level_filter || !index_read_tasks.empty())
     {
-        const size_t original_size = step_column_names.size();
-        for (size_t i = 0; i < original_size; ++i)
+        prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            row_level_filter,
+            prewhere_info,
+            index_read_tasks,
+            actions_settings,
+            reader_settings.enable_multiple_prewhere_read_steps,
+            reader_settings.force_short_circuit_execution,
+            &storage_snapshot->metadata->getColumns());
+    }
+
+    auto getRequiredSourceColumns = [](const PrewhereExprStep & step)
+    {
+        Names required_source_columns;
+        if (step.actions)
+            required_source_columns = step.actions->getActionsDAG().getRequiredColumnsNames();
+        else if (!step.filter_column_name.empty())
+            required_source_columns = Names{step.filter_column_name};
+        return required_source_columns;
+    };
+
+    std::vector<Names> required_source_columns_by_step;
+    auto collectRequiredSourceColumns = [&](const PrewhereExprSteps & steps)
+    {
+        for (const auto & step : steps)
+            required_source_columns_by_step.push_back(getRequiredSourceColumns(*step));
+    };
+
+    collectRequiredSourceColumns(mutation_steps);
+    collectRequiredSourceColumns(prewhere_actions.steps);
+
+    auto tryGetLegacyStringParent = [&](const String & name, String & parent_name)
+    {
+        constexpr size_t string_size_suffix_length = 5;
+        if (name.size() <= string_size_suffix_length
+            || name.compare(name.size() - string_size_suffix_length, string_size_suffix_length, ".size") != 0)
+            return false;
+
+        auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
+        if (!column_in_storage || !column_in_storage->isSubcolumn())
+            return false;
+
+        parent_name = name.substr(0, name.size() - string_size_suffix_length);
+        auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
+        if (!parent_column || parent_column->type->getTypeId() != TypeIndex::String)
+            return false;
+
+        auto name_in_part = column_in_storage->getNameInStorage();
+        if (!data_part_info_for_reader.isProjectionPart())
         {
-            const auto & name = step_column_names[i];
-            constexpr size_t string_size_suffix_length = 5;
-            if (name.size() <= string_size_suffix_length
-                || name.compare(name.size() - string_size_suffix_length, string_size_suffix_length, ".size") != 0)
-                continue;
+            if (auto alter_conversions = data_part_info_for_reader.getAlterConversions();
+                alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+                name_in_part = alter_conversions->getColumnOldName(name_in_part);
+        }
 
-            auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
-            if (!column_in_storage || !column_in_storage->isSubcolumn())
-                continue;
+        auto full_name_in_part = Nested::concatenateName(name_in_part, column_in_storage->getSubcolumnName());
+        auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetColumnOrSubcolumn(
+            GetColumnsOptions::AllPhysical, full_name_in_part);
 
-            String parent_name = name.substr(0, name.size() - string_size_suffix_length);
-            auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
-            if (!parent_column || parent_column->type->getTypeId() != TypeIndex::String)
-                continue;
-
-            if (std::find(column_to_read_after_prewhere.begin(), column_to_read_after_prewhere.end(), parent_name)
-                    == column_to_read_after_prewhere.end()
-                || columns_from_previous_steps.contains(parent_name)
-                || std::find(step_column_names.begin(), step_column_names.end(), parent_name) != step_column_names.end())
-                continue;
-
-            auto name_in_part = column_in_storage->getNameInStorage();
-            if (!data_part_info_for_reader.isProjectionPart())
-            {
-                if (auto alter_conversions = data_part_info_for_reader.getAlterConversions();
-                    alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
-                    name_in_part = alter_conversions->getColumnOldName(name_in_part);
-            }
-
-            auto full_name_in_part = Nested::concatenateName(name_in_part, column_in_storage->getSubcolumnName());
-            auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetColumnOrSubcolumn(
-                GetColumnsOptions::AllPhysical, full_name_in_part);
-
+        if (column_in_part)
+        {
+            auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
             bool has_separate_size_stream = false;
-            if (column_in_part)
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
             {
-                auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
-                serialization->enumerateStreams([&](const ISerialization::SubstreamPath & path)
-                {
-                    for (const auto & substream : path)
-                        has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
-                });
-            }
+                for (const auto & substream : path)
+                    has_separate_size_stream |= substream.type == ISerialization::Substream::StringSizes;
+            });
 
             if (has_separate_size_stream)
-                continue;
+                return false;
+        }
 
-            /// A legacy String .size is virtual and scans the regular String stream. PREWHERE and
-            /// the main read use separate MergeTree readers, so reading only .size here and the full
-            /// String later would scan the same data twice. Co-read the parent in this step instead.
-            /// SerializationStringSize then shares one deserialize state with the full String inside
-            /// this reader, and the parent is kept for the rest of the readers chain.
-            step_column_names.push_back(std::move(parent_name));
+        return true;
+    };
+
+    Names legacy_string_parents;
+    NameSet seen_legacy_string_parents;
+    auto collectLegacyStringParents = [&](const Names & names)
+    {
+        for (const auto & name : names)
+        {
+            String parent_name;
+            if (tryGetLegacyStringParent(name, parent_name) && seen_legacy_string_parents.emplace(parent_name).second)
+                legacy_string_parents.push_back(std::move(parent_name));
         }
     };
 
-    auto add_step = [&](const PrewhereExprStep & step)
+    for (const auto & names : required_source_columns_by_step)
+        collectLegacyStringParents(names);
+    collectLegacyStringParents(column_to_read_after_prewhere);
+
+    auto containsName = [](const Names & names, const String & name)
+    {
+        return std::find(names.begin(), names.end(), name) != names.end();
+    };
+
+    /// A legacy String .size is virtual and scans the regular String stream. PREWHERE and
+    /// the main read use separate MergeTree readers, so reading the parent and .size in
+    /// different readers would scan the same data twice. Co-read both names in the earliest
+    /// step that needs either one. The existing columns_from_previous_steps handling then
+    /// removes the second physical read while preserving expression evaluation order.
+    for (const auto & parent_name : legacy_string_parents)
+    {
+        const String size_name = parent_name + ".size";
+        bool parent_is_required = false;
+        bool size_is_required = false;
+        size_t first_step = required_source_columns_by_step.size();
+
+        for (size_t i = 0; i < required_source_columns_by_step.size(); ++i)
+        {
+            const auto & names = required_source_columns_by_step[i];
+            const bool has_parent = containsName(names, parent_name);
+            const bool has_size = containsName(names, size_name);
+            parent_is_required |= has_parent;
+            size_is_required |= has_size;
+            if ((has_parent || has_size) && first_step == required_source_columns_by_step.size())
+                first_step = i;
+        }
+
+        const bool parent_is_required_after_prewhere = containsName(column_to_read_after_prewhere, parent_name);
+        const bool size_is_required_after_prewhere = containsName(column_to_read_after_prewhere, size_name);
+        parent_is_required |= parent_is_required_after_prewhere;
+        size_is_required |= size_is_required_after_prewhere;
+        if ((parent_is_required_after_prewhere || size_is_required_after_prewhere)
+            && first_step == required_source_columns_by_step.size())
+            first_step = required_source_columns_by_step.size();
+
+        if (!parent_is_required || !size_is_required || first_step == required_source_columns_by_step.size())
+            continue;
+
+        auto & first_step_names = required_source_columns_by_step[first_step];
+        if (!containsName(first_step_names, parent_name))
+            first_step_names.push_back(parent_name);
+        if (!containsName(first_step_names, size_name))
+            first_step_names.push_back(size_name);
+    }
+
+    auto add_step = [&](const PrewhereExprStep & step, const Names & required_source_columns)
     {
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
@@ -557,13 +636,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// columns to avoid adding unnecessary columns or failing to find required columns that are computation
         /// results from previous steps.
         /// Example: step1: sin(a)>b, step2: sin(a)>c
-
-        /// If actions are empty then step is a filter step with a plain identifier as a filter column.
-        Names required_source_columns;
-        if (step.actions)
-            required_source_columns = step.actions->getActionsDAG().getRequiredColumnsNames();
-        else if (!step.filter_column_name.empty())
-            required_source_columns = Names{step.filter_column_name};
 
         Names step_column_names;
         for (const auto & name : required_source_columns)
@@ -603,23 +675,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
     };
 
+    size_t step_index = 0;
     for (const auto & step : mutation_steps)
-        add_step(*step);
+        add_step(*step, required_source_columns_by_step[step_index++]);
 
-    if (prewhere_info || row_level_filter || !index_read_tasks.empty())
-    {
-        auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
-            row_level_filter,
-            prewhere_info,
-            index_read_tasks,
-            actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution,
-            &storage_snapshot->metadata->getColumns());
-
-        for (const auto & step : prewhere_actions.steps)
-            add_step(*step);
-    }
+    for (const auto & step : prewhere_actions.steps)
+        add_step(*step, required_source_columns_by_step[step_index++]);
 
     /// Remove columns read in prewehere from the list of columns to read.
     Names post_column_names;

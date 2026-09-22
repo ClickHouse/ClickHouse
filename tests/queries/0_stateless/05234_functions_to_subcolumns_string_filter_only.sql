@@ -104,3 +104,42 @@ ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
 
 DROP TABLE test_string_filter_mixed;
+
+DROP TABLE IF EXISTS test_string_filter_multistep;
+CREATE TABLE test_string_filter_multistep
+(
+    id UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    serialization_info_version = 'with_types',
+    string_serialization_version = 'single_stream',
+    ratio_of_defaults_for_sparse_serialization = 0;
+
+INSERT INTO test_string_filter_multistep VALUES (0, ''), (1, 'foo'), (2, 'bar'), (3, 'foo'), (4, '');
+
+SELECT 'legacy String size before full String in multi-step PREWHERE';
+SELECT id, s
+FROM test_string_filter_multistep
+PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
+ORDER BY id
+SETTINGS
+    enable_multiple_prewhere_read_steps = 1,
+    optimize_functions_to_subcolumns = 1,
+    optimize_move_to_prewhere = 0;
+
+SELECT 'legacy String full String before size in multi-step PREWHERE';
+SELECT id, s
+FROM test_string_filter_multistep
+PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)
+ORDER BY id
+SETTINGS
+    enable_multiple_prewhere_read_steps = 1,
+    optimize_functions_to_subcolumns = 1,
+    optimize_move_to_prewhere = 0;
+
+DROP TABLE test_string_filter_multistep;

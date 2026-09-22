@@ -16,3 +16,9 @@ mixed table has sparse legacy and size-stream parts
 mixed sparse legacy and size-stream parts remain correct
 9	legacy
 11	modern
+legacy String size before full String in multi-step PREWHERE
+1	foo
+3	foo
+legacy String full String before size in multi-step PREWHERE
+1	foo
+3	foo
