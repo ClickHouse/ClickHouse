@@ -646,11 +646,12 @@ private:
 
     static void writeFeatures(WriteBuffer & out)
     {
-        /// Prometheus treats omitted capability entries as unsupported, so report every
-        /// currently implemented API and PromQL capability using Prometheus' canonical feature names.
+        /// Prometheus treats omitted capability entries as unsupported. Function and operator entries
+        /// use the same availability semantics as Prometheus' feature registry: true means the construct
+        /// is exposed, even when some argument forms have documented implementation restrictions.
         writeString(
             R"({"status":"success","data":{)"
-            R"("api":{"label_values_match":true,"query_warnings":true,"time_range_labels":true,"time_range_series":true},)"
+            R"("api":{"label_values_match":true,"time_range_labels":true,"time_range_series":true},)"
             R"("promql":{"at_modifier":true,"bool":true,"by":true,"group_left":true,"group_right":true,"ignoring":true,)"
             R"("negative_offset":true,"offset":true,"on":true,"per_query_lookback_delta":true,"subqueries":true,"without":true},)"
             R"("promql_functions":{"abs":true,"absent":true,"absent_over_time":true,"acos":true,"acosh":true,"asin":true,"asinh":true,"atan":true,)"
