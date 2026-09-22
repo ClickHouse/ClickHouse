@@ -27,7 +27,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
-#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -442,9 +441,6 @@ public:
 protected:
     Chunk generate() override
     {
-#ifdef OS_LINUX
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
-#endif
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -574,19 +570,7 @@ protected:
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                        {
-                            const void * virtual_addr = frame_pointers[i];
-#ifdef OS_LINUX
-                            const auto * object = symbol_index.findObject(virtual_addr);
-                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
-#else
-                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
-                            /// so we store virtual addresses directly in the trace column.
-                            uintptr_t physical_addr = uintptr_t(virtual_addr);
-#endif
-                            arr.emplace_back(physical_addr);
-                        }
+                            arr.emplace_back(StackTrace::resolveAddressForStorage(frame_pointers[i]));
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
@@ -749,7 +733,8 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
+            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
