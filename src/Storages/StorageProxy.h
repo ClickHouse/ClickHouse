@@ -20,6 +20,10 @@ public:
     /// iterating every table cannot trigger a load.
     virtual StoragePtr tryGetNested() const { return nullptr; }
 
+    /// Whether the proxy only defers the creation of the storage and adds no behaviour of its own,
+    /// so that an operation may run on the wrapped storage directly.
+    virtual bool isLazyStandIn() const { return false; }
+
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
@@ -188,42 +192,28 @@ public:
 
 };
 
-/// Proxies stack: a lazily loaded `URL` table is a `StorageTableProxy` over a `StorageURLSchemeDispatch`
-/// over the real storage, so a resolution walks the chain. The bound only guards against a cycle.
-constexpr size_t max_storage_proxy_depth = 16;
-
-/// Resolves a proxy to the storage it wraps, for callers that cast to a concrete engine type.
-/// Stops at a proxy whose storage does not exist yet, so the cast still fails for an unloaded table.
+/// The storage an operation should run on: the lazy stand-in is replaced by the storage it wraps
+/// once that exists, while the other proxies add behaviour of their own and are kept.
 inline StoragePtr resolveStorageProxy(const StoragePtr & storage)
 {
-    StoragePtr resolved = storage;
-    for (size_t depth = 0; depth < max_storage_proxy_depth; ++depth)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(resolved.get());
-        if (!proxy)
-            break;
-        auto nested = proxy->tryGetNested();
-        if (!nested)
-            break;
-        resolved = nested;
-    }
-    return resolved;
+    const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+    if (!proxy || !proxy->isLazyStandIn())
+        return storage;
+    auto nested = proxy->tryGetNested();
+    return nested ? nested : storage;
 }
 
 /// Same, but creates the wrapped storage when it does not exist yet. For operations that name a
 /// table explicitly, where loading it is the expected cost of the operation.
 inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
 {
-    StoragePtr resolved = storage;
-    for (size_t depth = 0; depth < max_storage_proxy_depth; ++depth)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(resolved.get());
-        if (!proxy)
-            break;
-        resolved = proxy->getNested();
-    }
-    return resolved;
+    const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+    return proxy && proxy->isLazyStandIn() ? proxy->getNested() : storage;
 }
+
+/// Proxies stack: a lazily loaded `URL` table is a `StorageTableProxy` over a `StorageURLSchemeDispatch`
+/// over the real storage. The bound only guards against a cycle.
+constexpr size_t max_storage_proxy_depth = 16;
 
 /// What a cast does with a table that is not loaded yet.
 enum class DeferredTable : uint8_t
@@ -240,9 +230,18 @@ enum class DeferredTable : uint8_t
 template <typename T>
 std::shared_ptr<T> castStorage(const StoragePtr & storage, DeferredTable deferred_table)
 {
-    if (!storage)
-        return nullptr;
-    auto resolved = deferred_table == DeferredTable::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
+    /// The type test looks through every layer, whichever wrappers sit on top of the engine.
+    StoragePtr resolved = storage;
+    for (size_t depth = 0; depth < max_storage_proxy_depth && resolved; ++depth)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(resolved.get());
+        if (!proxy)
+            break;
+        auto nested = deferred_table == DeferredTable::Load ? proxy->getNested() : proxy->tryGetNested();
+        if (!nested)
+            break;
+        resolved = nested;
+    }
     return std::dynamic_pointer_cast<T>(resolved);
 }
 
