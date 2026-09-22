@@ -1871,8 +1871,9 @@
         /* The "Format" button sits inside the editor, in its bottom right corner: just inside the
            1px border and to the left of the vertical scrollbar, whose width is kept in
            `--query-scrollbar-width` by `updateFormatButtonPosition`. It is subtle while inactive
-           (a gray link) and becomes a regular yellow button on hover. It is above the completion
-           overlay (z-index 2) and the resizer strip, which overlaps the editor's bottom edge. */
+           (a gray link), becomes a regular yellow button on hover, and takes the accented yellow
+           while the formatting is in progress. It is above the completion overlay (z-index 2) and
+           the resizer strip, which overlaps the editor's bottom edge. */
         #format-query
         {
             position: absolute;
@@ -1893,14 +1894,18 @@
 
         #format-query:hover, #format-query:focus-visible
         {
-            color: var(--button-active-text-color);
-            background-color: var(--button-active-color);
+            color: var(--button-text-color);
+            background-color: var(--button-color);
             text-decoration: none;
         }
 
+        /* While the formatting is in progress. */
         #format-query.busy
         {
             cursor: progress;
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+            text-decoration: none;
         }
 
         #query-params
