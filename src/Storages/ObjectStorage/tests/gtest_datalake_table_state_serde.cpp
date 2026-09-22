@@ -6,6 +6,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Core/ProtocolDefines.h>
 
+namespace DB::ErrorCodes
+{
+extern const int PROTOCOL_VERSION_MISMATCH;
+}
+
 using namespace DB;
 
 namespace
@@ -24,6 +29,17 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .snapshot_id = std::nullopt,
     },
 };
+
+Iceberg::IcebergObjectSerializableInfo makeObjectInfo()
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    return info;
+}
 }
 
 TEST(DatalakeStateSerde, IcebergStateSerde)
@@ -161,3 +177,54 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
     ASSERT_FALSE(deserialized.file_size_in_bytes.has_value());
 }
 
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoExternalPathRejectedBeforeAbsolutePathProtocol)
+{
+    auto with_position_delete = makeObjectInfo();
+    with_position_delete.requires_external_storage = true;
+    with_position_delete.position_deletes_objects
+        = {{"s3://other-bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
+
+    auto with_deletion_vector = makeObjectInfo();
+    with_deletion_vector.requires_external_storage = true;
+    with_deletion_vector.deletion_vector = Iceberg::DeletionVectorObject{"s3://other-bucket/deletes/dv.puffin", 123, 456};
+
+    for (const auto & info : {with_position_delete, with_deletion_vector})
+    {
+        String str;
+        WriteBufferFromString write_buffer{str};
+        try
+        {
+            info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+            FAIL() << "Serializing an external path below protocol version "
+                   << DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH << " did not throw";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::PROTOCOL_VERSION_MISMATCH);
+        }
+    }
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoDeleteFilePathsStrippedBeforeAbsolutePathProtocol)
+{
+    auto info = makeObjectInfo();
+    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
+    info.deletion_vector = Iceberg::DeletionVectorObject{"s3://bucket/deletes/dv.puffin", 123, 456};
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Iceberg::IcebergObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.position_deletes_objects.size(), 1);
+    ASSERT_EQ(deserialized.position_deletes_objects[0].file_path, "deletes/pos1.parquet");
+    ASSERT_TRUE(deserialized.deletion_vector.has_value());
+    ASSERT_EQ(deserialized.deletion_vector->file_path, "deletes/dv.puffin");
+}

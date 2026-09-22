@@ -1,3 +1,4 @@
+#include <Access/Common/normalizeAccessURI.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
@@ -99,16 +100,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
 String ITableFunction::getFunctionURINormalized() const
 {
-    try
-    {
-        Poco::URI uri(getFunctionURI());
-        uri.normalize();
-        return uri.toString();
-    }
-    catch (const Poco::Exception &)
-    {
-        return "";
-    }
+    return normalizeAccessURI(getFunctionURI());
 }
 
 }

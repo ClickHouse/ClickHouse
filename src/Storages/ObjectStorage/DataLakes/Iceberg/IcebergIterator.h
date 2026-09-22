@@ -31,6 +31,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB
 {
@@ -102,7 +104,8 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components);
+        Iceberg::PersistentTableComponents persistent_components,
+        std::shared_ptr<ExternalStorageCache> external_storages_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -131,6 +134,8 @@ private:
     std::mutex deletes_mutex;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
+    /// Sometimes data or manifests can be located on another storage.
+    std::shared_ptr<ExternalStorageCache> external_storages;
     /// Built in the constructor, before the producer thread of `data_files_stream` exists, and read
     /// only on that thread afterwards.
     std::unique_ptr<Iceberg::ManifestListPruner> manifest_list_pruner;

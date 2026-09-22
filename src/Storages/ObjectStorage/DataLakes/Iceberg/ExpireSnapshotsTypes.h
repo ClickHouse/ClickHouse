@@ -20,6 +20,10 @@ struct ExpireSnapshotsResult
     Int64 deleted_manifest_files_count = 0;
     Int64 deleted_manifest_lists_count = 0;
     Int64 deleted_statistics_files_count = 0;
+    /// Files that were expired from the metadata but could not be removed from the object storage,
+    /// e.g. because the credentials of a secondary storage do not allow deletion. They are leaked:
+    /// the metadata no longer references them, so a later `expire_snapshots` will not retry them.
+    Int64 failed_deletions_count = 0;
     bool dry_run = false;
 };
 

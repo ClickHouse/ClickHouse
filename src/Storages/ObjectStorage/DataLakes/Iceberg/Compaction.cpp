@@ -28,6 +28,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <fmt/format.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -42,6 +43,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_UNLINK;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int NOT_IMPLEMENTED;
 }
@@ -109,8 +111,12 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    /// Files the compacted snapshots reference from outside the table's base directory. Compaction
+    /// deletes the files it replaces, so it refuses to run while this is non-empty.
+    std::vector<Iceberg::IcebergPathFromMetadata> external_files;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
+    String initial_metadata_path;
 
     class ParititonEncoder
     {
@@ -150,6 +156,7 @@ static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
+    ExternalStorageCache & external_storages,
     ContextPtr context,
     size_t threshold)
 {
@@ -176,8 +183,11 @@ static bool isCurrentManifestListAboveThreshold(
         return false;
 
     auto filename = IcebergPathFromMetadata::deserialize(current_manifest_list_path);
-    RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
-    auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, log);
+    auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+        persistent_table_components.table_location, current_manifest_list_path, object_storage,
+        external_storages, context, persistent_table_components.path_resolver);
+    RelativePathWithMetadata object_info(key_in_storage);
+    auto manifest_list_buf = createReadBuffer(object_info, storage_to_use, context, log);
     AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), filename, getFormatSettings(context));
     return manifest_list_deserializer.rows() > threshold;
@@ -188,6 +198,7 @@ static Plan getPlan(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
+    ExternalStorageCache & external_storages,
     const String & write_format,
     ContextPtr context,
     CompressionMethod compression_method)
@@ -230,21 +241,26 @@ static Plan getPlan(
         }
     }
     plan.initial_metadata_object = initial_metadata_object;
+    plan.initial_metadata_path = metadata_file_path;
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
+    /// Every file the compacted snapshots reference, sorted below by whether the cleanup can reach it.
+    std::unordered_set<Iceberg::IcebergPathFromMetadata> referenced_file_paths;
     for (const auto & snapshot : snapshots_info)
     {
-        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
+        referenced_file_paths.insert(snapshot.manifest_list_path);
+        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log, external_storages);
         for (const auto & manifest_file : manifest_list)
         {
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
+            referenced_file_paths.insert(manifest_file.manifest_file_path);
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id), external_storages);
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -253,38 +269,47 @@ static Plan getPlan(
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+            {
                 all_positional_delete_files.push_back(pos_delete_file);
+                referenced_file_paths.insert(pos_delete_file->parsed_entry->file_path_key);
+            }
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
+                referenced_file_paths.insert(data_file->parsed_entry->file_path_key);
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
+                const auto & raw_metadata_path = data_file->parsed_entry->file_path_key.serialize();
+                auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
+                    persistent_table_components.table_location,
+                    raw_metadata_path, object_storage, external_storages, context,
+                    persistent_table_components.path_resolver);
+
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file,
-                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    raw_metadata_path,
                     0,
-                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
-                /// One DataFilePlan per source *data file*, keyed by the data file's own path.
-                /// Keying by the manifest path made every data file after the first in a
-                /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
-                /// file per manifest and the rest of the manifest's data silently disappeared
-                /// from the compacted table. The map still deduplicates the same data file
-                /// referenced from multiple snapshots' manifest lists.
-                const auto & data_file_path = data_file->parsed_entry->file_path_key;
+                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor),
+                    resolved_storage,
+                    resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(data_file_path))
+                /// One DataFilePlan per source data file, keyed by its resolved storage identity, so
+                /// that every file in a manifest gets rewritten and the same file referenced from
+                /// several manifest lists is still deduplicated.
+                auto path_identifier = Iceberg::IcebergPathFromMetadata::makeStorageIdentity(resolved_storage, resolved_key);
+                if (!plan.path_to_data_file.contains(path_identifier))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[data_file_path] = data_file_ptr;
+                    plan.path_to_data_file[path_identifier] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[data_file_path];
+                    data_file_ptr = plan.path_to_data_file[path_identifier];
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
@@ -305,9 +330,30 @@ static Plan getPlan(
         {
             if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
                 data_file->data_object_info->addPositionDeleteFile(
-                    delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
+                    delete_file, delete_file->parsed_entry->file_path_key.serialize());
         }
     }
+
+    /// The cleanup reaches a file by listing the table directory on the base storage or not at all, so
+    /// sort the referenced files by that boundary.
+    String base_subtree_prefix = persistent_table_components.table_path;
+    if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
+        base_subtree_prefix += '/';
+
+    for (const auto & raw_path : referenced_file_paths)
+    {
+        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+            persistent_table_components.table_location,
+            raw_path.serialize(),
+            object_storage,
+            external_storages,
+            context,
+            persistent_table_components.path_resolver);
+
+        if (storage_to_use.get() != object_storage.get() || !key_in_storage.starts_with(base_subtree_prefix))
+            plan.external_files.push_back(raw_path);
+    }
+
     plan.history = std::move(snapshots_info);
     plan.need_optimize = !all_positional_delete_files.empty();
     return plan;
@@ -321,7 +367,8 @@ static void writeDataFiles(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     const String & write_format,
-    CompressionMethod write_compression_method)
+    CompressionMethod write_compression_method,
+    std::shared_ptr<ExternalStorageCache> external_storages)
 {
     ColumnMapperPtr column_mapper;
     {
@@ -354,10 +401,13 @@ static void writeDataFiles(
                 format_settings,
                 // todo make compaction using same FormatParserSharedResources
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
-                context);
+                context,
+                path_resolver,
+                external_storages);
 
-        RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
-        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
+        ObjectStoragePtr storage_to_use = data_file->data_object_info->getResolvedStorage(object_storage);
+        RelativePathWithMetadata object_info(data_file->data_object_info->getPath());
+        auto read_buffer = createReadBuffer(object_info, storage_to_use, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -433,7 +483,8 @@ static bool writeConsolidatedManifestFile(
     CompressionMethod compression_method,
     const DataLakeStorageSettings & data_lake_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
@@ -632,7 +683,8 @@ static bool writeConsolidatedManifestFile(
     std::vector<IcebergPathFromMetadata> data_manifest_paths;
 
     auto current_manifest_list = getManifestList(
-        object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
+        object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log,
+        external_storages);
 
     for (const auto & manifest_file : current_manifest_list)
     {
@@ -645,7 +697,8 @@ static bool writeConsolidatedManifestFile(
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
 
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
+            external_storages);
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
@@ -739,8 +792,11 @@ static bool writeConsolidatedManifestFile(
     /// is no encryption metadata to lose and reporting success must not turn into a hard error.
     for (const auto & data_manifest_path : data_manifest_paths)
     {
-        RelativePathWithMetadata key_metadata_object_info(path_resolver.resolve(data_manifest_path));
-        auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
+        auto [key_metadata_storage, key_metadata_key] = resolveObjectStorageForPath(
+            persistent_table_components.table_location, data_manifest_path.serialize(), object_storage,
+            external_storages, context, path_resolver);
+        RelativePathWithMetadata key_metadata_object_info(key_metadata_key);
+        auto key_metadata_buf = createReadBuffer(key_metadata_object_info, key_metadata_storage, context, log);
         AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), data_manifest_path, getFormatSettings(context));
         if (!key_metadata_deserializer.hasPath(c_data_file_key_metadata))
             continue;
@@ -913,6 +969,7 @@ static bool writeConsolidatedManifestFile(
             path_resolver,
             metadata_object,
             object_storage,
+            external_storages,
             context,
             consolidated_manifest_paths,
             new_snapshot.snapshot,
@@ -1034,7 +1091,7 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static void writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
+    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ExternalStorageCache & external_storages, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
 
@@ -1140,6 +1197,7 @@ static void writeMetadataFiles(
         {
             manifest_entry->patched_path = plan.generator.generateManifestEntryName();
             manifest_file_renamings[manifest_entry->path] = manifest_entry->patched_path;
+
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry->patched_path)),
                 WriteMode::Rewrite,
@@ -1163,7 +1221,7 @@ static void writeMetadataFiles(
                     "Iceberg compaction does not support this table history: live manifest {} is first referenced "
                     "by snapshot {} which produced no rewritten snapshot (e.g. a delete-only snapshot). "
                     "The table is left unchanged.",
-                    manifest_entry->path.serialize(),
+                    manifest_entry->path,
                     snapshot_id);
 
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
@@ -1319,6 +1377,7 @@ static void writeMetadataFiles(
             path_resolver,
             metadata_object,
             object_storage,
+            external_storages,
             context,
             renamed_manifest_entries,
             new_snapshots[i].snapshot,
@@ -1346,23 +1405,97 @@ static void writeMetadataFiles(
     }
 }
 
-static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+/// The files the rewrite replaces, split by the role they play in the head switch (see `clearOldFiles`).
+/// Only the base storage is listed: `compactIcebergTable` rejects a table that references anything else.
+struct OldFiles
 {
-    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
-    auto data_files = listFiles(*object_storage, table_path, "data", "");
+    std::vector<String> metadata_files;
+    std::vector<String> data_files;
+};
 
-    for (auto && data_file : data_files)
-        metadata_files.push_back(data_file);
+/// A listing is unordered, so the removals are ordered here: the current head last of the metadata
+/// files, and the non-metadata files after it, so a part-way failure leaves the table where it started.
+static OldFiles getOldFiles(ObjectStoragePtr object_storage, const String & table_path, const String & head_metadata_path)
+{
+    constexpr std::string_view metadata_suffix = ".metadata.json";
 
-    return metadata_files;
+    auto metadata_prefix_files = listFiles(*object_storage, table_path, "metadata", "");
+
+    /// By file name: a configured metadata path may be spelled differently from the key a listing returns.
+    const String head_file_name = std::filesystem::path(head_metadata_path).filename();
+    auto is_head = [&](const String & key) { return std::filesystem::path(key).filename() == head_file_name; };
+
+    std::vector<String> ordered;
+    ordered.reserve(metadata_prefix_files.size());
+    auto append_matching = [&](const auto & predicate)
+    {
+        for (const auto & key : metadata_prefix_files)
+            if (predicate(key))
+                ordered.push_back(key);
+    };
+
+    append_matching([&](const String & key) { return !is_head(key) && key.ends_with(metadata_suffix); });
+    append_matching([&](const String & key) { return is_head(key); });
+    append_matching([&](const String & key) { return !is_head(key) && !key.ends_with(metadata_suffix); });
+
+    return {std::move(ordered), listFiles(*object_storage, table_path, "data", "")};
 }
 
-static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+/// The compacted metadata is written as `v0.metadata.json`, a lower version than the files it replaces,
+/// so the table becomes current only once the old `metadata` prefix is gone. Until then the old head
+/// still points at the old manifests and data, so a metadata file that survives stops the removals.
+/// After the switch the data files are unreferenced, so every removal is attempted and the leftovers are
+/// named in the exception.
+static void clearOldFiles(ObjectStoragePtr object_storage, const OldFiles & old_files)
 {
-    for (const auto & metadata_file : old_files)
+    auto log = getLogger("IcebergCompaction");
+
+    for (const auto & key : old_files.metadata_files)
     {
-        object_storage->removeObjectIfExists(StoredObject(metadata_file));
+        LOG_DEBUG(log, "Removing old file during compaction: {}", key);
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(key));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "while removing '{}', one of the metadata files the compaction replaced. The table is still at its "
+                "previous state and its data is intact; the compacted files written next to it are orphaned and the "
+                "old files that were not reached are left in place",
+                key);
+            throw;
+        }
     }
+
+    std::vector<String> not_removed;
+    for (const auto & key : old_files.data_files)
+    {
+        LOG_DEBUG(log, "Removing old file during compaction: {}", key);
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(key));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove the old file " + key);
+            not_removed.push_back(key);
+        }
+    }
+
+    if (not_removed.empty())
+        return;
+
+    const size_t total = not_removed.size();
+    if (total > 10)
+        not_removed.resize(10);
+
+    throw Exception(
+        ErrorCodes::CANNOT_UNLINK,
+        "The table has been compacted, but {} of the files it replaced could not be removed and have to be deleted "
+        "by hand (the log names all of them): {}",
+        total,
+        fmt::join(not_removed, ", "));
 }
 
 void compactIcebergManifests(
@@ -1373,7 +1506,8 @@ void compactIcebergManifests(
     ContextPtr context_,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
@@ -1421,7 +1555,7 @@ void compactIcebergManifests(
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(
-                metadata_object, persistent_table_components, object_storage_, context_, min_count_to_compact))
+                metadata_object, persistent_table_components, object_storage_, external_storages, context_, min_count_to_compact))
         {
             LOG_INFO(log, "Manifest compaction is not needed (manifest list is within threshold {})",
                      min_count_to_compact);
@@ -1439,7 +1573,8 @@ void compactIcebergManifests(
                 persistent_table_components.metadata_compression_method,
                 data_lake_settings,
                 catalog,
-                table_id))
+                table_id,
+                external_storages))
         {
             // Invalidate metadata cache so the next reader picks up the new state
             if (persistent_table_components.metadata_cache)
@@ -1461,6 +1596,7 @@ void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage_,
+    std::shared_ptr<ExternalStorageCache> external_storages_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
@@ -1474,12 +1610,34 @@ void compactIcebergTable(
         data_lake_settings,
         persistent_table_components,
         object_storage_,
+        *external_storages_,
         write_format,
         context_,
         persistent_table_components.metadata_compression_method);
+
+    /// Fail closed: the rewrite deletes the files it replaces by listing the table directory, and a file
+    /// outside it is also the one the table may not own -- `add_files` registers such files without
+    /// copying them -- so deleting it could destroy data another table or writer still uses.
+    if (!plan.external_files.empty())
+    {
+        constexpr size_t max_files_to_name = 10;
+        auto named = plan.external_files;
+        if (named.size() > max_files_to_name)
+            named.resize(max_files_to_name);
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported for Iceberg tables that reference files outside the table's base "
+            "directory (found {} such file(s), including: {}): compaction deletes the files it replaces, "
+            "and a file outside the table location may be owned or shared by something else. "
+            "Aborting to avoid deleting it",
+            plan.external_files.size(),
+            fmt::join(named, ", "));
+    }
+
     if (plan.need_optimize)
     {
-        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
+        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path, plan.initial_metadata_path);
         writeDataFiles(
             plan,
             sample_block_,
@@ -1488,8 +1646,9 @@ void compactIcebergTable(
             format_settings_,
             context_,
             write_format,
-            persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+            persistent_table_components.metadata_compression_method,
+            external_storages_);
+        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *external_storages_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }

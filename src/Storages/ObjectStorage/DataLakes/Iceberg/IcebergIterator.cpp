@@ -48,6 +48,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
@@ -337,7 +339,8 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<ExternalStorageCache> external_storages_)
     : logger(getLogger("IcebergIterator"))
     , object_storage(std::move(object_storage_))
     , local_context(local_context_)
@@ -346,6 +349,7 @@ IcebergIterator::IcebergIterator(
     , persistent_components(persistent_components_)
     , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
+    , external_storages(external_storages_)
 {
     chassert(local_context);
 
@@ -422,7 +426,8 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const Manif
         persistent_components,
         local_context,
         logger,
-        manifest_list_entry.manifest_file_path);
+        manifest_list_entry.manifest_file_path,
+        *external_storages);
 
     return Iceberg::ManifestFileIterator::create(
         manifest_file_cacheable_part.deserializer,
@@ -518,12 +523,22 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ProcessedManifestFileEntryPtr manifest_file_entry;
     if (data_files_stream->pop(manifest_file_entry))
     {
-        IcebergDataObjectInfoPtr object_info
-            = std::make_shared<IcebergDataObjectInfo>(
-                manifest_file_entry,
-                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
-                table_state_snapshot->schema_id,
-                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+        const auto & raw_metadata_path = manifest_file_entry->parsed_entry->file_path_key.serialize();
+        auto [storage_to_use, resolved_key] = resolveObjectStorageForPath(
+            persistent_components.table_location, raw_metadata_path,
+            object_storage, *external_storages, local_context,
+            persistent_components.path_resolver);
+
+        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(
+            manifest_file_entry,
+            raw_metadata_path,
+            table_state_snapshot->schema_id,
+            Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor),
+            storage_to_use,
+            resolved_key);
+
+        object_info->info.requires_external_storage = (storage_to_use != object_storage);
+
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
@@ -558,11 +573,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path,
                     lower.has_value() ? lower->serialize() : "[no lower bound]",
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
-                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+                const auto delete_path = position_delete->parsed_entry->file_path_key.serialize();
                 if (position_delete->parsed_entry->isDeletionVector())
-                    object_info->addDeletionVector(position_delete, resolved_delete_path);
+                    object_info->addDeletionVector(position_delete, delete_path);
                 else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                    object_info->addPositionDeleteFile(position_delete, delete_path);
             }
         }
 
@@ -579,7 +594,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(
-                equality_delete, persistent_components.path_resolver.resolve(equality_delete->parsed_entry->file_path_key));
+                equality_delete, equality_delete->parsed_entry->file_path_key.serialize());
         }
 
         if (!object_info->info.equality_deletes_objects.empty())
@@ -589,6 +604,70 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 "Finally got {} equality delete elements for data file {}",
                 object_info->info.equality_deletes_objects.size(),
                 object_info->info.data_object_file_path_key);
+        }
+
+        /// Only a task that leaves this node needs the flag, and the resolutions below cost an `S3::URI`
+        /// parse per delete file, which a local read must not pay for.
+        if (tasks_go_to_other_replicas && !object_info->info.requires_external_storage)
+        {
+            /// A worker predating the absolute-path protocol receives delete file paths stripped of their
+            /// scheme and authority (see `path_for_protocol`) and resolves what is left against the table
+            /// location, so flag the task when that reconstruction does not land back on the same object:
+            /// the old worker would apply deletes from the wrong file, or fail to open it.
+            ///
+            /// A scheme-less path is its own stripped form, so both resolutions below would compare equal
+            /// and the storage alone decides. The only scheme-less path that can leave the base storage is
+            /// an absolute one on a local base storage, so everything else is answered by one
+            /// `SchemeAuthorityKey` parse instead of two path resolutions.
+            const bool base_storage_is_local = object_storage->getType() == ObjectStorageType::Local;
+            auto resolves_to_itself_on_base_storage = [&](const String & file_path)
+            {
+                SchemeAuthorityKey decomposed{file_path};
+                if (!decomposed.scheme.empty())
+                    return false;
+                return !decomposed.key.starts_with('/') || !base_storage_is_local;
+            };
+
+            auto needs_absolute_path_protocol = [&](const String & file_path)
+            {
+                if (resolves_to_itself_on_base_storage(file_path))
+                    return false;
+
+                auto [del_storage, del_key] = resolveObjectStorageForPath(
+                    persistent_components.table_location, file_path, object_storage, *external_storages, local_context,
+                    persistent_components.path_resolver);
+                if (del_storage != object_storage)
+                    return true;
+                try
+                {
+                    auto [stripped_storage, stripped_key] = resolveObjectStorageForPath(
+                        persistent_components.table_location, SchemeAuthorityKey(file_path).key, object_storage,
+                        *external_storages, local_context, persistent_components.path_resolver);
+                    return stripped_storage != object_storage || stripped_key != del_key;
+                }
+                catch (const Exception &)
+                {
+                    /// The stripped key is unresolvable, so old workers cannot read it either.
+                    return true;
+                }
+            };
+            auto any_needs_protocol = [&](const auto & delete_objects)
+            {
+                for (const auto & del : delete_objects)
+                    if (needs_absolute_path_protocol(del.file_path))
+                        return true;
+                return false;
+            };
+
+            /// The data file needs no such check: its path travels already resolved in
+            /// `ClusterFunctionReadTaskResponse::path`, written at every protocol version, so an old worker
+            /// opens the right object and only reports `_path` in the legacy `namespace/key` form. That
+            /// divergence happens for ordinary in-table files too, so no per-file flag can remove it.
+            object_info->info.requires_external_storage =
+                any_needs_protocol(object_info->info.position_deletes_objects)
+                || any_needs_protocol(object_info->info.equality_deletes_objects)
+                || (object_info->info.deletion_vector.has_value()
+                    && needs_absolute_path_protocol(object_info->info.deletion_vector->file_path));
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
