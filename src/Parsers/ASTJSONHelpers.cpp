@@ -65,7 +65,17 @@ static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const F
             else if (std::isinf(x))
                 writeJSONString(x > 0 ? "+Inf" : "-Inf", out, fs);
             else
-                writeFloatText(x, out);
+            {
+                /// `writeFloatText` prints e.g. 9.99e19 as `99900000000000000000`, which a JSON reader takes for
+                /// an integer and rejects when it does not fit 64 bits (`formatQueryFromJSON` could not read
+                /// its own output). Keep the value recognisable as floating point.
+                WriteBufferFromOwnString text;
+                writeFloatText(x, text);
+                const String & repr = text.str();
+                out << repr;
+                if (repr.find_first_of(".eE") == String::npos)
+                    out << ".0";
+            }
             break;
         }
         case Field::Types::Bool:
