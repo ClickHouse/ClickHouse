@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 
 #include <Core/Block.h>
@@ -16,14 +17,16 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE joins respectively.
+/// The in-memory join is a `HashJoin`, or a `PartitionedHashJoin` when the planner says so
+/// (`use_partitioned_join_`: `join_algorithm` lists `partitioned_hash` and the shape allows it).
+/// The on-disk join is `MergeJoin` (JoinAlgorithm::PARTIAL_MERGE).
 ///
 /// The hash phase uses the same `parallel_hash_join_threshold` layout as a bare `HashJoin`.
 /// Concurrent fill takes a shared lock. Draining onto `MergeJoin` takes an exclusive lock
 /// because `MergeJoin::addBlockToJoin` is not concurrent.
 ///
 /// Unmatched RIGHT/FULL rows: `supportParallelNonJoinedBlocksProcessing` is captured from
-/// the inner `HashJoin` so the pipeline wires `NonJoinedBlocksTransform`. After a drain
+/// the inner join so the pipeline wires `NonJoinedBlocksTransform`. After a drain
 /// the 5-arg `getNonJoinedBlocks` still forwards. `MergeJoin` does not override it, so
 /// `IJoin`'s default puts every unmatched row on stream 0.
 ///
@@ -39,7 +42,9 @@ public:
         bool any_take_last_row_,
         const HashJoinStatsCollectingParams & stats_collecting_params_,
         size_t max_threads_,
-        bool use_parallel_layout_);
+        bool use_parallel_layout_,
+        bool use_partitioned_join_,
+        std::optional<size_t> build_rows_hint_);
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -144,7 +149,7 @@ public:
     /// conservative and never claim to preserve the left stream order. See issue #110662.
     bool preservesLeftBlockOrder() const override { return false; }
 
-    bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
+    bool supportParallelJoin() const override { return supports_parallel_join; }
     size_t getMaxBuildThreads() const override { return max_threads; }
     bool supportParallelNonJoinedBlocksProcessing() const override { return supports_parallel_non_joined_blocks_processing; }
 
@@ -183,12 +188,14 @@ private:
     std::shared_ptr<TableJoin> table_join;
     const Block right_sample_block;
     const size_t max_threads;
-    const bool use_parallel_layout;
+    /// Which in-memory join `join` holds until a switch.
+    const bool use_partitioned_join;
+    bool supports_parallel_join = false;
     bool supports_parallel_non_joined_blocks_processing = false;
 
-    /// Drain HashJoin onto MergeJoin. Caller holds exclusive `switch_mutex`.
+    /// Drain the in-memory join onto MergeJoin. Caller holds exclusive `switch_mutex`.
     /// `MergeJoin` is built first; `join` and `switched` are published before the hash
-    /// table is released so a throw cannot send fillers back onto a drained HashJoin.
+    /// table is released so a throw cannot send fillers back onto a drained join.
     bool switchJoin();
 };
 

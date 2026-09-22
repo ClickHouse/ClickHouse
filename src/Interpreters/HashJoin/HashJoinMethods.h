@@ -233,7 +233,10 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const ScatteredBlock::Selector::Range & range);
 
+public:
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
+    /// Public because `PartitionedHashJoin` runs it over its shared table, which answers the same
+    /// `findKey` and `prefetch` calls as a standard map.
     template <typename KeyGetter, typename Map, typename AddedColumns>
     static size_t joinRightColumnsWithAdditionalFilter(
         std::vector<KeyGetter> && key_getter_vector,

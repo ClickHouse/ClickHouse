@@ -1,0 +1,26 @@
+counts	500
+stored rows	10000
+all left	1
+all inner	1
+any left first	1
+any left last	1
+any inner	1
+all left nulls	1
+all right	1
+all full	1
+semi left	1
+anti left	1
+read all	1
+read any first	1
+read any last	1
+after delete	428
+all left after delete	1
+after attach	428
+all left after attach	1
+after truncate	0
+joined after truncate	0
+refilled	500
+string key	1
+read string key	1
+two keys	1
+read two keys	1

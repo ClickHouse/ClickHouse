@@ -133,6 +133,7 @@ SETTINGS log_comment = '05139 spill below threshold';
 
 SYSTEM FLUSH LOGS query_log;
 
+-- The spill queries switched to grace, whose buckets are partitioned builds with row stores of their own.
 SELECT '-- the row store was built (blocks > 0) where the shape admits it, and the spill queries switched to grace';
 SELECT
     log_comment,

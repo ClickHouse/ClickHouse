@@ -174,6 +174,9 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
         settings.set("partitioned_hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
     if (!options.cap_partitions_by_l1_descriptors)
         settings.set("partitioned_hash_join_cap_partitions_by_l1_descriptors", false);
+    /// These tests read the shared table's geometry after the build; the dense sequential keys they
+    /// build would otherwise be converted to a range map.
+    settings.set("enable_join_fixed_hash_table_conversion", false);
     auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, /*tmp_volume=*/nullptr, /*tmp_data=*/nullptr);
     table_join->setKind(options.kind);
     table_join->getTableJoin().strictness = options.strictness;
@@ -923,12 +926,11 @@ TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
         EXPECT_EQ(stats.scratch_used_high_water, 28u * distinct_keys);
 }
 
-/// The statistics cache receives every build's exact distinct count. No later build under the same
-/// key sizes its table from that count.
-TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
+/// The statistics cache receives every build's exact distinct count. The next build under the same
+/// key sizes its table from it instead of from its sketch. A build that outgrows the cached count
+/// grows its table and republishes the count.
+TEST(PartitionedHashJoin, SizesTableFromPublishedStatistics)
 {
-    /// The count serves the planner's other consumers. A five times larger build under the same key
-    /// must still estimate its own count from the sketch and size the table for it.
     static std::atomic<UInt64> key_counter{0};
     const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
     const StatsCollectingParams params(
@@ -940,15 +942,30 @@ TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
     BuildOptions options;
     options.stats_collecting_params = &params;
     auto small = buildJoin(small_keys, /*duplicates=*/1, options);
-    expectTableInvariants(small.join->getBuildStats(), small_keys, small_keys);
+    const auto small_stats = small.join->getBuildStats();
+    EXPECT_NEAR(small_stats.hll_estimate, static_cast<double>(small_keys), 0.05 * static_cast<double>(small_keys))
+        << "the first build under a key has no cached count and sizes from its sketch";
+    expectTableInvariants(small_stats, small_keys, small_keys);
     const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(published.has_value());
     EXPECT_EQ(published->ht_size, small_keys);
 
+    /// The same key again, with the same keys: the cached count replaces the sketch and sizes the table
+    /// exactly, without the safety margin the sketch gets.
+    auto repeated = buildJoin(small_keys, /*duplicates=*/1, options);
+    const auto repeated_stats = repeated.join->getBuildStats();
+    EXPECT_EQ(repeated_stats.hll_estimate, static_cast<double>(small_keys)) << "the cached count must have replaced the sketch";
+    EXPECT_EQ(repeated_stats.table_size_degree, Key64Table::degreeFor(small_keys));
+    EXPECT_EQ(repeated_stats.table_resizes, 0u);
+    expectTableInvariants(repeated_stats, small_keys, small_keys);
+    probeAndCheck(repeated, small_keys, /*duplicates=*/1, /*misses=*/1000);
+
+    /// Five times more keys than the cache says: the table starts at the cached size, grows during the
+    /// build, and the build republishes the larger count.
     auto large = buildJoin(large_keys, /*duplicates=*/1, options);
     const auto large_stats = large.join->getBuildStats();
-    EXPECT_NEAR(large_stats.hll_estimate, static_cast<double>(large_keys), 0.05 * static_cast<double>(large_keys))
-        << "the sketch must have run; a cached count would read 50000";
+    EXPECT_EQ(large_stats.hll_estimate, static_cast<double>(small_keys)) << "the cached count is read whatever the data holds";
+    EXPECT_GT(large_stats.table_resizes, 0u);
     expectTableInvariants(large_stats, large_keys, large_keys);
     probeAndCheck(large, large_keys, /*duplicates=*/1, /*misses=*/1000);
 
