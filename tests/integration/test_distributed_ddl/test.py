@@ -357,12 +357,11 @@ def test_kill_query(test_cluster):
             f"KILL QUERY ON CLUSTER 'cluster' WHERE query_id = '{query_id}' SYNC "
             "FORMAT TSV SETTINGS kill_throw_if_noop = true",
         )
+        assert_eq_with_retry(query_instance, process_count_query, "0")
     finally:
         query_instance.query(
             f"KILL QUERY WHERE query_id = '{query_id}' SETTINGS kill_throw_if_noop = false"
         )
-
-    assert_eq_with_retry(query_instance, process_count_query, "0")
 
 
 def test_kill_mutation(test_cluster):

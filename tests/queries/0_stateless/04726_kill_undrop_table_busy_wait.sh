@@ -67,14 +67,14 @@ do
     sleep 0.3
 done
 
-${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$undrop_query_id' SYNC FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$undrop_query_id' SYNC SETTINGS kill_throw_if_noop = false FORMAT Null"
 # The pipeline's exit status is the status of the grep, so this asserts that the UNDROP really
 # failed with QUERY_WAS_CANCELLED; without the explicit check a successful ATTACH below could
 # let the test pass even if the busy-wait ignored the kill.
 wait "$undrop_pid" || { echo "UNDROP TABLE was not cancelled with QUERY_WAS_CANCELLED"; exit 1; }
 
 # Release the storage reference.
-${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$select_query_id' SYNC FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$select_query_id' SYNC SETTINGS kill_throw_if_noop = false FORMAT Null"
 wait $select_pid || true
 
 # The metadata has been returned to the database before the wait, so the table can be attached.
