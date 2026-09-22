@@ -84,6 +84,11 @@ public:
 
     bool supportsPooling() const override { return false; }
 
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override
+    {
+        return column;
+    }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
