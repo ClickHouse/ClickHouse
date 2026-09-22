@@ -272,11 +272,9 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
 
     res.buildSourcePartsByVersion();
 
-    /// The file holds nothing but this index, so bytes left over mean its content is not what was
-    /// written. One corruption shape makes this check the difference between a loud and a silent
-    /// failure: a zeroed block parses as an index of format version `V1` with no source parts at all,
-    /// and everything after those nine bytes would otherwise be ignored.
-    assertEOF(in);
+    /// Consumes exactly the bytes of the index and nothing after them: the index is also embedded in
+    /// larger streams, so whether anything may follow it is for the caller to decide (see
+    /// `IMergeTreeDataPart::loadPatchPartIndex` for the file that holds nothing else).
     return res;
 }
 

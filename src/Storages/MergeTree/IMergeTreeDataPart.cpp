@@ -2084,7 +2084,15 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+    {
         patch_part_index = PatchPartIndex::readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is not what was
+        /// written. One corruption shape makes this check the difference between a loud and a silent
+        /// failure: a zeroed block parses as an index of format version `V1` with no source parts at
+        /// all, and everything after those nine bytes would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
