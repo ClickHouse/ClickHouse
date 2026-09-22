@@ -56,6 +56,11 @@ CREATE VIEW c06 AS SELECT * FROM mongodb(${NC_HOST}, password = 'MONGOPW', struc
 -- arity that was scanned before it.
 CREATE TABLE c07 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db', 'c', '_id');
 CREATE TABLE c08 (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db', 'c');
+-- Argument 0 of the \`host:port\` forms is a destination, not a credential, so one that cannot be read
+-- here keeps its text and only the password is hidden. The table function rejects a bare expression
+-- argument (\`Code: 36\`), so the engine is the surface on which this shape is accepted.
+CREATE TABLE c09 (x String) ENGINE = MongoDB(concat('127.0.0.1', ':27017'), 'db', 'c', 'usr', 'MONGOPW');
+CREATE TABLE c10 (x String) ENGINE = MongoDB(concat('127.0.0.1', ':27017'), 'db', 'c', 'usr', 'MONGOPW', 'ssl=false', '_id');
 
 SELECT name, replaceAll(create_table_query, '\n', ' ') FROM system.tables
 WHERE database = currentDatabase() ORDER BY name;
@@ -63,7 +68,7 @@ WHERE database = currentDatabase() ORDER BY name;
 DROP VIEW f01; DROP VIEW f02; DROP VIEW f03; DROP VIEW f04; DROP TABLE f05; DROP TABLE f06;
 DROP VIEW f07; DROP VIEW f08; DROP VIEW f09; DROP VIEW f10; DROP VIEW f11; DROP VIEW f12;
 DROP TABLE c01; DROP VIEW c02; DROP VIEW c03; DROP TABLE c04; DROP VIEW c05; DROP VIEW c06;
-DROP TABLE c07; DROP TABLE c08;
+DROP TABLE c07; DROP TABLE c08; DROP TABLE c09; DROP TABLE c10;
 DROP NAMED COLLECTION ${NC};
 DROP NAMED COLLECTION ${NC_HOST};
 "

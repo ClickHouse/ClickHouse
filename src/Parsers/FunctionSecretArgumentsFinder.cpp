@@ -388,9 +388,11 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
         if (maskURIPassword(&uri))
             result.replaced_arguments[0] = quoteString(uri);
     }
-    else
+    else if (function->arguments->size() <= 4)
     {
-        /// An unreadable argument 0 can still be a URI carrying credentials, so hide it whole.
+        /// Only the URI forms carry a credential in argument 0, and both surfaces select them by
+        /// argument count: at most 4, against 5 and up for `host:port`. An unreadable argument 0 can
+        /// still be a URI carrying credentials, so hide it whole.
         markSecretArgument(0);
     }
 
