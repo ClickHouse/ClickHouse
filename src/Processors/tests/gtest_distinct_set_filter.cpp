@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <optional>
 #include <set>
 #include <thread>
@@ -895,6 +896,58 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesEveryInput)
                 EXPECT_EQ((*input.getColumns()[1])[row], (*payload)[row]);
             EXPECT_EQ(filter.getTotalRowCount(), populated ? 1 : 0);
             EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), num_rows - populated);
+        }
+    }
+}
+
+TEST(DistinctSetFilterConstants, PreservesHeaderConstants)
+{
+    const DataTypes types{
+        std::make_shared<DataTypeString>(),
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+    for (const auto & type : types)
+    {
+        auto value_column = type->createColumn();
+        const Field value = isArray(type) ? Field(Array{Field(String(4096, 'x'))}) : Field(String(4096, 'x'));
+        value_column->insert(value);
+        const ColumnPtr constant = ColumnConst::create(std::move(value_column), 0);
+        const Block header = {
+            ColumnWithTypeAndName(constant, type, "payload"),
+            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+
+        for (const bool prepare : {false, true})
+        {
+            for (const Names & keys : {Names{}, Names{"k"}})
+            {
+                SCOPED_TRACE(::testing::Message() << type->getName() << ", prepare=" << prepare << ", keys=" << keys.size());
+                DistinctSetFilter filter(header, keys, SizeLimits{});
+                const auto & constant_data = assert_cast<const ColumnConst &>(*constant).getDataColumn();
+                auto check_constant = [&](const Chunk & chunk)
+                {
+                    const auto * output = typeid_cast<const ColumnConst *>(chunk.getColumns()[0].get());
+                    ASSERT_NE(output, nullptr);
+                    EXPECT_EQ(output->size(), chunk.getNumRows());
+                    EXPECT_EQ(&output->getDataColumn(), &constant_data);
+                    EXPECT_EQ((*output)[0], value);
+                };
+
+                const Columns inputs{makeColumn({1, 2, 3}), makeColumn({2, 3, 4}), makeColumn({1, 2, 3})};
+                const std::array<size_t, 3> expected_rows{3, 1, 0};
+                for (size_t i = 0; i < inputs.size(); ++i)
+                {
+                    Chunk input({constant->cloneResized(3), inputs[i]}, 3);
+                    if (prepare)
+                    {
+                        filter.prepareForInsert(input);
+                        check_constant(input);
+                    }
+                    auto output = filter.filter(std::move(input));
+                    ASSERT_EQ(output.getNumRows(), expected_rows[i]);
+                    if (output.hasRows())
+                        check_constant(output);
+                }
+                EXPECT_EQ(filter.getTotalRowCount(), 4);
+            }
         }
     }
 }
