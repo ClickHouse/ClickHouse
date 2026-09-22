@@ -2975,7 +2975,7 @@ ENGINE = MergeTree ORDER BY x;
 
 <ExperimentalBadge/>
 
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
@@ -2997,7 +2997,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -3005,7 +3005,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
 
 ```text
    ┌─column──┬─codec_block_counts─┐
-1. │ time    │ {'T64':62}         │
+1. │ time    │ {'T64, LZ4':62}    │
 2. │ user_id │ {'NONE':123}       │
    └─────────┴────────────────────┘
 ```
