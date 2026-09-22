@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Interpreters/convertFieldToType.h>
@@ -130,7 +132,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field)
+    const Field & value_field,
+    const DataTypePtr & value_type)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -139,8 +142,34 @@ bool isJSONPathFilterSafe(
 
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
-    /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
+    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
+    /// than the underlying number, so it has to be converted with that type.
+    DataTypePtr unwrapped_value_type;
+    const IDataTypeEnum * enum_source = nullptr;
+    if (value_type)
+    {
+        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+
+        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
+        const WhichDataType which_value(unwrapped_value_type);
+        if (which_value.isVariant() || which_value.isDynamic())
+            return false;
+
+        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
+
+        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
+        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
+        /// hold one, is absent from the converted value.
+        bool nested_source_type_lost = false;
+        unwrapped_value_type->forEachChild([&](const IDataType & nested)
+        {
+            const WhichDataType which_nested(nested);
+            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
+        });
+        if (nested_source_type_lost)
+            return false;
+    }
+    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
     if (converted == key_expression_type->getDefault())
         return false;
 

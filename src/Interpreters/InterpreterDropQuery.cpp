@@ -13,7 +13,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -340,7 +339,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// MergeTree removes its data under its own locks, but the storage still must not be
             /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
-            if (std::dynamic_pointer_cast<MergeTreeData>(table_to_classify))
+            /// An `Alias` runs the truncate on its target, so the exemption follows the target:
+            /// `isMergeTree()` resolves it, and is false while it is missing or not loaded yet.
+            if (table_to_classify->isMergeTree())
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -529,9 +530,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.setDatabase(database_name);
         query_for_table.sync = query.sync;
 
-        /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
-        /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || !query.has_like)
+        /// `TRUNCATE TABLES` keeps storages alive and is handled below without preparing them for shutdown.
+        if (!truncate || !query.has_tables)
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -706,8 +706,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
     }
 
-    /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && query.has_like)
+    /// Truncate all tables or only those matching the optional `LIKE` pattern.
+    if (truncate && query.has_tables)
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);

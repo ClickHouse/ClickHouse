@@ -932,11 +932,11 @@ REGISTER_FUNCTION(PointInPolygon)
     FunctionDocumentation::Description description = R"(
 Checks whether the point belongs to the polygon on the plane.
 
-:::note
+<Note>
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
 - The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
     FunctionDocumentation::Arguments arguments = {
