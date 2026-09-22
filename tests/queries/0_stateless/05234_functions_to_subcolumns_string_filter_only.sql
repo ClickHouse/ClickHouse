@@ -87,7 +87,7 @@ INSERT INTO test_string_filter_mixed VALUES (10, 1, ''), (11, 1, 'modern');
 
 SELECT 'mixed table has sparse legacy and size-stream parts';
 SELECT
-    countIf(serialization = 'Sparse'),
+    countIf(serialization_kind = 'Sparse'),
     countIf(not has(substreams, 's.size')),
     countIf(has(substreams, 's.size'))
 FROM system.parts_columns
