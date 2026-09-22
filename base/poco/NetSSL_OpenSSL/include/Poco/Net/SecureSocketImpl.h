@@ -238,7 +238,9 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        bool mustRetry(int rc, Poco::Timespan & remaining_time);
+        /// `blocking_caller` is what the caller's socket mode is, which differs from the socket's
+        /// own mode while `completeHandshakeImpl` drives the handshake non-blocking.
+        bool mustRetry(int rc, Poco::Timespan & remaining_time, bool blocking_caller);
         /// Returns true if the last operation should be retried,
         /// otherwise false.
         ///

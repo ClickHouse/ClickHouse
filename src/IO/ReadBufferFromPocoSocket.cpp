@@ -192,6 +192,8 @@ void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_millisecon
 
     if (!receive_timeout_before_handshake)
         receive_timeout_before_handshake = socket.getReceiveTimeout();
+    if (!send_timeout_before_handshake)
+        send_timeout_before_handshake = socket.getSendTimeout();
 
     /// Also now, not only per read: `MySQLHandler::finishHandshake` reads the first bytes with raw
     /// `socket().receiveBytes`, which never reaches nextImpl.
@@ -215,6 +217,10 @@ void ReadBufferFromPocoSocketBase::clampReceiveTimeoutToHandshakeDeadline(UInt64
         read_window = *receive_timeout_before_handshake;
 
     socket.setReceiveTimeout(read_window);
+    /// The TLS handshake budget in `SecureSocketImpl::getMaxTimeoutOrLimit` is the greater of the two
+    /// timeouts, so leaving the send side alone would let it run for `send_timeout`.
+    if (socket.getSendTimeout() > read_window)
+        socket.setSendTimeout(read_window);
 }
 
 void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
@@ -226,6 +232,11 @@ void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
     {
         socket.setReceiveTimeout(*receive_timeout_before_handshake);
         receive_timeout_before_handshake.reset();
+    }
+    if (send_timeout_before_handshake)
+    {
+        socket.setSendTimeout(*send_timeout_before_handshake);
+        send_timeout_before_handshake.reset();
     }
 }
 

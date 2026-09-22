@@ -1086,16 +1086,12 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
     const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
 
-    /// `attach` negotiates TLS inline, before the new buffer exists, and Poco drives that loop
-    /// itself. Give it what is left of the budget: it bounds each read there, not their total.
-    if (handshake_milliseconds_left)
-        socket().setReceiveTimeout(
-            Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(handshake_milliseconds_left) * 1000));
-
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    /// Not from the plaintext socket: the deadline clamped that one.
-    ss->setReceiveTimeout(server.context()->getSettingsRef()[Setting::receive_timeout]);
-    ss->setSendTimeout(socket().getSendTimeout());
+    /// Not from the plaintext socket: the deadline clamped both of those, and the clamped values
+    /// would become the ones restored after authentication.
+    const Settings & handshake_settings = server.context()->getSettingsRef();
+    ss->setReceiveTimeout(handshake_settings[Setting::receive_timeout]);
+    ss->setSendTimeout(handshake_settings[Setting::send_timeout]);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);

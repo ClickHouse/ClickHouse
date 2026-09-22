@@ -54,6 +54,7 @@ private:
     size_t handshake_timeout_milliseconds = 0;
     Stopwatch handshake_stopwatch = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     std::optional<Poco::Timespan> receive_timeout_before_handshake;
+    std::optional<Poco::Timespan> send_timeout_before_handshake;
 };
 
 class ReadBufferFromPocoSocket : public ReadBufferFromPocoSocketBase

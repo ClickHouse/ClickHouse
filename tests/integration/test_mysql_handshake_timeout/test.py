@@ -1,4 +1,6 @@
+import select
 import socket
+import struct
 import time
 
 import pytest
@@ -7,7 +9,13 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/handshake_timeout.xml"],
+    main_configs=[
+        "configs/handshake_timeout.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
 )
 
 MYSQL_PORT = 9001
@@ -20,6 +28,11 @@ DISCONNECT_DEADLINE = 4 * HANDSHAKE_TIMEOUT
 # waiting and the deadline is what cuts the connection. Together the steps outlast the budget.
 TRICKLE_INTERVAL = 0.2
 TRICKLE_STEPS = 40
+# The TLS case needs to outlast the budget while feeding a byte per interval.
+TLS_TRICKLE_STEPS = int(2 * HANDSHAKE_TIMEOUT / TRICKLE_INTERVAL)
+
+CLIENT_PROTOCOL_41 = 0x00000200
+CLIENT_SSL = 0x00000800
 
 # Both silence cases log this, so each one waits for one more than the log already holds.
 SOCKET_TIMEOUT_LINE = "Timeout exceeded while reading from socket"
@@ -45,6 +58,18 @@ def connect_and_read_greeting():
     assert greeting[3] == 0, f"Unexpected sequence id: {greeting!r}"
     assert greeting[4] == 10, f"Unexpected protocol version: {greeting!r}"
     return sock
+
+
+def disconnected(sock):
+    """Whether the server has hung up, without blocking. A reset counts: the server closes while the
+    bytes we trickled are still unread, and Linux answers that with RST rather than FIN."""
+    readable, _, _ = select.select([sock], [], [], 0)
+    if not readable:
+        return False
+    try:
+        return not sock.recv(4096)
+    except OSError:
+        return True
 
 
 def wait_for_disconnect(sock):
@@ -117,6 +142,40 @@ def test_silence_before_any_bytes_is_disconnected(started_cluster):
     try:
         elapsed = wait_for_disconnect(sock)
         assert elapsed >= HANDSHAKE_TIMEOUT - 2, f"Disconnected after {elapsed} seconds, too early"
+    finally:
+        sock.close()
+
+    node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
+
+
+def test_trickled_tls_handshake_is_disconnected(started_cluster):
+    """A client that dribbles its TLS ClientHello must be cut off at the budget.
+
+    OpenSSL reads inside its own state machine, so on a blocking socket only `SO_RCVTIMEO` applied,
+    per read, and a byte before each timeout kept the negotiation alive indefinitely.
+    """
+    seen = int(node.count_in_log(SOCKET_TIMEOUT_LINE))
+    sock = connect_and_read_greeting()
+    started = time.monotonic()
+    try:
+        # SSLRequest, which makes the server upgrade, then a TLS record header claiming 512 bytes.
+        payload = struct.pack("<IIB", CLIENT_PROTOCOL_41 | CLIENT_SSL, 16777216, 45) + b"\x00" * 23
+        sock.sendall(struct.pack("<I", len(payload) | (1 << 24)) + payload)
+        sock.sendall(bytes([0x16, 0x03, 0x01, 0x02, 0x00]))
+
+        for _ in range(TLS_TRICKLE_STEPS):
+            time.sleep(TRICKLE_INTERVAL)
+            if disconnected(sock):
+                break
+            try:
+                sock.sendall(b"\x00")
+            except OSError:
+                break
+        else:
+            wait_for_disconnect(sock)
+
+        elapsed = time.monotonic() - started
+        assert elapsed < DISCONNECT_DEADLINE, f"TLS negotiation held for {elapsed} seconds"
     finally:
         sock.close()
 
