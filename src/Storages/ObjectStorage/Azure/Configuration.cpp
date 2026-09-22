@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool azure_ignore_file_doesnt_exist;
     extern const SettingsUInt64 azure_list_object_keys_size;
     extern const SettingsBool azure_skip_empty_files;
+    extern const SettingsBool azure_skip_hidden_files;
     extern const SettingsBool azure_throw_on_zero_files_match;
     extern const SettingsBool azure_truncate_on_insert;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
@@ -86,6 +87,7 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
         .list_object_keys_size = settings[Setting::azure_list_object_keys_size],
         .throw_on_zero_files_match = settings[Setting::azure_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::azure_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::azure_skip_hidden_files],
     };
 }
 
