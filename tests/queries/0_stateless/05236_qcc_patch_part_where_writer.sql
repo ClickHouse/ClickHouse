@@ -11,10 +11,7 @@ SET use_query_condition_cache = 1;
 -- The cache is populated per replica, so the assertions below need a single one.
 SET enable_parallel_replicas = 0;
 
-DROP TABLE IF EXISTS t_qcc_patch_where;
-
--- auto_statistics_types = '': randomized auto statistics can prune the whole part for the
--- never-matching predicate below, leaving nothing to read and its cache assertions vacuous.
+-- auto_statistics_types is randomized per run; pinned so the cache assertions cannot depend on it.
 CREATE TABLE t_qcc_patch_where (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_offset_column = 1,
