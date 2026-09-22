@@ -1,6 +1,5 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/SettingsObsoleteMacros.h>
 #include <Core/Settings.h>
 #include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
@@ -18,6 +17,7 @@ namespace DB
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
+    DECLARE(UInt64, max_connections, S3::DEFAULT_MAX_CONNECTIONS, "", 0) \
     DECLARE(UInt64, http_keep_alive_timeout, S3::DEFAULT_KEEP_ALIVE_TIMEOUT, "", 0) \
     DECLARE(UInt64, http_keep_alive_max_requests, S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS, "", 0) \
     DECLARE(UInt64, expiration_window_seconds, S3::DEFAULT_EXPIRATION_WINDOW_SECONDS, "", 0) \
@@ -46,18 +46,9 @@ namespace DB
     DECLARE(String, google_adc_client_secret, "", "", 0) \
     DECLARE(String, google_adc_refresh_token, "", "", 0) \
 
-/// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
-/// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
-/// `storage_connections_*` and `http_connections_*` server settings instead. The name is still
-/// accepted - in a disk configuration, in a named collection, and over the wire, where these
-/// settings are serialized by name - so that an existing configuration keeps working.
-#define OBSOLETE_S3AUTH_SETTINGS(M, ALIAS) \
-    MAKE_OBSOLETE(M, UInt64, max_connections, 1024) \
-
 #define CLIENT_SETTINGS_LIST(M, ALIAS) \
     CLIENT_SETTINGS(M, ALIAS) \
-    AUTH_SETTINGS(M, ALIAS) \
-    OBSOLETE_S3AUTH_SETTINGS(M, ALIAS)
+    AUTH_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
@@ -87,10 +78,8 @@ S3AuthSettings::S3AuthSettings(
         }
     }
 
-    resetObsoleteSettings();
-
-    headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "header"));
-    access_headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "access_header"));
+    headers = getHTTPHeaders(config_prefix, config, "header");
+    access_headers = getHTTPHeaders(config_prefix, config, "access_header");
 
     server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
@@ -152,17 +141,6 @@ void S3AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_c
             field.setValue(settings.get(setting_name));
         }
     }
-
-    resetObsoleteSettings();
-}
-
-void S3AuthSettings::resetObsoleteSettings()
-{
-    for (const auto & field : impl->all())
-    {
-        if (field.getTier() == SettingsTierType::OBSOLETE && field.isValueChanged())
-            impl->resetToDefault(field.getName());
-    }
 }
 
 bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
@@ -193,8 +171,6 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         || settings.server_side_encryption_kms_config.encryption_context.has_value()
         || settings.server_side_encryption_kms_config.key_id.has_value())
         server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
-
-    resetObsoleteSettings();
 }
 
 void S3AuthSettings::clearServerManagedRequestAuth()
@@ -223,14 +199,14 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_refresh_token", "");
 }
 
-NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
+HTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
     bool auth_settings_is_default = !impl->isChanged("access_key_id");
     if (access_headers.empty() || !auth_settings_is_default)
         return headers;
 
-    NormalizedHTTPHeaderEntries result(headers);
-    result.append(access_headers);
+    HTTPHeaderEntries result(headers);
+    result.insert(result.end(), access_headers.begin(), access_headers.end());
 
     return result;
 }
@@ -268,7 +244,6 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     S3AuthSettings result;
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
-    result.resetObsoleteSettings();
 
     size_t headers_size = 0;
     readVarUInt(headers_size, in);
@@ -278,7 +253,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         std::string value;
         readStringBinary(name, in);
         readStringBinary(value, in);
-        result.headers.push_back({name, value});
+        result.headers.emplace_back(name, value);
     }
 
     size_t access_headers_size = 0;
@@ -289,7 +264,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         std::string value;
         readStringBinary(name, in);
         readStringBinary(value, in);
-        result.access_headers.push_back({name, value});
+        result.access_headers.emplace_back(name, value);
     }
     size_t users_size = 0;
     readVarUInt(users_size, in);

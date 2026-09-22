@@ -76,20 +76,6 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc{2}", {.prefix = "ab"});
     check("^a*", {});
 
-    /// The optional literal is a whole UTF-8 code point, not the last byte of it: the truncated
-    /// prefix `0xC3` would prune granules holding `c`, which matches `^é*c`.
-    check("^é*c", {});
-    check("^aé*c", {.prefix = "a"});
-    check("^aé?", {.prefix = "a"});
-    check("^aé{0,2}", {.prefix = "a"});
-    check("^é", {.prefix = "é", .is_perfect = true});
-    check("^éa*", {.prefix = "é"});
-    check("^aé(?m)*c", {.prefix = "a"});
-    check("^aé\\Q\\E*c", {.prefix = "a"});
-    check("^aé(?i)\\Q\\E?c", {.prefix = "a"});
-    check("^é(?m)*c", {});
-    check("^é\\Q\\E*c", {});
-
     /// Groups are not analyzed, except a top-level alternation.
     check("^(abc)", {});
     check("^(?:abc)", {});

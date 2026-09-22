@@ -43,19 +43,16 @@ namespace
 inline void
 readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    const auto overflow = settings.throwOnDateTimeOverflow()
-        ? DateTimeOverflow::Report
-        : DateTimeOverflow::Saturate;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, overflow == DateTimeOverflow::Saturate);
+            readDateTimeTextImpl<>(x, istr, time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
+            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
             break;
     }
 
@@ -65,20 +62,17 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    const auto overflow = settings.throwOnDateTimeOverflow()
-        ? DateTimeOverflow::Report
-        : DateTimeOverflow::Saturate;
     bool res = false;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadDateTimeText(x, istr, time_zone, nullptr, nullptr, overflow == DateTimeOverflow::Saturate);
+            res = tryReadDateTimeText(x, istr, time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
+            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
+            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
             break;
     }
 
@@ -187,11 +181,11 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow());
+        readDateTimeAsRawValue(x, istr);
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        readDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow());
+        readDateTimeAsNumber(x, istr);
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -208,12 +202,12 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow()))
+        if (!tryReadDateTimeAsRawValue(x, istr))
             return false;
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        if (!tryReadDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow()))
+        if (!tryReadDateTimeAsNumber(x, istr))
             return false;
     }
 
@@ -240,11 +234,11 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow());
+        readDateTimeAsRawValue(x, istr);
     }
     else
     {
-        readDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow());
+        readDateTimeAsNumber(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -260,12 +254,12 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow()))
+        if (!tryReadDateTimeAsRawValue(x, istr))
             return false;
     }
     else
     {
-        if (!tryReadDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow()))
+        if (!tryReadDateTimeAsNumber(x, istr))
             return false;
     }
 

@@ -45,7 +45,7 @@ private:
     AsyncCallback async_callback = {};
 };
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 /// Class for nonblocking establishing connection to the replica.
 /// It runs establishing connection process in coroutine and sets special

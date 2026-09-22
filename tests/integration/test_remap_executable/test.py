@@ -34,10 +34,7 @@ def test_signal_listener_restarted(started_cluster):
     # restarted thread is alive and processing signals.
     pid = node.get_process_pid("clickhouse")
     node.exec_in_container(["bash", "-c", f"kill -HUP {pid}"], user="root")
-    # The reopen archives clickhouse-server.log aside (`<rotateOnOpen>` in the common
-    # integration config), so a line logged before the close can end up in the archived
-    # file; only a line logged after the reopen is guaranteed to be in the tailed file.
-    node.wait_for_log_line("Opened new log file after received signal")
+    node.wait_for_log_line("Received signal to close logs")
     assert node.query("SELECT 1") == "1\n"
 
 

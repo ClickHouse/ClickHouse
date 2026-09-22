@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -26,6 +27,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -68,10 +70,20 @@ namespace
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
 
-        InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
-        if (query_info.storage_limits)
-            interpreter.addStorageLimits(*query_info.storage_limits);
-        plan = std::move(interpreter).extractQueryPlan();
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            InterpreterSelectWithUnionQuery interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(plan);
+        }
     }
 }
 

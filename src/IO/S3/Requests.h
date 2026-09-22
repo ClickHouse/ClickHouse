@@ -230,33 +230,14 @@ public:
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-/// Custom object metadata key under which a writer stamps the id identifying itself.
-static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
-
-/// 22 characters drawn from `a`-`z`, about 103 bits. It only has to be unique among the writers
-/// racing for one key.
-static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
-
-/// The id the writer stamped in the object's metadata. Set it and the client accepts a failure whose
-/// object carries it. Left empty, the client asks nothing.
-class RequestWithIdempotencyId
-{
-public:
-    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
-    const Aws::String & getIdempotencyId() const { return idempotency_id; }
-
-private:
-    Aws::String idempotency_id;
-};
-
-class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId
+class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
     bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>, public RequestWithIdempotencyId
+class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;

@@ -2076,7 +2076,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                static const DB::Strings post_codecs = {"none", "bitpacking", "pfor"};
+                static const DB::Strings post_codecs = {"none", "bitpacking"};
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }

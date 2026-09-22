@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS tt;
 CREATE TABLE tt (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
 INSERT INTO tt SELECT * FROM numbers(10);
 
+SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 -- when the query plan is serialized for distributed query, parallel replicas are not enabled because
 -- (with prefer_localhost_replica) because all reading steps are ReadFromTable instead of ReadFromMergeTree

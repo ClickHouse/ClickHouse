@@ -379,6 +379,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"defer_partition_pruning_after_final", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
        {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
+       {"enable_analyzer", trueOrFalseSetting},
        {"enable_automatic_decision_for_merging_across_partitions_for_final", trueOrFalseSetting},
        {"enable_identifier_resolve_cache", trueOrFalseSetting},
        {"enable_join_fixed_hash_table_conversion", trueOrFalseSetting},
@@ -501,6 +502,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_use_projection_filtering", trueOrFalseSetting},
        {"optimize_use_projections", trueOrFalseSetting},
        {"parallel_non_joined_rows_processing", trueOrFalseSetting},
+       {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
        {"parallel_replicas_plan_based", trueOrFalseSetting},
        {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
        {"parallel_replicas_prefer_local_replica", trueOrFalseSetting},
@@ -1444,15 +1446,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
-    {"output_format_arrow_unsupported_types",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"'throw'", "'text'", "'binary'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
     {"output_format_arrow_unsupported_types_as_binary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalseSettingNoOracle},
@@ -2517,7 +2510,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (fc.enable_sync_settings)
     {
         serverSettings.insert(
-            {{"alter_sync", CHSetting(zeroToThree, {}, false)},
+            {{"alter_sync", CHSetting(zeroOneTwo, {}, false)},
              {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
              {"mutations_sync", CHSetting(zeroToThree, {}, false)}});
     }

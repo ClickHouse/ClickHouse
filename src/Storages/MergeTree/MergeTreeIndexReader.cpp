@@ -21,15 +21,10 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings,
-    bool interruptible_marks_read)
+    MergeTreeReaderSettings settings)
 {
     auto context = data_part_info->getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
-    /// Kept on this copy so the opt-in never reaches the index data stream below.
-    auto marks_read_settings = settings.read_settings;
-    marks_read_settings.remote_fs_settings.interruptible_reads = interruptible_marks_read;
 
     const auto & index_granularity_info = data_part_info->getIndexGranularityInfo();
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
@@ -39,7 +34,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         marks_count,
         index_granularity_info,
         settings.save_marks_in_cache,
-        marks_read_settings,
+        settings.read_settings,
         load_marks_threadpool,
         /*num_columns_in_mark=*/ 1,
         settings.use_streaming_marks_compression);
@@ -82,8 +77,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MarkCache * mark_cache_,
     UncompressedCache * uncompressed_cache_,
     VectorSimilarityIndexCache * vector_similarity_index_cache_,
-    MergeTreeReaderSettings settings_,
-    bool interruptible_marks_read_)
+    MergeTreeReaderSettings settings_)
     : index(index_)
     , data_part_info(std::move(data_part_info_))
     , marks_count(marks_count_)
@@ -92,7 +86,6 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , uncompressed_cache(uncompressed_cache_)
     , vector_similarity_index_cache(vector_similarity_index_cache_)
     , settings(std::move(settings_))
-    , interruptible_marks_read(interruptible_marks_read_)
 {
 }
 
@@ -126,8 +119,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             all_mark_ranges,
             mark_cache,
             uncompressed_cache,
-            patchSettings(settings, substream.type),
-            interruptible_marks_read);
+            patchSettings(settings, substream.type));
 
         stream->adjustRightMark(last_mark);
         stream->seekToStart();

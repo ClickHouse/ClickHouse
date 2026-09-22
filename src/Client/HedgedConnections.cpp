@@ -1,5 +1,5 @@
 #include <Core/Protocol.h>
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
@@ -20,6 +20,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
@@ -58,7 +59,6 @@ HedgedConnections::HedgedConnections(
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
           context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
-          /*fail_if_replica_unprobed_=*/ true,
           table_to_check_,
           priority_func)
     , context(std::move(context_))
@@ -242,12 +242,11 @@ void HedgedConnections::sendQuery(
             modified_settings[Setting::parallel_replica_offset] = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
-        /// The analyzer is the only query analysis this server has, but a replica in a rolling upgrade
-        /// can be older than 26.9 and have it switched off by its own profile. The setting is never
-        /// `changed` here anymore, so force it into the changed set to be sent: the initiator decides
-        /// how a query is analyzed on every server that takes part in it, and the two analyses do not
-        /// speak the same inter-server protocol.
-        modified_settings.set("allow_experimental_analyzer", true);
+        /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+        /// Make the analyzer being set, so it will be effectively applied on the remote server.
+        /// In other words, the initiator always controls whether the analyzer enabled or not for
+        /// all servers involved in the distributed query processing.
+        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
         /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
         /// servers of a distributed query must agree on it even when it comes only from server/profile
