@@ -55,7 +55,7 @@ For this tutorial, you'll need:
     <Step title="Preprocess and insert the data" id="preprocess-import-data">
 
         You can use the `url` function to stream data into ClickHouse. Some preprocess is required first.
-        The query below inserts 5 million rows into the `uk_price_paid` table and performs the following preprocessing steps:
+        The query below inserts 25+ million rows into the `uk_price_paid` table and performs the following preprocessing steps:
         - splits the `postcode` to two different columns - `postcode1` and `postcode2`, which is better for storage and queries
         - converts the `time` field to date as it only contains `00:00` time
         - ignores the [UUID](/reference/data-types/uuid) field because it isn't needed for analysis
