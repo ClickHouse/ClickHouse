@@ -1,0 +1,14 @@
+-- a sample older than the TTL window goes to the samples table only
+2	1
+-- the recent samples table holds one part, not one per partition of the expired range
+1
+-- a block of only expired samples writes nothing to the recent samples table
+4	1
+1
+-- a query inside the TTL window still reads the kept sample from the recent samples table
+1	0
+2
+-- a query outside the TTL window reads the expired samples from the samples table
+0	1
+4
+1
