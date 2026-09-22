@@ -125,6 +125,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
     ProjectionsDescription other;
     for (const auto & projection : projections)
         other.add(projection.clone());
+    for (const auto & definition_ast : unavailable)
+        other.addUnavailable(definition_ast->clone());
 
     return other;
 }
@@ -869,6 +871,19 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
+    for (const auto & definition_ast : unavailable)
+    {
+        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
+            continue;
+        if (if_not_exists)
+            return;
+        throw Exception(
+            ErrorCodes::ILLEGAL_PROJECTION,
+            "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
+            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
+            projection.name);
+    }
+
     auto insert_it = projections.cend();
 
     if (first)
@@ -893,6 +908,14 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     auto it = map.find(projection_name);
     if (it == map.end())
     {
+        for (auto unavailable_it = unavailable.begin(); unavailable_it != unavailable.end(); ++unavailable_it)
+        {
+            if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
+                continue;
+            unavailable.erase(unavailable_it);
+            return;
+        }
+
         if (if_exists)
             return;
 
@@ -905,6 +928,20 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
+{
+    unavailable.push_back(std::move(definition_ast));
+}
+
+Names ProjectionsDescription::getUnavailableNames() const
+{
+    Names names;
+    names.reserve(unavailable.size());
+    for (const auto & definition_ast : unavailable)
+        names.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
+    return names;
 }
 
 void ProjectionsDescription::replace(ProjectionDescription && projection)
