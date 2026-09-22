@@ -1066,9 +1066,8 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        /// Log only at debug level: an error-level log entry would be reported as an error of the query
-        /// even though the query succeeds. Logging directly rather than through `tryLogCurrentException`
-        /// leaves the exception unmarked, so `~Exception` still escalates an important error code.
+        /// Debug level: an error-level entry is forwarded to the client as an error of this query, which succeeds.
+        /// A direct log leaves the exception unmarked, so `~Exception` still escalates an important error code.
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
@@ -1218,7 +1217,6 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        /// Log only at debug level for the same reason as in `getTablesIteratorImpl`.
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
@@ -1257,7 +1255,6 @@ VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /
     }
     catch (...)
     {
-        /// Log only at debug level for the same reason as in `getTablesIteratorImpl`.
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
