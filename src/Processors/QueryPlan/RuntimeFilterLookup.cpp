@@ -196,7 +196,7 @@ detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr
 
 void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
 {
-    if (!range_supported || !positive_filter)
+    if (!enabled || !range_supported || !positive_filter)
         return;
 
     range_min = range.left;

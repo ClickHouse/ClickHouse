@@ -73,7 +73,7 @@ namespace
         Int64 scale_multiplier = 1;
         Int64 scale_divisor = 1;
 
-        switch (interval_kind.kind)
+        switch (interval_kind)
         {
             case IntervalKind::Kind::Nanosecond:
             {
