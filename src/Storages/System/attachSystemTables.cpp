@@ -1164,7 +1164,7 @@ alias_for:
 .description
 Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.
 
-The values are the ones this server uses, which need not be the compiled-in defaults: the `<merge_tree>` and `<replicated_merge_tree>` sections of the server configuration sets them, and the `compatibility` setting rolls them back to an older release's. The `source` column names which of those a value came from, and `changed` is `source != 'default'`.
+The values are the ones this server uses, which need not be the compiled-in defaults: the `<merge_tree>` and `<replicated_merge_tree>` sections of the server configuration set them, and the `compatibility` setting rolls them back to an older release's. The `source` column names which of those a value came from, and `changed` is `source != 'default'`.
 
 A setting that is also writable under an older name has a row for each name, as in [`system.settings`](/reference/system-tables/settings); `alias_for` is empty on the row of the name the setting is declared under and names that setting on the others. Add `WHERE alias_for = ''` to a query that reads this table as a list of settings, one row per setting.
 
@@ -1173,6 +1173,17 @@ For the settings in effect for one table, rather than for the engine, see [`syst
     attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", R"DOCS_MD(
 .description
 Settings of every table engine that has settings of its own, with the value the engine would give a table created now, and where that value comes from. `system.merge_tree_settings` is this table restricted to the `MergeTree` family; `system.table_settings` reports the same settings per table, as they are actually in effect.
+
+Describes engines rather than tables: for the settings in effect for one table, see [system.table_settings](/reference/system-tables/table_settings).
+
+.examples
+```sql
+SELECT engine, name, value, `default` FROM system.engine_settings WHERE engine = 'Memory';
+```
+
+.see_also
+- [system.table_settings](/reference/system-tables/table_settings)
+- [system.merge_tree_settings](/reference/system-tables/merge_tree_settings)
 )DOCS_MD");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", R"DOCS_MD(
 .description
@@ -2015,6 +2026,22 @@ expression:  WatchID > 0
     attachNoDescription<StorageSystemTableSettings>(context, system_database, "table_settings", R"DOCS_MD(
 .description
 Settings of every table as they are actually in effect, which need not be what its `CREATE` query states: a value can come from the server configuration, the `compatibility` setting, a named collection or metadata shared between replicas. The `source` column says which.
+
+An engine that keeps no settings of its own reports only what the table's `SETTINGS` clause states - plain object storage (`S3`, `GCS`, `AzureBlobStorage`, `HDFS`), `File` and `URL` among them. A setting known only from that clause has an empty `default`, `type` and `description` unless the engine lists it in [system.engine_settings](/reference/system-tables/engine_settings).
+
+The value of a setting a named collection supplied is shown as `[HIDDEN]`, with `is_masked = 1`, to a reader who could not read that collection from [system.named_collections](/reference/system-tables/named_collections) - a collection is secret as a whole, not only the keys a masking rule knows. Which setting it supplied is still reported.
+
+A table is shown to a user who has the `SHOW TABLES` privilege on it. The [SHOW TABLE SETTINGS](/reference/statements/show) statement reads this table for one table.
+
+.examples
+```sql
+CREATE TABLE tbl (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096;
+SELECT name, value, source FROM system.table_settings WHERE database = currentDatabase() AND table = 'tbl' AND changed;
+```
+
+.see_also
+- [system.engine_settings](/reference/system-tables/engine_settings)
+- [SHOW TABLE SETTINGS](/reference/statements/show)
 )DOCS_MD");
     attach<StorageSystemLicenses>(context, system_database, "licenses", R"DOCS_MD(
 .description
