@@ -38,6 +38,9 @@ public:
 
     CatalogTables getTables() const override;
 
+    /// S3 table buckets are always in S3.
+    std::optional<StorageType> getStorageType() const override { return StorageType::S3; }
+
     bool managesTableLocation() const override { return true; }
 
     bool tryGetTableMetadata(
@@ -45,7 +48,7 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data, bool if_exists) const override;
 
 protected:
     /// Override the network primitives instead of `getAuthHeaders` so the SigV4 signer has

@@ -485,6 +485,19 @@ def test_create_and_insert_delta_table(started_cluster):
     assert len(commits) == 2, commits
 
 
+def test_create_without_engine_requires_format(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("v2_create_no_engine")
+    create_database(node, db_name)
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {db_name}.`default.created` (id Int32)"
+    )
+    assert "mixed-format Unity DataLakeCatalog" in error
+    assert "explicit `Iceberg`- or `DeltaLake`-family table engine" in error
+    assert "LOGICAL_ERROR" not in error
+
+
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_pat")

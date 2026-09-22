@@ -37,6 +37,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -137,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 database_replicated_allow_explicit_uuid;
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
+    extern const SettingsBool datalake_create_table_as_ignore_unsupported_source_properties;
     extern const SettingsBool data_type_default_nullable;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
@@ -1796,6 +1798,21 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage, bool allow_settings)
+{
+    if (storage.primary_key)
+        return "PRIMARY KEY";
+    if (storage.sample_by)
+        return "SAMPLE BY";
+    if (storage.ttl_table)
+        return "TTL";
+    if (storage.unique_key)
+        return "UNIQUE KEY";
+    if (!allow_settings && storage.settings)
+        return "engine SETTINGS";
+    return nullptr;
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2046,6 +2063,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.columns_list)
         visitor.visitTableExpressions(*create.columns_list);
 
+    const bool engine_user_specified = create.storage && create.storage->engine;
+    const bool columns_user_specified = create.columns_list;
+    const bool comment_user_specified = create.comment;
+
+    const char * datalake_unsupported_storage_clause = nullptr;
+    if (create.storage)
+        datalake_unsupported_storage_clause = findUnsupportedDatalakeStorageClause(*create.storage, engine_user_specified);
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -2151,12 +2176,105 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.cluster.empty())
     {
+        checkDatabaseSupportsOnClusterDDL(database);
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
 
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+
+    if (database && database->isDatalakeCatalog())
+    {
+        const bool ignore_unsupported_source_properties
+            = !as_table_saved.empty()
+            && getContext()->getSettingsRef()[Setting::datalake_create_table_as_ignore_unsupported_source_properties];
+
+        if (create.is_ordinary_view || create.is_materialized_view
+            || create.is_dictionary || create.attach || create.is_clone_as
+            || create.replace_table || create.replace_view)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DataLakeCatalog supports only plain CREATE TABLE; "
+                "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
+
+        if (engine_user_specified)
+            database->validateCreateTableEngine(*create.storage->engine);
+
+        if (datalake_unsupported_storage_clause)
+        {
+            if (engine_user_specified)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DataLakeCatalog CREATE TABLE with an explicit table engine supports only "
+                    "PARTITION BY, ORDER BY, and engine SETTINGS; "
+                    "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported "
+                    "(got {})", datalake_unsupported_storage_clause);
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
+                "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported "
+                "(got {})", datalake_unsupported_storage_clause);
+        }
+
+        if (!ignore_unsupported_source_properties || columns_user_specified)
+        {
+            for (const auto & column : properties.columns)
+            {
+                if (column.default_desc.expression || column.default_desc.kind != ColumnDefaultKind::Default)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Column '{}': {} is not yet supported by DataLakeCatalog table creation",
+                        column.name, toString(column.default_desc.kind));
+
+                if (!column.comment.empty() || column.codec || column.ttl
+                    || !column.settings.empty() || column.statistics.hasExplicitStatistics())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Column '{}': COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY "
+                        "are not supported by DataLakeCatalog table creation",
+                        column.name);
+            }
+
+            if (!properties.indices.empty() || !properties.constraints.empty() || !properties.projections.empty()
+                || (create.columns_list && (create.columns_list->primary_key || create.columns_list->primary_key_from_columns)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
+        }
+
+        if (create.comment && (!ignore_unsupported_source_properties || comment_user_specified))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table COMMENT is not supported by DataLakeCatalog table creation "
+                "(note: CREATE TABLE ... AS inherits the comment from the source table)");
+
+        if (!ignore_unsupported_source_properties && !as_table_saved.empty() && create.storage)
+        {
+            if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*create.storage, false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Source table {}.{} has {}, which a DataLakeCatalog table cannot represent; "
+                    "CREATE TABLE ... AS supports only columns, PARTITION BY, and ORDER BY",
+                    backQuoteIfNeed(getContext()->resolveDatabase(as_database_saved)),
+                    backQuoteIfNeed(as_table_saved), inherited_clause);
+        }
+
+        if (ignore_unsupported_source_properties)
+        {
+            if (!columns_user_specified)
+            {
+                ColumnsDescription plain_columns;
+                for (const auto & column : properties.columns)
+                    plain_columns.add(ColumnDescription(column.name, column.type));
+
+                properties.columns = std::move(plain_columns);
+                properties.indices = {};
+                properties.constraints = {};
+                properties.projections = {};
+
+                auto columns_list = make_intrusive<ASTColumns>();
+                columns_list->set(columns_list->columns, formatColumns(properties.columns));
+                create.set(create.columns_list, columns_list);
+            }
+
+            if (!comment_user_specified)
+                create.reset(create.comment);
+        }
+    }
 
     if (create.isTemporary() && create.replace_table)
     {
@@ -2274,7 +2392,24 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard, mode);
+    bool created = false;
+    try
+    {
+        created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
+    }
+    catch (const Exception & e)
+    {
+        if (!create.if_not_exists || e.code() != ErrorCodes::TABLE_ALREADY_EXISTS
+            || !database || !database->isDatalakeCatalog())
+            throw;
+        LOG_INFO(
+            getLogger("InterpreterCreateQuery"),
+            "CREATE TABLE IF NOT EXISTS {}.{} created nothing: {}",
+            backQuoteIfNeed(create.getDatabase()),
+            backQuoteIfNeed(create.getTable()),
+            e.message());
+        created = false;
+    }
 
     if (!created)   /// Table already exists
     {
@@ -2387,7 +2522,7 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool engine_user_specified)
 {
     if (create.isTemporary())
     {
@@ -2483,6 +2618,63 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
+    }
+
+    auto & create_query = query_ptr->as<ASTCreateQuery &>();
+    if (database->isDatalakeCatalog() && !as_table_saved.empty())
+    {
+        String as_database_name = getContext()->resolveDatabase(as_database_saved);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+
+        if (engine_user_specified)
+        {
+            if (!create_query.storage->partition_by
+                && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                create_query.storage->set(create_query.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+            if (!create_query.storage->order_by
+                && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                create_query.storage->set(create_query.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+        }
+        else
+        {
+            ASTPtr partition_by;
+            ASTPtr order_by;
+            if (create_query.storage)
+            {
+                if (create_query.storage->partition_by)
+                    partition_by = create_query.storage->partition_by->clone();
+                if (create_query.storage->order_by)
+                    order_by = create_query.storage->order_by->clone();
+            }
+
+            if (!partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                partition_by = as_storage_metadata->getPartitionKeyAST()->clone();
+            if (!order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                order_by = as_storage_metadata->getSortingKeyAST()->clone();
+
+            auto storage_ast = make_intrusive<ASTStorage>();
+            create_query.set(create_query.storage, storage_ast);
+            if (partition_by)
+                create_query.storage->set(create_query.storage->partition_by, partition_by);
+            if (order_by)
+                create_query.storage->set(create_query.storage->order_by, order_by);
+        }
+    }
+
+    if (database->isDatalakeCatalog() && !engine_user_specified)
+    {
+        if (!create_query.columns_list
+            || !create_query.columns_list->columns
+            || create_query.columns_list->columns->children.empty())
+        {
+            auto columns_declare_list = make_intrusive<ASTColumns>();
+            columns_declare_list->set(columns_declare_list->columns, formatColumns(properties.columns));
+            create_query.set(create_query.columns_list, columns_declare_list);
+        }
+
+        database->createTable(getContext(), create.getTable(), nullptr, query_ptr);
+        return true;
     }
 
     data_path = database->getTableDataPath(create);
@@ -2622,7 +2814,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             is_restore_from_backup);
 
         /// If schema was inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
@@ -2814,6 +3005,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                         : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
                     : "REPLACE TABLE"));
 
+        chassert(!database->isDatalakeCatalog());
+
         /// For a plain create the final name must not already exist (as an active table, as a dictionary, or
         /// reserved by a detached table). Check it up front, before the create-only validations below (table
         /// name length, cyclic dependencies) and before authorizing or running the populating SELECT, so that
@@ -2945,7 +3138,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, /*engine_user_specified=*/false);
         ddl_guard.reset();
         chassert(done);
         created = true;

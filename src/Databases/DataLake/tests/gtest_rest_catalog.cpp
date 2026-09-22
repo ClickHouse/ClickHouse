@@ -21,6 +21,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/JSON/Object.h>
 #include <Poco/SharedPtr.h>
 #include <Poco/URI.h>
 
@@ -28,6 +29,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <utility>
 
 using namespace DataLake;
 
@@ -319,6 +321,24 @@ private:
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 
+class ManagedLocationRestCatalog final : public RestCatalog
+{
+public:
+    explicit ManagedLocationRestCatalog(DB::ContextPtr context_)
+        : RestCatalog(
+            "warehouse",
+            "http://127.0.0.1:1",
+            /* auth_scope */ "",
+            /* oauth_server_uri */ "",
+            /* oauth_server_use_request_body */ false,
+            /* flat_namespaces */ false,
+            std::move(context_))
+    {
+    }
+
+    bool managesTableLocation() const override { return true; }
+};
+
 void expectThrowsCode(std::function<void()> fn, int expected_code)
 {
     try
@@ -350,6 +370,30 @@ bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
         context);
 
     return catalog.empty();
+}
+
+TEST(RestCatalog, ManagedLocationCatalogRejectsExplicitMetadataPath)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    ManagedLocationRestCatalog catalog(std::move(context));
+
+    try
+    {
+        catalog.createTable(
+            "namespace",
+            "table",
+            "s3://user-chosen/prefix/metadata/v1.metadata.json",
+            new Poco::JSON::Object,
+            DB::CompressionMethod::None,
+            /* if_not_exists */ false);
+        FAIL() << "expected an explicit location to be rejected";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_TRUE(e.message().contains("omit the `ENGINE` clause"));
+    }
 }
 
 DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool flat_namespaces)

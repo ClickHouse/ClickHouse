@@ -89,6 +89,13 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    void prepareForDrop(ContextPtr query_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->prepareForDrop(query_context);
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};

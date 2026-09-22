@@ -449,7 +449,17 @@ bool writeMetadataFileAndVersionHint(
         }
         else
         {
-            break;
+            /// Remove the metadata file written above, otherwise version-hint resolution could later
+            /// pick this uncommitted file as the latest version.
+            LOG_INFO(
+                getLogger("IcebergMetadataFileWriter"),
+                "Removing the uncommitted Iceberg metadata file {}: the version hint is already at version {}, "
+                "at or past version {} this commit tried to write, so the write did not commit",
+                storage_metadata_path,
+                old_version,
+                metadata_file_info.version);
+            object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
+            return false;
         }
         ++i;
     }
@@ -861,6 +871,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
+        if (*param <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires a positive width, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
@@ -868,6 +880,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
+        if (*param <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires a positive number of buckets, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
