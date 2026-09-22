@@ -17,26 +17,29 @@ namespace DB
 {
 class TableJoin;
 class HashJoin;
+class PartitionedHashJoin;
+class MatchedRowsStats;
 
 /**
- * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
+ * Efficient and highly parallel implementation of external memory JOIN based on an in-memory hash join
+ * (`HashJoin`, or `PartitionedHashJoin` when the query runs `partitioned_hash`).
  * Supports most of the JOIN modes, except CROSS and ASOF.
  *
  * The joining algorithm consists of three stages:
  *
  * 1) During the first stage we accumulate blocks of the right table via @addBlockToJoin.
  * Each input block is split into multiple buckets based on the hash of the row join keys.
- * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
- * When the size of HashJoin exceeds the limits, we double the number of buckets.
+ * The first bucket is added to the in-memory join, and the remaining buckets are written to disk for further processing.
+ * When the size of the in-memory join exceeds the limits, we double the number of buckets.
  * There can be multiple threads calling addBlockToJoin, just like HashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
- * The first bucket is joined in-memory via HashJoin::joinBlock, and the remaining buckets are written to the disk.
+ * The first bucket is joined in-memory via the in-memory join's `joinBlock`, and the remaining buckets are written to the disk.
  *
  * 3) When the last thread reading left table block finishes, the last stage begins.
  * Each @DelayedJoinedBlocksTransform calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
- * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into in-memory HashJoin,
+ * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into the in-memory join,
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
@@ -47,7 +50,8 @@ class GraceHashJoin final : public IJoin
     class FileBucket;
     class DelayedBlocks;
 
-    using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
+    /// The join of one bucket, see `partitioned_buckets`.
+    using InMemoryJoinPtr = std::shared_ptr<IJoin>;
 
     struct GraceHashJoinStats
     {
@@ -63,7 +67,7 @@ class GraceHashJoin final : public IJoin
         MatchedRowsAccumulator matched_left;
         MatchedRowsAccumulator matched_right;
 
-        void foldIn(const HashJoin & in_memory_join);
+        void foldIn(UInt64 right_table_rows, UInt64 keys, size_t peak_bytes, const MatchedRowsStats * match_stats);
     };
 
 public:
@@ -80,7 +84,8 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
         size_t external_join_threshold_,
-        size_t max_threads_);
+        size_t max_threads_,
+        bool partitioned_buckets_ = false);
 
     ~GraceHashJoin() override;
 
@@ -126,6 +131,17 @@ private:
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
+    /// The calls to the bucket's join beyond `IJoin`, each with a `HashJoin` and a `PartitionedHashJoin` arm.
+    /// The bytes the overflow checks compare with the limits: what `HashJoin` holds now, or what the
+    /// partitioned join predicts it will hold once it builds its table at the barrier.
+    size_t inMemoryBytes(const IJoin & join) const;
+    size_t inMemoryPeakBytes(const IJoin & join) const;
+    BlocksList releaseInMemoryBlocks(IJoin & join) const;
+    /// The partitioned join builds its table in its post-build phase, so that phase runs here for every
+    /// bucket; a `HashJoin` bucket keeps its post-build optimizations for the single-bucket case.
+    void finishInMemoryBuild(IJoin & join) const;
+    void foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & join) const;
+
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block, size_t worker_id);
 
@@ -136,6 +152,7 @@ private:
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
+    bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
 
     /// Add bucket_count new buckets
     /// Throws if a bucket creation fails
@@ -173,6 +190,7 @@ private:
     const size_t max_num_buckets;
     const size_t external_join_threshold;
     const size_t max_threads;
+    const bool partitioned_buckets;
 
     Names left_key_names;
     Names right_key_names;

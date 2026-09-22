@@ -2,8 +2,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Common/HashTable/HashTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -65,18 +65,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// Filled from one thread, then shared unchanged, so always the serial map layout.
-HashJoinPtr makeStorageJoinHashJoin(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
+/// The Join table engine's mode of the partitioned hash join: filled one block at a time under the
+/// storage's write lock, then shared unchanged with the queries.
+PartitionedHashJoinPtr makeStorageJoinTable(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
 {
-    return std::make_shared<HashJoin>(
+    return std::make_shared<PartitionedHashJoin>(
+        PartitionedHashJoin::JoinTableTag{},
         std::move(table_join),
         std::make_shared<const Block>(std::move(right_sample_block)),
-        overwrite,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false);
+        overwrite);
 }
 
 }
@@ -109,7 +106,7 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+    join = makeStorageJoinTable(table_join, getRightSampleBlock(), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -169,8 +166,7 @@ bool StorageJoin::optimize(
 void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
-    size_t dummy = current_bytes;
-    join->shrinkStoredBlocksToFit(dummy, /* worker_id = */ 0, true);
+    join->shrinkStoredBlocksToFit();
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -191,7 +187,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+    join = makeStorageJoinTable(table_join, getRightSampleBlock(), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -215,7 +211,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+    auto new_data = makeStorageJoinTable(table_join, getRightSampleBlock(), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -263,7 +259,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
+JoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -284,7 +280,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
 
-    /// The prebuilt join is reused as is (see reuseJoinedData below), so it cannot serve an
+    /// The prebuilt table is shared as is (see `shareJoinTable` below), so it cannot serve an
     /// expression the query derived: the names are unqualified, the saved block has a different
     /// layout and the maps variant may differ.
     if (analyzed_join->getMixedJoinExpression())
@@ -333,17 +329,16 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone
-        = makeStorageJoinHashJoin(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
+    PartitionedHashJoinPtr join_clone = makeStorageJoinTable(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);
-    join_clone->reuseJoinedData(*join);
+    join_clone->shareJoinTable(*join);
 
     return join_clone;
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+JoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
     const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
@@ -826,10 +821,13 @@ std::vector<size_t> packedKeyOrder(const Sizes & clause_sizes, const std::option
 
 }
 
+/// Reads a Join table back out of its partitioned join: the one table's cells in position order, each
+/// with the rows its mapped value names. A LEFT or INNER table does not store the key columns in its
+/// blocks, so they are recovered from the cell's key.
 class JoinSource final : public ISource
 {
 public:
-    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
+    JoinSource(PartitionedHashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
         : ISource(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
@@ -842,17 +840,18 @@ public:
 
         column_indices.resize(sample_block->columns());
 
-        auto & saved_block = join->getJoinedData()->sample_block;
+        const HashJoin & inner = *join->hash_join;
+        const auto & saved_block = inner.getJoinedData()->sample_block;
         std::unordered_map<String, size_t> key_output_positions;
 
         for (size_t i = 0; i < sample_block->columns(); ++i)
         {
             const auto & [_, type, name] = sample_block->getByPosition(i);
-            if (join->right_table_keys.has(name))
+            if (inner.right_table_keys.has(name))
             {
                 key_pos = i;
                 key_output_positions.emplace(name, i);
-                const auto & column = join->right_table_keys.getByName(name);
+                const auto & column = inner.right_table_keys.getByName(name);
                 restored_block.insert(column);
             }
             else
@@ -868,7 +867,7 @@ public:
         /// Key slots of a packed map key, in engine-clause order. They come from the clause and not
         /// from right_table_keys, which deduplicates a repeated key name while the packed key does not.
         const auto & key_names_right = table_join.getOnlyClause().key_names_right;
-        const auto & key_sizes = join->getKeySizes().at(0);
+        const auto & key_sizes = inner.getKeySizes().at(0);
         if (key_names_right.size() != key_sizes.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -890,30 +889,33 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!join->data->hasStoredColumns())
+        if (!join->storedData().hasStoredColumns())
             return {};
 
+        /// The inner join's own maps stay empty; their variant only names the shape the table mirrors.
+        const HashJoin & inner = *join->hash_join;
         Chunk chunk;
         if (!joinDispatch(
-                join->kind,
-                join->strictness,
-                join->data->maps.front(),
-                join->getMapsKind(),
-                [&](auto kind, auto strictness, auto & map)
+                inner.kind,
+                inner.strictness,
+                inner.data->maps.front(),
+                inner.getMapsKind(),
+                [&](auto kind, auto strictness, auto & maps_shape)
                 {
-                    /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
+                    /// `StorageJoin` reads the right rows back out of the table, so it never stores them
                     /// in a map that keeps none.
-                    if constexpr (SetJoinMaps<decltype(map)>)
+                    using MapsShape = std::decay_t<decltype(maps_shape)>;
+                    if constexpr (SetJoinMaps<MapsShape>)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
                     else
-                        chunk = createChunk<kind, strictness>(map);
+                        chunk = createChunk<kind, strictness>(std::get<typename HashJoinTableMapsFor<MapsShape>::Type>(join->clause.tableMaps().maps));
                 }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }
 
 private:
-    HashJoinPtr join;
+    PartitionedHashJoinPtr join;
     TableLockHolder lock_holder;
 
     UInt64 max_block_size;
@@ -930,18 +932,18 @@ private:
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
 
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Chunk createChunk(const Maps & maps)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Tables>
+    Chunk createChunk(const Tables & tables)
     {
         MutableColumns mut_columns = restored_block.cloneEmpty().mutateColumns();
 
         size_t rows_added = 0;
 
-        switch (join->data->type)
+        switch (join->storedData().type)
         {
 #define M(TYPE)                                           \
     case HashJoin::Type::TYPE:                                \
-        rows_added = fillColumns<KIND, STRICTNESS, HashJoin::Type::TYPE>(*maps.TYPE, mut_columns); \
+        rows_added = fillColumns<KIND, STRICTNESS, HashJoin::Type::TYPE>(*tables.TYPE, mut_columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
 #undef M
@@ -950,8 +952,8 @@ private:
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_JOIN_KEYS,
                     "Cannot read a Join table whose keys are stored as {}: the key values are not recoverable "
-                    "from the map. Read it with a JOIN or joinGet instead",
-                    join->data->type);
+                    "from the table. Read it with a JOIN or joinGet instead",
+                    join->storedData().type);
         }
 
         if (!rows_added)
@@ -980,11 +982,13 @@ private:
         return Chunk(std::move(columns), num_rows);
     }
 
+    /// `Map` is the shared table, or the fixed map of the direct-index key types; both iterate their
+    /// occupied cells and hold the standard join cells.
     template <JoinKind KIND, JoinStrictness STRICTNESS, HashJoin::Type TYPE, typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns)
     {
         size_t rows_added = 0;
-        const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
+        const StoredBlock * const * stored_columns = join->storedData().stored_columns_index->blocksData();
         const KeyLayout layout = makeKeyLayout<TYPE, Map>();
 
         if (!position)

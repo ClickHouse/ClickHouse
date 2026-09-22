@@ -43,6 +43,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -1012,7 +1013,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader right_sample_block,
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context,
-    bool use_parallel_layout)
+    bool use_parallel_layout,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
@@ -1051,19 +1053,62 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
 
+    /// The spilling wrapper needs the left sample; the legacy planner cannot always build one, and
+    /// then the join runs in memory.
+    auto sanitized_left_sample = [&]() -> SharedHeader
+    {
+        Block left_sample_block(left_sample_columns);
+        if (!sanitizeBlock(left_sample_block, false))
+            return nullptr;
+        return std::make_shared<const Block>(std::move(left_sample_block));
+    };
+    const bool spill_to_disk
+        = analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk() && GraceHashJoin::isSupported(analyzed_join);
+    /// The partitioned join serves this shape and `join_algorithm` lists it: `partitioned_hash` itself,
+    /// and the in-memory join of `auto` and the buckets of `grace_hash` when it is listed as well.
+    const bool partitioned_hash_wanted
+        = analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*analyzed_join);
+    auto make_partitioned_join = [&]() -> std::shared_ptr<IJoin>
+    {
+        const auto & settings = context->getSettingsRef();
+        if (spill_to_disk)
+            if (auto left_sample = sanitized_left_sample())
+                return std::make_shared<SpillingHashJoin>(
+                    PartitionedCollectingTag{},
+                    analyzed_join,
+                    left_sample,
+                    right_sample_block,
+                    context->getTempDataOnDisk(),
+                    settings[Setting::grace_hash_join_initial_buckets],
+                    settings[Setting::grace_hash_join_max_buckets],
+                    settings[Setting::max_threads],
+                    HashJoinStatsCollectingParams{},
+                    /*any_take_last_row_=*/false,
+                    rhs_size_estimation);
+        return std::make_shared<PartitionedHashJoin>(
+            analyzed_join,
+            right_sample_block,
+            settings[Setting::max_threads],
+            /*any_take_last_row_=*/false,
+            HashJoinStatsCollectingParams{},
+            /*max_bytes_before_external_join_=*/0,
+            rhs_size_estimation);
+    };
+
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        /// `partitioned_hash` exists only in the analyzer-based planner; the legacy planner falls
-        /// back to `hash` / `parallel_hash` at plan time.
+        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
         algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const auto & settings = context->getSettingsRef();
 
-        if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
-            && GraceHashJoin::isSupported(analyzed_join))
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && partitioned_hash_wanted)
+            return make_partitioned_join();
+
+        if (spill_to_disk)
         {
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
@@ -1129,16 +1174,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 context->getTempDataOnDisk(),
                 /*any_take_last_row_=*/false,
                 analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin(),
-                context->getSettingsRef()[Setting::max_threads]);
+                context->getSettingsRef()[Setting::max_threads],
+                /*partitioned_buckets_=*/partitioned_hash_wanted);
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
         const auto & settings = context->getSettingsRef();
 
-        if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
-            && GraceHashJoin::isSupported(analyzed_join))
+        if (spill_to_disk)
         {
+            if (partitioned_hash_wanted)
+                return make_partitioned_join();
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
             {
@@ -1163,7 +1210,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 /*any_take_last_row_=*/false,
                 HashJoinStatsCollectingParams{},
                 settings[Setting::max_threads],
-                use_parallel_layout);
+                use_parallel_layout,
+                partitioned_hash_wanted,
+                rhs_size_estimation);
+        if (partitioned_hash_wanted)
+            return make_partitioned_join();
         return std::make_shared<HashJoin>(
             analyzed_join,
             right_sample_block,
@@ -1183,15 +1234,16 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     auto right_sample_block = joined_plan->getCurrentHeader();
     /// The old analyzer has no join-order pass, so the right side is sized by walking
     /// `joined_plan`. That plan is not optimized yet, so the index analysis must not be kept.
+    const std::optional<UInt64> rhs_size_estimation
+        = QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode(), /*filter=*/nullptr, /*keep_index_analysis=*/false)
+              .estimated_rows;
     const bool use_parallel_layout = preferParallelHashLayout(
-        analyzed_join->kind(),
-        QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode(), /*filter=*/nullptr, /*keep_index_analysis=*/false)
-            .estimated_rows,
-        context->getSettingsRef()[Setting::parallel_hash_join_threshold]);
+        analyzed_join->kind(), rhs_size_estimation, context->getSettingsRef()[Setting::parallel_hash_join_threshold]);
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
-        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, use_parallel_layout);
+        auto join = tryCreateJoin(
+            alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, use_parallel_layout, rhs_size_estimation);
         if (join)
             return join;
     }
