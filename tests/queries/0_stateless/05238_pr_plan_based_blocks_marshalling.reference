@@ -1,0 +1,35 @@
+-- total, above ReadFromParallelReplicas, ReadFromParallelReplicas steps
+1	0	1
+0	0	1
+1	0	1
+1	0	1
+-- aggregating, local plan, marshalling on
+0	71071
+1	71214
+2	71357
+3	71500
+4	71643
+5	71786
+6	70929
+-- aggregating, local plan, marshalling off
+0	71071
+1	71214
+2	71357
+3	71500
+4	71643
+5	71786
+6	70929
+-- plain, local plan, marshalling on
+0	0
+0	7
+0	14
+0	21
+0	28
+-- aggregating, no local plan, marshalling on
+0	71071
+1	71214
+2	71357
+3	71500
+4	71643
+5	71786
+6	70929

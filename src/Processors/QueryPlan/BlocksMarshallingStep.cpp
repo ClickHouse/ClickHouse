@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 
 #include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -79,6 +80,12 @@ QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 
 void BlocksMarshallingStep::updateOutputHeader()
 {
+}
+
+void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry);
+void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("BlocksMarshalling", BlocksMarshallingStep::deserialize);
 }
 
 }
