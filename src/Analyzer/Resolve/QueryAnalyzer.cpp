@@ -196,6 +196,18 @@ String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
     return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
 }
 
+/// True for a WITH element declared AS MATERIALIZED, before or after its replacement by a TableNode.
+bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->isMaterialized();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->isMaterialized();
+    if (const auto * table_node = node->as<TableNode>())
+        return table_node->isMaterializedCTE();
+    return false;
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -1552,7 +1564,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+    auto cte_nodes_it = scope.cte_name_to_query_node.find(full_name);
+    if (cte_nodes_it == scope.cte_name_to_query_node.end())
+        return {};
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -1566,10 +1580,16 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     ///
     /// To accomplish this behaviour it's not allowed to resolve identifiers to
     /// CTE that is being resolved.
-    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+    ///
+    /// With `analyzer_compatibility_cte_redefinition` a name can have several definitions; the latest one
+    /// not being resolved wins, so a redefinition reads the previous definition and the query body the last one.
+    auto & cte_nodes = cte_nodes_it->second;
+    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(),
+        [this](const QueryTreeNodePtr & node) { return !ctes_in_resolve_process.contains(node); });
+    if (cte_node_it == cte_nodes.rend())
         return {};
 
-    auto & cte_node = cte_query_node_it->second;
+    auto & cte_node = *cte_node_it;
     auto * query_node = cte_node->as<QueryNode>();
     auto * union_node = cte_node->as<UnionNode>();
 
@@ -6531,18 +6551,18 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     /// Prevent recursive CTE references during subquery resolution.
                     const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
+                    QueryTreeNodes cte_map_nodes;
                     for (auto * s = &scope; s; s = s->parent_scope)
                     {
                         auto it = s->cte_name_to_query_node.find(cte_name);
                         if (it != s->cte_name_to_query_node.end())
                         {
-                            cte_map_node = it->second;
+                            cte_map_nodes = it->second;
                             break;
                         }
                     }
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
                         ctes_in_resolve_process.insert(cte_map_node);
 
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
@@ -6553,7 +6573,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     else
                         resolveUnion(subquery, subquery_scope);
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
                         ctes_in_resolve_process.erase(cte_map_node);
 
                     checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
@@ -7009,6 +7029,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     auto & with_nodes = query_node_typed.getWith().getNodes();
 
+    const bool allow_cte_redefinition = scope.context->getSettingsRef()[Setting::analyzer_compatibility_cte_redefinition];
+
     for (auto & node : with_nodes)
     {
         auto * subquery_node = node->as<QueryNode>();
@@ -7019,12 +7041,31 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             continue;
         const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
-        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
-        if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "CTE with name {} already exists. In scope {}",
-                cte_name,
-                scope.scope_node->formatASTForErrorMessage());
+        auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
+        if (!cte_nodes.empty())
+        {
+            if (!allow_cte_redefinition)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_cte_redefinition "
+                    "to let a later definition shadow the earlier one. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            if (query_node_typed.isRecursiveWith())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined in a recursive WITH clause. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// A redefinition is rejected on its second registration, so only the first node can be materialized.
+            if (isMaterializedCTEDefinition(node) || isMaterializedCTEDefinition(cte_nodes.front()))
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined because it is declared as MATERIALIZED. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
+        cte_nodes.push_back(node);
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
