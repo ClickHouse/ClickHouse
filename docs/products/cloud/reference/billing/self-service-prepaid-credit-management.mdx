@@ -48,7 +48,7 @@ All amounts are in ClickHouse Credits (CHC), where 1 CHC equals \$1 of usage. If
 
 ### Organization balances {#organization-balances}
 
-The table below the summary contains one row per organization:
+Each row in the table below the summary represents one organization, with data reflecting all of that organization's prepaid balances.
 
 - **Organization** shows the organization's name, a partially masked organization ID, and a link to its billing page for a breakdown of credit balances.
 - **Credits granted**, **Expired credits**, **Credits used**, and **Credits available** use the same definitions as the summary, but apply to that organization's prepaid credits.
@@ -59,7 +59,7 @@ The table below the summary contains one row per organization:
 | --- | --- |
 | **Active** | The organization has one or more prepaid credit balances that have not expired. |
 | **Expires soon** | The organization has only one active prepaid balance, and it expires within 60 days. This status remains until the balance expires. |
-| **Expired** | All prepaid balances on the organization have expired. |
+| **Expired** | All prepaid balances on the organization have end dates in the past. |
 | **Spent** | All prepaid balances on the organization have been consumed but have not expired. This status takes precedence over **Active**. |
 | **No Prepaid Credits** | The organization has no prepaid credits. |
 
@@ -82,7 +82,7 @@ To transfer credits, you need the [Manage billing details](/products/cloud/refer
 ### Transfer rules {#transfer-rules}
 
 - You can transfer only **active prepaid credits**. You can't transfer trial credits.
-- A transfer changes the organizations that consume the credits. It doesn't change the total active credits granted under your committed contract.
+- A credit transfer modifies the prepaid credits available to the source and destination organizations. It doesn't change the total active credits granted under your committed contract.
 - Transferring prepaid credits into an organization in a trial or a grace period for non-payment makes it a prepaid organization. It starts consuming those credits.
 - You can transfer all remaining prepaid credits out of a source organization only if it has a [backup payment method](/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) or no services. Otherwise, the maximum transfer is 75% of the source organization's credit balance.
 - You can't transfer credits between ClickHouse Cloud and [Bring Your Own Cloud (BYOC)](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) organizations.
