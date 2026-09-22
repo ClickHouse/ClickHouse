@@ -35,7 +35,9 @@ Si primero quiere probar esta integración sin modificar su configuración actua
 * Archivo JAR de OpenTelemetry JMX Metric Gatherer (instrucciones de descarga a continuación)
 
 <Steps>
-  <Step title="Obtener la API key de ClickStack" id="get-api-key">
+  <Step>
+    #### Obtener la API key de ClickStack
+
     El JMX Metric Gatherer envía datos al endpoint OTLP de ClickStack, que requiere autenticación.
 
     1. Abre HyperDX en la URL de tu ClickStack (p. ej., http://localhost:8080)
@@ -52,7 +54,9 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     ```
   </Step>
 
-  <Step title="Descargue el JMX Metric Gatherer de OpenTelemetry" id="download-jmx">
+  <Step>
+    #### Descargue el JMX Metric Gatherer de OpenTelemetry
+
     Descargue el archivo JAR del JMX Metric Gatherer:
 
     ```bash
@@ -61,7 +65,9 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     ```
   </Step>
 
-  <Step title="Verifique que JMX de Kafka esté habilitado" id="verify-jmx">
+  <Step>
+    #### Verifique que JMX de Kafka esté habilitado
+
     Asegúrese de que JMX esté habilitado en sus brókeres de Kafka. Para despliegues con Docker:
 
     ```yaml
@@ -71,7 +77,7 @@ Si primero quiere probar esta integración sin modificar su configuración actua
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... other Kafka configuration
+          # ... otra configuración de Kafka
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -90,7 +96,9 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     ```
   </Step>
 
-  <Step title="Despliega JMX Metric Gatherer con Docker Compose" id="deploy-jmx">
+  <Step>
+    #### Despliega JMX Metric Gatherer con Docker Compose
+
     Este ejemplo muestra una configuración completa con Kafka, JMX Metric Gatherer y ClickStack. Ajusta los nombres de los servicios y los endpoints para que coincidan con tu despliegue actual:
 
     ```yaml
@@ -168,7 +176,9 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     * `10000` - Intervalo de recopilación en milisegundos (10 segundos)
   </Step>
 
-  <Step title="Verificar métricas en HyperDX" id="verify-metrics">
+  <Step>
+    #### Verificar métricas en HyperDX
+
     Inicie sesión en HyperDX y confirme que se estén recibiendo métricas:
 
     1. Vaya a Chart Explorer
@@ -186,10 +196,10 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     Para generar actividad y recopilar más métricas:
 
     ```bash
-    # Create a test topic
+    # Crear un topic de prueba
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # Send test messages
+    # Enviar mensajes de prueba
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -200,13 +210,15 @@ Si primero quiere probar esta integración sin modificar su configuración actua
 </Steps>
 
 <div id="demo-dataset">
-  ## Dataset de demostración
+  ## Conjunto de datos de demostración
 </div>
 
 Para quienes quieran probar la integración de métricas de Kafka antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos pregenerado con patrones realistas de métricas de Kafka.
 
 <Steps>
-  <Step title="Descargar el conjunto de datos de muestra de métricas" id="download-sample">
+  <Step>
+    #### Descargar el conjunto de datos de muestra de métricas
+
     Descargue los archivos de métricas pregenerados (29 horas de métricas de Kafka con patrones realistas):
 
     ```bash
@@ -228,7 +240,9 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     * **20:00-22:00: Descenso nocturno** - Caída pronunciada hasta los niveles nocturnos
   </Step>
 
-  <Step title="Iniciar ClickStack" id="start-clickstack">
+  <Step>
+    #### Iniciar ClickStack
+
     Inicie una instancia de ClickStack:
 
     ```bash
@@ -238,7 +252,9 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     ```
   </Step>
 
-  <Step title="Cargar métricas en ClickStack" id="load-metrics">
+  <Step>
+    #### Cargar métricas en ClickStack
+
     Cargue las métricas directamente en ClickHouse:
 
     ```bash
@@ -252,7 +268,9 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     ```
   </Step>
 
-  <Step title="Verificar métricas en HyperDX" id="verify-demo-metrics">
+  <Step>
+    #### Verificar métricas en HyperDX
+
     Una vez cargadas, la forma más rápida de ver las métricas es a través del dashboard preconfigurado.
 
     Continúe en la sección [Dashboards y visualización](#dashboards) para importar el dashboard y ver todas las métricas de Kafka de una vez.
@@ -266,18 +284,20 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
 </Steps>
 
 <div id="dashboards">
-  ## Dashboard y visualización
+  ## Paneles y visualización
 </div>
 
 Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visualizaciones esenciales de las métricas de Kafka.
 
 <Steps>
-  <Step title="Descargue la configuración del dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Descargue el archivo de configuración del dashboard</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Descargue</TrackedLink> la configuración del dashboard
   </Step>
 
-  <Step title="Importe el dashboard preconfigurado" id="import-dashboard">
-    1. Abra HyperDX y vaya a la sección Dashboard
+  <Step>
+    #### Importe el dashboard preconfigurado
+
+    1. Abra HyperDX y vaya a la sección Paneles
     2. Haga clic en **Import Dashboard** en la esquina superior derecha, en el menú de puntos suspensivos
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Botón para importar dashboard" />
@@ -287,7 +307,9 @@ Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visual
     <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Diálogo para finalizar la importación" />
   </Step>
 
-  <Step title="Vea el dashboard" id="created-dashboard">
+  <Step>
+    #### Vea el dashboard
+
     El dashboard se creará con todas las visualizaciones preconfiguradas:
 
     <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Dashboard de métricas de Kafka" />
@@ -410,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * Supervisar varios brókers de Kafka añadiendo instancias adicionales de JMX Metric Gatherer con atributos de recurso `kafka.broker.id` únicos
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Llevar a producción
 </div>
 
-Esta guía envía métricas directamente desde JMX Metric Gatherer al endpoint OTLP de ClickStack, lo que funciona bien para pruebas e implementaciones pequeñas.
+Esta guía envía métricas directamente desde JMX Metric Gatherer al endpoint OTLP de ClickStack, lo cual funciona bien para pruebas y despliegues pequeños.
 
-Para entornos de producción, despliega tu propio OpenTelemetry Collector como agente para recibir métricas del exportador JMX y reenviarlas a ClickStack. Esto proporciona procesamiento por lotes, resiliencia y gestión centralizada de la configuración.
+Para entornos de producción, implemente su propio OpenTelemetry Collector como agente para recibir métricas del exportador JMX y reenviarlas a ClickStack. Esto proporciona procesamiento por lotes, resiliencia y una gestión centralizada de la configuración.
 
-Consulta [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue para producción y ejemplos de configuración del collector.
+Consulte [Ingesta mediante OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue para producción y ejemplos de configuración del collector.

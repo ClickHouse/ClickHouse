@@ -6,6 +6,10 @@ tags: ['セキュリティと認証']
 keywords: ['行レベル', 'カラムレベル', 'セキュリティ']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
   ## ClickHouse と ClickHouse Cloud はどちらも行レベルおよびカラムレベルのアクセス制限をサポートしています
 </div>
@@ -13,7 +17,5 @@ keywords: ['行レベル', 'カラムレベル', 'セキュリティ']
 ClickHouse と ClickHouse Cloud はどちらも、ロールベースのアクセス制御 (RBAC) モデルの実現に必要な、読み取り専用ユーザー向けの行レベルおよびカラムレベルのアクセス制限をサポートしています。
 
 [行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) を使用すると、読み取り専用ユーザーがテーブルに対してクエリを実行したときに、どの行を返すかを指定できます。ClickHouse Cloud では、デフォルトで SQL ベースのワークフローが有効になっています。このワークフローを利用するには、[CREATE](/ja/reference/statements/create/user) でユーザーを作成し、[GRANT](/ja/reference/statements/grant) でそのユーザーにテーブルに対する権限を付与したうえで、適切な [ROW POLICY](/ja/concepts/features/security/access-rights#row-policy-management) を設定します。ユーザーが `SELECT * FROM table` を実行すると、ポリシーで許可された行のみが表示されます。
-
-行ポリシーは、そのサーバー上でデータが読み取られるテーブルをフィルタリングします。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルを経由するクエリをフィルタリングするには、クラスター内の各サーバーにある基になるローカルテーブルにポリシーを作成します。`Distributed` テーブル自体に設定したポリシーはリモートサーバーに送信されるクエリには適用できないため、このような読み取りは、フィルタリングされていない行を暗黙的に返すのではなく拒否されます。イニシエーターが構築済みの読み取りプランを送信する場合、ローカルテーブルのポリシーは適用されないため、行ポリシーを強制する必要があるユーザーには [`serialize_query_plan = 0`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を維持してください ([issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照) 。
 
 カラムレベルの制限は、ユーザーやロールにテーブルレベルのアクセスを付与するために、[GRANT ステートメント](/ja/reference/statements/grant) で直接指定できます。ユーザーは、クエリに、自身がアクセスできるカラム *のみ* を含めることができます。`SELECT * FROM table` のように、指定されたすべてのカラムに対するアクセス権をユーザーが持っていないテーブルから制限されたカラムを選択すると、権限が不足していることを示すエラーが返されます。

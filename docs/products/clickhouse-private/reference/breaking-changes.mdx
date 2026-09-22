@@ -1,0 +1,44 @@
+---
+noindex: true
+title: "Breaking Changes"
+sidebarTitle: "Breaking changes"
+description: "Version-specific breaking changes for ClickHouse Private components."
+---
+
+Version-specific breaking changes for ClickHouse Private components. Review this page before upgrading.
+
+------------------------------------------------------------------------
+
+## `helm/onprem-clickhouse-cluster` version `1.1.245` — Shared Catalog and Stateless Servers enabled by default
+
+Starting with chart version `1.1.245`, `featureFlags.enableSharedCatalog` and `featureFlags.disableMetadataPersistentVolumes` default to `true`. New installations will use the [Shared](https://clickhouse.com/docs/engines/database-engines/shared) database engine and stateless Server nodes out of the box.
+
+**New installations** require no action — the new defaults apply automatically.
+
+**Existing installations not yet on Shared Catalog** must explicitly set the previous defaults to avoid an unintended migration on upgrade:
+
+``` yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+When you are ready to migrate, follow the [Migrate to Shared Catalog](/products/clickhouse-private/guides/migrate-to-shared-catalog) guide.
+
+**Existing installations already on Shared Catalog** require no action — the new defaults match your current configuration.
+
+------------------------------------------------------------------------
+
+## `helm/onprem-clickhouse-cluster` version `1.1.210`
+
+Starting with chart version `1.1.210`, new config constraints are included by default. If you are using a ClickHouse server version **lower than 25.10**, you must exclude these constraints by adding the following to your server configuration:
+
+``` yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+Without this configuration, ClickHouse will fail to start as these settings are not recognized by versions prior to 25.10.

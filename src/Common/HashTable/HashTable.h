@@ -17,7 +17,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <limits>
 #include <utility>
 #include <math.h>
 #include <string.h>
@@ -73,7 +72,7 @@ struct HashTableNoState
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline ALWAYS_INLINE bool bitEquals(T a, T b)
+inline bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
@@ -174,9 +173,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -1103,14 +1102,9 @@ public:
         return buf[place].isZero(*this);
     }
 
-    /// A reservation of zero must be a no-op: the parameterless `resize` below is the
-    /// grow-one-step primitive, so forwarding zero would double the buffer instead. Repeated
-    /// zero reservations (e.g. `reserve(size() + additional)` with both terms zero) would then
-    /// grow an empty table without bound.
     void reserve(size_t num_elements)
     {
-        if (num_elements)
-            resize(num_elements);
+        resize(num_elements);
     }
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
@@ -1491,37 +1485,6 @@ public:
     size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
-    }
-
-    /// Estimates the additional memory charged while inserting this many new keys. Each resize charges
-    /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
-    /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
-    /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
-    {
-        auto projected_grower = grower;
-        const size_t initial_bytes = getBufferSizeInBytes();
-        constexpr size_t max_size = std::numeric_limits<size_t>::max();
-        size_t projected_size = 0;
-        if (common::addOverflow(m_size, additional_keys, projected_size))
-            return max_size;
-        size_t buffer_bytes = initial_bytes;
-        size_t peak_extra_bytes = 0;
-        while (projected_grower.overflow(projected_size))
-        {
-            /// The largest representable power-of-two capacity cannot grow further.
-            if (projected_grower.bufSize() > max_size / 2)
-                return max_size;
-            projected_grower.increaseSize();
-            size_t next_bytes = 0;
-            size_t extra_bytes = 0;
-            if (common::mulOverflow(projected_grower.bufSize(), sizeof(Cell), next_bytes)
-                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
-                return max_size;
-            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
-            buffer_bytes = next_bytes;
-        }
-        return peak_extra_bytes;
     }
 
     size_t getBufferSizeInCells() const

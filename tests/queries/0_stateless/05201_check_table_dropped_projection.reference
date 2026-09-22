@@ -1,7 +1,0 @@
-a part kept the dropped projection
-rows: 100
-check before a mutation: 1
-rows after the mutation: 100
-check after the mutation: 1
-parts reported broken: 0
-sum: 5000

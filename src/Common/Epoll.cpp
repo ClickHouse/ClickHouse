@@ -11,7 +11,6 @@
 #include <unistd.h>
 
 #if defined(OS_DARWIN)
-#include <mutex>
 #include <vector>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -76,13 +75,6 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
     if (events_count == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
-    /// Account the remaining time across EINTR retries from the cumulative elapsed with microsecond
-    /// precision, mirroring ReadBufferFromFileDescriptor::poll. Subtracting whole elapsed milliseconds
-    /// per retry and restarting the stopwatch truncated a sub-millisecond signal period to zero, so a
-    /// periodic signal (e.g. the query profiler's) reset the deadline every retry and the wait could
-    /// never expire.
-    const int original_timeout = timeout;
-    const UInt64 timeout_microseconds = original_timeout >= 0 ? static_cast<UInt64>(original_timeout) * 1000 : 0;
     Stopwatch watch;
     int ready_size = 0;
     while (true)
@@ -94,20 +86,10 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         {
             if (errno == EINTR)
             {
-                /// Only a positive timeout accrues against a deadline. A zero timeout is a
-                /// non-blocking readiness probe (callers use getManyReady(..., 0) to detect an
-                /// already-ready timer/socket/cancel) and a negative timeout is an infinite wait:
-                /// for both, retry the wait unchanged on EINTR. Returning early for a zero timeout
-                /// would let a signal hide an already-ready event for that iteration.
-                if (original_timeout > 0)
+                if (timeout >= 0)
                 {
-                    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-                    if (elapsed_microseconds >= timeout_microseconds)
-                    {
-                        ready_size = 0;
-                        break;
-                    }
-                    timeout = static_cast<int>((timeout_microseconds - elapsed_microseconds + 999) / 1000);
+                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
+                    watch.restart();
                 }
                 continue;
             }
@@ -133,8 +115,7 @@ Epoll::Epoll() : events_count(0)
         throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot create kqueue descriptor");
 }
 
-Epoll::Epoll(Epoll && other) noexcept
-    : epoll_fd(other.epoll_fd), events_count(other.events_count.load()), registered_fds(std::move(other.registered_fds))
+Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
 {
     other.epoll_fd = -1;
 }
@@ -144,18 +125,11 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
     events_count.store(other.events_count.load());
-    registered_fds = std::move(other.registered_fds);
     return *this;
 }
 
 void Epoll::add(int fd, void * ptr, uint32_t events)
 {
-    {
-        std::lock_guard lock(registered_fds_mutex);
-        if (!registered_fds.insert(fd).second)
-            throw Exception(ErrorCodes::EPOLL_ERROR, "Descriptor {} is already registered in kqueue", fd);
-    }
-
     epoll_data_t data{};
     if (ptr)
         data.ptr = ptr;
@@ -164,7 +138,7 @@ void Epoll::add(int fd, void * ptr, uint32_t events)
 
     struct kevent changes[2];
     int n = 0;
-    /// kqueue read/write filters are level-triggered like epoll.
+    /// EV_ADD is idempotent and re-arms the filter; kqueue read/write filters are level-triggered like epoll.
     if (events & EPOLLIN)
         EV_SET(&changes[n++], fd, EVFILT_READ, EV_ADD, 0, 0, reinterpret_cast<void *>(data.u64));
     if (events & EPOLLOUT)
@@ -177,17 +151,11 @@ void Epoll::add(int fd, void * ptr, uint32_t events)
     ++events_count;
 
     if (kevent(epoll_fd, changes, n, nullptr, 0, nullptr) == -1)
-        throw ErrnoException(
-            ErrorCodes::EPOLL_ERROR, "Cannot add descriptor {} (events {}) to kqueue {}", fd, events, epoll_fd);
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot add new descriptor to kqueue");
 }
 
 void Epoll::remove(int fd)
 {
-    {
-        std::lock_guard lock(registered_fds_mutex);
-        registered_fds.erase(fd);
-    }
-
     --events_count;
 
     struct kevent changes[2];
@@ -209,15 +177,6 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
     /// kqueue may report up to two native events per fd (read + write); over-allocate and coalesce below.
     std::vector<struct kevent> received(static_cast<size_t>(max_events) * 2);
 
-    /// Account the remaining time across EINTR retries from the cumulative elapsed, like the
-    /// `epoll_wait` branch above. Subtracting whole elapsed milliseconds per retry and restarting the
-    /// stopwatch truncated a sub-millisecond signal period to zero, so a periodic signal reset the
-    /// deadline every retry and the wait could never expire. On Darwin the query profiler delivers such
-    /// signals with `pthread_kill`. `kevent` takes a `timespec`, so the remaining time is carried in
-    /// microseconds here rather than rounded up to whole milliseconds as the `epoll_wait` API forces.
-    const UInt64 timeout_microseconds = timeout > 0 ? static_cast<UInt64>(timeout) * 1000 : 0;
-    UInt64 remaining_microseconds = timeout_microseconds;
-
     Stopwatch watch;
     int ready_size = 0;
     while (true)
@@ -226,8 +185,8 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         struct timespec * ts_ptr = nullptr;
         if (timeout >= 0)
         {
-            ts.tv_sec = static_cast<time_t>(remaining_microseconds / 1'000'000);
-            ts.tv_nsec = static_cast<long>(remaining_microseconds % 1'000'000) * 1000;
+            ts.tv_sec = timeout / 1000;
+            ts.tv_nsec = static_cast<long>(timeout % 1000) * 1'000'000;
             ts_ptr = &ts;
         }
 
@@ -238,20 +197,10 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         {
             if (errno == EINTR)
             {
-                /// Only a positive timeout accrues against a deadline. A zero timeout is a
-                /// non-blocking readiness probe (callers use getManyReady(..., 0) to detect an
-                /// already-ready timer/socket/cancel) and a negative timeout is an infinite wait:
-                /// for both, retry the wait unchanged on EINTR. Returning early for a zero timeout
-                /// would let a signal hide an already-ready event for that iteration.
-                if (timeout > 0)
+                if (timeout >= 0)
                 {
-                    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
-                    if (elapsed_microseconds >= timeout_microseconds)
-                    {
-                        ready_size = 0;
-                        break;
-                    }
-                    remaining_microseconds = timeout_microseconds - elapsed_microseconds;
+                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
+                    watch.restart();
                 }
                 continue;
             }
