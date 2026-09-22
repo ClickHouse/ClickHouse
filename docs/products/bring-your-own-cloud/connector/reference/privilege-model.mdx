@@ -13,7 +13,13 @@ import { Image } from "/snippets/components/Image.jsx";
 
 This page is the security reference for the ClickHouse Connector: its identities, connections, exact privileges, structural limits, and how every action is attributed. For how the pieces fit together, see [architecture](/products/bring-your-own-cloud/connector/architecture).
 
+<Note>
+The managed-mode workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither `init --managed` nor `init --no-managed`, and it does not ship the customer-create workflow or the `platform` command. The permissions below describe those workflows once that support is available.
+</Note>
+
 ## Identities {#identities}
+
+Managed-mode enrollment, customer service creation, and platform approval use these identities only on a [supported build and deployment](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
 
@@ -23,7 +29,7 @@ This page is the security reference for the ClickHouse Connector: its identities
 - **`pcm-executor`** is the executor's Kubernetes ServiceAccount for the lifecycle of managed services. A ValidatingAdmissionPolicy confines its writes to service namespaces.
 - **`pcm-platform`** is the executor's identity for platform updates. Your `clicklink clctl platform approve` mints its token for 2 hours and never renews it; between approvals the executor has no write access to the platform layer.
 - **The per-service IAM role** (`CH-S3-<service>-<region>-00-Role` by default) is created by `clicklink clctl executor prepare` with your credentials. It is scoped to that service's data and backup buckets and trusted only by that service's Kubernetes ServiceAccount, so neither the executor nor ClickHouse can assume it.
-- **The ambient AWS identity of the executor's node or host** serves two purposes. It logs in to Amazon ECR, through STS, when a platform sync or create pulls a chart. It assumes the read-only pull role you registered for the image check during a platform update. No S3 or IAM calls. Image pulls happen on your nodes under their own pull role. The executor holds no credentials for your buckets or IAM.
+- **The connector EC2 VM's instance profile**, for direct platform access, is used to assume your environment's read-only ECR puller role for both chart login and image checks. The approval CLI uses the same instance-profile path; workstation AWS profiles or SSO credentials do not replace it. Other ECR chart registries use ambient AWS credentials. No S3 or IAM calls. Image pulls happen on your nodes under their own pull role. The executor holds no credentials for your buckets or IAM. See [registry credentials](/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 - **Your own credentials** apply every grant. That is the executor's access grant at `init --managed`, the buckets and role at `prepare`, the permission half of every platform update at `approve`, and the cleanup at `teardown`.
 
 ## What the connector can do {#what-the-connector-can-do}
@@ -40,8 +46,8 @@ This is the complete list of connections the connector opens. All of them origin
 | Your enrollment endpoint | HTTPS (enrollment token or HMAC; no mTLS) | Token redemption and certificate signing (`/v1/pcm/cert/sign`) at install time |
 | Your ClickHouse instances | ClickHouse native protocol | Read-only queries as `pcm_scraper` and `pcm_troubleshooter`, plus the scraper's log-flush statement (see [grants](#clickhouse-grants)); the executor opens no ClickHouse connection |
 | The Kubernetes API server | HTTPS | Namespace-scoped reads and ServiceAccount token requests for the scraper and troubleshooter (both targets); the executor's writes inside service namespaces and, during an approved platform update, inside the platform namespaces; exact-name read and update of the connector's own mTLS Secret to persist renewed certificates (Kubernetes installs only; a VM writes renewals to its local TLS files) |
-| Amazon ECR | HTTPS, the executor's ambient AWS identity, or the read-only pull role it assumes for the image check | Registry login when a platform sync or create pulls a chart from ECR; `DescribeImages` during a platform update to confirm the images exist |
-| AWS STS | HTTPS, ambient AWS identity of the executor's node or host | Credentials for the ECR login, and the assume-role into the read-only pull role you registered for the image check. ECR and STS are the executor's only cloud API calls |
+| Amazon ECR | HTTPS, the read-only pull role assumed using the connector EC2 VM's instance profile for direct platform access; ambient AWS credentials for other ECR chart registries | Registry login when a platform sync or create pulls a chart from ECR; `DescribeImages` during a platform update to confirm the images exist |
+| AWS STS | HTTPS, the connector EC2 VM's instance profile for direct platform access; the configured AWS credential chain for other ECR chart registries | Assumes the read-only pull role for direct platform chart login and image checks; may also supply credentials for other ECR logins. ECR and STS are the executor's only cloud API calls |
 | A container registry, from your cluster nodes | HTTPS | Image pulls for managed services and platform components, through a read-only pull role ClickHouse grants to the node roles you registered, or from your own registry after you import the images |
 | Your identity provider's JWKS endpoint | HTTPS | Operator token validation, only when the session gateway is enabled |
 
@@ -123,6 +129,8 @@ The scraper and troubleshooter have no ClusterRole or ClusterRoleBinding. The ch
 
 #### Executor {#kubernetes-rbac-executor}
 
+The `init --managed` workflow below is unavailable in public `v0.16.0`; confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
+
 In managed mode, `clicklink clctl init --managed` (or `clicklink clctl executor access grant --cluster` followed by `apply --cluster`) applies the executor's grant with your credentials. The grant is the `pcm-executor` ServiceAccount (in the connector namespace on Kubernetes, in `clicklink-system` on a VM install), one ClusterRole bound to it, and the `pcm-executor-prefix-guard` ValidatingAdmissionPolicy.
 
 The verbs are granted cluster-wide because RBAC cannot express a namespace prefix. The admission policy then denies every write from `pcm-executor` that targets a namespace outside the service prefix (`ns-` by default). Its home namespace admits three writes: its own token renewal, the `clicklink-instance-registry` ConfigMap the scraper reads, and, on Kubernetes, the renewed client certificate written back to the `clicklink-mtls` Secret. The policy applies to that ServiceAccount alone and uses `failurePolicy: Fail` and `validationActions: [Deny]`. The ClusterRoleBinding is applied last, after the policy and its binding, so a partially applied grant leaves the executor with no permissions rather than unguarded ones.
@@ -148,6 +156,8 @@ Admission does not run on `get`, `list`, or `watch`, so the executor's reads of 
 
 #### Platform identity {#kubernetes-rbac-platform}
 
+The public `v0.16.0` CLI has no `platform` command; this approval model requires [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+
 `clicklink clctl platform approve` applies the permission half of a platform update with your credentials: Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and ClusterRoleBindings, Roles and RoleBindings, webhook and admission configurations, PriorityClasses, and the StorageClass. It then ensures the `pcm-platform` ServiceAccount, its ClusterRole, the `pcm-platform-scope-guard` ValidatingAdmissionPolicy, and the binding, and mints a bound token valid for 2 hours.
 
 With that token the executor may write only `deployments`, `services`, `configmaps`, `secrets`, `jobs`, and `poddisruptionbudgets`, and only in the platform namespaces the scope guard allows. It may read `pods`, `events`, `namespaces`, `serviceaccounts`, CustomResourceDefinitions, RBAC objects, webhook configurations, StorageClasses, and PriorityClasses to check that the permission half is in place before it applies anything. It never holds `escalate`, `bind`, or `impersonate`, never writes a cluster-scoped kind or an RBAC object, and cannot mint or renew its own token. The token authorizes exactly one bundle: the digest you approved is recorded on the ServiceAccount, and the executor refuses any other.
@@ -158,11 +168,13 @@ With that token the executor may write only `deployments`, `services`, `configma
 - **No exec.** No RBAC contains `pods/exec`; no component can run commands in your pods.
 - **No writes outside service and platform namespaces.** The scraper and troubleshooter hold no `delete` or `patch`. Their only mutations are the exact-name `update` on the connector's own mTLS Secret and `create` on `serviceaccounts/token`, which mints short-lived tokens for their own ServiceAccounts and modifies no stored object. Admission denies the executor's writes outside the service prefix, and its platform writes exist only while a token you minted is valid.
 - **No permission to grant permissions.** Your credentials apply the platform's Namespaces, CRDs, ServiceAccounts, RBAC, webhook and admission configurations, PriorityClasses, and StorageClass during `approve`. The executor's platform identity cannot escalate, bind, or impersonate. Inside a service namespace the executor can create only Roles that grant permissions it already holds.
-- **No credentials for your buckets or IAM.** `clicklink clctl executor prepare` creates the buckets and the per-service role, and `clicklink clctl executor teardown` removes them, both under your credentials. The role is assumable only by that service's pods. The executor uses the ambient AWS identity of its node or host for two calls only. It logs in to Amazon ECR, through STS, when it pulls a chart. It assumes the read-only pull role for a platform update's image check. It cannot read or delete your data.
+- **No credentials for your buckets or IAM.** `clicklink clctl executor prepare` creates the buckets and the per-service role, and `clicklink clctl executor teardown` removes them, both under your credentials. The role is assumable only by that service's pods. For direct platform access, the executor uses the connector EC2 VM's instance profile to assume the read-only ECR puller role for both chart login and image checks. Other ECR chart registries use ambient AWS credentials, as described under [identities](#identities). Its only cloud API calls go to ECR and STS; it cannot read or delete your data.
 - **No knowledge of your default user password.** `clicklink clctl executor prepare` generates it on your side and shows it once (or `clicklink clctl instances create` does, when you pass the inputs as flags). Only its hashes are submitted, so neither the connector nor ClickHouse Cloud can recover it.
 - **Nothing inbound.** ClickHouse Cloud never opens a connection into your environment. The only command paths are the two outbound WebSockets. The troubleshooter refuses every command unless a support session you enabled is active. The executor accepts lifecycle commands only for the services you asked ClickHouse to manage, within the scopes above. Even during a session, the troubleshooter's reach is bounded on both sides. ClickHouse queries are limited to the table allowlist, which refuses `query_log` and `text_log`, so they are never granted. Kubernetes access is limited to the read-only views and pod logs the namespace-scoped Roles grant.
 
 ## What requires your action {#what-requires-your-action}
+
+Before using the managed-mode enrollment, service-creation, or platform-approval commands below, confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team. Those workflows are unavailable in public `v0.16.0`.
 
 - **Enabling managed mode.** The executor runs, and its Kubernetes grant exists, only after you enable managed mode at `init`; the grant is applied with cluster admin. See [managed services](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode).
 - **Creating a service.** `clicklink clctl executor prepare` runs with your AWS credentials to create the buckets and the IAM role, and `clicklink clctl instances create` submits the definition. ClickHouse Cloud cannot create a service in your cluster without both. See [create a service](/products/bring-your-own-cloud/connector/managed-services#create-a-service).
