@@ -715,7 +715,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     bool needs_conversion = false;
     for (size_t i = 0; i < key_size; ++i)
     {
-        auto physical_column = tryGetColumn(primary_key.column_names[i]);
+        auto physical_column = getColumns().tryGetByName(primary_key.column_names[i]);
         if (physical_column
             && isOrderPreservingIntegerWidening(physical_column->type.get(), primary_key.data_types[i].get()))
         {
@@ -732,7 +732,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     Columns logical_index = *physical_index;
     for (size_t i = 0; i < key_size; ++i)
     {
-        auto physical_column = tryGetColumn(primary_key.column_names[i]);
+        auto physical_column = getColumns().tryGetByName(primary_key.column_names[i]);
         if (!physical_column
             || !isOrderPreservingIntegerWidening(physical_column->type.get(), primary_key.data_types[i].get()))
             continue;
@@ -1824,7 +1824,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     for (size_t i = 0; i < key_size; ++i)
     {
         auto index_type = primary_key.data_types[i];
-        if (auto physical_column = tryGetColumn(primary_key.column_names[i]);
+        if (auto physical_column = getColumns().tryGetByName(primary_key.column_names[i]);
             physical_column && isOrderPreservingIntegerWidening(physical_column->type.get(), index_type.get()))
             index_type = physical_column->type;
 
@@ -1841,7 +1841,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     for (size_t j = 0; j < key_size; ++j)
     {
         auto index_type = primary_key.data_types[j];
-        if (auto physical_column = tryGetColumn(primary_key.column_names[j]);
+        if (auto physical_column = getColumns().tryGetByName(primary_key.column_names[j]);
             physical_column && isOrderPreservingIntegerWidening(physical_column->type.get(), index_type.get()))
             index_type = physical_column->type;
 

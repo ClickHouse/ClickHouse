@@ -228,7 +228,7 @@ static bool hasPrimaryKeyIntegerWidening(
             || !std::ranges::contains(primary_key.column_names, command.column_name))
             continue;
 
-        auto physical_column = source_part->tryGetColumn(command.column_name);
+        auto physical_column = source_part->getColumns().tryGetByName(command.column_name);
         if (physical_column
             && isOrderPreservingIntegerWidening(physical_column->type.get(), command.data_type.get()))
             return true;

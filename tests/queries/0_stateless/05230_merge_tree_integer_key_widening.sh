@@ -41,7 +41,7 @@ wait_for_mutation()
 
 cleanup()
 {
-    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_enum_key_widening merge_tree_integer_key_widening_lwd merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening; do
+    for table in merge_tree_integer_key_widening merge_tree_sorting_key_widening merge_tree_signed_key_widening merge_tree_enum_key_widening merge_tree_integer_key_widening_lwd merge_tree_integer_key_widening_reject merge_tree_partition_key_widening merge_tree_sample_key_widening merge_tree_version_key_widening_reject; do
         $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES $table" >/dev/null 2>&1 || true
         $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $table" >/dev/null 2>&1 || true
     done
@@ -124,3 +124,8 @@ expect_failure "ALTER TABLE merge_tree_partition_key_widening MODIFY COLUMN k UI
 client "DROP TABLE IF EXISTS merge_tree_sample_key_widening"
 client "CREATE TABLE merge_tree_sample_key_widening (k UInt16) ENGINE = MergeTree ORDER BY k SAMPLE BY k"
 expect_failure "ALTER TABLE merge_tree_sample_key_widening MODIFY COLUMN k UInt32" "sampling key widening"
+
+
+client "DROP TABLE IF EXISTS merge_tree_version_key_widening_reject"
+client "CREATE TABLE merge_tree_version_key_widening_reject (id UInt8, version UInt16) ENGINE = ReplacingMergeTree(version) PARTITION BY version ORDER BY (id, version)"
+expect_failure "ALTER TABLE merge_tree_version_key_widening_reject MODIFY COLUMN version UInt32" "version partition key widening"

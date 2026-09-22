@@ -29,3 +29,4 @@ rejected: integer to float
 rejected: native integer to UInt128
 rejected: partition key widening
 rejected: sampling key widening
+rejected: version partition key widening
