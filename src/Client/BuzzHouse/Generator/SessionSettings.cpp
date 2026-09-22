@@ -386,7 +386,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_join_runtime_filters_index_analysis", trueOrFalseSetting},
        {"enable_join_transitive_predicates", trueOrFalseSetting},
        {"enable_lazy_columns_replication", trueOrFalseSetting},
-       {"enable_optimize_predicate_expression", trueOrFalseSetting},
        {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
        {"enable_packed_string_keys_in_aggregation", trueOrFalseSetting},
        {"enable_parallel_replicas", trueOrFalseSetting},
