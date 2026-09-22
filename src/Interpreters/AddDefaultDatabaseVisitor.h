@@ -36,15 +36,25 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
+    /// With `qualify_function_table_names_with_database_name_`, the full traversal (`visit`) also
+    /// qualifies the dictionary of `dictGet` and the table of `joinGet` with `database_name`, the
+    /// way `visitTableExpressions` does, instead of leaving `joinGet` alone and resolving `dictGet`
+    /// against the current database of `context`. It is meant for a mutation expression: the text
+    /// is stored and executed later, in a background context whose current database is unrelated to
+    /// the session, so every name in it has to be bound to the database of the mutated table before
+    /// it is stored - the table identifiers already are, and the access check of the mutation
+    /// (`MutationPredicateColumnsAccess`) requires the objects under that database too.
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false)
+        bool only_replace_in_join_ = false,
+        bool qualify_function_table_names_with_database_name_ = false)
         : context(context_)
         , database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
         , only_replace_in_join(only_replace_in_join_)
+        , qualify_function_table_names_with_database_name(qualify_function_table_names_with_database_name_)
     {
         if (!context->isGlobalContext())
         {
@@ -149,6 +159,7 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+    bool qualify_function_table_names_with_database_name = false;
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
@@ -212,6 +223,68 @@ private:
             visitTableExpressionsImpl(*child);
     }
 
+    /// Qualify the table named by the first argument of `joinGet` with `database_name`.
+    void qualifyJoinGetTableName(ASTs & arguments) const
+    {
+        if (arguments.empty())
+            return;
+
+        if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+        {
+            /// A compound identifier is already qualified, a parameterized name is only known
+            /// when the view is called, a temporary table has no database, and an alias of an
+            /// expression is not a table name at all.
+            if (!identifier->compound() && !identifier->isParam()
+                && !external_tables.contains(identifier->name()) && !expression_aliases.contains(identifier->name()))
+            {
+                arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+            }
+        }
+        else if (auto * literal = arguments[0]->as<ASTLiteral>())
+        {
+            auto & literal_value = literal->value;
+            if (literal_value.getType() == Field::Types::String)
+            {
+                auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
+                if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
+                {
+                    qualified_table_name->database = database_name;
+                    literal_value = qualified_table_name->getFullName();
+                }
+            }
+        }
+    }
+
+    /// Qualify the dictionary named by the first argument of `dictGet` with `database_name`.
+    void qualifyDictGetDictionaryName(ASTs & arguments) const
+    {
+        if (arguments.empty())
+            return;
+
+        if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+        {
+            /// A compound identifier is already qualified, and a parameterized name is only
+            /// known when the view is called, so there is nothing to qualify.
+            /// The name is resolved against `database_name` and not against the current database
+            /// of `context`: on the metadata-load paths the context is the loading context, whose
+            /// current database is unrelated to the database owning the definition.
+            if (!identifier->compound() && !identifier->isParam())
+            {
+                auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
+                arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
+            }
+        }
+        else if (auto * literal = arguments[0]->as<ASTLiteral>())
+        {
+            auto & literal_value = literal->value;
+            if (literal_value.getType() == Field::Types::String)
+            {
+                auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
+                literal_value = qualified_dictionary_name.getFullName();
+            }
+        }
+    }
+
     /// Qualify the table names which are carried by function arguments rather than by table
     /// expressions: the dictionary name in the first argument of `dictGet`, the table name in the
     /// first argument of `joinGet` and the table name in the right argument of `IN` (and of the
@@ -220,7 +293,7 @@ private:
     /// `visitTableExpressionsImpl`.
     ///
     /// `joinGet` is qualified here although `visit(ASTFunction &)` of the full traversal leaves it
-    /// alone: the loading dependency graph resolves a bare name against the database owning the
+    /// alone (unless `qualify_function_table_names_with_database_name`): the loading dependency graph resolves a bare name against the database owning the
     /// definition, while `joinGet` itself resolves it against the current database of the query
     /// reading the view or inserting into the table. Persisting the qualified name is what makes
     /// the two agree.
@@ -234,59 +307,11 @@ private:
 
         auto & arguments = function.arguments->children;
 
-        if (is_join_get && !arguments.empty())
-        {
-            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
-            {
-                /// A compound identifier is already qualified, a parameterized name is only known
-                /// when the view is called, a temporary table has no database, and an alias of an
-                /// expression is not a table name at all.
-                if (!identifier->compound() && !identifier->isParam()
-                    && !external_tables.contains(identifier->name()) && !expression_aliases.contains(identifier->name()))
-                {
-                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
-                }
-            }
-            else if (auto * literal = arguments[0]->as<ASTLiteral>())
-            {
-                auto & literal_value = literal->value;
-                if (literal_value.getType() == Field::Types::String)
-                {
-                    auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
-                    if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
-                    {
-                        qualified_table_name->database = database_name;
-                        literal_value = qualified_table_name->getFullName();
-                    }
-                }
-            }
-        }
+        if (is_join_get)
+            qualifyJoinGetTableName(arguments);
 
-        if (is_dict_get && !arguments.empty())
-        {
-            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
-            {
-                /// A compound identifier is already qualified, and a parameterized name is only
-                /// known when the view is called, so there is nothing to qualify.
-                /// The name is resolved against `database_name` and not against the current database
-                /// of `context`: on the metadata-load paths the context is the loading context, whose
-                /// current database is unrelated to the database owning the definition.
-                if (!identifier->compound() && !identifier->isParam())
-                {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
-                    arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
-                }
-            }
-            else if (auto * literal = arguments[0]->as<ASTLiteral>())
-            {
-                auto & literal_value = literal->value;
-                if (literal_value.getType() == Field::Types::String)
-                {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
-                    literal_value = qualified_dictionary_name.getFullName();
-                }
-            }
-        }
+        if (is_dict_get)
+            qualifyDictGetDictionaryName(arguments);
 
         if (is_operator_in && arguments.size() > 1)
         {
@@ -490,6 +515,20 @@ private:
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+
+        if (qualify_function_table_names_with_database_name && function.arguments)
+        {
+            /// The dictionary and the table are bound to `database_name` here, so the name is left
+            /// alone below: for `dictGet` it is compound now, or names an XML dictionary and must
+            /// not be qualified with the current database of `context` either.
+            if (is_dict_get)
+            {
+                qualifyDictGetDictionaryName(function.arguments->children);
+                is_dict_get = false;
+            }
+            if (functionIsJoinGet(function.name))
+                qualifyJoinGetTableName(function.arguments->children);
+        }
 
         for (auto & child : function.children)
         {

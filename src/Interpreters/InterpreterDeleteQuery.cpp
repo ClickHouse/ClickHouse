@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationPredicateColumnsAccess.h>
@@ -150,7 +151,17 @@ BlockIO InterpreterDeleteQuery::execute()
         mut_command.type = MutationCommand::Type::DELETE;
         auto alter_command = make_intrusive<ASTAlterCommand>();
         alter_command->type = ASTAlterCommand::DELETE;
-        alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+        ASTPtr predicate = delete_query.predicate->clone();
+        /// Bind the tables, the dictionary of a `dictGet` and the table of a `joinGet` in the
+        /// predicate to the database of the table, as `InterpreterAlterQuery` does for
+        /// `ALTER ... DELETE`: the stored predicate is executed later in a background context
+        /// with no current database, and the access check above required them under that database.
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), table_id.getDatabaseName(),
+            /*only_replace_current_database_function_=*/ false, /*only_replace_in_join_=*/ false,
+            /*qualify_function_table_names_with_database_name_=*/ true);
+        visitor.visit(predicate);
+        alter_command->predicate = alter_command->children.emplace_back(std::move(predicate)).get();
         mut_command.ast_text = alter_command->formatWithSecretsOneLine();
         mut_command.max_parser_depth = settings[Setting::max_parser_depth];
         mut_command.max_parser_backtracks = settings[Setting::max_parser_backtracks];

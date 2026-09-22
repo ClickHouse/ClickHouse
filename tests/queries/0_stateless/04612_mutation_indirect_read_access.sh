@@ -17,7 +17,7 @@ udf_name="${CLICKHOUSE_DATABASE}_leak_04612"
 other_db="${CLICKHOUSE_DATABASE}_other_04612"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src, xdb_tab;
 DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
@@ -226,6 +226,39 @@ GRANT SELECT ON $other_db.join_tab TO $user_name;
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
 check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
 
+# The stored mutation is bound to the very object the check required. The session's database now
+# holds a dictionary and a Join table of the same names with other values, and the user holds the
+# grants on the mutated table's database's ones: every mutation path reads those, and none of the
+# session's - which the user may read too, so a mismatch would show in the values, not as a denial.
+# The table is its own, so that a mutation left behind cannot fail the other cases.
+echo "-- ... and the stored mutation reads that database's object, not the session's same-named one"
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE $other_db.dict_src (key UInt64, payload String) ENGINE = MergeTree ORDER BY key;
+INSERT INTO $other_db.dict_src VALUES (1, 'from-other-dict'), (2, 'from-other-dict');
+CREATE DICTIONARY $other_db.dict (key UInt64, payload String) PRIMARY KEY key
+SOURCE(CLICKHOUSE(TABLE 'dict_src' DB '$other_db')) LAYOUT(FLAT()) LIFETIME(0);
+CREATE TABLE $other_db.join_tab (id UInt32, payload String) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO $other_db.join_tab VALUES (1, 'joined-other'), (2, 'joined-other');
+INSERT INTO dict_src VALUES (2, 'from-dict');
+SYSTEM RELOAD DICTIONARY dict;
+INSERT INTO join_tab VALUES (2, 'joined');
+CREATE TABLE xdb_tab (id UInt32, name String, name2 String) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO xdb_tab VALUES (1, '', ''), (2, '', ''), (3, '', '');
+GRANT ALTER UPDATE, ALTER DELETE, UPDATE, DELETE, SELECT ON $CLICKHOUSE_DATABASE.xdb_tab TO $user_name;
+GRANT dictGet ON $CLICKHOUSE_DATABASE.dict TO $user_name;
+GRANT SELECT ON $CLICKHOUSE_DATABASE.join_tab TO $user_name;
+"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.xdb_tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)), name2 = joinGet('join_tab', 'payload', id) WHERE id = 1 SETTINGS $off" "$other_db"
+check_access "UPDATE $CLICKHOUSE_DATABASE.xdb_tab SET name = dictGet('dict', 'payload', toUInt64(id)), name2 = joinGet('join_tab', 'payload', id) WHERE id = 2 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
+check_access "ALTER TABLE $CLICKHOUSE_DATABASE.xdb_tab DELETE WHERE dictGet('dict', 'payload', toUInt64(id)) = 'from-other-dict' OR joinGet('join_tab', 'payload', id) = 'joined-other' SETTINGS $off" "$other_db"
+check_access "DELETE FROM $CLICKHOUSE_DATABASE.xdb_tab WHERE dictGet('dict', 'payload', toUInt64(id)) = 'from-other-dict' OR joinGet('join_tab', 'payload', id) = 'joined-other' SETTINGS $off" "$other_db"
+$CLICKHOUSE_CLIENT -q "SELECT id, name, name2 FROM xdb_tab ORDER BY id"
+$CLICKHOUSE_CLIENT -q "
+REVOKE dictGet ON $CLICKHOUSE_DATABASE.dict FROM $user_name;
+REVOKE SELECT ON $CLICKHOUSE_DATABASE.join_tab FROM $user_name;
+"
+
 # A read named inside a subquery, or inside a `JOIN ... ON` condition, is invisible to a walk that
 # only looks at the subquery's `FROM` tables and at the clauses of its `SELECT`.
 echo "-- A named read below the top level is a read too, in a subquery and in a JOIN condition"
@@ -358,7 +391,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DICTIONARY IF EXISTS dict;
-DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src, xdb_tab;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
 DROP DATABASE IF EXISTS $other_db;

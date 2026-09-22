@@ -923,10 +923,12 @@ private:
     /// session's `other`. Requiring the grant on the same table that is read leaves no room for a
     /// user who can read `current_db.other` but not `db1.other`.
     ///
-    /// The object of a `dictGet` / `joinGet` is qualified by the same visitor
-    /// (`visitFunctionTableNameArguments`) and with the same database, so it is resolved here the
-    /// same way: a session on `db2` mutating `db1.t` reads `db1.join_tab`, and requiring the grant
-    /// on `db2.join_tab` would leave this hole open for same-named objects in another database.
+    /// The object of a `dictGet` / `joinGet` is qualified by the same visitor and with the same
+    /// database (its `qualify_function_table_names_with_database_name` mode, which every mutation
+    /// path runs before the expression is stored - `ALTER ... UPDATE / DELETE`, `UPDATE` and
+    /// `DELETE FROM`), so it is resolved here the same way: a session on `db2` mutating `db1.t`
+    /// reads `db1.join_tab`, and requiring the grant on `db2.join_tab` would leave this hole open
+    /// for same-named objects in another database.
     ///
     /// An empty database is kept when the mutated table's database is unknown and there is no
     /// current one: `executeDDLQueryOnCluster` expands an empty database in an access element to

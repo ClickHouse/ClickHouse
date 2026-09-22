@@ -270,18 +270,27 @@ BlockIO InterpreterUpdateQuery::execute()
         ApplyWithSubqueryVisitor::visit(assignments, getContext());
     }
 
-    /// Add default database to table identifiers that we can encounter in the update expression.
+    /// Add default database to table identifiers that we can encounter in the update expression,
+    /// and to the dictionary of a `dictGet` and the table of a `joinGet` in it: the expression is
+    /// executed later in a background context, and its access check
+    /// (`MutationPredicateColumnsAccess`) requires them under the database of the updated table.
     /// A separate visitor per expression: it remembers the names of the recursive common table
     /// expressions it walked, and the two expressions have separate scopes.
     if (update_query.predicate)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), table_id.getDatabaseName(),
+            /*only_replace_current_database_function_=*/ false, /*only_replace_in_join_=*/ false,
+            /*qualify_function_table_names_with_database_name_=*/ true);
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
     }
     if (update_query.assignments)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), table_id.getDatabaseName(),
+            /*only_replace_current_database_function_=*/ false, /*only_replace_in_join_=*/ false,
+            /*qualify_function_table_names_with_database_name_=*/ true);
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
     }

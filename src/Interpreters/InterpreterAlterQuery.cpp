@@ -624,7 +624,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    /// The dictionary of a `dictGet` and the table of a `joinGet` are bound to the same database:
+    /// a mutation expression is executed later in a background context, and its access check
+    /// (`MutationPredicateColumnsAccess`) requires them under the database of the altered table.
+    AddDefaultDatabaseVisitor visitor(
+        getContext(), table_id.getDatabaseName(),
+        /*only_replace_current_database_function_=*/ false, /*only_replace_in_join_=*/ false,
+        /*qualify_function_table_names_with_database_name_=*/ true);
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

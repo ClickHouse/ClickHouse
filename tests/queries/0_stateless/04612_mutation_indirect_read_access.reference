@@ -53,6 +53,14 @@ ACCESS_DENIED
 -- An unqualified dictGet / joinGet object is read from the mutated table's database too
 ACCESS_DENIED
 ACCESS_DENIED
+-- ... and the stored mutation reads that database's object, not the session's same-named one
+OK
+OK
+OK
+OK
+1	from-dict	joined
+2	from-dict	joined
+3		
 -- A named read below the top level is a read too, in a subquery and in a JOIN condition
 ACCESS_DENIED
 ACCESS_DENIED
