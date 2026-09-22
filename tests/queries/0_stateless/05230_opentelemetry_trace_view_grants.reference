@@ -1,0 +1,13 @@
+=== without SELECT on the span log: every path is denied ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== with SELECT on the span log: trace_id and query_id work, the cluster path also needs REMOTE ===
+query	value
+└─ child	
+query	value
+└─ child	
+ACCESS_DENIED
+=== with REMOTE too: the cluster path works ===
+query	value
+└─ child	
