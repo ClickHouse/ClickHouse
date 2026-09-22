@@ -20,9 +20,12 @@ INSERT INTO join_rls_late VALUES (1, 'a'), (2, 'b');
 SELECT key, value FROM join_rls_late ORDER BY key;
 SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls_late AS j ON j.key = p.key ORDER BY p.key; -- { serverError NOT_IMPLEMENTED }
 SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls_late AS j ON j.key = p.key ORDER BY p.key SETTINGS join_algorithm = 'hash'; -- { serverError NOT_IMPLEMENTED }
+SELECT joinGet(join_rls_late, 'value', toUInt64(2)); -- { serverError NOT_IMPLEMENTED }
+SELECT joinGetOrNull(join_rls_late, 'value', toUInt64(2)); -- { serverError NOT_IMPLEMENTED }
 
 DROP ROW POLICY join_rls_policy ON join_rls_late;
 SELECT p.key, j.value FROM probe_join_rls AS p LEFT ANY JOIN join_rls_late AS j ON j.key = p.key ORDER BY p.key;
+SELECT joinGet(join_rls_late, 'value', toUInt64(2)), joinGetOrNull(join_rls_late, 'value', toUInt64(3));
 
 DROP TABLE join_rls;
 DROP TABLE join_rls_late;
