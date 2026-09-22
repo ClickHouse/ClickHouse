@@ -5174,7 +5174,7 @@ Enabled by default.
 If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
 )", 0) \
     DECLARE(UInt64, mutations_sync, 0, R"(
-Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` queries ([mutations](/reference/statements/alter/index#mutations)) synchronously.
+Controls how the client waits for mutation-producing [`ALTER TABLE`](/reference/statements/alter/index) operations, including `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `MATERIALIZE STATISTICS`, and `MODIFY COLUMN` changes that are not metadata-only.
 
 Possible values:
 
