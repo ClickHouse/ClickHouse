@@ -58,6 +58,7 @@ FROM
 -- The runtime filter must be built on the initiator from all rows instead of on each replica from its own
 -- share of them, otherwise the probe side is pruned by a partial filter.
 SET query_plan_join_swap_table = 'true';
+SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
@@ -69,7 +70,8 @@ SELECT countIf(r.k > 0) FROM t_pr_join_fact ALL LEFT JOIN
 
 SELECT
     arrayExists(x -> x LIKE '%ReadFromParallelReplicas%', plan) AS read_distributed,
-    arrayFirstIndex(x -> x LIKE '%──BuildRuntimeFilter%', plan) < arrayFirstIndex(x -> x LIKE '%──Union%', plan) AS filter_local
+    arrayFirstIndex(x -> x LIKE '%──BuildRuntimeFilter%', plan) > 0
+        AND arrayFirstIndex(x -> x LIKE '%──BuildRuntimeFilter%', plan) < arrayFirstIndex(x -> x LIKE '%──Union%', plan) AS filter_local
 FROM
 (
     SELECT groupArray(explain) AS plan
