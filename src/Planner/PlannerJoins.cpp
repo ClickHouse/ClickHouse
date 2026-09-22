@@ -43,6 +43,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 
@@ -1231,9 +1232,25 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        /// Covers the single-level hash-join shapes; the rest falls back to `hash` below, at plan time.
+        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
+            && GraceHashJoin::isSupported(table_join);
+
+        /// The partitioned join has no spilling mode yet, so an external-join limit is one more shape
+        /// that `hash` takes.
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && !spill_to_disk && PartitionedHashJoin::isSupported(*table_join))
+            return std::make_shared<PartitionedHashJoin>(
+                table_join,
+                right_table_expression_header,
+                params.max_threads,
+                params.join_any_take_last_row,
+                stats_collecting_params,
+                params.rhs_size_estimation);
+
+        if (spill_to_disk)
         {
             return std::make_shared<SpillingHashJoin>(
                 table_join,
@@ -1444,7 +1461,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled() && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Only `hash`, `parallel_hash` and `partitioned_hash` joins support multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {

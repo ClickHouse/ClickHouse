@@ -1,0 +1,12 @@
+-- OR of two inequalities: CROSS join plus a filter, executed by ConstantJoin
+Filter column: b < c OR id > id + 30
+Type: cross | Strictness: all | Algorithm: ConstantJoin
+1669	60179088
+1669	60179088
+1669	60179088
+-- a single inequality
+Filter column: b > c
+Type: cross | Strictness: all | Algorithm: ConstantJoin
+1992	59402928
+1992	59402928
+-- INNER ANY is not converted, for either algorithm

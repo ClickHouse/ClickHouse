@@ -1,0 +1,50 @@
+<test>
+    <settings>
+        <join_algorithm>partitioned_hash</join_algorithm>
+        <max_threads>8</max_threads>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <!-- Every left key matches 5000 right rows: 25 billion joined rows out of 5 million probe rows.
+         The joined blocks are already capped at max_joined_block_size_rows. Squashing them again
+         would copy every output row once more. -->
+    <create_query>CREATE TABLE phj_left (key UInt64, val String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE phj_right (key UInt64, val String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO phj_left SELECT number % 1000, toString(number) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO phj_right SELECT number % 1000, toString(number) FROM numbers(5000000)</fill_query>
+
+    <!-- Ten right rows per key and every column read: exercises the row store and the building of joined blocks. -->
+    <create_query>CREATE TABLE phj_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE phj_build_x10 (k UInt64, a Int32, b Int64, c UInt8, d Float64, e FixedString(16)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO phj_probe SELECT rand64() FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO phj_build_x10 SELECT number % 1000000, number, number, number, number, reinterpret(number, 'FixedString(16)') FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <query tag='right_count_fanout'>
+        SELECT count() FROM phj_left AS l RIGHT JOIN phj_right AS r ON l.key = r.key
+        FORMAT Null SETTINGS query_plan_convert_outer_join_to_inner_join = 0
+    </query>
+    <query tag='inner_count_fanout'>
+        SELECT count() FROM phj_left AS l INNER JOIN phj_right AS r ON l.key = r.key FORMAT Null
+    </query>
+    <query tag='inner_x10_all_columns'>
+        SELECT * FROM phj_probe AS l JOIN phj_build_x10 AS r ON (l.k % 1111111) = r.k FORMAT Null
+    </query>
+    <query tag='full_x10_all_columns'>
+        SELECT * FROM phj_probe AS l FULL JOIN phj_build_x10 AS r ON (l.k % 1111111) = r.k
+        FORMAT Null SETTINGS query_plan_convert_outer_join_to_inner_join = 0
+    </query>
+    <!-- Low selectivity: about one probe row in a thousand matches. The joined blocks are small
+         and go straight into the aggregation without being merged. -->
+    <query tag='inner_low_selectivity_agg'>
+        SELECT count(), sum(r.a) FROM phj_probe AS l JOIN phj_build_x10 AS r ON (l.k % 1000000000) = r.k FORMAT Null
+    </query>
+    <query tag='semi_low_selectivity'>
+        SELECT count(), sum(l.k) FROM phj_probe AS l SEMI LEFT JOIN phj_build_x10 AS r ON (l.k % 1000000000) = r.k FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS phj_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS phj_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS phj_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS phj_build_x10</drop_query>
+</test>
