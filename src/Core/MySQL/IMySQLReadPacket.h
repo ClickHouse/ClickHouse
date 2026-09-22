@@ -24,8 +24,7 @@ public:
 protected:
     virtual void readPayloadImpl(ReadBuffer & buf) = 0;
 
-    /// `payload` has to end where the packet ends: the completeness check asks it whether this
-    /// message was read out, not whether the connection ended.
+    /// `payload` has to end where the packet ends.
     void readPayloadFrom(ReadBuffer & payload);
 };
 

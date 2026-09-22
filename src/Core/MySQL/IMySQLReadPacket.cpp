@@ -40,10 +40,7 @@ void IMySQLReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 
 void LimitedReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
 {
-    /// The limit belongs on the payload, not on `in`: `in` is the connection, which continues with
-    /// the next packet, so `expect_eof` there would ask whether the client hung up. On the payload it
-    /// asks what the limit is about - whether this packet carries more than the maximum - and the
-    /// count covers payload bytes instead of packet headers as well.
+    /// On the payload, not on `in`: `in` is the connection, which continues with the next packet.
     MySQLPacketPayloadReadBuffer payload(in, sequence_id);
     LimitReadBuffer limited(payload, {.read_no_more = 10000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
     readPayloadFrom(limited);
