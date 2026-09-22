@@ -23,6 +23,8 @@ bool isMergeRun(int argc, const char * const * argv);
 /// `-timeout=N` is picked up to tell libFuzzer's real timeout from its periodic alarms.
 /// `setup_queries` (may be empty) is executed by the runner before the first input; a failure there
 /// aborts the process, because every later input would run against a broken fixture.
+/// Registers an `atexit` handler that ends the process with `_exit` (see the definition for why
+/// `clickhouse local` is not shut down): a target registers its own `atexit` printers *after* this call.
 void initialize(const int * argc, char *** argv, const String & setup_queries);
 
 /// Executes `query` on the runner thread and returns when it has finished. Query errors are

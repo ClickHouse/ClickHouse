@@ -355,15 +355,21 @@ void initialize(const int * argc, char *** argv, const String & setup_queries)
         }
     }
 
+    /// libFuzzer ends a session (`-max_total_time`, `-runs`) with `exit` on its own thread. The static
+    /// destructors of objects created lazily during the run (function-local singletons such as
+    /// `S3::ClientCacheRegistry::instance()`) run before this handler, so shutting `clickhouse local` down
+    /// now (`LocalServer::cleanup` destroys the tables the inputs created) dereferences destroyed
+    /// singletons: UBSan `applying non-zero offset 8 to null pointer` in `ClientCacheRegistry::unregisterClient`
+    /// from `~S3ObjectStorage`, an abort and an empty-input `crash-da39a3ee...` artifact. The runner is idle
+    /// (the callback returns only when it waits for input) and stays blocked; the process leaves with `_exit`
+    /// after the statistics printers a target registers *after* this call (they run before it). The temporary
+    /// directory of `clickhouse local` (a few hundred KB) is not removed.
     int ret = std::atexit([]()
     {
-        {
-            std::lock_guard lock(mutex);
-            state = FuzzerState::FINISHED;
-        }
-        cv.notify_one();
-        if (runner.has_value())
-            runner->join();
+        std::cout.flush();
+        std::cerr.flush();
+        fflush(nullptr);
+        _exit(0);
     });
 
     if (ret != 0)

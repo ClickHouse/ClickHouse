@@ -787,17 +787,9 @@ extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
     if (DB::LocalFuzzerRunner::isMergeRun(*argc, *argv))
         return 0;
 
-    /// libFuzzer ends a session (`-max_total_time`, `-runs`) with `exit`, which runs the static destructors of
-    /// ClickHouse while the runner thread and the background pools of `clickhouse local` are still alive; that
-    /// aborted the process at the deadline (an empty-input `crash-da39a3ee...` artifact, exit code 134) in some
-    /// sessions. Registered first so that it runs last, after the statistics printers: flush and leave.
-    atexit([]
-    {
-        std::cout.flush();
-        std::cerr.flush();
-        fflush(nullptr);
-        _exit(0);
-    });
+    /// First: its `atexit` handler ends the process with `_exit` and must run after the statistics printers
+    /// registered below (`atexit` handlers run in reverse order of registration).
+    DB::LocalFuzzerRunner::initialize(argc, argv, loadSchema());
 
     DB::JSONASTFuzzer::initializePipeline("json_ast_sql_execution_fuzzer", argc, argv);
     if (const char * value = getenv("JSON_AST_FUZZER_ORACLE"))
@@ -807,7 +799,6 @@ extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
     if (const char * value = getenv("JSON_AST_FUZZER_LAST_INPUT"); value && *value)
         last_input_path = value;
     atexit(printOracleStats);
-    DB::LocalFuzzerRunner::initialize(argc, argv, loadSchema());
     return 0;
 }
 
