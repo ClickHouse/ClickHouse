@@ -196,6 +196,7 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
+        configuration->check(context);
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
@@ -273,25 +274,15 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    std::string disk_name;
-    if constexpr (is_data_lake)
-    {
-        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
-            ? (*settings)[DataLakeStorageSetting::disk].value
-            : "";
-    }
-
-    ObjectStoragePtr current_object_storage;
-    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
-        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
-    else
-        current_object_storage = getObjectStorage(context, !is_insert_query);
-
+    /// For a data-lake function with `SETTINGS disk = '...'` this returns the table's private copy of the
+    /// disk's object storage (see `DataLakeConfiguration::fromDisk`), never the disk's own storage: the
+    /// settings update in `lazyInitializeIfNeeded` must not touch the disk.
+    ///
     /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
     /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        current_object_storage,
+        getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -444,14 +435,14 @@ FROM s3(
 
 Suppose that we have several files with following URIs on S3:
 
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_2.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_3.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_4.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_1.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_2.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_3.csv'
-- 'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_4.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_2.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_3.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_4.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_1.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_2.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_3.csv'
+- 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_4.csv'
 
 Count the number of rows in files ending with numbers from 1 to 3:
 
@@ -510,25 +501,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
+The `**` glob can be used for recursive directory traversal. The following query reads every file named `some_file_1.csv` under `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
+Braces can be combined with `**` to match several filenames recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-Note. It is possible to specify custom URL mappers in the server configuration file. Example:
+The same recursive pattern also works with an `s3://` URL:
+
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
-The URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` would be replaced to `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
-Custom mapper can be added into `config.xml`:
+You can add a custom URL mapper in `config.xml`:
 ```xml
 <url_scheme_mappers>
    <s3>
@@ -1512,7 +1503,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
+ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial: deletion vector reads are supported; manifest compaction isn't supported.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1590,8 +1581,7 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3). This support is read-only: ClickHouse does not write, update, or compact deletion vectors, and `ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 
@@ -2297,7 +2287,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 
 | Paimon Data Type | ClickHouse Data Type
 |-------|--------|
-|BOOLEAN     |Int8      |
+|BOOLEAN     |Bool      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2373,7 +2363,7 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
          {.description = R"DOCS_MD(
-Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
+Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9)
 
 ## Syntax {#syntax}
 
@@ -2478,7 +2468,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
          {.allow_readonly = false});
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on S3.)",
             .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
@@ -2486,7 +2476,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on Azure object store (writes from version 26.9).)",
             .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});

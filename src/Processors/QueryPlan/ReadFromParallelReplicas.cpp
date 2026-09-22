@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -74,6 +75,20 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
+namespace
+{
+/// Formats the fragment for the step description. `actions` and `indexes` are off on purpose: they make
+/// `describeActions` and `describeIndexes` ask every MergeTree read for its analysis result, so building
+/// a description string would run index analysis, which is expensive and can throw (for example when the
+/// analysis exceeds `max_rows_to_read`) even though nothing is being read yet.
+String dumpQueryPlanShape(const QueryPlan & query_plan)
+{
+    WriteBufferFromOwnString buffer;
+    query_plan.explainPlan(buffer, ExplainPlanOptions{.header = true, .description = true, .actions = false, .indexes = false});
+    return buffer.str();
+}
+}
+
 ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     std::shared_ptr<const QueryPlan> query_plan_,
     ClusterPtr cluster_,
@@ -107,7 +122,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlan(*query_plan), fmt::join(replicas, ", "));
+    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlanShape(*query_plan), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 

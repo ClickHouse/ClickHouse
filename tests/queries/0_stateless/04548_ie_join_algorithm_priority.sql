@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- The position of `ie_join` in the `join_algorithm` list sets its priority over the
 -- equality-based algorithms. Listed last, it takes only joins that hash cannot execute
 -- (no equality conditions in the ON section; a null-safe equality counts as an equality).

@@ -12,7 +12,9 @@
 -- The fix runs the in-place pipeline against a clone of `source`, leaving the original intact so
 -- `DelayedCreatingSetsStep::makePlansForSets` can still build the set. The failpoint
 -- `prepared_sets_build_ordered_set_inplace_fail` fires once inside `CreatingSetsTransform::generate`
--- and skips `finishInsert`, reproducing the silent in-place failure deterministically.
+-- and skips `finishInsert`, reproducing the silent in-place failure deterministically. It fires only
+-- for an in-place build that runs against a clone of its source, which for the nested query below is
+-- the innermost subquery only (see 05137).
 
 DROP TABLE IF EXISTS t_not_ready_set;
 CREATE TABLE t_not_ready_set (k UInt64) ENGINE = MergeTree ORDER BY k;
