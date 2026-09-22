@@ -99,7 +99,7 @@ is enabled:
 Keep `readonly` off the `changeable_in_readonly` list in every profile, and remember that profile restrictions apply system-wide, not per-user.
 </Warning>
 
-Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and get full write access, even over HTTP.
+Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and regain the ability to run the write queries its existing privileges already allow.
 
 This matters everywhere, not just for the profile assigned to the user:
 - Any session can switch to any profile via `SET profile`, since profile selection isn't access-checked (it's only limited by whatever settings constraints are already active).
