@@ -15,7 +15,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The name must start with a letter, or the formatter backticks it and the substitution below has to
 # cope with two spellings of the same collection.
 COLL="c${CLICKHOUSE_TEST_UNIQUE_NAME}"
-PREFIX="05236_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# `CLICKHOUSE_TEST_UNIQUE_NAME` is only the test name and `CLICKHOUSE_DATABASE`, and that database is
+# pinned whenever the runner is given `--database`, so without a run-local part in the query ids the
+# reads below can be answered by an earlier run's rows instead of this one's.
+PREFIX="05236_${CLICKHOUSE_TEST_UNIQUE_NAME}_${RANDOM}${RANDOM}"
 ARMS=0
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
