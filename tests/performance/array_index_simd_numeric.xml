@@ -40,14 +40,6 @@
         SELECT materialize(range(10)::Array(UInt8))
         FROM numbers(1000000)
     </fill_query>
-    <fill_query>
-        INSERT INTO perf_array_index_simd_thresholds
-        SELECT
-            materialize(range(80)::Array(UInt16)),
-            materialize(range(160)::Array(UInt64))
-        FROM numbers(20000)
-    </fill_query>
-
     <query>
         SELECT sum(has(u32, toUInt32(4294967295)))
         FROM perf_array_index_simd_numeric
