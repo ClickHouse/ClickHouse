@@ -654,8 +654,10 @@ public:
         bool is_masked_secret = false,
         const std::vector<size_t> & scalar_subquery_ids = {})
     {
-        /// On the DAG as well as on the node: a constant projected under an alias is rebuilt as a
-        /// fresh column and the marked node goes away with the old one, but the actions survive.
+        /// Recorded here as well as on the node below, because different plan rewrites lose
+        /// different halves: splitting a DAG moves nodes into a fresh one that has no list of its
+        /// own, while projecting a constant under an alias rebuilds the node and loses what was on
+        /// it. Both are read back onto the consuming step.
         for (size_t id : scalar_subquery_ids)
             actions_dag.addScalarSubqueryId(id);
 
