@@ -51,16 +51,21 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    /// Open the SQLite database lazily, on the first external contact (structure inference or execution),
-    /// rather than in `parseArguments`. The table function never creates the database file (`allow_create` is
-    /// always false), so a `SELECT` / `DESCRIBE` / `INSERT` against a missing path fails closed instead of
-    /// fabricating an empty database (matching the storage engine and the `SQLite` format reader). Runs at
-    /// most once per table-function instance.
-    std::shared_ptr<sqlite3> openConnection(ContextPtr context, bool allow_create) const;
+    /// Open the SQLite database on external contact (structure inference or execution) rather than in
+    /// `parseArguments`. The table function never creates the database file (`allow_create` is always false), so
+    /// a `SELECT` / `DESCRIBE` / `INSERT` against a missing path fails closed instead of fabricating an empty
+    /// database (matching the storage engine and the `SQLite` format reader).
+    ///
+    /// The connection is never retained by the table function. A `CREATE TABLE ... AS sqlite(...)` proxy keeps
+    /// the table function alive until the nested storage is first resolved, so a handle kept here would pin the
+    /// database file the path pointed to at that moment, and a same-path replacement made before the first use
+    /// would neither be observed by the nested storage's construction-time schema classification nor release
+    /// the old file. Structure inference and execution are never called on the same instance anyway (see
+    /// `InterpreterCreateQuery`, which instantiates the function once per step), so nothing is lost.
+    std::shared_ptr<sqlite3> openConnection(ContextPtr context) const;
 
     String database_path;
     TableNameOrQuery remote_table_or_query;
-    mutable std::shared_ptr<sqlite3> sqlite_db;
 };
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
@@ -72,11 +77,12 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
 
-    /// Open lazily here (not in `parseArguments`), and never create the database file: a table function
-    /// always refers to an already-existing table, so a missing path can only be a mistake. Even an `INSERT`
-    /// would fail with `no such table` after fabricating an empty database, so opening with `allow_create`
-    /// would only leave a junk file behind. A missing path therefore fails closed for reads and writes alike.
-    /// Reuses the connection already opened by `getActualTableStructure`.
+    /// Open here (not in `parseArguments`), and never create the database file: a table function always refers
+    /// to an already-existing table, so a missing path can only be a mistake. Even an `INSERT` would fail with
+    /// `no such table` after fabricating an empty database, so opening with `allow_create` would only leave a
+    /// junk file behind. A missing path therefore fails closed for reads and writes alike. The connection serves
+    /// the construction-time schema inference of `StorageSQLite` only; neither the storage nor this table
+    /// function retains it.
     ///
     /// When the structure is provided (`cached_columns`), do not open the database here at all and let
     /// `StorageSQLite` open it lazily on the first read or write instead. This path is taken when the nested
@@ -84,13 +90,14 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
     /// `system.tables` - and such a metadata-only access must not fail (or touch the file) just because the
     /// database file is unavailable, mirroring how `ATTACH` of the `SQLite` engine leaves the connection
     /// unopened. The generated-column classification of the explicit column list is then still pending and is
-    /// repaired on the first successful open (see `updateExternalDynamicMetadataIfExists`); a query-backed
-    /// source is read-only and needs no classification.
-    auto connection = sqlite_db;
+    /// repaired on the first successful open (see `updateExternalDynamicMetadataIfExists`), through a fresh
+    /// connection that sees the current database file even if it was replaced at the same path since the table
+    /// was created; a query-backed source is read-only and needs no classification.
+    std::shared_ptr<sqlite3> connection;
     bool generated_columns_reclassification_pending = false;
-    if (!connection && cached_columns.empty())
-        connection = openConnection(context, /* allow_create */ false);
-    else if (!connection)
+    if (cached_columns.empty())
+        connection = openConnection(context);
+    else
         generated_columns_reclassification_pending = !remote_table_or_query.isQuery();
 
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
@@ -105,11 +112,9 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-std::shared_ptr<sqlite3> TableFunctionSQLite::openConnection(ContextPtr context, bool allow_create) const
+std::shared_ptr<sqlite3> TableFunctionSQLite::openConnection(ContextPtr context) const
 {
-    if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, context, /* throw_on_error */ true, allow_create);
-    return sqlite_db;
+    return openSQLiteDB(database_path, context, /* throw_on_error */ true, /* allow_create */ false);
 }
 
 
@@ -122,7 +127,7 @@ ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr conte
     ///
     /// Inferring a structure never creates the database file: a read of a missing path must fail closed rather
     /// than materialize an empty database (fail-open review finding).
-    return StorageSQLite::getTableStructureFromData(openConnection(context, /* allow_create */ false), remote_table_or_query);
+    return StorageSQLite::getTableStructureFromData(openConnection(context), remote_table_or_query);
 }
 
 
@@ -154,8 +159,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     else
         remote_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(args[1], "table_name"));
 
-    /// The database is opened lazily on first use (see `openConnection`) so a `SELECT` of a missing path does
-    /// not fabricate an empty database file here.
+    /// The database is opened on first external contact (see `openConnection`) so a `SELECT` of a missing path
+    /// does not fabricate an empty database file here.
 }
 
 }
