@@ -3,15 +3,19 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
 # A table whose `current-snapshot-id` says "no current snapshot" reads as empty, and plain
-# `OPTIMIZE` must not bring its historical rows back. Both spellings the metadata readers have
-# always accepted are exercised, `-1` and an absent key; JSON `null` fails earlier, inside those
-# readers, so it is out of scope here.
+# `OPTIMIZE` must not bring its historical rows back. Four spellings of that state are exercised:
+# `current-snapshot-id` set to `-1` or absent, and - since `snapshots` is itself optional - an
+# empty and an absent snapshot set. JSON `null` fails earlier, inside the metadata readers, so it
+# is out of scope here.
 #
 # The row counts are asserted on both builds - a cloud build gates `OPTIMIZE` on
 # `IcebergCompactionMetadataGenerator` and throws instead of compacting, which leaves the table
 # empty for a different reason but never resurrects rows. So that a count of zero cannot pass for
 # the wrong reason, the open-source build is additionally held to `OPTIMIZE` succeeding: without
 # that, any exception raised before the refusal would leave the table empty and the test green.
+# On a cloud build the one thing that must never be reached is the background-compaction
+# assertion, which a release build reports as an ordinary exception, so its message is rejected
+# regardless of the build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +23,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
-for VARIANT in negative absent; do
+for VARIANT in negative absent empty_snapshots no_snapshots; do
     TABLE="t_${CLICKHOUSE_DATABASE}_${VARIANT}_${RANDOM}"
     TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
@@ -48,6 +52,12 @@ if variant == "negative":
     meta["current-snapshot-id"] = -1
 else:
     meta.pop("current-snapshot-id", None)
+if variant in ("empty_snapshots", "no_snapshots"):
+    assert meta.get("snapshots"), "expected a non-empty snapshot set to remove"
+    if variant == "empty_snapshots":
+        meta["snapshots"] = []
+    else:
+        meta.pop("snapshots", None)
 json.dump(meta, open(path, "w"))
 PY
 
@@ -62,7 +72,9 @@ PY
         --send_logs_level=fatal --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
     STATUS=$?
     after=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}")
-    if [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
+    if [[ "${ERR}" == *"Background compaction is not initialized"* ]]; then
+        echo "${VARIANT} FAIL: OPTIMIZE reached the background-compaction assertion: ${ERR}"
+    elif [[ "${STATUS}" -ne 0 && "${IS_CLOUD}" != "1" ]]; then
         echo "${VARIANT} FAIL: OPTIMIZE failed on the open-source build: ${ERR}"
     else
         echo "${VARIANT} before=${before} after=${after}"

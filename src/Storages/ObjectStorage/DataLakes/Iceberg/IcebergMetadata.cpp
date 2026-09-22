@@ -1000,6 +1000,10 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
+    /// `snapshots` is optional in the Iceberg spec, so an absent key is an empty history.
+    if (!metadata_object->has(f_snapshots))
+        return {};
+
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     /// snapshot-log is optional; treat an absent log as empty rather than throwing.
     Poco::JSON::Array::Ptr snapshot_logs

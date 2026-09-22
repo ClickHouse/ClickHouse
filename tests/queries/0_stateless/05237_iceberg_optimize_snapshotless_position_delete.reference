@@ -1,2 +1,4 @@
 negative before=0 after=0
 absent before=0 after=0
+empty_snapshots before=0 after=0
+no_snapshots before=0 after=0
