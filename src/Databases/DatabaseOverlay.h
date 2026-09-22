@@ -272,6 +272,7 @@ public:
     /// require a privilege on both the facade name and the source (the facade must not widen
     /// access). Returns `std::nullopt` for plain databases, temporary tables, and null `storage`.
     static std::optional<StorageID> getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage);
+    static std::optional<StorageID> getSourceTableIdForReadonlyFacade(const StorageID & written_id, const IStorage & storage);
 
     /// Shared gate for iterator-based `system.*` readers (`system.parts`, `system.mutations`,
     /// `system.replicas`, queue/consumer tables, ...): returns true when `storage`, reached under

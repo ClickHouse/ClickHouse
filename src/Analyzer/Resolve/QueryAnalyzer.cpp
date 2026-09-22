@@ -72,7 +72,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
@@ -6337,21 +6337,11 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto row_policy_filter = scope.context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    /// When the view is reached through a read-only `Overlay` facade, `storage_id` is the underlying
-    /// source view, but the facade's own row policies must apply too (a row must pass both). Combine
-    /// them here, mirroring `getEffectiveRowPolicyFilter` on the non-inlined path — otherwise
-    /// inlining the view would silently drop the facade filter.
-    if (ids_to_check.size() > 1)
-    {
-        auto facade_filter = scope.context->getRowPolicyFilter(
-            written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
-    }
-
-    bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    /// `written_id` is the facade name when the view is reached through a read-only `Overlay`
+    /// facade: the facade's own row policies apply too (a row must pass both), mirroring the
+    /// non-inlined path - otherwise inlining the view would silently drop the facade filter.
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, written_id, scope.context);
+    bool has_row_policy = row_policy_filter != nullptr;
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();

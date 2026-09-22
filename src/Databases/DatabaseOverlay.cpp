@@ -254,7 +254,14 @@ void DatabaseOverlay::checkSourceDatabaseNamesVisible(const ContextPtr & context
 
 std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)
 {
-    if (!storage || !written_id.hasDatabase())
+    if (!storage)
+        return {};
+    return getSourceTableIdForReadonlyFacade(written_id, *storage);
+}
+
+std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const IStorage & storage)
+{
+    if (!written_id.hasDatabase())
         return {};
 
     /// A parameterized view reached through a facade is re-wrapped into a synthesized
@@ -262,11 +269,11 @@ std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(cons
     /// coincide and cannot reveal the source. The synthesized view carries the id of the
     /// underlying source view instead (recorded by `Context` at the only places that build it,
     /// after the name resolved through a read-only facade).
-    if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
+    if (const auto * view = typeid_cast<const StorageView *>(&storage))
         if (const auto & carried_source_id = view->getOverlaySourceTableId())
             return carried_source_id;
 
-    auto source_id = storage->getStorageID();
+    auto source_id = storage.getStorageID();
     if (!source_id.hasDatabase()
         || (source_id.database_name == written_id.database_name && source_id.table_name == written_id.table_name))
         return {};

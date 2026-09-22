@@ -25,7 +25,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -100,6 +99,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -836,32 +836,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
         /// Reading through a read-only `Overlay` facade requires a grant on the facade as well as
-        /// on the source, so the facade's row policies must apply too. Combine them with the
-        /// source's (a row must pass both).
-        if (const auto & written_id = joined_tables.leftTableStorageID(); isReadonlyOverlayRead(written_id, table_id))
-        {
-            auto facade_filter = context->getRowPolicyFilter(written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
-        }
-        /// A parameterized view reached through a facade: the synthesized storage keeps the
-        /// facade name (the filter above is the facade's), and carries the id of the underlying
-        /// source view, whose row policies must apply too.
-        else if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, storage))
-        {
-            auto source_filter = context->getRowPolicyFilter(source_id->getDatabaseName(), source_id->getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            row_policy_filter = combineRowPolicyFilters(row_policy_filter, source_filter);
-        }
-
-        if (const auto * alias = storage->as<StorageAlias>())
-        {
-            const auto target_storage_id = alias->getTargetTable()->getStorageID();
-            auto target_row_policy_filter = context->getRowPolicyFilter(
-                target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-        }
+        /// on the source, so the row policies of both names apply (a row must pass both); the id
+        /// as written in the query tells the resolver whether a facade is involved.
+        row_policy_filter = getRowPolicyFilterForStorage(*storage, joined_tables.leftTableStorageID(), context);
 
         if (row_policy_filter && context->hasQueryContext())
         {

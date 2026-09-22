@@ -23,7 +23,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -40,6 +39,7 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -536,48 +536,6 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const StorageID & as_written_id, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    /// When the table is reached through a read-only `Overlay` facade, access requires a grant on
-    /// the facade as well as on the source, so both names' row policies must apply. Combine the
-    /// facade's SELECT policies with the source's (a row must pass both). For a plain table the
-    /// storage id above is the source and the facade name is combined here; for a parameterized
-    /// view the synthesized storage keeps the facade name, so the source id (carried on the
-    /// storage) is combined instead.
-    if (auto source_id = overlaySourceIdToAlsoCheck(as_written_id, storage))
-    {
-        const auto & other_id
-            = (source_id->database_name == storage_id.database_name && source_id->table_name == storage_id.table_name)
-            ? as_written_id
-            : *source_id;
-        auto other_filter = query_context->getRowPolicyFilter(
-            other_id.getDatabaseName(), other_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(row_policy_filter, other_filter);
-    }
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -602,7 +560,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
+    if (getEffectiveRowPolicyFilter(*storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -729,7 +687,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
+    if (getEffectiveRowPolicyFilter(*storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -979,7 +937,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, as_written_id, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, as_written_id, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -1332,7 +1290,7 @@ void pushOrderByIntoView(
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
     const auto * row_policy_table_node = table_expression->as<TableNode>();
-    if (getEffectiveRowPolicyFilter(storage, row_policy_table_node ? row_policy_table_node->getStorageID() : storage->getStorageID(), query_context))
+    if (getEffectiveRowPolicyFilter(*storage, row_policy_table_node ? row_policy_table_node->getStorageID() : storage->getStorageID(), query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1783,7 +1741,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
+                || !!getEffectiveRowPolicyFilter(*storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
@@ -2186,13 +2144,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// while a non-pushable filter had already been built for the view path —
                         /// which then fails the `row_policy_filter_not_pushed` guard below with
                         /// `ILLEGAL_PREWHERE` instead of falling back to `StorageView::readImpl`.
-                        const auto & dist_id = underlying_dist->getStorageID();
-                        auto view_row_policy = getEffectiveRowPolicyFilter(
-                            storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
-                        auto dist_row_policy = query_context->getRowPolicyFilter(
-                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
                         const bool has_row_policy
-                            = view_row_policy || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+                            = getEffectiveRowPolicyFilter(*storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context)
+                            || getEffectiveRowPolicyFilter(*underlying_dist, query_context);
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
