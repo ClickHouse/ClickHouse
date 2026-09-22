@@ -377,6 +377,25 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             return false;
         }
 
+        /// The analysis carries the list of columns to read, and it is that list - not the step's own -
+        /// that the read follows while `output_header` is built from the step's own. Handing over an
+        /// analysis is handing over the column list with it, so the two reads have to want the same
+        /// columns. They do whenever they are the same read of the same query, and the passes that
+        /// change a read's columns after analysis - lazy materialization, a rewritten `PREWHERE`,
+        /// vector search - run on both plans. Decline if they ever disagree: sharing one analysis
+        /// cannot serve two column lists.
+        if (analyzed && analyzed->column_names_to_read != replicas_reads[i]->getAllColumnNames())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Read of {} wants columns [{}] but the analysis of the single-node plan reads [{}]; "
+                "not transplanting index analysis",
+                replicas_reads[i]->getStorageID().getNameForLogs(),
+                fmt::join(replicas_reads[i]->getAllColumnNames(), ", "),
+                fmt::join(analyzed->column_names_to_read, ", "));
+            return false;
+        }
+
         if (analyzed)
         {
             replicas_reads[i]->setAnalyzedResult(analyzed);
