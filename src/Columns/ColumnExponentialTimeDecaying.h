@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
