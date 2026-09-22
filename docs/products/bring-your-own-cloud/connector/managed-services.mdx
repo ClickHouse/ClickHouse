@@ -14,6 +14,10 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In managed mode the connector runs a third component, the executor. ClickHouse Cloud operates ClickHouse services in your Kubernetes cluster through it. This page covers creating a service, reading its status, what ClickHouse Cloud does once a service exists, and how a service is retired.
 
+<Note>
+The customer-create workflow below requires support in the CLI, your connector endpoint, and ClickHouse Cloud that is not yet in the public release. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team before preparing resources.
+</Note>
+
 ## What managed mode does {#what-managed-mode-does}
 
 The executor is a daemon in the same `clicklink` binary as the scraper and the troubleshooter. It holds an outbound WebSocket channel to your connector endpoint and receives lifecycle commands from ClickHouse Cloud. It applies each command to the one Kubernetes cluster it is configured for and reports the outcome over the same channel. Like the other components it makes only outbound connections: ClickHouse Cloud never connects into your cluster, and the executor's local API binds to loopback.
@@ -165,14 +169,14 @@ The executor wires the scraper into each service it creates. It does not provisi
 <Tabs>
 <Tab title="Kubernetes" id="troubleshooter-kubernetes">
 ```bash
-clicklink clctl troubleshoot access provision --target helm \
+printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance <name> --instance-namespace ns-<name> \
-  --server <kubernetes-api-server-url> \
+  --server <kubernetes-api-server-url> --ch-admin-password-stdin \
   --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
 ```
 
-Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` and run `helm upgrade`, as shown under [adding ClickHouse instances](/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+`$CH_DEFAULT_PASSWORD` is the `default` user's password that `prepare` printed. The command needs it to authenticate before applying the SQL grants; it does not prompt for it. Then add the Secret and ServiceAccount pair to `troubleshooter.accessBundles` and run `helm upgrade`, as shown under [adding ClickHouse instances](/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
 </Tab>
 <Tab title="Linux VM" id="troubleshooter-vm">
 ```bash

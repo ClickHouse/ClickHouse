@@ -59,7 +59,15 @@ sudo clicklink clctl preflight
 
 ## Managed mode {#managed-mode}
 
-Managed mode runs the executor, which applies the service lifecycle that ClickHouse Cloud drives to your cluster. `init` turns it on at enrollment and fills in the cluster identity (see [enable managed mode](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); the keys below are the ones you might revisit afterwards. To turn managed mode on for a connector installed without it, or off, re-run `init` with `--force` and `--managed` or `--no-managed`. `--no-managed` stops the executor but leaves its cluster grant in place; remove it as described in [stop managed mode](/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). Like every `init` run this needs an entry point: `--handoff` if you kept the bundle, or `--enroll` with a fresh token, as described in [re-runs and recovery](/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+Managed mode runs the executor, which applies the service lifecycle that ClickHouse Cloud drives to your cluster. `init` turns it on at enrollment and fills in the cluster identity (see [enable managed mode](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); the keys below are the ones you might revisit afterwards. To change the configured posture, re-run `init` with `--force` and `--managed` or `--no-managed`. Like every `init` run this needs an entry point: `--handoff` if you kept the bundle, or `--enroll` with a fresh token, as described in [re-runs and recovery](/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+On a VM, `--no-managed` disables the executor in the configuration but does not stop or disable an already-running systemd unit. Stop it explicitly before changing the configuration:
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+On Kubernetes, setting `executor.enabled: false` in the values and applying the change with `helm upgrade` removes the executor Deployment. On both targets the cluster grant remains until you remove it; follow [stop managed mode](/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) to remove that access too.
 
 <Tabs>
 <Tab title="Kubernetes" id="managed-mode-kubernetes">

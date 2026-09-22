@@ -320,6 +320,8 @@ Removes what `prepare` created for a service that ClickHouse Cloud has deleted. 
 
 ### instances create {#instances-create}
 
+This customer-create workflow is not yet available in the public release and requires support in the CLI, connector endpoint, and ClickHouse Cloud. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
+
 Submits a prepared create to ClickHouse Cloud through your connector endpoint, with the connector's own credentials. It prints the spoken name ClickHouse Cloud assigned, the state, and a `watch:` hint that uses your service name. The create body comes from the file `prepare` wrote, or from the four `--deployed-name`, `--data-bucket`, `--backup-bucket`, and `--irsa-role-arn` flags together. A retry with the same inputs returns the first create.
 
 | Flag | Description |
@@ -376,7 +378,9 @@ Prints the commands the executor has recorded, as JSON, newest first. A failed c
 
 ## clicklink clctl platform approve {#platform-approve}
 
-Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. When a chart in the bundle lives in Amazon ECR, it needs AWS credentials that can read it. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+
+For direct access to ClickHouse's registry, run approval on the connector EC2 VM: the CLI uses its instance profile to assume the read-only pull role, independently of your kubeconfig credentials. Other ECR chart registries use ambient AWS credentials. See [registry credentials](/products/bring-your-own-cloud/connector/platform-updates#registry-credentials). The Kubernetes Secret and port-forward workflow below also requires unreleased CLI and chart support; confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
 
 | Flag | Description |
 |------|-------------|

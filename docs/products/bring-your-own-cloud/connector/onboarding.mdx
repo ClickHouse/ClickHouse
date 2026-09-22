@@ -13,6 +13,14 @@ import { Image } from "/snippets/components/Image.jsx";
 
 This page takes you from an enrollment token to a verified connector in managed mode, where the executor applies the service lifecycle that ClickHouse Cloud drives. The connector installs on a Kubernetes cluster (Helm) or a Linux VM (systemd). Token enrollment is the standard flow; when your environment cannot reach your connector endpoint directly, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs). To observe ClickHouse you run yourself without the executor, pass `--no-managed`.
 
+## Managed-mode availability {#managed-mode-availability}
+
+<Warning>
+As of 2026-09-22, the public installer serves `v0.16.0`, which does not include `init --managed`. Customer service creation (`instances create --from-prepare`) and Kubernetes platform approval (`platform approve --secret-namespace`) are also not yet available in a public release.
+
+Before following the managed-mode workflows, ask your ClickHouse account team to confirm support for your deployment target and provide the matching CLI, connector chart or image, and installation instructions. Customer service creation also requires support on your connector endpoint and in ClickHouse Cloud; a newer CLI alone is not sufficient. The public installation commands below do not currently install a release that supports these workflows.
+</Warning>
+
 ## Prerequisites {#prerequisites}
 
 ### Register your environment {#registration}
