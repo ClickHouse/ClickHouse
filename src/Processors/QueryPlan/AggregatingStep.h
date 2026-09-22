@@ -119,6 +119,12 @@ public:
     /// predates the serialized bit keeps the strict resize.
     void enableGradualResize() { gradual_resize_enabled = true; }
     bool isGradualResizeEnabled() const { return gradual_resize_enabled; }
+    /// The source storage reads evenly into its streams (`IStorage::hasEvenlyDistributedRead`), so the step
+    /// plans no pre-aggregation resize at all and the gradual/strict choice never arises for it. Code that
+    /// rebuilds the step without this property (the decorrelation, the plan deserialization) must not carry
+    /// the gradual-resize bit over from such a step: the rebuilt copy does reach the resize branch, and the
+    /// settings are documented to ignore evenly distributed sources.
+    bool storageHasEvenlyDistributedRead() const { return storage_has_evenly_distributed_read; }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
     /// the query is ordered by; the in-order streams may stop only at a boundary of them.
     void setLimitHint(size_t limit, size_t prefix_columns)

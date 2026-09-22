@@ -4,11 +4,15 @@
 -- must keep applying to it: the rebuilt `AggregatingStep` has to carry the gradual-resize mark
 -- over (`AggregatingStep::enableGradualResize`), otherwise the settings silently turn into a no-op
 -- on this shape.
--- `numbers(...)` reports `hasEvenlyDistributedRead = true` and bypasses the pre-aggregation resize
--- entirely, so the aggregated source has to be a `MergeTree` table.
+-- `numbers(...)` and `Memory` report `hasEvenlyDistributedRead = true` and bypass the pre-aggregation
+-- resize entirely, so the aggregated source has to be a `MergeTree` table for the positive cases. The
+-- settings are documented to ignore such sources, and the rebuilt step must honour that too: it is
+-- built without the evenly-distributed-read property (its input is the decorrelating join), so it
+-- would otherwise build a `GradualResize` that the same `GROUP BY` never builds on its own.
 
 DROP TABLE IF EXISTS test_gradual_resize_outer;
 DROP TABLE IF EXISTS test_gradual_resize_inner;
+DROP TABLE IF EXISTS test_gradual_resize_inner_memory;
 
 SET allow_experimental_correlated_subqueries = 1;
 SET min_rows_per_stream_for_gradual_resize = 1000;
@@ -30,8 +34,11 @@ SET optimize_aggregation_in_order = 0;
 CREATE TABLE test_gradual_resize_outer (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE test_gradual_resize_inner (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 
+CREATE TABLE test_gradual_resize_inner_memory (k UInt64, v UInt64) ENGINE = Memory;
+
 INSERT INTO test_gradual_resize_outer SELECT number FROM numbers(10);
 INSERT INTO test_gradual_resize_inner SELECT number % 10, number FROM numbers(200000);
+INSERT INTO test_gradual_resize_inner_memory SELECT number % 10, number FROM numbers(200000);
 
 -- Positive control: the subquery's `GROUP BY` takes the gradual path when it is not correlated.
 SELECT count() > 0
@@ -79,6 +86,32 @@ FROM
     SETTINGS min_rows_per_stream_for_gradual_resize = 0
 );
 
+-- An evenly distributed source (`Memory`) ignores the thresholds: neither the plain `GROUP BY` (which
+-- plans no pre-aggregation resize at all) nor its decorrelated copy (which keeps the strict resize) may
+-- build a `GradualResize`.
+SELECT countIf(explain LIKE '%GradualResize%')
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, sum(v) FROM test_gradual_resize_inner_memory GROUP BY k
+);
+
+SELECT countIf(explain LIKE '%GradualResize%'), countIf(explain LIKE '%Resize%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k
+    FROM test_gradual_resize_outer
+    WHERE EXISTS
+    (
+        SELECT v % 7 AS m, sum(v)
+        FROM test_gradual_resize_inner_memory
+        WHERE test_gradual_resize_inner_memory.k = test_gradual_resize_outer.k
+        GROUP BY m
+        HAVING sum(v) > 0
+    )
+);
+
 -- The answer does not depend on the resize.
 SELECT k, (SELECT count() FROM (SELECT v % 7 AS m, sum(v) FROM test_gradual_resize_inner WHERE test_gradual_resize_inner.k = test_gradual_resize_outer.k GROUP BY m HAVING sum(v) > 0)) AS groups
 FROM test_gradual_resize_outer
@@ -86,3 +119,4 @@ ORDER BY k;
 
 DROP TABLE test_gradual_resize_outer;
 DROP TABLE test_gradual_resize_inner;
+DROP TABLE test_gradual_resize_inner_memory;
