@@ -280,6 +280,9 @@ public:
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
+            MapKeysInfo,
+            MapKey,
+            MapKeyPresence,
 
             QuantizedCodes,
             ProductQuantizationCodebook,

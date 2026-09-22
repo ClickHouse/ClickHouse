@@ -1463,6 +1463,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"map_max_key_columns", 0, 0, "New setting to limit the number of independent key streams in with_key_columns Map serialization. 0 means no limit."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",

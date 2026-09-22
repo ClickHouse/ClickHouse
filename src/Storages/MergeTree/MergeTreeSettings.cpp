@@ -396,14 +396,21 @@ Possible values:
 
 - basic — Use the standard serialization for `Map`.
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- with_key_columns — Store each key as an independent set of streams, plus a shared presence stream. Reading a single key opens only that key's files.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+The number of independent key streams in `with_key_columns` serialization is limited by [map_max_key_columns](#map_max_key_columns).
 )", 0) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
 This setting allows to specify a different serialization version of
 `Map` columns for zero level parts that are created during inserts.
 It can be useful to keep `basic` serialization for zero level parts to avoid
-performance degradation during inserts, while using `with_buckets` for merged parts.
+performance degradation during inserts, while using `with_buckets` or `with_key_columns` for merged parts.
+)", 0) \
+    DECLARE(UInt64, map_max_key_columns, 0, R"(
+The maximum number of keys that `with_key_columns` `Map` serialization stores as independent streams.
+Keys beyond this limit are written to a fallback tail stream in the `basic` encoding.
+A value of `0` means no limit.
 )", 0) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
 The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.

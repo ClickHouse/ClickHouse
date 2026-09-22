@@ -25,6 +25,8 @@ public:
 
     /// Prefix used for dynamic subcolumn names that represent a single map key, e.g. `m.key_foo`.
     static constexpr std::string_view KEY_SUBCOLUMN_PREFIX = "key_";
+    /// Prefix used for per-key presence subcolumns, e.g. `m.exists_foo`.
+    static constexpr std::string_view EXISTS_SUBCOLUMN_PREFIX = "exists_";
 
     explicit DataTypeMap(const DataTypePtr & nested_);
     explicit DataTypeMap(const DataTypes & elems);

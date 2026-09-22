@@ -1,5 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -141,6 +144,8 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     auto serialization = getSerialization(name_and_type.name);
+    if (typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Map serialization version 'with_key_columns' is not supported for Compact parts");
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }

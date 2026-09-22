@@ -8,6 +8,8 @@
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 
+#include <set>
+
 
 namespace DB
 {
@@ -454,6 +456,37 @@ void ColumnMap::Statistics::merge(const Statistics & other)
     count += other.count;
 }
 
+namespace
+{
+
+void unionKeys(Array & dest, const Array & src)
+{
+    if (src.empty())
+        return;
+
+    std::set<Field> unique(dest.begin(), dest.end());
+    unique.insert(src.begin(), src.end());
+    dest.assign(unique.begin(), unique.end());
+}
+
+void collectKeysFromData(Array & dest, const ColumnMap & column)
+{
+    std::set<Field> unique(dest.begin(), dest.end());
+    const auto & keys_column = column.getNestedData().getColumn(0);
+    for (size_t i = 0; i < keys_column.size(); ++i)
+        unique.insert(keys_column[i]);
+    dest.assign(unique.begin(), unique.end());
+}
+
+}
+
+void ColumnMap::enableKeyCollection()
+{
+    auto new_statistics = statistics ? std::make_shared<Statistics>(*statistics) : std::make_shared<Statistics>();
+    new_statistics->collect_keys = true;
+    statistics = std::move(new_statistics);
+}
+
 void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
@@ -488,9 +521,13 @@ ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
 
 void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    const bool collect_keys = statistics && statistics->collect_keys;
     auto new_statistics = std::make_shared<Statistics>();
+    new_statistics->collect_keys = collect_keys;
+
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
+    bool have_source_keys = false;
     for (const auto & source_column : source_columns)
     {
         if (!source_column)
@@ -505,8 +542,22 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source statistics is invalid");
 
         new_statistics->merge(*source_statistics);
+        if (!source_statistics->keys.empty())
+        {
+            have_source_keys = true;
+            unionKeys(new_statistics->keys, source_statistics->keys);
+        }
         nested_source_columns.push_back(source_map->getNestedColumnPtr());
     }
+
+    if (collect_keys && !have_source_keys)
+    {
+        for (const auto & source_column : source_columns)
+            collectKeysFromData(new_statistics->keys, assert_cast<const ColumnMap &>(*source_column));
+    }
+
+    if (have_source_keys || !new_statistics->keys.empty())
+        new_statistics->collect_keys = true;
 
     statistics = std::move(new_statistics);
     if (!nested)
