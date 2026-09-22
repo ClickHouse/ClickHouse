@@ -4252,10 +4252,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// in value and type but with different source expressions share a single map entry,
                         /// and the source expression determines the action node name (hence which aggregation
                         /// key column the projection reads), so the matched node's own one must be preserved.
-                        const auto node_type = node->getNodeType();
-                        if (node_type != QueryTreeNodeType::COLUMN
-                            && node_type != QueryTreeNodeType::CONSTANT
-                            && node_type != QueryTreeNodeType::FUNCTION)
+                        const auto current_node_type = node->getNodeType();
+                        if (current_node_type != QueryTreeNodeType::COLUMN
+                            && current_node_type != QueryTreeNodeType::CONSTANT
+                            && current_node_type != QueryTreeNodeType::FUNCTION)
                             break;
 
                         auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
