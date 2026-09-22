@@ -155,6 +155,8 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
+}
+
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -168,6 +170,9 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
 
     return default_expr_list;
 }
+
+namespace
+{
 
 ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {

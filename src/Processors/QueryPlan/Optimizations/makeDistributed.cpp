@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -42,9 +43,22 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/misc.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <unordered_set>
+#include <Common/quoteString.h>
 #include <Storages/SelectQueryInfo.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
@@ -66,14 +80,95 @@ namespace QueryPlanOptimizations
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
+std::optional<String> findDictionaryFunctionInColumnDefaults(const ReadFromMergeTree & read);
+std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr & node);
+bool isDictionaryFunction(const String & name, const DataTypes & argument_types);
+
+/// The functions that resolve an object of the initiator by name: the `dictGet` family (a dictionary), `joinGet` (a
+/// `Join` table), `assignCentroid` in its dictionary form, the `region*` functions (the embedded dictionaries of the
+/// server configuration) and the AI functions (a named collection with the credentials). `assignCentroid` takes a
+/// dictionary only with a `String` second argument; the inline form passes the centroids as an array and ships fine.
+/// The function sees the name unwrapped (the default `Nullable` / `LowCardinality` handling), while the plan node
+/// keeps the type as written, so unwrap here too.
+bool isDictionaryFunction(const String & name, const DataTypes & argument_types)
+{
+    static const std::unordered_set<String> embedded_dictionary_functions
+        = {"regionToCity", "regionToArea", "regionToDistrict", "regionToCountry", "regionToContinent",
+           "regionToTopContinent", "regionToPopulation", "regionIn", "regionHierarchy", "regionToName"};
+    static const std::unordered_set<String> ai_functions
+        = {"aiEmbed", "aiExtract", "aiGenerate", "aiFilter", "aiClassify", "aiTranslate", "aiRedact", "aiSimilarity"};
+
+    if (name == "assignCentroid")
+        return argument_types.size() == 2 && isString(removeLowCardinalityAndNullable(argument_types[1]));
+    return functionIsDictGet(name) || functionIsJoinGet(name) || embedded_dictionary_functions.contains(name)
+        || ai_functions.contains(name);
+}
+
+/// The predicate over a resolved query tree, where argument types are known. A call folded into a constant keeps the
+/// call as the constant's source expression, and `ConstantNode` reports no children, so that branch is explicit.
+std::optional<String> findDictionaryFunctionInQueryTree(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return std::nullopt;
+    if (const auto * function = node->as<FunctionNode>())
+        if (isDictionaryFunction(function->getFunctionName(), function->getArgumentTypes()))
+            return function->getFunctionName();
+    if (const auto * constant = node->as<ConstantNode>())
+        return findDictionaryFunctionInQueryTree(constant->getSourceExpression());
+    for (const auto & child : node->getChildren())
+        if (auto name = findDictionaryFunctionInQueryTree(child))
+            return name;
+    return std::nullopt;
+}
+
+/// A `DEFAULT` / `MATERIALIZED` column that a part lacks is computed by the reader from the table metadata
+/// (`IMergeTreeReader::evaluateMissingDefaults`), i.e. on the worker, while the plan carries only `INPUT <column>`,
+/// so the DAG walk cannot see the function. The reader's own `defaultRequiredExpressions` lists what it would compute,
+/// including the defaults of the columns a default reads; an empty block stands for a part that has none of the
+/// columns, the worst case. The list is resolved the way the reader resolves it (`createExpressionsAnalyzer`), so the
+/// argument types are known and a call folded into a constant is still visible. Whether some part actually lacks a
+/// column is not checked, and a list that fails to resolve counts as a reference: a needless local run is accepted
+/// over a worker task failing, and the local run reports the real error where the reader evaluates the default.
+std::optional<String> findDictionaryFunctionInColumnDefaults(const ReadFromMergeTree & read)
+{
+    const auto & columns = read.getStorageMetadata()->getColumns();
+    NamesAndTypesList required_columns;
+    for (const auto & name : read.getAllColumnNames())
+        if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
+            required_columns.push_back(*column);
+
+    auto defaults = defaultRequiredExpressions(Block{}, required_columns, columns, /*null_as_default*/ false);
+    if (!defaults)
+        return std::nullopt;
+
+    QueryTreeNodePtr resolved;
+    try
+    {
+        auto context = Context::createCopy(read.getContext());
+        auto dummy_table = std::make_shared<TableNode>(std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns), context);
+        resolved = buildQueryTree(defaults, context);
+        QueryAnalyzer(/*only_analyze*/ true).resolve(resolved, dummy_table, context);
+    }
+    catch (const Exception & e)
+    {
+        return fmt::format("<unresolvable column default: {}>", e.message());
+    }
+
+    /// One `... AS <column>` per default the reader would evaluate.
+    for (const auto & default_expression : resolved->getChildren())
+        if (auto name = findDictionaryFunctionInQueryTree(default_expression))
+            return fmt::format("{} (in the default expression of column {})", *name, backQuote(default_expression->getAlias()));
+    return std::nullopt;
+}
 
 /// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
-/// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
-/// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
+/// worker resolves `db.dict` in its own catalog, which is not the initiator's. `joinGet` does the same with a
+/// `Join` table. The step is serializable, so `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
 /// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
 /// Every serializable step that carries an `ActionsDAG` is scanned: expression, filter, the join expression,
 /// the filters pushed into a source read, `LIMIT AFTER/UNTIL` boundaries, `INTERPOLATE`, the element filter
-/// fused into `ARRAY JOIN`. `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
+/// fused into `ARRAY JOIN`, and the `DEFAULT` / `MATERIALIZED` expressions a read may have to compute
+/// (`findDictionaryFunctionInColumnDefaults`). `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
 /// `ObjectFilterStep` exists only in the old interpreter, which `make_distributed_plan` does not use.
 /// The check goes away once the workers receive the dictionaries a distributed plan reads.
 std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
@@ -83,14 +178,9 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
         std::optional<String> found;
         auto is_dictionary_function = [&](const IFunctionBase & function)
         {
-            const auto & name = function.getName();
-            /// `assignCentroid` reads a dictionary only when its second argument is a `String` (the name); the other form
-            /// carries the centroids inline as an array and ships fine.
-            const auto & argument_types = function.getArgumentTypes();
-            bool is_assign_centroid_over_dictionary = name == "assignCentroid" && argument_types.size() == 2 && isString(argument_types[1]);
-            if (!functionIsDictGet(name) && !is_assign_centroid_over_dictionary)
+            if (!isDictionaryFunction(function.getName(), function.getArgumentTypes()))
                 return false;
-            found = name;
+            found = function.getName();
             return true;
         };
 
@@ -143,6 +233,8 @@ std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
             if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
                 if (auto name = find_in_dag(row_level_filter->actions))
                     return name;
+            if (auto name = findDictionaryFunctionInColumnDefaults(*read))
+                return name;
         }
     }
     return std::nullopt;
@@ -160,7 +252,8 @@ std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(co
 {
     if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
         return PreformattedMessage::create(
-            "make_distributed_plan does not support the dictionary function {}", *dictionary_function);
+            "make_distributed_plan does not support the function {}: it reads an object of the initiator (a dictionary, a Join table, the embedded dictionaries or a named collection)",
+            *dictionary_function);
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return std::nullopt;
