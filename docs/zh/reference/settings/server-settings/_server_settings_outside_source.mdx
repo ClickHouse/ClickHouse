@@ -1772,7 +1772,7 @@ curl 127.0.0.1:9363/metrics
 
 服务器的时区。
 
-以 UTC 时区或地理位置的 IANA 标识符指定 (例如 Africa/Abidjan) 。
+指定为 `system.time_zones` 中列出的名称——即随服务器一起分发的 [IANA 时区数据库](https://www.iana.org/time-zones)，例如 `Africa/Abidjan`——或指定为相对于 UTC 的固定偏移量，写作 `Fixed/UTC±HH:MM:SS`，例如 `Fixed/UTC+05:30:00`。仅存在于操作系统时区数据库中的名称会被拒绝，因为 ClickHouse 自带一份数据库副本，以确保结果不依赖于宿主机。
 
 当 DateTime 字段以文本格式输出 (显示在屏幕上或写入文件中) 时，以及从字符串获取 DateTime 时，时区对于 String 和 DateTime 格式之间的转换是必需的。此外，如果处理时间和日期的函数在输入参数中未接收到时区，也会使用该时区。
 

@@ -1772,7 +1772,7 @@ Par exemple :
 
 Le fuseau horaire du serveur.
 
-Il est spécifié sous la forme d’un identifiant IANA du fuseau UTC ou d’un lieu géographique (par exemple, Africa/Abidjan).
+Il est spécifié soit sous la forme d’un nom répertorié par `system.time_zones` — la [base de données IANA des fuseaux horaires](https://www.iana.org/time-zones) livrée avec le serveur, par exemple `Africa/Abidjan` —, soit sous la forme d’un décalage fixe par rapport à UTC, écrit `Fixed/UTC±HH:MM:SS`, par exemple `Fixed/UTC+05:30:00`. Un nom qui n’existe que dans la base de données de fuseaux horaires du système d’exploitation est rejeté, car ClickHouse embarque sa propre copie de la base afin que les résultats ne dépendent pas de l’hôte.
 
 Le fuseau horaire est nécessaire pour les conversions entre les formats String et DateTime lorsque des champs DateTime sont affichés au format texte (à l’écran ou dans un fichier), ainsi que lors de la conversion d’une chaîne en DateTime. En outre, il est utilisé dans les fonctions qui manipulent l’heure et la date si elles n’ont pas reçu de fuseau horaire dans les paramètres d’entrée.
 

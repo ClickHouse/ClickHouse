@@ -1772,7 +1772,7 @@ URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록
 
 서버의 시간대입니다.
 
-UTC 시간대 또는 지리적 위치에 대한 IANA 식별자(예: Africa/Abidjan)로 지정합니다.
+`system.time_zones`에 나열된 이름, 즉 서버와 함께 제공되는 [IANA Time Zone Database](https://www.iana.org/time-zones)의 이름(예: `Africa/Abidjan`)으로 지정하거나, `Fixed/UTC±HH:MM:SS` 형태로 표기하는 UTC 기준 고정 오프셋(예: `Fixed/UTC+05:30:00`)으로 지정합니다. 운영체제의 시간대 데이터베이스에만 존재하는 이름은 거부되는데, 이는 결과가 호스트에 의존하지 않도록 ClickHouse가 자체 데이터베이스 사본을 함께 제공하기 때문입니다.
 
 시간대는 DateTime 필드가 텍스트 포맷으로 출력될 때(화면에 표시되거나 파일에 기록될 때)와 문자열에서 DateTime 값을 가져올 때 String과 DateTime 포맷 간 변환에 필요합니다. 또한 입력 매개변수로 시간대를 받지 않은 경우, 시간 및 날짜를 처리하는 함수에서도 시간대가 사용됩니다.
 

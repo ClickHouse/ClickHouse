@@ -1772,7 +1772,7 @@ Por ejemplo:
 
 La zona horaria del servidor.
 
-Se especifica como un identificador IANA de la zona horaria UTC o de una ubicación geográfica (por ejemplo, Africa/Abidjan).
+Se especifica como un nombre que aparece en `system.time_zones` —la [IANA Time Zone Database](https://www.iana.org/time-zones) que se distribuye con el servidor, por ejemplo `Africa/Abidjan`— o como un desplazamiento fijo respecto a UTC, escrito `Fixed/UTC±HH:MM:SS`, por ejemplo `Fixed/UTC+05:30:00`. Se rechaza todo nombre que solo exista en la base de datos de zonas horarias del sistema operativo, ya que ClickHouse distribuye su propia copia de la base de datos para que los resultados no dependan del host.
 
 La zona horaria es necesaria para las conversiones entre los formatos String y DateTime cuando los campos DateTime se muestran en formato de texto (impresos en pantalla o en un archivo), y cuando se obtiene un DateTime a partir de una cadena. Además, la zona horaria se usa en las funciones que trabajan con fecha y hora si no la reciben en los parámetros de entrada.
 

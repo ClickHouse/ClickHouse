@@ -1772,7 +1772,7 @@ Por exemplo:
 
 O fuso horário do servidor.
 
-Especificado como um identificador IANA do fuso horário UTC ou de uma localização geográfica (por exemplo, Africa/Abidjan).
+Especificado como um nome listado em `system.time_zones` — o [IANA Time Zone Database](https://www.iana.org/time-zones) que acompanha o servidor, por exemplo `Africa/Abidjan` — ou como um deslocamento fixo em relação ao UTC, escrito como `Fixed/UTC±HH:MM:SS`, por exemplo `Fixed/UTC+05:30:00`. Um nome que exista apenas no banco de dados de fusos horários do sistema operacional é rejeitado, pois o ClickHouse distribui sua própria cópia do banco de dados para que os resultados não dependam do host.
 
 O fuso horário é necessário para conversões entre os formatos String e DateTime quando campos DateTime são convertidos para o formato de texto (impressos na tela ou em um arquivo) e ao obter um DateTime a partir de uma string. Além disso, o fuso horário é usado em funções que trabalham com hora e data se elas não receberem o fuso horário nos parâmetros de entrada.
 
