@@ -1,8 +1,7 @@
 -- A build with few distinct keys and many rows. The hash table is small, so sizing the partitions
 -- by cache alone gives one partition, and one thread would insert every row. From
--- `parallel_hash_join_threshold` build rows on, `partitioned_hash` uses one partition per thread
--- instead (never more partitions than distinct keys), as `parallel_hash` has one table per thread.
--- Results must match `hash`.
+-- `parallel_hash_join_threshold` build rows on, the hash join uses one partition per thread instead
+-- (never more partitions than distinct keys), as `parallel_hash` had one table per thread.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -24,40 +23,33 @@ SELECT toUInt64(number % 1024) AS k, if(number % 13 = 0, NULL, toUInt64(number %
 CREATE TABLE t_pf_probe ENGINE = MergeTree ORDER BY tuple() AS
 SELECT toUInt64(number % 1500) AS k, number AS p FROM numbers(2048);
 
-SELECT 'inner all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'inner all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 inner all';
 
-SELECT 'right all on a nullable key', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, ifNull(b.kn, 0), b.v))) FROM t_pf_probe AS p RIGHT JOIN t_pf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, ifNull(b.kn, 0), b.v))) FROM t_pf_probe AS p RIGHT JOIN t_pf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'right all on a nullable key', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, ifNull(b.kn, 0), b.v))) FROM t_pf_probe AS p RIGHT JOIN t_pf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 right all nullable';
 
-SELECT 'full all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p FULL JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p FULL JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'full all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p FULL JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 full all';
 
-SELECT 'any left', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'any left', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 any left';
 
 SELECT '-- semi and anti left';
-SELECT 'semi left', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p SEMI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p SEMI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'semi left', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p SEMI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 semi left';
 
-SELECT 'anti left', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p ANTI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p ANTI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'anti left', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p))) FROM t_pf_probe AS p ANTI LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 anti left';
 
-SELECT 'any left keeping the last row per key', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_any_take_last_row = 1) AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', join_any_take_last_row = 1) AS pa)
+SELECT 'any left keeping the last row per key', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_pf_probe AS p ANY LEFT JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_any_take_last_row = 1) AS pa)
 SETTINGS log_comment = '05140 any left last row';
 
 SELECT '-- string key over the same few keys';
@@ -66,24 +58,20 @@ SELECT toString(number % 1024) AS ks, number AS v FROM numbers(2000000);
 CREATE TABLE t_pf_probe_str ENGINE = MergeTree ORDER BY tuple() AS
 SELECT toString(number % 1500) AS ks, number AS p FROM numbers(2048);
 
-SELECT 'string inner all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p INNER JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p INNER JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'string inner all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p INNER JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 string inner all';
 
-SELECT 'string right all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p RIGHT JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p RIGHT JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'string right all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p RIGHT JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 string right all';
 
-SELECT 'string full all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p FULL JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p FULL JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'string full all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.ks, b.v))) FROM t_pf_probe_str AS p FULL JOIN t_pf_build_str AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05140 string full all';
 
-SELECT 'below the threshold the small table keeps one partition', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', parallel_hash_join_threshold = 100000000) AS pa)
+SELECT 'below the threshold the small table keeps one partition', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, b.v))) FROM t_pf_probe AS p INNER JOIN t_pf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 100000000) AS pa)
 SETTINGS log_comment = '05140 below threshold';
 
 SYSTEM FLUSH LOGS query_log;

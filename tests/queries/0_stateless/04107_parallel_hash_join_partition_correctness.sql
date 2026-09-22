@@ -1,5 +1,5 @@
 -- `hash` vs `parallel_hash` must produce the same rows on nullable outer joins / ASOF
--- (alias contract). Then a small exact-row check under the parallel layout.
+-- (alias contract). Then a small exact-row check with a parallel fill.
 -- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(4, 4)
 
 DROP TABLE IF EXISTS t_left;

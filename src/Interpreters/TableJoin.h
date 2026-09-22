@@ -173,8 +173,8 @@ private:
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
-    const size_t partitioned_hash_join_max_fanout_per_pass = 8192;
-    const bool partitioned_hash_join_cap_partitions_by_l1_descriptors = true;
+    const size_t hash_join_max_fanout_per_pass = 8192;
+    const bool hash_join_cap_partitions_by_l1_descriptors = true;
     const UInt64 parallel_hash_join_threshold = 100'000;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -310,14 +310,12 @@ public:
 
     static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
-    /// Hash-table algorithms that share planning: `hash`, `parallel_hash`, and `partitioned_hash`.
-    /// The three algorithms publish and consume the same hash table statistics.
-    /// Mixed ON conditions and several ORs fall back to `hash` when `partitioned_hash` declines them.
+    /// The algorithms that build a hash table over the right side and share its planning: `hash` and its alias
+    /// `parallel_hash`.
     static bool isHashFamilyEnabled(const std::vector<JoinAlgorithm> & join_algorithms)
     {
         return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH)
-            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARTITIONED_HASH);
+            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH);
     }
 
     bool isHashFamilyEnabled() const
@@ -371,8 +369,8 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-    size_t partitionedHashJoinMaxFanoutPerPass() const { return partitioned_hash_join_max_fanout_per_pass; }
-    bool partitionedHashJoinCapPartitionsByL1Descriptors() const { return partitioned_hash_join_cap_partitions_by_l1_descriptors; }
+    size_t hashJoinMaxFanoutPerPass() const { return hash_join_max_fanout_per_pass; }
+    bool hashJoinCapPartitionsByL1Descriptors() const { return hash_join_cap_partitions_by_l1_descriptors; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
 
@@ -528,7 +526,4 @@ bool allowHashJoinCacheKeys(
     bool is_special_storage,
     bool one_disjunct);
 
-/// Unlike `allowHashJoinCacheKeys`, this ignores the algorithm list and special storages.
-/// Whether the layout is usable is a correctness question, not a user choice.
-bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold);
 }

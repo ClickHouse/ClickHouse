@@ -1,10 +1,8 @@
--- When the planner estimates the right table below `parallel_hash_join_threshold` rows,
--- `partitioned_hash` builds it on one thread. The pipeline then has the `hash` shape: one
--- `FillingRightJoinSide` transform and no squashing after the join. The hash table starts at the
--- distinct-key count a previous run left in the hash table statistics cache, and grows as `hash`'s
--- does when there is none. A spill hands the kept build blocks to `GraceHashJoin`. Results must
--- match `hash` for every join kind. Every `partitioned_hash` build here follows the `hash` build of
--- the same query, which publishes the same statistics entry, so it starts at the exact size.
+-- When the planner estimates the right table below `parallel_hash_join_threshold` rows, the hash
+-- join builds it on one thread. The pipeline then has one `FillingRightJoinSide` transform and no
+-- squashing after the join. The hash table starts at the distinct-key count a previous run left in
+-- the hash table statistics cache, and grows when there is none. A spill hands the kept build blocks
+-- to `GraceHashJoin`. Every join kind is covered.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -15,7 +13,7 @@ SET max_bytes_in_join = 0;
 SET grace_hash_join_initial_buckets = 1;
 SET grace_hash_join_max_buckets = 1024;
 SET max_threads = 4;
-SET join_algorithm = 'partitioned_hash';
+SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS t_sf_build;
 DROP TABLE IF EXISTS t_sf_probe;
@@ -38,72 +36,59 @@ SELECT countIf(explain LIKE '%FillingRightJoinSide%')
 FROM (EXPLAIN PIPELINE SELECT count() FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS parallel_hash_join_threshold = 0);
 
 SELECT '-- inner / left / right / full all, UInt64 key';
-SELECT 'inner', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'inner', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 inner';
 
-SELECT 'left', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'left', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 left';
 
-SELECT 'right', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'right', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 right';
 
-SELECT 'full', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'full', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 full';
 
 SELECT '-- string key, nullable key';
-SELECT 'string', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'string', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 string';
 
-SELECT 'right nullable', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'right nullable', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 right nullable';
 
 SELECT '-- any, semi, anti';
-SELECT 'any', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p ANY LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p ANY LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'any', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p ANY LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 any';
 
-SELECT 'semi', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p SEMI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p SEMI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'semi', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p SEMI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 semi';
 
-SELECT 'anti', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p ANTI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p ANTI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'anti', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p))) FROM t_sf_probe AS p ANTI LEFT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 anti';
 
-SELECT 'spill switch during the one-thread build', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 20000) AS pa)
+SELECT 'spill switch during the one-thread build', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 20000) AS pa)
 SETTINGS log_comment = '05141 spill';
 
 SELECT '-- right and full joins under a spill budget, with several probe streams and with one';
-SELECT 'spill right', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 20000) AS pa)
+SELECT 'spill right', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 20000) AS pa)
 SETTINGS log_comment = '05141 spill right';
 
-SELECT 'spill right one stream', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 20000, max_threads = 1) AS pa)
+SELECT 'spill right one stream', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 20000, max_threads = 1) AS pa)
 SETTINGS log_comment = '05141 spill right one stream';
 
-SELECT 'spill full one stream', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 20000, max_threads = 1) AS pa)
+SELECT 'spill full one stream', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 20000, max_threads = 1) AS pa)
 SETTINGS log_comment = '05141 spill full one stream';
 
 SELECT '-- the spilling wrapper keeps the shape: one filling transform below the threshold, delayed ports';
@@ -118,29 +103,24 @@ SELECT number % 500 AS k, toDateTime('2020-01-01 00:00:00', 'UTC') + number AS t
 CREATE TABLE t_sf_one ENGINE = MergeTree ORDER BY tuple() AS SELECT toUInt64(7) AS k, toUInt64(42) AS v;
 CREATE TABLE t_sf_50k ENGINE = MergeTree ORDER BY tuple() AS SELECT number AS k, number * 2 AS v FROM numbers(50000);
 
-SELECT 'asof', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT number % 500 AS k, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 2 AS ts, number AS p FROM numbers(20000)) AS p ASOF LEFT JOIN t_sf_asof AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT number % 500 AS k, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 2 AS ts, number AS p FROM numbers(20000)) AS p ASOF LEFT JOIN t_sf_asof AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'asof', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT number % 500 AS k, toDateTime('2020-01-01 00:00:00', 'UTC') + number * 2 AS ts, number AS p FROM numbers(20000)) AS p ASOF LEFT JOIN t_sf_asof AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 asof';
 
-SELECT 'one row', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'one row', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 one row';
 
-SELECT 'one row right', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'one row right', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p RIGHT JOIN t_sf_one AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 one row right';
 
-SELECT '50k', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT '50k', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 50k';
 
-SELECT '50k full', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT '50k full', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 50k full';
 
 SELECT '-- a planner estimate far below the real row count only makes the table grow';
@@ -148,23 +128,20 @@ SELECT '-- a planner estimate far below the real row count only makes the table 
 -- The hash-table statistics cache of the earlier identical query must not override it.
 SET param__internal_join_table_stat_hints = '{"t_sf_50k": {"cardinality": 16, "distinct_keys": {"k": 16}}}';
 
-SELECT 'low hint', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'low hint', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_50k AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS use_statistics = 0, query_plan_optimize_join_order_algorithm = 'greedy', collect_hash_table_stats_during_joins = 0, send_logs_level = 'error', log_comment = '05141 low hint';
 SET param__internal_join_table_stat_hints = '{}';
 
 SELECT '-- inner and spill again with the threshold off (parallel build, one partition per thread)';
 SET parallel_hash_join_threshold = 0;
 
-SELECT 'parallel inner', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'parallel inner', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p INNER JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05141 parallel inner';
 
-SELECT 'parallel spill', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 20000) AS pa)
+SELECT 'parallel spill', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_sf_probe AS p FULL JOIN t_sf_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 20000) AS pa)
 SETTINGS log_comment = '05141 parallel spill';
 SET parallel_hash_join_threshold = DEFAULT;
 
@@ -172,7 +149,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The spill queries switched to grace, whose buckets are partitioned builds too; their bucket count follows the byte
 -- predictions, so for them only the presence of partitioned builds is asserted.
--- The `hash` subquery of each pair publishes the distinct-key count under the statistics key the `partitioned_hash`
+-- The `hash` subquery of each pair publishes the distinct-key count under the statistics key the `hash`
 -- subquery reads, so the partitioned builds start at the exact size and do not grow. Only the builds without a cached
 -- count grow from the smallest table: the low hint (statistics collection off) and the one-stream grace buckets.
 SELECT '-- one partition, rows inserted, table growth only without a cached count, the spill queries switched to grace';

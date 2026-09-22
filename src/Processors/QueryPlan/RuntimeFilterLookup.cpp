@@ -766,7 +766,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
 
     MergeLock lock(source.mutex, mutex);
 
-    /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
+    /// `publishSharedFixedHashTableFilters` may have already replaced this lookup entry with a
     /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
     /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
     /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter

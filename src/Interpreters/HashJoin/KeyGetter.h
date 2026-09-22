@@ -160,8 +160,7 @@ struct LowCardinalityKeyGetterForJoin
         auto it = row < saved_hash.size() ? data.find(key, saved_hash[row]) : data.find(key);
 
         const bool found = it;
-        /// Only the used-flag paths ask; `freezeMapsForProbing` computed the prefix sums
-        /// before any probe.
+        /// Only the used-flag paths ask.
         size_t offset = 0;
         if constexpr (use_offset)
             offset = found ? data.offsetInternal(it) : 0;
@@ -263,17 +262,6 @@ KEYGETTER_RANGE_IMPL(range16_key64, UInt64)
 KEYGETTER_RANGE_IMPL(range17_key64, UInt64)
 KEYGETTER_RANGE_IMPL(range18_key64, UInt64)
 #undef KEYGETTER_RANGE_IMPL
-
-#define KEYGETTER_TWO_LEVEL_IMPL(NAME) \
-    template <typename Value, typename Mapped, bool use_offset> \
-    struct KeyGetterForTypeImpl<HashJoin::Type::two_level_##NAME, Value, Mapped, use_offset> \
-        : KeyGetterForTypeImpl<HashJoin::Type::NAME, Value, Mapped, use_offset> \
-    { \
-    };
-APPLY_FOR_SINGLE_LEVEL_JOIN_VARIANTS(KEYGETTER_TWO_LEVEL_IMPL)
-KEYGETTER_TWO_LEVEL_IMPL(key8)
-KEYGETTER_TWO_LEVEL_IMPL(key16)
-#undef KEYGETTER_TWO_LEVEL_IMPL
 
 /// Set tables, which joins that never read a right-side row run on, have no mapped value in their
 /// cells: they report the `VoidMapped` placeholder, while the column hashing methods spell the absence

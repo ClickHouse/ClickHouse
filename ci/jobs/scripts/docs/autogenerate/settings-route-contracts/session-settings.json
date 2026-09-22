@@ -169,6 +169,7 @@
     {"prefix":"aggregate","mode":"token","target":"/reference/settings/session-settings/aggregate"},
     {"prefix":"azure_max","mode":"token","target":"/reference/settings/session-settings/azure-max"},
     {"prefix":"azure_sdk","mode":"token","target":"/reference/settings/session-settings/azure-sdk"},
+    {"prefix":"hash_join","mode":"token","target":"/reference/settings/session-settings/hash-join"},
     {"prefix":"ignore_on","mode":"token","target":"/reference/settings/session-settings/ignore-on"},
     {"prefix":"log_query","mode":"token","target":"/reference/settings/session-settings/log-query"},
     {"prefix":"max_bytes","mode":"token","target":"/reference/settings/session-settings/max-bytes"},

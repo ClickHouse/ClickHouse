@@ -1,5 +1,5 @@
 -- `join_algorithm = 'auto'` runs `JoinSwitcher`: an in-memory join that drains onto `MergeJoin` once the
--- right side exceeds `max_rows_in_join` or `max_bytes_in_join`. When the list names `partitioned_hash` as
+-- right side exceeds `max_rows_in_join` or `max_bytes_in_join`. When the list names `hash` as
 -- well, the in-memory join is a `PartitionedHashJoin`, and a shape `MergeJoin` declines runs the
 -- partitioned join alone. A join that stays in memory and one that switches must both return what
 -- `hash` returns. The log checks at the end assert that the partitioned join built every in-memory case
@@ -19,9 +19,10 @@ SET enable_parallel_replicas = 0;
 SET parallel_hash_join_threshold = 1;
 SET max_threads = 8;
 -- The runtime-filter pass keeps only the algorithms that can apply a filter, and `auto` is not one of them:
--- with filters on, `auto,partitioned_hash` on an INNER join runs the partitioned join alone.
+-- with filters on, `auto,hash` on an INNER join runs the partitioned join alone.
 SET enable_join_runtime_filters = 0;
 
+-- `ANY INNER` picks one of four left payloads per key; check membership without pinning a winner.
 SELECT '-- auto stays in memory';
 {% for join_type, projection in [
     ('INNER', 'a.k, a.v, b.x'),
@@ -34,14 +35,13 @@ SELECT '-- auto stays in memory';
     ('ANTI LEFT', 'a.k, a.v'),
     ('SEMI RIGHT', 'b.k, b.x'),
     ('ANTI RIGHT', 'b.k, b.x')] -%}
-SELECT '{{ join_type }} | auto,partitioned_hash', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto,partitioned_hash') AS pa)
+SELECT '{{ join_type }} | auto,hash', pa FROM (SELECT
+    (SELECT (count(), {% if join_type == 'ANY INNER' %}sum(cityHash64(a.k, b.k)), countIf(a.v < 20000 AND a.v % 5000 = a.k AND a.k = b.k) = count(){% else %}sum(cityHash64({{ projection }})){% endif %}) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto,hash') AS pa)
 SETTINGS log_comment = '05220 auto in memory';
 {% endfor -%}
 
--- The switched results are compared with `auto` starting from `HashJoin`, which drains onto the same `MergeJoin`:
--- `MergeJoin` emits one row per left row for ANY INNER where the hash joins emit one per matched key.
+-- After the switch, `MergeJoin` emits one row per matching left row for `ANY INNER`,
+-- so the full probe payload fingerprint is deterministic.
 SELECT '-- auto switches to MergeJoin at max_rows_in_join';
 {% for join_type, projection in [
     ('INNER', 'a.k, a.v, b.x'),
@@ -51,9 +51,8 @@ SELECT '-- auto switches to MergeJoin at max_rows_in_join';
     ('ANY LEFT', 'a.k, a.v, b.k'),
     ('ANY INNER', 'a.k, a.v, b.k'),
     ('SEMI LEFT', 'a.k, a.v')] -%}
-SELECT '{{ join_type }} | auto,partitioned_hash | max_rows_in_join', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto', max_rows_in_join = 100) AS h,
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto,partitioned_hash', max_rows_in_join = 100) AS pa)
+SELECT '{{ join_type }} | auto,hash | max_rows_in_join', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'auto,hash', max_rows_in_join = 100) AS pa)
 SETTINGS log_comment = '05220 auto switch';
 {% endfor -%}
 

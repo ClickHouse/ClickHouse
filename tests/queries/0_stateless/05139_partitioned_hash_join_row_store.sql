@@ -1,7 +1,6 @@
--- `partitioned_hash` stores the right side's fixed-width payload columns row by row while the
--- build blocks arrive, as the parallel `hash` layout does. The joined output and the RIGHT/FULL
--- non-joined rows read those columns back from that store. So do the blocks handed to `GraceHashJoin`
--- on a spill. Checksums must match `hash`.
+-- The hash join stores the right side's fixed-width payload columns row by row while the build
+-- blocks arrive. The joined output and the RIGHT/FULL non-joined rows read those columns back from
+-- that store. So do the blocks handed to `GraceHashJoin` on a spill.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -55,70 +54,60 @@ FROM numbers(100000);
 CREATE TABLE t_rs_probe (k UInt64, p UInt64) ENGINE = MergeTree ORDER BY tuple()
 AS SELECT number, number + 1000000 FROM numbers(120000);
 
-SELECT 'inner all', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'inner all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05139 inner all';
 
-SELECT 'inner all with the row store off: the columnar path on the same shape', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', enable_hash_join_row_store = 0) AS pa)
+SELECT 'inner all with the row store off: the columnar path on the same shape', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', enable_hash_join_row_store = 0) AS pa)
 SETTINGS log_comment = '05139 inner all no store';
 
-SELECT 'inner all with the right table sorted by key: the store is still built and read', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', allow_experimental_join_right_table_sorting = 1) AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', allow_experimental_join_right_table_sorting = 1) AS pa)
+SELECT 'inner all with the right table sorted by key: the store is still built and read', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', allow_experimental_join_right_table_sorting = 1) AS pa)
 SETTINGS log_comment = '05139 inner all sorted';
 
 SELECT '-- inner all, first rows';
 SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'partitioned_hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
 
-SELECT 'left all, defaults for the unmatched probe rows', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left all, defaults for the unmatched probe rows', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
 SELECT '-- left all, first unmatched rows';
 SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p LIMIT 3 SETTINGS join_algorithm = 'hash';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p LIMIT 3 SETTINGS join_algorithm = 'partitioned_hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p LEFT JOIN t_rs_build AS b ON p.k = b.k WHERE b.k = 0 ORDER BY p.p LIMIT 3 SETTINGS join_algorithm = 'hash';
 
-SELECT 'right all on a nullable key: non-joined rows plus the null-key rows', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'right all on a nullable key: non-joined rows plus the null-key rows', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05139 right all nullable';
 
 SELECT '-- right all, first non-joined rows';
 SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn WHERE p.p = 0 ORDER BY b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn WHERE p.p = 0 ORDER BY b.a LIMIT 3 SETTINGS join_algorithm = 'partitioned_hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn WHERE p.p = 0 ORDER BY b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
 
-SELECT 'right all with the row store off', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'partitioned_hash', enable_hash_join_row_store = 0) AS pa)
+SELECT 'right all with the row store off', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p RIGHT JOIN t_rs_build AS b ON p.k = b.kn SETTINGS join_algorithm = 'hash', enable_hash_join_row_store = 0) AS pa)
 SETTINGS log_comment = '05139 right all no store';
 
-SELECT 'full all', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'full all', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05139 full all';
 
 SELECT '-- full all, first rows of each side''s unmatched rows';
 SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k WHERE p.p = 0 OR b.k = 0 ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
-SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k WHERE p.p = 0 OR b.k = 0 ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'partitioned_hash';
+SELECT p.k, p.p, b.k, b.kn, b.a, b.b, b.c, b.d, hex(b.e), hex(b.f), b.g, b.s, hex(b.h), hex(b.i), b.j FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k WHERE p.p = 0 OR b.k = 0 ORDER BY p.p, b.a LIMIT 3 SETTINGS join_algorithm = 'hash';
 
-SELECT 'full all with the row store off', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', enable_hash_join_row_store = 0) AS pa)
+SELECT 'full all with the row store off', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', enable_hash_join_row_store = 0) AS pa)
 SETTINGS log_comment = '05139 full all no store';
 
-SELECT 'left any: ANY joins build no row store', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k)), sum(b.a > 0)) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k)), sum(b.a > 0)) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+-- `ANY` may choose either payload for a duplicate key, including zero or 60000 for key zero.
+SELECT 'left any: ANY joins build no row store', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k)), countIf(if(p.k < 60000, b.a = p.k OR (p.k < 40000 AND b.a = p.k + 60000), b.a = 0)) = count()) FROM t_rs_probe AS p LEFT ANY JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05139 left any';
 
-SELECT 'spill switch: the build blocks handed to grace are rebuilt from the row store', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 200000) AS pa)
+SELECT 'spill switch: the build blocks handed to grace are rebuilt from the row store', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p INNER JOIN t_rs_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 200000) AS pa)
 SETTINGS log_comment = '05139 spill';
 
 SELECT '-- spill switch below parallel_hash_join_threshold: the kept build blocks go to grace as they are';
@@ -126,9 +115,8 @@ SELECT '-- spill switch below parallel_hash_join_threshold: the kept build block
 -- grace then hands over those kept blocks, the second of the two spill paths.
 CREATE TABLE t_rs_build_small ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM t_rs_build WHERE k < 30000;
 
-SELECT 'spill below threshold', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 200000) AS pa)
+SELECT 'spill below threshold', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k, ifNull(b.kn, 0), b.a, ifNull(b.b, 0), b.c, b.d, b.e, ifNull(b.f, ''), b.g, b.s, ifNull(b.h, ''), b.i, b.j))) FROM t_rs_probe AS p FULL JOIN t_rs_build_small AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 200000) AS pa)
 SETTINGS log_comment = '05139 spill below threshold';
 
 SYSTEM FLUSH LOGS query_log;

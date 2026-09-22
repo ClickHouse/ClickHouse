@@ -87,8 +87,8 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
-    extern const SettingsNonZeroUInt64 partitioned_hash_join_max_fanout_per_pass;
-    extern const SettingsBool partitioned_hash_join_cap_partitions_by_l1_descriptors;
+    extern const SettingsNonZeroUInt64 hash_join_max_fanout_per_pass;
+    extern const SettingsBool hash_join_cap_partitions_by_l1_descriptors;
     extern const SettingsUInt64 parallel_hash_join_threshold;
 }
 
@@ -241,8 +241,8 @@ TableJoin::TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, V
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
-    , partitioned_hash_join_max_fanout_per_pass(settings[Setting::partitioned_hash_join_max_fanout_per_pass])
-    , partitioned_hash_join_cap_partitions_by_l1_descriptors(settings[Setting::partitioned_hash_join_cap_partitions_by_l1_descriptors])
+    , hash_join_max_fanout_per_pass(settings[Setting::hash_join_max_fanout_per_pass])
+    , hash_join_cap_partitions_by_l1_descriptors(settings[Setting::hash_join_cap_partitions_by_l1_descriptors])
     , parallel_hash_join_threshold(settings[Setting::parallel_hash_join_threshold])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
@@ -279,8 +279,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
-    , partitioned_hash_join_max_fanout_per_pass(settings.partitioned_hash_join_max_fanout_per_pass)
-    , partitioned_hash_join_cap_partitions_by_l1_descriptors(settings.partitioned_hash_join_cap_partitions_by_l1_descriptors)
+    , hash_join_max_fanout_per_pass(settings.hash_join_max_fanout_per_pass)
+    , hash_join_cap_partitions_by_l1_descriptors(settings.hash_join_cap_partitions_by_l1_descriptors)
     , parallel_hash_join_threshold(settings.parallel_hash_join_threshold)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
@@ -1339,12 +1339,5 @@ bool allowHashJoinCacheKeys(
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
-}
-
-bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold)
-{
-    /// No estimate means the right side cannot be ruled small, so prefer the parallel layout.
-    return parallelLayoutKindSupported(kind)
-        && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
 }
 }

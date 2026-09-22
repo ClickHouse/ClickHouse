@@ -4,12 +4,14 @@
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/HashJoin/SharedFixedHashTableFilter.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -19,7 +21,15 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <iterator>
 #include <mutex>
+
+namespace CurrentMetrics
+{
+extern const Metric HashJoinDestroyThreads;
+extern const Metric HashJoinDestroyThreadsActive;
+extern const Metric HashJoinDestroyThreadsScheduled;
+}
 
 namespace ProfileEvents
 {
@@ -41,10 +51,16 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int FAULT_INJECTED;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char hash_join_throw_after_data_release[];
 }
 
 namespace
@@ -126,17 +142,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
     , max_bytes_before_external_join(max_bytes_before_external_join_)
-    , hash_join(
-          std::make_unique<HashJoin>(
-              table_join,
-              right_sample_block,
-              any_take_last_row,
-              /*reserve_num_=*/0,
-              /*instance_id_=*/"",
-              /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
-              /*max_threads_=*/1,
-              /*use_parallel_layout_=*/false,
-              /*allow_set_maps_=*/false))
+    , hash_join(std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, /*allow_set_maps_=*/false))
     , join_table_mode(join_table_mode_)
     , used_flags_per_row(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , cached_distinct_estimates(table_join->getClauses().size())
@@ -198,6 +204,10 @@ PartitionedHashJoin::PartitionedHashJoin(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
         clauses.front().createJoinTable();
     }
+
+    /// Charge the constructor's allocations before the plan creates another join.
+    CurrentThread::flushUntrackedMemory();
+    CurrentMemoryTracker::check();
 }
 
 PartitionedHashJoin::~PartitionedHashJoin()
@@ -221,19 +231,73 @@ PartitionedHashJoin::~PartitionedHashJoin()
 
     for (auto & clause : clauses)
         clause.releaseTable();
+    destroyStoredBlocksInParallel();
     hash_join.reset();
     probe_scratch_pool.clear();
     for (auto & slot : probe_scratch_slots)
         delete slot.load(std::memory_order_acquire);
 }
 
+void PartitionedHashJoin::destroyStoredBlocksInParallel()
+{
+    /// The table went with `clause.releaseTable()`, and the arena is one allocation. What is left to
+    /// free is the stored right blocks: hundreds of megabytes to gigabytes on a large build. Several
+    /// threads free them. A Join table's per-query instances share the storage's `data`, so only its
+    /// last owner destroys it.
+    static constexpr size_t PARALLEL_DESTROY_THRESHOLD_BYTES = 100 * 1024 * 1024;
+
+    if (num_threads <= 1 || !hash_join->data || hash_join->data.use_count() != 1
+        || hash_join->data->allocated_size.load(std::memory_order_relaxed) < PARALLEL_DESTROY_THRESHOLD_BYTES)
+        return;
+
+    try
+    {
+        HashJoin::StoredBlocksList blocks = std::move(storedBlocks());
+        const size_t num_tasks = std::min(num_threads, blocks.size());
+        if (num_tasks <= 1)
+            return;
+
+        /// Runs of consecutive blocks spliced off the one list: a list node keeps its address, and no cell
+        /// refers to a block any more.
+        std::vector<HashJoin::StoredBlocksList> slices(num_tasks);
+        const size_t blocks_per_task = (blocks.size() + num_tasks - 1) / num_tasks;
+        for (auto & slice : slices)
+        {
+            auto end = blocks.begin();
+            std::advance(end, std::min(blocks_per_task, blocks.size()));
+            slice.splice(slice.end(), blocks, blocks.begin(), end);
+        }
+
+        ThreadPool pool(
+            CurrentMetrics::HashJoinDestroyThreads,
+            CurrentMetrics::HashJoinDestroyThreadsActive,
+            CurrentMetrics::HashJoinDestroyThreadsScheduled,
+            num_tasks);
+        for (auto & slice : slices)
+            pool.scheduleOrThrowOnError(
+                [&slice, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DESTRUCTION);
+                    slice.clear();
+                });
+        pool.wait();
+    }
+    catch (...)
+    {
+        /// Unscheduled blocks are freed when the local lists unwind.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 {
-    /// Everything the single-level `HashJoin` machinery serves. Kinds: INNER, LEFT, RIGHT, FULL.
-    /// Strictness: ALL, ANY, RightAny, SEMI, ANTI, plus ASOF. Also null maps, per-clause ON filters,
-    /// mixed non-equi ON conditions, USING, and any number of disjuncts. Out: key-value storages, and
-    /// the Cross/Comma/Paste and ON-constant joins. Those are routed before the algorithm loop.
-    /// A memory limit is no reason to decline: the planner wraps this join in `SpillingHashJoin` instead.
+    /// Everything `HashJoin` serves: INNER, LEFT, RIGHT and FULL with ALL, ANY, RightAny, SEMI, ANTI
+    /// and ASOF. Null maps, ON filters, mixed non-equi conditions, USING, several disjuncts and a Join
+    /// table or a key-value storage on the right side all pass. Cross, Comma, Paste and ON-constant
+    /// joins are routed before the algorithm loop. The ASOF shapes `HashJoin` rejects (not INNER or
+    /// LEFT, or without an equality key) throw its errors from the constructor, because the inner
+    /// `HashJoin` is built first. A memory limit is no reason to decline: the planner wraps this join
+    /// in `SpillingHashJoin` instead.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
 
@@ -247,32 +311,9 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
         case JoinStrictness::RightAny:
         case JoinStrictness::Semi:
         case JoinStrictness::Anti:
-        case JoinStrictness::Asof: break;
+        case JoinStrictness::Asof: return true;
         default: return false;
     }
-
-    /// A `Join` table is probed through the instance `StorageJoin::getJoinLocked` builds, which the
-    /// planner reaches before the algorithm loop, so it is not a shape to decline here. A key-value
-    /// storage (a dictionary) on the right side is: it stays on `HashJoin`, this join has not been run
-    /// against one.
-    if (table_join.isSpecialStorage() && !table_join.getStorageJoin())
-        return false;
-
-    if (strictness == JoinStrictness::Asof)
-    {
-        /// The same restrictions `HashJoin` applies.
-        if (!isInnerOrLeft(kind) || !table_join.oneDisjunct())
-            return false;
-        if (table_join.getOnlyClause().key_names_right.size() <= 1)
-            return false;
-    }
-
-    /// The keyless clauses have their own plan-time routing.
-    for (const auto & on_clause : table_join.getClauses())
-        if (on_clause.key_names_right.empty())
-            return false;
-
-    return true;
 }
 
 const TableJoin & PartitionedHashJoin::getTableJoin() const
@@ -303,7 +344,7 @@ void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
     /// The stored blocks are the storage's now, so the right-side flags of the statistics can be
     /// sized to them, as `HashJoin::reuseJoinedData` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
 }
 
 DataTypePtr PartitionedHashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -343,7 +384,7 @@ ColumnWithTypeAndName PartitionedHashJoin::joinGet(const Block & block, const Bl
 void PartitionedHashJoin::shrinkStoredBlocksToFit()
 {
     size_t total_bytes = getTotalByteCount();
-    hash_join->shrinkStoredBlocksToFit(total_bytes, /*worker_id=*/0, /*force_optimize=*/true);
+    hash_join->shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/true);
 }
 
 PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()
@@ -455,13 +496,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         for (auto & clause : clauses)
             clause.insertSingleLaneBlock(fill);
 
-        if (!check_limits)
-            return true;
-        return table_join->sizeLimits().check(
-            accumulated_rows.load(std::memory_order_relaxed),
-            accumulated_bytes.load(std::memory_order_relaxed),
-            "JOIN",
-            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return !check_limits || checkFillLimits();
     }
 
     FillLane & lane = getFillLane(worker_id);
@@ -477,17 +512,27 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routeBytes(), std::memory_order_relaxed);
     lane.blocks.push_back(std::move(fill));
 
-    if (!check_limits)
-        return true;
+    return !check_limits || checkFillLimits();
+}
 
-    /// The fill-phase analogue of `HashJoin`'s per-block limit check. Rows are the accumulated
-    /// input rows, an upper bound on the keys the map-based algorithms check; bytes cover the stored
-    /// blocks and the route transients.
-    return table_join->sizeLimits().check(
-        accumulated_rows.load(std::memory_order_relaxed),
-        accumulated_bytes.load(std::memory_order_relaxed),
-        "JOIN",
-        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+size_t PartitionedHashJoin::rowCountForLimit(size_t max_rows) const
+{
+    /// One clause has at most one distinct key per input row. Merging its lane sketches is unnecessary
+    /// until that bound reaches the limit. Multiple clauses count their keys separately.
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    if (max_rows == 0 || (clauses.size() == 1 && rows < max_rows))
+        return rows;
+    return getTotalRowCount();
+}
+
+bool PartitionedHashJoin::checkFillLimits()
+{
+    /// The parallel fill estimates the distinct keys; the exact count is checked after the build.
+    const SizeLimits & limits = table_join->sizeLimits();
+    if (!limits.hasLimits())
+        return true;
+    limits_requested = true;
+    return limits.check(rowCountForLimit(limits.max_rows), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void PartitionedHashJoin::checkTypesOfKeys(const Block & block) const
@@ -841,12 +886,18 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     hash_join->all_values_unique = all_values_unique;
     hash_join->onBuildPhaseFinish();
     reinitUsedFlags();
-    hash_join->data->keys_to_join = getTotalRowCount();
     /// Every stored block has its final number: the right-side flags of the statistics are sized
     /// per block, as `HashJoin::onBuildPhaseFinish` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
     build_phase_finished = true;
+    /// Read after the flag, so the count is the table's. Before it, `getTotalRowCount` gives the fill
+    /// sketches' estimate, and the barrier has already discarded the lanes with the sketches.
+    hash_join->data->keys_to_join = getTotalRowCount();
+
+    /// The fill checked the sketch's estimate of the distinct keys; this is the exact count.
+    if (limits_requested.load(std::memory_order_relaxed))
+        table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 ThreadPool & PartitionedHashJoin::postBuildPool(size_t clause_idx)
@@ -896,17 +947,36 @@ JoinResultPtr PartitionedHashJoin::joinBlock(Block block, size_t lane)
 
 size_t PartitionedHashJoin::getTotalRowCount() const
 {
-    /// The distinct keys, as `HashJoin` reports them for a Join table; shared with the per-query
-    /// instances, so read from the table rather than from this instance's fill counter.
-    if (join_table_mode)
-        return clauses.front().tableRowCount();
+    /// The distinct keys summed over the clauses' tables, as `HashJoin` reports them: `max_rows_in_join`
+    /// and the `JoinSwitcher` limit count hash table rows, not input rows. A Join table's keys are shared
+    /// with the per-query instances, so they are read from the table rather than from this instance's
+    /// fill counter. Before the barrier the lanes only have the sketches, so the count is their estimate,
+    /// never above the rows seen.
+    if (join_table_mode || build_phase_finished)
+    {
+        size_t keys = 0;
+        for (const auto & clause : clauses)
+            keys += clause.tableRowCount();
+        return keys;
+    }
 
-    if (!build_phase_finished || !clauses.front().hasTable())
-        return accumulated_rows.load(std::memory_order_relaxed);
+    /// A single fill thread inserts as it goes, but the table publishes its size only when the build
+    /// finishes. Until then the claimed cells are the count. They are exact between blocks, which is
+    /// when the spilling wrapper's row limit and `GraceHashJoin::hasMemoryOverflow` read it.
+    if (single_fill_thread && clauses.front().hasTable())
+    {
+        size_t keys = 0;
+        for (const auto & clause : clauses)
+            keys += clause.claimedTotal();
+        return keys;
+    }
 
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    if (rows == 0)
+        return 0;
     size_t keys = 0;
-    for (const auto & clause : clauses)
-        keys += clause.tableRowCount();
+    for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        keys += std::min(rows, liveDistinctEstimate(clause_idx));
     return keys;
 }
 
@@ -1150,6 +1220,12 @@ bool PartitionedHashJoin::isCloneSupported() const
 std::shared_ptr<IJoin>
 PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const
 {
+    return cloneWithBuildRowsHint(table_join_, std::move(right_sample_block_), build_rows_hint);
+}
+
+std::shared_ptr<IJoin> PartitionedHashJoin::cloneWithBuildRowsHint(
+    const std::shared_ptr<TableJoin> & table_join_, SharedHeader right_sample_block_, std::optional<size_t> build_rows_hint_) const
+{
     /// Every reachable clone path preserves a supported shape; re-checked so that a future caller
     /// which does not surfaces as an exception instead of wrong results.
     if (!isSupported(*table_join_))
@@ -1162,21 +1238,20 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
         any_take_last_row,
         HashJoinStatsCollectingParams{.build = stats_collecting_params, .match = match_stats_collecting_params},
         max_bytes_before_external_join,
-        build_rows_hint);
+        build_rows_hint_);
 }
 
 std::shared_ptr<IJoin>
 PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const
 {
-    return std::make_shared<HashJoin>(
-        table_join_,
-        right_sample_block_,
-        any_take_last_row,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false);
+    if (!isSupported(*table_join_))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: attempt to clone with a join shape the algorithm does not support");
+    auto shard_join = std::make_shared<PartitionedHashJoin>(
+        table_join_, right_sample_block_, /*num_threads_=*/1, any_take_last_row, HashJoinStatsCollectingParams{}, /*max_bytes_before_external_join_=*/0, build_rows_hint);
+    shard_join->parallel_non_joined_allowed = false;
+    shard_join->partial_build = true;
+    return shard_join;
 }
 
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)
@@ -1270,6 +1345,11 @@ BlocksList PartitionedHashJoin::releaseJoinedBlocks(bool restructure)
     beginStoredBlockDrain();
     for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
         blocks.push_back(std::move(block));
+
+    /// Restoring the blocks allocates, so it can throw here with the join's data already gone.
+    fiu_do_on(FailPoints::hash_join_throw_after_data_release, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
+    });
 
     if (restructure)
         for (auto & block : blocks)

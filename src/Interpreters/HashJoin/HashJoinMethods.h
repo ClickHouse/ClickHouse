@@ -12,7 +12,6 @@
 
 #include <memory>
 #include <optional>
-#include <typeinfo>
 
 namespace DB
 {
@@ -109,31 +108,6 @@ struct Inserter
     }
 };
 
-/// The one key getter shared by a block's slots, for the getters whose construction reads the whole
-/// block. Type-erased because the concrete type is only known inside the per-key-type dispatch.
-class BlockKeyGetter
-{
-public:
-    template <typename KeyGetter, typename Build>
-    KeyGetter & getOrBuild(Build && build)
-    {
-        if (!getter)
-        {
-            getter = std::make_shared<KeyGetter>(build());
-            built_type = &typeid(KeyGetter);
-        }
-        chassert(*built_type == typeid(KeyGetter));
-        return *static_cast<KeyGetter *>(getter.get());
-    }
-
-private:
-    std::shared_ptr<void> getter;
-    const std::type_info * built_type = nullptr;
-};
-
-template <typename KeyGetter>
-constexpr bool share_key_getter_across_buckets = requires { requires KeyGetter::reads_whole_block_at_construction; };
-
 /// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
@@ -145,12 +119,10 @@ public:
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
-        BlockKeyGetter & block_key_getter,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const ScatteredBlock::Selector & selector,
-        const Columns * dense_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
@@ -177,12 +149,10 @@ private:
     static void insertFromBlockImplTypeCase(
         HashJoin & join,
         HashMap & map,
-        BlockKeyGetter & block_key_getter,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const Selector & selector,
-        const Columns * dense_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,

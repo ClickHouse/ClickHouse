@@ -1,20 +1,20 @@
--- a runtime filter is planted for partitioned_hash
+-- a runtime filter is planted for hash
 1
 -- the partitioned algorithm survives the runtime-filter algorithm pruning
 1
--- listing both algorithms keeps partitioned_hash when a filter is planted
+-- listing both algorithms keeps hash when a filter is planted
 1
-inner results are unchanged by the runtime filter	50000	1	1
--- non-joined rows come from parallel sources under partitioned_hash
+inner results are unchanged by the runtime filter	(50000,1077654703081575815)	1
+-- non-joined rows come from parallel sources under hash
 1
-right parity across algorithms and stream counts	200000	1	1	1	1
-full parity across algorithms and stream counts	350000	1	1	1
-right parity with join_use_nulls	200000	1
-a one-partition build still emits every non-joined row	8	1
--- convert_join_to_in rewrites a qualifying partitioned_hash join
+right parity across algorithms and stream counts	(200000,13597697861340224949)	1	1
+full parity across algorithms and stream counts	(350000,7646823830885997778)	1
+right parity with join_use_nulls	(200000,1077654703081575815)
+a one-partition build still emits every non-joined row	(8,9273065752511075797)
+-- convert_join_to_in rewrites a qualifying hash join
 0
 the rewritten query gives the same rows as the join	50000	1
 -- with automatic external join the partitioned algorithm stays selected
 1
--- listing both algorithms keeps partitioned_hash when spilling is configured
+-- listing both algorithms keeps hash when spilling is configured
 1

@@ -92,8 +92,8 @@ namespace DB
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
-    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, "Maximum number of partitions a `partitioned_hash` join writes in one pass over the right table.", 0) \
-    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, "Limit how many partitions a `partitioned_hash` join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache.", 0) \
+    DECLARE(NonZeroUInt64, hash_join_max_fanout_per_pass, 8192, "Maximum number of partitions the hash join writes in one pass over the right table.", 0) \
+    DECLARE(Bool, hash_join_cap_partitions_by_l1_descriptors, true, "Limit how many partitions the hash join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache.", 0) \
     \
     DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, a hash join spills through `GraceHashJoin` when the right-side data exceeds this many bytes, but only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). When set to 0 (default), this absolute byte threshold is disabled.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0., "Spill threshold for hash joins expressed as a fraction of available memory. Combined with the absolute `max_bytes_before_external_join`, the smaller resulting threshold applies. The ratio is recomputed on each executor against its local memory limits.", 0) \
