@@ -1013,11 +1013,11 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     Buckets buckets_snapshot = rehashBuckets();
     force_spill = false;
     /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
-    stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
+    stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, inMemoryPeakBytes(*hash_join));
     /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
     /// first: a throw must not leave `hash_join` pointing at a join whose data is gone.
     auto released_join = std::move(hash_join);
-    auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
+    auto right_blocks = releaseInMemoryBlocks(*released_join);
     released_join.reset();
 
     {
