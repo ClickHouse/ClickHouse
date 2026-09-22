@@ -362,9 +362,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         /// A read that a projection answered selects that projection's parts and columns. The
         /// candidate is built with `optimize_projection` off, so its reads are of the base table and
         /// none of that applies to them. The pairing cannot tell the two apart: a projection read
-        /// keeps the table and the table expression name of the base read it replaced. What keeps
-        /// them apart today is the node the decision is matched on, hashed bottom-up over its whole
-        /// subtree, so a projection read under it makes the hash disagree and the optimization stops
+        /// keeps the table and the table expression name of the base read it replaced. What keeps them
+        /// apart today is the hash of the node the decision is matched on, taken bottom-up over its
+        /// subtree: a read contributes only its name, its table and its `PREWHERE`, but the steps above
+        /// a projection read serialize differently and the hash disagrees, so the optimization stops
         /// long before here. Decline rather than rest on that, for a read outside that subtree would
         /// reach this point.
         if (analyzed && analyzed->readFromProjection())
