@@ -937,8 +937,7 @@ void addAggregationStep(QueryPlan & query_plan,
     /// before any `AggregatingInOrderTransform` is built, so in-order state here only misleads later
     /// steps: with `enable_memory_bound_merging_of_aggregation_results` a distributed query would take
     /// `MergingAggregatedStep::applyOrder` and then fail in `MergingAggregatedStep::transformPipeline`.
-    /// Aggregation in order does not produce the overflow row, so it cannot serve a query that needs
-    /// one; `optimizeAggregationInOrder` refuses the same combination.
+    /// Aggregation in order does not produce the overflow row, so it cannot serve a query that needs one.
     const bool force_aggregation_in_order = settings[Setting::force_aggregation_in_order]
         && aggregation_analysis_result.grouping_sets_parameters_list.empty() && !aggregator_params.overflow_row;
 
