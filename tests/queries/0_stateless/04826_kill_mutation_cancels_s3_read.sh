@@ -137,27 +137,44 @@ for _ in {1..150}; do
 done
 echo "toggle: mutation started: $([[ "$started" -ge 1 ]] && echo 1 || echo 0)"
 
-# Let the retry loop reach its steady cadence, so the release below lands between two of the
-# read's own checks -- with a fresh attempt the read rechecks within milliseconds and the window
-# never opens.
-sleep 12
-# The blocker must stay cancelled long enough for a poller to see it -- back to back the window is
-# shorter than any poll interval, so nothing observes it and there is nothing to latch. It is then
-# released while the read is still between attempts, which is the ordering under test.
-$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_toggle"
-sleep 0.5
-$CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_toggle"
+# An entry in system.merges only means the task is running: the subquery's S3 client is built later,
+# and under a sanitizer that took 16s, so a toggle can be over before the read makes its first
+# attempt and cancel nothing. Each round leaves the mutation schedulable, so it is simply retried.
 cancelled=0
-for _ in {1..300}; do
-    seen=$($CLICKHOUSE_CLIENT -q "
-        SELECT countIf(latest_fail_reason LIKE '%Cancelled mutating parts%')
+toggle_deadline=$((SECONDS + 70))
+while [[ "$SECONDS" -lt "$toggle_deadline" ]]; do
+    # Long enough for the retry loop to back off to seconds, so the release below lands between two
+    # of the read's own checks; jittered, because a fixed wait plus the fixed restart after a
+    # cancelled attempt reproduces the same phase every round.
+    sleep "$((5 + RANDOM % 4))"
+    # One call: the window is a server-side sleep, so client startup cannot stretch it, and the
+    # baseline is read at the moment of the release. The blocker must stay cancelled long enough for
+    # a poller to see it, since back to back nothing observes it and there is nothing to latch.
+    baseline=$($CLICKHOUSE_CLIENT -q "
+        SYSTEM STOP MERGES t_toggle;
+        SELECT sleep(0.5) FORMAT Null;
+        SYSTEM START MERGES t_toggle;
+        SELECT max(toUnixTimestamp(latest_fail_time))
         FROM system.mutations
         WHERE database = currentDatabase() AND table = 't_toggle'")
-    if [[ "$seen" -ge 1 ]]; then
-        cancelled=1
-        break
-    fi
-    sleep 0.2
+    [[ -n "$baseline" ]] || continue
+    # A released blocker answers every later poll with "not cancelled", so a cancellation recorded
+    # after the release can only come from one that was persisted. An earlier one would only show
+    # the read reading the blocker itself, which the arm above already covers.
+    seen_deadline=$((SECONDS + 8))
+    while [[ "$SECONDS" -lt "$seen_deadline" ]]; do
+        seen=$($CLICKHOUSE_CLIENT -q "
+            SELECT countIf(latest_fail_reason LIKE '%Cancelled mutating parts%'
+                           AND toUnixTimestamp(latest_fail_time) > $baseline)
+            FROM system.mutations
+            WHERE database = currentDatabase() AND table = 't_toggle'")
+        if [[ "${seen:-0}" -ge 1 ]]; then
+            cancelled=1
+            break
+        fi
+        sleep 0.5
+    done
+    [[ "$cancelled" -eq 1 ]] && break
 done
 echo "toggle stop/start cancels the read: $cancelled"
 $CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = currentDatabase() AND table = 't_toggle' FORMAT Null"
