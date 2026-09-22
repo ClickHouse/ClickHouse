@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -39,7 +40,13 @@ String getRotatedLogTablesRegexp(const StorageID & log_table_id);
 /// `SystemLog::prepareUnionTable` generates: a proxy over one of the generated table functions carrying the
 /// comment marker. The name of the cluster and the choice between the generated shapes come from the server
 /// configuration, which may well have changed since the table was generated, so they are not pinned.
-std::optional<StorageID> getSystemLogOfGeneratedUnionTable(const ASTCreateQuery & create_query);
+///
+/// The names in the definition may be spelled as literals, identifiers, or (with `context`) any constant
+/// expression, the same way the table functions themselves accept them: `merge(currentDatabase(), ...)` is
+/// the same definition as `merge('system', ...)` when `system` is the current database. A definition being
+/// created has to be read that way, because a table function nested into `clusterAllReplicas` keeps its
+/// arguments as written; a stored definition is read without a context, as the server wrote it.
+std::optional<StorageID> getSystemLogOfGeneratedUnionTable(const ASTCreateQuery & create_query, ContextPtr context = nullptr);
 
 /// Whether `create_query_ast` is a definition that `SystemLog::prepareUnionTable` generated for `log_table_id`,
 /// and therefore a table that it may replace.

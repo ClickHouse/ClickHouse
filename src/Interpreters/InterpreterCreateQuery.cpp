@@ -3050,7 +3050,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// text on the DDL worker, where nothing but the text is available. So `CREATE OR REPLACE` of such a
         /// definition refuses to replace anything that is not a generated union table of the same log, whoever
         /// issues it; a user who really wants that has to drop the existing table first.
-        const std::optional<StorageID> generated_union_table_log = getSystemLogOfGeneratedUnionTable(create);
+        ///
+        /// This is decided after `doCreateTable` above has resolved the table function of the definition, whose
+        /// `parseArguments` rewrote the arguments in `create` into literals: `merge(currentDatabase(), ...)`,
+        /// `merge(system, ...)` and `clusterAllReplicas(default, system.query_log)` are the very same definition
+        /// as their literal spellings by now, so the rule does not depend on how the query spelled them. The
+        /// arguments of a table function nested into `clusterAllReplicas` are the exception, as they are
+        /// evaluated on the remote side only, so the predicate takes the context to evaluate them itself.
+        const std::optional<StorageID> generated_union_table_log = getSystemLogOfGeneratedUnionTable(create, getContext());
 
         InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
         interpreter_rename.setSkipAccessCheck(true);
