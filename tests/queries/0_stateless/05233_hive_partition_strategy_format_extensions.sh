@@ -113,7 +113,7 @@ SELECT id, key FROM 05233_gz;
 -- must accept any suffix after the format extension (a gzipped file does not have to be named
 -- .gz), and it still has to match the files named without any suffix - that is what the table
 -- itself writes.
-INSERT INTO FUNCTION s3('$path/gz_lake/key=9/data.jsonl.custom', 'test', 'testtest', 'JSONEachRow', 'gzip') SELECT 12 AS id;
+INSERT INTO FUNCTION s3('$path/gz_lake/key=9/data.jsonl.custom', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip') SELECT 12 AS id;
 
 CREATE TABLE 05233_gz_explicit (id UInt64, key UInt64)
 ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip', partition_strategy = 'hive')
