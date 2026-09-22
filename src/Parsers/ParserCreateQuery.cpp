@@ -1747,6 +1747,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_named_collection(Keyword::NAMED_COLLECTION);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_on(Keyword::ON);
@@ -1757,6 +1758,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
+    bool or_replace = false;
     bool if_not_exists = false;
 
     ASTPtr collection_name;
@@ -1764,10 +1766,13 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_create.ignore(pos, expected))
         return false;
 
+    if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
     if (!s_named_collection.ignore(pos, expected))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (!or_replace && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
     if (!name_p.parse(pos, collection_name, expected))
@@ -1805,6 +1810,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_not_exists = if_not_exists;
+    query->or_replace = or_replace;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
     query->overridability = overridability;
@@ -3736,22 +3742,26 @@ DDL-created named collections can be enabled on select ClickHouse Cloud services
 **Syntax**
 
 ```sql
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster] AS
 key_name1 = 'some value' [[NOT] OVERRIDABLE],
 key_name2 = 'some value' [[NOT] OVERRIDABLE],
 key_name3 = 'some value' [[NOT] OVERRIDABLE],
 ...
 ```
 
+`OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
+replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
 **Example**
 
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
+CREATE OR REPLACE NAMED COLLECTION foobar AS a = '2', c = '3';
 ```
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/reference/statements/alter/named-collection)
+- [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection)
 - [DROP NAMED COLLECTION](/reference/statements/drop#drop-function)
 
 **See Also**
@@ -3759,7 +3769,7 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 - [Named collections guide](/concepts/features/configuration/server-config/named-collections)
 )DOCS_MD",
         .syntax = R"(
-CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+CREATE [OR REPLACE] NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
 )",
         .parent = "CREATE",
