@@ -466,7 +466,7 @@ public:
         }
 
         /// Runs `computeBucketPrefix` on two-level maps. Single-level maps need nothing.
-        void computeBucketPrefix(Type which) const
+        void computeBucketPrefix(Type which)
         {
             switch (which)
             {

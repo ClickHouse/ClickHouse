@@ -26,8 +26,8 @@ template <
     typename Grower,
     typename Allocator,
     template <typename...> typename ImplTable,
-    Int32 bits_for_bucket>
-struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket>>
+    size_t BITS_FOR_BUCKET>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>>
     : std::true_type
 {
 };
@@ -37,8 +37,8 @@ struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
 {
 };
 
-template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, Int32 bits_for_bucket>
-struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, bits_for_bucket>> : std::true_type
+template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, size_t BITS_FOR_BUCKET>
+struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, BITS_FOR_BUCKET>> : std::true_type
 {
 };
 
@@ -47,7 +47,7 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
-/// A type pack cannot bind the non-type `bits_for_bucket`, so the parameters are spelled out.
+/// A type pack cannot bind the non-type `BITS_FOR_BUCKET`, so the parameters are spelled out.
 template <
     typename Key,
     typename Cell,
@@ -55,9 +55,9 @@ template <
     typename Grower,
     typename Allocator,
     typename ImplTable,
-    Int32 bits_for_bucket,
+    size_t BITS_FOR_BUCKET,
     typename BucketHash>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket, BucketHash>>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET, BucketHash>>
     : std::true_type
 {
 };

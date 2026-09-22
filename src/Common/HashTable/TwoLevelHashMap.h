@@ -4,22 +4,20 @@
 #include <Common/HashTable/HashMap.h>
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET
->
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
 class TwoLevelHashMapTable
-    : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, bits_for_bucket>
+    : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
-    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, bits_for_bucket>;
+    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
     using LookupResult = typename Impl::LookupResult;
 
     using Base::Base;
@@ -39,28 +37,24 @@ public:
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET
->
-using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, bits_for_bucket>;
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable,
-    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET
->
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
 using TwoLevelHashMapWithSavedHash
-    = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, bits_for_bucket>;
+    = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;

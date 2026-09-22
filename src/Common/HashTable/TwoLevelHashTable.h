@@ -8,7 +8,7 @@
 
 
 /** Two-level hash table.
-  * Represents 256 (or 1 << bits_for_bucket) small hash tables (buckets of the first level).
+  * Represents 256 (or 1 << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
   * To determine which one to use, one of the bytes of the hash function is taken.
   *
   * Usually works a little slower than a simple hash table.
@@ -17,7 +17,7 @@
   * - delay during resizes is amortized, since the small hash tables will be resized separately;
   * - in theory, resizes are cache-local in a larger range of sizes.
   *
-  * With `bits_for_bucket = 0` there is a single bucket: routing folds to a constant.
+  * With `BITS_FOR_BUCKET = 0` there is a single bucket: routing folds to a constant.
   * Lookups and inserts compile down to what the single-level table does.
   * One map type can then serve both a serial fill and a fill from many threads.
   *
@@ -38,7 +38,7 @@ struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initia
     void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
 };
 
-constexpr Int32 DEFAULT_BITS_FOR_BUCKET = 8;
+constexpr size_t DEFAULT_BITS_FOR_BUCKET = 8;
 
 /// A table that directly addresses a fixed key range, so that all buckets can share one instance of
 /// it. Specialized next to the table types that qualify.
@@ -48,10 +48,8 @@ struct IsFixedRangeTable : std::false_type
 };
 
 /// Bucket selection for a fixed-range table, whose placement "hash" is the key itself. Hashes the
-/// cache line the key's cell starts on: a dense key range spreads over the buckets, and two keys
-/// whose cells share a line stay in one bucket, so they are never written under two different locks.
-/// The line is the cell's byte offset divided by the line size, not the key divided by a cells-per-line
-/// count, because `cell_size` does not always divide the line size.
+/// cache line the key's cell starts on. `FixedHashMapCell` is padded so its size divides the line,
+/// and two keys that start on one line stay in one bucket.
 template <size_t cell_size>
 struct FixedRangeBucketHash
 {
@@ -59,6 +57,7 @@ struct FixedRangeBucketHash
     size_t ALWAYS_INLINE operator()(Key key) const
     {
         const UInt64 line = (static_cast<UInt64>(key) * cell_size) / DB::CH_CACHE_LINE_SIZE;
+        /// `getBucketFromHash` keeps the high bits. A line number is small, so XOR cannot move it there.
         return static_cast<size_t>((line * 0x9E3779B97F4A7C15ULL) >> 32);
     }
 };
@@ -70,11 +69,11 @@ template <
     typename Grower,
     typename Allocator,
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
-    Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET,
     typename BucketHash = void>
 class TwoLevelHashTable : private boost::noncopyable, protected Hash /// empty base optimization
 {
-    static_assert(bits_for_bucket >= 0 && bits_for_bucket < 32, "the bucket is taken from the low 32 bits of the hash");
+    static_assert(BITS_FOR_BUCKET < 32, "the bucket is taken from the low 32 bits of the hash");
 
 protected:
     friend class const_iterator;
@@ -86,13 +85,13 @@ protected:
 public:
     using Impl = ImplTable;
 
-    static constexpr UInt32 NUM_BUCKETS = 1ULL << bits_for_bucket;
+    static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
     static constexpr bool isFixedRangeStorage() { return IsFixedRangeTable<ImplTable>::value; }
 
     /// NOTE Bad for hash tables with more than 2^32 cells.
-    static constexpr UInt32 bucketShift() { return 32 - bits_for_bucket; }
+    static constexpr UInt32 bucketShift() { return 32 - BITS_FOR_BUCKET; }
     static size_t ALWAYS_INLINE getBucketFromHash(size_t hash_value) { return (hash_value >> bucketShift()) & MAX_BUCKET; }
 
 private:
@@ -140,7 +139,7 @@ private:
 
         /// Prefix sums of the bucket capacities: `bucket_cells_prefix[b]` is the number of cells in
         /// the buckets before `b`. Must not run while another thread reads offsets.
-        void computeBucketPrefix() const
+        void computeBucketPrefix()
         {
             bucket_cells_prefix.assign(NUM_BUCKETS, 0);
             size_t run = 0;
@@ -173,7 +172,7 @@ private:
         }
 
         Impl buckets[NUM_BUCKETS];
-        mutable std::vector<size_t> bucket_cells_prefix;
+        std::vector<size_t> bucket_cells_prefix;
     };
 
     /// One flat table that every bucket maps into. The buckets only partition the keys.
@@ -629,7 +628,7 @@ public:
     /// Prefix sums that `offsetInternal` uses to number cells across all buckets.
     /// Call this once the table stops growing, and again after it grows.
     /// An offset read before that is stale. The lookup path does not check.
-    void computeBucketPrefix() const { impls.computeBucketPrefix(); }
+    void computeBucketPrefix() { impls.computeBucketPrefix(); }
 
     void restoreMinMaxOptimization() { impls.restoreMinMaxOptimization(); }
     bool canUseMinMaxOptimization() const { return impls.canUseMinMaxOptimization(); }

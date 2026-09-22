@@ -25,7 +25,7 @@
 namespace
 {
 
-template <Int32 bits>
+template <size_t bits>
 using MapWithBits = TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, bits>;
 
 using OneBucketMap = MapWithBits<0>;
@@ -51,7 +51,7 @@ using RoutedMap = TwoLevelHashTable<
     TwoLevelHashTableGrower<>,
     HashTableAllocator,
     IdentityImpl,
-    /* bits_for_bucket = */ 8,
+    /* BITS_FOR_BUCKET = */ 8,
     MixingBucketHash>;
 
 static_assert(BucketPartitionedMap<OneBucketMap>);
@@ -220,14 +220,16 @@ TEST(TwoLevelHashTableBuckets, BucketIsTakenFromTheHighEndOfTheLow32Bits)
 {
     /// A caller that routes keys before it has a table computes the bucket itself.
     /// The formula is part of the interface: the top `bits` of the low 32 bits of the hash.
-    const auto check = []<Int32 bits>()
+    const auto check = []<size_t bits>()
     {
         using Map = MapWithBits<bits>;
         ASSERT_EQ(Map::bucketShift(), static_cast<UInt32>(32 - bits));
         for (const size_t hash_value : {size_t(0), size_t(1), size_t(0xFFFFFFFFULL), size_t(0x100000000ULL),
                                         size_t(0xFFFFFFFFFFFFFFFFULL), size_t(0x123456789ABCDEFULL), size_t(0xDEADBEEF00000000ULL)})
         {
-            const size_t expected = bits == 0 ? 0 : static_cast<UInt32>(hash_value) >> (32 - bits);
+            size_t expected = 0;
+            if constexpr (bits != 0)
+                expected = static_cast<UInt32>(hash_value) >> (32 - bits);
             ASSERT_EQ(Map::getBucketFromHash(hash_value), expected) << "bits " << bits << ", hash " << hash_value;
         }
     };
