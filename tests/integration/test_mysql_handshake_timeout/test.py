@@ -18,7 +18,17 @@ node = cluster.add_instance(
     ],
 )
 
+# A node whose `receive_timeout` is well below the handshake budget: the phase must obey the
+# smaller of the two, including on the reads that bypass the buffer.
+short_timeout_node = cluster.add_instance(
+    "short_timeout_node",
+    main_configs=["configs/short_receive_timeout.xml"],
+    user_configs=["configs/short_receive_timeout.xml"],
+)
+
 MYSQL_PORT = 9001
+SHORT_RECEIVE_TIMEOUT = 1
+SHORT_NODE_HANDSHAKE_TIMEOUT = 9
 # `handshake_timeout_milliseconds` from the config, in seconds.
 HANDSHAKE_TIMEOUT = 3
 # The server has to close within the budget plus slack. A client-side timeout is a failure: it would
@@ -180,6 +190,29 @@ def test_trickled_tls_handshake_is_disconnected(started_cluster):
         sock.close()
 
     node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
+
+
+def test_receive_timeout_is_not_widened_by_the_deadline(started_cluster):
+    """`receive_timeout` below the handshake budget stays the shorter of the two.
+
+    The raw pre-SSL reads re-apply the deadline to the socket, so they must take the minimum with
+    what the socket was configured with rather than writing the remaining budget over it.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(SHORT_NODE_HANDSHAKE_TIMEOUT)
+    try:
+        sock.connect((short_timeout_node.ip_address, MYSQL_PORT))
+        greeting = sock.recv(4096)
+        assert len(greeting) > 5, f"No MySQL handshake packet: {greeting!r}"
+
+        started = time.monotonic()
+        wait_for_disconnect(sock)
+        elapsed = time.monotonic() - started
+        assert elapsed < SHORT_NODE_HANDSHAKE_TIMEOUT / 2, (
+            f"Held for {elapsed} seconds, `receive_timeout` is {SHORT_RECEIVE_TIMEOUT}"
+        )
+    finally:
+        sock.close()
 
 
 def test_server_healthy_after_disconnects(started_cluster):

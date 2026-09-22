@@ -44,6 +44,8 @@ public:
     void setHandshakeTimeout(size_t timeout_milliseconds);
     void clearHandshakeTimeout();
     UInt64 handshakeMillisecondsLeft() const;
+    /// For reads that bypass this buffer and so cannot rely on nextImpl doing it.
+    void applyHandshakeDeadlineToSocket();
 
 private:
     void clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left);

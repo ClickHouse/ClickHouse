@@ -209,6 +209,12 @@ UInt64 ReadBufferFromPocoSocketBase::handshakeMillisecondsLeft() const
     return elapsed < handshake_timeout_milliseconds ? handshake_timeout_milliseconds - elapsed : 1;
 }
 
+void ReadBufferFromPocoSocketBase::applyHandshakeDeadlineToSocket()
+{
+    if (handshake_timeout_milliseconds)
+        clampReceiveTimeoutToHandshakeDeadline(handshakeMillisecondsLeft());
+}
+
 void ReadBufferFromPocoSocketBase::clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left)
 {
     Poco::Timespan read_window(

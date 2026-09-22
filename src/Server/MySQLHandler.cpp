@@ -729,8 +729,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
         {
             /// These reads bypass `in`, so re-apply its deadline here: `receiveBytes` restarts the
             /// socket timeout, which would otherwise give the phase one budget per call.
-            if (const UInt64 left = in->handshakeMillisecondsLeft())
-                socket().setReceiveTimeout(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(left) * 1000));
+            in->applyHandshakeDeadlineToSocket();
 
             int ret = 0;
             try
