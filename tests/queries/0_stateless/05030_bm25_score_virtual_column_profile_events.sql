@@ -5,6 +5,8 @@ SET allow_experimental_bm25_score_column = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
+-- The postings read counts are compared between two queries, so the second one must not hit the global postings cache.
+SET use_text_index_postings_cache = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
 
