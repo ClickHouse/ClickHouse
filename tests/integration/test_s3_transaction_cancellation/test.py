@@ -14,6 +14,12 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_minio=True,
     with_zookeeper=True,
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
     # Keep system-log writes off S3 so the read failpoint belongs to the rollback.
     with_remote_database_disk=False,
     stay_alive=True,
