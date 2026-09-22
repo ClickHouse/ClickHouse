@@ -257,6 +257,17 @@ bool hasAnyNonFinishedTTLInMap(const TTLInfoMap & map)
     return false;
 }
 
+time_t getMaximalNonFinishedTTLInMap(const TTLInfoMap & map)
+{
+    time_t max_ttl = 0;
+
+    for (const auto & [name, info] : map)
+        if (info.initialized() && !info.finished() && info.max > max_ttl)
+            max_ttl = info.max;
+
+    return max_ttl;
+}
+
 }
 
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowTTLs() const
@@ -265,6 +276,19 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowTTLs() const
         return true;
 
     return hasAnyNonFinishedTTLInMap(rows_where_ttl) || hasAnyNonFinishedTTLInMap(group_by_ttl);
+}
+
+time_t MergeTreeDataPartTTLInfos::getMaximalNonFinishedRowTTL() const
+{
+    time_t max_ttl = 0;
+
+    if (table_ttl.initialized() && !table_ttl.finished())
+        max_ttl = table_ttl.max;
+
+    max_ttl = std::max(max_ttl, getMaximalNonFinishedTTLInMap(rows_where_ttl));
+    max_ttl = std::max(max_ttl, getMaximalNonFinishedTTLInMap(group_by_ttl));
+
+    return max_ttl;
 }
 
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedColumnTTLs() const

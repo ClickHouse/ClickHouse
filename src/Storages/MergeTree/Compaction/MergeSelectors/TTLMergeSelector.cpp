@@ -225,7 +225,7 @@ TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t 
 
 time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) const
 {
-    return part.general_ttl_info->part_max_ttl;
+    return part.general_ttl_info->row_max_ttl;
 }
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
@@ -233,7 +233,7 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     if (!part.general_ttl_info.has_value())
         return false;
 
-    return part.general_ttl_info->has_any_non_finished_ttls;
+    return part.general_ttl_info->has_any_non_finished_row_ttls;
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)

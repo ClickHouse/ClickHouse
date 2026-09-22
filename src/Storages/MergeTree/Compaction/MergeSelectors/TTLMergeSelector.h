@@ -65,7 +65,7 @@ private:
     const size_t max_parts_to_merge_at_once;
 };
 
-/// Select parts that must be fully deleted because of ttl for part.
+/// Select parts whose rows have all expired and which can be fully deleted.
 class TTLPartDropMergeSelector : public ITTLMergeSelector
 {
 public:
@@ -74,7 +74,8 @@ public:
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
-    /// Actually does not check anything. Allows to use any part.
+    /// Checks that the part has at least one unfinished row TTL. Column TTLs do not postpone
+    /// dropping a part whose rows have all expired.
     bool canConsiderPart(const PartProperties & part) const override;
 };
 

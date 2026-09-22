@@ -67,6 +67,9 @@ struct MergeTreeDataPartTTLInfos
     /// Has any row TTL (table, `WHERE` or `GROUP BY`) which is not calculated on a completely expired part.
     bool hasAnyNonFinishedRowTTLs() const;
 
+    /// The latest time at which all rows in the part expire. Zero if there is no unfinished row TTL.
+    time_t getMaximalNonFinishedRowTTL() const;
+
     /// Has any column TTL which is not calculated on a completely expired part. A column TTL can only
     /// be honoured by rewriting the part, never by dropping it, so it is tracked separately.
     bool hasAnyNonFinishedColumnTTLs() const;
