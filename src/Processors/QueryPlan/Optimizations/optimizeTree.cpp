@@ -94,6 +94,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 }
 

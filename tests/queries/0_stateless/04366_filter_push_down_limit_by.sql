@@ -34,6 +34,89 @@ FROM (
     ) WHERE key = '5'
 );
 
+-- Same query with query_plan_filter_push_down_below_limit_by = 0: the conjunct stays above the
+-- LIMIT BY, so the primary key gets no condition -> the plan shape used before 26.7.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key = '5' SETTINGS query_plan_filter_push_down_below_limit_by = 0
+);
+
+-- `filter_above_limitby` = 1 iff a Filter step exists AND its plan line precedes LimitBy's.
+-- Absence of a primary key condition alone cannot tell "filter above LimitBy" from "filter
+-- pushed below it but index analysis produced nothing", so the OFF path needs this placement
+-- oracle too. Same shape as 04512_filter_push_down_limit_by_nondeterministic.
+SELECT (has_filter AND fl < ll) AS filter_above_limitby
+FROM (
+    SELECT countIf(explain LIKE '%Filter (%') > 0 AS has_filter,
+           minIf(ln, explain LIKE '%Filter (%') AS fl,
+           minIf(ln, explain LIKE '%LimitBy%')  AS ll
+    FROM (
+        SELECT explain, rowNumberInAllBlocks() AS ln
+        FROM (
+            EXPLAIN
+            SELECT * FROM (
+                SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+            ) WHERE key = '5' SETTINGS query_plan_filter_push_down_below_limit_by = 0, enable_parallel_replicas = 0
+        )
+    )
+);
+
+-- The push-down pass also runs with `query_plan_filter_push_down = 0` once a JOIN runtime
+-- filter has been added, so the setting has to be honoured on that path as well: at its default
+-- the key conjunct still reaches below LimitBy (no Filter step above it -> 0), at 0 the conjunct
+-- stays above LimitBy (-> 1). The two arms differ only in the new setting.
+-- `query_plan_optimize_join_order_randomize = 0` (its default) is pinned in both arms because a
+-- non-zero seed feeds the join order optimizer random cardinalities, which can reverse the two
+-- join inputs; the reversed plan prints the right-hand branch first and `fl < ll` then compares
+-- lines from different branches.
+DROP TABLE IF EXISTS t_04366_rhs;
+CREATE TABLE t_04366_rhs (key String) ENGINE = MergeTree ORDER BY key AS SELECT '5';
+
+SELECT (has_filter AND fl < ll) AS filter_above_limitby
+FROM (
+    SELECT countIf(explain LIKE '%Filter (%') > 0 AS has_filter,
+           minIf(ln, explain LIKE '%Filter (%') AS fl,
+           minIf(ln, explain LIKE '%LimitBy%')  AS ll
+    FROM (
+        SELECT explain, rowNumberInAllBlocks() AS ln
+        FROM (
+            EXPLAIN
+            SELECT l.key FROM (
+                SELECT key, ts FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+            ) AS l INNER JOIN t_04366_rhs AS r ON l.key = r.key
+            WHERE l.key = '5'
+            SETTINGS query_plan_filter_push_down = 0, query_plan_filter_push_down_below_limit_by = 1,
+                     enable_join_runtime_filters = 1, enable_parallel_replicas = 0,
+                     query_plan_optimize_join_order_randomize = 0
+        )
+    )
+);
+
+SELECT (has_filter AND fl < ll) AS filter_above_limitby
+FROM (
+    SELECT countIf(explain LIKE '%Filter (%') > 0 AS has_filter,
+           minIf(ln, explain LIKE '%Filter (%') AS fl,
+           minIf(ln, explain LIKE '%LimitBy%')  AS ll
+    FROM (
+        SELECT explain, rowNumberInAllBlocks() AS ln
+        FROM (
+            EXPLAIN
+            SELECT l.key FROM (
+                SELECT key, ts FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+            ) AS l INNER JOIN t_04366_rhs AS r ON l.key = r.key
+            WHERE l.key = '5'
+            SETTINGS query_plan_filter_push_down = 0, query_plan_filter_push_down_below_limit_by = 0,
+                     enable_join_runtime_filters = 1, enable_parallel_replicas = 0,
+                     query_plan_optimize_join_order_randomize = 0
+        )
+    )
+);
+
+DROP TABLE t_04366_rhs;
+
 -- LIMIT n OFFSET m BY (m > 0): NOT pushed. A group of size <= m is fully dropped, so a
 -- pushed throwing key predicate could be evaluated on rows the query never reaches.
 SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
@@ -94,6 +177,11 @@ SELECT count(), sum(val) FROM (
     SELECT key, ts, val FROM t_04366 WHERE key = '5' ORDER BY key, ts LIMIT 1 BY key
 );
 
+-- Same result with the push-down declined, so the OFF path is not covered by EXPLAIN alone.
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key = '5' SETTINGS query_plan_filter_push_down_below_limit_by = 0;
+
 DROP TABLE t_04366;
 
 -- Exception-semantics regression: a singleton group '0' dropped by OFFSET 1 must NOT be
@@ -129,3 +217,12 @@ SELECT key FROM (
     SELECT key, x FROM t_04366_nonkey ORDER BY key, ord LIMIT 1 BY key
 ) WHERE intDiv(1, x) > 0;
 DROP TABLE t_04366_nonkey;
+
+-- `compatibility` with a version before 26.7 restores the pre-26.7 plan (the push-down shipped
+-- in 26.7, so SettingsChangesHistory registers the semantic change under that version); 26.7
+-- through 26.9 had it enabled, so those must keep it on.
+SET compatibility = '26.6';
+SELECT getSetting('query_plan_filter_push_down_below_limit_by');
+SET compatibility = '26.9';
+SELECT getSetting('query_plan_filter_push_down_below_limit_by');
+SET compatibility = '';
