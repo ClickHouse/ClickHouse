@@ -6,8 +6,11 @@ Converted from stateless tests because stateless tests must not modify the serve
 data on disk (including the backups disk).
 """
 
+import base64
 import hashlib
+import json
 import os.path
+import re
 
 import pytest
 
@@ -374,4 +377,71 @@ def test_backup_metadata_version_overflow(started_cluster):
     assert "BACKUP_VERSION_NOT_SUPPORTED" in err
 
     node.query("DROP TABLE IF EXISTS tbl_ver_overflow SYNC")
+    remove_from_backups_disk(bname)
+
+
+def test_restore_part_written_by_newer_server(started_cluster):
+    # A part whose `serialization.json` carries a field this server does not know about was written
+    # by a newer server. That is not damage, so RESTORE must report `BACKUP_VERSION_NOT_SUPPORTED`
+    # (600), not `BACKUP_DAMAGED` and not `CORRUPTED_DATA`. This reproduces the motivating case of a
+    # backup made by 26.3+ (which writes `propagate_types_serialization_versions_to_nested_types`)
+    # restored on 26.2, with a field name no server version knows so the test stays valid.
+    node.query("DROP TABLE IF EXISTS tbl_newer_format SYNC")
+    node.query("CREATE TABLE tbl_newer_format (x UInt64, s String) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO tbl_newer_format SELECT number, toString(number) FROM numbers(10)")
+
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'tbl_newer_format' AND active"
+    ).strip()
+    assert part, "no active part to address"
+
+    bname = "test_restore_part_written_by_newer_server"
+    node.query(f"BACKUP TABLE tbl_newer_format TO Disk('backups', '{bname}')")
+
+    # Rewrite the part's `serialization.json` inside the backup with an extra top-level field.
+    file_in_backup = f"data/default/tbl_newer_format/{part}/serialization.json"
+    file_path = f"{BACKUPS_DISK_ROOT}/{bname}/{file_in_backup}"
+    backup_metadata_path = f"{BACKUPS_DISK_ROOT}/{bname}/.backup"
+    # Transfer the file base64-encoded: the helper strips the command output, and the byte-exact
+    # content is needed to find the file's entry in the backup metadata.
+    original = base64.b64decode(node.exec_in_container(["base64", "-w0", file_path], privileged=True, user="root"))
+    edited_json = json.loads(original)
+    edited_json["field_added_by_a_newer_server"] = True
+    edited = json.dumps(edited_json).encode()
+
+    # The backup's entry for the file must be re-pointed at the new size, so that the only thing wrong
+    # with the backup is the part format itself. The checksum is the key under which the backup looks
+    # the file up, not something it verifies against the content, so it is kept.
+    backup_metadata = node.exec_in_container(["cat", backup_metadata_path], privileged=True, user="root")
+    entry_match = re.search(
+        f"<name>{re.escape(file_in_backup)}</name><size>{len(original)}</size><checksum>[0-9a-f]+</checksum>", backup_metadata
+    )
+    assert entry_match, f"no entry for {file_in_backup} of size {len(original)} in {backup_metadata}"
+    original_entry = entry_match.group(0)
+    edited_entry = original_entry.replace(f"<size>{len(original)}</size>", f"<size>{len(edited)}</size>")
+    assert edited_entry != original_entry
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo -n '{base64.b64encode(edited).decode()}' | base64 -d > {file_path} && "
+            f"sed -i 's|{original_entry}|{edited_entry}|' {backup_metadata_path}",
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    node.query("DROP TABLE tbl_newer_format SYNC")
+    errors_before = get_error_counts()
+
+    err = node.query_and_get_error(f"RESTORE TABLE tbl_newer_format FROM Disk('backups', '{bname}')")
+    assert "field_added_by_a_newer_server" in err
+    assert f"while restoring part {part}" in err
+    assert "Code: 600" in err
+    assert "BACKUP_VERSION_NOT_SUPPORTED" in err
+    assert "BACKUP_DAMAGED" not in err
+    # Neither the low-level `UNKNOWN_FORMAT_VERSION` nor `CORRUPTED_DATA` may be counted.
+    assert get_error_counts_delta(errors_before) == {"BACKUP_VERSION_NOT_SUPPORTED": 1}
+
+    node.query("DROP TABLE IF EXISTS tbl_newer_format SYNC")
     remove_from_backups_disk(bname)
