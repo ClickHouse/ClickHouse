@@ -2403,19 +2403,6 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
-/// Whether applying the `CAST` of the key DAG straight to a constant of another type gives the same
-/// value as normalizing the constant to the key column's type first and then applying it. A
-/// `Dynamic` value keeps the type it was inserted with, so `CAST(CAST(x, 'Dynamic'), 'String')`
-/// renders `x` the way its own type does and the round trip can be skipped. Every other key type
-/// puts the value into its own value space first - `DateTime64(3)` keeps three fractional digits of a
-/// `DateTime64(6)` constant, and so does `Array(DateTime64(3))` for each element - so the direct
-/// `CAST` would render a value the key space does not hold.
-static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input_type)
-{
-    return isDynamic(removeLowCardinality(key_input_type));
-}
-
-
 /// Cast column to target_type and fail if the cast introduces NULLs.
 static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
 {
@@ -2488,6 +2475,42 @@ static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const
 }
 
 
+/// Applies a single `CAST` of a `Dynamic` key directly to the constant's original type.
+/// `Dynamic` preserves that type, so `CAST(CAST(x, 'Dynamic'), 'String')` renders `x` the same
+/// way as `CAST(x, 'String')`. The accurate cast cannot prepare the intermediate `Dynamic`
+/// conversion, but this equivalent direct conversion still permits index analysis.
+static bool tryApplyDirectCastForDynamicKey(
+    const ColumnPtr & input_column,
+    const DataTypePtr & input_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag,
+    ColumnPtr & out_column,
+    DataTypePtr & out_type)
+{
+    chassert(isDynamic(removeLowCardinality(dag.input_type)));
+    const auto & actions_dag = dag.actions->getActionsDAG();
+    const auto * output_node = actions_dag.findInOutputs(dag.output_name).getWithoutAlias();
+
+    /// This equivalence applies to `CAST` (for example, `col::String` or `col::Int32`),
+    /// not to other conversion functions such as `toString` or `toInt32`.
+    if (output_node->type != ActionsDAG::ActionType::FUNCTION || output_node->function_base->getName() != "CAST")
+        return false;
+
+    chassert(output_node->children.size() >= 2);
+    const auto * cast_arg = output_node->children.front()->getWithoutAlias();
+    if (cast_arg->type != ActionsDAG::ActionType::INPUT || cast_arg->result_name != input_name)
+        return false;
+
+    const auto cast_result_type = recursiveRemoveLowCardinality(output_node->result_type);
+    out_column = input_column;
+    out_type = input_type;
+    if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
+        return false;
+
+    return finalizeTransformedColumn(out_column, out_type);
+}
+
+
 /// Converts `in_column` to the type the transform DAG consumes and writes it to `out_column`/`out_type`,
 /// so the value the transform will see is observable before the transform runs.
 /// Returns false when the conversion cannot be applied accurately to every value in `in_column`.
@@ -2511,64 +2534,6 @@ static bool convertColumnForDeterministicDag(
 
     if (!input_type->equals(*dag.input_type))
     {
-        /// Fast-path: consume leading CAST(...) that are no-op for current type
-        /// or can be applied directly to the CAST result type. This avoids the
-        /// round-trip through dag.input_type (e.g. String -> Dynamic -> String).
-        /// Additionally, some round trip might not be possible to do safely. Like String -> Dynamic -> String.
-        auto try_apply_direct_cast_fast_path = [&]() -> bool
-        {
-            const auto & actions_dag = dag.actions->getActionsDAG();
-
-            const ActionsDAG::Node * output_node = nullptr;
-            for (const auto * node : actions_dag.getOutputs())
-            {
-                if (node->result_name == dag.output_name)
-                {
-                    output_node = node;
-                    break;
-                }
-            }
-
-            if (!output_node)
-                return false;
-
-            auto skip_aliases = [](const ActionsDAG::Node * node) -> const ActionsDAG::Node *
-            {
-                while (node && node->type == ActionsDAG::ActionType::ALIAS)
-                {
-                    if (node->children.size() != 1)
-                        return nullptr;
-                    node = node->children.front();
-                }
-                return node;
-            };
-
-            output_node = skip_aliases(output_node);
-            if (!output_node)
-                return false;
-
-            /// Only handles a single CAST directly applied to the input.
-            /// Currently, only supports CAST function (e.g. `col::String`, `col::Int32`) but will not work for other
-            /// conversion functions like `toString(col)`, `toInt32(col)`, etc.
-            if (output_node->type != ActionsDAG::ActionType::FUNCTION || !output_node->function_base
-                || output_node->function_base->getName() != "CAST" || output_node->children.empty())
-                return false;
-
-            const auto * cast_arg = skip_aliases(output_node->children.front());
-            if (!cast_arg || cast_arg->type != ActionsDAG::ActionType::INPUT || cast_arg->result_name != input_name)
-                return false;
-
-            const auto cast_result_type = recursiveRemoveLowCardinality(output_node->result_type);
-
-            out_column = input_column;
-            out_type = input_type;
-
-            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
-                return false;
-
-            return finalizeTransformedColumn(out_column, out_type);
-        };
-
         /// The constant is normalized through the key column's type first: applying the `CAST` of the
         /// DAG straight to the constant's own type renders it from a different type space. A
         /// `DateTime64(6)` constant casts to a `String` with six fractional digits, while the key space
@@ -2585,7 +2550,8 @@ static bool convertColumnForDeterministicDag(
             /// type instead would put it in a different value space - and this helper also transforms
             /// whole set columns, where one such element would drag the representable ones along - so
             /// decline: the caller then reads more instead of pruning by a value the key space does not hold.
-            if (isDirectCastEquivalentToNormalizedCast(dag.input_type) && try_apply_direct_cast_fast_path())
+            if (isDynamic(removeLowCardinality(dag.input_type))
+                && tryApplyDirectCastForDynamicKey(input_column, input_type, input_name, dag, out_column, out_type))
             {
                 out_transform_applied = true;
                 return true;
@@ -2647,9 +2613,11 @@ static bool executeDeterministicDag(
 ///
 /// If `in_type` differs from `dag.input_type`, we normally cast `in_column` to `dag.input_type` (without
 /// introducing NULLs) and then execute the DAG. However, if the extracted DAG is just a single CAST applied
-/// directly to the input, casting to `dag.input_type` first can be redundant or even unsafe. In this case,
-/// we try to apply the CAST directly to the input column to avoid a lossy round-trip through `dag.input_type`
-/// (e.g. String -> Dynamic -> String).
+/// directly to a `Dynamic` input, we can apply the `CAST` to the constant's original type instead.
+/// `Dynamic` preserves that type, making this equivalent to the unsupported intermediate conversion
+/// (for example, `String` -> `Dynamic` -> `String`). Other key types must normalize the value first:
+/// `DateTime64(3)` and `Array(DateTime64(3))` keep three fractional digits from `DateTime64(6)` values,
+/// so a direct `CAST` would render a value that the key space does not hold.
 ///
 /// Examples:
 /// - DAG `p -> cityHash64(p)`:
