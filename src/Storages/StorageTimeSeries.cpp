@@ -750,6 +750,10 @@ void StorageTimeSeries::readImpl(
 
     auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
     query_plan = QueryPlan();
+    /// The generated plan joins the outer plan only during optimization, after the outer plan has decided
+    /// on distribution, so its contexts must be handed over now for a fallback to reach them.
+    query_plan.takeContextsFrom(*generated_plan);
+    query_plan.addDistributedPlanDecisionContext(read_context);
     query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
@@ -875,7 +879,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 |---|---|---|
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
-| `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
+| `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -907,7 +911,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
 
 ### Specifying outer columns {#specifying-outer-columns}
 
-The outer `samples` column can be listed explicitly in a `CREATE TABLE` statement to override its default `Array(Tuple(DateTime64(3), Float64))` type (its old name `time_series` is accepted too). ClickHouse extracts the timestamp and scalar types from the tuple and propagates them to the inner samples table:
+The outer `samples` column can be listed explicitly in a `CREATE TABLE` statement to override its default `Array(Tuple(DateTime64(3), Float64))` type (its old name `time_series` is accepted too). ClickHouse extracts the timestamp and value types from the tuple and propagates them to the inner samples table:
 
 ```sql
 CREATE TABLE my_table (samples Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
