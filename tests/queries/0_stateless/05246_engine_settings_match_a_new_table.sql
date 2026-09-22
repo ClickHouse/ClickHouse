@@ -23,6 +23,9 @@ WHERE engine = 'Distributed' AND name = 'background_insert_batch';
 
 SELECT engine, name, uniqExact(value) AS readings_agree, count() FROM readings GROUP BY engine, name ORDER BY engine;
 
--- The four settings filled that way are reported at all, and as unchanged while the server leaves them alone.
-SELECT name, changed, source FROM system.engine_settings
+-- The four settings filled that way are reported at all, and their source follows the value, as it does for a
+-- table's own rows: two of them take a core setting's value that is not this engine's compiled-in default, so
+-- they read `other`, and the two whose core value happens to equal it read `default`. Saying `default` for a
+-- value that differs from the `default` column would contradict both that column and the table's own row.
+SELECT name, value, `default`, changed, source FROM system.engine_settings
 WHERE engine = 'Distributed' AND name LIKE 'background_insert_%' ORDER BY name;

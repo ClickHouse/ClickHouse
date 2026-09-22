@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/SettingsWithRecordedOrigin.h>
 #include <Storages/enumerateSettingsFromImpl.h>
@@ -143,13 +144,12 @@ SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr cont
     settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
 
     auto described = settings.enumerateSettings();
-    /// Filling a setting marks it changed even where it assigned the value it already had, and nothing records
-    /// an origin for it - a core setting is not one of the sources the column names. So for those the changed
-    /// bit says nothing and the value decides: whatever set a value other than the default, it was not the
-    /// default. A setting the `distributed` config section assigned keeps the source it recorded.
-    for (auto & one : described)
-        if (one.origin == SettingOrigin::Other && one.value == one.default_value)
-            one.origin = SettingOrigin::Default;
+    /// Filling one of these copies the core setting's field, changed bit and all, so the bit says nothing
+    /// about them here: it is set for a value that merely equals the default and clear for one that does not.
+    /// The value decides instead - the same rule, and the same call, `StorageDistributed::getTableSettings`
+    /// applies to the table's own rows, so the two cannot answer differently for the same value.
+    /// A setting the `distributed` config section assigned keeps the source it recorded.
+    setOriginByValue(described);
     return described;
 }
 

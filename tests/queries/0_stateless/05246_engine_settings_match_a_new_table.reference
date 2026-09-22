@@ -1,6 +1,6 @@
 Distributed	background_insert_batch	1	2
 Join	join_use_nulls	1	2
-background_insert_batch	0	default
-background_insert_max_sleep_time_ms	0	default
-background_insert_sleep_time_ms	0	default
-background_insert_split_batch_on_failure	0	default
+background_insert_batch	0	0	0	default
+background_insert_max_sleep_time_ms	30000	0	1	other
+background_insert_sleep_time_ms	100	0	1	other
+background_insert_split_batch_on_failure	0	0	0	default
