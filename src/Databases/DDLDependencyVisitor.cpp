@@ -22,6 +22,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -44,7 +45,6 @@ namespace
     class DDLDependencyVisitorData
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
-        friend void visitViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
             : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
@@ -78,17 +78,6 @@ namespace
             {
                 visitDictionaryDef(*dictionary);
             }
-            else if (const auto * select = ast->as<ASTSelectQuery>())
-            {
-                if (auto with = select->with())
-                {
-                    for (const auto & child : with->children)
-                    {
-                        if (const auto * element = child->as<ASTWithElement>())
-                            cte_names.insert(element->name);
-                    }
-                }
-            }
             else if (auto * expr = ast->as<ASTTableExpression>())
             {
                 visitTableExpression(*expr);
@@ -105,7 +94,7 @@ namespace
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
-        /// Names declared by `WITH` lists met in the view's query; a bare identifier with such a name is a CTE reference.
+        /// Names declared by the `WITH` lists of the enclosing selects in the view's query; a bare identifier with such a name is a CTE reference.
         std::unordered_set<String> cte_names;
         QualifiedTableName table_name;
         String default_database;
@@ -186,8 +175,7 @@ namespace
                 {
                     /// CTE names are skipped only inside the query: `storage`/`targets` keep bare table names.
                     skip_asts.insert(create.select);
-                    visitViewQuery(create.select, *this);
-                    cte_names.clear();
+                    visitViewQuery(create.select);
 
                     if (create.is_materialized_view)
                     {
@@ -220,6 +208,38 @@ namespace
                     skip_asts.insert(create.select);
             }
 
+        }
+
+        /// Walks the query of a view: the names of the enclosing `WITH` lists are CTE references, not tables.
+        void visitViewQuery(const ASTPtr & node)
+        {
+            checkStackSize();
+            if (const auto * select = node->as<ASTSelectQuery>())
+            {
+                auto enclosing = cte_names;
+                if (auto with = select->with())
+                {
+                    for (const auto & child : with->children)
+                    {
+                        if (const auto * element = child->as<ASTWithElement>())
+                            cte_names.insert(element->name);
+                    }
+                }
+                visitViewQueryNode(node);
+                cte_names = std::move(enclosing);
+                return;
+            }
+            visitViewQueryNode(node);
+        }
+
+        void visitViewQueryNode(const ASTPtr & node)
+        {
+            visit(node);
+            for (const auto & child : node->children)
+            {
+                if (needChildVisit(child))
+                    visitViewQuery(child);
+            }
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -603,13 +623,6 @@ namespace
         static bool needChildVisit(const ASTPtr &, const ASTPtr & child, const Data & data) { return data.needChildVisit(child); }
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
-
-    /// Visits the query of a view, see `visitCreateQuery`.
-    void visitViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data)
-    {
-        DDLDependencyVisitor::Visitor visitor{data};
-        visitor.visit(select);
-    }
 
     void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
     {

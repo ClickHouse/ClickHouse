@@ -16,3 +16,10 @@
 -- the same for a materialized view writing to a target table
 1
 2
+-- a recursive CTE name does not hide a same-named table in a sibling branch
+1
+2
+3
+100
+-- a CTE name in a dictionary query does not hide a same-named table in a sibling branch
+['c_dict_113711b']

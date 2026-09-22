@@ -50,3 +50,23 @@ DROP TABLE mv_dst_dep_113711b SETTINGS check_referential_table_dependencies = 1;
 
 DROP TABLE mv_dep_113711b;
 DROP TABLE mv_dst_dep_113711b, mv_src_dep_113711b;
+
+SELECT '-- a recursive CTE name does not hide a same-named table in a sibling branch';
+DROP TABLE IF EXISTS v_rec_113711b;
+DROP TABLE IF EXISTS r_rec_113711b;
+CREATE TABLE r_rec_113711b (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO r_rec_113711b VALUES (100);
+CREATE VIEW v_rec_113711b AS SELECT x FROM (WITH RECURSIVE r_rec_113711b AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM r_rec_113711b WHERE x < 3) SELECT x FROM r_rec_113711b) UNION ALL SELECT x FROM r_rec_113711b;
+SELECT * FROM v_rec_113711b ORDER BY x;
+DROP TABLE r_rec_113711b SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE v_rec_113711b;
+DROP TABLE r_rec_113711b;
+
+SELECT '-- a CTE name in a dictionary query does not hide a same-named table in a sibling branch';
+-- The names of the query resolve in the server's default database, so the edge is checked by name.
+DROP DICTIONARY IF EXISTS d_dict_113711b;
+CREATE DICTIONARY d_dict_113711b (x UInt8) PRIMARY KEY x
+SOURCE(CLICKHOUSE(QUERY 'SELECT x FROM (WITH c_dict_113711b AS (SELECT 1 AS x) SELECT x FROM c_dict_113711b) UNION ALL SELECT x FROM c_dict_113711b'))
+LIFETIME(0) LAYOUT(HASHED());
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'd_dict_113711b';
+DROP DICTIONARY d_dict_113711b;
