@@ -464,6 +464,12 @@ def test_restore_valid_backup_onto_failing_disk(started_cluster):
         errors_before = get_error_counts()
         err = node.query_and_get_error(f"RESTORE TABLE tbl_failing_disk FROM Disk('backups', '{bname}')")
         errors_delta = get_error_counts_delta(errors_before)
+
+        # Nor is the part detached as broken when broken parts are allowed: the `RESTORE` still fails.
+        node.query("DROP TABLE IF EXISTS tbl_failing_disk SYNC")
+        err_with_detach = node.query_and_get_error(
+            f"RESTORE TABLE tbl_failing_disk FROM Disk('backups', '{bname}') SETTINGS restore_broken_parts_as_detached = true"
+        )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT restore_part_inject_no_space_error")
 
@@ -471,6 +477,8 @@ def test_restore_valid_backup_onto_failing_disk(started_cluster):
     assert "CANNOT_WRITE_TO_FILE_DESCRIPTOR" in err
     assert "BACKUP_DAMAGED" not in err
     assert errors_delta == {"CANNOT_WRITE_TO_FILE_DESCRIPTOR": 1}
+    assert "CANNOT_WRITE_TO_FILE_DESCRIPTOR" in err_with_detach
+    assert "BACKUP_DAMAGED" not in err_with_detach
 
     # With the failure gone the same backup restores fine.
     node.query("DROP TABLE IF EXISTS tbl_failing_disk SYNC")

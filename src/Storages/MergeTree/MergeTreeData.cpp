@@ -9657,17 +9657,6 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 namespace
 {
 
-/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
-/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
-/// has been recorded for it yet).
-///
-/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
-/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
-/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
-/// cannot be read: either it was written by a newer server whose format this one does not understand
-/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
-///
-/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
 /// Whether the error describes the disk or the configuration of this server rather than the contents of
 /// the backup. The files of the part have already been copied from the backup to the destination disk, so
 /// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
@@ -9679,7 +9668,19 @@ bool isDestinationSideError(const Exception & e)
     return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED;
 }
 
-void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, bool in_local_step)
+/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
+/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
+/// has been recorded for it yet).
+///
+/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
+/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
+/// cannot be read: either it was written by a newer server whose format this one does not understand
+/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
+///
+/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
+/// Returns whether the failure is attributed to the part in the backup being broken.
+bool classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, bool in_local_step)
 {
     try
     {
@@ -9691,15 +9692,17 @@ void classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, boo
         /// this block only reaches into the exception object to assign and record its final code.
         Exception * e = current_exception_cast<Exception *>();
         if (!e)
-            return;
+            return !retryable;
 
-        if (!retryable && !in_local_step && !isDestinationSideError(*e))
+        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
+        if (part_is_broken)
         {
             e->resetCode(
                 e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
         }
 
         e->recordToSystemErrors();
+        return part_is_broken;
     }
 }
 
@@ -9801,15 +9804,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!error)
             return part;
 
-        classifyAndRecordRestoreError(error, retryable, in_local_step);
+        bool part_is_broken = classifyAndRecordRestoreError(error, retryable, in_local_step);
 
-        if (!retryable && detach_if_broken)
+        /// A failure of the destination is not a broken part: it is not detached and fails the `RESTORE`.
+        if (part_is_broken && detach_if_broken)
         {
             mark_broken(error);
             return nullptr;
         }
 
-        if (!retryable)
+        if (part_is_broken)
         {
             LOG_ERROR(log,
                       "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
