@@ -1,3 +1,10 @@
+-- Tags: no-fasttest
+-- Tag justification:
+--   no-fasttest: the `MySQL`, `MaterializedPostgreSQL` and `DataLakeCatalog` database engines are
+--                not registered in the fast test build, which configures `-DENABLE_LIBRARIES=0`
+--                (their registrations are under `#if USE_MYSQL`, `#if USE_LIBPQXX` and
+--                `#if USE_AVRO && USE_PARQUET`).
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT '--- a name that is not a setting at all is rejected ---';
