@@ -49,7 +49,9 @@
 #include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -58,7 +60,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -1071,24 +1072,6 @@ struct IEJoinOperandRange
     std::optional<Float64> null_fraction;
 };
 
-/// The numeric value of a statistics min/max Field. Basic statistics keep min/max only for
-/// values represented by numbers (`hasNumericMinMax`), so only the numeric Field types occur;
-/// anything else (e.g. a Decimal) yields no estimate rather than a wrong one.
-static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
-{
-    switch (value.getType())
-    {
-        case Field::Types::UInt64:
-            return static_cast<Float64>(value.safeGet<UInt64>());
-        case Field::Types::Int64:
-            return static_cast<Float64>(value.safeGet<Int64>());
-        case Field::Types::Float64:
-            return value.safeGet<Float64>();
-        default:
-            return {};
-    }
-}
-
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
 /// statistics under a uniformity assumption, or std::nullopt when the statistics do not cover
 /// the operands.
@@ -1105,11 +1088,13 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
+    /// Uniform interpolation is valid only while the recorded range remains representative.
     auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
         -> std::optional<IEJoinOperandRange>
     {
         auto it = column_stats.find(operand.getColumnName());
-        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value
+            || !QueryPlanOptimizations::isRepresentativeValueRange(it->second.range_provenance))
             return {};
         auto min_value = statisticsFieldToFloat64(*it->second.min_value);
         auto max_value = statisticsFieldToFloat64(*it->second.max_value);

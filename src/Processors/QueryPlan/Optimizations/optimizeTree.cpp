@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -21,7 +22,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <ranges>
 #include <stack>
 #include <unordered_map>
 #include <utility>
@@ -326,23 +326,41 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// Join reordering and runtime-filter planning inspect the same relation subtrees. Share one
+    /// pass-local cache so storage statistics and range analysis are derived only once.
+    RelationStatsCache relation_stats_cache;
+    const auto convert_logical_join_to_physical = [&](QueryPlan::Node & join_node)
+    {
+        /// Physical conversion installs pre-join ExpressionSteps at the existing child addresses.
+        /// Their cached entries still describe the subtrees moved underneath those wrappers, so
+        /// invalidate every original child along with the join node after a successful conversion.
+        const auto original_children = join_node.children;
+        if (!convertLogicalJoinToPhysical(join_node, nodes, optimization_settings))
+            return false;
+
+        relation_stats_cache.invalidate(join_node);
+        for (auto * child : original_children)
+            relation_stats_cache.invalidate(*child);
+        return true;
+    };
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            optimizeJoinLogical(frame_node, nodes, optimization_settings);
-            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
+            optimizeJoinLogical(frame_node, nodes, optimization_settings, relation_stats_cache);
+            optimizeJoinLegacy(frame_node, nodes, optimization_settings, relation_stats_cache);
+            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings, relation_stats_cache);
         },
         [&](auto & frame_node)
         {
             if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(
+                    frame_node, nodes, optimization_settings, relation_stats_cache);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
             /// Joins left in the outer plan are converted right after the fragment is created.
             if (!optimization_settings.enable_parallel_replicas)
-                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+                convert_logical_join_to_physical(frame_node);
         });
 
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
@@ -447,9 +465,7 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed), which the traversal above skipped.
     if (optimization_settings.enable_parallel_replicas)
     {
-        traverseQueryPlan(stack, root,
-            [&](auto &) {},
-            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        traverseQueryPlan(stack, root, [&](auto &) { }, [&](auto & frame_node) { convert_logical_join_to_physical(frame_node); });
 
         /// The joins are physical only now, so this is the first point where lazy column indexing can be
         /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
