@@ -81,6 +81,9 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <chrono>
+#include <atomic>
+#include <future>
 #include <unordered_set>
 #include <vector>
 
@@ -257,9 +260,21 @@ void runStatement(DB::ContextMutablePtr session_context, const std::string & sql
 
 void cleanupFuzzerObjects()
 {
+    /// `DROP ... SYNC` of some engines blocks in the storage's `shutdown` (it joins the engine's background
+    /// threads): a `Distributed` table flushing pending sends to an unreachable host, a `Kafka`/`RabbitMQ`/`NATS`
+    /// consumer, a dictionary reloading from a dead source. Such a drop can run past libFuzzer's per-input timeout
+    /// (observed: a single cleanup at 155 s vs the 120 s limit). Run the drops on a detachable worker with its own
+    /// copy of the context (so it stays alive if detached) and give up after a bounded wait; a stuck cleanup then
+    /// leaks its objects into the rest of the session instead of aborting it, and cleanup is not attempted again
+    /// (the session ends soon on its time or RSS limit, and each worker process starts from a fresh fixture).
+    static std::atomic<bool> cleanup_disabled{false};
+    if (cleanup_disabled.load(std::memory_order_acquire))
+        return;
     DB::LocalFuzzerRunner::runOnRunnerThread([&](DB::ContextMutablePtr context)
     {
-        std::thread worker([&]
+        auto finished = std::make_shared<std::promise<void>>();
+        std::future<void> future = finished->get_future();
+        std::thread worker([context, finished]
         {
             DB::ThreadStatus thread_status;
             std::string fixture_list;
@@ -271,8 +286,17 @@ void cleanupFuzzerObjects()
                 runStatement(context, "DROP DATABASE IF EXISTS " + DB::backQuoteIfNeed(name) + " SYNC");
             for (const auto & name : runNamesQuery(context, "SELECT name FROM system.functions WHERE origin = 'SQLUserDefined'"))
                 runStatement(context, "DROP FUNCTION IF EXISTS " + DB::backQuoteIfNeed(name));
+            finished->set_value();
         });
-        worker.join();
+        if (future.wait_for(std::chrono::seconds(30)) == std::future_status::ready)
+        {
+            worker.join();
+        }
+        else
+        {
+            cleanup_disabled.store(true, std::memory_order_release);
+            worker.detach();
+        }
     });
 }
 
