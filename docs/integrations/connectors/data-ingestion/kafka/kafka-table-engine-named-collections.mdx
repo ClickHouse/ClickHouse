@@ -94,46 +94,6 @@ Add the following section to your ClickHouse `config.xml` file:
 3. The section within `<kafka>` contains extended Kafka configuration options. For more options, refer to the [librdkafka configuration](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 4. This example uses the `SASL_SSL` security protocol and `PLAIN` mechanism. Adjust these settings based on your Kafka cluster configuration.
 
-### OAuth authentication with `OAUTHBEARER` {#oauth-authentication-with-oauthbearer}
-
-To use OAuth authentication, set `sasl_mechanism` to `OAUTHBEARER` in the named collection's nested `<kafka>` section. The settings in this section are [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md): ClickHouse replaces underscores in XML element names with periods before passing them to `librdkafka`.
-
-For example, the following named collection connects to an Azure Event Hubs namespace using the OAuth client credentials flow:
-
-```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
-<clickhouse>
-    <named_collections>
-        <domain_one>
-            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
-            <kafka_topic_list>topic</kafka_topic_list>
-            <kafka_group_name>clickhouse</kafka_group_name>
-            <kafka_format>JSONEachRow</kafka_format>
-            <kafka>
-                <security_protocol>SASL_SSL</security_protocol>
-                <sasl_mechanism>OAUTHBEARER</sasl_mechanism>
-                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
-                <sasl_oauthbearer_client_id>client-id</sasl_oauthbearer_client_id>
-                <sasl_oauthbearer_client_secret from_env="KAFKA_DOMAIN_ONE_CLIENT_SECRET"/>
-                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
-                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
-            </kafka>
-        </domain_one>
-    </named_collections>
-</clickhouse>
-```
-
-Create a separate named collection for every Event Hubs namespace. Each collection can set its own `kafka_broker_list` and `sasl_oauthbearer_scope`; use the collection when creating its Kafka table:
-
-```sql
-CREATE TABLE domain_one_queue
-(
-    message String
-)
-ENGINE = Kafka(domain_one);
-```
-
-The `from_env` attribute reads the client secret from the ClickHouse server process environment. See [substitution by environment variables](/concepts/features/configuration/server-config/configuration-files#from_env_zk) for deployment and default-value details. Do not put OAuth properties at the top level of a named collection: only values under `<kafka>` are passed to `librdkafka`.
-
 ## Creating tables and databases {#creating-tables-and-databases}
 
 Create the necessary databases and tables on your ClickHouse cluster. If you run ClickHouse as a single node, omit the cluster part of the SQL command and use any other engine instead of `ReplicatedMergeTree`.
