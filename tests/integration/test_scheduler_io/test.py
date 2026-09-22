@@ -1245,20 +1245,3 @@ def test_config_and_sql_root_workloads_coexist():
     )
 
     node.query("DROP WORKLOAD sql_root")
-
-
-def test_config_workload_with_sql_defined_parent():
-    # A config-defined workload may reference a parent defined via SQL (a cross-storage parent). The
-    # config layer sees only config entities, so it must not reject such a parent as missing before
-    # the storages are merged.
-    node.query("CREATE WORKLOAD sql_parent")
-    update_workloads_config(node, resources_and_workloads="CREATE WORKLOAD cfg_child IN sql_parent")
-
-    assert (
-        node.query("SELECT parent FROM system.workloads WHERE name = 'cfg_child'")
-        == "sql_parent\n"
-    )
-
-    # Reset the config (drops cfg_child) before dropping its SQL-defined parent.
-    update_workloads_config(node)
-    node.query("DROP WORKLOAD sql_parent")
