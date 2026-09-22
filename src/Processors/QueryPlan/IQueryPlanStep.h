@@ -43,15 +43,19 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
-/// Identity of a plan step, unique within a query. A copy of a step is a different step:
-/// clone() is `make_unique<Step>(*this)` and both copies can end up in the same plan, so
-/// copying allocates a new index rather than duplicating the source's. Moving preserves it.
+/// Identity of a plan step, unique within a query.
 class PlanStepIndex
 {
 public:
-    PlanStepIndex();                                                   // fresh index
-    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}          // copy => fresh index
+    PlanStepIndex();
+
+    /// A copy of a step is a different step -- `clone` is `make_unique<Step>(*this)` and both
+    /// copies can end up in the same plan -- so copying takes a fresh index instead of
+    /// duplicating the source's.
+    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
     PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+
+    /// Moving is the same step changing hands, so the index travels with it.
     PlanStepIndex(PlanStepIndex &&) noexcept = default;
     PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
 
@@ -140,11 +144,7 @@ public:
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
 
-    /// Ids of the subqueries whose results this step consumes -- an `IN (SELECT ...)` set built
-    /// during planning, whose plan ran outside this query's tree. Recorded so that
-    /// `system.query_log.query_plan` can say which step used each captured sub-plan, instead of
-    /// leaving it looking like an unrelated plan that happened to run. Filled only when the query
-    /// is being profiled, and empty otherwise.
+    /// Ids of the subqueries whose results this step consumes.
     const std::vector<size_t> & getConsumedSubqueryIds() const { return consumed_subquery_ids; }
     void addConsumedSubqueryId(size_t id)
     {
