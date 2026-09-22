@@ -145,7 +145,7 @@ def test_features_without_table():
     assert set(features) == {"api", "promql", "promql_functions", "promql_operators"}
 
     expected_api = {
-        "label_values_match", "query_warnings", "time_range_labels", "time_range_series",
+        "label_values_match", "time_range_labels", "time_range_series",
     }
     expected_promql = {
         "at_modifier", "bool", "by", "group_left", "group_right",
