@@ -230,7 +230,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
+        ASTPtr query_aliases;
+        if (aliases && select_with_union_query_typed.column_match_mode != SetOperationColumnMatchMode::Name)
+            query_aliases = aliases;
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(
+            select_list_node, false /*is_subquery*/, {} /*cte_name*/, query_aliases, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
