@@ -120,11 +120,12 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
 
-/// Throws if a SETTINGS clause anywhere in the query changes the `allow_experimental_analyzer`
-/// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
-/// switched in the middle of query processing. Applied to every query at the start of processing;
-/// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
-void validateAnalyzerSettings(ASTPtr ast, bool context_value);
+/// Throws if a SETTINGS clause anywhere in the query disables the `allow_experimental_analyzer`
+/// (`enable_analyzer`) setting. The setting is obsolete and frozen at `1`; a change at the top level
+/// is refused by the settings constraints, and this refuses one nested in a subquery, which those do
+/// not see. Applied to every query at the start of processing; also used for generated queries that
+/// bypass `executeQuery`, such as in the `eval` table function.
+void validateAnalyzerSettings(ASTPtr ast);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

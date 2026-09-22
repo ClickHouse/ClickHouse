@@ -613,22 +613,26 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-# We enable position independent encoding for all build types except build with -flto=thin:
+# Position independent code is enabled on every amd64 and aarch64 build:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
-# build with -flto=thin as trully "production" build where each % of performance is important.
-# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
+# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
-# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
-#
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
-if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
+if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
+
+    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # the compiler driver's default unless the linker is asked explicitly, so ask it.
+    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
+    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    if (OS_LINUX AND NOT USE_MUSL)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    endif()
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
@@ -784,6 +788,24 @@ add_subdirectory (programs)
 add_subdirectory (utils)
 
 if (FUZZER)
+    # The .options files reference all.dict. OSS-Fuzz builds fuzzer targets
+    # individually and copies tests/fuzz/*.dict, so the `fuzzers` POST_BUILD
+    # step below never runs for it: generate the source-derived fallback here,
+    # before any target is built. The nightly libFuzzer job overwrites it with
+    # the authoritative binary-derived one (tests/fuzz/update_dict.sh).
+    execute_process(
+        COMMAND "${CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict"
+        RESULT_VARIABLE FUZZER_SOURCE_DICT_RESULT
+        OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
+        ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
+    string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
+    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
+    # abort on an unmatched glob far from here.
+    if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
+        message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
+
     # Bundle fuzzers target
     add_custom_target(fuzzers)
     # Instrument all targets fuzzer and link with libfuzzer
