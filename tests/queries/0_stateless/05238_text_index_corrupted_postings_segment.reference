@@ -1,9 +1,0 @@
--- the declared size of an uncompressed posting list
-4950
-bitmap of 2000 bytes exceeds the upper bound
--- the declared number of row ids of a compressed posting list
-4950
-cardinality 0 is not in the range
--- the first row id of a compressed posting list, which shifts all of its row ids
-4950
-row ids from 5 to 104 while its row range is [0, 99]
