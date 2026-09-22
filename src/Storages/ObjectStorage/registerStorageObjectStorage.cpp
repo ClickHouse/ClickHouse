@@ -52,15 +52,13 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Use format settings from global server context + settings from
-    // the SETTINGS clause of the create query. Settings from current
-    // session and user are ignored.
+    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
         Settings settings = context->getSettingsCopy();
 
-        // Apply changes from SETTINGS clause, with validation.
+        // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(context, settings);
@@ -133,6 +131,7 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -756,6 +755,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -799,6 +799,7 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -1285,7 +1286,7 @@ This produces a new snapshot (a `replace` operation) that references the same da
 ### Requirements and behavior {#manifest-compaction-behavior}
 
 - The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
-- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
+- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `100`, the documented default of the Iceberg table property `commit.manifest.min-count-to-merge`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg format-version 2 tables. Running it against a format-version 1 table throws an exception, and so does running it against a format-version 3 table, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
 - `OPTIMIZE TABLE ... MANIFEST` is not supported for encrypted Iceberg tables whose data files contain per-file `key_metadata`. Preserving this encryption metadata across a manifest rewrite is not yet implemented, so the statement throws a `NOT_IMPLEMENTED` exception.
@@ -1296,9 +1297,10 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-
-The following deletion method is **not supported**:
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
+Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
+`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 ```sql
@@ -1968,7 +1970,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 
 | Paimon Data Type | ClickHouse Data Type |
 |-------|--------|
-|BOOLEAN     |Int8      |
+|BOOLEAN     |Bool      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2232,7 +2234,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 ## Create a DeltaLake table {#create-table}
 
-To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
+By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
 <TabItem value="S3" label="S3" default>
@@ -2477,7 +2479,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
+            .description = "Provides an integration with Delta Lake tables stored on the local filesystem. Reads work out of the box; with `allow_delta_lake_create_table = 1` a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` creates a new table (writing the initial commit), and `INSERT` requires `allow_delta_lake_writes = 1`.",
             .syntax = "ENGINE = DeltaLakeLocal(path)",
             .related = {"DeltaLake"}});
 }

@@ -14,12 +14,15 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -29,6 +32,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/ExchangeServer.h>
+#include <Server/DistributedQuery/StreamingExchangeDeserializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
@@ -142,10 +146,9 @@ std::optional<int> run(QueryPipeline & pipeline, size_t threads)
     return std::nullopt;
 }
 
-/// The sending task: `chunks_per_stream` streams into one real sink. With `sink_takes_packets` the
-/// streams serialize their chunks first, as the send steps arrange it; otherwise the sink serializes.
-QueryPipeline makeSendingPipeline(
-    const SharedHeader & header, std::vector<Chunks> chunks_per_stream, LoopbackExchange & exchange, bool sink_takes_packets)
+/// The sending task: `chunks_per_stream` streams, each serializing its chunks, into one real sink,
+/// as the send steps arrange it.
+QueryPipeline makeSendingPipeline(const SharedHeader & header, std::vector<Chunks> chunks_per_stream, LoopbackExchange & exchange)
 {
     Pipes pipes;
     for (auto & chunks : chunks_per_stream)
@@ -153,30 +156,40 @@ QueryPipeline makeSendingPipeline(
 
     QueryPipelineBuilder builder;
     builder.init(Pipe::unitePipes(std::move(pipes)));
-    if (sink_takes_packets)
-        builder.addSimpleTransform([](const SharedHeader & stream_header)
-        {
-            return std::make_shared<StreamingExchangeSerializingTransform>(stream_header);
-        });
+    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    {
+        return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+    });
     builder.resize(1);
 
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets);
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
     });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
 
-/// The receiving task: one real source connected to `port`. With `limit_rows` the receiver stops
-/// after that many rows, as a `LIMIT` does.
+/// The receiving task: one real source connected to `port`. With `source_hands_packets` a
+/// deserializer follows the source, as the receive steps arrange it; otherwise the source deserializes.
+/// With `limit_rows` the receiver stops after that many rows, as a `LIMIT` does.
 QueryPipeline makeReceivingPipeline(
-    const SharedHeader & header, UInt16 port, std::shared_ptr<CollectingSink> sink, std::optional<UInt64> limit_rows = {})
+    const SharedHeader & header,
+    UInt16 port,
+    bool source_hands_packets,
+    std::shared_ptr<CollectingSink> sink,
+    std::optional<UInt64> limit_rows = {})
 {
-    auto source = std::make_shared<StreamingExchangeSource>(header, "query", "stream", "127.0.0.1", port, /*cancellation_=*/ nullptr);
+    auto source = std::make_shared<StreamingExchangeSource>(
+        header, "query", "stream", "127.0.0.1", port, /*cancellation_=*/ nullptr, /*auth_token_=*/ String{}, source_hands_packets);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(source));
+    if (source_hands_packets)
+        builder.addSimpleTransform([&](const SharedHeader &)
+        {
+            return std::make_shared<StreamingExchangeDeserializingTransform>(header, "exchange");
+        });
     if (limit_rows)
         builder.addTransform(std::make_shared<LimitTransform>(header, *limit_rows, /*offset_=*/ 0));
     builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
@@ -204,7 +217,7 @@ UInt64 sumOfValues(const std::vector<Chunk> & chunks)
 /// Every packet shape crosses a real socket between a real sink and a real source: data chunks, a
 /// data chunk with an aggregation info, a chunk without rows that carries one (an aggregation emits
 /// those for empty buckets), and the end-of-stream marker. The bytes on the wire do not depend on
-/// whether the sink serializes itself or takes packets, so both must interoperate with the source.
+/// which side serializes or deserializes, so all four pairings must interoperate.
 TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
 {
     MainThreadStatus::getInstance();
@@ -215,74 +228,188 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
     constexpr size_t total_rows = streams * chunks_per_stream * rows_per_chunk;
     constexpr UInt64 expected_sum = UInt64(total_rows) * (total_rows - 1) / 2;
 
-    for (bool sink_takes_packets : {false, true})
+    for (bool source_hands_packets : {false, true})
     {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        std::vector<Chunks> chunks_per_stream_list(streams);
+        for (size_t stream = 0; stream < streams; ++stream)
+            for (size_t index = 0; index < chunks_per_stream; ++index)
+                chunks_per_stream_list[stream].push_back(makeChunk((stream * chunks_per_stream + index) * rows_per_chunk, rows_per_chunk));
+        chunks_per_stream_list[0].front().getChunkInfos().add(makeAggregatedInfo(/*bucket_num=*/ 1, /*chunk_num=*/ 5));
+        Chunk rowless(Columns{ColumnUInt64::create()}, 0);
+        rowless.getChunkInfos().add(makeAggregatedInfo(/*bucket_num=*/ 7, /*chunk_num=*/ 9));
+        chunks_per_stream_list[1].push_back(std::move(rowless));
+
+        auto header = makeHeader();
+        LoopbackExchange exchange;
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        const UInt64 sent_bytes_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
+        const UInt64 received_bytes_before = eventCount(ProfileEvents::StreamingExchangeReceiveBytes);
+        const UInt64 packets_sent_before = eventCount(ProfileEvents::StreamingExchangePacketsSent);
+        const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, streams); });
+        const auto receiving_code = run(receiving, 2);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        /// The events see the same bytes and packets on both ends: 14 data chunks and the marker.
+        const UInt64 sent_bytes = eventCount(ProfileEvents::StreamingExchangeSendBytes) - sent_bytes_before;
+        EXPECT_GT(sent_bytes, 0u);
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeReceiveBytes) - received_bytes_before, sent_bytes);
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsSent) - packets_sent_before, streams * chunks_per_stream + 2);
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, streams * chunks_per_stream + 2);
+
+        size_t rows = 0;
+        size_t rowless_with_info = 0;
+        size_t data_chunks_with_info = 0;
+        for (const auto & chunk : sink->chunks)
         {
-            SCOPED_TRACE(fmt::format("sink_takes_packets={}", sink_takes_packets));
-
-            std::vector<Chunks> chunks_per_stream_list(streams);
-            for (size_t stream = 0; stream < streams; ++stream)
-                for (size_t index = 0; index < chunks_per_stream; ++index)
-                    chunks_per_stream_list[stream].push_back(makeChunk((stream * chunks_per_stream + index) * rows_per_chunk, rows_per_chunk));
-            chunks_per_stream_list[0].front().getChunkInfos().add(makeAggregatedInfo(/*bucket_num=*/ 1, /*chunk_num=*/ 5));
-            Chunk rowless(Columns{ColumnUInt64::create()}, 0);
-            rowless.getChunkInfos().add(makeAggregatedInfo(/*bucket_num=*/ 7, /*chunk_num=*/ 9));
-            chunks_per_stream_list[1].push_back(std::move(rowless));
-
-            auto header = makeHeader();
-            LoopbackExchange exchange;
-            auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange, sink_takes_packets);
-            auto sink = std::make_shared<CollectingSink>(header);
-            auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink);
-
-            const UInt64 sent_bytes_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
-            const UInt64 received_bytes_before = eventCount(ProfileEvents::StreamingExchangeReceiveBytes);
-            const UInt64 packets_sent_before = eventCount(ProfileEvents::StreamingExchangePacketsSent);
-            const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
-
-            std::optional<int> sending_code;
-            std::thread sender([&] { sending_code = run(sending, streams); });
-            const auto receiving_code = run(receiving, 2);
-            sender.join();
-
-            EXPECT_EQ(sending_code, std::nullopt);
-            EXPECT_EQ(receiving_code, std::nullopt);
-
-            /// The events see the same bytes and packets on both ends: 14 data chunks and the marker.
-            const UInt64 sent_bytes = eventCount(ProfileEvents::StreamingExchangeSendBytes) - sent_bytes_before;
-            EXPECT_GT(sent_bytes, 0u);
-            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeReceiveBytes) - received_bytes_before, sent_bytes);
-            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsSent) - packets_sent_before, streams * chunks_per_stream + 2);
-            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, streams * chunks_per_stream + 2);
-
-            size_t rows = 0;
-            size_t rowless_with_info = 0;
-            size_t data_chunks_with_info = 0;
-            for (const auto & chunk : sink->chunks)
+            rows += chunk.getNumRows();
+            auto info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+            if (!info)
+                continue;
+            if (chunk.getNumRows() == 0)
             {
-                rows += chunk.getNumRows();
-                auto info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
-                if (!info)
-                    continue;
-                if (chunk.getNumRows() == 0)
-                {
-                    ++rowless_with_info;
-                    EXPECT_EQ(info->bucket_num, 7);
-                    EXPECT_EQ(info->chunk_num, 9u);
-                }
-                else
-                {
-                    ++data_chunks_with_info;
-                    EXPECT_EQ(info->bucket_num, 1);
-                    EXPECT_EQ(info->chunk_num, 5u);
-                    EXPECT_EQ(chunk.getNumRows(), rows_per_chunk);
-                }
+                ++rowless_with_info;
+                EXPECT_EQ(info->bucket_num, 7);
+                EXPECT_EQ(info->chunk_num, 9u);
             }
-            EXPECT_EQ(rows, total_rows);
-            EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
-            EXPECT_EQ(rowless_with_info, 1u);
-            EXPECT_EQ(data_chunks_with_info, 1u);
+            else
+            {
+                ++data_chunks_with_info;
+                EXPECT_EQ(info->bucket_num, 1);
+                EXPECT_EQ(info->chunk_num, 5u);
+                EXPECT_EQ(chunk.getNumRows(), rows_per_chunk);
+            }
         }
+        EXPECT_EQ(rows, total_rows);
+        EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
+        EXPECT_EQ(rowless_with_info, 1u);
+        EXPECT_EQ(data_chunks_with_info, 1u);
+    }
+}
+
+/// A stream without columns, for example the input of a `count()`, carries only row counts: its
+/// packets have rows and no block, and the end-of-stream marker has neither. Both source modes must
+/// carry the rows over the socket and still tell the marker apart by its flag.
+TEST(StreamingExchangeTransport, RowsWithoutColumnsCrossTheSocket)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t streams = 2;
+    constexpr size_t chunks_per_stream = 3;
+    constexpr size_t rows_per_chunk = 1000;
+    auto header = std::make_shared<const Block>();
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        std::vector<Chunks> chunks_per_stream_list(streams);
+        for (auto & chunks : chunks_per_stream_list)
+            for (size_t index = 0; index < chunks_per_stream; ++index)
+                chunks.emplace_back(Columns{}, rows_per_chunk);
+
+        LoopbackExchange exchange;
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        const UInt64 packets_sent_before = eventCount(ProfileEvents::StreamingExchangePacketsSent);
+        const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, streams); });
+        const auto receiving_code = run(receiving, 2);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+        /// One packet per chunk and the marker.
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsSent) - packets_sent_before, streams * chunks_per_stream + 1);
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, streams * chunks_per_stream + 1);
+
+        size_t rows = 0;
+        for (const auto & chunk : sink->chunks)
+        {
+            EXPECT_EQ(chunk.getNumColumns(), 0u);
+            rows += chunk.getNumRows();
+        }
+        EXPECT_EQ(rows, streams * chunks_per_stream * rows_per_chunk);
+    }
+}
+
+/// A chunk with no rows and no columns is data too. On a stream without columns a transform can
+/// emit such chunks, and the serializer must not write them as the end-of-stream marker, or the rows
+/// after them would never arrive.
+TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
+{
+    MainThreadStatus::getInstance();
+
+    /// Turns every one-row chunk into a chunk with no rows; a source cannot emit those itself.
+    class EmptyOneRowChunks : public ISimpleTransform
+    {
+    public:
+        explicit EmptyOneRowChunks(SharedHeader header_) : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ false) { }
+        String getName() const override { return "EmptyOneRowChunks"; }
+
+    protected:
+        void transform(Chunk & chunk) override
+        {
+            if (chunk.getNumRows() == 1)
+                chunk = Chunk(Columns{}, 0);
+        }
+    };
+
+    constexpr size_t rows_per_chunk = 1000;
+    auto header = std::make_shared<const Block>();
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        Chunks chunks;
+        chunks.emplace_back(Columns{}, rows_per_chunk);
+        chunks.emplace_back(Columns{}, 1);
+        chunks.emplace_back(Columns{}, rows_per_chunk);
+
+        LoopbackExchange exchange;
+        const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+        builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<EmptyOneRowChunks>(stream_header); });
+        builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec()); });
+        auto future_connection = exchange.connections->getConnection("query", "stream");
+        builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
+        {
+            return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        });
+        auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
+
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 2);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+        /// The empty chunk crosses the socket as a data packet: three data packets and the marker.
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, 4u);
+        size_t rows = 0;
+        for (const auto & chunk : sink->chunks)
+            rows += chunk.getNumRows();
+        EXPECT_EQ(rows, 2 * rows_per_chunk);
     }
 }
 
@@ -317,16 +444,16 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(input))));
-    builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header); });
+    builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec()); });
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*input_is_serialized_=*/ true);
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
     });
     auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     auto sink = std::make_shared<CollectingSink>(header, /*hold_chunks=*/ true);
-    auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink);
+    auto receiving = makeReceivingPipeline(header, exchange.server.port(), /*source_hands_packets=*/ true, sink);
 
     const UInt64 stall_time_before = eventCount(ProfileEvents::StreamingExchangeSendQueueFullMicroseconds);
 
@@ -367,32 +494,38 @@ TEST(StreamingExchangeTransport, ReceiverThatStopsEarlyClosesTheStream)
 
     constexpr size_t chunks = 4;
     constexpr size_t rows_per_chunk = 1000;
-    std::vector<Chunks> chunks_per_stream_list(1);
-    for (size_t index = 0; index < chunks; ++index)
-        chunks_per_stream_list[0].push_back(makeChunk(index * rows_per_chunk, rows_per_chunk));
 
-    auto header = makeHeader();
-    LoopbackExchange exchange;
-    auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange, /*sink_takes_packets=*/ true);
-    auto sink = std::make_shared<CollectingSink>(header);
-    auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink, /*limit_rows=*/ 1);
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
 
-    const UInt64 early_closes_before = eventCount(ProfileEvents::StreamingExchangeEarlyCloses);
+        std::vector<Chunks> chunks_per_stream_list(1);
+        for (size_t index = 0; index < chunks; ++index)
+            chunks_per_stream_list[0].push_back(makeChunk(index * rows_per_chunk, rows_per_chunk));
 
-    std::optional<int> sending_code;
-    std::optional<int> receiving_code;
-    std::thread sender([&] { sending_code = run(sending, 2); });
-    std::thread receiver([&] { receiving_code = run(receiving, 2); });
-    sender.join();
-    receiver.join();
+        auto header = makeHeader();
+        LoopbackExchange exchange;
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink, /*limit_rows=*/ 1);
 
-    EXPECT_EQ(sending_code, std::nullopt);
-    EXPECT_EQ(receiving_code, std::nullopt);
-    EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeEarlyCloses) - early_closes_before, 1u);
-    size_t rows = 0;
-    for (const auto & chunk : sink->chunks)
-        rows += chunk.getNumRows();
-    EXPECT_EQ(rows, 1u);
+        const UInt64 early_closes_before = eventCount(ProfileEvents::StreamingExchangeEarlyCloses);
+
+        std::optional<int> sending_code;
+        std::optional<int> receiving_code;
+        std::thread sender([&] { sending_code = run(sending, 2); });
+        std::thread receiver([&] { receiving_code = run(receiving, 2); });
+        sender.join();
+        receiver.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+        EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeEarlyCloses) - early_closes_before, 1u);
+        size_t rows = 0;
+        for (const auto & chunk : sink->chunks)
+            rows += chunk.getNumRows();
+        EXPECT_EQ(rows, 1u);
+    }
 }
 
 namespace
@@ -432,13 +565,13 @@ std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string by
     };
 }
 
-/// Runs a real source against `peer`; returns the code the pipeline threw with, and the rows that
-/// arrived.
-std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer)
+/// Runs a real source in the given mode against `peer`; returns the code the pipeline threw with,
+/// and the rows that arrived.
+std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer, bool source_hands_packets)
 {
     auto header = makeHeader();
     auto sink = std::make_shared<CollectingSink>(header);
-    auto receiving = makeReceivingPipeline(header, peer.port(), sink);
+    auto receiving = makeReceivingPipeline(header, peer.port(), source_hands_packets, sink);
     auto code = run(receiving, 2);
     size_t rows = 0;
     for (const auto & chunk : sink->chunks)
@@ -448,50 +581,122 @@ std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer &
 
 }
 
-/// What a real source does with packets a well-behaved sink never sends: the end-of-stream marker
-/// with rows or truncated, a packet of an unknown type, an oversized body, and a connection cut in
-/// the middle of a packet. A proper packet followed by the marker ends cleanly.
+/// What a real source does with packets a well-behaved sink never sends, in both of its modes: the
+/// end-of-stream marker with rows, with an aggregation chunk number or truncated, a packet of an
+/// unknown type, an oversized body, and a connection cut in the middle of a packet. A proper packet
+/// followed by the marker ends cleanly.
 TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
 {
     MainThreadStatus::getInstance();
 
+    for (bool source_hands_packets : {false, true})
     {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
         {
             /// flags, rows, columns: flag 1 is the end of stream.
             ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1, 5, 0})));
-            EXPECT_EQ(receiveFrom(peer).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "a marker with rows";
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "a marker with rows";
+        }
+        {
+            /// Flag 2 says an aggregation chunk number follows; the marker must not carry one.
+            ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1 | 2, 0, 0, /*chunk_num*/ 7})));
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "a marker with an aggregation chunk number";
         }
         {
             ExchangeTest::FakePeer peer(sendAfterHandshake(dataPacket({1, 0})));
-            EXPECT_EQ(receiveFrom(peer).first, ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF) << "a marker without the column count";
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF) << "a marker without the column count";
         }
         {
             ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(/*packet_type=*/ 0xbad, /*bytes_size=*/ 0)));
-            EXPECT_EQ(receiveFrom(peer).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an unknown packet type";
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an unknown packet type";
         }
         {
             ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES + 1)));
-            EXPECT_EQ(receiveFrom(peer).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
         }
         {
             ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'), /*then_reset=*/ true));
-            EXPECT_EQ(receiveFrom(peer).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED) << "a connection cut in the middle of a packet";
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED) << "a connection cut in the middle of a packet";
         }
         {
             WriteBufferFromOwnString packets;
             const auto header = makeHeader();
-            const size_t first = StreamingExchangeProtocol::writeDataPacket(makeChunk(0, 3), header, packets);
-            const size_t marker = StreamingExchangeProtocol::writeDataPacket(Chunk(), header, packets);
+            const size_t first = StreamingExchangeProtocol::writeDataPacket(makeChunk(0, 3), header, packets, CompressionCodecFactory::instance().getDefaultCodec());
+            const size_t marker = StreamingExchangeProtocol::writeEndOfStreamPacket(packets);
             packets.finalize();
             std::string bytes = packets.str();
             StreamingExchangeProtocol::finishDataPacket(bytes.data() + first, marker - first);
-            StreamingExchangeProtocol::finishDataPacket(bytes.data() + marker, bytes.size() - marker);
 
             ExchangeTest::FakePeer peer(sendAfterHandshake(bytes));
-            const auto [code, rows] = receiveFrom(peer);
+            const auto [code, rows] = receiveFrom(peer, source_hands_packets);
             EXPECT_EQ(code, std::nullopt) << "a proper packet and the marker";
             EXPECT_EQ(rows, 3u);
         }
+    }
+}
+
+/// Both readers of a Data packet must prove that a final packet is the empty end-of-stream marker:
+/// the end-of-stream flag alone, no rows, no columns and nothing after the fields. A source that
+/// hands packets on drops the marker after reading only its fields; the deserializer and a source
+/// that deserializes itself read the whole body. Rows, columns or a chunk number in a marker would be
+/// lost, and a truncated or overlong marker is a protocol violation.
+TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
+{
+    auto body_of = [](std::initializer_list<UInt64> fields, const String & trailing = {})
+    {
+        WriteBufferFromOwnString body;
+        for (UInt64 field : fields)
+            writeVarUInt(field, body);
+        body.write(trailing.data(), trailing.size());
+        body.finalize();
+        return body.str();
+    };
+    auto prefix_of = [](const String & body)
+    {
+        return StreamingExchangeProtocol::readDataPacketPrefix(body.data(), body.size(), "test stream");
+    };
+    auto packet_of = [](const String & body)
+    {
+        ReadBufferFromMemory in(body.data(), body.size());
+        return StreamingExchangeProtocol::readDataPacketBody(in, Block{}, "test stream");
+    };
+    auto expect_rejected = [](auto && read, const char * what, const char * reader)
+    {
+        try
+        {
+            read();
+            FAIL() << what << " was accepted by " << reader;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+                << reader << ", " << what << ": " << e.message();
+        }
+    };
+
+    /// flags, rows, columns; flag 1 = end of stream, flag 2 = an aggregation chunk number follows.
+    EXPECT_TRUE(prefix_of(body_of({1, 0, 0})).end_of_stream);
+    EXPECT_TRUE(packet_of(body_of({1, 0, 0})).end_of_stream);
+    const auto data_prefix = prefix_of(body_of({0, 5, 1}, "block bytes"));
+    EXPECT_FALSE(data_prefix.end_of_stream);
+    EXPECT_EQ(data_prefix.num_rows, 5u);
+    /// Rows without columns are data, as on the input of a `count()`.
+    const auto rows_only = packet_of(body_of({0, 5, 0}));
+    EXPECT_FALSE(rows_only.end_of_stream);
+    EXPECT_EQ(rows_only.chunk.getNumRows(), 5u);
+
+    const std::vector<std::pair<String, const char *>> bad_markers = {
+        {body_of({1, 5, 0}), "a marker with rows"},
+        {body_of({1, 0, 1}), "a marker with columns"},
+        {body_of({1 | 2, 0, 0, /*chunk_num*/ 7}), "a marker with an aggregation chunk number"},
+        {body_of({1, 0}), "a marker without the column count"},
+        {body_of({1, 0, 0}, "x"), "a marker with bytes after its fields"},
+    };
+    for (const auto & [body, what] : bad_markers)
+    {
+        expect_rejected([&] { prefix_of(body); }, what, "the prefix reader");
+        expect_rejected([&] { packet_of(body); }, what, "the body reader");
     }
 }
 
