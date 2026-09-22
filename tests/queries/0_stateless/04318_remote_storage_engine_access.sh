@@ -138,6 +138,10 @@ CREATE DATABASE $protected_db;
 CREATE TABLE $protected_db.protected_target (x UInt64) ENGINE = MergeTree ORDER BY x;
 GRANT SELECT, INSERT ON $protected_db.protected_target TO $user;
 GRANT CREATE VIEW, DROP TABLE ON $db.* TO $user;
+-- Arm 4 leaves SELECT and INSERT revoked on one table of this database, and creating a refreshable
+-- view pre-checks SELECT/INSERT/CREATE TABLE/DROP TABLE on the whole database of its target, so the
+-- partial revoke has to be undone before the view exists.
+GRANT SELECT, INSERT ON $db.local_target TO $user;
 CREATE TABLE $db.mv_target (x UInt64) ENGINE = Remote('127.0.0.1', $protected_db, protected_target, 'default');
 CREATE TABLE $db.mv_src (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO $db.mv_src VALUES (1);

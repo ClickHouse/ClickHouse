@@ -20,6 +20,24 @@ SETTINGS index_granularity = 4096, param_not_a_setting = 1; -- { serverError UNK
 CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = MergeTree ORDER BY x
 SETTINGS param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
 
+SELECT '--- the replicated member of the family is judged the same way ---';
+
+-- One `create` serves the whole family, and it judges the names before the engine resolves its
+-- Keeper path, so none of these needs Keeper and the file stays runnable without one.
+CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x
+SETTINGS not_a_setting_at_all = 1; -- { serverError UNKNOWN_SETTING }
+
+CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x
+SETTINGS index_granularity = 4096, not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
+
+CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x
+SETTINGS index_granularity = 4096, param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
+
+-- A setting of the engine is still not a name this rejects on the replicated engine either: this one
+-- gets through the check and is refused by the family's own sanity check instead.
+CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x
+SETTINGS index_granularity = 0; -- { serverError BAD_ARGUMENTS }
+
 SELECT '--- a setting of the engine is still accepted in the reset form ---';
 
 -- Only the engine setting is read back: where an accepted reset ends up in the stored clause is
