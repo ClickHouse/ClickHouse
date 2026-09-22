@@ -1,4 +1,6 @@
 with SHOW COLUMNS only:
+-- copy_legacy_plain:
+MergeTree
 -- copy_legacy:
 necessary to have the grant SELECT ON db.url_src
 -- copy_current:

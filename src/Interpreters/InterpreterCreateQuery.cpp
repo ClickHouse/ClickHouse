@@ -3736,16 +3736,31 @@ BlockIO InterpreterCreateQuery::execute()
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
             /// The worker materializes `AS src` with no user, so pin our database like the UUIDs above
-            /// and authorize what it inherits: the source, and its engine, which this query has none of.
+            /// and let `setEngine` authorize the inherited definition on a copy we then throw away.
             if (!create.as_table.empty())
             {
                 create.as_database = getContext()->resolveDatabase(create.as_database);
-                getContext()->checkAccess(AccessType::SELECT, create.as_database, create.as_table);
 
-                auto as_create = DatabaseCatalog::instance().getDatabase(create.as_database, getContext())
-                                     ->getCreateTableQuery(create.as_table, getContext());
-                if (const auto & as_storage = as_create->as<ASTCreateQuery &>().storage; as_storage && as_storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, as_storage->engine->name);
+                /// `OLDEST_VERSION` ships no settings, so a worker there would not replace an external
+                /// engine with `Null`, and the authorization below would be for a definition it never
+                /// creates.
+                const auto & settings = getContext()->getSettingsRef();
+                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION
+                    && (settings[Setting::restore_replace_external_engines_to_null]
+                        || settings[Setting::restore_replace_external_table_functions_to_null]))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "CREATE TABLE ... {} ON CLUSTER with restore_replace_external_engines_to_null or "
+                        "restore_replace_external_table_functions_to_null is not supported with "
+                        "distributed_ddl_entry_format_version = {}, which ships no settings to the workers",
+                        create.is_clone_as ? "CLONE AS" : "AS",
+                        on_cluster_version);
+
+                ASTPtr inherited_query = query_ptr->clone();
+                auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                setEngine(inherited);
+                if (inherited.storage && inherited.storage->engine)
+                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,

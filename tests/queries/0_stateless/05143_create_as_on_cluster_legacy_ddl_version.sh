@@ -23,8 +23,11 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT URL ON *.* TO ${user};
 
     CREATE TABLE ${db}.url_src (id UInt64) ENGINE = URL('http://user:password@127.0.0.1:1/', 'CSV');
+    CREATE TABLE ${db}.plain_src (id UInt64) ENGINE = MergeTree ORDER BY id;
 
+    GRANT TABLE ENGINE ON MergeTree TO ${user};
     GRANT SHOW COLUMNS ON ${db}.url_src TO ${user};
+    GRANT SHOW COLUMNS ON ${db}.plain_src TO ${user};
     GRANT SELECT ON ${db}.url_src TO ${no_url};
 "
 
@@ -43,6 +46,8 @@ function try_copy()
 }
 
 echo "with SHOW COLUMNS only:"
+# Nothing is masked in this one, so it is copied without SELECT, as on the current version.
+try_copy copy_legacy_plain "${db}.plain_src" "${legacy[@]}"
 try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
 try_copy copy_current "${db}.url_src" "${current[@]}"
 # An unqualified source is authorized, and read, in the database of this query.
