@@ -1007,8 +1007,7 @@ void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
 void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArguments()
 {
     // YTsaurus('base_uri', 'yt_path', 'auth_token')
-    /// Argument 2 is hidden whatever argument 0 is: an identifier there either names a collection or the
-    /// call is rejected, but formatting precedes validation, so the token still reaches the log.
+    /// Formatting precedes argument validation, so argument 2 is hidden whatever argument 0 is.
     markSecretArgument(2);
 
     if (isNamedCollectionName(0))
