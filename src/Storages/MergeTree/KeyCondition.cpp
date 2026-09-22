@@ -2155,7 +2155,7 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
 static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
 {
-    if (!transform_input_type || !isStringOrFixedString(removeLowCardinalityAndNullable(constant.type)))
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(constant.type)))
         return true;
 
     const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
@@ -2237,18 +2237,15 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 
     for (const auto & chain : chains)
     {
-        /// The chain casts the constant to the argument type of its first function.
-        DataTypePtr transform_input_type;
-        if (!chain.functions_chain.empty() && !chain.functions_chain.front()->getArgumentTypes().empty())
+        auto normalized_constant = constant;
+        if (!chain.functions_chain.empty())
         {
-            transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
-            if (zeroPaddedFixedStringConstantLosesPadding(value, constant.type, transform_input_type))
+            /// The chain casts the constant to the argument type of its first function.
+            const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
+            if (zeroPaddedFixedStringConstantLosesPadding(value, constant.type, transform_input_type)
+                || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
         }
-
-        auto normalized_constant = constant;
-        if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
-            continue;
 
         ColumnPtr transformed_const_column;
         DataTypePtr transformed_const_type;
