@@ -19,6 +19,8 @@ SETTINGS
     index_granularity = 2,
     index_granularity_bytes = '10Mi',
     merge_with_ttl_timeout = 86400,
+    min_bytes_for_full_part_storage = 0,
+    min_rows_for_full_part_storage = 0,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
     vertical_merge_algorithm_min_rows_to_activate = 100000000;
