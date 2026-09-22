@@ -48,7 +48,7 @@ SYSTEM START VIEW my_database.my_view;
 SYSTEM WAIT VIEW my_database.my_view;
 ```
 
-Resuming an overdue view starts its refresh right away, and [`SYSTEM WAIT VIEW`](/reference/statements/system#wait-view) blocks while that refresh runs.
+Starting a view only resumes its schedule, and unlike [`SYSTEM REFRESH VIEW`](/reference/statements/system#refresh-view) it adds no refresh of its own. A view whose refresh time passed while it was stopped is already overdue on that schedule, so it refreshes as soon as it is started, and [`SYSTEM WAIT VIEW`](/reference/statements/system#wait-view) blocks while that refresh runs.
 
 A view that is waiting for a [`REFRESH ... DEPENDS ON`](/reference/statements/create/view#refresh-dependencies) prerequisite is not refreshing yet, so start those views after the ones they depend on. A circular dependency has no such order, and a restart breaks the cycle whenever its views are not coordinated: start every member, then run the same `SYSTEM REFRESH VIEW` you ran to start the cycle when you created it, and wait for that refresh. A graph that took more than one such refresh to start needs the same set again. Triggering a different member can leave the cycle idle, because a view resumes only once every one of its prerequisites has refreshed. Once triggered the cycle refreshes on its own, so the one-at-a-time pacing stops at the trigger.
 
