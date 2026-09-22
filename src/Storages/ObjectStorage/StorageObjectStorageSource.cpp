@@ -394,18 +394,25 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
 /// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
 /// are immutable, so no ETag is required (this also avoids disabling the cache for data lakes whose
-/// object metadata does not carry an ETag); the storage namespace stands in for it as the token.
+/// object metadata does not carry an ETag); a strong ETag is still preferred when the store supplied
+/// one, and the storage namespace stands in otherwise.
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     const ObjectInfo & object_info, bool is_data_lake, const String & storage_namespace)
 {
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-    /// A data lake path is stripped of its namespace, and a table function reads under a nil table
-    /// UUID, so the table UUID in the key does not separate two tables the way it does for
-    /// `MergeTree`. Fold the namespace in, so `icebergS3('.../bucketA/tbl')` and
-    /// `icebergS3('.../bucketB/tbl')` cannot share an entry for the same relative path.
-    if (is_data_lake)
-        return QueryConditionCache::makeFilePartName(identifier, makeImmutableContentsCacheToken(storage_namespace));
     const auto & metadata = object_info.getObjectMetadata();
+    if (is_data_lake)
+    {
+        /// A strong ETag tracks an in-place rewrite, which is what `use_iceberg_manifest_object_metadata = 0`
+        /// is documented to protect against.
+        if (metadata)
+            if (const auto content_cache_token = metadata->getContentCacheToken())
+                return QueryConditionCache::makeFilePartName(identifier, *content_cache_token);
+
+        /// The namespace, not the bare path: a data lake path is bucket-relative, and a table function
+        /// reads under a nil table UUID, so two buckets would otherwise share an entry.
+        return QueryConditionCache::makeFilePartName(identifier, makeImmutableContentsCacheToken(storage_namespace));
+    }
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
     return QueryConditionCache::makeFilePartName(identifier, metadata->etag);

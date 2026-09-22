@@ -68,8 +68,35 @@ TEST(QueryConditionCacheKey, MissingMetadataBypassesCache)
     EXPECT_FALSE(key.has_value());
 }
 
-/// Data-lake data files are immutable, so the cache is keyed without an etag - the storage namespace
-/// stands in as the content token, even when the object carries a weak etag or no etag at all.
+/// A strong etag tracks an in-place rewrite, which `use_iceberg_manifest_object_metadata = 0` is
+/// documented to protect against, so the key must follow it when the store supplied one.
+TEST(QueryConditionCacheKey, DataLakePrefersAStrongEtag)
+{
+    auto object_info = makeObjectInfo("lake/data.parquet", "strong-etag", /*etag_is_strong=*/ true);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ true, namespace_a);
+    ASSERT_TRUE(key.has_value());
+    EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("lake/data.parquet", "strong-etag"));
+
+    auto rewritten = makeObjectInfo("lake/data.parquet", "strong-etag-after-rewrite", /*etag_is_strong=*/ true);
+    EXPECT_NE(*key, *StorageObjectStorageSource::makeQueryConditionCacheKey(rewritten, /*is_data_lake=*/ true, namespace_a));
+}
+
+/// A data file answered from the manifest and one with no metadata yet must share an entry.
+TEST(QueryConditionCacheKey, DataLakeManifestMetadataAgreesWithTheNamespaceFallback)
+{
+    ObjectInfo from_manifest("lake/data.parquet");
+    ObjectMetadata metadata;
+    metadata.immutable_contents_namespace = namespace_a;
+    from_manifest.setObjectMetadata(metadata);
+
+    auto without_metadata = makeObjectInfo("lake/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
+
+    EXPECT_EQ(
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(from_manifest, /*is_data_lake=*/ true, namespace_a),
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(without_metadata, /*is_data_lake=*/ true, namespace_a));
+}
+
+/// With a weak etag or no metadata, the storage namespace stands in as the content token.
 TEST(QueryConditionCacheKey, DataLakeUsesTheNamespaceWithoutEtag)
 {
     const auto expected = QueryConditionCache::makeFilePartName("lake/data.parquet", makeImmutableContentsCacheToken(namespace_a));
