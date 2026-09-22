@@ -278,7 +278,10 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    bool resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    bool resolveProjectionRenameAliases(
+        QueryTreeNodePtr & projection_node_list,
+        IdentifierResolveScope & scope,
+        std::unordered_set<std::string> & projection_alias_names);
 
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 

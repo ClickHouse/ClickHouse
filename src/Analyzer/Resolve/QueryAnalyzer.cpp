@@ -4763,7 +4763,10 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-bool QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+bool QueryAnalyzer::resolveProjectionRenameAliases(
+    QueryTreeNodePtr & projection_node_list,
+    IdentifierResolveScope & scope,
+    std::unordered_set<std::string> & projection_alias_names)
 {
     bool has_rename_aliases = false;
 
@@ -4777,10 +4780,15 @@ bool QueryAnalyzer::resolveProjectionRenameAliases(QueryTreeNodePtr & projection
         {
             for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
             {
-                if (!transformer->as<RenameColumnTransformerNode>())
+                auto * rename_transformer = transformer->as<RenameColumnTransformerNode>();
+                if (!rename_transformer)
                     continue;
 
                 has_rename_aliases = true;
+                if (is_top_level_projection && !node->hasAlias())
+                    for (const auto & rename : rename_transformer->getRenames())
+                        projection_alias_names.insert(rename.target_name);
+
                 resolveExpressionNode(
                     node,
                     scope,
@@ -7258,7 +7266,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// RENAME aliases must be visible to clauses resolved before the delayed projection when
     /// group_by_use_nulls is enabled. Full projection resolution stays in its original place so
     /// GROUP BY keys can still be converted to Nullable only where required.
-    const bool has_rename_aliases = resolveProjectionRenameAliases(query_node_typed.getProjectionNode(), scope);
+    const bool has_rename_aliases = resolveProjectionRenameAliases(
+        query_node_typed.getProjectionNode(), scope, projection_alias_names);
 
     if (!query_node_typed.isGroupByAll() && !has_rename_aliases)
         unresolved_projection.reset();
