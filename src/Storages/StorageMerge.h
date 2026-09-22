@@ -292,6 +292,10 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
+        /// The copy of the outer query context the child was built on. Every optimization-settings snapshot
+        /// for this child is taken from it, so the snapshots agree with the child's own distributed-plan
+        /// decision instead of the outer plan's, which `ReadFromMerge` always loses.
+        ContextMutablePtr context;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

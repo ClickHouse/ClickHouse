@@ -844,14 +844,9 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     if (!child_plan.isInitialized())
         return optimization_settings;
 
-    /// The child's verdict lives on the plan, not in the context these settings come from. An accepted
-    /// child is built distributed even from the flipped outer context (call 2), a rejected one stays
-    /// local, and an undecided child decides now on the setting of its own context (call 1).
-    if (child_plan.staysDistributed())
-        optimization_settings.make_distributed_plan = true;
-    else if (child_plan.didFallBackToLocal())
-        optimization_settings.make_distributed_plan = false;
-    else
+    /// The settings come from the child's own context, so `applyDistributedPlanFallbackToLocal` either
+    /// decides now or re-applies the verdict it recorded on the child plan at creation.
+    if (child_plan.isInitialized())
         child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
@@ -881,7 +876,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
+            child.plan.optimize(getChildPlanOptimizationSettings(child.context, query_info, child.plan));
         }
     }
 
@@ -1411,7 +1406,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_context,
                 current_streams);
 
+            child.context = modified_context;
             child.plan.addInterpreterContext(modified_context);
+            /// A directly read child has no planner to register its context, and its reading step keeps this copy.
+            child.plan.addDistributedPlanDecisionContext(modified_context);
 
             if (child.plan.isInitialized())
             {
@@ -1802,7 +1800,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// this is the run that materializes the logical exchanges inserted into the child plan when
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
-    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
+    auto optimization_settings = getChildPlanOptimizationSettings(child.context, query_info, child.plan);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -1911,7 +1909,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         plan = std::move(planner).extractQueryPlan();
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{std::move(plan), storage_stage, {}};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
