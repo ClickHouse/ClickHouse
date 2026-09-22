@@ -112,6 +112,7 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
     const std::filesystem::path & keeper_path_,
     const String & replica_name_,
+    const String & active_node_identifier_,
     size_t idx_,
     const LoggerPtr & log_,
     size_t num_consumers_,
@@ -119,6 +120,7 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
+    , active_node_identifier(active_node_identifier_)
     , idx(idx_)
     , num_consumers(std::max<size_t>(num_consumers_, 1))
     , partition_shard_num(partition_shard_num_)
@@ -343,22 +345,26 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     /// Only an ephemeral `is_active` carries that meaning: it is tied to the session of a running replica
     /// and disappears with it. A persistent or otherwise session-less node with the same name (e.g. re-created
     /// from outside the server) says nothing about liveness, so it must not be counted.
+    /// The nodes are read rather than only probed for existence, because for our own replica the payload
+    /// matters too: `StorageKafka2::activate` stores `active_node_identifier` in it, and an ephemeral node
+    /// with a different payload was created by some other Keeper session, so it is not our registration.
     Strings is_active_paths;
     is_active_paths.reserve(candidates.size());
     for (const auto & name : candidates)
         is_active_paths.push_back(keeper_path / "replicas" / name / "is_active");
 
-    auto is_active_responses = keeper->exists(is_active_paths);
+    auto is_active_responses = keeper->tryGet(is_active_paths);
 
     size_t active_replica_count = 0;
     size_t active_replicas_with_lock = 0;
     bool self_is_active = false;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (is_active_responses[i].error != Coordination::Error::ZOK)
+        const auto & response = is_active_responses[i];
+        if (response.error != Coordination::Error::ZOK)
             continue;
 
-        if (is_active_responses[i].stat.ephemeralOwner == 0)
+        if (response.stat.ephemeralOwner == 0)
         {
             LOG_WARNING(
                 log,
@@ -368,8 +374,25 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             continue;
         }
 
+        const bool is_self = candidates[i] == replica_name;
+        if (is_self && response.data != active_node_identifier)
+        {
+            /// Somebody else holds our replica name. We must neither count it as our own liveness signal nor
+            /// take part in the distribution on the strength of it: the caller goes through the
+            /// deactivate/reactivate path, which releases our locks and waits until the foreign node is gone.
+            LOG_WARNING(
+                log,
+                "The node {}/replicas/{}/is_active is owned by another Keeper session (its data is '{}', ours is '{}'), "
+                "so it is not the registration of this replica. Not counting it",
+                keeper_path.string(),
+                candidates[i],
+                response.data,
+                active_node_identifier);
+            continue;
+        }
+
         ++active_replica_count;
-        if (candidates[i] == replica_name)
+        if (is_self)
             self_is_active = true;
         if (replicas_with_lock.contains(candidates[i]))
             ++active_replicas_with_lock;
@@ -378,8 +401,9 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     /// Our own registration is completed by `StorageKafka2::activate` before the reader tasks are started and
     /// is only torn down after they are stopped, so by the time we get here this replica must be among the
     /// active ones. If it is not, our registration in Keeper is broken: the persistent replica znode is gone,
-    /// its shard num does not match ours anymore, or the ephemeral `is_active` node was removed (e.g. from
-    /// outside the server). In all of these cases every peer already leaves us out of its quota. Taking part in the distribution anyway would
+    /// its shard num does not match ours anymore, or the ephemeral `is_active` node was removed or replaced by
+    /// a node of another Keeper session (e.g. from outside the server). In all of these cases every peer already
+    /// leaves us out of its quota, or accounts for somebody else under our name. Taking part in the distribution anyway would
     /// let this replica claim locks nobody accounts for, so the caller stops the cycle and asks the storage to
     /// go through the normal deactivate/reactivate path instead.
     if (!self_is_active)

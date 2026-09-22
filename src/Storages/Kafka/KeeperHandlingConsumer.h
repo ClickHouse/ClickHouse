@@ -82,6 +82,7 @@ public:
         const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
         const std::filesystem::path & keeper_path_,
         const String & replica_name_,
+        const String & active_node_identifier_,
         size_t idx_,
         const LoggerPtr & log_,
         size_t num_consumers_,
@@ -164,6 +165,9 @@ private:
 
     std::filesystem::path keeper_path;
     const String replica_name;
+    /// The payload `StorageKafka2` stores in its own ephemeral `replicas/<replica_name>/is_active` node. Only a
+    /// node carrying it proves that this replica is registered by this very server (see `getActiveReplicasInfo`).
+    const String active_node_identifier;
     const size_t idx;
 
     /// Consumers configured on this node (`kafka_num_consumers`). Fixed for the lifetime of
