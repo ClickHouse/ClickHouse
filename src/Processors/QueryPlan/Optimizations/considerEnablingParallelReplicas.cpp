@@ -396,12 +396,8 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
-    /// The probe is only costed, so it is built without materializing the subqueries a `GLOBAL IN` /
-    /// `GLOBAL JOIN` rewrite would execute. If replicas win, the plan is rebuilt for real below - the
-    /// deferred one describes the query but its temporary tables are empty.
     auto built_sets = collectBuiltSets(query_plan);
-    auto probe_build = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*defer_materialization*/ true);
-    auto & plan_with_parallel_replicas = probe_build.plan;
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets);
     if (!plan_with_parallel_replicas)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
@@ -525,26 +521,6 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
-                /// Replicas are worth it, so the probe is about to become the plan that runs - but a
-                /// probe built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty cannot
-                /// be run: it describes the query correctly and would return wrong results. Decline.
-                ///
-                /// No query reaches here today. A `GLOBAL IN` names its set after the subquery, the
-                /// shipped plan names it after the temporary table that replaced it, so the two plans
-                /// hash differently and the match above always fails for exactly the queries that defer.
-                /// Declining is therefore free, and it stays correct if that ever changes: the cost is
-                /// losing the optimization for these queries, not a wrong answer. Filling the deferred
-                /// tables in place and keeping the plan is the better answer, but it is only worth
-                /// building once the match works.
-                if (probe_build.materialization_deferred)
-                {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "The plan was built without materializing its subqueries, so it cannot be executed. "
-                        "Not enabling parallel replicas reading");
-                    return;
-                }
-
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
@@ -566,17 +542,17 @@ void considerEnablingParallelReplicas(
                 /// with no analysis yet is precisely the one about to be given `analysis`. A different table
                 /// means the two plans diverged at the matched node - which the rebuild above can do, since
                 /// it replaces the replicas plan - so fail loudly rather than read the wrong ranges.
-                if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Parallel replicas branch read is for table {} but the single-node plan reads {}",
-                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
-                        source_reading_step->getStorageID().getNameForLogs());
-                }
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
+                }
+                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
+                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
+                        source_reading_step->getStorageID().getNameForLogs());
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));

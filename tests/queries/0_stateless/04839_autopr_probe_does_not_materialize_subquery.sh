@@ -7,6 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The plan the automatic-parallel-replicas decision builds to cost is usually thrown away, so it must
 # not execute the query's subqueries. A `GLOBAL JOIN` against a view materializes the view while the
 # plan is built, and that copy used to be a third of every mark the query read.
+#
+# The join below is written as a plain comma join and still ships: `parallel_replicas_prefer_local_join`
+# defaults to 1, but it only keeps a join local when every storage on the materialized side is
+# `*MergeTree`, and this one is a view. So `rewriteJoinToGlobalJoin` makes it `GLOBAL` and the view is
+# materialized into a temporary table.
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_04839;

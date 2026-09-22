@@ -5,7 +5,6 @@
 
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -95,8 +94,7 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
-    const std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool)> &
-    getQueryPlanWithParallelReplicasBuilder() const
+    const std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> & getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
     }
@@ -108,8 +106,7 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
 
-    std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool /*defer_materialization*/)>
-        query_plan_with_parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
