@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 
-
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
@@ -62,7 +61,6 @@
 #include <base/wide_integer_to_string.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
-
 namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
@@ -73,7 +71,6 @@ extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
 };
-
 
 namespace DB
 {
@@ -89,7 +86,6 @@ extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsNonZeroUInt64 iceberg_file_entries_queue_size;
 extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 };
-
 
 using namespace Iceberg;
 
@@ -606,19 +602,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->info.data_object_file_path_key);
         }
 
-        /// Only a task that leaves this node needs the flag, and the resolutions below cost an `S3::URI`
-        /// parse per delete file, which a local read must not pay for.
+        /// Only distributed tasks need compatibility checks, which parse every delete-file URI.
         if (tasks_go_to_other_replicas && !object_info->info.requires_external_storage)
         {
-            /// A worker predating the absolute-path protocol receives delete file paths stripped of their
-            /// scheme and authority (see `path_for_protocol`) and resolves what is left against the table
-            /// location, so flag the task when that reconstruction does not land back on the same object:
-            /// the old worker would apply deletes from the wrong file, or fail to open it.
-            ///
-            /// A scheme-less path is its own stripped form, so both resolutions below would compare equal
-            /// and the storage alone decides. The only scheme-less path that can leave the base storage is
-            /// an absolute one on a local base storage, so everything else is answered by one
-            /// `SchemeAuthorityKey` parse instead of two path resolutions.
+            /// Old workers strip scheme and authority from delete paths. Require the new protocol when that changes
+            /// the resolved object. Scheme-less paths need a check only on local storage.
             const bool base_storage_is_local = object_storage->getType() == ObjectStorageType::Local;
             auto resolves_to_itself_on_base_storage = [&](const String & file_path)
             {
@@ -647,7 +635,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 }
                 catch (const Exception &)
                 {
-                    /// The stripped key is unresolvable, so old workers cannot read it either.
                     return true;
                 }
             };
@@ -659,10 +646,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 return false;
             };
 
-            /// The data file needs no such check: its path travels already resolved in
-            /// `ClusterFunctionReadTaskResponse::path`, written at every protocol version, so an old worker
-            /// opens the right object and only reports `_path` in the legacy `namespace/key` form. That
-            /// divergence happens for ordinary in-table files too, so no per-file flag can remove it.
+            /// Data paths already travel as resolved keys at every protocol version; only delete paths need this check.
             object_info->info.requires_external_storage =
                 any_needs_protocol(object_info->info.position_deletes_objects)
                 || any_needs_protocol(object_info->info.equality_deletes_objects)

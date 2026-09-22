@@ -106,8 +106,7 @@ void collectMetadataRootFiles(
     const VisitPathFn & visit,
     std::unordered_set<String> & out)
 {
-    /// `metadata_path` bypasses `visit`: it is already a base-storage key, not a URI-style path from
-    /// metadata contents, so the resolver inside `visit` would misparse it.
+    /// `metadata_path` is already a storage key; passing it through URI resolution would misparse it.
     out.insert(metadata_path);
 
     /// version-hint.text is not a metadata path: it is a fixed object under the storage root.
@@ -134,16 +133,8 @@ void collectMetadataRootFiles(
     collectStatisticsPaths(metadata, f_partition_statistics, visit);
 }
 
-/// Walk the historical metadata versions listed in `metadata-log` (recursively) and feed every path
-/// they reference through `visit_history`, leaves included: the visitor decides what each one means.
-/// History is inspected only to detect references outside the base subtree, so the visitor must not
-/// extend the reachable set -- files under `table_path` referenced solely by expired history stay
-/// eligible as orphans.
-///
-/// A historical metadata file, manifest list or manifest already deleted from storage is skipped with a
-/// warning, because `remove_orphan_files` deletes exactly such files itself and refusing to run on them
-/// would make its first successful run break every later one. Every other failure propagates: unlike a
-/// deleted object it says nothing about what the file referenced.
+/// Ignore deleted historical metadata: `remove_orphan_files` may have removed it on a previous run.
+/// Other errors propagate because they leave the referenced paths unknown.
 void collectHistoricalReferences(
     const Poco::JSON::Object::Ptr & current_metadata,
     ObjectStoragePtr object_storage,
@@ -181,8 +172,6 @@ void collectHistoricalReferences(
 
     std::unordered_set<IcebergPathFromMetadata> traversed_manifest_lists;
 
-    /// Hand back the resolved (storage, key) only while the object is still in storage, so the walk can
-    /// tell an already-deleted historical reference from a failure that must propagate.
     using ResolvedPath = std::pair<ObjectStoragePtr, String>;
     auto resolve_if_present = [&](const IcebergPathFromMetadata & path) -> std::optional<ResolvedPath>
     {
@@ -212,8 +201,7 @@ void collectHistoricalReferences(
         }
 
         auto & [historical_metadata_storage, historical_metadata_key] = *resolved_metadata;
-        /// Bypass the metadata cache: it is keyed by path only, and the same key means a different
-        /// object on a secondary storage.
+        /// The metadata cache is keyed by path alone, which is not unique across storages.
         auto historical_metadata = getMetadataJSONObject(
             historical_metadata_key,
             historical_metadata_storage,
@@ -283,7 +271,6 @@ void collectHistoricalReferences(
 
 }
 
-
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
@@ -296,8 +283,7 @@ ReachableFilesResult collectReachableFiles(
     bool scan_metadata_log_history,
     bool ignore_explicit_metadata_file_path)
 {
-    /// The highest `v*.metadata.json` in storage can be a version the catalog never committed, and
-    /// traversing it would report the files of the committed head as unreachable.
+    /// A higher metadata version may be uncommitted; follow the catalog head.
     auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
@@ -325,16 +311,10 @@ ReachableFilesResult collectReachableFiles(
     std::set<std::pair<const IObjectStorage *, String>> seen_external;
     const auto & resolver = persistent_table_components.path_resolver;
 
-    /// `reachable` is matched against a base-storage listing of `table_path`, so keep only base-storage
-    /// keys under that prefix and send everything else to `external_files`. The callers list `table_path`
-    /// with a trailing '/', so normalize the prefix once and match that.
     String base_subtree_prefix = persistent_table_components.table_path;
     if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
         base_subtree_prefix += '/';
 
-    /// Every branch of `getLatestOrExplicitMetadataFileAndVersion` yields a base-storage key under
-    /// `table_path/metadata/`, never an external path, which is what lets `collectMetadataRootFiles`
-    /// insert it into `reachable` directly.
     chassert(metadata_path.starts_with(base_subtree_prefix));
 
     auto visit = [&](const IcebergPathFromMetadata & path)
@@ -355,10 +335,7 @@ ReachableFilesResult collectReachableFiles(
 
     if (scan_metadata_log_history)
     {
-        /// History extends `external_files` only, never `reachable`: base-subtree files referenced
-        /// solely by expired history stay eligible as orphans. And only an external object still in
-        /// storage counts, since a deleted one leaves nothing outside `table_path` to clean; a missing
-        /// one is remembered so the paths the walk repeats across versions cost one probe in total.
+        /// History contributes only existing external files; expired in-table files must remain eligible as orphans.
         std::set<std::pair<const IObjectStorage *, String>> missing_external;
         auto visit_history = [&](const IcebergPathFromMetadata & path)
         {
@@ -380,8 +357,6 @@ ReachableFilesResult collectReachableFiles(
             seen_external.insert(external_id);
             external_files.emplace_back(std::move(storage), std::move(key));
         };
-        /// Historical manifests are parsed with the current schema id, as `collectSnapshotReferencedFiles`
-        /// does for pre-schema-change snapshots.
         collectHistoricalReferences(
             metadata, object_storage, persistent_table_components, context, log, external_storages,
             metadata->getValue<Int32>(f_current_schema_id), visit_history);

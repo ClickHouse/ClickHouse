@@ -7,6 +7,7 @@ import pytest
 from helpers.s3_tools import S3Uploader
 from helpers.iceberg_utils import default_upload_directory, get_uuid_str
 from .external_paths_utils import (
+    create_and_upload_table,
     _download_table_for_relocation,
     find_files,
     ALL_ROWS,
@@ -22,9 +23,6 @@ from .external_paths_utils import (
 )
 
 
-# The `OPTIMIZE TABLE ... MANIFEST` threshold pre-check reads the current manifest list wherever it
-# lives, not only from the base storage.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3613986714
 def test_optimize_manifest_with_external_manifest_list(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -33,7 +31,6 @@ def test_optimize_manifest_with_external_manifest_list(started_cluster_iceberg_w
     base_bucket = started_cluster_iceberg_with_spark.minio_bucket
 
     spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    # Three appends so the manifest list is above the compaction threshold below.
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 'beta')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (3, 'gamma')")
@@ -71,14 +68,6 @@ def test_optimize_manifest_with_external_manifest_list(started_cluster_iceberg_w
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-# Nothing but the metadata says the table owns a file outside its base directory -- `add_files` registers
-# such files without copying them -- so every command that would delete one refuses the whole table
-# instead. Each reaches those files differently: `OPTIMIZE` by listing the table directory, which an
-# external file is invisible to, `expire_snapshots` by deleting what it drops from the metadata, and
-# `remove_orphan_files` by scanning only the base storage.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3996270612
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3621619560
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3632505967
 @pytest.mark.parametrize(
     "make_external,command,settings,rows",
     [
@@ -141,9 +130,6 @@ def test_maintenance_commands_reject_external_paths(started_cluster_iceberg_with
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 
-# `generateManifestList` rereads the parent snapshot's manifest list wherever it lives, so a write
-# works with the current manifest list in another bucket.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3613986717
 @pytest.mark.parametrize(
     "write_query,rows_after",
     [
@@ -155,14 +141,10 @@ def test_maintenance_commands_reject_external_paths(started_cluster_iceberg_with
 
 def test_write_with_external_manifest_list(started_cluster_iceberg_with_spark, write_query, rows_after):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = f"test_write_external_ml_{get_uuid_str()}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     base_path = relocate_manifest_lists_to_bucket(started_cluster_iceberg_with_spark, TABLE_NAME, external_bucket(started_cluster_iceberg_with_spark))
 
@@ -174,12 +156,6 @@ def test_write_with_external_manifest_list(started_cluster_iceberg_with_spark, w
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-# Only a historical external file that is still in storage leaves something to clean, so only that keeps
-# `remove_orphan_files` refusing -- otherwise the files it deletes itself would block every later run.
-# The current metadata reaches the file solely through `metadata-log`: the snapshot walk and
-# `collectMetadataRootFiles` visit current references without probing, as they should.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r4035027368
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r4035119131
 @pytest.mark.parametrize("external_history_ref", ["manifest_list", "statistics"])
 def test_remove_orphan_files_ignores_deleted_external_history(started_cluster_iceberg_with_spark, external_history_ref):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -188,8 +164,7 @@ def test_remove_orphan_files_ignores_deleted_external_history(started_cluster_ic
     TABLE_NAME = f"test_orphan_history_{external_history_ref}_{get_uuid_str()}"
     history_bucket = external_bucket(started_cluster_iceberg_with_spark)
 
-    # Two appends, so there is an older snapshot for the historical metadata to keep after the current
-    # one drops it, the way `expire_snapshots` leaves the table.
+    # Keep an expired snapshot reachable only through historical metadata.
     spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 'beta')")
@@ -205,18 +180,16 @@ def test_remove_orphan_files_ignores_deleted_external_history(started_cluster_ic
     external_key = f"{base_path}/metadata/history_external"
     external_path = f"s3a://{history_bucket}/{external_key}"
 
-    # The historical metadata keeps every snapshot, and names the file outside the table directory.
     history = json.loads(json.dumps(current))
     assert len(history["snapshots"]) >= 2, history["snapshots"]
     older_snapshot = history["snapshots"][0]
     if external_history_ref == "manifest_list":
-        # The manifest list is read once it resolves, so the external object has to be a real one.
         external_source = next(
             f for f in find_files(metadata_dir, ".avro")
             if os.path.basename(f).startswith("snap-") and str(older_snapshot["snapshot-id"]) in os.path.basename(f))
         older_snapshot["manifest-list"] = external_path
     else:
-        # A statistics file is only ever named, never read, so its content does not matter.
+        # Statistics contents are never read during traversal.
         external_source = current_metadata_file
         history["statistics"] = [{
             "snapshot-id": older_snapshot["snapshot-id"],
@@ -226,9 +199,7 @@ def test_remove_orphan_files_ignores_deleted_external_history(started_cluster_ic
             "blob-metadata": [],
         }]
 
-    # Named as a lower version in the scheme the table already commits through: every `*.metadata.json`
-    # under `metadata/` is parsed when the table looks for its head, a second scheme there makes the head
-    # ambiguous, and a higher version would become the head.
+    # Use a lower version in the existing naming scheme so this history cannot become the table head.
     assert current.get("metadata-log"), "expected a metadata-log entry to copy the path spelling from"
     log_entry = dict(current["metadata-log"][-1])
     history_name = "v0.metadata.json"

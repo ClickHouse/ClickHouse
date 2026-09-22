@@ -349,8 +349,6 @@ std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 // File collection helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve a metadata path to the identity of the object it points at, so files spelled
-/// differently (s3:// vs s3a:// vs https) but pointing at the same object compare equal.
 Iceberg::IcebergPathFromMetadata resolveFileIdentity(
     const Iceberg::IcebergPathFromMetadata & path,
     const ObjectStoragePtr & object_storage,
@@ -365,10 +363,7 @@ Iceberg::IcebergPathFromMetadata resolveFileIdentity(
     return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
 }
 
-/// True when the object is definitively absent. The new metadata is committed before anything is
-/// deleted, so a subtree `collectExpiredFiles` skips is leaked permanently: the only failure safe to
-/// ignore is a file a previous interrupted expiration already deleted. A probe that cannot answer
-/// returns `false`, so the original error propagates.
+/// Only a confirmed missing object is safe to skip: committing expiration would otherwise leak its subtree.
 bool isAlreadyGone(
     const Iceberg::IcebergPathFromMetadata & path,
     const ObjectStoragePtr & object_storage,
@@ -442,9 +437,6 @@ void collectRetainedFiles(
     }
 }
 
-/// A manifest may be deleted only once every entry it lists is gone, and a manifest list only once
-/// every manifest it lists is gone; otherwise a leaf that survived is left with nothing naming it.
-/// The leaf roles double as the categories the command counts in.
 enum class ExpiredFileRole : uint8_t
 {
     DataFile,
@@ -460,7 +452,6 @@ struct ExpiredFile
     ExpiredFileRole role;
 };
 
-/// Per-category counts, of the files a run plans to delete and of the ones it did delete.
 struct ExpiredFileCounts
 {
     Int64 data_files = 0;
@@ -484,7 +475,7 @@ struct ExpiredFileCounts
 
 struct ExpiredFiles
 {
-    /// Leaf-first: a manifest's entries, then the manifest; a manifest list after all its manifests.
+    /// Delete leaves before their manifests, and manifests before their manifest lists.
     std::vector<ExpiredFile> all_paths;
     ExpiredFileCounts planned;
 };
@@ -513,8 +504,6 @@ ExpiredFiles collectExpiredFiles(
         }
         catch (...)
         {
-            /// Fail closed: an unresolvable manifest list cannot even be probed for existence, and
-            /// skipping it would leak its whole subtree once the new metadata is committed below.
             tryLogCurrentException(log, fmt::format("Failed to resolve manifest list {}", manifest_list_path));
             throw;
         }
@@ -549,7 +538,6 @@ ExpiredFiles collectExpiredFiles(
             }
             catch (...)
             {
-                /// Fail closed, as for the manifest list above.
                 tryLogCurrentException(log, fmt::format("Failed to resolve manifest file {}", manifest_entry.manifest_file_path));
                 throw;
             }
@@ -608,8 +596,6 @@ ExpiredFiles collectExpiredFiles(
     return result;
 }
 
-/// The expired files that resolve outside the table's own directory on the base storage. `add_files`
-/// registers such objects without copying them, so another table or writer may still own them.
 std::vector<Iceberg::IcebergPathFromMetadata> collectExternalExpiredFiles(
     const std::vector<ExpiredFile> & files,
     ObjectStoragePtr object_storage,
@@ -784,13 +770,10 @@ void updateMetadataForExpiration(
 struct DeletionOutcome
 {
     ExpiredFileCounts deleted;
-    /// Files expired from the metadata that stayed in the object storage.
     Int64 failed = 0;
 };
 
-/// Deletes the expired files and reports per category what was really removed. The new metadata is
-/// already committed, so a manifest is all that still names its entries and a manifest list all that
-/// names its manifests: keep either when something below it survived, counted as a failed deletion.
+/// Keep a manifest or manifest list if any dependency survived deletion, so surviving files remain discoverable.
 DeletionOutcome deleteExpiredFiles(
     const std::vector<ExpiredFile> & files_to_delete,
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -800,7 +783,6 @@ DeletionOutcome deleteExpiredFiles(
     ExternalStorageCache & external_storages)
 {
     DeletionOutcome outcome;
-    /// Whether something under the manifest, resp. the manifest list, being walked survived.
     bool manifest_incomplete = false;
     bool manifest_list_incomplete = false;
 
@@ -831,7 +813,6 @@ DeletionOutcome deleteExpiredFiles(
                 ++outcome.failed;
                 LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
 
-                /// A leaf marks both, so a kept manifest keeps its manifest list without a further flag.
                 if (role != ExpiredFileRole::Manifest && role != ExpiredFileRole::ManifestList)
                     manifest_incomplete = true;
                 manifest_list_incomplete = true;
@@ -847,7 +828,6 @@ DeletionOutcome deleteExpiredFiles(
 }
 
 }
-
 
 // ---------------------------------------------------------------------------
 // Public: expireSnapshots orchestration
@@ -957,8 +937,6 @@ ExpireSnapshotsResult expireSnapshots(
             object_storage, persistent_table_components, context, log, current_schema_id,
             external_storages);
 
-        /// Fail closed, as `OPTIMIZE` and `remove_orphan_files` do: an expired file outside the table's
-        /// own directory is the one it may not own. Before the metadata commit, so nothing is leaked.
         auto external_expired_files = collectExternalExpiredFiles(
             expired_files.all_paths, object_storage, persistent_table_components, context, external_storages);
         if (!external_expired_files.empty())
@@ -1048,7 +1026,6 @@ ExpireSnapshotsResult expireSnapshots(
 
     UNREACHABLE();
 }
-
 
 // ---------------------------------------------------------------------------
 // Public: executeExpireSnapshots (entry point from ALTER TABLE ... EXECUTE)

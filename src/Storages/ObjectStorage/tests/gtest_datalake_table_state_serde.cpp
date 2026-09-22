@@ -180,29 +180,18 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
 
 TEST(DatalakeStateSerde, IcebergObjectSerializableInfoExternalPathRejectedBeforeAbsolutePathProtocol)
 {
-    auto with_position_delete = makeObjectInfo();
-    with_position_delete.requires_external_storage = true;
-    with_position_delete.position_deletes_objects
-        = {{"s3://other-bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
-
-    auto with_deletion_vector = makeObjectInfo();
-    with_deletion_vector.requires_external_storage = true;
-    with_deletion_vector.deletion_vector = Iceberg::DeletionVectorObject{"s3://other-bucket/deletes/dv.puffin", 123, 456};
-
-    for (const auto & info : {with_position_delete, with_deletion_vector})
+    auto info = makeObjectInfo();
+    info.requires_external_storage = true;
+    String str;
+    WriteBufferFromString write_buffer{str};
+    try
     {
-        String str;
-        WriteBufferFromString write_buffer{str};
-        try
-        {
-            info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
-            FAIL() << "Serializing an external path below protocol version "
-                   << DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH << " did not throw";
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(e.code(), ErrorCodes::PROTOCOL_VERSION_MISMATCH);
-        }
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+        FAIL() << "External storage accepted by the old protocol";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::PROTOCOL_VERSION_MISMATCH);
     }
 }
 

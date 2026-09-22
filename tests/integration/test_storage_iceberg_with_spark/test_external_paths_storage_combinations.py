@@ -1,28 +1,28 @@
 import pytest
 
-from helpers.iceberg_utils import default_upload_directory, get_uuid_str
+from helpers.iceberg_utils import get_uuid_str
 from .external_paths_utils import (
-    VALID_COMBINATIONS,
+    create_and_upload_table,
     _distribute_table_components,
     get_query_args,
     get_table_function,
 )
 
 
-@pytest.mark.parametrize("metadata_storage,manifest_list_storage,manifest_storage,data_storage", VALID_COMBINATIONS)
+@pytest.mark.parametrize("metadata_storage,manifest_list_storage,manifest_storage,data_storage", [
+    ("s3", "local", "s3", "s3"),
+    ("s3", "s3", "local", "s3"),
+    ("s3", "s3", "s3", "local"),
+    ("azure", "local", "azure", "azure"),
+    ("azure", "azure", "local", "azure"),
+    ("azure", "azure", "azure", "local"),
+])
 def test_multi_storage_combinations(started_cluster_iceberg_with_spark, metadata_storage, manifest_list_storage, manifest_storage, data_storage):
-    """
-    Test Iceberg table with all components in different storage locations.
-    """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = f"test_combo_{get_uuid_str()}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     base_path = _distribute_table_components(started_cluster_iceberg_with_spark, TABLE_NAME, metadata_storage,
                                              manifest_list_storage, manifest_storage, data_storage)

@@ -21,15 +21,9 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
     if (send_over_whole_archive && object_info->isArchive())
         return object_info->getIdentifierForPath(object_info->getPathToArchive());
 
-    /// For Iceberg objects addressed by an external (absolute) path, schedule by that metadata path
-    /// so the same physical file maps to a stable replica regardless of the coordinator's key.
     if (auto metadata_path = object_info->getPathInDataLakeMetadata())
     {
-        /// A `file://` path names the local filesystem of whichever node opens it, and this distributor
-        /// hands tasks to an arbitrary replica, so an external local file -- the data file or one of the
-        /// delete files that come with it -- would be read from the wrong machine (or be missing there).
-        /// There is no node the task could be pinned to either: the coordinator is not necessarily one of
-        /// the replicas. Fail closed instead of returning the contents of a same-named file elsewhere.
+        /// The coordinator may not be a replica, and replicas need not share its filesystem, so local files cannot be dispatched.
         if (auto local_path = object_info->getExternalLocalPath())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

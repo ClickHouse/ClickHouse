@@ -39,8 +39,7 @@ public:
     /// Also needed to get the file which corresponds to a line in the Chunk when used for position-delete algorithms.
     static IcebergPathFromMetadata deserialize(String path_) { return IcebergPathFromMetadata(std::move(path_)); }
 
-    /// Identity of the physical object a path resolves to, as the triple (storage description, namespace, key).
-    /// Lets paths spelled differently (s3:// vs s3a:// vs https) but pointing at the same object compare equal.
+    /// Use resolved identity so URI aliases for the same object compare equal.
     static IcebergPathFromMetadata makeStorageIdentity(const ObjectStoragePtr & storage, const String & key);
 
     /// Extract the raw path string for writing into Iceberg metadata files,
@@ -51,7 +50,6 @@ public:
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
-
 
 private:
     friend class DB::FileNamesGenerator;
@@ -178,9 +176,7 @@ struct std::hash<DB::Iceberg::IcebergPathFromMetadata>
 template <>
 struct fmt::formatter<DB::Iceberg::IcebergPathFromMetadata> : fmt::formatter<std::string>
 {
-    /// Metadata can spell a file as a presigned `S3` URL, an Azure SAS URL or a
-    /// `scheme://user:password@host` one, and this formatter feeds log and exception messages only --
-    /// I/O, hashing and serialization go through `serialize` -- so the credentials are masked here.
+    /// This formatter is only for diagnostics; I/O and hashing use the unmasked `serialize` result.
     auto format(const DB::Iceberg::IcebergPathFromMetadata & p, fmt::format_context & ctx) const
     {
         return fmt::formatter<std::string>::format(DB::maskCredentialsInURI(p.serialize()), ctx);

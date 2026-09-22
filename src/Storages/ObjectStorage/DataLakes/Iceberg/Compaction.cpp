@@ -111,8 +111,6 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
-    /// Files the compacted snapshots reference from outside the table's base directory. Compaction
-    /// deletes the files it replaces, so it refuses to run while this is non-empty.
     std::vector<Iceberg::IcebergPathFromMetadata> external_files;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
@@ -245,7 +243,6 @@ static Plan getPlan(
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
-    /// Every file the compacted snapshots reference, sorted below by whether the cleanup can reach it.
     std::unordered_set<Iceberg::IcebergPathFromMetadata> referenced_file_paths;
     for (const auto & snapshot : snapshots_info)
     {
@@ -295,9 +292,7 @@ static Plan getPlan(
                     resolved_storage,
                     resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                /// One DataFilePlan per source data file, keyed by its resolved storage identity, so
-                /// that every file in a manifest gets rewritten and the same file referenced from
-                /// several manifest lists is still deduplicated.
+                /// Deduplicate by resolved identity: different metadata paths may name the same file.
                 auto path_identifier = Iceberg::IcebergPathFromMetadata::makeStorageIdentity(resolved_storage, resolved_key);
                 if (!plan.path_to_data_file.contains(path_identifier))
                 {
@@ -334,8 +329,6 @@ static Plan getPlan(
         }
     }
 
-    /// The cleanup reaches a file by listing the table directory on the base storage or not at all, so
-    /// sort the referenced files by that boundary.
     String base_subtree_prefix = persistent_table_components.table_path;
     if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
         base_subtree_prefix += '/';
@@ -1405,23 +1398,20 @@ static void writeMetadataFiles(
     }
 }
 
-/// The files the rewrite replaces, split by the role they play in the head switch (see `clearOldFiles`).
-/// Only the base storage is listed: `compactIcebergTable` rejects a table that references anything else.
 struct OldFiles
 {
     std::vector<String> metadata_files;
     std::vector<String> data_files;
 };
 
-/// A listing is unordered, so the removals are ordered here: the current head last of the metadata
-/// files, and the non-metadata files after it, so a part-way failure leaves the table where it started.
+/// Remove the old head after other metadata, then its dependencies, so a partial failure leaves it readable.
 static OldFiles getOldFiles(ObjectStoragePtr object_storage, const String & table_path, const String & head_metadata_path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
 
     auto metadata_prefix_files = listFiles(*object_storage, table_path, "metadata", "");
 
-    /// By file name: a configured metadata path may be spelled differently from the key a listing returns.
+    /// A configured metadata path may differ from the listing key; compare filenames.
     const String head_file_name = std::filesystem::path(head_metadata_path).filename();
     auto is_head = [&](const String & key) { return std::filesystem::path(key).filename() == head_file_name; };
 
@@ -1441,11 +1431,8 @@ static OldFiles getOldFiles(ObjectStoragePtr object_storage, const String & tabl
     return {std::move(ordered), listFiles(*object_storage, table_path, "data", "")};
 }
 
-/// The compacted metadata is written as `v0.metadata.json`, a lower version than the files it replaces,
-/// so the table becomes current only once the old `metadata` prefix is gone. Until then the old head
-/// still points at the old manifests and data, so a metadata file that survives stops the removals.
-/// After the switch the data files are unreferenced, so every removal is attempted and the leftovers are
-/// named in the exception.
+/// The replacement is `v0.metadata.json`, so the old head remains current until higher versions are removed.
+/// Stop on metadata deletion failures to preserve its dependencies.
 static void clearOldFiles(ObjectStoragePtr object_storage, const OldFiles & old_files)
 {
     auto log = getLogger("IcebergCompaction");
@@ -1615,9 +1602,7 @@ void compactIcebergTable(
         context_,
         persistent_table_components.metadata_compression_method);
 
-    /// Fail closed: the rewrite deletes the files it replaces by listing the table directory, and a file
-    /// outside it is also the one the table may not own -- `add_files` registers such files without
-    /// copying them -- so deleting it could destroy data another table or writer still uses.
+    /// External files may be shared with other tables through `add_files`; compaction cannot safely delete them.
     if (!plan.external_files.empty())
     {
         constexpr size_t max_files_to_name = 10;

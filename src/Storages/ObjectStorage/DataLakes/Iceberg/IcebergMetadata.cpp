@@ -165,7 +165,6 @@ String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_objec
 }
 }
 
-
 using namespace Iceberg;
 
 namespace
@@ -443,7 +442,6 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     if (!snapshot_object->has(f_schema_id))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
     Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
-
 
     return std::make_shared<IcebergDataSnapshot>(
         getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log, *external_storages),
@@ -981,7 +979,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
 }
 
-
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
@@ -1126,8 +1123,6 @@ IcebergFileRecord buildIcebergFileRecord(const Iceberg::ProcessedManifestFileEnt
     IcebergFileRecord record;
     record.snapshot_id = parsed.parsed_snapshot_id.value_or(inherited_snapshot_id);
     record.content = parsed.content_type;
-    /// The path as the manifest spells it, the same value the read path exposes as `_path`: a file
-    /// outside the table location has no table-relative form.
     record.file_path = parsed.file_path_key.serialize();
     record.file_format = parsed.file_format;
     record.record_count = parsed.record_count;
@@ -1173,8 +1168,6 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
     {
         for (const auto & processed : handle.getFilesWithoutDeleted(content_type))
         {
-            /// The grant on the table does not cover a file it places outside its own location, so show
-            /// that entry only to a user who is granted it, as reading it requires.
             if (!isPathReadGranted(
                     persistent_components.table_location,
                     processed->parsed_entry->file_path_key.serialize(),
@@ -1263,7 +1256,6 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return 0;
     }
 
-
     /// Row counts stored in the metadata layers above the manifest files are not used as
     /// data sources, because writers derive them instead of measuring them against the data:
     /// - the snapshot summary's `total-records` is maintained incrementally (parent total
@@ -1298,8 +1290,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        /// Counting from the manifests answers what a scan would, so a file the scan could not read must
-        /// not be counted from its metadata. Leave it to the scan, which fails with the proper error.
+        /// Metadata-only counts must not bypass access or path restrictions enforced by a scan.
         for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
             if (!isPathReadable(
                     persistent_components.table_location,
@@ -1349,7 +1340,6 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *external_storages);
 
-        /// As in `totalRows`: the size of a file the scan could not read is not summed from its metadata.
         for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
             if (!isPathReadable(
                     persistent_components.table_location,
@@ -1602,8 +1592,7 @@ void IcebergMetadata::drop(ContextPtr context)
     if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
         return;
 
-    /// Skipped rather than refused: this runs after the table is already marked as dropped, so
-    /// throwing here only makes `DatabaseCatalog` retry the drop forever.
+    /// The table is already marked dropped; throwing would make `DatabaseCatalog` retry forever.
     if (persistent_components.table_root_was_derived)
     {
         LOG_WARNING(
@@ -1615,14 +1604,8 @@ void IcebergMetadata::drop(ContextPtr context)
         return;
     }
 
-    /// Files outside `table_path` are only discoverable through the metadata graph the base wipe below
-    /// removes, so enumerate them first, and let a failure propagate rather than wiping the metadata a
-    /// retry would re-enumerate from.
-    /// History is not walked: `drop` deletes what it enumerates, and objects referenced only by expired
-    /// historical metadata are out of scope.
-    /// The catalog cannot be consulted here, `StorageObjectStorage::drop` removes the table from it
-    /// first. Enumerate from the configured `iceberg_metadata_file_path`, where a catalog-backed table
-    /// reads from, so a higher `v*.metadata.json` from an interrupted write does not hide the head's files.
+    /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
+    /// The catalog entry is already removed, so use the configured metadata head, not an uncommitted higher version.
     std::vector<std::pair<ObjectStoragePtr, String>> external_files;
     try
     {
@@ -1633,11 +1616,7 @@ void IcebergMetadata::drop(ContextPtr context)
     }
     catch (const Exception & e)
     {
-        /// `DatabaseCatalog::dropTableDataTask` treats every exception here as "retry later", so a
-        /// permanent rejection -- an unresolvable external URI, or a `file://` path outside `user_files` --
-        /// is terminal instead, or `DROP TABLE ... SYNC` would wait forever; the wipe below proceeds and
-        /// those files are reported as left behind. `FILE_DOESNT_EXIST` is terminal too: the metadata to
-        /// enumerate from is gone. Everything else may succeed on a retry, so it propagates.
+        /// Permanent path rejections and missing metadata cannot succeed on retry; rethrow only transient failures.
         if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::NOT_IMPLEMENTED
             && e.code() != ErrorCodes::SUPPORT_IS_DISABLED && e.code() != ErrorCodes::PATH_ACCESS_DENIED
             && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
@@ -1652,21 +1631,14 @@ void IcebergMetadata::drop(ContextPtr context)
         external_files.clear();
     }
 
-    /// Leaf-first (reverse of the traversal's append order) so an interrupted drop can re-enumerate the
-    /// rest on retry, one object per request: a batch removal can delete part of the batch and then throw,
-    /// orphaning a data file whose manifest is already gone. Shared files are deleted too, as with `PURGE`.
+    /// Delete leaves first, one per request: a partial batch failure could delete the manifest needed for retry.
     std::reverse(external_files.begin(), external_files.end());
     for (const auto & [storage, key] : external_files)
     {
-        /// Log before removal, as in `clearOldFiles`: `removeObjectIfExists` does not confirm the object
-        /// was present, so an interrupt still leaves an audit trail of what the drop was purging.
         LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", storage->getDescription(), key);
         storage->removeObjectIfExists(StoredObject(key));
     }
 
-    /// The base subtree last, restricted to `table_path`: referenced files elsewhere were deleted above,
-    /// and unreferenced objects elsewhere may be another table's. `listFiles` joins path and prefix, so
-    /// the prefix must be empty, or it scans the non-existent `table_path/table_path`.
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
     StoredObjects base_objects;
     base_objects.reserve(files.size());

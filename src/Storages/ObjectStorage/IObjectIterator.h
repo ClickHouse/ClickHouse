@@ -50,18 +50,12 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    /// The storage this object is read from. Ordinarily the one the reader was handed, but a data
-    /// lake may place a file on a storage of its own, and then only that one can serve it.
     virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
 
-    /// The path a data lake's metadata spells for this object, when that differs from the key it is read
-    /// by. It is what `_path` reports, and what identifies the object across storages where the key alone
-    /// is ambiguous: the same key in two buckets names two different files.
+    /// Manifest spelling used by `_path` and cross-storage cache keys; storage keys alone are not unique.
     virtual std::optional<String> getPathInDataLakeMetadata() const { return std::nullopt; }
 
-    /// The path of a file this object needs -- its own, or a delete file attached to it -- that lives on
-    /// the local filesystem outside the table location, if any. Only the node that resolved it can read
-    /// it, so a task carrying one cannot be handed to a replica.
+    /// Returns a local dependency that cannot be handed to another replica, including attached delete files.
     virtual std::optional<String> getExternalLocalPath() const { return std::nullopt; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
@@ -69,8 +63,6 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
-    /// Polymorphic copy: preserves the dynamic type (e.g. `IcebergDataObjectInfo` with its
-    /// resolved storage and metadata path) where a plain copy construction would slice it.
     virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
 
     /// Lazy materialization: if set, read only these rows of the file.
@@ -100,12 +92,9 @@ struct IObjectIterator
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
 
-    /// When true, the objects this iterator produces are handed to other replicas instead of being read
-    /// here, so an implementation must also fill in whatever only the cluster protocol needs.
     bool tasks_go_to_other_replicas = false;
 
-    /// Set `tasks_go_to_other_replicas` flag, propagating to nested iterators if any. Must be called
-    /// before the first `next`.
+    /// Call before the first `next`; propagates to nested iterators.
     virtual void setTasksGoToOtherReplicas(bool value) { tasks_go_to_other_replicas = value; }
 };
 
@@ -182,6 +171,5 @@ private:
     std::queue<ObjectInfoPtr> pending_objects_info;
     const LoggerPtr log = getLogger("GlobIterator");
 };
-
 
 }

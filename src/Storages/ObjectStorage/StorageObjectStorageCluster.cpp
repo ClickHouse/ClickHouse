@@ -446,8 +446,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         );
     }
 
-    /// The objects below are not read here, they are serialized and handed to other replicas, so the
-    /// iterator must also fill in the per-object metadata only the cluster protocol consumes.
     iterator->setTasksGoToOtherReplicas(true);
 
     std::vector<std::string> ids_of_hosts;

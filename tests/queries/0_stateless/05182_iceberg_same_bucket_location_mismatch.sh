@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# An Iceberg table whose metadata `location` names a sibling prefix of the same bucket, not the
-# directory the table is read from -- the shape copying a table without rewriting its metadata
-# produces. `IcebergPathResolver` must re-root the paths spelled relative to that location.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,8 +14,6 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
     DROP TABLE IF EXISTS t_iceberg_same_bucket;
 "
 
-# Only the last path component changes, so the bucket stays the configured one: this is a
-# same-bucket mismatch, not a cross-bucket move.
 ${CLICKHOUSE_CLIENT} --input_format_parallel_parsing 0 --output_format_parallel_formatting 0 -q "
     SELECT * FROM s3(s3_conn, filename='${TABLE_PATH}/metadata/v2.metadata.json', structure='line String', format='LineAsString')
 " | python3 -c "
@@ -30,10 +25,8 @@ new_location = head + '/relocated_' + leaf
 m['location'] = new_location
 for s in m.get('snapshots', []):
     ml = s['manifest-list']
-    for prefix in [old_location + '/', old_location]:
-        if ml.startswith(prefix):
-            s['manifest-list'] = new_location + '/' + ml[len(prefix):].lstrip('/')
-            break
+    assert ml.startswith(old_location + '/')
+    s['manifest-list'] = new_location + ml[len(old_location):]
 print(json.dumps(m))
 " | ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO FUNCTION s3(s3_conn, filename='${TABLE_PATH}/metadata/v2.metadata.json', structure='line String', format='LineAsString')

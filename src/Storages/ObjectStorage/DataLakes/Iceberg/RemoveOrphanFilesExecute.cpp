@@ -264,12 +264,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    /// Fail closed: the scan below covers only `table_path` on the base storage. Files that resolve
-    /// elsewhere (secondary storage, or base storage outside `table_path`) have no bounded directory to
-    /// scan, so there is no safe way to reach them without risking unrelated objects that share the bucket.
-    /// External references can also survive only in historical metadata versions (`metadata-log`), so the
-    /// history is scanned too: a table whose current snapshot moved back under `table_path` may still own
-    /// orphaned objects in another bucket/prefix that this operation cannot see.
+    /// The scan is bounded by `table_path`; external references, including historical ones, make cleanup unsafe.
     auto [reachable, metadata_version, metadata_path, external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true);
@@ -299,7 +294,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    /// Only the traversal root matters here (TOCTOU detection), so skip the history walk.
+    /// Only the traversal root is needed for TOCTOU detection.
     auto [_recheck_files, recheck_version, recheck_path, _recheck_external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true);
@@ -319,7 +314,6 @@ RemoveOrphanFilesResult removeOrphanFiles(
 }
 
 }
-
 
 // ---------------------------------------------------------------------------
 // Public entry point

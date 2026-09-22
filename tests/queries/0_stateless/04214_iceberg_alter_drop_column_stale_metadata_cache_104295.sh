@@ -30,7 +30,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Isolated work dir for the `IcebergLocal` table.
 WORK_DIR="${CLICKHOUSE_TMP}/iceberg_alter_drop_column_104295_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"

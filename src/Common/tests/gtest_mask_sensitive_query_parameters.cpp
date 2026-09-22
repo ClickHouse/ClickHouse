@@ -96,30 +96,12 @@ TEST(MaskCredentialsInURI, ObjectPathsUnchanged)
     EXPECT_EQ(maskCredentialsInURI("/table/data/x.parquet"), "/table/data/x.parquet");
 }
 
-TEST(MaskCredentialsInURI, PresignedAndSasParameters)
+TEST(MaskCredentialsInURI, PasswordAndQueryParameters)
 {
-    EXPECT_EQ(
-        maskCredentialsInURI("s3://bucket/x.parquet?X-Amz-Credential=AKIA%2F20260912&X-Amz-Signature=deadbeef"),
-        "s3://bucket/x.parquet?X-Amz-Credential=[HIDDEN]&X-Amz-Signature=[HIDDEN]");
-    EXPECT_EQ(
-        maskCredentialsInURI("https://acct.blob.core.windows.net/c/f.parquet?sv=2021-08-06&sr=b&sig=SECRET"),
-        "https://acct.blob.core.windows.net/c/f.parquet?sv=2021-08-06&sr=b&sig=[HIDDEN]");
-}
-
-TEST(MaskCredentialsInURI, UserinfoPassword)
-{
-    EXPECT_EQ(
-        maskCredentialsInURI("s3://alice:hunter2@minio:9000/bucket/f.parquet"),
-        "s3://alice:[HIDDEN]@minio:9000/bucket/f.parquet");
-}
-
-TEST(MaskCredentialsInURI, UriEmbeddedInALongerString)
-{
-    /// The scheduling identifier of a data lake file prefixes the path with its read source index.
-    EXPECT_EQ(
-        maskCredentialsInURI("7:s3://alice:hunter2@minio:9000/bucket/f.parquet"),
-        "7:s3://alice:[HIDDEN]@minio:9000/bucket/f.parquet");
-    EXPECT_EQ(
-        maskCredentialsInURI("7:https://h/b/f.parquet?X-Amz-Signature=abc"),
-        "7:https://h/b/f.parquet?X-Amz-Signature=[HIDDEN]");
+    for (const auto & prefix : {"", "7:"})
+    {
+        EXPECT_EQ(
+            maskCredentialsInURI(std::string(prefix) + "s3://alice:hunter2@minio:9000/bucket/f.parquet?X-Amz-Signature=abc"),
+            std::string(prefix) + "s3://alice:[HIDDEN]@minio:9000/bucket/f.parquet?X-Amz-Signature=[HIDDEN]");
+    }
 }

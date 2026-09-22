@@ -28,7 +28,6 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int PROTOCOL_VERSION_MISMATCH;
 }
 
-
 using namespace DB::Iceberg;
 
 namespace DB
@@ -83,8 +82,6 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           std::move(identity_partition_columns_)}
     , resolved_storage(std::move(resolved_storage_))
 {
-    /// resolved_storage and resolved_key must be provided together or neither must be provided
-    /// (default-constructed, meaning the path has not been resolved yet).
     chassert(resolved_key_.empty() == (resolved_storage == nullptr));
 }
 
@@ -176,13 +173,10 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
 
 std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
 {
-    /// Without `requires_external_storage` every path of this object resolves against the table's own
-    /// storage, which is reached the same way from every node.
     if (!info.requires_external_storage)
         return std::nullopt;
 
-    /// A scheme-less absolute path is a local filesystem path only when the table's storage is local;
-    /// elsewhere it is a key relative to the table's bucket.
+    /// A scheme-less absolute path denotes a local file only on local storage; otherwise it is a bucket key.
     const bool absolute_is_local = resolved_storage && resolved_storage->getType() == ObjectStorageType::Local;
 
     auto is_local = [&](const String & path)
@@ -195,8 +189,6 @@ std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
     if (auto metadata_path = getPathInDataLakeMetadata(); metadata_path && is_local(*metadata_path))
         return metadata_path;
 
-    /// The delete files are resolved by whoever reads the object, not by the coordinator, so they are
-    /// part of the task just as much as the data file itself.
     for (const auto & delete_object : info.position_deletes_objects)
         if (is_local(delete_object.file_path))
             return delete_object.file_path;

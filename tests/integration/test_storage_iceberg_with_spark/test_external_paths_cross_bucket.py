@@ -1,13 +1,13 @@
 import os
 import json
 import shutil
-import tempfile
 import time
 import pytest
 
 from helpers.s3_tools import S3Uploader
-from helpers.iceberg_utils import default_download_directory, default_upload_directory, get_uuid_str
+from helpers.iceberg_utils import default_upload_directory, get_uuid_str
 from .external_paths_utils import (
+    create_and_upload_table,
     _create_iceberg_s3_table,
     _distribute_table_components,
     _download_table_for_relocation,
@@ -21,14 +21,8 @@ from .external_paths_utils import (
 )
 
 
-# S3 only: Azure cross-container is not supported, the account key cannot be extracted from the
-# credential object. The `url` spelling pins its own case, that the bucket of an explicit path-style URL
-# is preserved when the secondary storage is created.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3348134710
 @pytest.mark.parametrize("spelling", ["s3", "url"])
 def test_four_different_s3_buckets(started_cluster_iceberg_with_spark, spelling):
-    """S3: each component in a different bucket (metadata, manifest-list, manifest, data), named by an
-    `s3a://bucket/key` path or by an explicit `http://endpoint/bucket/key` URL."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -54,9 +48,6 @@ def test_four_different_s3_buckets(started_cluster_iceberg_with_spark, spelling)
     assert result == "1\tAlice\t100\n2\tBob\t85\n3\tCarol\t92\n"
 
 
-# External data files under the same object key in different buckets must not share a num-rows cache
-# entry.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3356426404
 def test_num_rows_cache_no_collision_across_buckets(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -71,25 +62,17 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster_iceberg_with
 
         default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{table_name}/", f"/iceberg_data/default/{table_name}/")
 
-        temp_dir = tempfile.mkdtemp()
-        host_path = os.path.join(temp_dir, table_name)
-        os.makedirs(host_path, exist_ok=True)
-        default_download_directory(started_cluster_iceberg_with_spark, "s3", f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/", host_path)
-
-        base_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+        temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, table_name)
         metadata_dir = os.path.join(host_path, "metadata")
         data_dir = os.path.join(host_path, "data")
 
         data_files = find_files(data_dir, ".parquet")
         assert len(data_files) == 1, f"Expected a single data file, got: {data_files}"
 
-        # Point the data file to the same object key in a different bucket.
         manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
         for mf in manifest_files:
             modify_avro_file(mf, ["data_file", "file_path"], lambda _: f"s3a://{data_bucket}/{shared_key}")
-            # Make `count()` unanswerable from metadata so it goes through the num-rows cache. Dropping
-            # `value_counts` is not enough: the count comes from `record_count`, which reports
-            # "unavailable" only when negative (see `getRowsCountInAllFilesExcludingDeleted`).
+            # Set `record_count` negative and remove summary counts to force the file-count cache path.
             modify_avro_file(mf, ["data_file", "value_counts"], lambda _: None)
             modify_avro_file(mf, ["data_file", "record_count"], lambda _: -1)
 
@@ -110,14 +93,14 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster_iceberg_with
         shutil.rmtree(temp_dir)
         return base_path
 
-    # An entry is reused only for files older than it, so upload everything before querying.
+    # Upload both files before populating the cache: entries are reused only for older files.
     base_path_a = prepare_table(
         f"test_count_cache_a_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c')", external_bucket(started_cluster_iceberg_with_spark, 1)
     )
     base_path_b = prepare_table(
         f"test_count_cache_b_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e')", external_bucket(started_cluster_iceberg_with_spark, 2)
     )
-    # Margin for the second-resolution `last_modified` comparison.
+    # Allow for the second-resolution `last_modified` comparison.
     time.sleep(3)
 
     def count(base_path, marker):
@@ -133,30 +116,21 @@ def test_num_rows_cache_no_collision_across_buckets(started_cluster_iceberg_with
         ).strip())
         return result, cache_lookups
 
-    # The first query populates the num-rows cache; the second one must not reuse its entry.
     count_a, cache_lookups_a = count(base_path_a, "count_cache_marker_a")
     count_b, cache_lookups_b = count(base_path_b, "count_cache_marker_b")
     assert count_a == "3"
     assert count_b == "5"
-    # Both queries must actually consult the num-rows cache.
     assert cache_lookups_a >= 1
     assert cache_lookups_b >= 1
 
 
-# `_path` predicate pushdown and bucket splitting operate on the same absolute path that Iceberg rows
-# expose for external files, so a `_path` predicate selects them and bucket splitting keeps the storage
-# the path resolved to.
 def test_external_path_virtual_column_filter(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = f"test_path_filter_{get_uuid_str()}"
     data_bucket = external_bucket(started_cluster_iceberg_with_spark)
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     base_path = relocate_data_files_to_bucket(started_cluster_iceberg_with_spark, TABLE_NAME, data_bucket)
 
@@ -166,30 +140,20 @@ def test_external_path_virtual_column_filter(started_cluster_iceberg_with_spark)
     paths = instance.query(f"SELECT DISTINCT _path FROM icebergS3({args})").strip().splitlines()
     assert len(paths) == 1
     external_path = paths[0]
-    # `_path` must expose the external location, not a key inside the base bucket.
     assert data_bucket in external_path
 
-    # Through the cluster function too, where bucket splitting must keep the resolved storage.
     assert instance.query(
         f"SELECT count() FROM icebergS3Cluster('cluster_simple', {args}) WHERE _path = '{external_path}' "
         "SETTINGS cluster_table_function_split_granularity = 'bucket'"
     ).strip() == "3"
 
 
-# A bucket name identifies a bucket only within one provider, so a `gs://` path must not be served by an
-# S3 base storage with the same bucket name. The data files stay where the base storage would find them,
-# so a read that collapses the providers succeeds -- and must not.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3789962904
 def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = f"test_gs_same_bucket_{get_uuid_str()}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
     _rewrite_manifests_and_reupload(
@@ -199,8 +163,7 @@ def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster_iceberg_w
 
     _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
 
-    # Google Cloud Storage is unreachable from the test cluster, so the read fails and the retries are
-    # kept short; what matters is that it is not answered from the identically named MinIO bucket.
+    # GCS is unreachable here; a successful read would mean the MinIO bucket was used incorrectly.
     error = instance.query_and_get_error(
         f"SELECT * FROM {TABLE_NAME} ORDER BY id "
         f"SETTINGS s3_request_timeout_ms = 3000, s3_connect_timeout_ms = 3000")
@@ -209,23 +172,13 @@ def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster_iceberg_w
     instance.query(f"DETACH TABLE {TABLE_NAME}")
 
 
-# A scheme no source covers names a target no read can open and no grant can authorize, and the
-# metadata-only surfaces still answer for it: reporting a file nobody can read is when
-# `system.iceberg_files` is needed most.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r4035027375
 def test_unsupported_scheme_is_still_reported_by_system_iceberg_files(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = f"test_unsupported_scheme_{get_uuid_str()}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
-    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
-
-    # `viewfs` is a real Hadoop spelling ClickHouse has no storage for, and unlike `gs` it is not
-    # normalized onto one it does.
     temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
     _rewrite_manifests_and_reupload(
         started_cluster_iceberg_with_spark, host_path, base_path,
@@ -242,14 +195,11 @@ def test_unsupported_scheme_is_still_reported_by_system_iceberg_files(started_cl
     assert paths, "The unreadable table was dropped from system.iceberg_files"
     assert all(p.startswith("viewfs://cluster/") for p in paths), paths
 
-    # `count()` from the manifests stands in for a scan, so it gives up its answer and lets the scan
-    # report the rejection.
     assert "Unsupported storage scheme" in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
 
     instance.query(f"DETACH TABLE {TABLE_NAME}")
 
 
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r4039927348
 def test_cluster_function_reads_external_delete_file(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
 

@@ -6,9 +6,10 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import LocalUploader, S3Downloader, S3Uploader, prepare_s3_bucket
 from helpers.spark_tools import ResilientSparkSession
-from helpers.iceberg_utils import default_upload_directory, get_uuid_str
+from helpers.iceberg_utils import get_uuid_str
 from .conftest import get_spark
 from .external_paths_utils import (
+    create_and_upload_table,
     ALL_ROWS,
     _create_iceberg_s3_table,
     _download_table_for_relocation,
@@ -17,14 +18,11 @@ from .external_paths_utils import (
     _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
     find_files,
-    relocate_data_files_within_base_bucket,
+    relocate_data_files_to_bucket,
 )
 
 
-# A cluster of its own: `iceberg_delete_data_on_drop` is read from the default profile and
-# `remote_url_allow_hosts` is server-level, so neither can be set without changing what every other test
-# in the package sees. `get_spark` comes from the package conftest because `getOrCreate` hands back
-# whichever session the worker built first.
+# `iceberg_delete_data_on_drop` and `remote_url_allow_hosts` require a separate cluster.
 @pytest.fixture(scope="module")
 def started_cluster():
     cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -58,10 +56,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-# `IcebergMetadata::drop` walks the current metadata graph, so it deletes data files outside the table
-# directory as well -- in another bucket, or under an absolute URI elsewhere in the same one.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3621619550
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3632505967
 @pytest.mark.parametrize(
     "make_external",
     [
@@ -93,30 +87,20 @@ def test_delete_data_on_drop_removes_external_files(started_cluster, make_extern
     assert count_objects(external_bucket, external_prefix) == 0
 
 
-# The drop enumerates the files to delete from the configured `iceberg_metadata_file_path`, not from the
-# highest `v*.metadata.json` in storage: an interrupted write leaves a higher version whose snapshot does
-# not name the head's external files. The catalog cannot be asked here, `StorageObjectStorage::drop`
-# removes the table from it first.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706553
 def test_delete_data_on_drop_uses_configured_metadata_head(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
 
     TABLE_NAME = f"test_drop_stale_head_{get_uuid_str()}"
     base_bucket = started_cluster.minio_bucket
     external_prefix = f"external_data/{TABLE_NAME}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
-    base_path = relocate_data_files_within_base_bucket(started_cluster, TABLE_NAME, external_prefix)
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(started_cluster, TABLE_NAME, base_bucket, prefix=external_prefix)
 
     temp_dir, host_path, _ = _download_table_for_relocation(started_cluster, TABLE_NAME)
     metadata_files = sorted(find_files(os.path.join(host_path, "metadata"), ".metadata.json"))
     head = os.path.basename(metadata_files[-1])
-    # A stale higher version, as an interrupted write leaves behind: it has no snapshot, so it names no
-    # data file at all.
+    # An uncommitted higher version must not hide the configured head during deletion.
     started_cluster.default_s3_uploader.upload_file(
         metadata_files[0], f"{base_path}/metadata/99999-{get_uuid_str()}.metadata.json")
     shutil.rmtree(temp_dir)
@@ -140,28 +124,20 @@ def test_delete_data_on_drop_uses_configured_metadata_head(started_cluster):
     assert count_objects(f"{external_prefix}/") == 0
 
 
-# A `file://` URI is read from the local filesystem of whichever server resolves it, so an authority
-# naming another host is rejected rather than serving that server's own file under the path.
-# `system.iceberg_files` still reports such a path, which is when it is most needed for diagnosis.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3735408259
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3859370183
 def test_file_uri_with_remote_authority_is_rejected(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
 
     TABLE_NAME = f"test_file_remote_authority_{get_uuid_str()}"
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
-
-    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
-    # The files are put in place locally too, so the query fails on the authority, not on a missing file.
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    # Keep the local files present so failure proves path rejection, not a missing file.
     base_path = _rewrite_paths_to_local_uri(started_cluster, TABLE_NAME, "other-host")
 
     _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY id")
     assert "refers to host 'other-host'" in error
+    assert "refers to host 'other-host'" in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
 
     paths = instance.query(
         f"SELECT file_path FROM system.iceberg_files "
@@ -169,27 +145,18 @@ def test_file_uri_with_remote_authority_is_rejected(started_cluster):
     assert paths, "The unreadable table was dropped from system.iceberg_files"
     assert all(p.startswith("file://other-host/") for p in paths), paths
 
-    # The drop hits the poisoned path. That rejection is permanent, so it must be terminal rather than
-    # retried by `DatabaseCatalog`, or `DROP TABLE ... SYNC` never returns.
+    # Permanent path rejection must not make `DatabaseCatalog` retry this drop forever.
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 
-# An endpoint named by Iceberg metadata passes `remote_url_allow_hosts` just like one named in a table
-# definition, so a manifest cannot reach a host an ordinary `S3` table may not.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706589
 def test_external_endpoint_is_rejected_by_remote_host_filter(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
 
     TABLE_NAME = f"test_host_filter_{get_uuid_str()}"
     base_bucket = started_cluster.minio_bucket
 
-    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    create_and_upload_table(started_cluster, TABLE_NAME)
 
-    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
-
-    # The files stay where they are: the endpoint is refused before any request is made for them.
     temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
     _rewrite_manifests_and_reupload(
         started_cluster, host_path, base_path,

@@ -134,7 +134,6 @@ private:
     std::mutex deletes_mutex;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
-    /// Sometimes data or manifests can be located on another storage.
     std::shared_ptr<ExternalStorageCache> external_storages;
     /// Built in the constructor, before the producer thread of `data_files_stream` exists, and read
     /// only on that thread afterwards.
@@ -144,6 +143,5 @@ private:
     std::unique_ptr<Iceberg::DataFileEntriesStream> data_files_stream;
 };
 }
-
 
 #endif

@@ -78,8 +78,6 @@ public:
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
-    /// Same as above, but objects read from a resolved (secondary) storage are identified
-    /// by that storage. Use this overload for schema/num-rows cache keys.
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration,
         const ObjectInfoPtr & object_info,
@@ -201,8 +199,6 @@ private:
         const std::string & path_in_archive,
         std::optional<size_t> read_source_index);
 
-    /// Record on the object which storage it is read from, resolving it from the path the table's
-    /// metadata spells. A no-op unless the object is a data lake object placed on another storage.
     void resolveObjectStorageIfNeeded(const ObjectInfoPtr & object);
 
     ClusterFunctionReadTaskCallback callback;
@@ -212,7 +208,6 @@ private:
     ObjectStoragePtr object_storage;
     std::string table_location;
 #if USE_AVRO
-    /// Storages built here for files the table's metadata places outside its own storage.
     ExternalStorageCache external_storages;
 #endif
     /// path_to_archive -> archive reader.

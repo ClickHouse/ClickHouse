@@ -187,18 +187,13 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
 
     assert data_entries_checked > 0
 
-# Regression test: the compacted metadata is written as a lower version than the files it replaces, so the
-# table becomes current only once the whole old `metadata` prefix is gone. A metadata file that cannot be
-# removed leaves the old snapshot current, so the cleanup must stop there instead of going on to delete the
-# manifests and data that snapshot still references.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706541
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceberg_with_spark, storage_type):
+
+def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceberg_with_spark):
+    storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_optimize_failed_cleanup_" + storage_type + "_" + get_uuid_str()
 
-    # A positional delete file is what makes the table worth compacting.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
@@ -231,8 +226,7 @@ def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceb
     metadata_before = list_dir("metadata")
     data_before = list_dir("data")
 
-    # The failpoint throws after the object is gone, so the cleanup loses its first removal. The head is
-    # removed last, so that is never the file the table resolves to.
+    # The failpoint throws after removal; the head must be removed last to remain readable.
     instance.query("SYSTEM ENABLE FAILPOINT local_object_storage_network_error_during_remove")
     try:
         error = instance.query_and_get_error(
@@ -241,11 +235,8 @@ def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceb
     finally:
         instance.query("SYSTEM DISABLE FAILPOINT local_object_storage_network_error_during_remove")
 
-    # The failure is reported with what it means for the table, not as a bare removal error.
     assert "the metadata files the compaction replaced" in error, error
 
-    # The cleanup stopped inside the `metadata` prefix, so the old snapshot is still the current one and
-    # everything it references is still there and reads.
     assert list_dir("metadata") & metadata_before, \
         "The whole old `metadata` prefix was removed even though one of its removals failed"
     assert data_before <= list_dir("data"), \
