@@ -639,16 +639,16 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
             if (getTupleType(element_types[i]) != nullptr && !tuple.getColumn(i).isNullAt(0))
                 return true;
     }
+    return false;
+}
+
+}
+
 DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(lhs_type.get()); tuple_type && tuple_type->getElements().size() > 1)
         return tuple_type->getElements();
     return {lhs_type};
-}
-
-    return false;
-}
-
 }
 
 /// Format: lhs IN rhs
