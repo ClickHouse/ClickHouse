@@ -306,6 +306,12 @@ public:
     /// set outside the tests, where checking one empty `std::function` per `setMany` is all it costs.
     std::function<void()> on_entries_staged_for_test;
 
+    /// Test seam: `setMany` calls this right after its entries have been inserted into the shards
+    /// and before the recheck that takes a stale write back out. That is the window in which a
+    /// reader which started after the invalidation writes the same keys, and its entries are the
+    /// ones the recheck has to leave alone, see `removeStaleEntries`.
+    std::function<void()> on_entries_inserted_for_test;
+
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 
@@ -428,6 +434,10 @@ private:
 
     /// Remove the given entries from the shards. Must be called without `index_mutex`.
     void removeFromShards(const std::vector<Key> & keys);
+
+    /// Take back the entries of a `setMany` whose write turned out to be stale, and only those:
+    /// the key can meanwhile belong to a reader that started after the invalidation.
+    void removeStaleEntries(const std::vector<Key> & keys, const std::vector<MappedPtr> & entries);
 
     /// Forget one entry of a part in `part_index`, erasing the buckets of the column and of the
     /// part when they hold nothing any more, so that the index retains no memory for what the

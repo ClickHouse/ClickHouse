@@ -347,6 +347,43 @@ TEST(ColumnsCache, ClearAllLandingMidInsertRemovesTheStaleWrite)
     EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
 }
 
+TEST(ColumnsCache, StaleWriteLeavesAFreshWriteOfTheSameKeyAlone)
+{
+    /// The same window again, but with a reader that starts after the drop and writes the very
+    /// same key while the stale write is still on its way out. That reader is exactly the one
+    /// that should repopulate the cache after `SYSTEM DROP COLUMNS CACHE`, so the stale cleanup
+    /// has to take out the entries it inserted itself and not everything under their keys.
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    ColumnsCache::MappedPtr fresh;
+    cache.on_entries_inserted_for_test = [&]
+    {
+        /// The write of the post-drop reader is an ordinary `setMany`; it must not re-enter here.
+        cache.on_entries_inserted_for_test = nullptr;
+
+        cache.clearAll();
+        fresh = makeEntry(c, 0, 0, 8);
+        EXPECT_GT(cache.setMany({fresh}, cache.getInvalidationGeneration(c.table_uuid)), 0u);
+    };
+
+    /// The stale write is rejected and charges nothing.
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    cache.on_entries_inserted_for_test = nullptr;
+
+    /// The fresh entry is still there, and the index still knows about it.
+    ASSERT_TRUE(fresh);
+    EXPECT_EQ(cache.count(), 1u);
+    EXPECT_EQ(getOne(cache, c, 0), fresh);
+    EXPECT_TRUE(cache.containsPart(c.table_uuid, "part_1"));
+
+    /// And the index entry is the real one: removing the part takes the fresh entry with it.
+    cache.removePart(c.table_uuid, "part_1");
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, "part_1"));
+}
+
 TEST(ColumnsCache, AdjacentRunsOfDifferentRepresentationsMerge)
 {
     /// The copy a read accumulates for the cache is a clone of the column the read produced, so
