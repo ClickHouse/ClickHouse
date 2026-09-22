@@ -2923,10 +2923,10 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
     /// Nested `accurateCastOrNull` conversions also need nullable results to report failures,
     /// even when the declared tuple field type itself is non-nullable.
-    auto wrapper = prepareImpl(
-        from_nested_type,
-        to_nested_type,
-        (result_is_nullable && !strict_text_conversion) || cast_type == CastType::accurateOrNull);
+    const bool requested_result_is_nullable
+        = (result_is_nullable && !strict_text_conversion) || cast_type == CastType::accurateOrNull;
+
+    auto wrapper = prepareImpl(from_nested_type, to_nested_type, requested_result_is_nullable);
 
     if (result_is_nullable)
     {
