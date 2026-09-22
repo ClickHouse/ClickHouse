@@ -1420,7 +1420,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
     DECLARE(NonZeroUInt64, ai_request_threadpool_pool_size, 100, R"(Size of the server-wide thread pool that issues requests to AI providers. One worker holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single query's share of it.)", 0) \
-    DECLARE(UInt64, ai_request_threadpool_queue_size, 10000, R"(Number of AI provider requests which is possible to push into that pool. A query that submits a request while the queue is full waits for a slot.)", 0) \
+    DECLARE(UInt64, ai_request_threadpool_queue_size, 10'000, R"(Number of AI provider requests which is possible to push into that pool. A query that submits a request while the queue is full waits for a slot.)", 0) \
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
