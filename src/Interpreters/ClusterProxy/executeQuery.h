@@ -184,6 +184,14 @@ void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits);
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    QueryProcessingStage::Enum processed_stage,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
@@ -212,6 +220,15 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context);
 
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    SelectQueryInfo query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context);
 }
 
 }

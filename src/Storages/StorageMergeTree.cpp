@@ -24,7 +24,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -99,6 +99,7 @@ namespace FailPoints
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
@@ -110,6 +111,7 @@ namespace Setting
     extern const SettingsBool optimize_skip_merged_partitions;
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_parts_to_move;
     extern const SettingsUpdateParallelMode update_parallel_mode;
@@ -174,7 +176,7 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     if (mutation.tid.isNonTransactional())
         return {};
 
-    auto txn = TransactionManager::instance().tryGetRunningTransaction(mutation.tid.getHash());
+    auto txn = TransactionLog::instance().tryGetRunningTransaction(mutation.tid.getHash());
     if (txn)
         return txn;
 
@@ -345,11 +347,50 @@ void StorageMergeTree::read(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     size_t num_streams)
 {
-    /// The reading step for parallel replicas is built in the Planner, so don't do it here.
+    const auto & settings = local_context->getSettingsRef();
+    /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
+    /// With `parallel_replicas_plan_based` do not build the query-based reading step either: the
+    /// plan-based implementation is meant to replace it, so a query the planner never saw reads
+    /// locally instead of falling back to the implementation being replaced.
+    if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+        && !settings[Setting::allow_experimental_analyzer] && !settings[Setting::parallel_replicas_plan_based])
+    {
+        ClusterProxy::executeQueryWithParallelReplicas(
+            query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+        return;
+    }
+
+    if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+        && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
+    {
+        auto cluster = local_context->getClusterForParallelReplicas();
+        if (local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        {
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = std::move(cluster);
+            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+            ClusterProxy::executeQueryWithParallelReplicasCustomKey(
+                query_plan,
+                getStorageID(),
+                std::move(modified_query_info),
+                metadata_snapshot->getColumns(),
+                storage_snapshot,
+                processed_stage,
+                query_info.query,
+                local_context);
+            return;
+        }
+        LOG_WARNING(
+            log,
+            "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+            "multiple shards",
+            cluster->getName());
+    }
+
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
@@ -461,7 +502,9 @@ void StorageMergeTree::alter(
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(
+        new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -1394,20 +1437,6 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
                     result.latest_fail_time = time(nullptr);
                 }
-
-                LOG_DEBUG(
-                    log,
-                    "Mutation {} of {} waits on part {} (data_version {} < {}), state {}, removal_tid {}, "
-                    "lock hash {}, fail reason {}",
-                    mutation_entry.file_name,
-                    mutation_entry.tid,
-                    data_part->name,
-                    data_version,
-                    mutation_version,
-                    data_part->stateString(),
-                    data_part->version->getInfo().removal_tid,
-                    part_locked,
-                    result.latest_fail_reason.empty() ? "none, still waiting" : result.latest_fail_reason);
             }
 
             return result;
@@ -1555,7 +1584,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (auto txn = tryGetTransactionForMutation(*to_kill, log.load()))
     {
         LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", to_kill->tid, mutation_id);
-        TransactionManager::instance().rollbackTransaction(txn);
+        TransactionLog::instance().rollbackTransaction(txn);
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
@@ -1612,7 +1641,7 @@ void StorageMergeTree::loadMutations()
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
-                    if (auto csn = TransactionManager::getCSN(entry.tid))
+                    if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
                         entry.writeCSN(csn);
@@ -2196,7 +2225,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (transactions_enabled.load(std::memory_order_relaxed))
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
-        txn = TransactionManager::instance().beginTransaction();
+        txn = TransactionLog::instance().beginTransaction();
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
@@ -2525,7 +2554,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
+            if (!tid.isNonTransactional() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 

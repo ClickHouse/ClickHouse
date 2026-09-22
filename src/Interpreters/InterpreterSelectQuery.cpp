@@ -607,9 +607,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Only the analyzer can resolve recursive CTEs.
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
     if (getSelectQuery().recursive_with)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported by this interpreter");
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
 
     initSettings();
 
@@ -2066,7 +2067,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /// in `JoinStepLogical.cpp`). Besides being semantically correct (this sort is done locally
                         /// before a merge join), it is what lets `optimizeParallelFullSortingMergeJoin` recognize the
                         /// step and rewrite it into hash-scattered shards; otherwise `parallel_full_sorting_merge`
-                        /// would silently degrade to a single merge join here.
+                        /// would silently degrade to a single merge join with `enable_analyzer = 0`.
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
                             std::move(order_descr),

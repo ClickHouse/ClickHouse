@@ -445,19 +445,9 @@ Chunk SystemRemoteDataPathsSource::generate()
             continue;
 
         StoredObjects storage_objects;
-        time_t last_modified = 0;
         try
         {
             storage_objects = metadata_storage->getStorageObjects(local_path);
-
-            if (current_disk_reports_last_modified)
-            {
-                /// On a storage that records modification times, no timestamp means the path is already gone.
-                auto timestamp = metadata_storage->getLastModifiedIfExists(local_path);
-                if (!timestamp)
-                    continue;
-                last_modified = timestamp->epochTime();
-            }
         }
         catch (Exception & e)
         {
@@ -472,13 +462,12 @@ Chunk SystemRemoteDataPathsSource::generate()
             e.addMessage("While parsing file {}", local_path);
             throw;
         }
-        catch (const fs::filesystem_error & e)
-        {
-            /// Files or directories can disappear due to concurrent operations
-            if (e.code() == std::errc::no_such_file_or_directory)
-                continue;
 
-            throw;
+        time_t last_modified = 0;
+        if (current_disk_reports_last_modified)
+        {
+            if (auto ts = metadata_storage->getLastModifiedIfExists(local_path))
+                last_modified = ts->epochTime();
         }
 
         for (const auto & object : storage_objects)

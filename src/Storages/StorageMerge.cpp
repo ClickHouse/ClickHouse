@@ -1,7 +1,6 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
-#include <span>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
@@ -22,7 +21,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -68,7 +66,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -103,6 +100,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
@@ -725,7 +723,8 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     auto common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (processed_stage != QueryProcessingStage::FetchColumns)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+        && processed_stage != QueryProcessingStage::FetchColumns)
     {
         auto block = *common_header;
         /// Remove constants.
@@ -840,44 +839,6 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
-/// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
-static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
-{
-    if (pipelines.size() < 2)
-        return;
-
-    /// Children are converted to the common Merge header before being optimized, and are optimized
-    /// independently afterwards, so constant folding can leave a column Const in one sibling and not
-    /// in another. This is the only point at which every sibling's final header is known.
-    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
-    ColumnsWithTypeAndName common = reconcileConstness(
-        pipelines.front()->getHeader().getColumnsWithTypeAndName(),
-        pipelines.size(),
-        [&](size_t sibling, size_t, const String & name) { return pipelines[sibling]->getHeader().findByName(name); });
-
-    /// Every sibling needs comparing even when nothing was materialized above: the target is the
-    /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
-    /// full column.
-    auto target = std::make_shared<const Block>(std::move(common));
-    for (const auto & cur_pipeline : pipelines)
-    {
-        if (blocksHaveEqualStructure(cur_pipeline->getHeader(), *target))
-            continue;
-
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            cur_pipeline->getHeader().getColumnsWithTypeAndName(),
-            target->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            nullptr);
-
-        auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
-        {
-            return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
-        });
-    }
-}
-
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
@@ -913,8 +874,6 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
-
-    reconcileSiblingPipelineHeaders(pipelines);
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
@@ -1359,6 +1318,62 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_query_info.row_level_filter = std::move(row_level_filter_copy);
             }
 
+            if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                auto storage_columns = storage_metadata_snapshot->getColumns();
+                auto syntax_result = TreeRewriter(context).analyzeSelect(
+                    modified_query_info.query, TreeRewriterResult({}, storage, nested_storage_snapshot));
+
+                bool with_aliases = common_processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
+                if (with_aliases)
+                {
+                    ASTPtr required_columns_expr_list = make_intrusive<ASTExpressionList>();
+                    ASTPtr column_expr;
+
+                    auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
+
+                    for (const auto & column : real_column_names)
+                    {
+                        const auto column_default = storage_columns.getDefault(column);
+                        bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+
+                        if (is_alias)
+                        {
+                            column_expr = column_default->expression->clone();
+                            replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
+                                                    syntax_result->array_join_result_to_source, context);
+
+                            const auto & column_description = storage_columns.get(column);
+                            column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
+                                                                storage_metadata_snapshot->getColumns().getAll(), context);
+                            column_expr = setAlias(column_expr, column);
+
+                            /// use storage type for transient columns that are not represented in result
+                            ///  e.g. for columns that needed to evaluate row policy
+                            auto type = sample_block.has(column) ? sample_block.getByName(column).type : column_description.type;
+
+                            aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
+                        }
+                        else
+                            column_expr = make_intrusive<ASTIdentifier>(column);
+
+                        required_columns_expr_list->children.emplace_back(std::move(column_expr));
+                    }
+
+                    syntax_result = TreeRewriter(context).analyze(
+                        required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage->getStorageSnapshot(storage_metadata_snapshot, context));
+
+                    auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActionsDAG(true);
+
+                    column_names_as_aliases = alias_actions.getRequiredColumns().getNames();
+                    if (column_names_as_aliases.empty())
+                    {
+                        column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
+                        is_smallest_column_requested = true;
+                    }
+                }
+            }
+
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
             std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
@@ -1774,7 +1789,8 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!builder->initialized())
         return builder;
 
-    if (processed_stage > child.stage || processed_stage != QueryProcessingStage::FetchColumns)
+    if (processed_stage > child.stage
+        || (context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
     {
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -1815,6 +1831,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         }
     }
 
+    bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
         processed_stage,
         storage_snapshot_,
@@ -1823,7 +1841,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     QueryPlan plan;
 
     bool must_return_interpreter_select_query_plan
-        = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
+        = use_analyzer && processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
     if (processed_stage <= storage_stage && !must_return_interpreter_select_query_plan)
     {
         /// If there are only virtual columns in query, we must request at least one other column.
@@ -1863,16 +1881,29 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         auto child_select_query_options = SelectQueryOptions(processed_stage);
         child_select_query_options.is_local_plan_for_distributed_query = true;
 
-        /// Converting query to AST because types might be different in the source table.
-        /// Need to resolve types again.
-        auto ast = modified_query_info.query_tree->toAST();
-        InterpreterSelectQueryAnalyzer interpreter(ast,
-            modified_context,
-            child_select_query_options);
+        if (use_analyzer)
+        {
+            /// Converting query to AST because types might be different in the source table.
+            /// Need to resolve types again.
+            auto ast = modified_query_info.query_tree->toAST();
+            InterpreterSelectQueryAnalyzer interpreter(ast,
+                modified_context,
+                child_select_query_options);
 
-        auto & planner = interpreter.getPlanner();
-        planner.buildQueryPlanIfNeeded();
-        plan = std::move(planner).extractQueryPlan();
+            auto & planner = interpreter.getPlanner();
+            planner.buildQueryPlanIfNeeded();
+            plan = std::move(planner).extractQueryPlan();
+        }
+        else
+        {
+            modified_select.replaceDatabaseAndTable(database_name, table_name);
+            /// TODO: Find a way to support projections for StorageMerge
+            InterpreterSelectQuery interpreter{modified_query_info.query,
+                modified_context,
+                child_select_query_options};
+
+            interpreter.buildQueryPlan(plan);
+        }
     }
 
     return ChildPlan{std::move(plan), storage_stage};
@@ -2005,18 +2036,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                     ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
                     ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
                 };
-
-                /// An `indexHint` argument contributes a second input for the same virtual column,
-                /// so the expression can ask for `_table` (or `_database`) more than once while the
-                /// block above holds it exactly once. Allow duplicate inputs to be bound to the same
-                /// block column - the value is the same for all of them. This is what every other
-                /// consumer of these split predicates does, see `filterBlockWithExpression`.
-                ///
-                /// The block must keep exactly one row, which the `getBool` below relies on. Deriving
-                /// it from the expression's own inputs instead would produce an empty block for a
-                /// predicate that needs no input at all, such as `indexHint(materialize(1))`, and a
-                /// filter evaluated over zero rows would read as false and deselect every table.
-                filter->execute(block, /*dry_run=*/false, /*allow_duplicates_in_input=*/true);
+                filter->execute(block);
                 // Valid only when block has exactly one row.
                 return block.getByName(column_name).column->getBool(0);
             };
@@ -2181,6 +2201,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         for (const auto & alias : aliases)
         {
@@ -2203,6 +2224,21 @@ void ReadFromMerge::convertAndFilterSourceStream(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
             actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
+            child.plan.addStep(std::move(expression_step));
+        }
+    }
+    else
+    {
+        for (const auto & alias : aliases)
+        {
+            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+            ASTPtr expr = alias.expression;
+            auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
+            auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
+
+            auto dag = std::make_shared<ActionsDAG>(pipe_columns);
+            auto actions_dag = expression_analyzer.getActionsDAG(true, false);
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
         }

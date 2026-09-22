@@ -101,9 +101,6 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
-static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
-static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
-static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
@@ -138,18 +135,6 @@ size_t DictionarySparseIndex::size() const
         return *tokens_column ? (*tokens_column)->size() : 0;
 
     return std::get<BitPackedStringArray>(tokens).size();
-}
-
-size_t DictionarySparseIndex::lowerBound(std::string_view token) const
-{
-    auto range = collections::range(0, size());
-
-    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, std::string_view rhs)
-    {
-        return getToken(lhs_idx) < rhs;
-    });
-
-    return it - range.begin();
 }
 
 size_t DictionarySparseIndex::upperBound(std::string_view token) const
@@ -498,49 +483,6 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
     return tokens_column;
 }
 
-using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
-
-/// Ascending, non-overlapping, half-open block ranges.
-DictionaryBlockRanges blocksMatchingTokenKeyRanges(
-    const DictionarySparseIndex & sparse_index, const std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> & key_ranges)
-{
-    if (!key_ranges)
-        return {{0, sparse_index.size()}};
-
-    DictionaryBlockRanges block_ranges;
-    block_ranges.reserve(key_ranges->size());
-
-    for (const auto & key_range : *key_ranges)
-    {
-        /// A block is indexed by its first token, so the last block starting at or before `begin` may still hold `begin`.
-        size_t first_block_after_begin = sparse_index.upperBound(key_range.begin);
-        size_t range_begin = first_block_after_begin != 0 ? first_block_after_begin - 1 : 0;
-
-        /// `end` is exclusive: a block whose first token is `end` holds no key of it. Equal bounds are the single key `begin`.
-        size_t range_end = sparse_index.size();
-        if (!key_range.end.empty())
-            range_end = key_range.end == key_range.begin ? first_block_after_begin : sparse_index.lowerBound(key_range.end);
-
-        if (range_begin < range_end)
-            block_ranges.emplace_back(range_begin, range_end);
-    }
-
-    std::sort(block_ranges.begin(), block_ranges.end());
-
-    DictionaryBlockRanges merged_ranges;
-    merged_ranges.reserve(block_ranges.size());
-
-    for (const auto & block_range : block_ranges)
-    {
-        if (!merged_ranges.empty() && block_range.first <= merged_ranges.back().second)
-            merged_ranges.back().second = std::max(merged_ranges.back().second, block_range.second);
-        else
-            merged_ranges.push_back(block_range);
-    }
-
-    return merged_ranges;
-}
-
 }
 
 MergeTreeIndexGranuleText::~MergeTreeIndexGranuleText() = default;
@@ -717,63 +659,49 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         return;
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
-    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
-    const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
-    PaddedPODArray<UInt8> candidate_marks;
-    for (const auto & [range_begin, range_end] : block_ranges)
+    for (size_t block_idx = 0; block_idx < sparse_index.size(); ++block_idx)
     {
-        for (size_t block_idx = range_begin; block_idx < range_end; ++block_idx)
+        /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
+        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
+        dictionary_stream.seekToMark({offset_in_file, 0});
+        auto * data_buffer = dictionary_stream.getDataBuffer();
+
+        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
+        const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
+        size_t num_tokens = block_tokens.size();
+
+        matched_indices.clear();
+
+        for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
         {
-            /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
-            UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
-            dictionary_stream.seekToMark({offset_in_file, 0});
-            auto * data_buffer = dictionary_stream.getDataBuffer();
+            const auto & token = block_tokens.getDataAt(token_idx);
+            if (analyzer->addTokenToPatterns(token))
+                matched_indices.emplace_back(token_idx);
+        }
 
-            ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
-            auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
-            const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
-            size_t num_tokens = block_tokens.size();
+        if (matched_indices.empty())
+            continue;
 
-            matched_indices.clear();
+        /// Deserialize only the token infos for matched tokens.
+        auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
 
-            if (filter_tokens_by_literals)
-            {
-                analyzer->matchTokensByLiterals(block_tokens, candidate_marks, matched_indices);
-            }
-            else
-            {
-                for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
-                {
-                    const auto & token = block_tokens.getDataAt(token_idx);
-                    if (analyzer->addTokenToPatterns(token))
-                        matched_indices.emplace_back(token_idx);
-                }
-            }
+        for (size_t i = 0; i < matched_indices.size(); ++i)
+        {
+            String token(block_tokens.getDataAt(matched_indices[i]));
+            postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
+            analyzer->addTokenInfo(token, infos[i]);
+        }
 
-            if (matched_indices.empty())
-                continue;
-
-            /// Deserialize only the token infos for matched tokens.
-            auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
-
-            for (size_t i = 0; i < matched_indices.size(); ++i)
-            {
-                String token(block_tokens.getDataAt(matched_indices[i]));
-                postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
-                analyzer->addTokenInfo(token, infos[i]);
-            }
-
-            if (postings_to_read > max_postings_to_read)
-            {
-                /// Too many large-posting tokens matched.
-                /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
-                analyzer->bypassPatternQueries();
-                ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
-                return;
-            }
+        if (postings_to_read > max_postings_to_read)
+        {
+            /// Too many large-posting tokens matched.
+            /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
+            analyzer->bypassPatternQueries();
+            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
+            return;
         }
     }
 }
@@ -1310,7 +1238,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
 
-        if (!isValidPostingListCodecType(codec_type))
+        if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
@@ -2105,19 +2033,6 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
 
     return substreams;
-}
-
-MergeTreeIndexSubstreams MergeTreeIndexText::getPotentialSubstreams() const
-{
-    /// `.pos` unconditionally: whether a part holds it is a property of that part, not of the
-    /// current `params.positions`.
-    return
-    {
-        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"}
-    };
 }
 
 MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
