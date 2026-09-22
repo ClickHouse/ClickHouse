@@ -944,7 +944,7 @@ void StorageMaterializedView::alter(
         {
             return !command.isCommentAlter() || command.type == AlterCommand::COMMENT_TABLE;
         });
-        /// Altering the inner table commits separately from this view, so it has to come after every
+        /// Altering the inner table is a metadata change of its own, so it has to come after every
         /// check that can still reject the statement.
         if (!column_comment_commands.empty())
         {
@@ -957,9 +957,13 @@ void StorageMaterializedView::alter(
                 cache->clear();
             }
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
+            /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
+            /// and commits it at the first metadata change made from the query context itself, which has
+            /// to be this view's own commit below, so both changes land in that one transaction.
+            auto target_alter_context = Context::createCopy(local_context);
             /// `IStorage::alter` takes a null guard when the caller already holds one, and the caller holds this view's.
             DDLGuardPtr target_ddl_guard;
-            target_table->alter(column_comment_commands, local_context, target_alter_lock, target_ddl_guard);
+            target_table->alter(column_comment_commands, target_alter_context, target_alter_lock, target_ddl_guard);
             target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
         }
 
