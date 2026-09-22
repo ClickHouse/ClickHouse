@@ -4,8 +4,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/transformEndianness.h>
@@ -47,6 +49,12 @@ MutableColumnPtr buildOrderingKey(const IColumn & storage, Float64 decay_length)
 
 struct ComparatorBase
 {
+    ComparatorBase(const ColumnExponentialTimeDecaying & column_, int nan_direction_hint_)
+        : column(column_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
+
     const ColumnExponentialTimeDecaying & column;
     int nan_direction_hint;
 
@@ -183,16 +191,16 @@ void ColumnExponentialTimeDecaying::insertData(const char * pos, size_t length)
             sizeof(UInt64),
             length);
 
-    UInt64 ordering_key;
-    std::memcpy(&ordering_key, pos, sizeof(ordering_key));
-    transformEndianness<std::endian::native, std::endian::little>(ordering_key);
+    UInt64 key = 0;
+    std::memcpy(&key, pos, sizeof(key));
+    transformEndianness<std::endian::native, std::endian::little>(key);
 
     const auto direct
-        = getExponentialTimeDecayingCanonicalDirectValue(ordering_key);
+        = getExponentialTimeDecayingCanonicalDirectValue(key);
     if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
         || getExponentialTimeDecayingOrderingKey(
                direct.value_at_anchor, direct.anchor_time, decay_length)
-            != ordering_key)
+            != key)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Serialized ExponentialTimeDecaying ordering key is invalid");
@@ -279,12 +287,12 @@ std::string_view ColumnExponentialTimeDecaying::serializeValueIntoArena(
     char const *& begin,
     const IColumn::SerializationSettings *) const
 {
-    UInt64 ordering_key = getOrderingKey(*this, n);
-    transformEndianness<std::endian::little>(ordering_key);
+    UInt64 key = getOrderingKey(*this, n);
+    transformEndianness<std::endian::little>(key);
 
-    char * memory = arena.allocContinue(sizeof(ordering_key), begin);
-    std::memcpy(memory, &ordering_key, sizeof(ordering_key));
-    return {memory, sizeof(ordering_key)};
+    char * memory = arena.allocContinue(sizeof(key), begin);
+    std::memcpy(memory, &key, sizeof(key));
+    return {memory, sizeof(key)};
 }
 
 char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
@@ -292,10 +300,10 @@ char * ColumnExponentialTimeDecaying::serializeValueIntoMemory(
     char * memory,
     const IColumn::SerializationSettings *) const
 {
-    UInt64 ordering_key = getOrderingKey(*this, n);
-    transformEndianness<std::endian::little>(ordering_key);
-    std::memcpy(memory, &ordering_key, sizeof(ordering_key));
-    return memory + sizeof(ordering_key);
+    UInt64 key = getOrderingKey(*this, n);
+    transformEndianness<std::endian::little>(key);
+    std::memcpy(memory, &key, sizeof(key));
+    return memory + sizeof(key);
 }
 
 void ColumnExponentialTimeDecaying::collectSerializedValueSizes(
@@ -329,15 +337,15 @@ void ColumnExponentialTimeDecaying::deserializeAndInsertFromArena(
     ReadBuffer & in,
     const IColumn::SerializationSettings *)
 {
-    UInt64 ordering_key;
-    readBinaryLittleEndian(ordering_key, in);
+    UInt64 key = 0;
+    readBinaryLittleEndian(key, in);
 
     const auto direct
-        = getExponentialTimeDecayingCanonicalDirectValue(ordering_key);
+        = getExponentialTimeDecayingCanonicalDirectValue(key);
     if ((direct.value_at_anchor != 0 && !std::isfinite(direct.anchor_time))
         || getExponentialTimeDecayingOrderingKey(
                direct.value_at_anchor, direct.anchor_time, decay_length)
-            != ordering_key)
+            != key)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Serialized ExponentialTimeDecaying ordering key is invalid");
@@ -390,15 +398,14 @@ void ColumnExponentialTimeDecaying::getPermutation(
     int nan_direction_hint,
     Permutation & res) const
 {
-    ComparatorBase base{*this, nan_direction_hint};
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(base), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(base), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(base), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else
-        getPermutationImpl(limit, res, ComparatorDescendingStable(base), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnExponentialTimeDecaying::updatePermutation(
@@ -409,17 +416,16 @@ void ColumnExponentialTimeDecaying::updatePermutation(
     Permutation & res,
     EqualRanges & equal_ranges) const
 {
-    ComparatorBase base{*this, nan_direction_hint};
-    ComparatorEqual equal(base);
+    ComparatorEqual equal(*this, nan_direction_hint);
 
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(base), equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, nan_direction_hint), equal, DefaultSort(), DefaultPartialSort());
     else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(base), equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), equal, DefaultSort(), DefaultPartialSort());
     else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(base), equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), equal, DefaultSort(), DefaultPartialSort());
     else
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(base), equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnExponentialTimeDecaying::getExtremes(
