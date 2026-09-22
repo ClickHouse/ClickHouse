@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Common/QueryScope.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/tests/gtest_global_context.h>
@@ -91,6 +92,7 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     query_context->getClientInfo().current_user = "process_list_test_user";
     query_context->getClientInfo().current_query_id = "process_list_memory_settings";
 
+    auto query_scope = QueryScope::create(query_context);
     ProcessList process_list;
     auto entry = process_list.insert(
         "SELECT 1",
