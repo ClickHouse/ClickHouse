@@ -45,7 +45,8 @@ FROM numbers(20000);
 
 SELECT '--- results are unchanged ---';
 
--- The three-key `serialized` fixture: with the setting off and on, the same 10000 groups.
+-- The three-key `serialized` fixture: with the setting off and on, the same 2000 of the 6000 groups
+-- (the ones with four rows) survive `HAVING count() > 3`.
 SELECT count(), sum(cnt), min(cnt), max(cnt) FROM (
     SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING count() > 3
 ) SETTINGS query_plan_aggregation_having_prefilter = 0;

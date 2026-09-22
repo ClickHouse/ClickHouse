@@ -2749,6 +2749,14 @@ private:
             /// interned in the dictionary, so a high-cardinality key would grow the scratch column with
             /// every distinct key. Rebuilding the column once it has outgrown the bound keeps the
             /// residency constant, at one allocation per `max_scratch_bytes` of keys measured.
+            ///
+            /// The rebuild starts the `LowCardinality` dictionary over, so a value that was already
+            /// interned is charged its full bytes once more the next time it is seen. That is deliberate:
+            /// keeping the dictionary across rebuilds would give up the residency bound, and the
+            /// recharge is bounded by one value per distinct value per `max_scratch_bytes` of dictionary
+            /// growth - at worst, for a single repeated value near the bound, it prices the key the way
+            /// a materialized non-`LowCardinality` column would, which only makes the estimate
+            /// conservative, never low.
             if (column->allocatedBytes() > max_scratch_bytes)
             {
                 columns.key_columns[owner] = columns.key_columns[owner]->cloneEmpty();
