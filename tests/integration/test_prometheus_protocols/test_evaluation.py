@@ -1204,6 +1204,96 @@ def test_function_over_time():
         [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
     )
 
+    # first_over_time: the earliest sample of each window, e.g. at 165 the window (120, 165] holds 3@130 and 4@140.
+    # Like last_over_time, it keeps the metric name.
+    do_query_test(
+        "first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "3"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',3),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # first_over_time on `resets`, which decreases within windows, so the first sample differs from
+    # the minimum and the maximum; all the tags are kept.
+    do_query_test(
+        "first_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "resets", "job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "8"], [180, "2"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('__name__','resets'),('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # step (15s) > window (10s): the sample at 140 is outside grid point 150's window (140, 150], so 150 must be empty.
+    do_query_test(
+        "first_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "3"], [195, "5"], [210, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
+    # ts_of_first_over_time: the timestamp of the earliest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "110"], [135, "110"], [150, "110"], [165, "130"], [180, "140"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',110),('1970-01-01 00:02:15.000',110),('1970-01-01 00:02:30.000',110),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # ts_of_last_over_time: the timestamp of the latest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_last_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "130"], [150, "140"], [165, "140"], [180, "140"], [195, "190"], [210, "210"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:45.000',140),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',210)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "resets", "job": "test"}, "value": [210, "10"]}]}',
+        [["[('__name__','resets'),('job','test')]", "1970-01-01 00:03:30.000", 10]],
+    )
+
+    do_query_test(
+        "ts_of_first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "190"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 190]],
+    )
+
+    do_query_test(
+        "ts_of_last_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
     # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
     do_query_test(
         "present_over_time(test[45s])[120s:15s]",

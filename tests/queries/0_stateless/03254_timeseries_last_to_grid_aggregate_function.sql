@@ -163,3 +163,33 @@ SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, -50)(timestamp, value
 
 SELECT timeSeriesResampleToGridWithStaleness(200, 100, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 0, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+
+-- timeSeriesLastToGrid is the main name, timeSeriesResampleToGridWithStaleness is its alias, so the alias resolves to the main name in the state type.
+SELECT timeSeriesLastToGrid(100, 200, 10, 15)(timestamp, value) FROM ts_data;
+SELECT toTypeName(timeSeriesResampleToGridWithStalenessState(100, 200, 10, 15)(timestamp, value)) FROM ts_data;
+
+-- timeSeriesTimestampOfLastToGrid returns the timestamp of the most recent sample within the window, with the type of the input timestamps.
+SELECT timeSeriesTimestampOfLastToGrid(100, 200, 10, 15)(timestamp, value) FROM ts_data;
+SELECT timeSeriesTimestampOfLastToGrid(100, 200, 10, 15)(timestamp::DateTime64(3, 'UTC'), value::Float32) FROM ts_data;
+SELECT toTypeName(timeSeriesTimestampOfLastToGrid(100, 200, 10, 15)(timestamp, value::Float32)) FROM ts_data;
+
+-- Merging -State halves gives the same result as the direct call.
+SELECT timeSeriesTimestampOfLastToGridMerge(100, 200, 10, 15)(state)
+FROM
+(
+    SELECT timeSeriesTimestampOfLastToGridState(100, 200, 10, 15)(timestamp, value) AS state
+    FROM ts_data
+    GROUP BY toUnixTimestamp(timestamp) % 3
+);
+
+-- Fractional timestamps are returned with the fraction kept.
+WITH
+    [110.25, 120.75]::Array(DateTime64(3, 'UTC')) AS timestamps,
+    [1, 2]::Array(Float64) AS values
+SELECT timeSeriesLastToGrid(121, 121, 0, 20)(timestamps, values), timeSeriesTimestampOfLastToGrid(121, 121, 0, 20)(timestamps, values);
+
+-- Samples with the same timestamp are collapsed to the greatest value, a NaN loses to any other value.
+WITH
+    [100, 100, 110, 110]::Array(DateTime('UTC')) AS timestamps,
+    [2, 5, nan, 3]::Array(Float64) AS values
+SELECT timeSeriesLastToGrid(100, 110, 10, 20)(timestamps, values), timeSeriesTimestampOfLastToGrid(100, 110, 10, 20)(timestamps, values);
