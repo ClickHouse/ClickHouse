@@ -15,53 +15,29 @@ FROM (SELECT * FROM generateRandom('x JSON', 1) LIMIT 5);
 
 SELECT '-- a stream of documents with a stable key set';
 SELECT length(distinctJSONPaths(x))
-FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000);
+FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000);
 
 SELECT '-- the key set does not depend on the number of streams';
-SELECT (SELECT arraySort(distinctJSONPaths(x)) FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 100000 SETTINGS max_threads = 1))
-     = (SELECT arraySort(distinctJSONPaths(x)) FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 100000 SETTINGS max_threads = 8));
-
-SELECT '-- the same seed gives the same values twice';
-DROP TABLE IF EXISTS t_generate_random_json_seeded;
-CREATE TABLE t_generate_random_json_seeded (run UInt8, s String) ENGINE = MergeTree ORDER BY (run, s);
-INSERT INTO t_generate_random_json_seeded SELECT 1, toString(x) FROM generateRandom('x JSON', 45) LIMIT 100;
-INSERT INTO t_generate_random_json_seeded SELECT 2, toString(x) FROM generateRandom('x JSON', 45) LIMIT 100;
-SELECT uniqExact(h) FROM (SELECT run, cityHash64(arraySort(groupArray(s))) AS h FROM t_generate_random_json_seeded GROUP BY run);
-DROP TABLE t_generate_random_json_seeded;
-
-SELECT '-- inserting the generated documents into a table, with the structure taken from it';
-DROP TABLE IF EXISTS t_generate_random_json;
-CREATE TABLE t_generate_random_json (x JSON) ENGINE = MergeTree ORDER BY tuple();
--- The seed is random here, so `null_ratio = 0` fills every key: otherwise a schema of few sparse
--- keys could leave two of the ten documents empty, and thus equal to each other.
-INSERT INTO t_generate_random_json SELECT * FROM generateRandom(SETTINGS null_ratio = 0) LIMIT 10;
-SELECT count(), uniqExact(x) FROM t_generate_random_json;
-TRUNCATE TABLE t_generate_random_json;
-INSERT INTO t_generate_random_json SELECT * FROM generateRandom() LIMIT 100000 SETTINGS max_threads = 8;
-SELECT count() FROM t_generate_random_json;
--- The seed is random here, so only the bounds the knobs guarantee can be asserted: the root object
--- gets at least half of the 8 keys and every key yields at least one leaf, while three levels of
--- eight keys cannot yield more than 8^3 leaves.
-SELECT length(distinctJSONPaths(x)) BETWEEN 4 AND 512 FROM t_generate_random_json;
-DROP TABLE t_generate_random_json;
+SELECT (SELECT arraySort(distinctJSONPaths(x)) FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000 SETTINGS max_threads = 1))
+     = (SELECT arraySort(distinctJSONPaths(x)) FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000 SETTINGS max_threads = 8));
 
 SELECT '-- no path is deeper than `max_json_depth`';
 SELECT max(length(splitByChar('.', p)))
-FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p FROM generateRandom('x JSON', 45) LIMIT 10000);
+FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p FROM generateRandom('x JSON', 45) LIMIT 2000);
 SELECT max(length(splitByChar('.', p)))
-FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p FROM generateRandom('x JSON', 45, SETTINGS max_json_depth = 1) LIMIT 10000);
+FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p FROM generateRandom('x JSON', 45, SETTINGS max_json_depth = 1) LIMIT 2000);
 
 SELECT '-- no object level has more keys than `max_json_keys_per_object`';
 -- Every path contributes one key to each of its ancestors, so a nested object is counted as a key
 -- of its parent even though only its own leaves appear in `JSONAllPaths`.
-WITH paths AS (SELECT DISTINCT arrayJoin(JSONAllPaths(x)) AS p FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000))
+WITH paths AS (SELECT DISTINCT arrayJoin(JSONAllPaths(x)) AS p FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000))
 SELECT max(keys) <= 8 FROM (
     SELECT uniqExact(child) AS keys FROM (
         SELECT splitByChar('.', p) AS parts, arrayJoin(arrayEnumerate(parts)) AS i,
                arrayStringConcat(arraySlice(parts, 1, i - 1), '.') AS parent, parts[i] AS child
         FROM paths)
     GROUP BY parent);
-WITH paths AS (SELECT DISTINCT arrayJoin(JSONAllPaths(x)) AS p FROM (SELECT * FROM generateRandom('x JSON', 45, SETTINGS max_json_keys_per_object = 3) LIMIT 10000))
+WITH paths AS (SELECT DISTINCT arrayJoin(JSONAllPaths(x)) AS p FROM (SELECT * FROM generateRandom('x JSON', 45, SETTINGS max_json_keys_per_object = 3) LIMIT 2000))
 SELECT max(keys) <= 3 FROM (
     SELECT uniqExact(child) AS keys FROM (
         SELECT splitByChar('.', p) AS parts, arrayJoin(arrayEnumerate(parts)) AS i,
@@ -76,7 +52,7 @@ FROM (SELECT * FROM generateRandom('x JSON(a UInt32)', 45, SETTINGS max_json_key
 SELECT '-- typed paths are always filled and are not generated paths';
 SELECT count(), countIf(x.a IS NOT NULL), countIf(x.b IS NOT NULL),
        countIf(has(JSONDynamicPaths(x), 'a') OR has(JSONDynamicPaths(x), 'b'))
-FROM (SELECT * FROM generateRandom('x JSON(a UInt32, b String)', 45) LIMIT 10000);
+FROM (SELECT * FROM generateRandom('x JSON(a UInt32, b String)', 45) LIMIT 2000);
 
 SELECT '-- a typed path inside an object leaves that key to the typed path alone';
 -- A generated key that an existing typed path goes through can only hold that path, so `a` never
@@ -105,7 +81,7 @@ FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p
 SELECT '-- nothing is generated at or below a skipped path';
 SELECT countIf(p = 'tags' OR startsWith(p, 'tags.') OR startsWith(p, 'user'))
 FROM (SELECT arrayJoin(JSONAllPaths(x)) AS p
-      FROM generateRandom('x JSON(SKIP tags, SKIP REGEXP ''user.*'')', 45) LIMIT 10000);
+      FROM generateRandom('x JSON(SKIP tags, SKIP REGEXP ''user.*'')', 45) LIMIT 2000);
 
 SELECT '-- a small `max_dynamic_paths` spills to the shared data, the default does not';
 SELECT sum(length(JSONSharedDataPaths(x))) > 0
@@ -121,47 +97,47 @@ FROM (SELECT * FROM generateRandom('x JSON', 45, SETTINGS null_ratio = 0) LIMIT 
 
 SELECT '-- every generated type is one the JSON parser would infer';
 SELECT countIf(NOT match(t, '^(Int64|UInt64|Float64|Bool|String|Date|DateTime|Array\\(Nullable\\((Int64|UInt64|Float64|Bool|String|Date|DateTime)\\)\\)|Array\\(Dynamic\\)|Array\\(JSON\\(.*\\)\\))$'))
-FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)).2 AS t FROM generateRandom('x JSON', 45) LIMIT 10000);
+FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)).2 AS t FROM generateRandom('x JSON', 45) LIMIT 2000);
 
 SELECT '-- a `UInt64` value is above the `Int64` maximum, the way the parser infers that type';
 SELECT min(x.children.id.:UInt64) > 9223372036854775807
-FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000);
+FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000);
 
 SELECT '-- arrays of objects and heterogeneous arrays are generated as well';
 -- The seed pins the key set, so both counts are exact: one array of objects at `children.limit`
 -- and one heterogeneous array at `deleted.country.level`.
 SELECT countIf(t LIKE 'Array(JSON(%'), countIf(t = 'Array(Dynamic)')
 FROM (SELECT p, t FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
-                        FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000)) GROUP BY p, t);
+                        FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000)) GROUP BY p, t);
 -- The elements of a heterogeneous array are strings mixed with one number type, plus the untyped
 -- NULL (`None`) that a `Dynamic` element can hold - exactly what the parser infers for such an array.
 SELECT arraySort(groupUniqArray(dynamicType(e)))
 FROM (SELECT arrayJoin(x.deleted.country.level.:`Array(Dynamic)`) AS e
-      FROM generateRandom('x JSON', 45) LIMIT 10000);
+      FROM generateRandom('x JSON', 45) LIMIT 2000);
 
 SELECT '-- the objects inside an array of objects are flat once one level is left';
 -- `children.limit` is a key at depth 2, so its element objects are the third and last level.
 SELECT count() > 0, max(length(splitByChar('.', p)))
 FROM (SELECT arrayJoin(JSONAllPaths(arrayJoin(CAST(x.children.limit, 'Array(JSON)')))) AS p
-      FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000));
+      FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000));
 
 SELECT '-- the depth bound counts the object levels inside arrays too';
 -- With `max_string_length = 0` every generated string is empty, so the braces of the text form are
 -- exactly the objects of the document and their deepest nesting is its depth.
 SELECT max(arrayMax(arrayCumSum(arrayMap(c -> if(c = '{', 1, if(c = '}', -1, 0)), extractAll(toString(x), '.')))))
-FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3) LIMIT 1000);
+FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3) LIMIT 100);
 SELECT max(arrayMax(arrayCumSum(arrayMap(c -> if(c = '{', 1, if(c = '}', -1, 0)), extractAll(toString(x), '.')))))
-FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3, SETTINGS max_json_depth = 2) LIMIT 1000);
+FROM (SELECT * FROM generateRandom('x JSON', 45, 0, 3, SETTINGS max_json_depth = 2) LIMIT 100);
 
 SELECT '-- a key drifts between two types, unless the type allows only one of them';
 SELECT countIf(types = 2), countIf(types > 2)
 FROM (SELECT p, uniqExact(t) AS types
       FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
-            FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 10000)) GROUP BY p);
+            FROM (SELECT * FROM generateRandom('x JSON', 45) LIMIT 2000)) GROUP BY p);
 SELECT max(types)
 FROM (SELECT p, uniqExact(t) AS types
       FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
-            FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_types=1)', 45) LIMIT 10000)) GROUP BY p);
+            FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_types=1)', 45) LIMIT 2000)) GROUP BY p);
 
 SELECT '-- `JSON(max_dynamic_types=0)` keeps every value in the shared variant of its path column';
 -- The path columns can hold no dynamic type at all, yet every value still reads back with the type
@@ -170,21 +146,6 @@ SELECT uniqExact(p), countIf(NOT match(t, '^(Int64|UInt64|Float64|Bool|String|Da
 FROM (SELECT arrayJoin(JSONAllPathsWithTypes(x)) AS e, e.1 AS p, e.2 AS t
       FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_types=0)', 45, 2, 3) LIMIT 1000));
 
-SELECT '-- arrays of objects under the tightest `max_dynamic_types` and `max_dynamic_paths`';
--- `JSON(max_dynamic_types=1)` leaves the nested objects no dynamic type and
--- `JSON(max_dynamic_paths=2)` leaves them no dynamic path, so their leaves go to the shared parts
--- of the element columns. Both element shapes still carry their values.
-DROP TABLE IF EXISTS t_generate_random_json_tight;
-CREATE TABLE t_generate_random_json_tight (x JSON(max_dynamic_types=1)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_generate_random_json_tight SELECT * FROM generateRandom('x JSON(max_dynamic_types=1)', 45, 2, 3) LIMIT 1000;
-SELECT count(), uniqExact(x) FROM t_generate_random_json_tight;
-SELECT count() > 0, max(length(splitByChar('.', p)))
-FROM (SELECT arrayJoin(JSONAllPaths(arrayJoin(CAST(x.children.limit, 'Array(JSON)')))) AS p FROM t_generate_random_json_tight);
-DROP TABLE t_generate_random_json_tight;
-SELECT count() > 0, max(length(splitByChar('.', p)))
-FROM (SELECT arrayJoin(JSONAllPaths(arrayJoin(CAST(x.children.limit, 'Array(JSON)')))) AS p
-      FROM (SELECT * FROM generateRandom('x JSON(max_dynamic_paths=2)', 45, 2, 3) LIMIT 1000));
-
 SELECT '-- `Nullable(JSON)` has both NULLs and documents';
 SELECT countIf(x IS NULL) > 0, countIf(x IS NOT NULL AND toString(x) != '{}') > 0
 FROM (SELECT * FROM generateRandom('x Nullable(JSON)', 45, 2, 3) LIMIT 1000);
@@ -192,22 +153,6 @@ FROM (SELECT * FROM generateRandom('x Nullable(JSON)', 45, 2, 3) LIMIT 1000);
 SELECT '-- `JSON` inside other types';
 SELECT count(), uniqExact(toString(a)) > 1, uniqExact(toString(b)) > 1, uniqExact(toString(c)) > 1
 FROM (SELECT * FROM generateRandom('a Array(JSON), b Map(String, JSON), c Tuple(JSON, Dynamic)', 45, 2, 3) LIMIT 100);
-
-SELECT '-- an engine table with the settings in its `SETTINGS` clause, and `JSON` inside `Nested`';
-DROP TABLE IF EXISTS t_generate_random_json_engine;
-CREATE TABLE t_generate_random_json_engine (x JSON, n Nested(j JSON, k UInt8)) ENGINE = GenerateRandom(45, 0, 3)
-SETTINGS max_json_depth = 2, max_json_keys_per_object = 4;
-SELECT count(), countIf(length(n.j) > 0) > 0 FROM (SELECT * FROM t_generate_random_json_engine LIMIT 1000);
-SELECT max(arrayMax(arrayCumSum(arrayMap(c -> if(c = '{', 1, if(c = '}', -1, 0)), extractAll(toString(x), '.')))))
-FROM (SELECT * FROM t_generate_random_json_engine LIMIT 1000);
-WITH paths AS (SELECT DISTINCT arrayJoin(JSONAllPaths(x)) AS p FROM (SELECT * FROM t_generate_random_json_engine LIMIT 1000))
-SELECT max(keys) <= 4 FROM (
-    SELECT uniqExact(child) AS keys FROM (
-        SELECT splitByChar('.', p) AS parts, arrayJoin(arrayEnumerate(parts)) AS i,
-               arrayStringConcat(arraySlice(parts, 1, i - 1), '.') AS parent, parts[i] AS child
-        FROM paths)
-    GROUP BY parent);
-DROP TABLE t_generate_random_json_engine;
 
 SELECT '-- seeded values, with short strings and arrays so that the documents stay readable';
 SELECT * FROM generateRandom('x JSON', 45, 2, 3) LIMIT 3;

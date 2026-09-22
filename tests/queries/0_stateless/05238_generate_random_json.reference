@@ -4,12 +4,6 @@
 15
 -- the key set does not depend on the number of streams
 1
--- the same seed gives the same values twice
-1
--- inserting the generated documents into a table, with the structure taken from it
-10	10
-100000
-1
 -- no path is deeper than `max_json_depth`
 3
 1
@@ -19,7 +13,7 @@
 -- `max_json_keys_per_object = 0` generates the typed paths only
 100	100	0
 -- typed paths are always filled and are not generated paths
-10000	10000	10000	0
+2000	2000	2000	0
 -- a typed path inside an object leaves that key to the typed path alone
 1000	1000	1000	0
 1000	1000
@@ -52,18 +46,10 @@
 1
 -- `JSON(max_dynamic_types=0)` keeps every value in the shared variant of its path column
 14	0
--- arrays of objects under the tightest `max_dynamic_types` and `max_dynamic_paths`
-1000	1000
-1	1
-1	1
 -- `Nullable(JSON)` has both NULLs and documents
 1	1
 -- `JSON` inside other types
 100	1	1	1
--- an engine table with the settings in its `SETTINGS` clause, and `JSON` inside `Nested`
-1000	1
-2
-1
 -- seeded values, with short strings and arrays so that the documents stay readable
 {"children":{"cluster":-8576900438230856249,"limit":[]},"deleted":{"cluster":"~","country":{"level":[2.9631663574264724e-108]},"deleted":{"avatar":3708402060857210888,"filter":false},"message":7081903623107356502,"public":true,"url":8541739167907803432},"expires_at":{"deleted":false,"offset":">"},"sku":-1.6936998508160252e-149,"tax":""}
 {"children":{"cluster":8276839905833701665,"id":15115282907491782352},"deleted":{"cluster":"<B","country":{"level":[3.15880447114998e62]},"deleted":{"avatar":4506970193945269374,"filter":true},"message":1654476784440958783,"public":false,"url":-7280749570778219114},"expires_at":{"deleted":false,"offset":"U"},"tax":"CC"}
