@@ -135,6 +135,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::deserializeBinaryBulkWithMultip
     if (is_keys)
     {
         settings.path.push_back(Substream::MapKeyPresence);
+        if (settings.seek_stream_to_current_mark_callback)
+            settings.seek_stream_to_current_mark_callback(settings.path);
         auto * stream = settings.getter(settings.path);
         settings.path.pop_back();
 

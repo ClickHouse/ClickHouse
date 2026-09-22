@@ -411,6 +411,12 @@ performance degradation during inserts, while using `with_buckets` or `with_key_
 Reserved bound on the number of distinct keys that `with_key_columns` `Map` serialization stores as independent streams.
 A value of `0` means no limit. The writer does not apply this bound yet: every distinct key is stored in its own streams.
 )", 0) \
+    DECLARE(UInt64, max_bytes_for_compact_map_key_columns, 64ull * 1024 * 1024, R"(
+If `map_serialization_version` (or `map_serialization_version_for_zero_level_parts`) is `with_key_columns`,
+zero-level Compact parts are allowed only when the estimated uncompressed size is below this limit.
+A value of `0` disables Compact for `with_key_columns` and always writes Wide parts.
+Merge output (`part_level >= 1`) is always Wide regardless of this setting.
+)", 0) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
 The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
 The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).

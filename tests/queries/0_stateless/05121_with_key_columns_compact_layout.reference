@@ -1,0 +1,17 @@
+part_type
+Compact
+m_has_core_streams
+1	1	1	1	1
+s_has_core_streams
+1	1	1	1
+roundtrip
+1	1	2	3	0	1	1	0	{'a':1,'a.b':3,'b':2}	x	yyyy
+2	4	0	0	0	4	1	0	{'a':4}	z	
+3	0	0	0	0	0	0	0	{}		
+types
+UInt64	UInt8	String
+rewrite_m_a
+1
+opt0_vs_opt1
+0
+1

@@ -1,0 +1,38 @@
+[VM-139-218-ubuntu] 2026.09.15 02:12:17.960869 [ 2204317 ] {0911fa71-9303-4d28-991d-a91a22b1850f} <Error> executeQuery: Code: 107. DB::Exception: Cannot open file /data/develop/master/tmp/test_map_rerun_20260914/data/store/460/460a01d7-d22d-45e7-9e33-765435f1bb0b/all_1_1_0/m.keys_info.bin: , errno: 2, strerror: No such file or directory: (while reading column m.key_a): (while reading from part /data/develop/master/tmp/test_map_rerun_20260914/data/store/460/460a01d7-d22d-45e7-9e33-765435f1bb0b/all_1_1_0/ in table default.t_pk_compact_layout (460a01d7-d22d-45e7-9e33-765435f1bb0b) located on disk default of type local, from mark 0 with max_rows_to_read = 4, offset = 0): While reading part all_1_1_0: While executing MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder). (FILE_DOESNT_EXIST) (version 26.4.5.1) (from 127.0.0.1:56352) (query 1, line 1) (in query: SELECT m['a'] FROM t_pk_compact_layout), Stack trace (when copying this message, always include the lines below):
+
+0. Poco::Exception::Exception(String&&, int) @ 0x00000000134b4cb3
+1. DB::Exception::Exception(DB::Exception::MessageMasked&&, int, bool) @ 0x000000000a765e5e
+2. src/Common/Exception.h:171:100: DB::Exception::Exception(String&&, int, String, bool) @ 0x000000000438884e
+3. src/Common/Exception.h:57:54: DB::Exception::Exception(PreformattedMessage&&, int) @ 0x00000000043882f9
+4. DB::ErrnoException::ErrnoException<String const&>(int, int, FormatStringHelperImpl<std::type_identity<String const&>::type>, String const&) @ 0x000000000a87277a
+5. void DB::ErrnoException::throwFromPath<String const&>(int, String const&, FormatStringHelperImpl<std::type_identity<String const&>::type>, String const&) @ 0x000000000a872582
+6. DB::OpenedFile::getFD() const @ 0x000000000d6c629f
+7. DB::AsynchronousReadBufferFromFileWithDescriptorsCache::AsynchronousReadBufferFromFileWithDescriptorsCache(DB::IAsynchronousReader&, Priority, String const&, unsigned long, int, char*, unsigned long, std::optional<unsigned long>, std::shared_ptr<DB::IThrottler>, std::shared_ptr<DB::FilesystemReadPrefetchesLog>) @ 0x000000000d6c11c0
+8. DB::createReadBufferFromFileBase(String const&, DB::ReadSettings const&, std::optional<unsigned long>, std::optional<unsigned long>, int, char*, bool)::$_1::operator()(unsigned long, unsigned long, int) const @ 0x000000000d6bf402
+9. DB::createReadBufferFromFileBase(String const&, DB::ReadSettings const&, std::optional<unsigned long>, std::optional<unsigned long>, int, char*, bool) @ 0x000000000d6bed88
+10. DB::DiskLocal::readFile(String const&, DB::ReadSettings const&, std::optional<unsigned long>) const @ 0x000000000dea65b0
+11. DB::DataPartStorageOnDiskFull::readFile(String const&, DB::ReadSettings const&, std::optional<unsigned long>) const @ 0x000000001236f9d2
+12. DB::MergeTreeReaderCompact::getKeysInfoBuffer(DB::NameAndTypePair const&) @ 0x00000000126920f1
+13. DB::SerializationMapKeyColumn::deserializeBinaryBulkStatePrefix(DB::ISerialization::DeserializeBinaryBulkSettings&, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>&, std::unordered_map<String, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>, std::hash<String>, std::equal_to<String>, std::allocator<std::pair<String const, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>>>>*) const @ 0x000000000dcfd526
+14. DB::MergeTreeReaderCompact::readPrefix(DB::NameAndTypePair const&, std::shared_ptr<DB::ISerialization const> const&, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>&, std::function<DB::ReadBuffer* (DB::ISerialization::SubstreamPath const&)> const&, std::unordered_map<String, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>, std::hash<String>, std::equal_to<String>, std::allocator<std::pair<String const, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>>>>*) @ 0x0000000012691a08
+15. DB::MergeTreeReaderCompact::readPrefix(unsigned long, unsigned long, DB::MergeTreeReaderStream&, std::unordered_map<String, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>, std::hash<String>, std::equal_to<String>, std::allocator<std::pair<String const, std::shared_ptr<DB::ISerialization::DeserializeBinaryBulkState>>>>*) @ 0x00000000126915de
+16. DB::MergeTreeReaderCompact::readSubcolumnsPrefixes(unsigned long, unsigned long)::$_0::operator()() const @ 0x00000000126902a0
+17. DB::MergeTreeReaderCompact::readSubcolumnsPrefixes(unsigned long, unsigned long) @ 0x000000001268ff8b
+18. DB::MergeTreeReaderCompactSingleBuffer::readRows(unsigned long, unsigned long, bool, unsigned long, unsigned long, std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn>>>&) @ 0x00000000126951e9
+19. DB::MergeTreeRangeReader::DelayedStream::finalize(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn>>>&) @ 0x000000001267f5c3
+20. DB::MergeTreeRangeReader::startReadingChain(unsigned long, DB::MarkRanges&) @ 0x0000000012687102
+21. DB::MergeTreeReadersChain::read(unsigned long, DB::MarkRanges&, std::vector<DB::MarkRanges, std::allocator<DB::MarkRanges>>&, std::function<void (std::vector<DB::ColumnWithTypeAndName, AllocatorWithMemoryTracking<DB::ColumnWithTypeAndName>> const&, unsigned long, std::optional<bool>&)> const&) @ 0x00000000126bca2b
+22. DB::MergeTreeReadTask::read() @ 0x00000000126ba888
+23. DB::MergeTreeProjectionIndexSelectAlgorithm::readFromTask(DB::MergeTreeReadTask&) @ 0x00000000126d0f8c
+24. DB::MergeTreeSelectProcessor::readCurrentTask(DB::MergeTreeReadTask&, DB::IMergeTreeSelectAlgorithm&) const @ 0x00000000126c8602
+25. DB::MergeTreeSelectProcessor::read() @ 0x00000000126c9d08
+26. DB::MergeTreeSource::tryGenerate() @ 0x0000000012f33fc3
+27. DB::ISource::work() @ 0x0000000012b7ddb6
+28. DB::ExecutionThreadContext::executeTask() @ 0x0000000012b94224
+29. DB::PipelineExecutor::executeStepImpl(unsigned long, DB::IAcquiredSlot*, std::atomic<bool>*) @ 0x0000000012b8ae2e
+30. DB::PipelineExecutor::executeImpl(unsigned long, bool) @ 0x0000000012b8a55d
+31. DB::PipelineExecutor::execute(unsigned long, bool) @ 0x0000000012b8a22e
+
+Received exception from server (version 26.4.5):
+Code: 107. DB::Exception: Received from localhost:19150. DB::Exception: Cannot open file /data/develop/master/tmp/test_map_rerun_20260914/data/store/460/460a01d7-d22d-45e7-9e33-765435f1bb0b/all_1_1_0/m.keys_info.bin: , errno: 2, strerror: No such file or directory: (while reading column m.key_a): (while reading from part /data/develop/master/tmp/test_map_rerun_20260914/data/store/460/460a01d7-d22d-45e7-9e33-765435f1bb0b/all_1_1_0/ in table default.t_pk_compact_layout (460a01d7-d22d-45e7-9e33-765435f1bb0b) located on disk default of type local, from mark 0 with max_rows_to_read = 4, offset = 0): While reading part all_1_1_0: While executing MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder). (FILE_DOESNT_EXIST)
+(query: SELECT m['a'] FROM t_pk_compact_layout)

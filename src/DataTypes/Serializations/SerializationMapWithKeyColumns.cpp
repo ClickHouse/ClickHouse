@@ -469,6 +469,19 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
     auto & column_map = assert_cast<ColumnMap &>(column);
     const size_t key_count = with_key_columns_state->manifest.keys.size();
 
+    /// Compact `.mrk4` keeps each key / presence stream in its own compressed
+    /// block. The Compact full-column getter only seeks for subcolumns, so the
+    /// nested value serialization (e.g. String size + data) must seek itself.
+    auto original_getter = settings.getter;
+    if (settings.seek_stream_to_current_mark_callback)
+    {
+        settings.getter = [&](const SubstreamPath & path) -> ReadBuffer *
+        {
+            settings.seek_stream_to_current_mark_callback(path);
+            return original_getter(path);
+        };
+    }
+
     std::vector<std::vector<UInt8>> presence;
     if (key_count != 0)
     {
@@ -491,6 +504,8 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkWithMultipleStreams(
             *value_columns[i], limit, settings, with_key_columns_state->value_states[i], cache);
         settings.path.pop_back();
     }
+
+    settings.getter = std::move(original_getter);
 
     size_t rows = limit;
     if (!presence.empty())

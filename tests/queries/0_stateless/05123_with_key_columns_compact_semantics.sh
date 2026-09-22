@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings
 
+# Compact with_key_columns must match basic / with_buckets lookup semantics.
+# SELECT m / mapKeys / mapValues are compared after mapSort because
+# with_key_columns returns keys in dictionary order (documented deviation).
+# Duplicate keys are checked separately.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-
-# Side-by-side semantic comparison of `with_key_columns` against `basic` and `with_buckets`.
-# `SELECT m` / `mapKeys` / `mapValues` are compared after `mapSort` because
-# `with_key_columns` parts return keys in dictionary order (documented deviation).
-# Duplicate keys are checked in a separate section with explicit expected values.
 
 data_path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$data_path"
@@ -22,6 +22,8 @@ else
 fi
 
 $CH -m -q "
+SET optimize_on_insert = 0;
+
 CREATE TABLE t_basic
 (
     id UInt64,
@@ -43,8 +45,8 @@ SETTINGS
     map_serialization_version = 'basic',
     map_serialization_version_for_zero_level_parts = 'basic',
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 CREATE TABLE t_key_columns AS t_basic
 ENGINE = MergeTree ORDER BY id
@@ -52,8 +54,8 @@ SETTINGS
     map_serialization_version = 'with_key_columns',
     map_serialization_version_for_zero_level_parts = 'with_key_columns',
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 CREATE TABLE t_buckets AS t_basic
 ENGINE = MergeTree ORDER BY id
@@ -64,8 +66,8 @@ SETTINGS
     map_buckets_strategy = 'constant',
     map_buckets_min_avg_size = 0,
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 INSERT INTO t_basic VALUES
     (1,
@@ -110,6 +112,10 @@ INSERT INTO t_basic VALUES
 
 INSERT INTO t_key_columns SELECT * FROM t_basic;
 INSERT INTO t_buckets SELECT * FROM t_basic;
+
+SELECT 'key_columns_part_type',
+    (SELECT DISTINCT part_type FROM system.parts
+     WHERE database = currentDatabase() AND table = 't_key_columns' AND active);
 
 SELECT 'states_nstr',
     (SELECT count() FROM (
@@ -313,14 +319,16 @@ SELECT 'group_by_vs_buckets',
 "
 
 $CH -m -q "
+SET optimize_on_insert = 0;
+
 CREATE TABLE t_dup_basic (id UInt64, m Map(String, UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS
     map_serialization_version = 'basic',
     map_serialization_version_for_zero_level_parts = 'basic',
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 CREATE TABLE t_dup_key_columns (id UInt64, m Map(String, UInt64))
 ENGINE = MergeTree ORDER BY id
@@ -328,8 +336,8 @@ SETTINGS
     map_serialization_version = 'with_key_columns',
     map_serialization_version_for_zero_level_parts = 'with_key_columns',
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 CREATE TABLE t_dup_buckets (id UInt64, m Map(String, UInt64))
 ENGINE = MergeTree ORDER BY id
@@ -340,8 +348,8 @@ SETTINGS
     map_buckets_strategy = 'constant',
     map_buckets_min_avg_size = 0,
     serialization_info_version = 'with_types',
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0;
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000;
 
 INSERT INTO t_dup_basic VALUES (1, map('k', 1, 'k', 2, 'x', 3));
 INSERT INTO t_dup_key_columns VALUES (1, map('k', 1, 'k', 2, 'x', 3));

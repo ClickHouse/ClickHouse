@@ -56,7 +56,8 @@ void SerializationMapKeyPresence::enumerateStreams(
     settings.path.push_back(Substream::MapKeyPresence);
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
     settings.path.back().name_of_substream = key_columns.keyToStreamName(key);
-    callback(settings.path);
+    if (!settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path))
+        callback(settings.path);
     settings.path.pop_back();
 }
 

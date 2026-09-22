@@ -61,8 +61,11 @@ void SerializationMapWithKeyColumnsValue::enumerateStreams(
 
     settings.path.push_back(Substream::MapKey);
     settings.path.back().name_of_substream = key_name;
-    auto value_data = SubstreamData(nested_serialization).withType(value_type).withColumn(data.column);
-    nested_serialization->enumerateStreams(settings, callback, value_data);
+    if (!settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path))
+    {
+        auto value_data = SubstreamData(nested_serialization).withType(value_type).withColumn(data.column);
+        nested_serialization->enumerateStreams(settings, callback, value_data);
+    }
     settings.path.pop_back();
 }
 
