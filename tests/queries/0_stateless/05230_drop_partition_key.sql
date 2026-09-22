@@ -1,5 +1,8 @@
 -- Tags: zookeeper, no-random-merge-tree-settings
 
+-- The forced implicit-projection checks below require insert-time statistics.
+SET materialize_statistics_on_insert = 1;
+
 DROP TABLE IF EXISTS t_drop_partition_key;
 
 CREATE TABLE t_drop_partition_key

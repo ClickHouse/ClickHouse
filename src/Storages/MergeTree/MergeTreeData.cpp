@@ -7043,6 +7043,14 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 
 void MergeTreeData::checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const
 {
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (!metadata_snapshot->hasPartitionKey() && part->info.getPartitionId() != "all")
+    {
+        /// After DROP PARTITION KEY, legacy parts keep their partition IDs, but parts loaded after
+        /// the ALTER cannot reconstruct partition.value. Only the preserved partition ID is comparable.
+        return;
+    }
+
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.getPartitionId(), lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
