@@ -514,6 +514,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
             break;
         case ASTAlterCommand::DROP_CONSTRAINT:
