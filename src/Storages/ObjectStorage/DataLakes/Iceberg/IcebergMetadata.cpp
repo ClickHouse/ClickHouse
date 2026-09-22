@@ -7,7 +7,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -139,7 +138,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsBool allow_experimental_geo_types_in_iceberg;
+extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
@@ -167,13 +166,13 @@ using namespace Iceberg;
 
 namespace
 {
-/// A Geometry column is exposed only to a query that opted into the experimental Iceberg geo
+/// A Geometry column is exposed only to a query that opted into the Iceberg geo
 /// reader. The permission belongs to the reading query rather than to the context that constructed
 /// the storage: for a persisted table that context is whatever attached it, and server startup
 /// attaches with the server defaults.
 void rejectGeoTypesIfNotAllowed(const NamesAndTypesList & schema, const ContextPtr & context)
 {
-    if (context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg])
+    if (context->getSettingsRef()[Setting::allow_geo_types_in_iceberg])
         return;
 
     auto is_geo = [](const IDataType & type)
@@ -187,7 +186,7 @@ void rejectGeoTypesIfNotAllowed(const NamesAndTypesList & schema, const ContextP
         if (found)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
+                "Using geometry/geography types is not allowed without enabled allow_geo_types_in_iceberg flag");
     }
 }
 
@@ -352,6 +351,9 @@ Int32 IcebergMetadata::parseTableSchema(
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
+
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -401,6 +403,8 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -424,7 +428,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 }
 
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
-    Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
+    Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {
     if (!snapshot_object->has(f_manifest_list))
         throw Exception(
@@ -435,6 +439,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
     {
@@ -449,6 +454,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_refresh_cursor))
+            refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -462,7 +470,17 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes);
+        total_position_deletes,
+        refresh_cursor,
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+}
+
+std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
+{
+    auto state = getRelevantState(local_context);
+    if (!state.first)
+        return std::nullopt;
+    return state.first->refresh_cursor;
 }
 
 IcebergDataSnapshotPtr
@@ -472,7 +490,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, object, snapshot_id, local_context);
 }
 
 bool IcebergMetadata::optimize(
@@ -827,7 +845,8 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components);
+            args, context, object_storage_, data_lake_settings, persistent_components,
+            catalog_, storage_id.getTableName());
     }
     else
     {
@@ -882,11 +901,11 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (!location_path.contains("://") && !location_path.starts_with('/'))
-        location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path
-            = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+        location_path = Iceberg::makeIcebergLocationURI(
+            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
+    else if (!location_path.contains("://") && !location_path.starts_with('/'))
+        location_path = "/" + location_path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
@@ -934,8 +953,10 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
-        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
+        auto catalog_filename = Iceberg::makeIcebergLocationURI(
+            configuration_ptr->getTypeName(),
+            configuration_ptr->getNamespace(),
+            configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
@@ -957,7 +978,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
         metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
 DataLakeMetadataPtr IcebergMetadata::create(
@@ -1435,7 +1456,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->info.position_deletes_objects.empty())
+    if (iceberg_object_info->info.hasPositionDeletes())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -1571,7 +1592,7 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is in beta."
+            "Insert into iceberg is in beta. "
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }

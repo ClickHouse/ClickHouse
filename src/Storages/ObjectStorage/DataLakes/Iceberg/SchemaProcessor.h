@@ -88,7 +88,21 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
+    /// Where a schema copy being registered comes from. metadata.json is the authoritative source;
+    /// the 'schema' key of a manifest file header is only a snapshot of the table schema at the time
+    /// the manifest was written. A schema that came from a manifest is never authoritative: it is
+    /// replaced by the metadata.json copy of the same schema-id whenever that one is registered, and
+    /// it may be ignored if it conflicts with an already registered metadata.json copy.
+    enum class SchemaSource
+    {
+        Metadata,
+        ManifestFile,
+    };
+
+    void addIcebergTableSchema(
+        Poco::JSON::Object::Ptr schema_ptr,
+        SchemaSource source = SchemaSource::Metadata,
+        bool tolerate_conflicting_manifest_schemas = false);
     std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
@@ -115,7 +129,11 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
+    void updateLastColumnId(Int32 last_column_id_);
+
 private:
+    std::atomic<Int64> last_column_id{-1};
+
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
@@ -123,6 +141,16 @@ private:
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+    /// Schema-ids whose registered copy came from a manifest file header and has not been confirmed
+    /// by an identical metadata.json copy yet. Such a copy is replaced when metadata.json binds the
+    /// schema-id to a different schema, and two manifest headers disagreeing on such a schema-id is
+    /// an error, because no authoritative copy is left to decide between them.
+    std::unordered_set<Int32> manifest_sourced_schema_ids TSA_GUARDED_BY(mutex);
+
+    /// Forget the schema registered for `schema_id` together with everything derived from it: the
+    /// per-field lookups and the cached schema transformation DAGs in either direction. They are
+    /// keyed by schema-id and never rebuilt once populated, so a stale entry would keep answering.
+    void dropCachedSchema(Int32 schema_id) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);

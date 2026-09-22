@@ -747,29 +747,6 @@ def test_read_in_order_across_surviving_exchange(started_cluster):
         assert distributed == baseline
 
 
-def test_legacy_read_in_order_is_rejected(started_cluster):
-    """The old interpreter plans read-in-order before the plan is optimized (query_plan_read_in_order = 0)
-    and builds a FinishSorting up front. optimizeReadInOrder only converts a Type::Full sorting, so the
-    exchange-safety check never sees that one, and the scatter placed under it can survive and feed it rows
-    that are no longer sorted - which returned rows from the wrong part of the table on 8 of 16 runs. Such a
-    plan has to be rejected rather than silently reordered."""
-    legacy = ("make_distributed_plan = 1, enable_parallel_replicas = 0, "
-              "enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1, "
-              "distributed_plan_read_in_order = 1")
-    bucket_counts = [
-        # Mismatched, so the exchange the pair fuses into survives - the shape that reproduced.
-        "distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 3",
-        # Matched, which is not safe either: the sorting here is not one this optimizer converted.
-        "distributed_plan_default_reader_bucket_count = 3, distributed_plan_default_shuffle_join_bucket_count = 3",
-    ]
-    for buckets in bucket_counts:
-        error = INITIATOR.query_and_get_error(
-            "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990 "
-            f"SETTINGS {legacy}, {buckets}"
-        )
-        assert "does not support a read-in-order distributed read" in error, error
-
-
 def test_read_in_order_stops_early(started_cluster):
     """The optimization must actually engage in a distributed plan, not merely return correct rows:
     reading in key order lets the read stop once the limit is met, so it touches far fewer rows than

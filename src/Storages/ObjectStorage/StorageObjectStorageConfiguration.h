@@ -202,6 +202,8 @@ public:
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
@@ -216,6 +218,13 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// For a table created on top of a server disk: the config section of the disk that holds the
+    /// backend object storage settings. Follows `disk` references of layered disk configs (e.g. a
+    /// cache disk over an S3 disk resolves to the S3 disk's section) and descends into the local
+    /// location's subsection for multi-location disks. Returns std::nullopt when the disk is not
+    /// present in the config (e.g. a custom disk created from SQL).
+    static std::optional<String> tryGetDiskConfigurationPrefix(const Poco::Util::AbstractConfiguration & config, const String & disk_name);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -377,7 +386,11 @@ public:
     /// DDL does not depend on the setting at attach time.
     String url_overridden_by_base_setting;
 
+    std::optional<String> source_disk_name;
+
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

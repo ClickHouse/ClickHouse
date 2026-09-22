@@ -6,31 +6,36 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/components/Image.jsx";
 
-Support sessions are how you grant ClickHouse temporary diagnostic access through the ClickHouse Connector. This page explains what a session is, how to enable and disable one, what ClickHouse operators can do while one is active, and how to audit everything that happened.
+<PrivatePreviewBadge />
+
+Support sessions are how you grant ClickHouse temporary diagnostic access through the ClickHouse Connector. This page covers what a session is, how to enable and disable one, what ClickHouse support engineers can do during one, and how to audit it.
 
 ## What a support session is {#what-a-support-session-is}
 
-A support session is a time-boxed window during which the troubleshooter accepts commands from ClickHouse support engineers. When no session is active, the troubleshooter refuses all commands, even while its outbound WebSocket is connected. There is no other execution path: nothing runs without a session, and ClickHouse cannot open one for you. ClickHouse's control plane never connects into your environment; it only receives what the troubleshooter sends over its outbound channel, and that channel carries commands only while your session state allows it.
+A support session is a time-boxed window during which the troubleshooter accepts commands from ClickHouse support engineers. Outside a session the troubleshooter refuses every command, even while its outbound WebSocket is connected. There is no other execution path: the troubleshooter runs nothing without a session, and ClickHouse cannot open one for you. ClickHouse Cloud never connects into your environment; it receives only what the troubleshooter sends over its outbound channel.
+
+Sessions govern diagnostics only. Lifecycle commands for services in managed mode travel over the executor's separate channel, which a support session neither opens nor gates; see [managed services](/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
 <Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
 
 You control sessions through two surfaces:
 
-- **The session gateway**, an authenticated API embedded in the troubleshooter with `enable`, `disable`, and `status` endpoints. Every gateway call requires a short-lived OIDC ID token whose email is on your operator allowlist.
-- **The local session file** on Linux VM installs, written directly on the host with root access.
+- **The session gateway**, an authenticated API embedded in the troubleshooter. It serves `POST /v1/clctl/session/enable`, `POST /v1/clctl/session/disable`, and `GET /v1/clctl/session/status`. Every call requires a short-lived OIDC ID token whose email is on your operator allowlist.
+- **The local session file** on Linux VM installs, written on the host with root access.
 
-Gateway transport depends on the target. A VM gateway serves self-signed TLS that each operator fingerprint-pins. A Kubernetes gateway listens pod-locally over HTTP, reached through `kubectl port-forward` (the tunnel rides the API server's TLS) or through an Ingress that terminates TLS with a CA-issued certificate.
+Gateway transport depends on the target. A VM gateway serves self-signed TLS that each operator fingerprint-pins. A Kubernetes gateway listens pod-locally over HTTP; you reach it through `kubectl port-forward` (the tunnel rides the API server's TLS) or through an Ingress that terminates TLS with a CA-issued certificate.
 
 You choose your session posture, including the operator allowlist, during `clicklink clctl init`.
 
 ## Enabling and disabling sessions {#enabling-and-disabling-sessions}
 
 <Tabs>
-<Tab title="Kubernetes">
+<Tab title="Kubernetes" id="sessions-kubernetes">
 
-The gateway listens on port 8443 of the troubleshooter pod. If you have cluster access, reach it over a port-forward; the tunnel rides the Kubernetes API server's TLS:
+The gateway listens on port 8443 of the troubleshooter pod. With cluster access, reach it over a port-forward:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -53,12 +58,12 @@ clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
 clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
 ```
 
-The caller's OIDC identity must be on the operator allowlist; unauthenticated or unlisted callers get a 401 or 403 and the attempt is logged. If you prefer not to require cluster credentials, the chart can expose the gateway through an opt-in Ingress that terminates TLS with a CA-issued certificate; see [configuration](/products/bring-your-own-cloud/connector/configuration).
+The caller's OIDC identity must be on the operator allowlist. Unauthenticated or unlisted callers get a 401 or 403, and the gateway logs the attempt. To avoid requiring cluster credentials, expose the gateway through the chart's opt-in Ingress, which terminates TLS with a CA-issued certificate; see [configuration](/products/bring-your-own-cloud/connector/configuration).
 
 </Tab>
-<Tab title="Linux VM">
+<Tab title="Linux VM" id="sessions-vm">
 
-With root access on the host, manage the session directly. State is persisted to `/var/lib/clicklink/session.json`, which the daemon and the CLI read and write atomically:
+With root access on the host, manage the session directly. The daemon and the CLI read and write the state file `/var/lib/clicklink/session.json` atomically:
 
 ```bash
 sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
@@ -74,53 +79,61 @@ clicklink clctl troubleshoot gateway trust \
   --gateway-fingerprint <sha256-fingerprint>
 ```
 
-The pin is stored in `~/.clicklink/clctl.yaml`, and connections fail closed if the presented certificate does not match it.
+The pin is stored in `~/.clicklink/clctl.yaml`. A connection fails closed when the presented certificate does not match it. If the gateway serves a certificate from your own CA instead, pass that CA bundle with `--gateway-ca` on each session command.
 
 </Tab>
 </Tabs>
 
 ## Session expiry {#session-expiry}
 
-Sessions expire on their own. The default duration is 4 hours; `session enable --duration` can set anything up to 24 hours. When the session expires, or the moment you run `session disable`, the troubleshooter stops accepting commands. Disabling the session is the immediate revocation path: no restart, no coordination with ClickHouse required.
+Sessions expire on their own. The default duration is 4 hours; `session enable --duration` accepts up to 24 hours. When the session expires, or the moment you run `session disable`, the troubleshooter stops accepting commands. Disabling is the immediate revocation path: no restart, and no coordination with ClickHouse.
 
 ## Operator allowlist {#operator-allowlist}
 
-Every gateway call is authorized against an allowlist of operator emails, matched against the email attested by the validated OIDC token, never against anything the client claims about itself.
+Every gateway call is authorized against an allowlist of operator emails. The match is against the email attested by the validated OIDC token, never against anything the client claims about itself.
 
-- **Kubernetes:** set `clctl.gateway.allowedOperators` in your values overlay. The list is rendered into a ConfigMap that the gateway re-reads on a 30-second window, so a values change plus `helm upgrade` rotates the allowlist without a pod restart.
+- **Kubernetes:** set `clctl.gateway.allowedOperators` in your values overlay. The chart renders the list into a ConfigMap, so a values change plus `helm upgrade` rotates the allowlist without a pod restart.
 - **Linux VM:** the allowlist lives at `/etc/clicklink/allowed-operators.txt`, written by `clicklink clctl init` from the operator emails you provide.
+
+On both targets the gateway re-reads the file on the next request once 30 seconds have passed since the last read, so edits take effect without a restart.
 
 ## What operators can do during a session {#what-operators-can-do}
 
-While a session is active, ClickHouse support engineers can run:
+While a session is active, ClickHouse support engineers can run two kinds of command.
 
-- **Read-only SQL** against your clusters as the `pcm_troubleshooter` user, restricted to an explicit table allowlist. The default allowlist covers ClickHouse `system` tables such as `system.parts`, `system.merges`, `system.replicas`, `system.metrics`, and `system.settings`; `system.query_log` and `system.text_log` are denied unconditionally, so query history never leaves. The default allowlist does include `system.processes`, whose `query` column shows the text of statements running at that moment; remove it from the session table allowlist (`troubleshooter.allowedTables` in the Helm overlay, `troubleshooter.allowed_tables` in the VM configuration file) if live query text must never be visible in a session. The user holds per-table `SELECT` grants only, with no write, DDL, or admin privileges.
-- **Read-only Kubernetes views** on every provisioned deployment (access bundles are anchored to Kubernetes ServiceAccounts on both install targets): `get`, `list`, and `watch` on pods, pod logs, services, configmaps, events, PersistentVolumeClaims, deployments, statefulsets, and replicasets in the granted namespaces. Without a provisioned bundle, the troubleshooter refuses kubectl-type commands outright.
+**Read-only SQL** runs against your clusters as the `pcm_troubleshooter` user, whose grants are limited to the session table allowlist. The troubleshooter also rejects any statement that does not start with `SELECT`, `WITH`, `SHOW`, `DESCRIBE`, or `EXPLAIN`. The user holds per-table `SELECT` grants only, with no write, DDL, or admin privileges.
 
-The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through the connector. The full grant and RBAC listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference.
+The default allowlist covers `system` tables such as `system.parts`, `system.merges`, `system.replicas`, `system.metrics`, and `system.settings`. `system.query_log` and `system.text_log` cannot be added to it: the daemon refuses a configuration that lists them, so no grant on them is ever provisioned. The default allowlist does include `system.processes`, whose `query` column shows the text of statements running at that moment. Remove it from `troubleshooter.allowedTables` (Helm overlay) or `troubleshooter.allowed_tables` (VM configuration file) if live query text must never be visible in a session.
+
+**Read-only Kubernetes views** are `get`, `list`, and `watch` on pods, pod status, pod logs, services, configmaps, events, PersistentVolumeClaims, deployments, statefulsets, and replicasets in the granted namespaces. Access bundles are anchored to Kubernetes ServiceAccounts on both install targets. Without a provisioned bundle, the troubleshooter refuses kubectl-type commands outright. The executor provisions the scraper for a managed service but not the troubleshooter; see [support sessions for a managed service](/products/bring-your-own-cloud/connector/managed-services#support-sessions).
+
+The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through a session. The full grant and RBAC listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference.
 
 ## Audit log {#audit-log}
 
-Every gateway call and every command executed during a session is appended to `/var/log/clicklink/troubleshoot-audit.log` as one JSON object per line (NDJSON). The `submitted_by` field records the identity behind each entry, and what that is depends on how the entry originated: gateway calls carry the email attested by the validated token, never a client-supplied value; session changes made locally on a VM record the invoking host user; and commands executed during a session record the org identity carried on the authenticated command channel. A gateway session-enable entry looks like this:
+Every command executed during a session is appended to `/var/log/clicklink/troubleshoot-audit.log` as one JSON object per line (NDJSON). Blocked commands are recorded too, with `blocked_by` naming the reason (for example `session inactive`). `submitted_by` is the organization ID on the command channel, which is your own org ID. The individual ClickHouse engineer is recorded on the ClickHouse Cloud side, not in this file. A session-command entry looks like this:
 
 ```json
 {
   "timestamp": "2026-06-22T22:30:00.123456789Z",
   "command_id": "11111111-2222-4333-8444-555555555555",
-  "submitted_by": "operator@clickhouse.com",
-  "command_type": "clctl.session.enable",
-  "command_text": "ticket #1234",
-  "instance_id": "",
-  "status": "ok",
+  "submitted_by": "<org-id>",
+  "command_type": "sql",
+  "command_text": "SELECT database, table, active, count() FROM system.parts GROUP BY ALL",
+  "instance_id": "analytics",
+  "status": "completed",
   "duration_ms": 42,
-  "output_lines": 0,
-  "remote_addr": "10.20.30.40"
+  "output_lines": 12
 }
 ```
 
-Session lifecycle entries use the `clctl.session.enable`, `clctl.session.disable`, and `clctl.session.status` command types, with the enable `--reason` recorded as `command_text`; commands run during a session are logged with the same schema. `status` distinguishes successful calls from `unauthorized`, `forbidden`, and `rate_limited` attempts, so denied access shows up in the log too.
+`status` carries the command outcome: `completed`, `error`, or `rejected`.
 
-On a VM, read the file directly with `clicklink clctl troubleshoot audit tail`. On Kubernetes the log lives inside the troubleshooter pod, and the container image has no shell, so invoke the binary's own reader through `kubectl exec`:
+Gateway calls are logged separately. Every call, including rejected ones, is emitted as a structured `clctl.gateway` line in the troubleshooter's own log: the journal on a VM, the container log on Kubernetes. The line carries `submitted_by` (the email attested by the validated token, never a client-supplied value), `command_type` (`clctl.session.enable`, `clctl.session.disable`, or `clctl.session.status`), `reason` (the enable `--reason`), `remote_addr`, and `status`. `status` is `ok`, `unauthorized`, `forbidden`, `rate_limited`, `bad_request`, `conflict`, or `error`, so denied access shows up in the log too.
+
+Local session changes on a VM are not audit-log entries. The invoking host user is recorded as `enabled_by` in `/var/lib/clicklink/session.json` and shown by `session status`.
+
+On a VM, read the audit log with `clicklink clctl troubleshoot audit tail`. On Kubernetes the log lives inside the troubleshooter pod, and the container image has no shell, so invoke the binary's own reader through `kubectl exec`:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -128,11 +141,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
   /clicklink clctl troubleshoot audit tail
 ```
 
-The log is a plain file inside your environment; ship it to your own SIEM like any other host or container log.
+The audit log is a plain file inside your environment; ship it to your own SIEM like any other host or container log.
 
 ## Redaction {#redaction}
 
-Everything the troubleshooter returns is redacted before it leaves your environment. Built-in patterns cover IPv4 and IPv6 addresses, bearer tokens, AWS access keys, email addresses, JWTs, SSH private keys, and credentials embedded in connection strings. You can extend or override them in `/etc/clicklink/redaction-patterns.yaml`; an entry with the same name as a built-in replaces it. The daemon refuses to start on an invalid patterns file, and `clicklink clctl preflight` validates it, so a broken redaction configuration fails loudly instead of silently passing data through.
+Everything the troubleshooter returns is redacted before it leaves your environment. Built-in patterns cover IPv4 and IPv6 addresses, bearer tokens, AWS access keys, email addresses, JWTs, SSH private keys, and credentials embedded in connection strings. You can extend or override them in `/etc/clicklink/redaction-patterns.yaml`; an entry with the same name as a built-in replaces it. The daemon refuses to start on an invalid patterns file, and `clicklink clctl preflight` validates it, so a broken redaction configuration fails loudly.
 
 ## Related pages {#related-pages}
 
