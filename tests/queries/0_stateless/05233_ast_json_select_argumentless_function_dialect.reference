@@ -9,6 +9,14 @@ for key 'function_core' has no 'arguments' list
 UNKNOWN_FUNCTION
 Function in (children 1)
 Literal UInt64_9
+for key 'select' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'group_by' has no 'arguments' list
+for key 'with' has no 'arguments' list
+for key 'order_by' has no 'arguments' list
+0
+WITH rand(14) AS n SELECT count(), n WHERE rand(12) > 0 GROUP BY a
+SELECT a, length(toString(a)) ORDER BY a
 SELECT count()
 FROM numbers(3)
 GROUP BY number

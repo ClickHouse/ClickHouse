@@ -25,6 +25,11 @@ ARGS_1_6=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","v
 ARGS_A_7=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":7}}]}'
 ARGS_A_8=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":8}}]}'
 ARGS_X_9=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"},{"type":"Literal","value":{"field_type":"UInt64","value":9}}]}'
+ARGS_A=',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}'
+ARGS_3=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":3}}]}'
+ARGS_12=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":12}}]}'
+ARGS_13=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":13}}]}'
+ARGS_14=',"arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":14}}]}'
 
 # $1 = statement to serialize, $2 = the "arguments" member to drop
 payload() {
@@ -77,6 +82,35 @@ ${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
 ${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" |
     grep -oE "Function in \(children 1\)|Literal UInt64_9"
 ${CLICKHOUSE_CLIENT} --query "DROP FUNCTION IF EXISTS ${UDF}"
+
+# A projection body carries its own copy of the select slots, and unlike every row above it needs no
+# `optimize`: while `CREATE TABLE` is still assembling the table metadata,
+# `fillProjectionDescriptionByQuery` clones the body into a synthetic `SELECT` and builds the legacy
+# interpreter on it, so a plain DDL statement reaches the same visitors. The malformed function is one
+# that is legal with zero arguments, because a function that is not is rejected by the analyzer's arity
+# check first, before anything dereferences the missing list.
+PROJ="ENGINE = MergeTree ORDER BY tuple()"
+send "$(payload "CREATE TABLE pr_sel (a UInt8, PROJECTION p (SELECT count(a) GROUP BY a)) ${PROJ}" "$ARGS_A")"
+send "$(payload "CREATE TABLE pr_whr (a UInt8, PROJECTION p (SELECT count() WHERE rand(12) > 0 GROUP BY a)) ${PROJ}" "$ARGS_12")"
+send "$(payload "CREATE TABLE pr_grp (a UInt8, PROJECTION p (SELECT count() GROUP BY rand(13))) ${PROJ}" "$ARGS_13")"
+send "$(payload "CREATE TABLE pr_wth (a UInt8, PROJECTION p (WITH rand(14) AS n SELECT count(), n GROUP BY a)) ${PROJ}" "$ARGS_14")"
+# A projection sorting key may not be constant, so this payload's well-formed twin is refused by that
+# rule; the screen still has to act before it, and the round-trip below covers a legal ORDER BY.
+send "$(payload "CREATE TABLE pr_ord (a UInt8, PROJECTION p (SELECT a ORDER BY now64(3))) ${PROJ}" "$ARGS_3")"
+# Rejected at the boundary means no table was created, so no later failure can stand in for the screen.
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE pr_sel"
+
+# Well-formed projection bodies still round-trip through all five slots, and the stored definition is
+# asserted rather than only the absence of an error.
+proj_roundtrip() {
+    ${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
+        "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('$1') FORMAT TSVRaw")"
+    ${CLICKHOUSE_CLIENT} --query "SELECT query FROM system.projections
+        WHERE database = currentDatabase() AND table = '$2'"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $2"
+}
+proj_roundtrip "CREATE TABLE pr_ok (a UInt8, PROJECTION p (WITH rand(14) AS n SELECT count(), n WHERE rand(12) > 0 GROUP BY a)) ${PROJ}" pr_ok
+proj_roundtrip "CREATE TABLE pr_ok2 (a UInt8, PROJECTION p (SELECT a, length(toString(a)) ORDER BY a)) ${PROJ}" pr_ok2
 
 # Well-formed payloads still round-trip through every screened slot, including the nullary `count()`,
 # the `numbers` table function and both transformer members, whose `arguments` lists the parser leaves
