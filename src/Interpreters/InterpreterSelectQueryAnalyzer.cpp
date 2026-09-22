@@ -233,6 +233,13 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// mark the query read. Such a plan could not be adopted anyway: it names its sets after the
     /// temporary tables that replaced the subqueries, so it never hashes equal to the single-node plan
     /// and the match that gates the cost model always fails. Do not build it.
+    ///
+    /// This has to stay below the interpreter. The answer turns on `distributed_product_mode`,
+    /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
+    /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
+    /// it is handed - `ctx` - while building the tree above, which is the same mechanism
+    /// `removeSettingsFromQuery` had to counteract. Asking before that would read pre-query settings
+    /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
         LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
