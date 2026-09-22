@@ -6,8 +6,8 @@
 
 SET enable_materialized_cte = 1;
 
-DROP TABLE IF EXISTS src_113711, src2_113711, t2_113711, r_113711, dst_113711, dst_chain_113711, dst_forward_113711, dst_inner_113711, dst_pinned_113711, dst_self_113711, dst_bad_113711, src_final_113711;
-DROP TABLE IF EXISTS v_113711, v_settings_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711, v_copy_113711, v_baked_113711;
+DROP TABLE IF EXISTS src_113711, src2_113711, t2_113711, t3_113711, r_113711, dst_113711, dst_chain_113711, dst_forward_113711, dst_inner_113711, dst_pinned_113711, dst_self_113711, dst_bad_113711, src_final_113711;
+DROP TABLE IF EXISTS v_113711, v_settings_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711, v_copy_113711, v_nested_copy_113711, v_baked_113711;
 DROP TABLE IF EXISTS mv_113711, mv_chain_113711, mv_forward_113711, mv_inner_113711, mv_pinned_113711, mv_self_113711, mv_bad_113711;
 
 CREATE TABLE src_113711 (id UInt32) ENGINE = MergeTree ORDER BY id;
@@ -204,17 +204,33 @@ INSERT INTO src2_113711 VALUES (71), (72);
 SELECT * FROM dst_self_113711 ORDER BY id;
 DROP TABLE mv_self_113711;
 
-SELECT '-- an expansion copy of a plain CTE is classified where it stands, like the analyzer at run time';
--- `p`'s body reads `t2_113711` as a table, but the reference site (inside the outer `SELECT`) declares
--- a `MATERIALIZED` CTE named `t2_113711`. The analyzer resolves `p`'s body at that reference site, so
--- the expansion copy of `p` reads the `MATERIALIZED` CTE, not the table `t2_113711`.
+SELECT '-- an expansion copy of a plain CTE is classified like its declaration body, also after a reload';
+-- The stored text keeps only the declaration body of `p`, where `t2_113711` is the table.
 CREATE TABLE t2_113711 (x UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t2_113711 VALUES (1), (2), (3);
 CREATE VIEW v_copy_113711 AS
 WITH p AS (SELECT * FROM t2_113711)
 SELECT * FROM (WITH t2_113711 AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM p);
 SELECT * FROM v_copy_113711 ORDER BY x;
+SELECT toTypeName(x) FROM v_copy_113711 LIMIT 1;
 SELECT replaceRegexpOne(create_table_query, '.*AS WITH', 'WITH') FROM system.tables WHERE database = currentDatabase() AND name = 'v_copy_113711';
+DETACH TABLE v_copy_113711;
+ATTACH TABLE v_copy_113711;
+SELECT * FROM v_copy_113711 ORDER BY x;
+SELECT toTypeName(x) FROM v_copy_113711 LIMIT 1;
+
+SELECT '-- a copy nested in a copy is classified like its own declaration body, not a same-named inner CTE';
+CREATE TABLE t3_113711 (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t3_113711 VALUES (1), (300);
+CREATE VIEW v_nested_copy_113711 AS
+WITH a AS (SELECT * FROM t3_113711), b AS (SELECT * FROM a)
+SELECT * FROM (WITH t3_113711 AS MATERIALIZED (SELECT 7 AS x), a AS (SELECT 2 AS x) SELECT * FROM b);
+SELECT * FROM v_nested_copy_113711 ORDER BY x;
+SELECT toTypeName(x) FROM v_nested_copy_113711 LIMIT 1;
+DETACH TABLE v_nested_copy_113711;
+ATTACH TABLE v_nested_copy_113711;
+SELECT * FROM v_nested_copy_113711 ORDER BY x;
+SELECT toTypeName(x) FROM v_nested_copy_113711 LIMIT 1;
 
 SELECT '-- a view definition that fixes enable_global_with_statement bakes in the nested-reference failure';
 CREATE VIEW v_baked_113711 AS
@@ -222,5 +238,5 @@ WITH r AS MATERIALIZED (SELECT 1 AS x)
 SELECT * FROM (SELECT * FROM r)
 SETTINGS enable_global_with_statement = 0; -- { serverError UNKNOWN_TABLE }
 
-DROP TABLE v_copy_113711, v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_settings_113711, v_113711;
-DROP TABLE src_final_113711, dst_bad_113711, dst_self_113711, dst_pinned_113711, dst_inner_113711, dst_forward_113711, dst_chain_113711, dst_113711, t2_113711, r_113711, src2_113711, src_113711;
+DROP TABLE v_nested_copy_113711, v_copy_113711, v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_settings_113711, v_113711;
+DROP TABLE src_final_113711, dst_bad_113711, dst_self_113711, dst_pinned_113711, dst_inner_113711, dst_forward_113711, dst_chain_113711, dst_113711, t3_113711, t2_113711, r_113711, src2_113711, src_113711;

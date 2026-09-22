@@ -84,7 +84,21 @@ SELECT id FROM default.src_113711
 -- materialized view with a CTE named like its source table: only the inserted block is read, once
 71	1
 72	1
--- an expansion copy of a plain CTE is classified where it stands, like the analyzer at run time
+-- an expansion copy of a plain CTE is classified like its declaration body, also after a reload
 1
+2
+3
+UInt32
 WITH p AS (SELECT * FROM default.t2_113711) SELECT * FROM (WITH t2_113711 AS MATERIALIZED (SELECT 1 AS x) SELECT * FROM p)
+1
+2
+3
+UInt32
+-- a copy nested in a copy is classified like its own declaration body, not a same-named inner CTE
+1
+300
+UInt32
+1
+300
+UInt32
 -- a view definition that fixes enable_global_with_statement bakes in the nested-reference failure

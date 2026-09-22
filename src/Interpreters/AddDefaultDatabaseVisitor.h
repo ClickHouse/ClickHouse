@@ -27,6 +27,7 @@
 #include <Poco/String.h>
 #include <optional>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -67,6 +68,23 @@ public:
 
     void visit(ASTPtr & ast) const
     {
+        /// An expansion copy of a plain CTE is classified like its declaration body, the only one the stored text keeps.
+        if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
+        {
+            if (auto it = plain_cte_scopes.find(subquery->cte_name); it != plain_cte_scopes.end())
+            {
+                const auto scope = it->second;
+                auto reference_cte_names = std::exchange(materialized_cte_names, scope.names);
+                const bool reference_global_with = std::exchange(global_with_enabled, scope.global_with);
+                auto reference_plain_cte_scopes = std::exchange(plain_cte_scopes, *scope.scopes);
+                visitChildren(*ast);
+                materialized_cte_names = std::move(reference_cte_names);
+                global_with_enabled = reference_global_with;
+                plain_cte_scopes = std::move(reference_plain_cte_scopes);
+                return;
+            }
+        }
+
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
             !tryVisit<ASTFunction>(ast) &&
@@ -123,6 +141,16 @@ private:
     mutable std::unordered_set<String> materialized_cte_names;
     /// The inherited `enable_global_with_statement` of the select being visited.
     mutable bool global_with_enabled;
+    /// What the body of a visible plain CTE was classified with at its declaration, including the plain CTEs it saw.
+    struct DeclarationScope;
+    using DeclarationScopes = std::unordered_map<String, DeclarationScope>;
+    struct DeclarationScope
+    {
+        std::unordered_set<String> names;
+        bool global_with;
+        std::shared_ptr<const DeclarationScopes> scopes;
+    };
+    mutable DeclarationScopes plain_cte_scopes;
     mutable std::unordered_set<String> expression_aliases;
 
     bool only_replace_current_database_function = false;
@@ -145,6 +173,7 @@ private:
         /// Nested selects inherit the names while global `WITH` is on; a select's own `SETTINGS` clause overrides
         /// the inherited value for itself and everything nested in it, like the analyzer applies the clause.
         auto enclosing_cte_names = materialized_cte_names;
+        auto enclosing_plain_cte_scopes = plain_cte_scopes;
         const bool enclosing_global_with = global_with_enabled;
         if (auto literal = globalWithSettingOf(select))
             global_with_enabled = *literal;
@@ -184,6 +213,9 @@ private:
                 for (const auto & name : own_cte_names)
                     if (!element || name != element->name)
                         materialized_cte_names.insert(name);
+                if (element && !element->is_materialized)
+                    plain_cte_scopes[element->name] = DeclarationScope{
+                        materialized_cte_names, global_with_enabled, std::make_shared<const DeclarationScopes>(plain_cte_scopes)};
                 visit(child);
             }
         materialized_cte_names = base_cte_names;
@@ -200,6 +232,7 @@ private:
 
         expression_aliases = std::move(enclosing_query_aliases);
         materialized_cte_names = std::move(enclosing_cte_names);
+        plain_cte_scopes = std::move(enclosing_plain_cte_scopes);
         global_with_enabled = enclosing_global_with;
     }
 
