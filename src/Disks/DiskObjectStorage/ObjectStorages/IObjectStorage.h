@@ -126,8 +126,7 @@ class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-/// The content cache token for an object whose contents are immutable. The `immutable:` prefix
-/// keeps it out of the value space of a real ETag, so the two kinds of token cannot collide.
+/// The content cache token of an immutable object. Prefixed so it cannot collide with a real ETag.
 inline String makeImmutableContentsCacheToken(const String & storage_namespace)
 {
     return "immutable:" + storage_namespace;
@@ -155,12 +154,9 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
-    /// Set when the object's contents are immutable, so they can be identified without an ETag.
-    /// Holds the storage namespace (endpoint and bucket/container) that the object's relative path
-    /// is resolved against, because the relative path alone is not a unique identity: a data lake
-    /// path is stripped of its namespace (`s3://bucket/tbl/data/x.parquet` becomes
-    /// `tbl/data/x.parquet`), while the content caches are server-wide. Two immutable objects at the
-    /// same relative path in different buckets are different objects and must not share a key.
+    /// Set when the contents are immutable and so identifiable without an ETag. Holds the endpoint and
+    /// bucket the path is resolved against: a data lake path is bucket-relative while the content
+    /// caches are server-wide, so the path alone would make two buckets share a key.
     std::optional<String> immutable_contents_namespace = std::nullopt;
     ObjectAttributes tags;
     ObjectAttributes attributes;
@@ -171,12 +167,9 @@ struct ObjectMetadata
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 
-    /// The token that identifies the contents in a content cache, next to the object's path. The
-    /// ETag when the contents may be rewritten, the storage namespace when they are immutable, and
-    /// an empty option when there is no stable identifier at all and the cache must be skipped.
-    ///
-    /// Never an empty string: an empty token would leave the relative path as the whole identity,
-    /// and that path is not unique across storage namespaces.
+    /// The content token beside the object's path: the strong ETag, else the namespace token of an
+    /// immutable object, else nothing and the cache must be skipped. Never an empty string, or the
+    /// bucket-relative path would be the whole identity.
     std::optional<std::string> getContentCacheToken() const
     {
         if (isEtagUsableAsCacheKey())

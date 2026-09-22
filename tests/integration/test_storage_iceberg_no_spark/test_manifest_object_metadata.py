@@ -81,23 +81,17 @@ def test_manifest_object_metadata_avoids_head_request_per_data_file(
     # This option should not change correctness.
     assert enabled_result == disabled_result
 
-    # The manifest answered for every data file and for nothing else.
     assert enabled_used == NUM_DATA_FILES
     assert disabled_used == 0
 
-    # Which matches the number of requests that did not have to be made
     assert disabled_heads - enabled_heads == NUM_DATA_FILES
 
 
 def test_manifest_object_metadata_yields_to_etag_validation(
     started_cluster_iceberg_no_spark,
 ):
-    """With `s3_validate_etag_on_read` on, the shortcut must not fire.
-
-    That setting pins every GET to an ETag seen beforehand, and the manifest records none. Taking the
-    manifest's answer would silently read unvalidated, so the object store is asked as before and the
-    read costs exactly what it costs with the shortcut disabled.
-    """
+    """With `s3_validate_etag_on_read` on the shortcut must not fire: that setting needs an ETag the
+    manifest cannot supply, so the read costs exactly what it costs with the shortcut disabled."""
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_manifest_object_metadata_validated_" + get_uuid_str()
     create_table_with_one_row_per_data_file(
@@ -134,12 +128,8 @@ def test_manifest_object_metadata_yields_to_etag_validation(
 def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
     started_cluster_iceberg_no_spark,
 ):
-    """`_etag` and `_time` come from the object store, which the manifest cannot replace.
-
-    Whether the virtual column is selected or only filtered on, the read must ask the object store
-    for that file and return the real value. Were the guard lost, `_etag` would quietly come back
-    empty with the shortcut on. A plain read of the same table proves the shortcut itself fires.
-    """
+    """`_etag` and `_time` must come from the object store whether selected or only filtered on.
+    Were the guard lost, `_etag` would quietly come back empty with the shortcut on."""
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_manifest_object_metadata_virtuals_" + get_uuid_str()
     num_files = 4
@@ -161,7 +151,7 @@ def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
     )
     assert control_used == num_files
 
-    # Selected: the values must be the store's, identical to a read that never took the shortcut.
+    # Selected: identical to a read that never took the shortcut.
     selected_query = f"SELECT _path, _etag, _time FROM {table_name} ORDER BY _path"
     with_shortcut, (selected_used,) = run_and_get_profile_events(
         instance, selected_query, f"{table_name}_selected", shortcut_on, used
@@ -185,15 +175,10 @@ def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
         assert int(matched) == num_files, filtered_query
 
 
-# The relative path of a data file is what the content caches key on, and
-# `IcebergPathResolver::resolve` strips the bucket from it: `s3://bucket/tbl/data/00001.parquet`
-# becomes `tbl/data/00001.parquet`. Without an ETag to fold in, two tables that share a relative
-# path have to be told apart by their storage namespace alone, and every cache below is server-wide.
-#
-# Each entry enables one cache, names the profile event that proves the second bucket was read on
-# its own terms, and gives a query shaped so that the cache is actually consulted. The filesystem
-# cache and the page cache cannot be checked in one query: the page cache is only used when no
-# filesystem cache is.
+# The content caches are server-wide and key on the data file's bucket-relative path plus a token,
+# so two tables sharing a relative path are told apart by the storage namespace alone. Each case
+# enables one cache, names the profile event proving the second bucket was read on its own terms,
+# and uses a query that consults that cache. The page cache is only used without a filesystem cache.
 CACHE_CASES = {
     "parquet_metadata": (
         {"use_parquet_metadata_cache": 1},
@@ -210,9 +195,8 @@ CACHE_CASES = {
         "PageCacheMisses",
         "SELECT x FROM {table}",
     ),
-    # The query condition cache is only consulted for a query with a filter. `x > 0` matches the row
-    # in either table and is pruned away by neither one's statistics, so the caching is the only
-    # thing that can differ.
+    # Consulted only with a filter. `x > 0` matches in both tables and neither one's statistics prune
+    # it, so caching is the only thing that can differ.
     "query_condition": (
         {"use_query_condition_cache": 1},
         "QueryConditionCacheMisses",
@@ -244,12 +228,8 @@ def _sole_data_file_key(instance, table_query, bucket):
 
 
 def _build_tables_colliding_across_buckets(cluster, instance, suffix):
-    """Two one-row Iceberg tables holding different rows at the same relative data file path.
-
-    The first lives in `minio_bucket` and is returned as a local table, the second in
-    `minio_bucket_2` and is returned as a table function - one table name gives both the same
-    relative prefix, which is all the content caches see.
-    """
+    """Two one-row Iceberg tables holding different rows at the same relative data file path: a
+    local table in `minio_bucket` and a table function over `minio_bucket_2`."""
     table_name = "test_manifest_object_metadata_alias_" + suffix
     other_content_table = "test_manifest_object_metadata_other_" + suffix
 
@@ -269,9 +249,8 @@ def _build_tables_colliding_across_buckets(cluster, instance, suffix):
         _read_object(cluster, cluster.minio_bucket, data_file_key)
     )
 
-    # Copy the table into the second bucket under identical keys, then give the copy different
-    # contents at the colliding data file key. This is the collision that a writer naming its data
-    # files deterministically reaches on its own, and that an ETag would otherwise separate.
+    # Copy the table into the second bucket under identical keys, then give the data file different
+    # contents: the collision a writer with deterministic file names reaches on its own.
     for obj in cluster.minio_client.list_objects(
         cluster.minio_bucket, _table_prefix(table_name), recursive=True
     ):
@@ -310,16 +289,13 @@ def test_manifest_object_metadata_does_not_alias_another_bucket(
     )
     settings = {"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0, **cache_settings}
 
-    # Reading the first bucket populates the cache under the shared relative path.
     assert (
         instance.query(read_query.format(table=table_name), settings=settings).strip()
         == "1"
     )
 
-    # The second bucket must be read on its own terms rather than served that entry. Its own row
-    # catches a cache that handed over the other object's bytes. The miss additionally catches one
-    # that answered from the other object's Parquet footer or matching marks, which can still decode
-    # to the right row by coincidence when the two files share a layout.
+    # The row catches served bytes; the miss catches a reused footer or skip marks, which can still
+    # decode to the right row by coincidence when the two files share a layout.
     second_bucket_rows, (misses,) = run_and_get_profile_events(
         instance,
         read_query.format(table=in_second_bucket),
@@ -330,8 +306,7 @@ def test_manifest_object_metadata_does_not_alias_another_bucket(
     assert second_bucket_rows.strip() == "2"
     assert misses > 0, f"{cache_name}: the second bucket was answered from the first bucket's entry"
 
-    # And the reverse direction, so the entries just written for the second bucket cannot be served
-    # to the first either.
+    # And the reverse direction.
     assert (
         instance.query(read_query.format(table=table_name), settings=settings).strip()
         == "1"
@@ -342,12 +317,8 @@ def test_manifest_object_metadata_does_not_alias_another_bucket(
 def test_manifest_object_metadata_keeps_the_content_caches_usable(
     started_cluster_iceberg_no_spark, cache_name
 ):
-    """The manifest-derived metadata must still identify the contents well enough to cache them.
-
-    Reporting the contents as unidentifiable would be safe but would silently disable every cache
-    below for all Iceberg reads, which costs far more than the metadata request this setting saves -
-    and would show up only as an unexplained slowdown.
-    """
+    """The manifest-derived metadata must still let the caches identify the contents. Reporting them
+    as unidentifiable would silently disable every cache below for all Iceberg reads."""
     cluster = started_cluster_iceberg_no_spark
     instance = cluster.instances["node1"]
     cache_settings, _, read_query = CACHE_CASES[cache_name]

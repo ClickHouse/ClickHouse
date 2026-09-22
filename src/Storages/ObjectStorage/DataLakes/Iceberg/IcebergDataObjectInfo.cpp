@@ -97,23 +97,19 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & pa
 
 std::optional<ObjectMetadata> IcebergDataObjectInfo::tryGetObjectMetadataWithoutRequest(const String & storage_namespace) const
 {
-    /// A negative size would mean a malformed manifest; fall back to asking the object store. So does
-    /// a zero size: `skip_empty_files` skips an empty object before anything touches it, and answered
-    /// from the manifest alone a missing object would pass for an empty one instead of being reported.
+    /// A negative size means a malformed manifest. Zero also falls back to the store: with
+    /// `skip_empty_files`, a missing object would otherwise pass for an empty one.
     if (!info.file_size_in_bytes.has_value() || *info.file_size_in_bytes <= 0)
         return std::nullopt;
 
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<uint64_t>(*info.file_size_in_bytes);
     metadata.is_size_known = true;
-    /// The manifest records no modification time, and the default presented as known would look
-    /// older than any cached entry to the schema and count caches.
+    /// The manifest records no modification time; a default presented as known would look older than
+    /// any cached count.
     metadata.is_last_modified_known = false;
-    /// The spec makes data files immutable: a new snapshot writes new files rather than rewriting an
-    /// existing path. So no ETag is needed to identify the contents - but the identity is the path
-    /// *within its namespace*. `IcebergPathResolver::resolve` strips the bucket and endpoint from an
-    /// own-bucket path, and two tables in different buckets can hold the same relative path; a
-    /// foreign-bucket path stays fully qualified, and the namespace is then the bucket it names.
+    /// Data files are immutable by spec, so no ETag is needed. The namespace still is, see
+    /// `ObjectMetadata::immutable_contents_namespace`.
     metadata.immutable_contents_namespace = storage_namespace;
 
     ProfileEvents::increment(ProfileEvents::IcebergManifestObjectMetadataUsed);

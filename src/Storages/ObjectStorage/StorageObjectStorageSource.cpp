@@ -1164,12 +1164,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// An engine that records the object's size itself (Iceberg, in the manifest entry) can
-            /// answer without a metadata request. Only the size is known that way, so the object
-            /// store is still asked for anything else the query wants from the response - including
-            /// an ETag to validate the read against: `s3_validate_etag_on_read` pins every GET to the
-            /// ETag seen beforehand, and the manifest has none to offer, so honouring that setting
-            /// means asking after all rather than silently reading unvalidated.
+            /// Iceberg records the size in the manifest entry, so the metadata request can be skipped.
+            /// Anything else the read needs still comes from the store, including the ETag that
+            /// `s3_validate_etag_on_read` pins each GET to.
             const auto & settings = context_->getSettingsRef();
             const bool needs_object_store_response = with_tags
                 || query_settings.ignore_non_existent_file
@@ -1269,10 +1266,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             const auto metadata = object_info->getObjectMetadata();
             if (!metadata)
                 return std::nullopt;
-            /// Immutable contents cannot go stale, so a cached row count stays valid however old it
-            /// is. Reporting the epoch says exactly that. The count cache key already carries the
-            /// storage namespace (`getUniqueStoragePathIdentifier` above, with connection info), so
-            /// two objects at the same relative path in different buckets do not share an entry.
+            /// Immutable contents cannot go stale, so any cached count is valid: report the epoch. The
+            /// count cache key already carries the namespace.
             if (metadata->immutable_contents_namespace)
                 return std::optional<time_t>(0);
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
@@ -1909,9 +1904,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
         else
         {
-            /// The path and the token are hashed as two separate updates. Keep it that way: this hash
-            /// is the key of on-disk cache entries, so a different composition would orphan every entry
-            /// written by an earlier version.
+            /// Two separate updates: this hash keys on-disk entries, and a different composition would
+            /// orphan every existing one.
             SipHash hash;
             hash.update(object_info.getPath());
             hash.update(*content_cache_token);

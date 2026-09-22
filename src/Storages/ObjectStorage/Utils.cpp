@@ -171,8 +171,7 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
 namespace
 {
 
-/// A fully qualified path names its own namespace only on a configuration that reads such paths.
-/// Anywhere else `scheme://` is just part of the key, and splitting it would invent a namespace.
+/// Outside a configuration that reads qualified paths, `scheme://` is just part of the key.
 std::optional<FullyQualifiedObjectPath> trySplitForConfiguration(
     const StorageObjectStorageConfiguration & configuration, const std::string & path)
 {

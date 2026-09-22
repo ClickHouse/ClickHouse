@@ -50,17 +50,11 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    /// Metadata a table engine already knows from its own records, letting the read path skip the
-    /// `HeadObject` it would otherwise issue just to learn the object's size. Nothing by default, so
-    /// storages that do not override this keep issuing the request.
-    ///
-    /// Unlike `getFileSizeHint` above, which only feeds the progress indicator, this replaces the
-    /// object store's answer - so an override must only return what its metadata guarantees.
-    ///
-    /// `storage_namespace` identifies the endpoint and bucket/container the object lives in: the
-    /// one a fully qualified path names itself, otherwise the table's (`dataSourceDescriptionForObjectPath`).
-    /// An override that reports the contents as immutable must record it, because a bucket-relative
-    /// path alone does not identify an object across namespaces.
+    /// Metadata the engine knows from its own records (Iceberg: the manifest entry), so the read path
+    /// can skip the `HeadObject` for the size. Unlike `getFileSizeHint`, this replaces the store's
+    /// answer, so return only what the records guarantee. `storage_namespace` is the object's endpoint
+    /// and bucket (`dataSourceDescriptionForObjectPath`); an immutable object must record it, see
+    /// `ObjectMetadata::immutable_contents_namespace`.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest(const String & /*storage_namespace*/) const
     {
         return std::nullopt;

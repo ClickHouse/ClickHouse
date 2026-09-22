@@ -318,14 +318,8 @@ def _query_with_profile_events(instance, query, query_id, settings, events):
 def test_manifest_object_metadata_identifies_cross_bucket_data_files(
     started_cluster_iceberg_no_spark, tmp_path
 ):
-    """The manifest answers for a foreign-bucket data file too, under that file's own namespace.
-
-    With `use_iceberg_manifest_object_metadata` no ETag is fetched, so the content caches identify a
-    data file by its path within a storage namespace. A foreign-bucket file keeps a fully qualified
-    path, and the namespace folded into its identity has to be the bucket that path names, not the
-    table's. Both files must come from the manifest without a metadata request, return their own
-    rows, and still be found in the Parquet metadata cache on a second read.
-    """
+    """The manifest answers for a foreign-bucket data file too, and the cache identity of that file
+    carries the bucket its qualified path names rather than the table's."""
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
 
@@ -378,8 +372,7 @@ def test_manifest_object_metadata_identifies_cross_bucket_data_files(
         "ParquetMetadataCacheHits",
     )
 
-    # First read: both data files are answered from the manifest, the foreign-bucket one included,
-    # and both footers are read from storage and cached.
+    # First read: both files answered from the manifest, both footers read from storage.
     first_result, (first_used, first_misses, _) = _query_with_profile_events(
         instance, read_query, f"{root_namespace}_first", settings, events
     )
@@ -387,8 +380,7 @@ def test_manifest_object_metadata_identifies_cross_bucket_data_files(
     assert first_used == 2
     assert first_misses == 2
 
-    # Second read: both footers are found under the identity the first read cached them with. A
-    # foreign-bucket file whose identity was not usable would show up here as a miss.
+    # Second read: a foreign-bucket file whose identity was unusable would show up as a miss.
     second_result, (second_used, _, second_hits) = _query_with_profile_events(
         instance, read_query, f"{root_namespace}_second", settings, events
     )
@@ -412,7 +404,6 @@ def test_manifest_object_metadata_identifies_cross_bucket_data_files(
         == "100"
     )
 
-    # And the setting changes no answer.
     assert (
         instance.query(
             read_query, settings={"use_iceberg_manifest_object_metadata": 0}

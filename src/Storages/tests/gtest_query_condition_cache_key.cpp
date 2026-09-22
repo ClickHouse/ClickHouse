@@ -9,8 +9,7 @@ using namespace DB;
 namespace
 {
 
-/// Two storage namespaces as `StorageObjectStorageConfiguration::getDataSourceDescription` reports
-/// them: the endpoint together with the bucket.
+/// Namespaces as `getDataSourceDescription` reports them: endpoint plus bucket.
 const String namespace_a = "storage.example.com443/bucket_a";
 const String namespace_b = "storage.example.com443/bucket_b";
 
@@ -112,10 +111,8 @@ TEST(QueryConditionCacheKey, DataLakeUsesTheNamespaceWithoutEtag)
     EXPECT_EQ(*no_meta_key, expected);
 }
 
-/// A data-lake path is stripped of its bucket (`s3://bucket/tbl/data/x.parquet` becomes
-/// `tbl/data/x.parquet`), and an object-storage table function reads under a nil table UUID, so the
-/// table UUID in the cache key does not separate two tables the way it does for `MergeTree`. The
-/// namespace has to, or one table's skip marks could be served for another table's data file.
+/// A data-lake path is bucket-relative and a table function reads under a nil table UUID, so without
+/// the namespace one table's skip marks could serve another table's file.
 TEST(QueryConditionCacheKey, DataLakeSeparatesTheNamespaces)
 {
     auto object_info = makeObjectInfo("tbl/data/00001.parquet", std::nullopt, /*etag_is_strong=*/ true);
@@ -127,7 +124,6 @@ TEST(QueryConditionCacheKey, DataLakeSeparatesTheNamespaces)
     ASSERT_TRUE(key_in_b.has_value());
     EXPECT_NE(*key_in_a, *key_in_b);
 
-    /// And the same data file in the same namespace still hits its own entry.
     EXPECT_EQ(
         *key_in_a,
         *StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ true, namespace_a));
