@@ -732,6 +732,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 if constexpr (IsDataTypeNumber<LeftDataType> || left_is_plain_decimal
                     || (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
                     || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+                    || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeTime64>)
                     || std::is_same_v<LeftDataType, DataTypeTime64>)
                 {
                     /// `accurateCast` rejects an unrepresentable value regardless of the overflow mode, and
@@ -747,6 +748,9 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     /// A `Time64` source needs it for the same reason as a `DateTime64` one - widening the scale of
                     /// a large value overflows the ticks - and it is also the path that keeps an accurate `Time64`
                     /// cast parameterized by the target scale.
+                    /// `DateTime64` to `Time64` projects the value to the seconds of the local day, which always fits,
+                    /// but a reduction of the scale drops a part of the fraction, and an accurate cast must reject
+                    /// such a lossy conversion instead of truncating it like `CAST` does.
                     if (cast_type == CastType::accurate)
                     {
                         AccurateConvertStrategyAdditions additions;

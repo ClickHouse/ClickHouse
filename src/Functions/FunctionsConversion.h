@@ -2602,20 +2602,39 @@ struct ConvertImpl
             const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
             time_zone = &from_type.getTimeZone();
 
+            const auto can_convert_exactly = [&](const auto & value)
+            {
+                if (col_from->getScale() <= col_to->getScale())
+                    return true;
+
+                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
+                return value.value % divisor == 0;
+            };
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
 
-                // accurateCastOrNull keeps the representability gate: is the rescaled value in range?
-                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                /// The projection to the seconds of the local day always fits the target, so the only way for
+                /// the conversion to be inexact is a reduction of the scale that drops a part of the fraction.
+                /// The accurate casts reject such a value (as NULL or as an exception) instead of truncating it.
+                if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
-                    ToFieldType result;
-                    if (!tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (!can_convert_exactly(vec_from[i]))
                     {
-                        vec_to[i] = static_cast<ToFieldType>(0);
-                        (*vec_null_map_to)[i] = true;
-                        continue;
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        {
+                            vec_to[i] = static_cast<ToFieldType>(0);
+                            (*vec_null_map_to)[i] = true;
+                            continue;
+                        }
+                        else
+                        {
+                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
+                                static_cast<double>(vec_from[i]), ToDataType::family_name);
+                        }
                     }
                 }
 
