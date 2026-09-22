@@ -1026,6 +1026,18 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     }
 }
 
+ASTPtr DatabaseReplicated::getCreateDatabaseQueryImpl() const
+{
+    ASTPtr ast = DatabaseOnDisk::getCreateDatabaseQueryImpl();
+
+    /// The metadata file may still hold a `logs_to_keep` above `UInt32::max`, if written by an older server.
+    auto * create = ast->as<ASTCreateQuery>();
+    if (create && create->storage && create->storage->settings)
+        DatabaseReplicatedSettings::checkOrClampLogsToKeep(*create->storage->settings, true /* clamp_on_overflow */);
+
+    return ast;
+}
+
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
 {
     DatabaseAtomic::beforeLoadingMetadata(context_, mode);

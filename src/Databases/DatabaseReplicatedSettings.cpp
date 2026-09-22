@@ -64,8 +64,11 @@ constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
 /// However, metadata written by an older server, and old server configs, may still contain values
 /// greater than `UInt32::max`; when such a value is replayed (server startup, short-syntax `ATTACH`,
 /// RESTORE) or read from the config, we clamp it to `UInt32::max` with a corresponding warning
-/// message in the logs. Metadata files/server config remain intact.
-void checkOrClampLogsToKeep(Field & logs_to_keep, bool clamp_on_overflow)
+/// message in the logs. The value is clamped in the definition itself, so a path that writes the
+/// metadata file from it (RESTORE) persists the clamped value. A replay of an existing metadata file
+/// does not rewrite the file; such a database clamps the value again when it exports its definition,
+/// see `DatabaseReplicated::getCreateDatabaseQueryImpl`. The server config is never rewritten.
+void checkOrClampLogsToKeepValue(Field & logs_to_keep, bool clamp_on_overflow)
 {
     /// Convert through the type the setting had before it was narrowed, so that everything an
     /// older server accepted is still accepted here and only the range check is new.
@@ -96,23 +99,25 @@ void checkOrClampLogsToKeep(Field & logs_to_keep, bool clamp_on_overflow)
 
 }
 
+void DatabaseReplicatedSettings::checkOrClampLogsToKeep(ASTSetQuery & settings, bool clamp_on_overflow)
+{
+    for (auto & change : settings.changes)
+    {
+        /// The shorthand form carries no value of its own; `applyChange` rejects it for a non-Bool
+        /// setting, and that is the error the operator should see.
+        if (change.name != "logs_to_keep" || change.shorthand)
+            continue;
+
+        checkOrClampLogsToKeepValue(change.value, clamp_on_overflow);
+    }
+}
+
 void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
-        /// A copy, because clamping must not reach the AST the metadata file is written back from.
-        SettingsChanges changes = storage_def.settings->changes;
-        for (auto & change : changes)
-        {
-            /// The shorthand form carries no value of its own; `applyChange` rejects it for a non-Bool
-            /// setting, and that is the error the operator should see.
-            if (change.name != "logs_to_keep" || change.shorthand)
-                continue;
-
-            checkOrClampLogsToKeep(change.value, loading_from_existing_metadata /* clamp_on_overflow */);
-        }
-
-        impl->applyChanges(changes);
+        checkOrClampLogsToKeep(*storage_def.settings, loading_from_existing_metadata /* clamp_on_overflow */);
+        impl->applyChanges(storage_def.settings->changes);
         return;
     }
 
@@ -138,7 +143,7 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
             if (key == "logs_to_keep")
             {
                 Field logs_to_keep = config.getString(config_elem + "." + key);
-                checkOrClampLogsToKeep(logs_to_keep, true /* clamp_on_overflow */);
+                checkOrClampLogsToKeepValue(logs_to_keep, true /* clamp_on_overflow */);
                 impl->set(key, logs_to_keep);
             }
             else

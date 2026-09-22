@@ -52,13 +52,38 @@ node_logs_to_keep_overflow = cluster.add_instance(
     main_configs=[
         "configs/config.xml",
         "configs/database_replicated_settings_overflow.xml",
+        "configs/backups_disk.xml",
     ],
     user_configs=["configs/users.xml"],
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard3", "replica": "1"},
     stay_alive=True,
     with_zookeeper=True,
+    external_dirs=["/backups/"],
 )
+
+
+def assert_exported_definition_is_clamped(node, db_name, stale_value, stage):
+    # Every surface that exports the definition goes through `getCreateDatabaseQuery`, which reparses
+    # the metadata file rather than serializing the live settings, so each is checked against the
+    # value the file holds: they must carry the clamped value, which `CREATE` accepts back, and not
+    # the stale literal, which it rejects. `stage` keeps the backup names apart when the same
+    # database is checked more than once: a backup is never overwritten.
+    show_create = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "logs_to_keep = 4294967295" in show_create
+    assert stale_value not in show_create
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert "logs_to_keep = 4294967295" in engine_full
+    assert stale_value not in engine_full
+
+    backup_name = f"{db_name}_exported_{stage}"
+    node.query(f"BACKUP DATABASE {db_name} TO Disk('backups', '{backup_name}')")
+    backup_definition = read_file(node, "backups", f"{backup_name}/metadata/{db_name}.sql")
+    assert "logs_to_keep = 4294967295" in backup_definition
+    assert stale_value not in backup_definition
 
 
 @pytest.fixture(scope="module")
@@ -284,6 +309,8 @@ def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
         "`logs_to_keep` of a Replicated database is 9999999999"
     )
     assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+    # The file is stale, but the definition the database exports is not.
+    assert_exported_definition_is_clamped(node, db_name, "9999999999", "attach")
 
     # Server startup replays the same file through a different path (an internal query with the full
     # definition, not the short syntax), and it must clamp too: rejecting would leave a server that
@@ -295,6 +322,8 @@ def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
         ).strip()
         == "1"
     )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+    assert_exported_definition_is_clamped(node, db_name, "9999999999", "restart")
 
     node.query(f"DROP DATABASE {db_name} SYNC")
 
@@ -338,8 +367,13 @@ def test_logs_to_keep_restore_of_out_of_range_backup(started_cluster):
     assert node.contains_in_log(
         "`logs_to_keep` of a Replicated database is 8888888888"
     )
-    # The clamp applies to the value in use only; the definition of record is written as restored.
-    assert "logs_to_keep = 8888888888" in read_metadata(node, f"metadata/{db_name}.sql")
+    # RESTORE writes a fresh metadata file from the restored definition, and the clamp is applied to
+    # that definition itself, so unlike a replayed file the definition of record holds the clamped
+    # value: nothing downstream of this restore ever sees the stale literal again.
+    restored_definition = read_metadata(node, f"metadata/{db_name}.sql")
+    assert "logs_to_keep = 4294967295" in restored_definition
+    assert "8888888888" not in restored_definition
+    assert_exported_definition_is_clamped(node, db_name, "8888888888", "restore")
 
     node.query(f"DROP DATABASE {db_name} SYNC")
 
