@@ -264,7 +264,6 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    /// The scan is bounded by `table_path`; external references, including historical ones, make cleanup unsafe.
     auto [reachable, metadata_version, metadata_path, external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true);
@@ -294,7 +293,6 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    /// Only the traversal root is needed for TOCTOU detection.
     auto [_recheck_files, recheck_version, recheck_path, _recheck_external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true);

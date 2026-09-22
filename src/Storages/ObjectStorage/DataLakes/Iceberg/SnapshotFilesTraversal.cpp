@@ -311,17 +311,14 @@ ReachableFilesResult collectReachableFiles(
     std::set<std::pair<const IObjectStorage *, String>> seen_external;
     const auto & resolver = persistent_table_components.path_resolver;
 
-    String base_subtree_prefix = persistent_table_components.table_path;
-    if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
-        base_subtree_prefix += '/';
-
-    chassert(metadata_path.starts_with(base_subtree_prefix));
+    chassert(isObjectInTableDirectory(
+        object_storage, metadata_path, object_storage, persistent_table_components.table_path));
 
     auto visit = [&](const IcebergPathFromMetadata & path)
     {
         auto [storage, key] = resolveObjectStorageForPath(
             persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
-        if (storage.get() == object_storage.get() && key.starts_with(base_subtree_prefix))
+        if (isObjectInTableDirectory(storage, key, object_storage, persistent_table_components.table_path))
             reachable.insert(std::move(key));
         else if (seen_external.emplace(storage.get(), key).second)
             external_files.emplace_back(std::move(storage), std::move(key));
@@ -340,8 +337,8 @@ ReachableFilesResult collectReachableFiles(
         auto visit_history = [&](const IcebergPathFromMetadata & path)
         {
             auto [storage, key] = resolveObjectStorageForPath(
-                persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
-            if (storage.get() == object_storage.get() && key.starts_with(base_subtree_prefix))
+            persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
+            if (isObjectInTableDirectory(storage, key, object_storage, persistent_table_components.table_path))
                 return;
 
             const std::pair<const IObjectStorage *, String> external_id{storage.get(), key};

@@ -123,7 +123,6 @@ std::optional<AccessTypeObjects::Source> sourceForScheme(const std::string & nor
 #if USE_AWS_S3
 S3::URI parseMetadataS3URI(const std::string & path, const SchemeAuthorityKey & decomposed)
 {
-    /// Normalize only Hadoop aliases; other schemes select their own provider in `S3::URI`.
     const auto normalized_path = decomposed.scheme == "s3a" || decomposed.scheme == "s3n"
         ? "s3://" + decomposed.authority + "/" + decomposed.key : path;
     /// Metadata keys are already encoded; percent-decoding would change keys such as `col=12%3A00%3A00`.
@@ -846,7 +845,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         });
 }
 
-std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
+static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
@@ -898,6 +897,18 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context))
         return *resolved;
     return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
+}
+
+bool isObjectInTableDirectory(
+    const ObjectStoragePtr & storage,
+    const std::string & key,
+    const ObjectStoragePtr & table_storage,
+    const std::string & table_path)
+{
+    if (storage != table_storage || !key.starts_with(table_path))
+        return false;
+    return table_path.empty() || table_path.ends_with('/')
+        || (key.size() > table_path.size() && key[table_path.size()] == '/');
 }
 
 void resolveObjectStorageFromDataLakeMetadata(

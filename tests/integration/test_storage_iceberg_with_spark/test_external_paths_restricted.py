@@ -115,7 +115,7 @@ def test_delete_data_on_drop_uses_configured_metadata_head(started_cluster):
         f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergS3({args}) "
         f"SETTINGS iceberg_metadata_file_path = 'metadata/{head}'")
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
     assert count_objects(f"{external_prefix}/") > 0
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")

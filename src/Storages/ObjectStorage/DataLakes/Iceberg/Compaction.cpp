@@ -329,10 +329,6 @@ static Plan getPlan(
         }
     }
 
-    String base_subtree_prefix = persistent_table_components.table_path;
-    if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
-        base_subtree_prefix += '/';
-
     for (const auto & raw_path : referenced_file_paths)
     {
         auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
@@ -343,7 +339,8 @@ static Plan getPlan(
             context,
             persistent_table_components.path_resolver);
 
-        if (storage_to_use.get() != object_storage.get() || !key_in_storage.starts_with(base_subtree_prefix))
+        if (!isObjectInTableDirectory(
+                storage_to_use, key_in_storage, object_storage, persistent_table_components.table_path))
             plan.external_files.push_back(raw_path);
     }
 

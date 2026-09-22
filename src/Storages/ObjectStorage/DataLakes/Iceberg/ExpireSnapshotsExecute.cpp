@@ -603,10 +603,6 @@ std::vector<Iceberg::IcebergPathFromMetadata> collectExternalExpiredFiles(
     ContextPtr context,
     ExternalStorageCache & external_storages)
 {
-    String base_subtree_prefix = persistent_table_components.table_path;
-    if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
-        base_subtree_prefix += '/';
-
     std::vector<Iceberg::IcebergPathFromMetadata> external;
     for (const auto & [file_path, _] : files)
     {
@@ -614,7 +610,8 @@ std::vector<Iceberg::IcebergPathFromMetadata> collectExternalExpiredFiles(
             persistent_table_components.path_resolver.getTableLocation(), file_path.serialize(), object_storage,
             external_storages, context, persistent_table_components.path_resolver);
 
-        if (storage_to_use.get() != object_storage.get() || !key_in_storage.starts_with(base_subtree_prefix))
+        if (!isObjectInTableDirectory(
+                storage_to_use, key_in_storage, object_storage, persistent_table_components.table_path))
             external.push_back(file_path);
     }
     return external;

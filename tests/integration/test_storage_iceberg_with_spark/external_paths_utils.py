@@ -76,17 +76,6 @@ def get_uploader(storage_type: str, cluster):
         raise ValueError(f"Unknown storage type: {storage_type}")
 
 
-def get_table_function(metadata_storage: str):
-    if metadata_storage == "s3" or metadata_storage.startswith("s3:"):
-        return "icebergS3"
-    elif metadata_storage == "azure" or metadata_storage.startswith("azure:"):
-        return "icebergAzure"
-    elif metadata_storage == "local":
-        return "icebergLocal"
-    else:
-        raise ValueError(f"Unknown storage type: {metadata_storage}")
-
-
 def get_query_args(metadata_storage: str, cluster, table_path: str):
     minio_url = f"http://{cluster.minio_host}:{cluster.minio_port}"
     if metadata_storage == "s3":
@@ -192,11 +181,12 @@ def _distribute_table_components(started_cluster, table_name, metadata_storage, 
     return base_path
 
 
-def _move_files_to_bucket(started_cluster, files, bucket, host_path, base_path):
+def _move_files_to_bucket(started_cluster, files, bucket, host_path, base_path, destination_prefix=None):
     uploader = S3Uploader(started_cluster.minio_client, bucket)
     for f in files:
         rel = os.path.relpath(f, host_path)
-        uploader.upload_file(f, f"{base_path}/{rel}")
+        destination = f"{destination_prefix}/{os.path.basename(f)}" if destination_prefix else f"{base_path}/{rel}"
+        uploader.upload_file(f, destination)
         started_cluster.minio_client.remove_object(started_cluster.minio_bucket, f"{base_path}/{rel}")
 
 
@@ -262,11 +252,9 @@ def relocate_data_files_to_bucket(started_cluster, table_name, data_bucket, pref
     _rewrite_manifests_and_reupload(
         started_cluster, host_path, base_path,
         lambda p: f"{uri}/{prefix}/{os.path.basename(p)}")
-    uploader = S3Uploader(started_cluster.minio_client, data_bucket)
-    for f in find_files(os.path.join(host_path, "data"), ".parquet"):
-        uploader.upload_file(f, f"{prefix}/{os.path.basename(f)}")
-        rel = os.path.relpath(f, host_path)
-        started_cluster.minio_client.remove_object(started_cluster.minio_bucket, f"{base_path}/{rel}")
+    _move_files_to_bucket(
+        started_cluster, find_files(os.path.join(host_path, "data"), ".parquet"),
+        data_bucket, host_path, base_path, prefix)
     shutil.rmtree(temp_dir)
     return base_path
 

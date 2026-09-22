@@ -1,6 +1,7 @@
 
 from helpers.iceberg_utils import get_uuid_str
 from .external_paths_utils import (
+    ALL_ROWS,
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
@@ -34,7 +35,7 @@ def test_propagate_credentials_to_other_endpoint(started_cluster_iceberg_with_sp
         f"SELECT * FROM {table_function} ORDER BY id "
         f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1, "
         f"s3_allow_server_credentials_in_user_queries = 1")
-    assert result == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert result == ALL_ROWS
 
 
 def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg_with_spark):
@@ -64,7 +65,7 @@ def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg
     assert "ACCESS_DENIED" in error, error
 
     instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/.*') TO {user}")
-    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
     assert instance.query(f"SELECT count() FROM {table_function}", user=user) == "3\n"
 
     instance.query(f"DROP USER {user}")
@@ -94,6 +95,6 @@ def test_external_local_file_requires_file_grant(started_cluster_iceberg_with_sp
     assert "ACCESS_DENIED" in error, error
 
     instance.query(f"GRANT READ ON FILE('/{base_path}/data/.*') TO {user}")
-    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
 
     instance.query(f"DROP USER {user}")

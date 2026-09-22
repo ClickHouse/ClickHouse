@@ -39,12 +39,9 @@ def test_optimize_manifest_with_external_manifest_list(started_cluster_iceberg_w
 
     base_path = relocate_manifest_lists_to_bucket(started_cluster_iceberg_with_spark, TABLE_NAME, external_bucket(started_cluster_iceberg_with_spark))
 
-    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
-    args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
-    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
-    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergS3({args})")
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
 
     def count_metadata_files():
         return sum(
@@ -64,7 +61,7 @@ def test_optimize_manifest_with_external_manifest_list(started_cluster_iceberg_w
 
     assert count_metadata_files() > metadata_files_before
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 

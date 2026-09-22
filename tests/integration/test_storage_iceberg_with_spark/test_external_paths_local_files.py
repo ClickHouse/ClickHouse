@@ -2,6 +2,7 @@ import pytest
 
 from helpers.iceberg_utils import additional_upload_directory, default_upload_directory, get_uuid_str
 from .external_paths_utils import (
+    ALL_ROWS,
     create_and_upload_table,
     _check_cluster_function_rejects_table,
     _create_iceberg_s3_table,
@@ -16,7 +17,7 @@ def test_cluster_function_rejects_external_local_file(started_cluster_iceberg_wi
     create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
     base_path = _rewrite_paths_to_local_uri(started_cluster_iceberg_with_spark, TABLE_NAME, "localhost")
 
-    _check_cluster_function_rejects_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path, "1\talpha\n2\tbeta\n3\tgamma\n")
+    _check_cluster_function_rejects_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path, ALL_ROWS)
 
 
 def test_cluster_function_rejects_external_local_delete_file(started_cluster_iceberg_with_spark):
@@ -58,7 +59,7 @@ def test_local_table_with_external_data_files(started_cluster_iceberg_with_spark
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
     instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{host_path}', format=Parquet)")
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 

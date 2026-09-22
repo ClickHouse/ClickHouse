@@ -8,7 +8,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -37,15 +36,6 @@ struct ExternalStorageCache
     std::map<std::string, ObjectStoragePtr> storages;
 };
 
-/// Returns `std::nullopt` for relative paths and paths under the declared table location;
-/// these must be re-rooted by `IcebergPathResolver`.
-std::optional<std::pair<ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
-    const std::string & table_location,
-    const std::string & path,
-    const ObjectStoragePtr & base_storage,
-    ExternalStorageCache & external_storages,
-    const ContextPtr & context);
-
 /// Checks grants without opening storage. Unreadable paths remain visible in `system.iceberg_files`.
 bool isPathReadGranted(
     const std::string & table_location,
@@ -67,6 +57,12 @@ std::pair<ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     ExternalStorageCache & external_storages,
     const ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver);
+
+bool isObjectInTableDirectory(
+    const ObjectStoragePtr & storage,
+    const std::string & key,
+    const ObjectStoragePtr & table_storage,
+    const std::string & table_path);
 
 void resolveObjectStorageFromDataLakeMetadata(
     const ObjectInfoPtr & object,
