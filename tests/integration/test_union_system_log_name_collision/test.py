@@ -149,9 +149,9 @@ def test_user_table_created_during_the_replacement_survives(started_cluster):
     """A user table created while the union table is being created must not be replaced.
 
     The union table's owner is classified outside any `DDLGuard`, so between that decision and the
-    exchange that publishes the new table another session can put a table of its own on the name. The
-    replacement is gated on a re-check that `InterpreterCreateQuery` runs under the target name's
-    `DDLGuard`, immediately before the exchange, so that table is left alone.
+    exchange that publishes the new table another session can put a table of its own on the name.
+    `CREATE OR REPLACE` of a generated union table definition re-applies the ownership rule itself, under
+    the target name's `DDLGuard` immediately before the exchange, so that table is left alone.
     """
     # Start from the state the previous test leaves: the union tables exist and are up to date.
     node.query("SELECT 42")
@@ -193,7 +193,7 @@ def test_user_table_created_during_the_replacement_survives(started_cluster):
         )
         == "MergeTree\n"
     )
-    # The message of the re-check that ran under the `DDLGuard`, not the one of the up-front check.
+    # The message of the refusal under the `DDLGuard`, not the one of the up-front check.
     assert node.contains_in_log(
         "the name was taken by a table that this server did not generate for it while the"
     )

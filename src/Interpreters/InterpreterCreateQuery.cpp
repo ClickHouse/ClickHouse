@@ -61,6 +61,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/SystemLogUnionTable.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
@@ -3040,15 +3041,37 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// `getRequiredAccess`) and `DROP` of the replaced table's own kind in `pre_swap_check` below, which
         /// still runs as the user.
         ContextPtr rename_context = is_plain_create ? ContextPtr{make_internal_context(/*bypass_size_guard=*/false)} : current_context;
+
+        /// A definition that `SystemLog::prepareUnionTable` generates declares itself, in its comment, a data-free
+        /// proxy that is safe to drop at any time, and the log flush replaces such a table whenever its
+        /// definition is outdated. Dropping the replaced table is safe only if it is such a proxy too, and that
+        /// has to be decided here, under the `DDLGuard` of the target name, from the query alone: the flush took
+        /// its decision outside any guard, and a database that replicates its DDL replays this query from its
+        /// text on the DDL worker, where nothing but the text is available. So `CREATE OR REPLACE` of such a
+        /// definition refuses to replace anything that is not a generated union table of the same log, whoever
+        /// issues it; a user who really wants that has to drop the existing table first.
+        const std::optional<StorageID> generated_union_table_log = getSystemLogOfGeneratedUnionTable(create);
+
         InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
         interpreter_rename.setSkipAccessCheck(true);
         interpreter_rename.setPreSwapCheck(
-            [&current_context, this](const StorageID & to_drop_id)
+            [&current_context, &generated_union_table_log](const StorageID & to_drop_id)
             {
-                /// The caller's own condition on the table being replaced, re-checked here because this
-                /// runs under the target name's `DDLGuard` while the caller's decision did not.
-                if (replaced_table_check)
-                    replaced_table_check(to_drop_id);
+                if (generated_union_table_log)
+                {
+                    ASTPtr to_drop_create_query = DatabaseCatalog::instance()
+                        .getDatabase(to_drop_id.database_name)
+                        ->getCreateTableQuery(to_drop_id.table_name, current_context);
+                    if (!isGeneratedUnionTable(to_drop_create_query, *generated_union_table_log))
+                        throw Exception(
+                            ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Not replacing table {}: the new definition is a union table generated for the system log {},"
+                            " which may only replace another one, and the existing table is not one: {}."
+                            " Drop the existing table first if this is intended.",
+                            to_drop_id.getNameForLogs(),
+                            generated_union_table_log->getNameForLogs(),
+                            to_drop_create_query->formatForErrorMessage());
+                }
 
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
                 {

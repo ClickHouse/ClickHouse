@@ -1,0 +1,10 @@
+10	precious
+MergeTree
+1
+event_date
+query
+MergeTree
+10	precious
+ReplicatedMergeTree
+event_date
+query

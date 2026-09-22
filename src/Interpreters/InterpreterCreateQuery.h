@@ -6,13 +6,10 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-
-#include <functional>
 
 
 namespace DB
@@ -81,19 +78,6 @@ public:
     {
         is_restore_from_backup = is_restore_from_backup_;
     }
-
-    /// Invoked by a `CREATE OR REPLACE TABLE` / `REPLACE TABLE` query, while the `DDLGuard` of the target
-    /// name is held and immediately before the exchange that replaces it, with the `StorageID` of the table
-    /// that is about to be dropped. Throwing from it aborts the replacement atomically: no exchange happens
-    /// and the exception propagates out of `execute`. It is not called when the target name is free, because
-    /// then nothing is replaced.
-    ///
-    /// This is how a caller that decided to replace a table only because of what that table is can hold that
-    /// decision against concurrent DDL: the decision is taken outside any guard, so by the time the exchange
-    /// runs another session may have dropped the inspected table and created a different one on its name.
-    /// Re-checking here runs under the guard, so what the callback sees is what the exchange will replace.
-    using ReplacedTableCheck = std::function<void(const StorageID &)>;
-    void setReplacedTableCheck(ReplacedTableCheck check) { replaced_table_check = std::move(check); }
 
     static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
 
@@ -225,8 +209,6 @@ private:
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
     bool is_metadata_replay = false;
-
-    ReplacedTableCheck replaced_table_check;
 
     String as_database_saved;
     String as_table_saved;
