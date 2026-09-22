@@ -7,11 +7,10 @@ date conversion
 3	0	0	0
 IP conversion settings
 date parsing settings
+nullable conversion, unparsable string
 nullable conversion results
-1	1	0	1	1	1	1	1
 2	0	0	0	0	0	0	0
 3	0	1	0	0	0	0	0
-1	1	0	1	1	1	1	1
 2	0	0	0	0	0	0	0
 3	0	1	0	0	0	0	0
 composite null key, transform_null_in=0

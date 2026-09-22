@@ -77,7 +77,8 @@ SELECT dictGet('conversion_dates', 'attr', s) LIKE 'si%' FROM conversion_strings
 
 SET cast_string_to_date_time_mode = 'basic';
 
--- A conversion to a nullable key can find a stored `NULL` even for a non-null input string.
+-- An unparsable string throws for a nullable key too, with and without the rewrite: the accurate
+-- conversion of the key does not turn it into a `NULL` that would find a stored `NULL` key.
 CREATE TABLE conversion_null_source (k1 Nullable(UInt8), k2 Nullable(UInt8), s String, attr String) ENGINE = Memory;
 INSERT INTO conversion_null_source VALUES (NULL, 1, 'a', 'hit'), (1, NULL, 'a', 'other'), (2, 2, 'b', 'many'), (3, 3, 'b', 'many');
 CREATE DICTIONARY conversion_null_scalar (k1 Nullable(UInt8), attr String DEFAULT '')
@@ -87,7 +88,23 @@ PRIMARY KEY k1, s SOURCE(CLICKHOUSE(TABLE 'conversion_null_source')) LAYOUT(COMP
 CREATE DICTIONARY conversion_null_second (s String, k2 Nullable(UInt8), attr String DEFAULT '')
 PRIMARY KEY s, k2 SOURCE(CLICKHOUSE(TABLE 'conversion_null_source')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
 TRUNCATE TABLE conversion_strings;
-INSERT INTO conversion_strings VALUES (1, 'bad', ('bad', 'a')), (2, '1', ('1', 'a')), (3, '2', ('2', 'b'));
+INSERT INTO conversion_strings VALUES (1, 'bad', ('bad', 'a'));
+SELECT 'nullable conversion, unparsable string';
+
+SELECT dictGet('conversion_null_scalar', 'attr', s) = 'hit' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT dictGet('conversion_null_scalar', 'attr', s) = 'hit' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT dictGet('conversion_null_first', 'attr', (s, 'a')) = 'hit' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT dictGet('conversion_null_first', 'attr', (s, 'a')) = 'hit' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT dictGet('conversion_null_second', 'attr', ('a', s)) LIKE 'oth%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_TEXT }
+
+SELECT dictGet('conversion_null_second', 'attr', ('a', s)) LIKE 'oth%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_TEXT }
+
+TRUNCATE TABLE conversion_strings;
+INSERT INTO conversion_strings VALUES (2, '1', ('1', 'a')), (3, '2', ('2', 'b'));
 SELECT 'nullable conversion results';
 
 SELECT id,
