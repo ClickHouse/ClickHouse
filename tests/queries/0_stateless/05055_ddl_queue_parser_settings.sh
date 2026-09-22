@@ -29,7 +29,7 @@ ${CLICKHOUSE_CLIENT} \
     --enable_trino_dialect=1 \
     --promql_database=promql_database_from_context \
     --promql_table=promql_table_from_context \
-    --promql_evaluation_time=1234567890 \
+    --promql_evaluation_time=42 \
     --enable_time_series_table=1 \
     --join_use_nulls=1 \
     --distributed_ddl_output_mode=none \
@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} \
             enable_trino_dialect = 1,
             promql_database = 'promql_database_from_query',
             promql_table = 'promql_table_from_query',
-            evaluation_time = 1234567891,
+            evaluation_time = 43,
             enable_time_series_table = 1,
             join_use_nulls = 1"
 
