@@ -129,7 +129,8 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                     generate_target_uuid(ViewTarget::RecentSamples);
 
                 bool tags_min_max_enabled = (*time_series_version >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
-                    && getTimeSeriesSettingStoreMinTimeAndMaxTime(query);
+                    && getTimeSeriesSettingStoreMinTimeAndMaxTime(query)
+                    && query.getTargetTableID(ViewTarget::Tags).empty();
                 if (for_restore && !hasExplicitTimeSeriesSettingVersion(query))
                 {
                     /// A query restored from a backup can come from a version before the `version` setting existed,

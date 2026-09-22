@@ -185,7 +185,7 @@ DROP TABLE ts_bounds;
 -- `part_log` rather than by rows, because the tags target is a ReplacingMergeTree and a background
 -- merge could collapse the duplicate id.
 DROP TABLE IF EXISTS ts_multiblock;
-CREATE TABLE ts_multiblock ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0;
+CREATE TABLE ts_multiblock ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0, tags_cache_max_series = 1000;
 
 INSERT INTO ts_multiblock (metric_name, tags, samples)
 SELECT 'mb_requests', map('job', 'api', 'instance', 'host1:8080'),

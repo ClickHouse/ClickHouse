@@ -138,6 +138,14 @@
                     <table>default.prometheus_datetime</table>
                 </handler>
             </my_rule_17>
+            <!-- External tags keep their time bounds in the tags table, including at version 6. -->
+            <my_rule_18>
+                <url_prefix>/external_tags</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>external_tags.prometheus</table>
+                </handler>
+            </my_rule_18>
         </handlers>
     </prometheus>
 </clickhouse>

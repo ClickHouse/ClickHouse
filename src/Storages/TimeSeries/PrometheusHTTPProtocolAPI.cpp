@@ -550,16 +550,11 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         min_time.reset();
         max_time.reset();
     }
-    else if (time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
+    else if (time_series_storage->hasTarget(ViewTarget::TagsMinMax))
     {
-        if (time_series_storage->hasTarget(ViewTarget::TagsMinMax))
-            tags_min_max_table_id = time_series_storage->getTargetTableID(ViewTarget::TagsMinMax, getContext());
-        else
-        {
-            min_time.reset();
-            max_time.reset();
-        }
+        tags_min_max_table_id = time_series_storage->getTargetTableID(ViewTarget::TagsMinMax, getContext());
     }
+    /// Without a separate target, the bounds remain in the tags table, including external tags at version 6.
 
     auto tags_table_id = tags_table->getStorageID();
 
