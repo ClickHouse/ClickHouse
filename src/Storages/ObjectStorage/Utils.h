@@ -42,6 +42,16 @@ public:
         return true;
     }
 
+    /// The same for the key the insert starts with, which is a part of the table already,
+    /// see `StorageObjectStorageConfiguration::tryReserveStartingPathForWrite`.
+    bool tryReserveStartingPath(const std::string & path)
+    {
+        if (!configuration->tryReserveStartingPathForWrite(path))
+            return false;
+        reserved.push_back(path);
+        return true;
+    }
+
 private:
     StorageObjectStorageConfigurationPtr configuration;
     std::vector<std::string> reserved;
@@ -49,10 +59,12 @@ private:
 
 using WrittenPathReservationsPtr = std::shared_ptr<WrittenPathReservations>;
 
-/// Checks whether the insert can write into the object with the given key. If the object exists and
-/// `*_create_new_file_on_insert` is enabled, returns the first free key of `numbered_keys` starting from
-/// `sequence_number`, which is advanced past the returned key so that an insert split by size continues
-/// the numbering from it. A key that another insert into the same table has reserved is taken as well.
+/// Checks whether the insert can write into the object with the given key, and reserves the key it is going
+/// to write. If the object exists and `*_create_new_file_on_insert` is enabled, returns the first free key
+/// of `numbered_keys` starting from `sequence_number`, which is advanced past the returned key so that an
+/// insert split by size continues the numbering from it. A key that another insert into the same table has
+/// reserved is taken as well - also the starting key itself: its object is not there until the insert writing
+/// it is committed, and without the reservation every concurrent insert would start writing the same key.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,

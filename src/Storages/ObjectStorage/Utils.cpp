@@ -49,8 +49,20 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     size_t & sequence_number,
     WrittenPathReservations & reservations)
 {
-    if (settings.truncate_on_insert
-        || !object_storage.exists(StoredObject(key)))
+    if (settings.truncate_on_insert)
+    {
+        /// A truncating insert overwrites the starting key by its very contract, also when another truncating
+        /// insert is writing it right now. It still reserves the key when it can, so that a concurrent insert
+        /// with `*_create_new_file_on_insert` steps aside from it while the object is not there yet.
+        reservations.tryReserveStartingPath(key);
+        return std::nullopt;
+    }
+
+    /// The starting key is free when the object is not there and no other insert into this table is writing it:
+    /// the object appears only when that insert is committed, and until then the reservation is the only thing
+    /// that tells the two inserts apart - without it both would write the same key, and one would lose its rows.
+    const bool object_exists = object_storage.exists(StoredObject(key));
+    if (!object_exists && reservations.tryReserveStartingPath(key))
         return std::nullopt;
 
     if (settings.create_new_file_on_insert)
@@ -66,6 +78,14 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
         return new_key;
     }
+
+    if (!object_exists)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object in bucket {} with key {} is being written by a concurrent insert into the table. "
+            "If you want to overwrite it, enable setting {}_truncate_on_insert, if you "
+            "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
+            configuration.getNamespace(), key, configuration.getTypeName(), configuration.getTypeName());
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,

@@ -935,10 +935,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// had to step aside from an existing object into a numbered key.
     const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
     size_t sequence_number = numbered_keys.start_sequence_number;
-    /// Every generated key is reserved until the insert is over, so that a concurrent insert into the same
-    /// table generates a different one: a key is published for the readers only after its object has been
-    /// committed, and until then the object storage does not have it either, so nothing else would tell the
-    /// two inserts apart and one of them would overwrite the data of the other.
+    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
+    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
+    /// for the readers only after its object has been committed, and until then the object storage does not have
+    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
     auto reservations = std::make_shared<WrittenPathReservations>(configuration);
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
@@ -965,16 +965,14 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// single atomic step on the shared list, so that a `SELECT` that snapshots it concurrently sees either
     /// the list without this key or the list with it, and never a copy of a vector that is being
     /// reallocated under it.
-    if (!first_key_is_published || get_next_path)
+    ///
+    /// The reservations are captured here as well, so that they outlive the sink: the sink calls the callback
+    /// only for a key that is not published yet, but the starting key of a plain insert is reserved as well,
+    /// and it has to stay reserved until the insert is over even though nothing is ever published for it.
+    publish_path = [config = configuration, reservations](const String & new_key)
     {
-        /// The reservations of the generated keys are captured here as well: they have to outlive the sink,
-        /// and this callback is created exactly when the insert has generated a key - the first one, a next
-        /// one of a split, or both.
-        publish_path = [config = configuration, reservations](const String & new_key)
-        {
-            config->appendPath({new_key});
-        };
-    }
+        config->appendPath({new_key});
+    };
 
     return std::make_shared<StorageObjectStorageSink>(
         first_key,

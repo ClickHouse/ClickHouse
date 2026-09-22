@@ -202,6 +202,17 @@ public:
         return paths_reserved_for_write.paths.insert(path).second;
     }
 
+    /// The same for the key an insert starts with - the raw path of a plain table, or the path of a partition.
+    /// It is a part of the table already, so it is published whether its object exists or not, and it is
+    /// reserved against the concurrent inserts into the table only: when the object is not there yet, the
+    /// reservation is the only thing that tells the concurrent inserts apart, and they would all write it.
+    /// Returns false when another insert into this table is writing this key right now.
+    bool tryReserveStartingPathForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_reserved_for_write.paths.insert(path).second;
+    }
+
     void releasePathReservedForWrite(const String & path)
     {
         std::lock_guard lock(paths_mutex);
