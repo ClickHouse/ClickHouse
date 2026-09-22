@@ -59,6 +59,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <Common/memcpySmall.h>
+
+#include <base/memcmpSmall.h>
+
 #include <limits>
 
 namespace DB
@@ -563,6 +567,9 @@ public:
     }
 
 private:
+    /// Values up to this length are padded on the stack instead of through a `String`.
+    static constexpr size_t max_padding_on_stack = 64;
+
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
     {
@@ -575,15 +582,25 @@ private:
         // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
         // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
         // the data is padded here and written directly to the Low Cardinality Column
+        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         if (value.size() == fixed_length)
         {
-            assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
+            lc_column.insertData(value.data(), value.size());
+        }
+        else if (fixed_length <= max_padding_on_stack)
+        {
+            /// Building a `String` here costs a copy plus an out of line `resize` on every value.
+            /// The buffer is zeroed with a constant size so that the compiler inlines it.
+            char padded_value[max_padding_on_stack];
+            memset(padded_value, 0, max_padding_on_stack);
+            memcpySmall(padded_value, value.data(), value.size());
+            lc_column.insertData(padded_value, fixed_length);
         }
         else
         {
             String padded_value(value);
             padded_value.resize(fixed_length, '\0');
-            assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
+            lc_column.insertData(padded_value.data(), padded_value.size());
         }
         return true;
     }
@@ -1465,6 +1482,9 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
+        /// When every element got its own value, all the nested columns already have the right size
+        /// and the `set_size` walk below (a virtual `size` per element) can be skipped.
+        size_t inserted_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1482,6 +1502,14 @@ public:
             }
         };
 
+        auto set_size_after_success = [&](size_t size)
+        {
+            /// Every element took exactly one value, so every nested column is already at `size`.
+            if (were_valid_elements && inserted_elements == tuple.tupleSize())
+                return;
+            set_size(size);
+        };
+
         if (element.isArray())
         {
             auto array = element.getArray();
@@ -1492,10 +1520,12 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
+                    ++inserted_elements;
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
+                    ++inserted_elements;
                 }
                 else
                 {
@@ -1505,7 +1535,7 @@ public:
                 }
             }
 
-            set_size(old_size + static_cast<size_t>(were_valid_elements));
+            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1520,10 +1550,12 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
+                        ++inserted_elements;
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
+                        ++inserted_elements;
                     }
                     else
                     {
@@ -1535,26 +1567,48 @@ public:
             }
             else
             {
+                /// Objects usually list their keys in the order the tuple declares them, so try the
+                /// next expected name before hashing the key for `name_to_index_map`.
+                size_t expected_index = 0;
+                auto matches_expected_name = [&](std::string_view key)
+                {
+                    if (expected_index >= explicit_names.size())
+                        return false;
+                    const String & name = explicit_names[expected_index];
+                    return memequalSmall(key.data(), key.size(), name.data(), name.size());
+                };
+
                 for (const auto & [key, value] : object)
                 {
-                    auto index = name_to_index_map.find(key);
-                    if (index != name_to_index_map.end())
+                    size_t index;
+                    if (matches_expected_name(key))
                     {
-                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
-                        {
-                            were_valid_elements = true;
-                        }
-                        else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
-                        {
-                            set_size(old_size);
-                            error += fmt::format(" (during reading tuple element \"{}\")", key);
-                            return false;
-                        }
+                        index = expected_index;
+                    }
+                    else
+                    {
+                        auto it = name_to_index_map.find(key);
+                        if (it == name_to_index_map.end())
+                            continue;
+                        index = it->second;
+                    }
+                    expected_index = index + 1;
+
+                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
+                    {
+                        were_valid_elements = true;
+                        ++inserted_elements;
+                    }
+                    else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
+                    {
+                        set_size(old_size);
+                        error += fmt::format(" (during reading tuple element \"{}\")", key);
+                        return false;
                     }
                 }
             }
 
-            set_size(old_size + static_cast<size_t>(were_valid_elements));
+            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
