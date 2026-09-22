@@ -3735,12 +3735,19 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The worker materializes `AS src` in its own database, so pin ours like the UUIDs above.
-            /// We may not have the table here to tell whether it holds credentials, so ask for `SELECT`.
+            /// The worker materializes `AS src` with no user and resolves it in its own database, so
+            /// pin ours like the UUIDs above and authorize here what it will inherit: the source table
+            /// and the engine that comes with it. `getRequiredAccess` cannot see that engine, because
+            /// this query has none of its own.
             if (!create.as_table.empty())
             {
                 create.as_database = getContext()->resolveDatabase(create.as_database);
                 getContext()->checkAccess(AccessType::SELECT, create.as_database, create.as_table);
+
+                auto as_create = DatabaseCatalog::instance().getDatabase(create.as_database, getContext())
+                                     ->getCreateTableQuery(create.as_table, getContext());
+                if (const auto & as_storage = as_create->as<ASTCreateQuery &>().storage; as_storage && as_storage->engine)
+                    getContext()->checkAccess(AccessType::TABLE_ENGINE, as_storage->engine->name);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,

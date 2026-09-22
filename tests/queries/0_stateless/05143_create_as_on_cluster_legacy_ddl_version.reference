@@ -8,5 +8,10 @@ necessary to have the grant SELECT ON db.url_src
 after GRANT SELECT:
 -- copy_legacy:
 URL
+-- copy_current:
+URL
 -- copy_legacy_unqualified:
 URL
+with SELECT but without the grant for the engine:
+-- copy_no_url:
+necessary to have the grant TABLE ENGINE ON URL
