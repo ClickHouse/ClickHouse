@@ -252,14 +252,13 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Other replicas' "requested-*" znodes: czxid (a re-created znode is a new request) and when this replica first saw
-        /// that request pending with nothing running; a Keeper session timeout later it runs it itself (`doScheduling`).
-        struct OtherReplicaRequest
+        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; czxid tells a re-created znode apart, see `doScheduling`.
+        struct PendingRequest
         {
             Int64 czxid = 0;
             std::optional<std::chrono::system_clock::time_point> pending_since {};
         };
-        std::map<String, OtherReplicaRequest> other_replicas_requests;
+        std::map<String, PendingRequest> pending_requests;
         /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
         /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
         UInt64 znode_reads_started = 0;
@@ -311,7 +310,7 @@ private:
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
-        /// `out_of_schedule_refresh_requested`, etc.
+        /// `pending_requests`, etc.
         std::atomic_bool interrupt_execution {false};
         CompletedPipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
@@ -339,10 +338,6 @@ private:
         bool stop_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
-        /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
-        /// For a coordinated view, whether this replica's "requested-<replica>" znode exists, see `readZnodesIfNeeded`.
-        bool out_of_schedule_refresh_requested = false;
-
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
         /// View Y: REFRESH AFTER 20 SECOND DEPENDS ON X.
@@ -413,7 +408,7 @@ private:
     /// It runs whenever anything changes (e.g. znodes change, or refresh completes, or retry timer fires).
     /// It looks at the state of everything and decides what needs to be done.
     /// Public methods just provide inputs for the doScheduling()'s decisions
-    /// (e.g. stop_requested, out_of_schedule_refresh_requested), they don't do anything significant themselves.
+    /// (e.g. stop_requested, pending_requests), they don't do anything significant themselves.
     /// If is_shutdown, both background tasks were stopped, and we only need to write to zookeeper
     /// to reflect that this replica is not running a refresh anymore.
     ///
