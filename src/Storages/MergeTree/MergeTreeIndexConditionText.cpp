@@ -749,7 +749,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        /// `transform_null_in = 1` renames the family; a NULL element is refused in the helper.
         if ((function_name == "in" || function_name == "globalIn"
              || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
@@ -2101,7 +2100,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     const auto & set_column = *columns[*set_key_position];
 
-    /// A `Nullable` key keeps the wrapper on its elements at `transform_null_in = 1`.
+    /// With setting `transform_null_in = 1`, the IN set can be nullable.
     const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
     const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
 
@@ -2114,7 +2113,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
-        /// A NULL element also matches the column's NULL rows, which a token search cannot express.
+        /// The atom is an OR over the elements, and the index skips NULL rows when building a
+        /// granule, so a NULL element is a disjunct it cannot bound. Decline the atom.
         if (set_column.isNullAt(row))
         {
             out.text_search_queries.clear();
