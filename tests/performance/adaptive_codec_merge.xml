@@ -23,7 +23,7 @@
     <fill_query>SYSTEM STOP MERGES adaptive_codec_merge_sizes</fill_query>
     <fill_query>SYSTEM STOP MERGES adaptive_codec_merge_chain</fill_query>
 
-    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(150000000)</fill_query>
+    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(120000000)</fill_query>
     <fill_query>INSERT INTO adaptive_codec_merge_sizes SELECT repeat('a', cityHash64(number) % 8) FROM numbers_mt(50000000)</fill_query>
     <fill_query>INSERT INTO adaptive_codec_merge_chain SELECT round(number / 100, 2) FROM numbers_mt(25000000)</fill_query>
 
