@@ -3,6 +3,8 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
+#include <Common/maskSensitiveQueryParameters.h>
+#include <Common/maskURIPassword.h>
 
 #include "config.h"
 
@@ -106,6 +108,20 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
     }
 }
 
+namespace
+{
+
+void maskCredentialsInURI(std::string & uri)
+{
+    /// Anchored at the start of the string, so this is a no-op on a bare request target.
+    maskURIUserinfo(uri);
+    /// The policy the server applies to the URIs it logs; classifies on the percent-decoded name.
+    uri = maskSensitiveQueryParametersInURI(uri);
+    maskPresignedURLParameters(uri);
+}
+
+}
+
 Exception HTTPException::makeExceptionMessage(
     int code,
     const std::string & uri,
@@ -113,11 +129,14 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & reason,
     const std::string & body)
 {
+    std::string masked_uri = uri;
+    maskCredentialsInURI(masked_uri);
+
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        uri, static_cast<int>(http_status), reason, body.length(), body);
+        masked_uri, static_cast<int>(http_status), reason, body.length(), body);
 }
 
 }
