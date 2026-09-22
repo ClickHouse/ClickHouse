@@ -15,9 +15,6 @@ struct ReverseImpl
 {
     static constexpr size_t max_word_path_size = 4 * sizeof(UInt64);
 
-    /// Note: the pointers never alias, but do not say so with `__restrict`. On AArch64 the annotation
-    /// makes the vectorizer pick a fixed-width NEON `rev64`/`stp` loop instead of the predicated SVE one,
-    /// which is measurably slower for the long strings this path handles.
     static void reverseBytes(const UInt8 * src, UInt8 * dst, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
@@ -85,13 +82,15 @@ struct ReverseImpl
     {
         /// Size the result from the number of rows we are asked to produce, not from the backing buffers:
         /// the source column may be larger than `input_rows_count` during partial evaluation.
-        res_offsets.assign(offsets.begin(), offsets.begin() + input_rows_count);
+        /// Allocate the large `res_data` before the small `res_offsets`. In the other order the small allocation
+        /// can take the start of the memory freed by the previous block, so the chars no longer fit there and go to
+        /// fresh pages: the performance tests showed a third more soft page faults and a quarter slower `reverse`
+        /// of mixed-length strings, all of it in system time.
         res_data.resize_exact(input_rows_count ? offsets[input_rows_count - 1] : 0);
+        res_offsets.assign(offsets.begin(), offsets.begin() + input_rows_count);
 
         /// Load the base pointers once. Going through the columns inside the loop makes the compiler
         /// reload them for every row, because the byte stores below may alias the column objects themselves.
-        /// These reloads sit on the critical path between rows: on the AArch64 CI runners they made
-        /// `reverse` of mixed-length strings about a quarter slower than the plain loop.
         const UInt8 * src = data.data();
         UInt8 * dst = res_data.data();
         const ColumnString::Offset * offsets_data = offsets.data();
