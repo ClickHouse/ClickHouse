@@ -128,7 +128,6 @@ std::unique_ptr<DB::AzureObjectStorage> createObjectStorageWithoutETag()
 
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
-        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::move(container_client),
         std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
         DB::AzureBlobStorage::ConnectionParams{},
