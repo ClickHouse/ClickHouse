@@ -27,6 +27,7 @@
 #include <map>
 #include <optional>
 #include <tuple>
+#include <unordered_set>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -318,6 +319,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
     }
 
     std::vector<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
+    std::unordered_set<const ReadFromMergeTree *> claimed_single_node_reads;
     for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
         auto identity = identify(replicas_reads[i]);
@@ -327,6 +329,19 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "Read of {} in the replicas plan has no counterpart of the same name in the single-node plan; "
+                "not transplanting index analysis",
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return false;
+        }
+        /// The names are unique on the single-node side because the map rejected a repeat, but two reads
+        /// of the candidate can still look up the same one - and the plans have equally many reads, so a
+        /// read claimed twice means another was not claimed at all, i.e. the plans do not read the same
+        /// things. Pair one to one or not at all.
+        if (!claimed_single_node_reads.insert(it->second).second)
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Two reads of {} in the replicas plan share one counterpart in the single-node plan; "
                 "not transplanting index analysis",
                 replicas_reads[i]->getStorageID().getNameForLogs());
             return false;

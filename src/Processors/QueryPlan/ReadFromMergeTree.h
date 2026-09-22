@@ -431,8 +431,9 @@ public:
     ///     granules at all;
     ///   - the filter actions, or the reader has no condition to record, so the query condition cache is
     ///     never populated and every later query over the same predicate misses it;
-    ///   - `limit`, which bounds how much an ordered read has to produce;
-    ///   - the filters `FINAL` defers past deduplication, which must not be applied before it.
+    ///   - `limit`, which nothing in `ReadFromMergeTree` reads today - the ordered read takes its bound
+    ///     from `query_info.input_order_info` - but which the pass does produce, so a read that skipped
+    ///     the pass is missing it and would diverge here the moment that changes.
     /// They are adopted together rather than one at a time as each turns out to be needed.
     /// Taken over wholesale rather than only where this read has nothing: it is called together with
     /// `setAnalyzedResult`, which replaces the ranges outright, and these are the conditions those ranges
@@ -448,8 +449,15 @@ public:
 
         limit = other.limit;
 
-        deferred_row_level_filter = other.deferred_row_level_filter;
-        deferred_prewhere_info = other.deferred_prewhere_info;
+        /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
+        /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
+        /// instead - before the rows they filter have been deduplicated. No caller reaches this with a
+        /// `FINAL` read today: `supportsDataflowStatisticsCollection` is false for one, and automatic
+        /// parallel replicas requires every step of the plan to support it. Redone here rather than
+        /// adopted from the other read, which would hold only as long as the two plans split the `WHERE`
+        /// into a `PREWHERE` the same way: a deferred filter is this read's own
+        /// `query_info.prewhere_info` or `query_info.row_level_filter` under another name.
+        deferFiltersAfterFinalIfNeeded();
     }
 
     /// selectRangesToRead() will always re-analyze
