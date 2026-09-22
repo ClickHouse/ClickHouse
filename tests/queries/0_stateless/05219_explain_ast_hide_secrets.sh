@@ -41,8 +41,16 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST optimize = 1, graph = 1
 echo "-- a secret typed into the explained query itself is hidden as well"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', '$key', leftPad('iv', 16, '*'))"
 
-echo "-- a positional secret written as a comparison is hidden whole; a named argument keeps its key"
-${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', 'k1' = 'k2')" | grep -F 'Literal'
+echo "-- a positional secret written as a comparison collapses to one node, not to 'Function equals'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT encrypt('aes-128-ecb', 'plain', 'k1' = 'k2')"
+
+echo "-- a url the finder cannot read collapses to one node, not to 'Function concat'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url(concat('https://user:', 'p@host/f'))"
+
+echo "-- the same url as a named override keeps its key, the value collapses"
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url(creds, url = concat('https://user:', 'p@host/f'))"
+
+echo "-- a nested map keeps its keys and hides its values"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN AST SELECT * FROM url('http://x/f', headers('Authorization' = 'Bearer abc'))" | grep -F 'Literal'
 
 echo "-- the view itself stays usable for the restricted user"
