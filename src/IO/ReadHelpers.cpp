@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -48,7 +47,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SYNTAX_ERROR;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
@@ -207,11 +205,6 @@ void assertNotEOF(ReadBuffer & buf)
 {
     if (buf.eof())
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
-}
-
-void throwNumberWithoutDigits()
-{
-    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
 
@@ -1295,10 +1288,6 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
-    /// `s` is an append target already holding previous values (for a column, all previous rows of the block),
-    /// so the size of the current value is the growth of `s`.
-    const size_t initial_size = s.size();
-
     while (!buf.eof())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
@@ -1306,12 +1295,8 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1356,9 +1341,6 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != opening_bracket)
         return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
-    /// See the comment about `initial_size` in readJSONStringInto.
-    const size_t initial_size = s.size();
-
     s.push_back(*buf.position());
     ++buf.position();
 
@@ -1371,12 +1353,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1527,14 +1505,10 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// This one lambda reports every way the parse below can fail - a non-digit where a digit belongs, a
-    /// delimiter that is not allowed, or the value ending early - so it must not claim a particular one.
-    /// `toDate('yesterday')` used to be reported as "value is too short".
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE,
-                "Cannot parse date: expected a date in the YYYY-MM-DD or YYYYMMDD format");
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
         return ReturnType(false);
     };
 
@@ -1721,9 +1695,8 @@ ReturnType readDateTimeTextFallback(
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if (saturate_on_overflow)
+        if constexpr (throw_exception)
         {
-            /// Use saturating version - makeDateTime saturates out-of-range years
             if (unlikely(year == 0))
                 datetime = 0;
             else
@@ -1731,28 +1704,29 @@ ReturnType readDateTimeTextFallback(
         }
         else
         {
-            /// Use non-saturating version - report out-of-range values instead of clamping them
-            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-            if (!datetime_maybe)
+            if (saturate_on_overflow)
             {
-                if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if (unlikely(year == 0))
+                    datetime = 0;
                 else
-                    return false;
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
-
-            if constexpr (!dt64_mode)
+            else
             {
-                if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                /// Use non-saturating version - return false for out-of-range values
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
+
+                if constexpr (!dt64_mode)
                 {
-                    if constexpr (throw_exception)
-                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", *datetime_maybe);
-                    else
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
                         return false;
                 }
-            }
 
-            datetime = *datetime_maybe;
+                datetime = *datetime_maybe;
+            }
         }
     }
     else
@@ -1783,8 +1757,6 @@ ReturnType readDateTimeTextFallback(
             else
                 return false;
         }
-
-        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
 
     }
 
@@ -2097,7 +2069,10 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
-void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+static void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -2620,15 +2595,6 @@ namespace
 
 /// Scale `value` to whole seconds and clamp it to the `DateTime` range. The multiplication is bound-checked
 /// with truncating division rather than `common::mulOverflow`, a no-op stub for big-int types.
-/// Whether `value` scaled to whole seconds fits the DateTime range, using the same truncating bound
-bool datetimeSecondsInRange(Int128 value, UInt32 unread_scale)
-{
-    static constexpr Int128 max_seconds = 0xFFFFFFFF;
-    if (value < 0)
-        return false;
-    return value <= max_seconds / DecimalUtils::scaleMultiplier<Int128>(unread_scale);
-}
-
 time_t datetimeSecondsFromNumber(Int128 value, UInt32 unread_scale)
 {
     static constexpr Int128 max_seconds = 0xFFFFFFFF;
@@ -2653,7 +2619,7 @@ bool datetime64TicksFromNumber(DateTime64 & x, Int128 value, UInt32 unread_scale
 }
 
 template <typename ReturnType>
-ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf, bool saturate_on_overflow)
+ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     Decimal128 tmp;
@@ -2673,20 +2639,12 @@ ReturnType readDateTimeAsNumberImpl(time_t & x, ReadBuffer & buf, bool saturate_
         else
             return ReturnType(false);
     }
-    if (!saturate_on_overflow && !datetimeSecondsInRange(tmp.value, unread_scale))
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value is out of bounds of type DateTime");
-        else
-            return ReturnType(false);
-    }
-
     x = datetimeSecondsFromNumber(tmp.value, unread_scale);
     return ReturnType(true);
 }
 
 template <typename ReturnType>
-ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf, bool saturate_on_overflow)
+ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     /// Saturating 128-bit read: a plain `readIntText` does not check overflow, so an out-of-range value would
@@ -2696,14 +2654,6 @@ ReturnType readDateTimeAsRawValueImpl(time_t & x, ReadBuffer & buf, bool saturat
         readIntText128Saturating(tmp, buf);
     else if (!readIntText128Saturating<bool>(tmp, buf))
         return ReturnType(false);
-
-    if (!saturate_on_overflow && !datetimeSecondsInRange(tmp, 0))
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value is out of bounds of type DateTime");
-        else
-            return ReturnType(false);
-    }
 
     x = datetimeSecondsFromNumber(tmp, 0);
     return ReturnType(true);
@@ -2735,7 +2685,6 @@ ReturnType readDateTime64AsNumberImpl(DateTime64 & x, UInt32 scale, ReadBuffer &
         else
             return ReturnType(false);
     }
-
     return ReturnType(true);
 }
 
@@ -2756,16 +2705,15 @@ ReturnType readDateTime64AsRawValueImpl(DateTime64 & x, ReadBuffer & buf)
         else
             return ReturnType(false);
     }
-
     return ReturnType(true);
 }
 
 }
 
-void readDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { readDateTimeAsNumberImpl<void>(x, buf, saturate_on_overflow); }
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { return readDateTimeAsNumberImpl<bool>(x, buf, saturate_on_overflow); }
-void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { readDateTimeAsRawValueImpl<void>(x, buf, saturate_on_overflow); }
-bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf, bool saturate_on_overflow) { return readDateTimeAsRawValueImpl<bool>(x, buf, saturate_on_overflow); }
+void readDateTimeAsNumber(time_t & x, ReadBuffer & buf) { readDateTimeAsNumberImpl<void>(x, buf); }
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf) { return readDateTimeAsNumberImpl<bool>(x, buf); }
+void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf) { readDateTimeAsRawValueImpl<void>(x, buf); }
+bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf) { return readDateTimeAsRawValueImpl<bool>(x, buf); }
 
 void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf) { readDateTime64AsNumberImpl<void>(x, scale, buf); }
 bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf) { return readDateTime64AsNumberImpl<bool>(x, scale, buf); }

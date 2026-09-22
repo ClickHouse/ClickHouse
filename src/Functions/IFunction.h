@@ -121,30 +121,18 @@ protected:
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
-      * behind a NULL untouched, so a function that declines this contract is not executed on them
-      * either - they are filtered out first, and their result is masked out as NULL anyway. This
-      * means the nested value under a NULL is not observable for such a function, e.g.:
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
-      * still holds for `plus` (which accepts the contract), while a declining function such as
-      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
-
-    /** The default implementations above may execute the function over a representation that stores
-      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
-      * result back onto the logical rows, which is sound only if the result is determined by the
-      * argument values. A function answering `false` is executed over materialized rows instead.
-      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
-      */
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
@@ -214,15 +202,6 @@ public:
 #endif
 
     virtual bool isStateful() const { return false; }
-
-    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
-      * noticeable amount of time, performs an external request, or accounts profile events that a user can
-      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
-      * Such a function still returns the same value for the same arguments, so it is neither
-      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
-      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
-      */
-    virtual bool hasObservableSideEffects() const { return false; }
 
     /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
       * to a small fixed-size result, so that computing it early and carrying the result instead of the
@@ -668,8 +647,6 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
-    /// See `IFunctionBase::hasObservableSideEffects`.
-    virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }

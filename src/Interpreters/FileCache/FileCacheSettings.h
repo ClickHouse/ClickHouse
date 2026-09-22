@@ -57,7 +57,6 @@ struct FileCacheSettings
     bool isPathRelativeInConfig() const { return is_path_relative_in_config; }
 
 private:
-    void warnAboutObsoleteSettings() const;
     std::unique_ptr<FileCacheSettingsImpl> impl;
     bool is_path_relative_in_config = false;
 };

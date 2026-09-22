@@ -53,6 +53,12 @@ Possible values:
 
 See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
+## s3_disable_checksum {#s3_disable_checksum}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
+
 ## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

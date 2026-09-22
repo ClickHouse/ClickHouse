@@ -6,22 +6,12 @@
 namespace DB
 {
 
-class ColumnString;
-
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
 /// longer worth evaluating (low-selectivity hints, pattern bypass).
 class TextIndexAnalyzer
 {
 public:
-    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
-    /// Equal bounds are the single key `begin`, not an empty range.
-    struct TokenKeyRange
-    {
-        String begin;
-        String end;
-    };
-
     struct ReadableRows
     {
     public:
@@ -52,8 +42,6 @@ public:
         bool is_failed = false;
         /// Query was discarded (low-selectivity hint, pattern bypass).
         bool is_bypassed = false;
-        /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
-        bool is_analysis_incomplete = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
@@ -89,17 +77,13 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    bool canFilterTokensByLiterals() const;
-    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
-    void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
+    size_t memoryUsageBytes() const;
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;
@@ -108,9 +92,6 @@ private:
     /// then cleans up `queries_by_token` for any query that just failed.
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
-
-    static void markPatternCandidateTokens(
-        const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks);
 
     /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
     void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);

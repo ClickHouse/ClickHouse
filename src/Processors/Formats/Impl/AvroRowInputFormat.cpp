@@ -1286,6 +1286,19 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     return false;
 }
 
+size_t AvroRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (file_reader_ptr->hasMore() && num_rows < max_block_size)
+    {
+        file_reader_ptr->decr();
+        file_reader_ptr->decoder().drain();
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
     uint8_t magic = 0;
@@ -1694,9 +1707,9 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
-| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
-| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
-| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
 

@@ -300,7 +300,7 @@ public:
                 {
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
+                        "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
                         "Actual type {}.",
                         getName(),
                         key_column_type->getName());
@@ -564,12 +564,8 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         bool key_is_nullable = key_col_with_type.type->isNullable();
-        ColumnPtr nullable_key_column;
         if (key_is_nullable)
-        {
-            nullable_key_column = key_col_with_type.column;
             key_col_with_type = columnGetNested(key_col_with_type);
-        }
 
         auto key_column = key_col_with_type.column;
 
@@ -600,7 +596,7 @@ public:
                 {
                     throw Exception(
                          ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute. "
+                         "Third argument of function {} must be tuple when dictionary is complex and key contains more than 1 attribute."
                          "Actual type {}.",
                          getName(),
                          key_col_with_type.type->getName());
@@ -635,7 +631,7 @@ public:
 
         auto result_column = executeDictionaryRequest(
             dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
-            collect_values_limit, arguments[current_arguments_index-1], result_type, nullable_key_column);
+            collect_values_limit, arguments[current_arguments_index-1], result_type);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -689,49 +685,20 @@ private:
     std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
         IColumn::Filter && default_mask,
         const DataTypePtr & result_type,
-        const ColumnWithTypeAndName & last_argument,
-        const ColumnPtr & nullable_key_column) const
+        const ColumnWithTypeAndName & last_argument) const
     {
-        /// A NULL key takes NULL from the key's null map after the lookup, so it never takes the default.
-        if (const auto * nullable_key = checkAndGetColumn<ColumnNullable>(nullable_key_column.get()))
-        {
-            const auto & null_map = nullable_key->getNullMapData();
-            chassert(null_map.size() == default_mask.size());
-            for (size_t i = 0; i < default_mask.size(); ++i)
-                if (null_map[i])
-                    default_mask[i] = 0;
-        }
-        else if (nullable_key_column && nullable_key_column->isNullAt(0))
-        {
-            /// A constant key is NULL in every row or in none of them.
-            std::fill(default_mask.begin(), default_mask.end(), 0);
-        }
-
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, default_mask);
 
         auto mutable_col = IColumn::mutate(column_before_cast.column->convertToFullColumnIfConst());
         clearMaskedNullsBeforeCast(*mutable_col, default_mask, result_type);
 
-        /// `maskedExecute` fills the rows that do not need the default with the argument type's default value.
-        /// An identity conversion can neither reject that value nor turn it into a NULL.
-        const bool identity_conversion = column_before_cast.type->equals(*result_type);
-        const size_t rows_needing_default = identity_conversion ? default_mask.size() : countBytesInFilter(default_mask);
-        const bool skip_unused_rows = rows_needing_default != default_mask.size();
-
-        ColumnPtr column_to_convert = std::move(mutable_col);
-        if (skip_unused_rows)
-            column_to_convert = column_to_convert->filter(default_mask, static_cast<ssize_t>(rows_needing_default));
-
         ColumnWithTypeAndName column_to_cast = {
-            column_to_convert,
+            std::move(mutable_col),
             column_before_cast.type,
             column_before_cast.name};
 
         auto cast = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
-
-        if (skip_unused_rows)
-            cast->expand(default_mask, /* inverted= */ false);
 
         auto mask_col = ColumnUInt8::create();
         mask_col->getData() = std::move(default_mask);
@@ -766,8 +733,7 @@ private:
         const Columns & default_cols,
         size_t collect_values_limit,
         const ColumnWithTypeAndName & last_argument,
-        const DataTypePtr & result_type,
-        const ColumnPtr & nullable_key_column) const
+        const DataTypePtr & result_type) const
     {
         ColumnPtr result;
 
@@ -787,7 +753,7 @@ private:
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument, nullable_key_column);
+                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
 
                 const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
                 const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
@@ -822,7 +788,7 @@ private:
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument, nullable_key_column);
+                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument);
 
                 restoreShortCircuitColumn(result, defaults_column, mask_column, attribute_type);
             }
@@ -1211,9 +1177,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    /// Not injective: every key that is absent from the dictionary maps to the same empty array,
-    /// so two distinct absent keys collide. The claim would only hold for keys the dictionary has.
-    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
