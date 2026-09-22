@@ -22,6 +22,7 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
+#include <Core/callOnTypeIndex.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -105,22 +106,24 @@ ColumnPtr castColumnAccurateSkipNulls(
     return result;
 }
 
-/// A floating-point destination has no scale to compare with the source: it holds a timestamp exactly when
-/// the converted value restores the original ticks. All timestamps within the resolution of the float round
-/// to one value, and only the one that the value converts back to may match it in a set. The ticks are
-/// restored by rounding to the nearest one rather than by truncating as the cast to `DateTime64` does: the
-/// nearest double to `0.29` lies below it, so truncating its product with the multiplier would restore
-/// `0.28` and reject a conversion that the float represents as well as it can.
+/// Marks the timestamps that a floating-point destination does not hold exactly. A float has no scale to
+/// compare with the source, so the conversion is lossless when the converted value restores the original
+/// ticks. All timestamps within the resolution of the float convert to one value, so at most one of them
+/// survives the round trip. The ticks are restored by rounding to the nearest one rather than by truncating
+/// as the cast to `DateTime64` does: the nearest double to `0.29` lies below it, so truncating its product
+/// with the scale multiplier would restore `0.28` and mark a conversion that the float represents as well
+/// as it can.
 template <typename FloatType>
-static ColumnPtr getDateTime64ToFloatLossMap(const ColumnDecimal<DateTime64>::Container & values, const DataTypeDateTime64 & type)
+static ColumnPtr getDateTime64ToFloatLossMap(const ColumnDecimal<DateTime64> & column)
 {
-    const UInt32 scale = type.getScale();
-    const Float64 multiplier = static_cast<Float64>(type.getScaleMultiplier().value);
+    const UInt32 scale = column.getScale();
+    const Float64 multiplier = static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(scale));
+    const auto & values = column.getData();
     auto result = ColumnUInt8::create(values.size(), UInt8(0));
     auto & loss_map = result->getData();
     for (size_t row = 0; row < values.size(); ++row)
     {
-        /// The same conversion as the cast, so that the checked value is the one that probes the set.
+        /// The same conversion as the cast, so that the checked value is the one the cast produces.
         const auto converted = DecimalUtils::convertTo<FloatType>(values[row], scale);
         Int64 restored = 0;
         loss_map[row] = !accurate::convertNumeric(std::round(static_cast<Float64>(converted) * multiplier), restored)
@@ -225,17 +228,19 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
     if (!datetime)
         return {};
 
-    const auto & values = assert_cast<const ColumnDecimal<DateTime64> &>(*column).getData();
-    const WhichDataType target(to_type);
+    const auto & datetime_column = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
 
-    if (target.isFloat32())
-        return getDateTime64ToFloatLossMap<Float32>(values, *datetime);
-    if (target.isFloat64())
-        return getDateTime64ToFloatLossMap<Float64>(values, *datetime);
-    if (target.isBFloat16())
-        return getDateTime64ToFloatLossMap<BFloat16>(values, *datetime);
+    ColumnPtr float_loss_map;
+    if (callOnBasicType<DateTime64, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
+        {
+            using FloatType = typename std::decay_t<decltype(types)>::RightType;
+            float_loss_map = getDateTime64ToFloatLossMap<FloatType>(datetime_column);
+            return true;
+        }))
+        return float_loss_map;
 
     UInt32 target_scale = 0;
+    const WhichDataType target(to_type);
     if (target.isDateTime64() || target.isTime64() || target.isDecimal())
         target_scale = getDecimalScale(*to_type);
     else if (!target.isDateOrDate32() && !target.isDateTime() && !target.isTime() && !target.isInteger())
@@ -247,6 +252,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
 
     const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(source_scale > target_scale ? source_scale - target_scale : 0);
     const Int64 source_multiplier = datetime->getScaleMultiplier().value;
+    const auto & values = datetime_column.getData();
     auto result = ColumnUInt8::create(values.size(), UInt8(0));
     auto & loss_map = result->getData();
     for (size_t row = 0; row < values.size(); ++row)

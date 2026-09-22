@@ -5,7 +5,7 @@
 SET enable_nullable_tuple_type = 1;
 
 {% for mode in [0, 1] %}
--- Nanoseconds are below the resolution of Float64 for a timestamp in 2026: the whole second matches its
+-- Nanoseconds are below the resolution of `Float64` for a timestamp in 2026: the whole second matches its
 -- float value, while the timestamps one nanosecond away, which the cast rounds to the same value, do not.
 SELECT {{ mode }}, toUnixTimestamp64Nano(t) - 1767225600000000000 AS offset_ns,
     (t, 1) IN (SELECT toFloat64(1767225600), 1),
@@ -17,7 +17,7 @@ FROM (SELECT fromUnixTimestamp64Nano(1767225600000000000 + arrayJoin([-1, 0, 1])
 ORDER BY offset_ns
 SETTINGS transform_null_in = {{ mode }};
 
--- Float32 holds a timestamp in 2026 only to a multiple of 128 seconds, and BFloat16 to a multiple of 2^23.
+-- `Float32` holds a timestamp in 2026 only to a multiple of 128 seconds, and `BFloat16` to a multiple of 2^23.
 SELECT {{ mode }}, t,
     (t, 1) IN (SELECT toFloat32(1767225600), 1),
     (t, 1) NOT IN (SELECT toFloat32(1767225600), 1),
@@ -33,7 +33,7 @@ FROM (SELECT toDateTime64(arrayJoin([1761607680, 1767225600]), 0, 'UTC') AS t)
 ORDER BY t
 SETTINGS transform_null_in = {{ mode }};
 
--- A fraction that Float64 holds only approximately still matches when the float converts back to the same
+-- A fraction that `Float64` holds only approximately still matches when the float converts back to the same
 -- timestamp. The nearest double to 0.29 lies below it, so truncating its product with the scale multiplier
 -- would restore 28 hundredths; the check rounds to the nearest tick instead.
 SELECT {{ mode }},
