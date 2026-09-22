@@ -359,7 +359,7 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
+bool GraceHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
@@ -369,7 +369,7 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (stop_after_current_bucket)
         return false;
 
-    addBlockToJoinImpl(materializeBlock(block));
+    addBlockToJoinImpl(materializeBlock(block), worker_id);
 
     /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
     if (!check_limits || table_join->legacyJoinSizeLimitsTriggerSpilling())
@@ -861,7 +861,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block));
+            addBlockToJoinImpl(std::move(block), /* worker_id = */ 0);
         }
         hash_join->onBuildPhaseFinish();
 
@@ -951,11 +951,10 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
     if (leftover.rows() > 0)
-        hash_join->addBlockToJoin(leftover, /* check_limits = */ false);
-
+        hash_join->addBlockToJoin(leftover, leftover.rows(), /*worker_id=*/0, /* check_limits = */ false);
 }
 
-void GraceHashJoin::addBlockToJoinImpl(Block block)
+void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -1015,7 +1014,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         bool block_added = false;
         if (!pre_threshold_overflow)
         {
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
             size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();

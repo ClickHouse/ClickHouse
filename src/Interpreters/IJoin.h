@@ -119,18 +119,17 @@ public:
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
+    /// `num_rows` is the row count of the chunk the block came from. `Block::rows` returns 0 for a
+    /// block without columns. That happens when `PREWHERE` consumes every column on the right side
+    /// of a `CROSS JOIN`. The count travels separately.
+    /// `worker_id` is the number of the thread that fills the join. A join that keeps
+    /// state per filler thread uses that id. Concurrent fillers pass distinct ids from
+    /// `[0, number of build threads)`. A single filler passes 0. A wrapper join forwards the id it
+    /// received. Every entry point passes 0. No implementation reads it.
+    /// `check_limits` makes the join check `max_rows_in_join` and `max_bytes_in_join` after the
+    /// insert. Callers that check the limits themselves pass false. `JoinSwitcher` is such a caller.
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
-
-    /// Overload that accepts the actual number of rows from the Chunk.
-    /// Needed because Block::rows() returns 0 when the block has no columns
-    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
-    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
-    {
-        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
-        (void)num_rows;
-        return addBlockToJoin(block, check_limits);
-    }
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) = 0;
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -165,6 +164,10 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
+
+    /// Upper bound on the number of threads that fill this join concurrently. Zero means the join
+    /// sets no bound of its own. Nothing consults it yet.
+    virtual size_t getMaxBuildThreads() const { return 0; }
 
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }

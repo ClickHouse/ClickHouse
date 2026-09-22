@@ -75,7 +75,7 @@ SpillingHashJoin::SpillingHashJoin(
 
 SpillingHashJoin::~SpillingHashJoin() = default;
 
-void SpillingHashJoin::tryConvertSlots()
+void SpillingHashJoin::tryConvertSlots(size_t worker_id)
 {
     chassert(concurrent_join);
     chassert(grace_join);
@@ -95,7 +95,7 @@ void SpillingHashJoin::tryConvertSlots()
         auto blocks = concurrent_join->releaseSlotBlocks(slot);
         while (!blocks.empty())
         {
-            grace_join->addBlockToJoin(blocks.front(), /*check_limits=*/false);
+            grace_join->addBlockToJoin(blocks.front(), blocks.front().rows(), worker_id, /*check_limits=*/false);
             blocks.pop_front();
         }
     }
@@ -111,15 +111,15 @@ std::string SpillingHashJoin::getName() const
     return fmt::format(name_format, hash_join->getName());
 }
 
-bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
+bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         /// Help convert one ConcurrentHashJoin slot while in GRACE_HASH_JOIN state.
         if (concurrent_join)
-            tryConvertSlots();
-        return chosen_join->addBlockToJoin(block, check_limits);
+            tryConvertSlots(worker_id);
+        return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
     }
 
     /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
@@ -132,20 +132,20 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (concurrent_join)
     {
         if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToGraceHashJoin();
+            switchToGraceHashJoin(worker_id);
     }
     else
     {
         if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToGraceHashJoin();
+            switchToGraceHashJoin(worker_id);
     }
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         if (concurrent_join)
-            tryConvertSlots();
-        return chosen_join->addBlockToJoin(block, check_limits);
+            tryConvertSlots(worker_id);
+        return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
     }
 
     if (concurrent_join)
@@ -155,16 +155,16 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
         /// Re-check: another thread may have switched while we waited for the lock.
         if (state.load(std::memory_order_acquire) != State::COLLECTING)
-            return chosen_join->addBlockToJoin(block, check_limits);
+            return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
 
-        return concurrent_join->addBlockToJoin(block, check_limits);
+        return concurrent_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
     }
 
     /// Single-thread HashJoin path.
-    return hash_join->addBlockToJoin(block, check_limits);
+    return hash_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
 }
 
-void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
+void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immediately)
 {
     const auto log_switch = [this, spill_immediately](const JoinPtr & join, std::string_view join_name)
     {
@@ -215,7 +215,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
         }
         /// Convert ConcurrentHashJoin slots into GraceHashJoin.
         /// Other build-phase threads will also help via `addBlockToJoin`.
-        tryConvertSlots();
+        tryConvertSlots(worker_id);
         return;
     }
 
@@ -246,7 +246,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
     /// freeing each after insertion to limit peak memory.
     while (!right_blocks.empty())
     {
-        chosen_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
+        chosen_join->addBlockToJoin(right_blocks.front(), right_blocks.front().rows(), worker_id, /*check_limits=*/false);
         right_blocks.pop_front();
     }
 
@@ -264,7 +264,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
-            switchToGraceHashJoin();
+            switchToGraceHashJoin(/*worker_id=*/0);
         }
         else if (concurrent_join)
         {
@@ -324,7 +324,7 @@ void SpillingHashJoin::requestSpill()
     {
         case State::COLLECTING:
             /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
-            switchToGraceHashJoin(/*spill_immediately=*/true);
+            switchToGraceHashJoin(/*worker_id=*/0, /*spill_immediately=*/true);
             return;
         case State::GRACE_HASH_JOIN:
             chosen_join->requestSpill();
