@@ -639,6 +639,13 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
             if (getTupleType(element_types[i]) != nullptr && !tuple.getColumn(i).isNullAt(0))
                 return true;
     }
+DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(lhs_type.get()); tuple_type && tuple_type->getElements().size() > 1)
+        return tuple_type->getElements();
+    return {lhs_type};
+}
+
     return false;
 }
 
@@ -653,26 +660,14 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
     const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
 {
-    DataTypes lhs_unpacked_types = {lhs_expression_type};
+    /// A `Nullable(Tuple(...))` stays a single value and is handled in the createBlockFromCollection() fast path.
+    DataTypes lhs_unpacked_types = getInKeyColumnTypes(lhs_expression_type);
 
-    /// Unpack `Tuple(...)` into tuple elements.
-    /// For `Nullable(Tuple(...))` we keep it as a single value and handle it in createBlockFromCollection() fast-path.
-    bool lhs_is_tuple = false;
     const auto * lhs_nullable_type = typeid_cast<const DataTypeNullable *>(lhs_expression_type.get());
     const auto * lhs_tuple_type
         = typeid_cast<const DataTypeTuple *>(lhs_nullable_type ? lhs_nullable_type->getNestedType().get() : lhs_expression_type.get());
-
-    if (lhs_tuple_type)
-    {
-        lhs_is_tuple = true;
-
-        /// Do not unpack empty tuple or single element tuple.
-        /// Do not unpack `Nullable(Tuple(...))` because in the end we build a single `Nullable(Tuple(...))` column anyway.
-        if (!lhs_nullable_type && lhs_tuple_type->getElements().size() > 1)
-            lhs_unpacked_types = lhs_tuple_type->getElements();
-    }
-
-    bool lhs_is_nullable = (lhs_nullable_type != nullptr);
+    const bool lhs_is_tuple = lhs_tuple_type != nullptr;
+    const bool lhs_is_nullable = lhs_nullable_type != nullptr;
 
     for (auto & lhs_element_type : lhs_unpacked_types)
     {
