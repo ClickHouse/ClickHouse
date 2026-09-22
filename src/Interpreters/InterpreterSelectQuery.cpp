@@ -25,7 +25,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -97,6 +96,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -792,15 +792,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-        if (const auto * alias = storage->as<StorageAlias>())
-        {
-            const auto target_storage_id = alias->getTargetTable()->getStorageID();
-            auto target_row_policy_filter = context->getRowPolicyFilter(
-                target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-        }
+        row_policy_filter = getRowPolicyFilterForStorage(*storage, context);
 
         if (row_policy_filter && context->hasQueryContext())
         {
@@ -952,15 +944,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             for (const auto & it : query_analyzer->getExternalTables())
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
-        }
-
-        if (!options.only_analyze || options.modify_inplace)
-        {
-            if (syntax_analyzer_result->rewrite_subqueries)
-            {
-                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
-            }
         }
 
         if (interpreter_subquery)
