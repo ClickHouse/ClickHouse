@@ -64,14 +64,8 @@ SELECT timeSeriesRateToGridMerge(120, 120, 1, 40, 1)(rate_state) FROM t_promql_e
 DROP TABLE t_promql_exact_rate_state;
 
 SELECT '--- the mode belongs to the state type, not to the session ---';
--- The coverage above always spells `exact_rate` as the fifth parameter. When it comes from the
--- setting instead, the mode has to end up in the parameter list all the same: `getStateType()` is
--- built from those parameters and is what `haveSameStateRepresentation` compares. Otherwise a state
--- built under `promql_exact_rate = 1` and a function built under the default share one type name,
--- the merge accepts the state, and it finalizes with extrapolating semantics.
--- The guard is behavioural: the merge below must refuse the state. The printed type name is not a
--- reliable probe for it, since it does not reflect the resolved mode.
--- The default spelling keeps the type it has always had, so states already written stay readable.
+-- A state built from the setting keeps the default type name, so the guard is behavioural:
+-- the merge below has to refuse it rather than finalize with extrapolating semantics.
 SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64))) SETTINGS promql_exact_rate = 0;
 
 DROP TABLE IF EXISTS t_exact_rate_setting_state;
