@@ -229,6 +229,47 @@ def test_series_time_range_is_inclusive_and_supports_one_sided_bounds():
     assert get_json_from_api(f"{path}&end=999")["data"] == []
 
 
+def test_series_time_range_without_metric_name_matcher():
+    data = get_json_from_api(
+        "/api/v1/series",
+        params={"match[]": '{host="server1"}', "start": "1030", "end": "1040"},
+    )["data"]
+    assert data == [
+        {"__name__": "cpu_usage", "host": "server1", "datacenter": "us-east"}
+    ]
+
+
+def test_time_series_target_functions_require_source_select():
+    node.query("CREATE USER ts_target_reader")
+    try:
+        for function in (
+            "timeSeriesTagsMinMax",
+            "timeSeriesTags",
+            "timeSeriesSamples",
+            "timeSeriesMetricFamilies",
+        ):
+            for query in (
+                f"DESCRIBE TABLE {function}('prometheus')",
+                f"SELECT count() FROM {function}('prometheus')",
+            ):
+                with pytest.raises(Exception, match="ACCESS_DENIED|Not enough privileges"):
+                    node.query(query, user="ts_target_reader")
+
+        node.query("GRANT SELECT ON prometheus TO ts_target_reader")
+        assert int(
+            node.query(
+                "SELECT count() FROM timeSeriesTagsMinMax('prometheus')",
+                user="ts_target_reader",
+            )
+        ) > 0
+        assert "min_time" in node.query(
+            "DESCRIBE TABLE timeSeriesTagsMinMax('prometheus')",
+            user="ts_target_reader",
+        )
+    finally:
+        node.query("DROP USER ts_target_reader")
+
+
 def test_series_rejects_inverted_time_range():
     get_bad_data_from_api("/api/v1/series?match[]=cpu_usage&start=1030&end=1000")
 

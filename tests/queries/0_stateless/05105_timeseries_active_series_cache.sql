@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS ts_nocache;
 -- 1. Table with the active series cache enabled. The cache skips a tags insert, and with it the
 -- `min_time` / `max_time` that batch would have contributed, so it needs a table that stores neither.
 CREATE TABLE ts_cache ENGINE = TimeSeries
-SETTINGS tags_to_columns = {'job': 'job_col', 'instance': 'instance_col'}, store_min_time_and_max_time = 0;
+SETTINGS tags_to_columns = {'job': 'job_col', 'instance': 'instance_col'}, store_min_time_and_max_time = 0, tags_cache_max_series = 1000;
 
 -- First insert: series tags are written to tags table and cached
 INSERT INTO ts_cache (metric_name, tags, samples) VALUES
@@ -64,6 +64,19 @@ SELECT 'cache disabled: both inserts write tags:';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_nocache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_nocache');
 
+-- A definition without the new setting must remain uncached after ATTACH, as for tables
+-- whose metadata predates the setting.
+CREATE TABLE ts_legacy ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0;
+INSERT INTO ts_legacy (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)]);
+DETACH TABLE ts_legacy;
+ATTACH TABLE ts_legacy;
+INSERT INTO ts_legacy (metric_name, tags, samples) VALUES
+    ('http_requests', {'job': 'api'}, [(toDateTime64(1015, 3), 2.0)]);
+SELECT 'missing cache setting after attach:';
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_legacy');
+DROP TABLE ts_legacy;
+
 -- 3. TRUNCATE clears the active series cache
 TRUNCATE TABLE ts_cache;
 
@@ -104,14 +117,14 @@ SELECT 'after alter ttl on live cache (second insert skips tags):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
--- Reset setting restores defaults (1000000 entries, 1800s TTL)
+-- Reset setting restores defaults (cache disabled, 1800s TTL)
 ALTER TABLE ts_cache RESET SETTING tags_cache_max_series;
 ALTER TABLE ts_cache RESET SETTING tags_cache_ttl_seconds;
 
 INSERT INTO ts_cache (metric_name, tags, samples) VALUES
     ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(2050, 3), 5.0)]);
 
-SELECT 'after reset to defaults (cached series skips tags insert):';
+SELECT 'after reset to defaults (tags insert resumes):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 

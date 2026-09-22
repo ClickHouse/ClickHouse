@@ -1411,7 +1411,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ALTER TABLE my_table MODIFY SETTING tags_cache_max_series = 500000;
 ALTER TABLE my_table MODIFY SETTING tags_cache_ttl_seconds = 7200;
 ALTER TABLE my_table MODIFY SETTING tags_cache_max_series = 0; -- Disables the cache
-ALTER TABLE my_table RESET SETTING tags_cache_max_series; -- Restores default (1000000)
+ALTER TABLE my_table RESET SETTING tags_cache_max_series; -- Restores default (0)
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator. Modifying or truncating inner target tables directly is unsupported while the cache is active; use `TRUNCATE TABLE` on the outer `TimeSeries` table instead.
