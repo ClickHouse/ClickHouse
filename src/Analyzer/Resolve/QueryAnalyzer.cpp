@@ -71,7 +71,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
@@ -6322,9 +6322,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto row_policy_filter = scope.context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, scope.context);
+    bool has_row_policy = row_policy_filter != nullptr;
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
@@ -6794,7 +6793,7 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
 
     /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
     /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
-    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// mirroring the legacy `splitConjunctionsAst` helper.
     /// Without this, a nested `and` containing an aggregate is classified as a single
     /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
     QueryTreeNodes conjuncts;
