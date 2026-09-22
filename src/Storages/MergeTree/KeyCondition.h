@@ -798,14 +798,32 @@ private:
         bool is_relaxed = false;
     };
 
+    /// A predicate expression from which deterministic key transforms can derive set atoms.
+    /// The source is a tuple component, a scalar expression, or a tuple expression as a whole.
+    struct SetTransformSource
+    {
+        /// The position in the predicate tuple, or 0 for a scalar or whole tuple.
+        size_t component = 0;
+        String expr_name;
+        /// Whole-tuple sources consume a single packed set column.
+        bool is_whole_tuple = false;
+    };
+
+    /// Collects predicate components and the whole tuple that appear among the key subexpressions.
+    /// For a scalar predicate expression, only the expression itself is considered.
+    static std::vector<SetTransformSource> collectSetTransformSources(
+        const RPNBuilderTreeNode & key_arg,
+        const NameSet & key_subexpr_names,
+        size_t args_count);
+
     struct SetIndexAnalysisResult
     {
         SetAtomCandidate componentwise_candidate;
         /// A tuple expression mapped onto one `Tuple`-typed key column needs a packed set column.
         std::optional<SetAtomCandidate> packed_tuple_candidate;
-        /// Predicate component indexes and key subexpression names that can supply additional atoms.
+        /// Predicate components and whole-tuple expressions that can supply additional atoms.
         /// Their transformation DAGs are collected only when building the group from the set columns.
-        std::vector<std::pair<size_t, String>> transform_sources;
+        std::vector<SetTransformSource> transform_sources;
     };
 
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.

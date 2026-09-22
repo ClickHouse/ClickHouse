@@ -2747,21 +2747,19 @@ String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet &
     return {};
 }
 
-/// Returns, per tuple component of the membership predicate expression (component 0 is the
-/// expression itself for a scalar), the name of the key subexpression through which the
-/// wrapped-set candidates of `appendSetAtoms` can be built. Components with no
-/// such name are omitted; an empty result means that pass cannot produce anything.
-std::vector<std::pair<size_t, String>> collectSetTransformSources(
+}
+
+std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformSources(
     const RPNBuilderTreeNode & key_arg,
     const NameSet & key_subexpr_names,
     size_t args_count)
 {
-    std::vector<std::pair<size_t, String>> result;
+    std::vector<SetTransformSource> result;
 
     if (args_count == 1)
     {
         if (String expr_name = findKeySubexpressionName(key_arg, key_subexpr_names); !expr_name.empty())
-            result.emplace_back(0, std::move(expr_name));
+            result.push_back({.component = 0, .expr_name = std::move(expr_name)});
         return result;
     }
 
@@ -2772,10 +2770,15 @@ std::vector<std::pair<size_t, String>> collectSetTransformSources(
     chassert(tuple_node.getFunctionName() == "tuple" && tuple_node.getArgumentsSize() == args_count);
     for (size_t i = 0; i < args_count; ++i)
         if (String expr_name = findKeySubexpressionName(tuple_node.getArgumentAt(i), key_subexpr_names); !expr_name.empty())
-            result.emplace_back(i, std::move(expr_name));
+            result.push_back({.component = i, .expr_name = std::move(expr_name)});
+
+    /// A key column can be a deterministic function of the packed tuple itself, such as
+    /// `cityHash64(tuple(s, x))` for the predicate `(s, x) IN (...)`. Such a key column is not a
+    /// function of any single component, so it is reachable only from the whole tuple.
+    if (String expr_name = findKeySubexpressionName(key_arg, key_subexpr_names); !expr_name.empty())
+        result.push_back({.component = 0, .expr_name = std::move(expr_name), .is_whole_tuple = true});
 
     return result;
-}
 }
 
 std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePredicateExpressionForSetIndex(
@@ -3356,12 +3359,12 @@ void KeyCondition::appendSetAtoms(
         }
     }
 
-    /// Also add set-wrapping atoms for the key columns that are deterministic functions of one
-    /// tuple component of the predicate expression (of the expression itself for a scalar), by
-    /// transforming that component of the set elements.
-    for (const auto & [component, expr_name] : analysis.transform_sources)
+    /// Also add set-wrapping atoms for key columns that are deterministic functions of a predicate
+    /// component, a scalar expression, or the packed tuple as a whole, by transforming the corresponding
+    /// set values.
+    for (const auto & source : analysis.transform_sources)
     {
-        auto candidates = collectKeyWrappingDags(expr_name, info, /*first_match_only*/ false);
+        auto candidates = collectKeyWrappingDags(source.expr_name, info, /*first_match_only*/ false);
 
         for (auto & candidate : candidates)
         {
@@ -3370,7 +3373,7 @@ void KeyCondition::appendSetAtoms(
                 continue;
 
             MergeTreeSetIndex::KeyTuplePositionMapping mapping;
-            mapping.tuple_index = component;
+            mapping.tuple_index = source.component;
             mapping.key_index = candidate.key_column_num;
 
             const bool is_injective = isDeterministicTransformInjective(
@@ -3380,7 +3383,9 @@ void KeyCondition::appendSetAtoms(
             set_candidate.indexes_mapping.emplace_back(std::move(mapping));
             set_candidate.set_transforming_dags.emplace_back(std::move(candidate.dag));
             set_candidate.key_expr_types.emplace_back(candidate.key_column_type);
-            set_candidate.args_count = args_count;
+            /// A whole-tuple candidate consumes one packed set column, like `packed_tuple_candidate`.
+            /// `tryPrepareSetAtom` repacks an unpacked set for the transform's tuple input.
+            set_candidate.args_count = source.is_whole_tuple ? 1 : args_count;
             set_candidate.is_relaxed = !is_injective;
 
             /// A non-injective transform supplies only a necessary membership condition.

@@ -1,0 +1,12 @@
+1
+2
+1
+2
+199
+199
+Condition: and((cityHash64(tuple(s, x)) in 1-element set), (tuple(s, x) in 1-element set))
+Granules: 2/25
+Condition: and((cityHash64(tuple(s, x)) in 1-element set), (tuple(s, x) in 1-element set))
+Granules: 2/25
+Condition: (tuple(s, x) in 1-element set)
+Granules: 25/25
