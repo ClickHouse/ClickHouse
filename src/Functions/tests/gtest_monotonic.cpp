@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -106,4 +110,53 @@ TEST(Monotonicity, ToNullable)
         ASSERT_TRUE(monotonicity.is_always_monotonic);
         ASSERT_TRUE(monotonicity.is_strict);
     }
+}
+
+TEST(Monotonicity, ToDayOfWeekConstantMode)
+{
+    tryRegisterFunctions();
+    auto resolver = FunctionFactory::instance().get("toDayOfWeek", getContext().context);
+    auto date_type = std::make_shared<DataTypeDate>();
+    auto mode_type = std::make_shared<DataTypeUInt8>();
+    const UInt64 monday = DateLUT::instance().makeDayNum(2026, 8, 3).toUnderType();
+
+    /// Sunday lies inside the Monday-based factor interval, so Sunday-first numbering is not monotonic.
+    for (UInt64 mode = 0; mode < 8; ++mode)
+    {
+        SCOPED_TRACE(mode);
+        const auto function = resolver->build({
+            {nullptr, date_type, "d"}, {mode_type->createColumnConst(1, mode), mode_type, "mode"}});
+        const auto monotonicity = function->getMonotonicityForRange(*date_type, monday, monday + 6);
+        EXPECT_EQ(monotonicity.is_monotonic, mode % 4 < 2);
+        EXPECT_FALSE(monotonicity.is_always_monotonic);
+        EXPECT_FALSE(function->getMonotonicityForRange(*date_type, monday, monday + 7).is_monotonic);
+    }
+}
+
+TEST(Monotonicity, ToDayOfWeekUnknownMode)
+{
+    const auto date_type = std::make_shared<DataTypeDate>();
+    const auto mode_type = std::make_shared<DataTypeUInt8>();
+    const UInt64 monday = DateLUT::instance().makeDayNum(2026, 8, 3).toUnderType();
+
+    /// Type-only construction cannot prove that an explicit mode uses Monday-first numbering.
+    const auto unknown_mode = buildFunction("toDayOfWeek", {date_type, mode_type});
+    EXPECT_FALSE(unknown_mode->getMonotonicityForRange(*date_type, monday, monday + 6).is_monotonic);
+
+    /// Omitting the mode selects Monday-first numbering without a constant argument.
+    const auto default_mode = buildFunction("toDayOfWeek", {date_type});
+    EXPECT_TRUE(default_mode->getMonotonicityForRange(*date_type, monday, monday + 6).is_monotonic);
+
+    const auto resolver = FunctionFactory::instance().get("toDayOfWeek", getContext().context);
+    const ColumnPtr mode_column = mode_type->createColumnConst(1, UInt64(0));
+    const auto nonconstant_mode = resolver->build({
+        {nullptr, date_type, "d"}, {mode_column->convertToFullColumnIfConst(), mode_type, "mode"}});
+    EXPECT_FALSE(nonconstant_mode->getMonotonicityForRange(*date_type, monday, monday + 6).is_monotonic);
+
+    /// An explicit time zone is not part of the default factor analysis, even with a known mode.
+    const auto timezone_type = std::make_shared<DataTypeString>();
+    const auto explicit_timezone = resolver->build({
+        {nullptr, date_type, "d"}, {mode_column, mode_type, "mode"},
+        {timezone_type->createColumnConst(1, String("UTC")), timezone_type, "timezone"}});
+    EXPECT_FALSE(explicit_timezone->getMonotonicityForRange(*date_type, monday, monday + 6).is_monotonic);
 }
