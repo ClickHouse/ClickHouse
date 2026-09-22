@@ -209,8 +209,10 @@ Verdict classify(const DB::IAST & ast)
 }
 
 /// Everything the fuzzer created is dropped after this many modifying statements, so objects do not
-/// accumulate and the fixture stays the only long-lived state.
-constexpr size_t cleanup_every = 200;
+/// accumulate and the fixture stays the only long-lived state. Kept small so that a single cleanup (one
+/// `DROP ... SYNC` per object on the ASan build) stays well under libFuzzer's per-input timeout: at 200 a
+/// cleanup once ran for 166 s and tripped the 120 s timeout.
+constexpr size_t cleanup_every = 40;
 size_t modifying_since_cleanup = 0;
 size_t executed_modifying = 0;
 
