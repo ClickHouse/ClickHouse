@@ -105,10 +105,6 @@ public:
     {
         virtual ~BloomFilter() = default;
 
-        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
-        /// value set intersect the two sequences in one pass instead of searching for each hash
-        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -446,11 +442,9 @@ public:
     /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
     /// FUNCTION_NOT_IN_SET (1 element)
     ///
-    /// These atoms are relaxed when the associated constants undergo
+    /// These atoms are relaxed only when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier, and a right-unbounded FUNCTION_IN_RANGE atom is also
-    /// relaxed when its key column can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns).
+    /// mentioned earlier.
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -464,8 +458,6 @@ public:
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
-
-    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
@@ -582,7 +574,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool & out_atom_is_exact);
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -678,17 +670,11 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
-    struct SpaceFillingCurveArgument
-    {
-        String name;
-        DataTypePtr type;
-    };
-
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<SpaceFillingCurveArgument> arguments;
+        std::vector<String> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;

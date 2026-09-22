@@ -70,8 +70,7 @@ public:
     void alter(
         const AlterCommands & params,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder,
-        DDLGuardPtr & ddl_guard) override;
+        AlterLockHolder & table_lock_holder) override;
 
     /// Truncate target table
     void truncate(

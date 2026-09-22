@@ -256,8 +256,9 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     # the check is skipped here and the restricted user reaches the embedded locator unchecked.
     #
     # The outer locator is File and IS granted, so a denial naming READ ON S3 can only come from the
-    # embedded S3 locator, which is why the manifest is rewritten to hold one - the
-    # attacker-controlled-manifest shape this authorization exists for.
+    # embedded S3 locator. `BACKUP DATABASE` serializes the locator as a string that
+    # `BackupInfo::fromAST` rejects before any check, so the function form is written into the
+    # manifest directly - the attacker-controlled-manifest shape this authorization exists for.
     # Every locator here is credential-free (File locally, a 1-argument S3 URL in the manifest): the
     # later definition-mismatch error logs both definitions, and a masked credential in that line
     # trips the tests-only `throw_on_match` masking rule and aborts the server.
@@ -288,7 +289,7 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     assert "READ ON S3" in error, error
 
     # With the grant, authorization passes: the restore proceeds past CHECKING_ACCESS_RIGHTS and
-    # fails later on the mismatch between the pre-existing definition and the rewritten one instead.
+    # fails later on the pre-existing string-vs-function definition mismatch instead.
     node.query(f"GRANT READ ON S3 TO {USER}")
     error = node.query_and_get_error(
         "RESTORE DATABASE dbembedded ON CLUSTER one_shard FROM File('outer10')", user=USER
@@ -299,103 +300,41 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     node.query("DROP DATABASE dbembedded SYNC")
 
 
-def test_restore_on_cluster_refuses_a_quoted_embedded_locator_over_an_existing_database(
-    started_cluster,
-):
-    # The pre-fix carrier: metadata an older server rewrote holds the locator as a string literal, and
-    # such a manifest can end up inside a backup. On this path the creation-time refusal never runs -
-    # the target database exists, so `CREATE DATABASE IF NOT EXISTS` returns before `DatabaseFactory`,
-    # and `allow_different_database_def = 1` waives the definition mismatch that would stop it next.
-    # The preflight is therefore the only place that can see the quoted locator, and it must refuse it
-    # rather than wave it through unauthorized: the function form of the very same manifest is denied
-    # for a missing `READ ON S3` in the case above.
-    #
-    # The refusal must not print the locator, which is why the assertion below looks for the host that
-    # a quoted locator could carry credentials next to.
-    node.query("DROP DATABASE IF EXISTS dbquoted SYNC")
-    node.query("BACKUP DATABASE d67785 TO File('inner13') FORMAT Null")
-    node.query("CREATE DATABASE dbquoted ENGINE = Backup('d67785', File('inner13'))")
-    node.query("BACKUP DATABASE dbquoted TO File('outer13') FORMAT Null")
-    manifest = (
-        "CREATE DATABASE dbquoted ENGINE = Backup('d67785', "
-        "'S3(\\'http://minio1:9001/root/data/denied/b13\\')')"
-    )
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cat > /var/lib/clickhouse/backups/outer13/metadata/dbquoted.sql <<'MANIFEST'\n"
-            f"{manifest}\nMANIFEST",
-        ],
-        user="root",
-    )
-
-    assert node.query("SELECT count() FROM system.databases WHERE name = 'dbquoted'") == "1\n"
-    node.query(f"GRANT READ ON FILE TO {USER}")
-
-    error = node.query_and_get_error(
-        "RESTORE DATABASE dbquoted ON CLUSTER one_shard FROM File('outer13') "
-        "SETTINGS allow_different_database_def = 1",
-        user=USER,
-    )
-    assert "BAD_ARGUMENTS" in error, error
-    assert "Expected function as the backup destination" in error, error
-    assert "minio1" not in error, error
-
-    node.query("DROP DATABASE dbquoted SYNC")
-
-
-def test_restore_on_cluster_of_a_real_backup_engine_manifest_authorizes_the_inner_locator(
-    started_cluster,
-):
-    # The manifest is NOT crafted here, which is the point: `BACKUP DATABASE` writes the inner locator
-    # as the function it is, so a real manifest carries a locator that authorization can decode, and
-    # the embedded one is checked exactly as a rewritten one is. Only this shape can see that, so it is
-    # a separate case from the rewritten one - which asserts the security property against a locator
-    # the definition never held. The outer locator is a Disk backup, which needs READ ON DISK, so a
-    # denial naming READ ON FILE can only come from the inner one.
+def test_restore_on_cluster_of_a_real_backup_engine_manifest_is_unchanged(started_cluster):
+    # The manifest is NOT crafted here, which is the point: `BACKUP DATABASE` serializes the inner
+    # locator as a string, and authorizing it would parse it and reject it with BAD_ARGUMENTS before
+    # any access decision. Only this shape can catch that, so it is a separate case from the crafted
+    # one - which asserts the security property but cannot see this class.
     node.query("DROP DATABASE IF EXISTS dbreal SYNC")
     node.query("BACKUP DATABASE d67785 TO File('inner11') FORMAT Null")
     node.query("CREATE DATABASE dbreal ENGINE = Backup('d67785', File('inner11'))")
-    node.query("BACKUP DATABASE dbreal TO Disk('backup_disk', 'outer11') FORMAT Null")
+    node.query("BACKUP DATABASE dbreal TO File('outer11') FORMAT Null")
     manifest = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cat /var/lib/clickhouse/disks/backup_disk/outer11/metadata/dbreal.sql",
-        ],
+        ["bash", "-c", "cat /var/lib/clickhouse/backups/outer11/metadata/dbreal.sql"],
         user="root",
     )
-    # The locator really is the function form: an ASTFunction, not an ASTLiteral holding its text.
-    assert "Backup('d67785', File('inner11'))" in manifest, manifest
+    # The locator really is the string form: an ASTLiteral, not an ASTFunction.
+    assert "Backup('d67785', 'File(\\'inner11\\')')" in manifest, manifest
 
-    # Only the outer locator's own grant, so the embedded File locator is the one that is missing.
-    node.query(f"GRANT READ ON DISK TO {USER}")
-
-    error = node.query_and_get_error(
-        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM Disk('backup_disk', 'outer11')",
-        user=USER,
-    )
-    assert "ACCESS_DENIED" in error, error
-    assert "READ ON FILE" in error, error
-
-    # Target exists and its definition matches the manifest, so nothing is created and the restore
-    # fully succeeds.
+    # Only the outer locator's own grant; the string-form inner one must not be authorized at all.
     node.query(f"GRANT READ ON FILE TO {USER}")
+
+    # Target exists, so nothing is created and the restore fully succeeds. Authorizing the string
+    # form turns this into `Code: 36` out of CHECKING_ACCESS_RIGHTS.
     node.query(
-        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM Disk('backup_disk', 'outer11') FORMAT Null",
-        user=USER,
+        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM File('outer11') FORMAT Null", user=USER
     )
 
-    # Target absent, so creation runs: the locator parses, and the created database reads the tables of
-    # the inner backup.
+    # Target absent, so creation runs and rejects the string form - as it does without this feature.
+    # `While creating database` is what pins the failure to the creation stage rather than the
+    # access-check one, which is where the same code would report it.
     node.query("DROP DATABASE dbreal SYNC")
-    node.query(
-        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM Disk('backup_disk', 'outer11') FORMAT Null",
-        user=USER,
+    error = node.query_and_get_error(
+        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM File('outer11')", user=USER
     )
-    assert node.query("SELECT x FROM dbreal.secrets") == "42\n"
-    node.query("DROP DATABASE dbreal SYNC")
+    assert "ACCESS_DENIED" not in error, error
+    assert "BAD_ARGUMENTS" in error, error
+    assert "While creating database" in error, error
 
 
 def test_explicit_base_backup_locator_is_authorized_on_the_initiator(started_cluster):

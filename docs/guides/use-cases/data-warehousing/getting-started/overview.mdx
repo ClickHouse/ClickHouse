@@ -135,12 +135,6 @@ GROUP BY url ORDER BY cnt DESC LIMIT 5
 ```
 
 The query syntax is identical — only the `FROM` clause changes. All ClickHouse SQL functions, joins, and aggregations work the same way regardless of the data source.
-
-<Note>
-**Add compute to eligible queries**
-
-On-Demand Compute is in private preview for eligible `SELECT` queries over supported Apache Iceberg and Delta Lake data. It temporarily assigns additional ClickHouse workers through your existing service and endpoint, without resizing the service. See the [On-Demand Compute documentation](/products/cloud/features/infrastructure/on-demand-compute) for eligibility and limitations.
-</Note>
 </Step>
 <Step title="Load a subset into ClickHouse" id="load-data">
 

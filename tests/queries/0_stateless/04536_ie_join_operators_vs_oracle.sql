@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- All 16 combinations of inequality operators on a duplicate-heavy fixture, verified
 -- against a brute-force cross-join oracle. The oracle queries use the comma-join syntax
 -- with the conditions in WHERE, which is executed as a cross join with a filter

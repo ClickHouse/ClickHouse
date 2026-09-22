@@ -16,14 +16,12 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeSeriesResultWriter.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/TargetSpecific.h>
@@ -72,25 +70,10 @@ public:
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    /// The result for one grid point: a number, or a `std::pair` of numbers stored as a tuple whose element names
-    /// the traits define in `getResultTupleElementNames`.
-    using ResultType = typename Traits::ResultType;
-    using ResultWriter = AggregateFunctionTimeSeriesResultWriter<ResultType>;
-
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
 
     using Bucket = typename Traits::Bucket;
-
-    struct State
-    {
-        /// Maps bucket index to the set of all timestamps and values
-        TimeSeriesBucketsMap<Bucket> buckets;
-    };
-
-    /// Number of arguments after the samples (e.g. the quantile level of `timeSeriesQuantileToGrid`). A derived class
-    /// taking such arguments shadows this constant, `State` and the hooks `addExtraArguments` and `getGridPointResult`.
-    static constexpr size_t num_extra_arguments = 0;
 
     String getName() const override
     {
@@ -107,8 +90,7 @@ public:
             argument_types_,
             parameters_,
             createResultType())
-        , array_of_pairs_argument(argument_types_.size() == 1 + FunctionImpl::num_extra_arguments)
-        , array_arguments(!array_of_pairs_argument && (argument_types_[1]->getTypeId() == TypeIndex::Array))
+        , array_arguments(argument_types_[1]->getTypeId() == TypeIndex::Array)
         , step(checkStep(start_timestamp_, end_timestamp_, step_))
         , window(checkWindow(window_))
         , grid_size(gridSize(start_timestamp_, end_timestamp_, step))
@@ -133,44 +115,41 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// The state is `FunctionImpl::State`: this `State` or a derived class's extension of it.
     bool hasTrivialDestructor() const override
     {
-        return std::is_trivially_destructible_v<typename FunctionImpl::State>;
+        return std::is_trivially_destructible_v<State>;
     }
 
     size_t alignOfData() const override
     {
-        return alignof(typename FunctionImpl::State);
+        return alignof(State);
     }
 
     size_t sizeOfData() const override
     {
-        return sizeof(typename FunctionImpl::State);
+        return sizeof(State);
     }
 
     void create(AggregateDataPtr __restrict place) const override  /// NOLINT
     {
-        new (place) typename FunctionImpl::State{};
+        new (place) State{};
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        std::destroy_at(reinterpret_cast<typename FunctionImpl::State *>(place));
+        data(place)->~State();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (array_of_pairs_argument || array_arguments)
+        if (array_arguments)
         {
             addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
         }
         else
         {
-            derived().addExtraArguments(row_num, row_num + 1, place, extraArgumentColumns(columns), /* flags = */ nullptr, /* flag_value_to_include = */ true);
-
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
         }
     }
@@ -189,7 +168,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (array_of_pairs_argument || array_arguments)
+        if (array_arguments)
         {
             /// A row of arrays holds a whole series, so the generic path's per-row overhead is amortized.
             Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
@@ -201,7 +180,7 @@ public:
             flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         const TimestampType * timestamp_data = timestamp_column.getData().data();
         const ValueType * value_data = value_column.getData().data();
 
@@ -214,30 +193,10 @@ public:
                 ++run_end;
 
             if (place)
-            {
-                derived().addExtraArguments(i, run_end, place + place_offset, extraArgumentColumns(columns), flags, /* flag_value_to_include = */ true);
-
                 addSamples<true>(place + place_offset, timestamp_data, value_data, flags, i, run_end);
-            }
 
             i = run_end;
         }
-    }
-
-    void addBatchWithNonNullPlaces(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if (array_arguments)
-            Base::addBatchWithNonNullPlaces(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-        else
-            addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void addBatchSinglePlace(
@@ -278,8 +237,7 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            combined_exclude_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            combined_exclude_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 combined_exclude_flags[i] = (!!null_map[i]) | !if_flags[i]; /// Exclude if NULL or if condition is false
             exclude_flags_data = combined_exclude_flags.get();
@@ -365,8 +323,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        ResultWriter writer(to, grid_size);
-        derived().doInsertResultInto(place, writer);
+        derived().doInsertResultInto(place, to);
     }
 
     void insertResultIntoBatch(
@@ -378,15 +335,25 @@ public:
         Arena *) const override
     {
         size_t batch_index = row_begin;
+        const size_t batch_size = row_end - row_begin;
 
-        ResultWriter writer(to, grid_size);
-        writer.reserve(row_end - row_begin);
+        /// Reserve offsets and values in column to
+        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
+        auto & data_to = typeid_cast<ColVecResultType &>(result_to.getNestedColumn()).getData();
+        auto & nulls_to = result_to.getNullMapData();
+
+        offsets_to.reserve(offsets_to.size() + batch_size);
+        data_to.reserve(data_to.size() + batch_size * grid_size);
+        nulls_to.reserve(nulls_to.size() + batch_size * grid_size);
 
         try
         {
             for (; batch_index < row_end; ++batch_index)
             {
-                derived().doInsertResultInto(places[batch_index] + place_offset, writer);
+                derived().doInsertResultInto(places[batch_index] + place_offset, to);
                 /// For State AggregateFunction ownership of aggregate place is passed to result column after insert,
                 /// so we need to destroy all states up to state of -State combinator.
                 Base::destroyUpToState(places[batch_index] + place_offset);
@@ -408,12 +375,28 @@ protected:
     /// `Summary` where needed), buckets leaving are dropped by `removeBefore`, and `getResult` reads off the window's
     /// value. The aggregator keeps only the window's worth of data, so there is no materialization of all buckets and
     /// no global sort in the dense case.
-    void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const
+    void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
     {
-        writer.addRow();
+        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        offsets_to.push_back(offsets_to.empty() ? grid_size : offsets_to.back() + grid_size);
 
         if (!grid_size)
             return;
+
+        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
+        auto & data_to = typeid_cast<ColVecResultType &>(result_to.getNestedColumn()).getData();
+        auto & nulls_to = result_to.getNullMapData();
+
+        const size_t old_size = data_to.size();
+        chassert(old_size == nulls_to.size(), "Sizes of nested column and null map of Nullable column are not equal");
+
+        data_to.resize(old_size + grid_size);
+        nulls_to.resize(old_size + grid_size);
+
+        ValueType * values = data_to.data() + old_size;
+        UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
         auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(buckets.size()));
@@ -436,7 +419,7 @@ protected:
                         aggregator.add(it->getMapped(), bucketEndTimestamp(next_bucket));
                 }
                 removeOutOfWindow(aggregator, grid_index);
-                writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
+                storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
             }
         }
         else
@@ -455,12 +438,11 @@ protected:
                 for (; pos < ordered_buckets.size() && ordered_buckets[pos].first < window_end; ++pos)
                     aggregator.add(*ordered_buckets[pos].second, bucketEndTimestamp(ordered_buckets[pos].first));
                 removeOutOfWindow(aggregator, grid_index);
-                writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
+                storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
             }
         }
     }
 
-    const bool array_of_pairs_argument{};   /// Whether samples are passed as a single argument of type Array(Tuple(timestamp, value))
     const bool array_arguments{};           /// Whether timestamp/value arguments are arrays (one row holds a whole series) or scalars
     const IntervalType step{};              /// Grid step (0 for a single-point grid). IntervalType represents a time difference between timestamps
     const IntervalType window{};            /// Window size used by derived functions (e.g. for rate and delta calculations)
@@ -491,44 +473,6 @@ protected:
     /// Reciprocal of `step` for `classifySample` (`step` is fixed at construction).
     const libdivide::divider<UInt64> step_divider{1};
 
-    /// Compute the grid timestamp for a given grid index, i.e. `start_timestamp + grid_index * step`.
-    /// Uses unsigned 64-bit arithmetic internally to avoid signed overflow on extreme inputs
-    /// (`start_timestamp` near `INT64_MIN` together with a `step` near `INT64_MAX`). The final
-    /// cast back to `TimestampType` preserves the same bit pattern that the signed accumulator
-    /// `grid_timestamp += step` would produce for normal inputs, but does not trigger UBSAN
-    /// on the adversarial boundary values generated by the AST fuzzer.
-    TimestampType timestampAtIndex(size_t grid_index) const
-    {
-        chassert(grid_index < grid_size);
-        const UInt64 start_bits = static_cast<UInt64>(toInt64(start_timestamp));
-        const UInt64 step_bits = static_cast<UInt64>(step);
-        const UInt64 result_bits = start_bits + static_cast<UInt64>(grid_index) * step_bits;
-        const TimestampType grid_point = static_cast<TimestampType>(static_cast<Int64>(result_bits));
-        return grid_point;
-    }
-
-    /// The result of the sliding `aggregator` at grid point `grid_index`; a derived class passes its extra state to the aggregator here.
-    template <typename Aggregator>
-    std::optional<ResultType> getGridPointResult(const Aggregator & aggregator, ConstAggregateDataPtr /*place*/, size_t grid_index) const
-    {
-        return aggregator.getResult(timestampAtIndex(grid_index));
-    }
-
-    /// The columns of the extra arguments, which follow the sample arguments (one array of pairs, or timestamps and values).
-    const IColumn ** extraArgumentColumns(const IColumn ** columns) const
-    {
-        return columns + (array_of_pairs_argument ? 1 : 2);
-    }
-
-    /// Hooks for a derived class with extra arguments and state (see `num_extra_arguments`); `extra_columns` points to
-    /// the argument columns after the samples. A row is included if its flag is non-zero and `flag_value_to_include` is
-    /// true, or its flag is zero and `flag_value_to_include` is false (`flags` is nullptr when every row is included).
-    void addExtraArguments(
-        size_t /*row_begin*/, size_t /*row_end*/, AggregateDataPtr __restrict /*place*/, const IColumn ** /*extra_columns*/,
-        const UInt8 * /*flags*/, bool /*flag_value_to_include*/) const
-    {
-    }
-
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
     /// copyable or declaring `is_position_independent`.
@@ -536,12 +480,15 @@ private:
         std::is_trivially_copyable_v<Bucket> || requires { requires Bucket::is_position_independent; },
         "Bucket must be position independent (memmove-able) to be stored in a HashMap");
 
+    struct State
+    {
+        /// Maps bucket index to the set of all timestamps and values
+        TimeSeriesBucketsMap<Bucket> buckets;
+    };
+
     static DataTypePtr createResultType()
     {
-        if constexpr (requires { Traits::getResultTupleElementNames(); })
-            return ResultWriter::createResultType(Traits::getResultTupleElementNames());
-        else
-            return ResultWriter::createResultType();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ValueType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -783,6 +730,22 @@ private:
         /// The start is always representable (the width is shortened when bucket #0 is clamped at the type minimum),
         /// so computing it as `end - (width - 1)` can't overflow.
         return static_cast<TimestampType>(toInt64(first_bucket_end_time) - (static_cast<Int64>(first_bucket_width) - 1));
+    }
+
+    /// Compute the grid timestamp for a given grid index, i.e. `start_timestamp + grid_index * step`.
+    /// Uses unsigned 64-bit arithmetic internally to avoid signed overflow on extreme inputs
+    /// (`start_timestamp` near `INT64_MIN` together with a `step` near `INT64_MAX`). The final
+    /// cast back to `TimestampType` preserves the same bit pattern that the signed accumulator
+    /// `grid_timestamp += step` would produce for normal inputs, but does not trigger UBSAN
+    /// on the adversarial boundary values generated by the AST fuzzer.
+    TimestampType timestampAtIndex(size_t grid_index) const
+    {
+        chassert(grid_index < grid_size);
+        const UInt64 start_bits = static_cast<UInt64>(toInt64(start_timestamp));
+        const UInt64 step_bits = static_cast<UInt64>(step);
+        const UInt64 result_bits = start_bits + static_cast<UInt64>(grid_index) * step_bits;
+        const TimestampType grid_point = static_cast<TimestampType>(static_cast<Int64>(result_bits));
+        return grid_point;
     }
 
     static constexpr size_t NO_BUCKET = -1;
@@ -1178,105 +1141,81 @@ private:
         const IColumn ** columns,
         const UInt8 * flags_data) const
     {
-        derived().addExtraArguments(row_begin, row_end, place, extraArgumentColumns(columns), flags_data, flag_value_to_include);
-
-        if (!array_of_pairs_argument && !array_arguments)
+        if (array_arguments)
         {
-            /// Each row holds a single sample.
-            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecValueType &>(*columns[1]).getData().data();
+            const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ColumnArray &>(*columns[1]);
+            const auto & timestamp_offsets = timestamp_column.getOffsets();
+            const auto & value_offsets = value_column.getOffsets();
+            const TimestampType * timestamp_data = typeid_cast<const ColVecType *>(timestamp_column.getDataPtr().get())->getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecResultType *>(value_column.getDataPtr().get())->getData().data();
 
-            if (!flags_data)
-                addMany(place, timestamp_data, value_data, row_begin, row_end);
-            else if constexpr (flag_value_to_include)
-                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+            if (flags_data)
+            {
+                size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    const auto timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
+                    const auto value_array_size = value_offsets[i] - previous_value_offset;
+
+                    if (flags_data[i] == flag_value_to_include)
+                    {
+                        /// Check that timestamp and value arrays have the same size for the selected rows
+                        if (timestamp_array_size != value_array_size)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                                i, timestamp_array_size, value_array_size);
+
+                        /// A flag is per row, and each row is a pair of arrays
+                        addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size);
+                    }
+
+                    previous_timestamp_offset = timestamp_offsets[i];
+                    previous_value_offset = value_offsets[i];
+                }
+            }
             else
-                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+            {
+                {
+                    /// Check that timestamp and value arrays have the same size for each row
+                    size_t previous_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                    for (size_t i = row_begin; i < row_end; ++i)
+                    {
+                        const auto timestamp_array_size = timestamp_offsets[i] - previous_offset;
+                        const auto value_array_size = value_offsets[i] - previous_offset;
 
-            return;
-        }
+                        if (timestamp_array_size != value_array_size)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                                i, timestamp_array_size, value_array_size);
 
-        /// Each row holds a whole series.
-        const ColumnArray::Offset * timestamp_offsets = nullptr;
-        const ColumnArray::Offset * value_offsets = nullptr;
-        const TimestampType * timestamp_data = nullptr;
-        const ValueType * value_data = nullptr;
+                        previous_offset = timestamp_offsets[i];
+                    }
+                }
 
-        if (array_of_pairs_argument)
-        {
-            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+                const size_t data_row_begin = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                const size_t data_row_end = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]);
 
-            /// The timestamps and the values are stored in the same array, so they share the offsets.
-            timestamp_offsets = array_column.getOffsets().data();
-            value_offsets = timestamp_offsets;
-            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ColVecValueType &>(tuple_column.getColumn(1)).getData().data();
+                addMany(place, timestamp_data, value_data, data_row_begin, data_row_end);
+            }
         }
         else
         {
-            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
+            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const TimestampType * timestamp_data = timestamp_column.getData().data();
+            const ValueType * value_data = value_column.getData().data();
 
-            timestamp_offsets = timestamp_array_column.getOffsets().data();
-            value_offsets = value_array_column.getOffsets().data();
-            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ColVecValueType &>(value_array_column.getData()).getData().data();
-        }
-
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-
-        if (!flags_data)
-        {
-            checkSeriesSizes(row_begin, row_end, timestamp_offsets, value_offsets);
-
-            /// No row is skipped, so the samples of all the rows are stored contiguously and are added
-            /// in a single call, which lets the vectorized kernel work on the whole batch.
-            const size_t samples_count = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]) - previous_timestamp_offset;
-            addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, samples_count);
-            return;
-        }
-
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-            const size_t value_array_size = value_offsets[i] - previous_value_offset;
-
-            /// A flag is per row, and each row holds a whole series
-            if ((flags_data[i] != 0) == flag_value_to_include)
+            if (flags_data)
             {
-                /// Check that timestamp and value arrays have the same size for the selected rows
-                if (timestamp_array_size != value_array_size)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                        i, timestamp_array_size, value_array_size);
-
-                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size);
+                if constexpr (flag_value_to_include)
+                    addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                else
+                    addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
             }
-
-            previous_timestamp_offset = timestamp_offsets[i];
-            previous_value_offset = value_offsets[i];
-        }
-    }
-
-    /// Checks that the timestamp array and the value array have the same size in each row.
-    static void checkSeriesSizes(size_t row_begin, size_t row_end,
-        const ColumnArray::Offset * timestamp_offsets, const ColumnArray::Offset * value_offsets)
-    {
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-            const size_t value_array_size = value_offsets[i] - previous_value_offset;
-
-            if (timestamp_array_size != value_array_size)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                    i, timestamp_array_size, value_array_size);
-
-            previous_timestamp_offset = timestamp_offsets[i];
-            previous_value_offset = value_offsets[i];
+            else
+            {
+                addMany(place, timestamp_data, value_data, row_begin, row_end);
+            }
         }
     }
 
@@ -1300,6 +1239,21 @@ private:
             aggregator.removeBefore(static_cast<TimestampType>(grid_timestamp - static_cast<Int64>(window)));
     }
 
+    /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
+    void storeGridResult(size_t grid_index, const std::optional<ValueType> & result, ValueType * values, UInt8 * nulls) const
+    {
+        chassert(grid_index < grid_size);
+        if (result)
+        {
+            values[grid_index] = *result;
+            nulls[grid_index] = 0;
+        }
+        else
+        {
+            values[grid_index] = ValueType{};
+            nulls[grid_index] = 1;
+        }
+    }
 };
 
 }

@@ -58,7 +58,7 @@ namespace ErrorCodes
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
-    DECLARE(Bool, write_cache_per_user_id_directory, false, "Deprecated setting, ignored. The behavior is now determined automatically based on cache policy", SettingsTierType::OBSOLETE) \
+    DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(UInt64, dynamic_resize_lock_wait_ms, 1000, "Timeout in milliseconds to acquire the dynamic resize exclusive lock before skipping the resize attempt", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
@@ -68,7 +68,7 @@ namespace ErrorCodes
     DECLARE(String, system_cache_extensions, ".txt,.json,.idx,.cidx,.dat", "Comma-separated list of file extensions that are classified as system cache segments when `use_split_cache` is enabled. When changed, existing cache entries remain in their previous segment type and are evicted naturally over time. Restart is required to change this setting.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
-    DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and the cache policy tracks per-client usage, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
+    DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and `write_cache_per_user_id_directory` is enabled, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
     DECLARE(UInt64, idle_client_check_interval_sec, 0, "How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).", 0) \
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
@@ -200,7 +200,6 @@ void FileCacheSettings::loadFromConfig(
         (*this)[FileCacheSetting::path] = default_cache_path;
     }
 
-    warnAboutObsoleteSettings();
     validate();
 }
 
@@ -224,20 +223,7 @@ void FileCacheSettings::loadFromCollection(
         (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
     }
 
-    warnAboutObsoleteSettings();
     validate();
-}
-
-void FileCacheSettings::warnAboutObsoleteSettings() const
-{
-    for (const auto & setting : impl->allChanged())
-    {
-        if (setting.getTier() == SettingsTierType::OBSOLETE)
-            LOG_WARNING(
-                getLogger("FileCacheSettings"),
-                "Filesystem cache setting `{}` is obsolete and has no effect: {}",
-                setting.getName(), setting.getDescription());
-    }
 }
 
 void FileCacheSettings::validate()
@@ -262,7 +248,9 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
 
-    if (settings[FileCacheSetting::use_split_cache] && isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
+    if (settings[FileCacheSetting::use_split_cache]
+        && (settings[FileCacheSetting::cache_policy] == FileCachePolicy::LRU_OVERCOMMIT
+            || settings[FileCacheSetting::cache_policy] == FileCachePolicy::SLRU_OVERCOMMIT))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`use_split_cache` is not supported with overcommit cache policies. "
