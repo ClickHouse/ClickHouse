@@ -16,11 +16,15 @@ CREATE VIEW pv AS SELECT x FROM t WHERE x = {p:UInt64};
 # the name and when the whole name arrives inside one quoted identifier: an AST round-trip (view
 # metadata, `ON CLUSTER` DDL, a query shipped to another server) collapses `db.pv` into the single
 # quoted token `db.pv`.
-for analyzer in 1 0; do
-    echo "--- enable_analyzer = $analyzer"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$analyzer" -q "SELECT * FROM ${DB}.pv(p = 2)"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$analyzer" -q "SELECT * FROM \`${DB}.pv\`(p = 2)"
-done
+echo "--- resolution"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM ${DB}.pv(p = 2)"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM \`${DB}.pv\`(p = 2)"
+
+# `EXPLAIN SYNTAX` inlines the view itself, so it has to split the name the same way execution
+# does; both spellings have to render the same plan.
+echo "--- explain syntax"
+$CLICKHOUSE_CLIENT -q "EXPLAIN SYNTAX SELECT * FROM ${DB}.pv(p = 2)" | sed "s/${DB}/db/g"
+$CLICKHOUSE_CLIENT -q "EXPLAIN SYNTAX SELECT * FROM \`${DB}.pv\`(p = 2)" | sed "s/${DB}/db/g"
 
 # Formatting keeps the qualification: the database and the view are quoted separately, so the
 # reference does not degrade into a reference to a table named `db.pv` on the way through metadata.

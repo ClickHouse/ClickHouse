@@ -1,9 +1,9 @@
---- enable_analyzer = 1
+--- resolution
 2
 2
---- enable_analyzer = 0
-2
-2
+--- explain syntax
+SELECT *\nFROM\n(\n    SELECT x\n    FROM db.t\n    WHERE equals(x, _CAST(2, \'UInt64\'))\n) AS pv
+SELECT *\nFROM\n(\n    SELECT x\n    FROM db.t\n    WHERE equals(x, _CAST(2, \'UInt64\'))\n) AS pv
 --- formatting
 SELECT * FROM db.pv(p = 2)
 CREATE VIEW db.outer_view (`x` UInt64) AS SELECT * FROM db.pv(p = 3)
