@@ -1,21 +1,19 @@
 #include <gtest/gtest.h>
 
+#include <base/scope_guard.h>
 #include <Core/Defines.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/MapConfiguration.h>
-#include <fmt/format.h>
-
-#include <cstdint>
-#include <filesystem>
 
 namespace DB
 {
@@ -36,23 +34,31 @@ ASTPtr parseWorkload(const String & query)
 
 TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 {
-    SharedContextHolder shared_context = Context::createShared();
-    auto global_context = Context::createGlobal(shared_context.get());
+    auto global_context = Context::createCopy(getContext().context);
 
-    const auto workload_path = std::filesystem::temp_directory_path()
-        / fmt::format("clickhouse-process-list-memory-settings-{}", reinterpret_cast<uintptr_t>(shared_context.get()));
-    std::filesystem::create_directories(workload_path);
+    const auto previous_max_allocation_before_suction
+        = global_context->getServerSettings().get("memory_reservation_max_allocation_before_suction_bytes");
+    const auto previous_suction_max_allocation
+        = global_context->getServerSettings().get("memory_reservation_suction_max_allocation_bytes");
+    const auto previous_suction_reserved
+        = global_context->getServerSettings().get("memory_reservation_suction_reserved_bytes");
+    const auto previous_suction_queue_policy
+        = global_context->getServerSettings().get("memory_reservation_suction_queue_policy");
+    SCOPE_EXIT({
+        global_context->setServerSetting(
+            "memory_reservation_max_allocation_before_suction_bytes", previous_max_allocation_before_suction);
+        global_context->setServerSetting(
+            "memory_reservation_suction_max_allocation_bytes", previous_suction_max_allocation);
+        global_context->setServerSetting(
+            "memory_reservation_suction_reserved_bytes", previous_suction_reserved);
+        global_context->setServerSetting(
+            "memory_reservation_suction_queue_policy", previous_suction_queue_policy);
+    });
 
-    Poco::AutoPtr<Poco::Util::MapConfiguration> config = new Poco::Util::MapConfiguration;
-    config->setString("workload_path", workload_path.string());
-    config->setString("memory_reservation_max_allocation_before_suction_bytes", "1111");
-    config->setString("memory_reservation_suction_max_allocation_bytes", "2222");
-    config->setString("memory_reservation_suction_reserved_bytes", "3333");
-    config->setString("memory_reservation_suction_queue_policy", "largest_memory_first");
-
-    global_context->setConfig(config);
-    global_context->setPath(workload_path.string());
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
+    global_context->setServerSetting("memory_reservation_max_allocation_before_suction_bytes", UInt64{1111});
+    global_context->setServerSetting("memory_reservation_suction_max_allocation_bytes", UInt64{2222});
+    global_context->setServerSetting("memory_reservation_suction_reserved_bytes", UInt64{3333});
+    global_context->setServerSetting("memory_reservation_suction_queue_policy", String{"largest_memory_first"});
 
     auto storage = global_context->getWorkloadEntityStoragePtr();
     Settings storage_settings;
@@ -113,9 +119,6 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     storage->removeEntity(global_context, WorkloadEntityType::Resource, "memory_for_process_list_test", true);
     storage.reset();
     query_context.reset();
-    global_context.reset();
-    shared_context.reset();
-    std::filesystem::remove_all(workload_path);
 }
 
 }
