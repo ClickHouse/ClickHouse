@@ -58,6 +58,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/PartFileCopy.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -693,22 +694,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
                 throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
         },
     };
-    if (!canCopyPartFilesWithSkip(src_storage, copy_options))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source directory cannot be preserved for `TTLClearIndex` merge of part {}", source_part->name);
-
     dst_storage.createDirectories();
     global_ctx->new_data_part->version->setAndStoreCreationTID(
         global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
         nullptr);
 
-    /// Failure after copying begins is reported to the caller. The merge is never rewritten.
+    /// Source rejection or copy failure is reported to the caller. The merge is never rewritten.
     if (!copyPartFilesWithSkip(
             src_storage,
             dst_storage,
             copy_options,
             global_ctx->context->getReadSettings(),
             global_ctx->context->getWriteSettings()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source directory changed during `TTLClearIndex` merge of part {}", source_part->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source directory cannot be preserved for `TTLClearIndex` merge of part {}", source_part->name);
 
     global_ctx->new_data_part->checksums = source_part->checksums;
 

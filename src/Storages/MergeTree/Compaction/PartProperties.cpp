@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/PartFileCopy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/TTLDescription.h>
 
@@ -158,20 +159,13 @@ bool canPreserveFilesForIndexClear(
         return false;
 
     const auto & source_part = future_part.parts.front();
-    if (!canPreserveFilesForIndexClear(metadata_snapshot, source_part)
-        || future_part.part_format.storage_type != MergeTreeDataPartStorageType::Full
+    if (future_part.part_format.storage_type != MergeTreeDataPartStorageType::Full
         || future_part.part_format.part_type != source_part->getType()
         || future_part.part_format.storage_type != source_part->getDataPartStorage().getType()
         || future_part.uuid != source_part->uuid)
         return false;
 
-    const PartFileCopyOptions copy_options
-    {
-        .fail_on_temporary_projection_directories = true,
-        .fail_on_projection_subdirectories = true,
-        .cancellation_callback = {},
-    };
-    return canCopyPartFilesWithSkip(source_part->getDataPartStorage(), copy_options);
+    return canPreserveFilesForIndexClear(metadata_snapshot, source_part);
 }
 
 namespace

@@ -1603,8 +1603,8 @@ TTLDescription TTLDescription::getTTLForColumnFromAST(
 {
     auto result = getTTLFromAST(definition_ast, columns, context, primary_key, validation_mode);
 
-    /// The column TTL grammar cannot produce `CLEAR INDEX` today, but check explicitly rather
-    /// than rely on the grammar.
+    /// `CLEAR INDEX` is a table-level TTL action. Check explicitly instead of relying on callers
+    /// to construct only ASTs accepted by the column TTL grammar.
     if (result.mode == TTLMode::CLEAR_INDEX)
         throw Exception(
             ErrorCodes::BAD_TTL_EXPRESSION,

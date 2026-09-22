@@ -119,8 +119,9 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
-    /// Clear index files - 4 priority. Generation is enabled separately for rolling-upgrade safety
-    /// because the merge type is serialized in replicated `MergeTree` log entries.
+    /// Prefer TTL work that drops or rewrites data over clearing obsolete index files.
+    /// Generation is enabled separately for rolling-upgrade safety because the merge type is
+    /// serialized in replicated `MergeTree` log entries.
     if (!ctx.merge_constraints.empty()
         && ctx.metadata_snapshot.hasAnyIndexClearTTL()
         && ctx.can_generate_ttl_clear_index_merges)

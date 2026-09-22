@@ -9,7 +9,6 @@
 #include <numeric>
 #include <ranges>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 using namespace DB;

@@ -5,9 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <ctime>
-#include <functional>
 #include <memory>
-#include <optional>
 #include <set>
 
 namespace DB
@@ -18,9 +16,7 @@ class IDataPartStorage;
 class IMergeTreeDataPart;
 struct MergeTreeDataPartChecksums;
 struct MergeTreeSettings;
-struct ReadSettings;
 struct StorageInMemoryMetadata;
-struct WriteSettings;
 
 struct SkipIndexClearFiles
 {
@@ -70,7 +66,7 @@ SkipIndexClearFiles collectSkipIndexClearFiles(
     const IDataPartStorage & storage);
 
 /// Return whether the part contains a checksummed or packed skip-index file, including
-/// standalone mutation orphans from the released #109595 bug.
+/// standalone files omitted from checksums by older mutations.
 bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index);
 
 /// Return whether standalone storage contains a declared data or mark file for the index.
@@ -94,32 +90,5 @@ NameSet getDroppedSkipIndexArchiveFileNames(
     const String & mrk_extension,
     const IMergeTreeDataPart & part,
     const DataPartStorageOnDiskBase & storage);
-
-struct PartFileCopyOptions
-{
-    const NameSet * files_to_skip = nullptr;
-    const NameSet * files_to_copy = nullptr;
-    bool copy_instead_of_hardlinks = false;
-    bool fail_on_temporary_projection_directories = false;
-    bool fail_on_projection_subdirectories = false;
-    bool checkpoint_after_projection = false;
-    bool sync_copied_files = false;
-    std::function<void()> cancellation_callback;
-};
-
-/// Return false if copyPartFilesWithSkip would reject the source part before copying anything.
-bool canCopyPartFilesWithSkip(
-    const IDataPartStorage & source_storage,
-    const PartFileCopyOptions & options);
-
-/// Copy or hardlink source part files into destination according to the skip/include sets.
-/// Projection directories are copied recursively. Returned names are the source files that were
-/// hardlinked, using projection-prefixed names for projection files to match mutation tracking.
-std::optional<NameSet> copyPartFilesWithSkip(
-    const IDataPartStorage & source_storage,
-    IDataPartStorage & destination_storage,
-    const PartFileCopyOptions & options,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings);
 
 }
