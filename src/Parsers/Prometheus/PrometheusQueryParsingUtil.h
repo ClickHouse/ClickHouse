@@ -16,9 +16,9 @@ struct PrometheusQueryParsingUtil
     using DurationType = Decimal64;
 
     /// Parses a prometheus query.
-    /// Scale `timestamp_scale` is used to parse decimals representing timestamps and durations.
+    /// Scale `time_scale` is used to parse decimals representing timestamps and durations.
     static bool tryParseQuery(std::string_view input,
-                              UInt32 timestamp_scale,
+                              UInt32 time_scale,
                               PrometheusQueryTree & res_query,
                               String * error_message = nullptr,
                               size_t * error_pos = nullptr);
@@ -57,7 +57,7 @@ struct PrometheusQueryParsingUtil
     /// or a hexadecimal number of seconds, or a duration with time units.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.
     static bool tryParseDuration(std::string_view input,
-                                 UInt32 timestamp_scale,
+                                 UInt32 duration_scale,
                                  DurationType & res_duration,
                                  String * error_message = nullptr,
                                  size_t * error_pos = nullptr,
@@ -65,14 +65,14 @@ struct PrometheusQueryParsingUtil
 
     /// Parses the range in a range selector, for example for "[1h30m]" the function parses "1h30m".
     static bool tryParseSelectorRange(std::string_view input,
-                                      UInt32 timestamp_scale,
+                                      UInt32 time_scale,
                                       DurationType & res_range,
                                       String * error_message = nullptr,
                                       size_t * error_pos = nullptr);
 
     /// Parses the range and optionally the step in a subquery, for example for "[1h:5m]" the function parses "1h" and "5m".
     static bool tryParseSubqueryRange(std::string_view input,
-                                      UInt32 timestamp_scale,
+                                      UInt32 time_scale,
                                       DurationType & res_range,
                                       std::optional<DurationType> & res_step,
                                       String * error_message = nullptr,

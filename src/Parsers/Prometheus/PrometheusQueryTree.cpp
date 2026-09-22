@@ -277,20 +277,20 @@ PrometheusQueryTree & PrometheusQueryTree::operator=(const PrometheusQueryTree &
         if (src.root)
             new_root = src.root->clone(new_node_list);
 
-        *this = PrometheusQueryTree{std::move(new_node_list), new_root, src.timestamp_scale};
+        *this = PrometheusQueryTree{std::move(new_node_list), new_root, src.time_scale};
     }
     return *this;
 }
 
-PrometheusQueryTree::PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_)
+PrometheusQueryTree::PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 time_scale_)
     : node_list(std::move(node_list_))
     , root(root_)
-    , timestamp_scale(timestamp_scale_)
+    , time_scale(time_scale_)
 {
 }
 
-PrometheusQueryTree::PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_)
-    : timestamp_scale(timestamp_scale_)
+PrometheusQueryTree::PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 time_scale_)
+    : time_scale(time_scale_)
 {
     node_list.emplace_back(std::move(single_node_));
     root = node_list.back().get();
@@ -300,7 +300,7 @@ PrometheusQueryTree & PrometheusQueryTree::operator=(PrometheusQueryTree && src)
 {
     node_list = std::exchange(src.node_list, {});
     root = std::exchange(src.root, nullptr);
-    timestamp_scale = std::exchange(src.timestamp_scale, 0);
+    time_scale = std::exchange(src.time_scale, 0);
     return *this;
 }
 
@@ -347,7 +347,7 @@ String PrometheusQueryTree::InstantSelector::dumpNode(const PrometheusQueryTree 
 String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}RangeSelector:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.time_scale));
     str += fmt::format("\n{}", getInstantSelector()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -355,9 +355,9 @@ String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & 
 String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Subquery:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.time_scale));
     if (step)
-        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.timestamp_scale));
+        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.time_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -371,7 +371,7 @@ String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, s
             break;
         case AtModifier::Timestamp:
             chassert(at_timestamp);
-            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
+            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.time_scale));
             break;
         case AtModifier::Start:
             str += fmt::format("\n{}at: start()", makeIndent(indent + 1));
@@ -381,7 +381,7 @@ String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, s
             break;
     }
     if (offset_value)
-        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
+        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.time_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
@@ -446,20 +446,20 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryT
 }
 
 
-void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp_scale_)
+void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 time_scale_)
 {
     String error_message;
     size_t error_pos = 0;
-    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, &error_message, &error_pos))
+    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, time_scale_, *this, &error_message, &error_pos))
         return;
 
     throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "{} at position {} while parsing PromQL query: {}",
                     error_message, error_pos, promql_query_);
 }
 
-bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
+bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 time_scale_, String * error_message_, size_t * error_pos_)
 {
-    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
+    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, time_scale_, *this, error_message_, error_pos_);
 }
 
 
@@ -570,7 +570,7 @@ String PrometheusQueryTree::RangeSelector::toString(const PrometheusQueryTree & 
 {
     String str = getInstantSelector()->toString(tree);
     str += "[";
-    str += formatDuration(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.time_scale);
     str += "]";
     return str;
 }
@@ -587,10 +587,10 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
         str += ")";
 
     str += "[";
-    str += formatDuration(range, tree.timestamp_scale);
+    str += formatDuration(range, tree.time_scale);
     str += ":";
     if (step)
-        str += formatDuration(*step, tree.timestamp_scale);
+        str += formatDuration(*step, tree.time_scale);
     str += "]";
 
     return str;
@@ -606,7 +606,7 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
         case AtModifier::Timestamp:
             chassert(at_timestamp);
             str += " @ ";
-            str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
+            str += DB::toString(Decimal64{*at_timestamp}, tree.time_scale);
             break;
         case AtModifier::Start:
             str += " @ start()";
@@ -618,7 +618,7 @@ String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) c
     if (offset_value)
     {
         str += " offset ";
-        str += formatDuration(*offset_value, tree.timestamp_scale);
+        str += formatDuration(DurationType{*offset_value}, tree.time_scale);
     }
     return str;
 }

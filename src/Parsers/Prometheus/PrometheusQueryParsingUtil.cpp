@@ -815,19 +815,19 @@ bool PrometheusQueryParsingUtil::tryParseTimestamp(
 
 bool PrometheusQueryParsingUtil::tryParseDuration(
     std::string_view input,
-    UInt32 timestamp_scale,
+    UInt32 duration_scale,
     DurationType & res_duration,
     String * error_message,
     size_t * error_pos,
     bool allow_octal_literals)
 {
-    return tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, allow_octal_literals);
+    return tryParseNumber(input, duration_scale, res_duration, error_message, error_pos, allow_octal_literals);
 }
 
 
 /// Parses a time range which is used in range selectors.
 bool PrometheusQueryParsingUtil::tryParseSelectorRange(
-    std::string_view input, UInt32 timestamp_scale, DurationType & res_range, String * error_message, size_t * error_pos)
+    std::string_view input, UInt32 time_scale, DurationType & res_range, String * error_message, size_t * error_pos)
 {
     /// Check opening and closing brackets.
     if (!input.starts_with('['))
@@ -864,7 +864,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
     }
 
     if (!tryParseDuration(
-            input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            input.substr(start_pos, end_pos - start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += start_pos;
@@ -877,7 +877,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
 /// Parses a time range with an optional step which are used in subqueries.
 bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     std::string_view input,
-    UInt32 timestamp_scale,
+    UInt32 time_scale,
     DurationType & res_range,
     std::optional<DurationType> & res_step,
     String * error_message,
@@ -937,7 +937,7 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     }
 
     if (!tryParseDuration(
-            input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
+            input.substr(range_start_pos, range_end_pos - range_start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += range_start_pos;
@@ -949,7 +949,7 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     if (step_start_pos != step_end_pos)
     {
         if (!tryParseDuration(
-                input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
+                input.substr(step_start_pos, step_end_pos - step_start_pos), time_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
         {
             if (error_pos)
                 *error_pos += step_start_pos;

@@ -239,19 +239,19 @@ public:
     PrometheusQueryTree & operator=(PrometheusQueryTree && src) noexcept;
 
     /// Constructs a PrometheusQueryTree from a prepared list of nodes.
-    PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_ = 3);
-    explicit PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_ = 3);
+    PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 time_scale_ = 3);
+    explicit PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 time_scale_ = 3);
 
     /// Parses a promql query.
-    explicit PrometheusQueryTree(std::string_view promql_query_, UInt32 timestamp_scale_ = 3) { parse(promql_query_, timestamp_scale_); }
+    explicit PrometheusQueryTree(std::string_view promql_query_, UInt32 time_scale_ = 3) { parse(promql_query_, time_scale_); }
 
     /// Parses a promql query.
     /// This function throws an exception if something is wrong with the syntax.
-    void parse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3);
+    void parse(std::string_view promql_query_, UInt32 time_scale_ = 3);
 
     /// Tries to parse a promql query. Returns true if successful.
     /// If it isn't successful the function sets `error_pos` and `error_message` and returns false.
-    bool tryParse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
+    bool tryParse(std::string_view promql_query_, UInt32 time_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
 
     bool empty() const { return node_list.empty(); }
     size_t size() const { return node_list.size(); }
@@ -266,7 +266,7 @@ public:
     ResultType getResultType() const;
 
     /// Returns the scale used for timestamps and durations.
-    UInt32 getTimestampScale() const { return timestamp_scale; }
+    UInt32 getTimeScale() const { return time_scale; }
 
     /// Dumps the tree to string as a tree for debugging purposes.
     String dumpTree() const;
@@ -274,7 +274,7 @@ public:
 private:
     std::vector<std::unique_ptr<Node>> node_list;
     const Node * root = nullptr;
-    UInt32 timestamp_scale = 0;
+    UInt32 time_scale = 0;
 };
 
 }
