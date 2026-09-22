@@ -107,7 +107,7 @@ SQLQueryPiece applyFunctionScalar(
                             "any",
                             makeASTFunction(
                                 "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)))),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN())));
 
                 builder.select_list.back()->setAlias(ColumnNames::Value);
                 res.store_method = StoreMethod::SINGLE_SCALAR;
@@ -131,11 +131,11 @@ SQLQueryPiece applyFunctionScalar(
                                 "if",
                                 makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
                                 makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
+                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN()))),
                         makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
                         makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN())));
 
                 builder.select_list.back()->setAlias(ColumnNames::Values);
                 res.store_method = StoreMethod::SCALAR_GRID;
