@@ -13,6 +13,7 @@ SET send_logs_level='error';
 -- therefore disable local plan for now
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM test_parallel_replicas_unavailable_shards WHERE NOT ignore(*) SETTINGS log_comment = '02769_7b513191-5082-4073-8568-53b86a49da79', parallel_replicas_local_plan=0;
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SYSTEM FLUSH LOGS query_log;
 
