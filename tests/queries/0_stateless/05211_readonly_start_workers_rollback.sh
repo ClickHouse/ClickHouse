@@ -7,6 +7,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that a paused `ALTER` is released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_readonly_throw_in_start_background_workers" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # Turning `table_readonly` back off on a table that was attached read-only starts its background
 # workers. If that start throws partway through, the table must stay read-only instead of becoming
 # writable with some workers missing, and a retried ALTER must complete the transition.

@@ -8,6 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that a paused `ALTER` is released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_settings_pause_before_metadata_commit" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_settings_throw_before_metadata_commit" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # `ALTER TABLE ... MODIFY SETTING table_readonly = 0` publishes the new setting in memory before the
 # metadata commit. The table is durably read-only until the commit succeeds, and the `ALTER` only
 # holds `alter_lock`, which does not serialize with the `lockForShare` that the write paths take. A
