@@ -489,8 +489,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         for (const auto & column : projection->getRequiredColumns())
             key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
 
-    /// For vertical merge with TTL delete optimization, include columns needed by
-    /// TTL expressions in the horizontal phase so the TTL filter can be evaluated.
+    /// The TTL step runs over the merged stream, so every TTL expression it evaluates must read
+    /// from a merged column - a gathered one is missing from the block and the expression throws.
+    /// Place the inputs of every TTL the step builds an algorithm for, not just the deleting ones.
     if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
     {
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
@@ -506,6 +507,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
             add_ttl_expression_columns(where_ttl);
+
+        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
+            add_ttl_expression_columns(move_ttl);
+
+        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
+            add_ttl_expression_columns(recompression_ttl);
     }
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
