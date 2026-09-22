@@ -37,10 +37,6 @@ namespace ErrorCodes
 
 using namespace Parquet;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
