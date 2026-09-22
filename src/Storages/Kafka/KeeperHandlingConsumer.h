@@ -166,7 +166,8 @@ private:
     std::filesystem::path keeper_path;
     const String replica_name;
     /// The payload `StorageKafka2` stores in its own ephemeral `replicas/<replica_name>/is_active` node. Only a
-    /// node carrying it proves that this replica is registered by this very server (see `getActiveReplicasInfo`).
+    /// node carrying it and owned by our own Keeper session proves that this replica is registered by this very
+    /// server (see `getActiveReplicasInfo`).
     const String active_node_identifier;
     const size_t idx;
 

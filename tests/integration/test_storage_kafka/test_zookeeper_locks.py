@@ -1101,3 +1101,134 @@ def test_keeper_session_loss_triggers_reactivation(kafka_cluster):
             retry_count=120,
             sleep_time=1,
         )
+
+
+def test_replayed_is_active_payload_triggers_reactivation(kafka_cluster):
+    """A foreign ephemeral `is_active` node carrying this replica's own identifier is still foreign.
+
+    The identifier the server stores in its `is_active` node is readable from Keeper, so another client
+    can delete the node and re-create it as its own ephemeral node with the very same payload. Judged by
+    the payload alone, both the replica and its consumers would take that node for their own registration
+    and keep consuming, while the peers count the foreign client under our name; once our real session
+    dies later, the replica stays counted as live and the quota bug returns. Ownership must therefore be
+    tied to the Keeper session that created the node: the replica has to release its locks, leave the
+    foreign node alone, and re-register only once the foreign session is gone.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "zk_replayed_marker_topic"
+    num_partitions = 2
+    keeper_path = "/clickhouse/test/zk_replayed_marker"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        create_kafka = k.generate_new_create_table_query(
+            table_name="kafka",
+            columns_def="key UInt64, value UInt64",
+            database="test",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+        )
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.kafka;
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.consumer;
+
+            {create_kafka};
+            CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key;
+            CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+            """
+        )
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(num_partitions)]
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+
+        base = f"{keeper_path}/topic_partition_locks"
+        expected_locks = {f"{topic_name}_{pid}.lock" for pid in range(num_partitions)}
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1")
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= len(messages),
+            retry_count=60,
+            sleep_time=1,
+        )
+
+        is_active_path = f"{keeper_path}/replicas/r1/is_active"
+
+        # The replayed node lives as long as this kazoo session does, so the session is kept open until
+        # the replica has proven that it gives way to it.
+        kazoo = kafka_cluster.get_kazoo_client("zoo1")
+        try:
+            own_data, own_stat = kazoo.get(is_active_path)
+            assert own_stat.ephemeralOwner != 0
+
+            # Replace our node with one of this session that carries exactly our payload, in a single
+            # transaction so there is no moment without a node in which the server could re-create its own.
+            transaction = kazoo.transaction()
+            transaction.delete(is_active_path, version=own_stat.version)
+            transaction.create(is_active_path, own_data, ephemeral=True)
+            results = transaction.commit()
+            assert not any(isinstance(result, Exception) for result in results), results
+
+            replayed_stat = kazoo.exists(is_active_path)
+            assert replayed_stat.ephemeralOwner != 0
+            assert replayed_stat.ephemeralOwner != own_stat.ephemeralOwner
+
+            # Only the owner session tells this node apart from ours, and it is enough: the locks have to
+            # go without waiting for any session to expire.
+            deadline = time.time() + 180.0
+            remaining = None
+            while time.time() < deadline:
+                with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+                    remaining = [lock for lock in zk.ls(base) if lock]
+                if not remaining:
+                    break
+                time.sleep(1.0)
+            else:
+                pytest.fail(
+                    f"Timed out waiting for the topic-partition locks to be released while {is_active_path} "
+                    f"is owned by another session with the same payload, still held: {remaining!r}"
+                )
+
+            # The replayed node must be left alone: its payload does not make it ours to remove.
+            current_data, current_stat = kazoo.get(is_active_path)
+            assert current_data == own_data
+            assert current_stat.ephemeralOwner == replayed_stat.ephemeralOwner
+        finally:
+            # Ends the foreign session, which takes its ephemeral node with it.
+            kazoo.stop()
+            kazoo.close()
+
+        # Now the replica must re-register with a node of its own session ...
+        deadline = time.time() + 180.0
+        while time.time() < deadline:
+            kazoo = kafka_cluster.get_kazoo_client("zoo1")
+            try:
+                if kazoo.exists(is_active_path) is not None:
+                    restored_data, restored_stat = kazoo.get(is_active_path)
+                    if (
+                        restored_data == own_data
+                        and restored_stat.ephemeralOwner != 0
+                        and restored_stat.ephemeralOwner != replayed_stat.ephemeralOwner
+                    ):
+                        break
+            finally:
+                kazoo.stop()
+                kazoo.close()
+            time.sleep(1.0)
+        else:
+            pytest.fail(f"Timed out waiting for {is_active_path} to be re-created by the server")
+
+        # ... and keep consuming afterwards, with the full lock set back in place.
+        k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        wait_for_locks(kafka_cluster, base, expected_locks, "r1", timeout=120.0)
+
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) >= 2 * len(messages),
+            retry_count=120,
+            sleep_time=1,
+        )

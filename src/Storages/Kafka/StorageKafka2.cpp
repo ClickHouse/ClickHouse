@@ -315,13 +315,19 @@ bool StorageKafka2::activate()
         /// merely forget it otherwise; `activate_in_keeper` then waits for it to disappear before re-registering.
         if (replica_is_active_node)
         {
+            const auto zookeeper = getZooKeeper();
             String is_active_data;
-            if (getZooKeeper()->tryGet(replica_is_active_node->getPath(), is_active_data) && is_active_data != active_node_identifier)
+            Coordination::Stat is_active_stat;
+            if (zookeeper->tryGet(replica_is_active_node->getPath(), is_active_data, &is_active_stat)
+                && (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != zookeeper->getClientID()))
             {
                 LOG_WARNING(
                     log,
-                    "The node {} was not created by this server (its data is '{}', ours is '{}'). Leaving it in place",
+                    "The node {} was not created by this server (it is owned by session {}, ours is {}; its data is '{}', "
+                    "ours is '{}'). Leaving it in place",
                     replica_is_active_node->getPath(),
+                    is_active_stat.ephemeralOwner,
+                    zookeeper->getClientID(),
                     is_active_data,
                     active_node_identifier);
                 replica_is_active_node->setAlreadyRemoved();
@@ -368,18 +374,31 @@ bool StorageKafka2::activate()
             /// wait for it either (`deleteEphemeralNodeIfContentMatches` would block for three session timeouts and
             /// then report a logical error for a state that comes from outside the server); report the conflict
             /// right away and let the retry with backoff re-register once the foreign node is gone.
+            /// A node that carries our identifier is ours only when it was created by our own session: the one that
+            /// registered us last (it is either this very session, when the registration fell apart while the
+            /// session was alive, or the expired one whose leftover node Keeper has not removed yet). Anything else
+            /// replayed our identifier and is just as foreign. Before the first registration of this process the
+            /// identifier is all there is to go by, as for every other replicated storage: a leftover of the
+            /// previous process is removed by its payload.
             String is_active_data;
             Coordination::Stat is_active_stat;
-            if (zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat) && is_active_stat.ephemeralOwner != 0
-                && is_active_data != active_node_identifier)
-                throw Exception(
-                    ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                    "Replica {} appears to be already active: znode {}/is_active is owned by another Keeper session "
-                    "(its data is '{}', ours is '{}'). If you're sure it's not, try again in a minute or remove the znode manually",
-                    replica_path,
-                    replica_path,
-                    is_active_data,
-                    active_node_identifier);
+            if (zookeeper->tryGet(is_active_path, is_active_data, &is_active_stat) && is_active_stat.ephemeralOwner != 0)
+            {
+                const bool is_ours = is_active_data == active_node_identifier
+                    && (!own_is_active_session_id || is_active_stat.ephemeralOwner == *own_is_active_session_id
+                        || is_active_stat.ephemeralOwner == zookeeper->getClientID());
+                if (!is_ours)
+                    throw Exception(
+                        ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                        "Replica {} appears to be already active: znode {}/is_active is owned by another Keeper session {} "
+                        "(ours is {}; its data is '{}', ours is '{}'). If you're sure it's not, try again in a minute or remove the znode manually",
+                        replica_path,
+                        replica_path,
+                        is_active_stat.ephemeralOwner,
+                        zookeeper->getClientID(),
+                        is_active_data,
+                        active_node_identifier);
+            }
 
             zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
@@ -401,6 +420,7 @@ bool StorageKafka2::activate()
                 throw;
             }
             replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *zookeeper);
+            own_is_active_session_id = zookeeper->getClientID();
 
             return true;
         }
@@ -1035,10 +1055,12 @@ bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keep
     /// leaves us out of their quota just like a missing one. Treat it as a broken registration here too,
     /// otherwise the repair would be skipped and this replica would stall forever.
     /// An ephemeral node is not enough either: it has to be the one this server created, which is what its
-    /// payload tells. A node of another Keeper session under our replica name means somebody else claims to be
-    /// this replica, and the peers then account for them, not for us. Our registration is not valid in that
-    /// case, and the deactivate/reactivate path takes it from there: it releases our locks and waits for the
-    /// foreign node to disappear before it re-registers, without ever stealing a live session's node.
+    /// payload and, above all, its owner session tell. The payload is readable from Keeper and can be replayed by
+    /// another client, the session cannot: our node is owned by the session we are checking with, since that is
+    /// the one that created it. A node of another Keeper session under our replica name means somebody else
+    /// claims to be this replica, and the peers then account for them, not for us. Our registration is not valid
+    /// in that case, and the deactivate/reactivate path takes it from there: it releases our locks and waits for
+    /// the foreign node to disappear before it re-registers, without ever stealing a live session's node.
     Coordination::Stat is_active_stat;
     String is_active_data;
     if (!keeper_to_use->tryGet(fs::path(replica_path) / "is_active", is_active_data, &is_active_stat))
@@ -1047,13 +1069,15 @@ bool StorageKafka2::isReplicaRegistrationValid(const zkutil::ZooKeeperPtr & keep
     if (is_active_stat.ephemeralOwner == 0)
         return false;
 
-    if (is_active_data != active_node_identifier)
+    if (is_active_data != active_node_identifier || is_active_stat.ephemeralOwner != keeper_to_use->getClientID())
     {
         LOG_WARNING(
             log,
-            "The node {}/is_active is owned by another Keeper session (its data is '{}', ours is '{}'), so this "
-            "replica is not the one registered under its name",
+            "The node {}/is_active is owned by another Keeper session {} (ours is {}; its data is '{}', ours is '{}'), "
+            "so this replica is not the one registered under its name",
             replica_path,
+            is_active_stat.ephemeralOwner,
+            keeper_to_use->getClientID(),
             is_active_data,
             active_node_identifier);
         return false;

@@ -348,6 +348,9 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     /// The nodes are read rather than only probed for existence, because for our own replica the payload
     /// matters too: `StorageKafka2::activate` stores `active_node_identifier` in it, and an ephemeral node
     /// with a different payload was created by some other Keeper session, so it is not our registration.
+    /// The payload alone does not prove ownership either, since it is readable from Keeper and can be replayed
+    /// by another client. What cannot be replayed is the session: the consumers share the storage's Keeper
+    /// session, which is the one that created our node, so our node is the one owned by this very session.
     Strings is_active_paths;
     is_active_paths.reserve(candidates.size());
     for (const auto & name : candidates)
@@ -375,17 +378,19 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         }
 
         const bool is_self = candidates[i] == replica_name;
-        if (is_self && response.data != active_node_identifier)
+        if (is_self && (response.data != active_node_identifier || response.stat.ephemeralOwner != keeper->getClientID()))
         {
             /// Somebody else holds our replica name. We must neither count it as our own liveness signal nor
             /// take part in the distribution on the strength of it: the caller goes through the
             /// deactivate/reactivate path, which releases our locks and waits until the foreign node is gone.
             LOG_WARNING(
                 log,
-                "The node {}/replicas/{}/is_active is owned by another Keeper session (its data is '{}', ours is '{}'), "
-                "so it is not the registration of this replica. Not counting it",
+                "The node {}/replicas/{}/is_active is owned by another Keeper session {} (ours is {}; its data is '{}', "
+                "ours is '{}'), so it is not the registration of this replica. Not counting it",
                 keeper_path.string(),
                 candidates[i],
+                response.stat.ephemeralOwner,
+                keeper->getClientID(),
                 response.data,
                 active_node_identifier);
             continue;

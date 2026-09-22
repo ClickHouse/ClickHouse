@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <list>
 #include <mutex>
+#include <optional>
 #include <rdkafka.h>
 
 namespace cppkafka
@@ -206,6 +207,12 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
+    /// The Keeper session that created our current or latest `is_active` node. The identifier stored in the node
+    /// is readable from Keeper and can be replayed by another client, the session cannot, so this is what tells a
+    /// leftover of our own from a foreign node when the replica re-registers. Empty until the first registration
+    /// of this process; `partialShutdown` deliberately leaves it in place, since the re-registration may take
+    /// several attempts.
+    std::optional<Int64> own_is_active_session_id;
     UInt64 consecutive_activate_failures = 0;
 
     bool activate();
