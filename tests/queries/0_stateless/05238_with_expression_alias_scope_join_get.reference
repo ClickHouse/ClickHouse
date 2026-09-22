@@ -1,0 +1,19 @@
+live in scope	7
+live out of scope	1
+live out of scope without scopes	1
+live without scopes	7
+view in scope	7
+view out of scope	1
+view out of scope without scopes	1
+view without scopes	7
+stored in scope is bare	1
+stored out of scope is qualified	1
+stored out of scope without scopes is qualified	1
+stored without scopes is bare	1
+read out of scope elsewhere	1
+read out of scope without scopes elsewhere	1
+read in scope elsewhere	77
+live in scope elsewhere	77
+reload in scope	7
+reload out of scope without scopes	1
+reload without scopes	7
