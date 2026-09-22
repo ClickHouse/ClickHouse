@@ -6,11 +6,9 @@
 namespace DB
 {
 
-/// traceView(trace_id [, timeline_width [, cluster]] [, since = date] [, until = date]) - renders the spans of one trace from
-/// `system.opentelemetry_span_log` as a call tree with a timeline: one row per span, the tree
-/// on the left (`span`), and a fixed-width bar (`timeline`) whose position is the span's start
-/// offset within the trace and whose length is proportional to its duration. Made for debugging
-/// traced queries: an over-long or ERROR phase is visible at a glance.
+/// traceView(trace_id [, timeline_width [, cluster]] [, since = date] [, until = date]) 
+/// renders the spans of one trace from `system.opentelemetry_span_log` as a call tree with a timeline
+/// Made for debugging traced queries: an over-long or ERROR phase is visible at a glance.
 class TableFunctionTraceView : public ITableFunction
 {
 public:

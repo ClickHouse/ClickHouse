@@ -57,9 +57,7 @@ struct Argument
     bool named;
 };
 
-/// `name = value` -> (name, value); anything else -> (the name of the position, the argument).
-/// `after_named` is whether a named argument came before: positional arguments cannot follow one,
-/// because their position would count the named argument as well.
+/// `name = value` -> (name, value).
 Argument splitNamedArgument(const ASTPtr & arg, size_t position, bool after_named)
 {
     const auto * equals = arg->as<ASTFunction>();
@@ -224,8 +222,7 @@ Block pullMonoBlock(QueryPipeline & pipeline)
         Block block;
         if (!pulling_executor.pull(block))
             break;
-        /// A pull that ended on the soft time limit (`timeout_overflow_mode = 'break'`) yields a
-        /// block without columns; `concatenateBlocks` expects every block to have the same structure.
+        /// No empty blocks allowed.
         if (!block.empty())
             blocks.push_back(std::move(block));
     }
@@ -254,11 +251,9 @@ Block executeInternalQuery(const String & query, ContextPtr context)
 }
 
 /// The spans of one trace, ordered by (start_time_us, span_id) so that sibling order is deterministic.
-/// `time_filter` is an extra condition on the span log (possibly empty), see `spanLogTimeFilter`.
 Block loadSpans(const String & source, const String & time_filter, const UUID & trace_id, ContextPtr context)
 {
-    /// LowCardinality columns are converted to plain types so that the rendering code and the
-    /// declared structure of the `attribute` result column need no special cases.
+    /// LowCardinality columns are converted to plain types
     Block spans = executeInternalQuery(
         fmt::format(
             "SELECT span_id, parent_span_id, toString(operation_name) AS operation_name,"
@@ -425,8 +420,7 @@ String renderSpanText(const SpanColumns & spans, size_t row, const String & tree
     return text;
 }
 
-/// Visits every span of the forest once, depth-first, children in row order. Duplicates are
-/// skipped. The roots go first; whatever is left afterwards is visited as a root too, so that no span of the trace is lost.
+/// Visits every span of the forest once, depth-first, children in row order. Duplicates are skipped
 /// `visit(row, prefix, connector)` receives the tree drawing of the row:
 /// `prefix` is the indentation inherited from the ancestors, `connector` the branch to the row itself.
 template <typename Visit>
@@ -594,10 +588,8 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
 StoragePtr TableFunctionTraceView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    /// The span log is created on its first flush: a server that never wrote a span has no
-    /// table, and the internal query would fail with an unknown table and the whole generated
-    /// query in the message, exactly where the flush hint is needed most. Only the local log
-    /// can be checked here; with `cluster`, a replica without the table fails on its own.
+    /// The span log is created on its first flush: a server that never wrote a span has no table,
+    /// Only the local log can be checked here; with `cluster`, a replica without the table fails on its own.
     if (cluster.empty() && !DatabaseCatalog::instance().tryGetTable(StorageID{"system", "opentelemetry_span_log"}, context))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The table system.opentelemetry_span_log does not exist yet: it is created by the first flush of spans."
