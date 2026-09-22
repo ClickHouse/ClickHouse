@@ -119,6 +119,33 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
 " | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
 
+# the chooser replays the filters and expressions above the read on the projection and refuses a slice
+# it cannot replay, so an array join inside that slice takes the projection out of the running, while the
+# same array join above the slice leaves it in
+echo "--- an array join decides by where it sits relative to the read ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_aj; DROP TABLE IF EXISTS t_real_aj;
+    CREATE TABLE t_aj (a UInt64, b UInt64, arr Array(UInt64)) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    CREATE TABLE t_real_aj AS t_aj;
+    ALTER TABLE t_real_aj ADD PROJECTION p_aj (SELECT a, b, arr ORDER BY b);
+    INSERT INTO t_aj SELECT number, number % 100, [number] FROM numbers(1000);
+    INSERT INTO t_real_aj SELECT number, number % 100, [number] FROM numbers(1000);
+"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_aj ON t_aj (SELECT a, b, arr ORDER BY b);
+    SELECT 'in the filter above the read:';
+    EXPLAIN WHATIF SELECT a FROM t_aj WHERE b = 42 AND arrayJoin(arr) > 0 SETTINGS ${PIN};
+    EXPLAIN indexes = 1 SELECT a FROM t_real_aj WHERE b = 42 AND arrayJoin(arr) > 0
+        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj';
+    SELECT 'above the slice the chooser replays:';
+    EXPLAIN WHATIF SELECT a, x FROM t_aj ARRAY JOIN arr AS x WHERE b = 42 SETTINGS ${PIN};
+    EXPLAIN indexes = 1 SELECT a, x FROM t_real_aj ARRAY JOIN arr AS x WHERE b = 42
+        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj';
+" | grep -E "^(in the filter|above the slice)|^\s+(status|verdict|reason):|ReadFromMergeTree \(" \
+  | sed -E 's/.*ReadFromMergeTree \(.*p_aj\).*/real: from the projection/; s/.*ReadFromMergeTree \(.*/real: from the base table/' \
+  | awk '{$1=$1; print}'
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);

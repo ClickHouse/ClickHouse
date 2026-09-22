@@ -120,25 +120,32 @@ String describe(SortOrderHelp help)
     }
 }
 
-bool findPath(const QueryPlan::Node * node, const IQueryPlanStep * target, std::vector<const QueryPlan::Node *> & path)
+bool findPath(QueryPlan::Node * node, const IQueryPlanStep * target, std::vector<QueryPlan::Node *> & path)
 {
     if (!node)
         return false;
     path.push_back(node);
     if (node->step.get() == target)
         return true;
-    for (const auto * child : node->children)
+    for (auto * child : node->children)
         if (findPath(child, target, path))
             return true;
     path.pop_back();
     return false;
 }
 
-/// the full sort right above the read, through filters and expressions only
-std::pair<const SortingStep *, const QueryPlan::Node *>
-findOuterSorting(const QueryPlan::Node * root, const ReadFromMergeTree * read_step)
+/// The slice `optimizeUseNormalProjections` would replace: the chain of filters and expressions above
+/// the read, taken as the node the chooser hands to `QueryDAG::build`, plus the full sort right above
+/// it when there is one.
+struct ReadSlice
 {
-    std::vector<const QueryPlan::Node *> path;
+    QueryPlan::Node * root = nullptr;
+    const SortingStep * outer_sorting = nullptr;
+};
+
+ReadSlice findReadSlice(QueryPlan::Node * root, const ReadFromMergeTree * read_step)
+{
+    std::vector<QueryPlan::Node *> path;
     if (!findPath(root, read_step, path) || path.size() < 2)
         return {};
 
@@ -151,10 +158,11 @@ findOuterSorting(const QueryPlan::Node * root, const ReadFromMergeTree * read_st
             break;
     }
 
+    ReadSlice slice{path[i + 1], nullptr};
     const auto * sort = typeid_cast<const SortingStep *>(path[i]->step.get());
     if (sort && sort->getType() == SortingStep::Type::Full)
-        return {sort, path[i + 1]};
-    return {};
+        slice.outer_sorting = sort;
+    return slice;
 }
 
 /// reads the whole part, wired like the empirical index scan
@@ -692,7 +700,7 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
-    const QueryPlan::Node * plan_root,
+    QueryPlan::Node * plan_root,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -807,13 +815,28 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    const auto [outer_sorting, subtree_above_reading] = findOuterSorting(plan_root, read_step);
+    const auto slice = findReadSlice(plan_root, read_step);
+
+    /// the chooser replays the slice on the projection, and `QueryDAG::build` refuses one it cannot
+    /// replay - an array join inside a filter or an expression, for one - so no projection is used there
+    if (slice.root)
+    {
+        QueryPlanOptimizations::QueryDAG replay;
+        if (!replay.build(*slice.root))
+        {
+            result.not_applicable_reason
+                = "The filters and expressions above the read cannot be replayed on a projection (an ARRAY JOIN in one of "
+                  "them, for example), so the optimizer would not use a projection for this read";
+            return result;
+        }
+    }
+
     SortOrderHelp sort_help = SortOrderHelp::NoOrderBy;
-    if (outer_sorting)
+    if (slice.outer_sorting)
     {
         if (!QueryPlanOptimizationSettings(context).read_in_order)
             sort_help = SortOrderHelp::ReadInOrderDisabled;
-        else if (QueryPlanOptimizations::wouldReadInOrderBeUseful(*outer_sorting, proj_key, *subtree_above_reading))
+        else if (QueryPlanOptimizations::wouldReadInOrderBeUseful(*slice.outer_sorting, proj_key, *slice.root))
             sort_help = SortOrderHelp::Helps;
         else
             sort_help = SortOrderHelp::NotUseful;
