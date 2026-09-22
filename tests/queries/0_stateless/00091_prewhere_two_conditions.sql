@@ -2,6 +2,7 @@
 -- Requires investigation (max_bytes_to_read is not respected)
 
 SET max_bytes_to_read = 600000000;
+SET optimize_functions_to_subcolumns = 0;
 
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
