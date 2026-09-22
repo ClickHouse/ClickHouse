@@ -10,6 +10,10 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/handshake_timeout.xml"],
 )
 
+# `handshake_timeout_milliseconds` from the config, in seconds, and the slack allowed on top.
+HANDSHAKE_TIMEOUT = 3
+DISCONNECT_DEADLINE = 4 * HANDSHAKE_TIMEOUT
+
 MAX_HELLO_STRING_SIZE = 64 * 1024
 OVERSIZED = 1 * 1024 * 1024  # 1 MB — exceeds the 64 KB limit
 
@@ -450,26 +454,31 @@ def test_slowloris_handshake_timeout(started_cluster):
 def test_silent_client_handshake_timeout(started_cluster):
     """A client that connects and then says nothing must be cut off by the handshake timeout."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(60)
+    sock.settimeout(DISCONNECT_DEADLINE)
     try:
         sock.connect((node.ip_address, 9000))
         # Announce a Hello packet and send nothing more, so the server blocks reading the rest.
         sock.sendall(encode_varuint(0))  # Client::Hello = 0
 
         started = time.monotonic()
-        while time.monotonic() - started < 60:
+        while True:
             try:
                 if not sock.recv(4096):
                     break
-            except (ConnectionResetError, BrokenPipeError, socket.timeout, OSError):
+            except socket.timeout:
+                # Not a pass: the server sitting on `receive_timeout` looks the same from here.
+                raise AssertionError(
+                    f"Server kept a silent connection for more than {DISCONNECT_DEADLINE} seconds"
+                )
+            except (ConnectionResetError, BrokenPipeError, OSError):
                 break
-        else:
-            raise AssertionError("Server kept a silent unauthenticated connection for over 60 seconds")
 
         elapsed = time.monotonic() - started
-        assert elapsed >= 1, f"Disconnected after {elapsed} seconds, too early to be the timeout"
+        assert HANDSHAKE_TIMEOUT - 2 <= elapsed < DISCONNECT_DEADLINE, f"Disconnected after {elapsed} s"
     finally:
         sock.close()
+
+    node.wait_for_log_line("Timeout exceeded while reading from socket")
 
 
 def test_server_healthy_after_rejections(started_cluster):

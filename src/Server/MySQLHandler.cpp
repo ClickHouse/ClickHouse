@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
+    extern const int SOCKET_TIMEOUT;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
@@ -726,7 +727,22 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
+            int ret = 0;
+            try
+            {
+                ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
+            }
+            catch (const Poco::TimeoutException &)
+            {
+                /// This read bypasses `ReadBufferFromPocoSocket`, so report the timeout the way that
+                /// buffer does rather than letting Poco's bare "Timeout" reach the log.
+                throw NetException(
+                    ErrorCodes::SOCKET_TIMEOUT,
+                    "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
+                    socket().peerAddress().toString(),
+                    socket().address().toString(),
+                    socket().getReceiveTimeout().totalMilliseconds());
+            }
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));

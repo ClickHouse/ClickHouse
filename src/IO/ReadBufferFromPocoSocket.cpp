@@ -192,6 +192,10 @@ void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_millisecon
 
     if (!receive_timeout_before_handshake)
         receive_timeout_before_handshake = socket.getReceiveTimeout();
+
+    /// Also now, not only per read: `MySQLHandler::finishHandshake` reads the first bytes with raw
+    /// `socket().receiveBytes`, which never reaches nextImpl.
+    clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds);
 }
 
 UInt64 ReadBufferFromPocoSocketBase::handshakeMillisecondsLeft() const

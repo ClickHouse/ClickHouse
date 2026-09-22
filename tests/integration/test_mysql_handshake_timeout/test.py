@@ -13,8 +13,9 @@ node = cluster.add_instance(
 MYSQL_PORT = 9001
 # `handshake_timeout_milliseconds` from the config, in seconds.
 HANDSHAKE_TIMEOUT = 3
-# Generous upper bound: the point is that the server does not wait `receive_timeout`, 300 s.
-DISCONNECT_DEADLINE = 60
+# The server has to close within the budget plus slack. A client-side timeout is a failure: it would
+# also happen if the server sat on `receive_timeout`, 300 s, which is the bug under test.
+DISCONNECT_DEADLINE = 4 * HANDSHAKE_TIMEOUT
 # Under the 500 ms floor the deadline keeps on the read window, so every byte lands while a read is
 # waiting and the deadline is what cuts the connection. Together the steps outlast the budget.
 TRICKLE_INTERVAL = 0.2
@@ -44,15 +45,21 @@ def connect_and_read_greeting():
 
 
 def wait_for_disconnect(sock):
-    """Wait until the server hangs up, and return how long that took."""
+    """Wait until the server hangs up, and return how long that took.
+
+    A client-side timeout fails the test: only the server closing proves the bound.
+    """
     started = time.monotonic()
-    while time.monotonic() - started < DISCONNECT_DEADLINE:
+    while True:
         try:
             if not sock.recv(4096):
                 return time.monotonic() - started
-        except (ConnectionResetError, BrokenPipeError, socket.timeout, OSError):
+        except socket.timeout:
+            raise AssertionError(
+                f"Server kept the connection for more than {DISCONNECT_DEADLINE} seconds"
+            )
+        except (ConnectionResetError, BrokenPipeError, OSError):
             return time.monotonic() - started
-    raise AssertionError(f"Server kept the connection for more than {DISCONNECT_DEADLINE} seconds")
 
 
 def test_trickled_handshake_is_disconnected(started_cluster):
@@ -72,7 +79,8 @@ def test_trickled_handshake_is_disconnected(started_cluster):
                 break  # The server hung up while we were trickling - expected.
         else:
             # Writes to a closed connection do not always fail, so confirm the hangup by reading.
-            wait_for_disconnect(sock)
+            elapsed = wait_for_disconnect(sock)
+            assert elapsed < DISCONNECT_DEADLINE
     finally:
         sock.close()
 
@@ -92,6 +100,22 @@ def test_silence_after_packet_header_is_disconnected(started_cluster):
         sock.close()
 
     # The shortened socket receive timeout, not the wall-clock deadline: no read ever completed.
+    node.wait_for_log_line("Timeout exceeded while reading from socket")
+
+
+def test_silence_before_any_bytes_is_disconnected(started_cluster):
+    """A client that takes the greeting and sends nothing at all must be cut off.
+
+    `finishHandshake` reads its first bytes with raw `socket().receiveBytes`, which never reaches the
+    read buffer, so only the timeout armed on the socket itself bounds this.
+    """
+    sock = connect_and_read_greeting()
+    try:
+        elapsed = wait_for_disconnect(sock)
+        assert elapsed >= HANDSHAKE_TIMEOUT - 2, f"Disconnected after {elapsed} seconds, too early"
+    finally:
+        sock.close()
+
     node.wait_for_log_line("Timeout exceeded while reading from socket")
 
 
