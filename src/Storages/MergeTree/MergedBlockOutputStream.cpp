@@ -469,7 +469,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             if (new_part->default_codec_is_approximate)
                 writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
             else
-                writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
+                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

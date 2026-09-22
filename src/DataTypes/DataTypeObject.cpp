@@ -1296,7 +1296,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
@@ -1349,7 +1349,7 @@ FROM test;
 - Row 3: `a` is absent entirely. Both `json.a` and `json.@a` return `NULL`, while `json.^a` returns an empty `{}`.
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Type inference for paths {#type-inference-for-paths}
@@ -1819,8 +1819,8 @@ To extract a path subcolumn from it, we just iterate over all rows in this `Map`
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
 In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
-Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
-and `advanced`.
+Currently, there are 4 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`,
+`advanced`, and `advanced_chunked`.
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -1863,6 +1863,16 @@ Note: because of storing some additional information inside the data structure, 
 `map` and `map_with_buckets` serializations.
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` serialization is the same as `advanced` but with support for splitting rows into smaller chunks during serialization.
+This reduces peak memory usage during merges of JSON columns with many unique paths, because only one chunk worth of data
+needs to be materialized at a time instead of the entire row range.
+
+The chunk size is controlled by the MergeTree setting [object_shared_data_target_chunk_rows](/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 by default).
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
 
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 
@@ -2036,10 +2046,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Experimental) {#lazy-type-hints}
+## Lazy Type Hints (Beta) {#lazy-type-hints}
 
 <Note>
-This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
+This feature is in beta and requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
@@ -2055,7 +2065,7 @@ This means you can add type hints instantly, and the data will be gradually conv
 ### Enabling Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Example {#lazy-type-hints-example}
@@ -2065,8 +2075,8 @@ SET allow_experimental_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable lazy type hints
+SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
@@ -2103,12 +2113,11 @@ To materialize type hints in existing data, you can either:
 
 ### Limitations {#lazy-type-hints-limitations}
 
-- This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 - Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
   - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
-  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - an explicit **data skipping index** — drop the index first, or disable `enable_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
   - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
 
   Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.

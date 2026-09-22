@@ -372,6 +372,25 @@ void triggerWatchCallback(
     }
 }
 
+#if USE_SSL
+/// The host part of "<host>:<port>", split lexically at the same character Poco::Net::SocketAddress
+/// splits it at, so that a port spelled as a service name still resolves. The result is matched
+/// against a certificate, so an IPv6 literal loses its brackets; a shape naming no host is empty.
+std::string peerHostName(const std::string & host_and_port)
+{
+    if (host_and_port.starts_with('/'))
+        return {};
+
+    if (host_and_port.starts_with('['))
+    {
+        size_t closing_bracket = host_and_port.find(']');
+        return closing_bracket == std::string::npos ? std::string{} : host_and_port.substr(1, closing_bracket - 1);
+    }
+
+    return host_and_port.substr(0, host_and_port.find(':'));
+}
+#endif
+
 }
 
 template <typename T>
@@ -617,7 +636,13 @@ void ZooKeeper::connect(
                 if (node.secure)
                 {
 #if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
+                    auto secure_socket = Poco::Net::SecureStreamSocket();
+                    /// The certificate names the configured host while the socket connects to the
+                    /// address it resolved to, so the name has to be carried explicitly. This is
+                    /// also what puts the host into the SNI extension.
+                    if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
+                        secure_socket.setPeerHostName(peer_host_name);
+                    socket = secure_socket;
 #else
                     throw Poco::Exception(
                         "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
@@ -2269,41 +2294,64 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
+bool ZooKeeper::resolveSystemLogs()
+{
+    while (true)
+    {
+        auto state = system_logs_state.load();
+        if (state == SystemLogsState::Resolved)
+            return true;
+        if (state == SystemLogsState::Unresolved && system_logs_state.compare_exchange_strong(state, SystemLogsState::InProgress))
+            break;
+        system_logs_state.wait(SystemLogsState::InProgress);
+    }
+
+    auto set_state = [&](SystemLogsState state)
+    {
+        system_logs_state = state;
+        system_logs_state.notify_all();
+    };
+
+    try
+    {
+        if (const auto global_context = Context::getGlobalContextInstance())
+        {
+            if (!global_context->hasSystemLogs())
+            {
+                set_state(SystemLogsState::Unresolved);
+                return false;
+            }
+
+            if (!zk_log)
+                zk_log = global_context->getZooKeeperLog();
+            if (!aggregated_zookeeper_log)
+                aggregated_zookeeper_log = global_context->getAggregatedZooKeeperLog();
+        }
+    }
+    catch (...)
+    {
+        set_state(SystemLogsState::Unresolved);
+        throw;
+    }
+
+    set_state(SystemLogsState::Resolved);
+    return true;
+}
+
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
-    {
-        return maybe_zk_log;
-    }
+    if (!resolveSystemLogs())
+        return nullptr;
 
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
-        {
-            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
-            return maybe_zk_log;
-        }
-    }
-
-    return nullptr;
+    return zk_log;
 }
+
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
-    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
-    {
-        return maybe_aggregated_zookeeper_log;
-    }
+    if (!resolveSystemLogs())
+        return nullptr;
 
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
-        {
-            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
-            return maybe_aggregated_zookeeper_log;
-        }
-    }
-
-    return nullptr;
+    return aggregated_zookeeper_log;
 }
 
 #ifdef ZOOKEEPER_LOG
