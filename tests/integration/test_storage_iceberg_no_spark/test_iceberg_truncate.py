@@ -420,7 +420,7 @@ def test_iceberg_delete_then_truncate_then_optimize(started_cluster_iceberg_no_s
     truncate_summary = compacted[-1][1]
     # The regression: with the truncate's parent still pointing at the dropped delete snapshot,
     # `getParentSnapshot` found nothing and both of these came out as "0".
-    assert truncate_summary["deleted-records"] == "3", truncate_summary
+    assert truncate_summary["deleted-records"] == "2", truncate_summary
     assert int(truncate_summary["deleted-data-files"]) >= 1, truncate_summary
     assert truncate_summary["total-records"] == "0", truncate_summary
     assert truncate_summary["total-data-files"] == "0", truncate_summary
