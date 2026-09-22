@@ -1211,6 +1211,39 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const bool use_parallel_layout
         = preferParallelHashLayout(table_join->kind(), params.rhs_size_estimation, params.parallel_hash_join_threshold);
 
+    const bool spill_to_disk
+        = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join);
+    /// The partitioned join serves this shape and `join_algorithm` lists it: `partitioned_hash` itself,
+    /// and the in-memory join of `auto` and the buckets of `grace_hash` when it is listed as well.
+    const bool partitioned_hash_wanted
+        = table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*table_join);
+    /// Without temporary storage, or for a shape `GraceHashJoin` declines, there is no join to spill
+    /// into. The budget stays off then: it could only refuse a table growth.
+    auto make_partitioned_join = [&]() -> std::shared_ptr<IJoin>
+    {
+        if (spill_to_disk)
+            return std::make_shared<SpillingHashJoin>(
+                PartitionedCollectingTag{},
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                table_join->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
+                params.grace_hash_join_max_buckets,
+                params.max_threads,
+                stats_collecting_params,
+                params.join_any_take_last_row,
+                params.rhs_size_estimation);
+        return std::make_shared<PartitionedHashJoin>(
+            table_join,
+            right_table_expression_header,
+            params.max_threads,
+            params.join_any_take_last_row,
+            stats_collecting_params,
+            /*max_bytes_before_external_join_=*/0,
+            params.rhs_size_estimation);
+    };
+
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -1236,36 +1269,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
-            && GraceHashJoin::isSupported(table_join);
-
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join))
-        {
-            if (spill_to_disk)
-                return std::make_shared<SpillingHashJoin>(
-                    PartitionedCollectingTag{},
-                    table_join,
-                    left_table_expression_header,
-                    right_table_expression_header,
-                    table_join->getTempDataOnDisk(),
-                    params.grace_hash_join_initial_buckets,
-                    params.grace_hash_join_max_buckets,
-                    params.max_threads,
-                    stats_collecting_params,
-                    params.join_any_take_last_row,
-                    params.rhs_size_estimation);
-
-            /// Without temporary storage, or for a shape `GraceHashJoin` declines, there is no join to
-            /// spill into. The budget stays off then: it could only refuse a table growth.
-            return std::make_shared<PartitionedHashJoin>(
-                table_join,
-                right_table_expression_header,
-                params.max_threads,
-                params.join_any_take_last_row,
-                stats_collecting_params,
-                /*max_bytes_before_external_join_=*/0,
-                params.rhs_size_estimation);
-        }
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && partitioned_hash_wanted)
+            return make_partitioned_join();
 
         if (spill_to_disk)
         {
@@ -1330,14 +1335,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.join_any_take_last_row,
                 table_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : params.max_bytes_before_external_join,
-                params.max_threads);
+                params.max_threads,
+                /*partitioned_buckets_=*/partitioned_hash_wanted);
         }
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        if (spill_to_disk)
         {
+            if (partitioned_hash_wanted)
+                return make_partitioned_join();
             return std::make_shared<SpillingHashJoin>(
                 table_join,
                 left_table_expression_header,
@@ -1358,7 +1366,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.join_any_take_last_row,
                 stats_collecting_params,
                 params.max_threads,
-                use_parallel_layout);
+                use_parallel_layout,
+                partitioned_hash_wanted,
+                params.rhs_size_estimation);
+        if (partitioned_hash_wanted)
+            return make_partitioned_join();
         return std::make_shared<HashJoin>(
             table_join,
             right_table_expression_header,

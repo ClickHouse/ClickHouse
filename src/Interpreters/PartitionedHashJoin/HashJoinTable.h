@@ -24,9 +24,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
-/// What a partitioned build can produce: the single-level subset of `HashJoin::Type`. Two-level maps
-/// are what partitioning replaces, and the `range*` conversions are post-build optimizations this
-/// path does not run.
+/// What a partitioned build can produce: `HashJoin::Type` without the `range*` types, which no build
+/// creates directly.
 #define APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
     M(key8) \
     M(key16) \
@@ -41,6 +40,24 @@ extern const int LOGICAL_ERROR;
     M(hashed) \
     M(low_cardinality_key_string) \
     M(low_cardinality_key_fixed_string)
+
+/// The fixed maps `tryConvertToFixedHashMap` turns a built `key32` / `key64` table into when its keys
+/// span a dense range.
+#define APPLY_FOR_PARTITIONED_JOIN_RANGE_VARIANTS(M) \
+    M(range8_key32) \
+    M(range16_key32) \
+    M(range17_key32) \
+    M(range18_key32) \
+    M(range8_key64) \
+    M(range16_key64) \
+    M(range17_key64) \
+    M(range18_key64)
+
+/// Every table a built join may hold - every `HashJoin::Type` - which is what the probe, the non-joined
+/// scan and the accounting dispatch over.
+#define APPLY_FOR_PARTITIONED_JOIN_TABLES(M) \
+    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
+    APPLY_FOR_PARTITIONED_JOIN_RANGE_VARIANTS(M)
 
 /// Turns a map hash into the bits `HashJoinTable` addresses by. The home cell is the top `size_degree`
 /// bits of this word and a row's partition the top `partition_bits`. Every key's home cell therefore
@@ -72,9 +89,10 @@ ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
   *
   * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`. The cells
   * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
-  * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. There is no
-  * `emplace`: the build claims cells through `claim` under its own ownership protocol. The table's
-  * size is published once at the end. The zero key lives in the standard zero-value cell.
+  * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. The partitioned
+  * build does not `emplace`: it claims cells through `claim` under its own ownership protocol. The
+  * table's size is published once at the end. `emplace` exists for the Join table engine alone, whose
+  * table has one range and grows as rows arrive. The zero key lives in the standard zero-value cell.
   *
   * Memory: the buffer is one reservation (`RangeCommittedBuffer`). A range is committed and charged
   * when its owner first touches it. During post-build the table's charge rises as the scattered
@@ -92,6 +110,9 @@ public:
     using hash_type = Hash;
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
+
+    /// One buffer, as the single-level maps have; the standard probe's prefetch heuristic reads it.
+    static constexpr size_t NUM_BUCKETS = 1;
 
     static_assert(std::is_same_v<typename Cell::State, HashTableNoState>, "the walk reads nothing through the table");
     static_assert(Grower::performs_linear_probing_with_single_step, "ranges assume the standard linear probe");
@@ -261,6 +282,104 @@ public:
         return this->zeroValue();
     }
 
+    /// The Join table engine's insert: the classic insert-or-find of `HashTable::emplace`, over the one
+    /// range of a single-partition table, doubling at the standard load factor (`maxFill`). Both
+    /// signatures `ColumnsHashing` calls; the mapped value of a new cell is left for the caller to
+    /// construct, as the standard table does. `it` is refreshed after a grow, so it always points at
+    /// the live buffer.
+    template <typename KeyHolder>
+    ALWAYS_INLINE void emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
+    {
+        emplace(key_holder, it, inserted, hash(keyHolderGetKey(key_holder)));
+    }
+
+    template <typename KeyHolder>
+    ALWAYS_INLINE void emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        if (Cell::isZero(key, state))
+        {
+            inserted = !this->hasZero();
+            if (inserted)
+            {
+                claimZero(hash_value);
+                ++m_size;
+            }
+            it = this->zeroValue();
+            return;
+        }
+
+        size_t pos = place(hash_value);
+        while (!buf[pos].isZero(state))
+        {
+            if (buf[pos].keyEquals(key, hash_value, state))
+            {
+                keyHolderDiscardKey(key_holder);
+                it = buf + pos;
+                inserted = false;
+                return;
+            }
+            pos = next(pos);
+        }
+
+        it = claim(pos, key_holder, hash_value);
+        inserted = true;
+        ++m_size;
+        if (m_size > maxFill()) [[unlikely]]
+        {
+            growSingleRange();
+            it = find(keyHolderGetKey(key_holder), hash_value);
+        }
+    }
+
+    /// Walks the zero-value cell first, then the occupied buffer cells in position order; `SELECT`
+    /// from a Join table reads the rows through it. The position is the cell's used-flags offset
+    /// (`offsetInternal`): 0 is the zero-value cell, `p + 1` buffer cell `p`. `const_iterator` is the
+    /// name the map-generic readers use.
+    class ConstIterator
+    {
+    public:
+        ConstIterator() = default;
+        ConstIterator(const HashJoinTable * table_, size_t offset_) : table(table_), offset(offset_) { }
+
+        const Cell & operator*() const { return *getPtr(); }
+        const Cell * operator->() const { return getPtr(); }
+        const Cell * getPtr() const { return offset == 0 ? table->zeroValue() : table->buf + (offset - 1); }
+
+        ConstIterator & operator++()
+        {
+            advance();
+            return *this;
+        }
+
+        bool operator==(const ConstIterator & rhs) const { return offset == rhs.offset; }
+        bool operator!=(const ConstIterator & rhs) const { return offset != rhs.offset; }
+
+        /// To the next occupied buffer cell, or to the end.
+        void advance()
+        {
+            const size_t cells = table->cellCount();
+            do
+                ++offset;
+            while (offset <= cells && table->buf[offset - 1].isZero(table->state));
+        }
+
+    private:
+        const HashJoinTable * table = nullptr;
+        size_t offset = 0;
+    };
+    using const_iterator = ConstIterator;
+
+    const_iterator begin() const
+    {
+        const_iterator it(this, 0);
+        if (!this->hasZero())
+            it.advance();
+        return it;
+    }
+
+    const_iterator end() const { return const_iterator(this, cellCount() + 1); }
+
     /// The probe lookup: `HashMapTable::find` over one buffer.
     ALWAYS_INLINE LookupResult find(const Key & key) { return find(key, hash(key)); }
     ALWAYS_INLINE ConstLookupResult find(const Key & key) const { return find(key, hash(key)); }
@@ -296,6 +415,33 @@ public:
     }
 
 private:
+    /// The doubling behind `emplace`: every cell is re-placed into a buffer of twice the cells with the
+    /// global mask, its mapped value moved over, and the old buffer released without destructors. Only
+    /// a single-partition table may do this; a partitioned one is grown by its build.
+    void growSingleRange()
+    {
+        if (partition_bits != 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "HashJoinTable: emplace can only grow a single-partition table, this one has {} partition bits",
+                partition_bits);
+
+        beginRehash(size_degree + 1);
+        commitNewRange(0);
+        for (Cell * cell = buf, * end = buf + cellCount(); cell != end; ++cell)
+        {
+            if (cell->isZero(state))
+                continue;
+            const size_t hash_value = cellHash(cell);
+            size_t pos = newPlace(hash_value);
+            while (!new_buf[pos].isZero(state))
+                pos = newNext(pos);
+            Cell * moved = claimPersisted(new_buf + pos, Cell::getKey(cell->getValue()), hash_value);
+            new (&moved->getMapped()) mapped_type(std::move(cell->getMapped()));
+        }
+        adoptRehash();
+    }
+
     /// Validated before any member derives a shift or a buffer size from it.
     static size_t checkedSizeDegree(size_t size_degree_, size_t partition_bits_)
     {
@@ -395,7 +541,7 @@ public:
     /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define M(NAME) \
     std::shared_ptr<typename HashJoinTableDetail::TableFor<typename decltype(StandardMaps::NAME)::element_type>::Type> NAME;
-    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+    APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
 
 private:
@@ -466,7 +612,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -524,7 +670,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->size() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -536,7 +682,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -548,7 +694,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -560,7 +706,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? reservedBufferBytesOf(*NAME) : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -587,7 +733,7 @@ using HashJoinTableMapsAsof = HashJoinTableMapsTemplate<AsofRowRefs>;
                 typename decltype(HashJoinTableMapsAsof::NAME)::element_type::cell_type, \
                 typename decltype(HashJoin::MapsAsof::NAME)::element_type::cell_type>, \
         "HashJoinTable cells must be identical to the standard join map cells");
-APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
 
 /// The `HashJoinTable` counterpart of a standard maps type, for the `MapGetter` and `JoinFeatures` templates
@@ -663,7 +809,7 @@ struct HashJoinTableMaps
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return !is_hash_join_table<typename decltype(HashJoinTableMapsAll::NAME)::element_type>;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return false;
         }

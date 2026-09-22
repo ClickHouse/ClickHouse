@@ -1,0 +1,5 @@
+in memory	130000	59149545000
+spilled	130000	59149545000
+-- the hintless table grew during the fill; the budgeted build switched to grace
+05224 in memory	1	0
+05224 spilled	1	1
