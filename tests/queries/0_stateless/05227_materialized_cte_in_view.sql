@@ -204,7 +204,10 @@ INSERT INTO src2_113711 VALUES (71), (72);
 SELECT * FROM dst_self_113711 ORDER BY id;
 DROP TABLE mv_self_113711;
 
-SELECT '-- an expansion copy of a plain CTE is classified with the scope of its declaration';
+SELECT '-- an expansion copy of a plain CTE is classified where it stands, like the analyzer at run time';
+-- `p`'s body reads `t2_113711` as a table, but the reference site (inside the outer `SELECT`) declares
+-- a `MATERIALIZED` CTE named `t2_113711`. The analyzer resolves `p`'s body at that reference site, so
+-- the expansion copy of `p` reads the `MATERIALIZED` CTE, not the table `t2_113711`.
 CREATE TABLE t2_113711 (x UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t2_113711 VALUES (1), (2), (3);
 CREATE VIEW v_copy_113711 AS
