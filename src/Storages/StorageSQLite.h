@@ -62,23 +62,22 @@ public:
         const TableNameOrQuery & table_or_query);
 
 private:
-    /// Lazily open the SQLite connection on first use. Guards the one-time initialization so that concurrent
-    /// first queries (`read` and `write`) do not race on the `sqlite_db` shared_ptr member. Returns the open
-    /// connection (also stored in `sqlite_db`), or nullptr when the file is still unavailable and
-    /// `throw_on_error` is false.
-    SQLitePtr openConnectionIfNeeded(bool throw_on_error, bool allow_create);
-
     /// Re-derive the generated-column classification from the remote schema observed through `connection`, when
     /// it could not be applied at construction time because the database file or table was unavailable. Runs at
-    /// most once. `connection` must be a freshly opened connection on `database_path` (never the cached
-    /// `sqlite_db` handle, which is pinned to the file it was first opened on and would miss a same-path
-    /// replacement of the database file). See the constructor and `generated_columns_reclassification_pending`.
+    /// most once. `connection` is a freshly opened connection on `database_path`, so it observes the current
+    /// database file even after a same-path replacement. See the constructor and
+    /// `generated_columns_reclassification_pending`.
     void reclassifyGeneratedColumnsFromRemote(ContextPtr query_context, sqlite3 * connection);
 
     TableNameOrQuery remote_table_or_query;
     String database_path;
-    SQLitePtr sqlite_db;
     LoggerPtr log;
+
+    /// No SQLite connection is retained by the storage. The connection passed to the constructor is used only
+    /// for construction-time schema inference; `read`, `write` and `updateExternalDynamicMetadataIfExists` each
+    /// open a fresh connection on `database_path`. A retained handle would keep the file it was opened on: after
+    /// a same-path replacement of the database file (`mv new.sqlite data.sqlite`), it would pin the old, unlinked
+    /// file on disk for the whole lifetime of the storage, while every query already runs against the replacement.
 
     /// True while the generated-column classification of an explicitly declared column list still has to be
     /// re-derived from the remote schema because the database file or table schema was unavailable when the
@@ -87,10 +86,6 @@ private:
     /// from `read`/`write`.
     std::atomic<bool> generated_columns_reclassification_pending{false};
     std::mutex reclassify_mutex;
-
-    /// Serializes the one-time lazy open of `sqlite_db` in `openConnectionIfNeeded` (see B3 / the data-race
-    /// review finding): the member must never be written by two concurrent first queries at once.
-    std::mutex connection_mutex;
 };
 
 }

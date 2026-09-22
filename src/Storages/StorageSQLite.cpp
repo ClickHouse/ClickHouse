@@ -142,14 +142,15 @@ StorageSQLite::StorageSQLite(
     , WithContext(context_->getGlobalContext())
     , remote_table_or_query(remote_table_or_query_)
     , database_path(database_path_)
-    , sqlite_db(sqlite_db_)
     , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
+    /// `sqlite_db_` serves construction-time schema inference only and is not retained (see the header): every
+    /// query opens its own connection, so the storage never pins a database file that was replaced at the same path.
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(sqlite_db, remote_table_or_query);
+        auto columns = getTableStructureFromData(sqlite_db_, remote_table_or_query);
         storage_metadata.setColumns(columns);
     }
     else
@@ -171,23 +172,6 @@ StorageSQLite::StorageSQLite(
     generated_columns_reclassification_pending = generated_columns_reclassification_pending_;
 }
 
-StorageSQLite::SQLitePtr StorageSQLite::openConnectionIfNeeded(bool throw_on_error, bool allow_create)
-{
-    /// Guard the one-time lazy connection bootstrap. `read` and `write` both funnel through here, so the
-    /// `sqlite_db` shared_ptr member is only ever written under this mutex - a plain unsynchronized
-    /// `if (!sqlite_db) sqlite_db = openSQLiteDB(...)` in each of them would be a data race on the shared_ptr
-    /// when two first queries run concurrently (e.g. after an `ATTACH`-while-unavailable).
-    std::lock_guard lock(connection_mutex);
-    if (!sqlite_db)
-    {
-        auto opened = openSQLiteDB(database_path, getContext(), throw_on_error, allow_create);
-        if (!opened)
-            return nullptr;
-        sqlite_db = opened;
-    }
-    return sqlite_db;
-}
-
 void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context, sqlite3 * connection)
 {
     if (!generated_columns_reclassification_pending.load(std::memory_order_acquire))
@@ -201,11 +185,11 @@ void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_contex
     /// at construction time is now reachable and the pending generated-column classification can be re-derived
     /// and stored in the in-memory metadata, where subsequent reads and writes pick it up.
     ///
-    /// `connection` must be a freshly opened one, never the long-lived `sqlite_db` handle: that handle keeps
-    /// the file it was first opened on, so after the database file has been replaced at the same path it still
-    /// sees the old, unlinked file. If the table (or its generated column) only exists in the replacement, a
-    /// repair probing through the cached handle would keep observing the stale schema and never complete,
-    /// while `read`/`write` - which already run on fresh per-query connections - see the replacement.
+    /// `connection` is a freshly opened one, so it sees the current database file even after the file has been
+    /// replaced at the same path. A retained handle would keep the file it was first opened on: if the table (or
+    /// its generated column) only exists in the replacement, a repair probing through it would keep observing the
+    /// stale schema and never complete, while `read`/`write` - which run on fresh per-query connections - see the
+    /// replacement.
     auto old_metadata = getInMemoryMetadataPtr(query_context, false);
     ColumnsDescription columns = old_metadata->getColumns();
 
@@ -242,10 +226,10 @@ void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// than opening a freshly created empty database (which contains no table and would otherwise mark the
     /// repair as done). The real file becoming reachable later then still repairs the classification.
     ///
-    /// The probe is a fresh connection rather than the cached `sqlite_db` handle: the cached handle is pinned
-    /// to the file it was first opened on, so after a same-path replacement of the database file it would keep
-    /// observing the old schema and the repair would never complete (see `reclassifyGeneratedColumnsFromRemote`).
-    /// The lazy bootstrap of `sqlite_db` itself stays with the first `read`/`write`.
+    /// The probe is a fresh connection, like every other connection this storage opens: a retained handle would
+    /// be pinned to the file it was first opened on, so after a same-path replacement of the database file it
+    /// would keep observing the old schema and the repair would never complete (see
+    /// `reclassifyGeneratedColumnsFromRemote`).
     auto probe_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, /* allow_create */ false);
     if (!probe_connection)
         return;
@@ -288,24 +272,22 @@ Pipe StorageSQLite::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    /// A read must never materialize a missing SQLite database. In particular, query-backed storages are
-    /// read-only and do not have pending generated-column reclassification, so deriving `allow_create` from
-    /// that flag would create an empty file on the first read after an `ATTACH` while the file is unavailable.
-    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
-
     /// Each read runs on its own dedicated connection: `SQLiteSource::onCancel` aborts a running statement
-    /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On the shared `sqlite_db` handle - also
-    /// used by every concurrent query on this table, and by all tables of a `DatabaseSQLite` - cancelling one
-    /// query could interrupt an unrelated sibling statement mid-scan. `allow_create` stays false: a read must
-    /// never materialize a missing database file.
+    /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On a connection shared by every concurrent
+    /// query on this table, cancelling one query could interrupt an unrelated sibling statement mid-scan.
+    ///
+    /// A read must never materialize a missing SQLite database, so `allow_create` stays false and a missing or
+    /// inaccessible file fails closed here. In particular, query-backed storages are read-only and do not have
+    /// pending generated-column reclassification, so deriving `allow_create` from that flag would create an empty
+    /// file on the first read after an `ATTACH` while the file is unavailable.
     ///
     /// The connection is opened before the pushdown decision below because that decision must be derived from
-    /// the very database the scan will run against. The long-lived `sqlite_db` handle keeps the file it was
-    /// opened on: after the database file has been replaced at the same path (`mv new.sqlite data.sqlite`),
-    /// it still sees the old, unlinked file, while a fresh open sees the replacement. Classifying the columns
-    /// through the cached handle would then reason about one database (an old STRICT table with a BINARY
-    /// collation) and query another (a non-STRICT replacement, or a NOCASE collation), and a predicate pushed
-    /// down on the strength of the stale metadata would drop rows the local re-filtering never sees.
+    /// the very database the scan will run against. A connection retained across queries would keep the file it
+    /// was opened on: after the database file has been replaced at the same path (`mv new.sqlite data.sqlite`),
+    /// it would still see the old, unlinked file, while a fresh open sees the replacement. Classifying the columns
+    /// through such a handle would reason about one database (an old STRICT table with a BINARY collation) and
+    /// query another (a non-STRICT replacement, or a NOCASE collation), and a predicate pushed down on the
+    /// strength of the stale metadata would drop rows the local re-filtering never sees.
     auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
@@ -583,15 +565,13 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
+    /// A transaction is connection-wide in SQLite. Give every sink its own connection so chunk transactions from
+    /// concurrent inserts cannot overlap.
+    ///
     /// A write must never materialize a missing SQLite database either: this storage never creates the
     /// remote table or schema itself, so a freshly created empty database could not satisfy the insert
     /// anyway - the file would be left behind as junk after the `INSERT` fails with "no such table".
     /// Fail closed on a missing file, exactly like the read path and the `sqlite` table function.
-    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
-
-    /// A transaction is connection-wide in SQLite. Give every sink its own connection so chunk transactions from
-    /// concurrent inserts cannot overlap on the shared metadata connection (which can also be shared by all tables
-    /// of a `DatabaseSQLite`). The database was opened above, so this connection must not create a missing file.
     auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
     /// Last-resort repair for a path that reaches `write` without the pre-snapshot metadata hook. The snapshot
@@ -656,9 +636,9 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// Only a genuine `CREATE` with an explicitly declared column list may materialize a missing database
         /// file. An `ATTACH` (or a server restart replaying the stored definition) must not create it as a side
-        /// effect: the table has to come up with the connection left unopened, so that a later read fails closed
-        /// while the file is unavailable (see `openConnectionIfNeeded`) instead of silently querying a fabricated
-        /// empty database. A schema-inference `CREATE` (`args.columns.empty()`) must not create it either: the
+        /// effect: the table has to come up without touching the file, so that a later read fails closed while
+        /// the file is unavailable (`read`/`write` open their connections with `allow_create = false`) instead
+        /// of silently querying a fabricated empty database. A schema-inference `CREATE` (`args.columns.empty()`) must not create it either: the
         /// storage constructor immediately reads the shape of the remote table or query, so a missing file can
         /// never make the statement succeed, and creating the file first would leave an empty database behind in
         /// `user_files` after the rejected DDL.
