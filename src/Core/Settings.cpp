@@ -497,6 +497,9 @@ because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
 
+`skip_unavailable_shards` does not silence this: a replica the initiator had no free connection
+slot for was never contacted, so the shard is not treated as unavailable.
+
 Possible values:
 
 - Positive integer.
@@ -627,9 +630,6 @@ Limit on Azure PUT request per second rate before throttling. Zero means unlimit
 )", 0) \
     DECLARE(UInt64, azure_max_put_burst, 0, R"(
 Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
-)", 0) \
-    DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
-The maximum number of connections per server.
 )", 0) \
     DECLARE(UInt64, s3_max_get_rps, 0, R"(
 Limit on S3 GET request per second rate before throttling. Zero means unlimited.
@@ -1040,7 +1040,7 @@ Possible values:
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
-- `3` - Only wait for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `alter_sync = 2`.
+- `3` - Only wait for active replicas. Inactive replicas apply the change when they become active.
 
 Cloud default value: `0`.
 
@@ -1767,6 +1767,13 @@ When enabled, during SELECT FINAL queries, parts from different partitions will 
     DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
 If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+Floating-point key columns are excluded from this derivation. The `FINAL` comparator is coarser than value
+identity for `Float32`, `Float64` and `BFloat16`: `-0.0` compares equal to `0.0`, and every `NaN` bit pattern
+compares equal to every other. A partition expression can tell exactly those values apart, so rows the comparator treats as
+one key can land in different partitions, and skipping the cross-partition merge would return all of them.
+The exclusion also applies when a float is nested inside a key column, for example `Tuple(Float64, UInt8)`
+or `Array(Float64)`.
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -3801,10 +3808,15 @@ This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join](/reference/engines/table-engines/special/join) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
+intermediate result. It is a hard cap for every hash-based `join_algorithm`: when the limit
+is reached the query throws or breaks according to
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+It never makes a join spill to disk — that decision belongs to
+[`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+and
+[`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+The exception is `legacy_join_size_limits_trigger_spilling`: with it on, the part of a
+join that already runs on disk treats this limit as a further spill trigger instead of a cap.
 
 Possible values:
 
@@ -3819,10 +3831,23 @@ This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join table engine](/reference/engines/table-engines/special/join).
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
+intermediate result. It is a hard cap for every hash-based `join_algorithm`: when the limit
+is reached the query throws or breaks according to
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+It never makes a join spill to disk — that decision belongs to
+[`max_bytes_before_external_join`](#max_bytes_before_external_join)
+and
+[`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
+Because it is a cap rather than a trigger, setting it at or below the spill
+threshold normally makes the query fail before the join can spill at all —
+unless the join is spill-capable and `enable_adaptive_memory_spill_scheduler`
+forces a spill first, or
+`legacy_join_size_limits_trigger_spilling` turns this limit back into a spill
+trigger for the part of a join that already runs on disk.
+
+The limit counts what the hash tables hold, so a join that spilled reaches it as
+each bucket is loaded rather than while the right side is read: it can read more
+of the right side before stopping than an in-memory hash join would.
 
 Possible values:
 
@@ -3835,11 +3860,13 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 - [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-This setting is honored only by the `hash`, `parallel_hash`, and `ie_join`
-[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
-algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
-limits differently — by spilling to disk, re-partitioning, or switching
-strategy — see
+Every hash-based [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm)
+value honors this setting, including the ones that spill to disk: reaching the
+limit stops the query rather than triggering a spill. The exception is
+`legacy_join_size_limits_trigger_spilling`: with it on, the part of a join that
+already runs on disk spills further instead of acting on this setting.
+`ie_join` honors it as well, on the input it accumulates from both sides. `partial_merge` still
+handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
 Possible values:
@@ -3879,6 +3906,8 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
+Whether a hash-based algorithm spills to disk is not part of this choice: [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) are the spill threshold for all of them (and once one of the two is non-zero, `enable_adaptive_memory_spill_scheduler` can spill the join earlier still, under memory pressure), and [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) a hard cap for all of them, unless `legacy_join_size_limits_trigger_spilling` turns the two caps back into spill triggers on disk. The value you pick decides how a join spills: `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect it in memory and switch over once the threshold is crossed.
+
 Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
 - Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
@@ -3892,7 +3921,9 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), and one of the two has to be non-zero unless `legacy_join_size_limits_trigger_spilling` is on. Without a threshold `grace_hash` is passed over for the next algorithm in the list, and rejected if it is the only one.
+
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -4681,6 +4712,11 @@ Possible values:
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
 )", 0) \
+    DECLARE(Bool, allow_executable_tables, true, R"(
+Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
+
+Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
+)", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
@@ -5147,7 +5183,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
 | `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+| `3`   | The query waits only for the active replicas. Inactive replicas apply the mutations when they become active.                                          |
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -5170,7 +5206,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
 | `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+| `3`   | The query waits only for the active replicas. Inactive replicas apply the lightweight deletes when they become active.                                |
 
 **See Also**
 
@@ -5309,6 +5345,8 @@ These functions can be transformed:
 - [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [has](/reference/functions/regular-functions/array-functions#has) and [notHas](/reference/functions/regular-functions/array-functions#notHas) for `Map` to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -5742,13 +5780,15 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 ```
 )", 0) \
     DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
-Format for AggregateFunction input during INSERT operations.
+How the input formats read columns of the `AggregateFunction` type.
 
 Possible values:
 
-- `state` — Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
-- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
-- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+- `state` — the serialized state of the aggregate function, as the output formats write it (the default).
+- `value` — a value of the argument of the aggregate function, or a tuple of the arguments if there are several of them. The value is aggregated to form the state.
+- `array` — an array of values, as described in the `value` option above. All elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes the format reads the column as if it had the type of the values: `T` for `AggregateFunction(f, T)`, `Tuple(T1, T2)` for `AggregateFunction(f, T1, T2)`, or `Array` of it in the `array` mode. The values are written in the representation the format uses for that type: a number or a string in a text format, a JSON array in the JSON formats, the binary encoding of the type in `RowBinary` or `Native`, a column of that type in `Parquet`, and so on. This applies to every input format, and also to `AggregateFunction` nested in `Array`, `Tuple` or `Map`.
 
 **Examples**
 
@@ -5760,18 +5800,26 @@ CREATE TABLE example (
 );
 ```
 
-
 With `aggregate_function_input_format = 'value'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
 
 With `aggregate_function_input_format = 'array'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
+```
+
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
 ```
 
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
@@ -7060,6 +7108,20 @@ Used by the aggregate projection matcher (and any future projection matcher that
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
+    DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, R"(
+Restores how `max_rows_in_join` and `max_bytes_in_join` worked before the spill threshold became the trigger, for
+the part of a join that runs on disk: reaching one of them makes the join spill further instead of stopping the query.
+`join_algorithm = 'grace_hash'` then spills on those two alone and ignores `max_bytes_before_external_join` entirely, zero
+included. `hash` / `parallel_hash` still go to disk on the spill threshold and spill on either one afterwards; their
+in-memory phase keeps treating the two as a hard cap, as it did before.
+
+For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
+
+A server that predates this setting applies the old meaning, and cannot be told otherwise, so with
+`serialize_query_plan = 1` a join whose spilling depends on the new meaning is not sent to such a server at all:
+the query fails instead of quietly running with the other contract. Turning this setting on makes those queries
+work across the two versions, with the old meaning on both sides.
+)", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
@@ -8225,6 +8287,8 @@ Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queri
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
+
+This setting controls an optimization only. Functions that cannot be executed on the default value of their arguments - such as `parseDateTime`, `IPv4StringToNum` or `intDiv` - always skip the rows containing a NULL regardless of this setting, because the value stored behind a NULL is the default value of the argument type and executing on it would throw on otherwise valid data.
 )", 0) \
     DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
 Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
@@ -8426,9 +8490,6 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0) \
-    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
-The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
-)", 0) \
     DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", 0) \
@@ -8485,7 +8546,7 @@ Cloud default value: `1`.
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Obsolete since v26.9: the analyzer cannot be disabled anymore.
 
-The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 the old query analysis was deprecated and this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
+The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
 )", IMPORTANT | SettingsTierType::OBSOLETE, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
@@ -8534,6 +8595,9 @@ You can use functions `timeZone()` and `serverTimeZone()` to get the session tim
 Possible values:
 
 -    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+-    A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`. The offset has to be a whole number of quarters of an hour and no further from UTC than 14 hours, which covers every offset a real time zone has.
+
+Only these names are accepted. A name that only the operating system's time zone database has is not, because ClickHouse ships its own copy of the time zone database so that results do not depend on the host.
 
 Examples:
 
@@ -8920,7 +8984,7 @@ Max backoff in milliseconds for parts update when using `select_sequential_consi
 Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+If set to a non-zero value, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. Together with `max_bytes_ratio_before_external_join` this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached; with both settings at `0` the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both and spills on `max_rows_in_join` / `max_bytes_in_join` instead. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
@@ -8929,7 +8993,7 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
-Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+Has effect for every hash-based `join_algorithm`, including `grace_hash`, provided a temporary data path is configured.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
@@ -8970,21 +9034,21 @@ Initial delay in milliseconds before the first retry of a failed AI function API
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. All three limits are disabled by default, so this has no effect until one of them is set. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
@@ -9073,6 +9137,8 @@ The maximum number of rows in the right table to determine whether to rerange th
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+This setting is experimental and currently does not work together with all other join optimizations.
+In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
@@ -9143,8 +9209,8 @@ The negative tokens cache uses the text index tokens cache and avoids repeated d
 Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to cache deserialized text index deserialized posting lists in memory.
+    DECLARE(Bool, use_text_index_postings_cache, true, R"(
+Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
@@ -9224,7 +9290,8 @@ on, `use_variant_as_common_type` is turned off, and the query analyzer is turned
 An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
+`grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
@@ -9421,13 +9488,12 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
-reorderings are valid using the CD-A conflict detector).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
+    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
+Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
+decide which join reorderings are valid. The following values are available:
+ - `''` (default) - no conflict detector, DPsub uses the per-relation `ON` clause restriction
+ - `'a'` - the CD-A conflict detector, which is correct but incomplete
+ - `'c'` - the CD-C conflict detector, which is correct and complete
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -9470,6 +9536,7 @@ Enable experimental table function `eval`.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true) \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
@@ -9531,6 +9598,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
