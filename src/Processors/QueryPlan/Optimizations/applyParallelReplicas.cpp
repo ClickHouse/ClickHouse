@@ -159,6 +159,17 @@ static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
     return false;
 }
 
+static bool subtreeHasNonClonableSets(const QueryPlan::Node * node)
+{
+    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get());
+        delayed && !delayed->getSets().empty())
+        return true;
+    for (const auto * child : node->children)
+        if (subtreeHasNonClonableSets(child))
+            return true;
+    return false;
+}
+
 /// A fragment is cloned and then serialized, so every step in it must be serializable. Checking that
 /// generically (instead of enumerating step types) keeps new non-serializable steps out automatically:
 /// a prepared-lookup join (JoinStepLogicalLookup) and correlated-subquery decorrelation (which buffers a
@@ -166,6 +177,10 @@ static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
 /// are consumed when the fragment is built (see ConvertToDistributedVisitor) and never get serialized.
 static bool subtreeIsShippable(const QueryPlan::Node * node)
 {
+    /// `QueryPlan::cloneSubtree` rejects a `DelayedCreatingSetsStep` holding single-use set sources.
+    if (subtreeHasNonClonableSets(node))
+        return false;
+
     const auto ignore_split_marker
         = [](const IQueryPlanStep & step) { return typeid_cast<const ParallelReplicasSplitStep *>(&step) != nullptr; };
 
