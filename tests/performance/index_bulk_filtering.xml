@@ -22,20 +22,19 @@
     </create_query>
 
     <!-- Stop merges, so that none happens while the queries below are benchmarked.
-         65409 is the default `max_block_size`, written out so that the part layout stays the same
-         if that default changes. -->
+         `max_block_size` is pinned so the 16-part layout cannot follow a change of its default. -->
     <fill_query>SYSTEM STOP MERGES test_set_index</fill_query>
     <fill_query>SYSTEM STOP MERGES test_minmax_index</fill_query>
 
     <fill_query>
         INSERT INTO test_set_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65409, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
     </fill_query>
 
     <fill_query>
         INSERT INTO test_minmax_index
-        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65409, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
         SELECT * FROM numbers(1000000);
     </fill_query>
 
