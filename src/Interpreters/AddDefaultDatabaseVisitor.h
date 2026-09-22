@@ -212,11 +212,11 @@ private:
         const auto * set_query = settings->as<ASTSetQuery>();
         if (!set_query)
             return std::nullopt;
-        std::optional<bool> result;
+        /// The first occurrence wins, as in the analyzer's `SettingsChanges` lookup.
         for (const auto & change : set_query->changes)
             if (change.name == "enable_global_with_statement")
-                result = SettingFieldBool(change.value).value;
-        return result;
+                return SettingFieldBool(change.value).value;
+        return std::nullopt;
     }
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:
