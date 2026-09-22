@@ -149,7 +149,8 @@ public:
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
-    /// The prepared chunk exposes the materialized column memory needed to estimate filtering copies.
+    /// Header constants stay compact because they cannot distinguish rows. The prepared chunk exposes
+    /// the materialized memory of the remaining columns needed to estimate filtering copies.
     /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
     void prepareForInsert(Chunk & chunk);
 
@@ -181,6 +182,7 @@ private:
     void initialize(const ColumnRawPtrs & key_columns);
 
     const ColumnNumbers key_columns_pos;
+    const ColumnNumbers non_constant_columns_pos;
     /// Types of the key columns (following `key_columns_pos`), for the key extraction.
     DataTypes key_types;
 

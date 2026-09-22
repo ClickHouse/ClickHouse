@@ -294,6 +294,7 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
 DistinctSetFilter::DistinctSetFilter(
     const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
+    , non_constant_columns_pos(calculateDistinctKeyColumnsPositions(header, {}))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
     , skip_null_keys(skip_null_keys_)
@@ -458,7 +459,7 @@ void DistinctSetFilter::prepareForInsert(Chunk & chunk)
     chassert(hasKeyColumns());
     chassert(!skip_null_keys);
 
-    materializeChunk(chunk);
+    materializeChunk(chunk, non_constant_columns_pos);
     if (data->empty())
         initialize(getKeyColumns(chunk.getColumns()));
 }
@@ -488,8 +489,9 @@ size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    /// The hash-set methods require materialized columns.
-    materializeChunk(chunk);
+    /// The hash-set methods require materialized keys. Header constants are excluded from the keys
+    /// and can remain compact when filtering the output.
+    materializeChunk(chunk, non_constant_columns_pos);
 
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
