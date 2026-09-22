@@ -25,7 +25,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
@@ -64,8 +63,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -111,6 +109,76 @@ bool isSameSetting(const String & left, const String & right)
     auto resolve = [](const String & name)
     { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
     return resolve(left) == resolve(right);
+}
+
+/// Removes the settings with the given names from the `SETTINGS` clause of a table definition.
+void resetSettings(SettingsChanges & settings_from_storage, const std::set<String> & settings_resets)
+{
+    for (const auto & setting_name : settings_resets)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
+
+        if (it != settings_from_storage.end())
+        {
+            settings_from_storage.erase(it, settings_from_storage.end());
+        }
+        else
+        {
+            /// Intentionally ignore if there is no such setting name
+            LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+        }
+    }
+}
+
+/// Splits a parsed `SETTINGS` clause into changes and resets.
+/// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
+void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
+{
+    settings_changes = set_query.changes;
+
+    for (const auto & setting_name : set_query.default_settings)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        if (std::ranges::any_of(settings_changes, same_setting))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is both modified and reset in one command", backQuote(setting_name));
+
+        auto insertion = settings_resets.emplace(setting_name);
+        if (!insertion.second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
+    }
+}
+
+/// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
+/// back to `settings_defaults`, the engine's config defaults. Engines without implicit indices pass none.
+void refreshSettingsDerivedMetadata(
+    StorageInMemoryMetadata & metadata, const MergeTreeSettings * settings_defaults, ContextPtr context)
+{
+    if (!settings_defaults)
+        return;
+
+    MergeTreeSettings effective_settings = *settings_defaults;
+    for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+    {
+        if (MergeTreeSettings::hasBuiltin(change.name))
+            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+    }
+
+    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+    for (const auto & column : metadata.columns)
+    {
+        metadata.dropImplicitIndicesForColumn(column.name);
+        metadata.addImplicitIndicesForColumn(column, context);
+    }
+    metadata.dropImplicitIndicesForVirtualColumns();
+    metadata.addImplicitIndicesForVirtualColumns(context);
 }
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
@@ -287,7 +355,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -295,7 +364,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
             command.append_column_setting = true;
         }
 
@@ -565,7 +635,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        parseSettingsChangesAndResets(command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
         return command;
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
@@ -573,7 +643,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_DATABASE_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        const auto & set_query = command_ast->settings_changes->as<ASTSetQuery &>();
+        /// Databases have no `RESET SETTING`: an engine applies only the changes, so the reset would be
+        /// silently dropped and would also skip the engine checks on the setting it removes.
+        if (!set_query.default_settings.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot reset setting {}: ALTER DATABASE does not support resetting a setting to DEFAULT",
+                backQuote(set_query.default_settings.front()));
+        command.settings_changes = set_query.changes;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RESET_SETTING)
@@ -681,8 +759,32 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+std::optional<AlterCommand> AlterCommand::extractSettingsResets()
+{
+    if (type != MODIFY_SETTING || settings_resets.empty())
+        return {};
+
+    if (settings_changes.empty())
+    {
+        type = RESET_SETTING;
+        return {};
+    }
+
+    AlterCommand reset_command;
+    reset_command.ast = ast;
+    reset_command.type = RESET_SETTING;
+    reset_command.settings_resets = std::move(settings_resets);
+    settings_resets.clear();
+    return reset_command;
+}
+
+
 void AlterCommand::apply(
-    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const ColumnsDescription * columns_before_alter,
+    const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -1154,21 +1256,7 @@ void AlterCommand::apply(
             return;
 #endif
 
-        SharedHeader as_select_sample;
-
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
-        }
-        else
-        {
-            /// For refreshable materialized views, allow parameterized views in the query.
-            /// This prevents the old analyzer from trying to execute table functions during analysis.
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
-                context,
-                false /* is_subquery */,
-                metadata.refresh != nullptr /* is_create_parameterized_view */);
-        }
+        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
@@ -1186,6 +1274,8 @@ void AlterCommand::apply(
         }
 
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        resetSettings(settings_from_storage, settings_resets);
+
         for (const auto & change : settings_changes)
         {
             auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
@@ -1206,54 +1296,15 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        MergeTreeSettings effective_settings;
-        bool any_mt_setting = false;
-        for (const auto & change : settings_from_storage)
-        {
-            if (MergeTreeSettings::hasBuiltin(change.name))
-            {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
-                any_mt_setting = true;
-            }
-        }
-        if (any_mt_setting)
-        {
-            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
-            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
-
-            for (const auto & column : metadata.columns)
-            {
-                metadata.dropImplicitIndicesForColumn(column.name);
-                metadata.addImplicitIndicesForColumn(column, context);
-            }
-            metadata.dropImplicitIndicesForVirtualColumns();
-            metadata.addImplicitIndicesForVirtualColumns(context);
-        }
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RESET_SETTING)
     {
         if (!metadata.settings_changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        for (const auto & setting_name : settings_resets)
-        {
-            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
-
-            if (it != settings_from_storage.end())
-            {
-                settings_from_storage.erase(it, settings_from_storage.end());
-            }
-            else
-            {
-                /// Intentionally ignore if there is no such setting name
-                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
-            }
-        }
+        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1423,7 +1474,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool isJSONLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
-    if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
+    if (!context || !context->getSettingsRef()[Setting::enable_json_lazy_type_hints])
         return false;
 
     /// Identical types are byte-identical, not a lazy conversion.
@@ -1530,7 +1581,7 @@ bool isNamedTupleSubfieldAddition(
         }
         if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
         {
-            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            nested_lazy_settings.emplace("enable_json_lazy_type_hints");
             continue;
         }
         if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
@@ -1557,7 +1608,7 @@ std::set<std::string_view> getLazyMetadataConversionSettings(
     }
 
     if (isJSONLazyMetadataConversion(from, to, context))
-        settings.emplace("allow_experimental_json_lazy_type_hints");
+        settings.emplace("enable_json_lazy_type_hints");
 
     return settings;
 }
@@ -1751,7 +1802,11 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+void AlterCommands::apply(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1759,8 +1814,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     auto metadata_copy = metadata;
 
     for (const AlterCommand & command : *this)
+    {
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
@@ -1797,12 +1854,15 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
+    /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
+    /// in the global context, not in the session that happens to issue the `ALTER`.
+    const ContextPtr index_context = context->getGlobalContext();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
         }
         catch (const Exception & exception)
         {
@@ -1831,6 +1891,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
+    for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
+        new_projections.addUnavailable(definition_ast->clone());
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
@@ -2055,6 +2117,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
+    /// - `apply()` runs the commands one after another - so that a command is screened below only when
+    /// it will really install a declaration.
+    NameSet constraint_names;
+    for (const auto & constraint : metadata->constraints.getConstraints())
+        constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2062,6 +2130,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
+        /// it would check a row against another row's value, or read past the end of a shorter column.
+        /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
+        /// just like `ADD CONSTRAINT` does.
+        ///
+        /// Only a declaration that `apply()` will really install is screened. An
+        /// `ADD CONSTRAINT IF NOT EXISTS` of a name that is taken, and a `MODIFY CONSTRAINT` of a name
+        /// that is not there, install nothing, so they keep meaning what they meant before this check
+        /// existed - the same way a no-op `ADD COLUMN IF NOT EXISTS` skips the validation of its column
+        /// below, and the way a missing name is reported by `apply()` rather than pre-empted here.
+        if (command.type == AlterCommand::ADD_CONSTRAINT)
+        {
+            if (command.constraint_decl && !(command.if_not_exists && constraint_names.contains(command.constraint_name)))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+            constraint_names.insert(command.constraint_name);
+        }
+        else if (command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            if (command.constraint_decl && constraint_names.contains(command.constraint_name))
+                ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
+        }
+        else if (command.type == AlterCommand::DROP_CONSTRAINT)
+            constraint_names.erase(command.constraint_name);
 
         /// `column_statistics_decl` covers the column-declaration spelling
         /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
@@ -2243,7 +2335,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
-                    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
                     {
                         auto execution_context = Context::createCopy(context);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
@@ -2266,24 +2357,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                         if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (const ColumnDescription & column : all_columns)
-                        {
-                            if (const auto & default_expression = column.default_desc.expression)
-                            {
-                                ASTPtr query = default_expression->clone();
-                                auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                                for (const auto & required_column : actions->getRequiredColumns())
-                                {
-                                    auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                                    if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
-                                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }
                             }
                         }

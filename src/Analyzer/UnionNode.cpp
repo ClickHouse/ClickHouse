@@ -15,10 +15,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+
+#include <Common/SettingsChanges.h>
 
 #include <DataTypes/getLeastSupertype.h>
 

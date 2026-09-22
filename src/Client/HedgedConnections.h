@@ -1,5 +1,5 @@
 #pragma once
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <functional>
 #include <queue>
@@ -160,6 +160,10 @@ private:
     bool resumePacketReceiver(const ReplicaLocation & replica_location);
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
+
+    /// Stops the factory and retracts pending replica replacements: after the factory is
+    /// stopped no replacement can arrive, so a pending flag would never be cleared.
+    void stopChoosingReplicasAndRetractPending();
 
     void startNewReplica();
 

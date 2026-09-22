@@ -2,6 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
+#include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
 
 
@@ -16,6 +17,7 @@ struct TimeSeriesSettingsImpl;
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ASTFunction) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, DataType) \
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, UInt64) \
 
@@ -65,10 +67,8 @@ bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 /// A non-zero result means the query enables the optional "recent samples" target table.
 UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 
-/// Returns the value of `version` from the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
-/// or the latest version if the query doesn't specify it (the normalization pins an explicit version
-/// into every query, so an absent setting means a new table getting the latest version).
-UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query);
+/// The similar function for `version` is `getTimeSeriesSettingVersion` in Parsers/getTimeSeriesSettingVersion.h,
+/// because it's used while formatting a CREATE query.
 
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `version` in its SETTINGS clause.
 bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);

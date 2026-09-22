@@ -6,14 +6,16 @@
 namespace DB
 {
 
+/// Statistics of jemalloc size classes (bins): aggregated over all arenas when
+/// `per_arena` is false, with one row per (arena, bin) otherwise.
 class StorageSystemJemallocBins final : public StorageWithCommonVirtualColumns
 {
 public:
-    explicit StorageSystemJemallocBins(const StorageID & table_id_);
+    StorageSystemJemallocBins(const StorageID & table_id_, bool per_arena_);
 
-    std::string getName() const override { return "SystemJemallocBins"; }
+    std::string getName() const override { return per_arena ? "SystemJemallocArenaBins" : "SystemJemallocBins"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static ColumnsDescription getColumnsDescription(bool per_arena);
     static VirtualColumnsDescription createVirtuals();
 
     using StorageWithCommonVirtualColumns::read;
@@ -30,6 +32,9 @@ public:
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
+
+private:
+    const bool per_arena;
 };
 
 }
