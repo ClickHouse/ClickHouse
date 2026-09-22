@@ -88,7 +88,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### Credenciais da API (HMAC) {#rotate-api-credentials}
 
-Solicite um novo token de inscrição à equipe responsável pela sua conta ClickHouse e execute novamente o comando `init` original com `--enroll` e `--force`. Mantenha todas as flags específicas do destino usadas na primeira instalação (`--target-namespace`, `--values` e quaisquer flags de espelhamento, como `--chart`, `--chart-repo` ou `--chart-version`), pois `--force` prepara novamente a configuração preservada. O modo gerenciado é herdado da configuração que está sendo substituída, portanto `--managed` é opcional aqui. Em uma instalação padrão:
+O comportamento do modo managed descrito aqui requer uma [compilação compatível](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); a versão pública `v0.16.0` não possui nem `--managed` nem `--no-managed`.
+
+Solicite um novo token de inscrição à account team da ClickHouse e execute novamente o comando `init` original com `--enroll` e `--force`. Mantenha todas as flags específicas do destino usadas na primeira instalação (`--target-namespace`, `--values` e quaisquer flags de espelhamento, como `--chart`, `--chart-repo` ou `--chart-version`), pois `--force` prepara novamente a configuração preservada. O modo managed é herdado da configuração que está sendo substituída, portanto `--managed` é opcional aqui. Em uma instalação padrão:
 
 ```bash
 # Kubernetes, from your workstation
@@ -157,9 +159,13 @@ A renovação é automática (consulte [certificados](#certificates)). Para subs
 
 ## Reexecuções e recuperação {#re-runs-and-recovery}
 
+<Note>
+  A CLI pública `v0.16.0` não possui `--managed` nem `--no-managed`. A preservação e a substituição do modo managed descritas abaixo exigem uma compilação com [suporte ao modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); confirme sua compilação com sua account team antes de alterar esse modo durante a recuperação.
+</Note>
+
 As reexecuções de `init` são convergentes; portanto, executar novamente o mesmo comando é sempre a primeira medida. Sem `--force`, um `/etc/clicklink/config.yaml` (VM) ou uma sobreposição `clicklink-values.yaml` (Kubernetes) existente é mantido, e uma chave de cliente existente é reutilizada; o `init` substitui as credenciais e a cadeia de CA atomicamente. Os comandos de recuperação exibidos pela CLI após uma falha parcial podem ser repetidos com segurança.
 
-`--force` substitui a configuração ou sobreposição mantida, regenera a chave de cliente e substitui um certificado de cliente ainda válido. Ele nunca gera um novo UUID de cluster, de modo que a identidade do connector é preservada. A postura de modo gerenciado da configuração substituída é mantida em reexecuções não assistidas e oferecida como padrão em um terminal, a menos que você passe `--managed` ou `--no-managed`.
+`--force` substitui a configuração ou sobreposição mantida, regenera a chave de cliente e substitui um certificado de cliente ainda válido. Ele nunca gera um novo UUID de cluster, de modo que a identidade do connector é preservada. A postura do modo managed da configuração substituída é mantida em reexecuções não assistidas e oferecida como padrão em um terminal, a menos que você passe `--managed` ou `--no-managed`.
 
 Se a assinatura do certificado falhar após o staging ou se o endpoint de assinatura retornar `409` porque já existe um certificado ainda válido, não será necessário um novo token nem uma segunda emissão. Conclua a instalação com os materiais assinados já presentes no disco:
 
@@ -247,6 +253,8 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
 ### A camada de plataforma {#uninstall-platform-layer}
+
+A CLI pública `v0.16.0` não possui o comando `platform`, incluindo `platform reset`; confirme a [disponibilidade](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usá-lo.
 
 Desinstalar o connector não remove a camada de plataforma. Os espaços de nomes e as cargas de trabalho da plataforma, o RBAC `pcm-platform` e os objetos de admission instalados pelas suas aprovações permanecem no cluster, assim como todos os serviços gerenciados. Exclua primeiro os serviços; consulte [excluir um serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#delete-a-service). Em um cluster de teste sem serviços, o comando `clicklink clctl platform reset` desinstala os lançamentos da plataforma, mas as CustomResourceDefinitions, o RBAC e a StorageClass que ele deixa para trás precisam ser excluídos manualmente; consulte [redefinir um cluster de teste](/pt-BR/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). Fora de um cluster de teste, defina um plano de remoção junto à sua account team da ClickHouse antes de mexer na camada de plataforma.
 

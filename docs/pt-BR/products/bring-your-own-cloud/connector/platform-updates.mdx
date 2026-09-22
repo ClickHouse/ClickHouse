@@ -14,6 +14,10 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Um cluster gerenciado executa uma pequena camada de plataforma da qual os serviços ClickHouse dependem. O ClickHouse Cloud propõe atualizações para essa camada; o executor não aplica nada até que você aprove cada uma delas com suas próprias credenciais do cluster. Esta página explica o que é uma atualização de plataforma, como aprová-la em uma VM ou em uma instalação Kubernetes, por quanto tempo uma aprovação é válida e quais permissões ela concede.
 
+<Note>
+  A CLI pública `v0.16.0` não possui o comando `platform`, incluindo `platform approve` e `platform reset`. Nem o fluxo de trabalho da VM Linux nem o do Kubernetes descritos abaixo estão disponíveis nesse lançamento. A aprovação no Kubernetes exige, adicionalmente, suporte na CLI e no chart do executor para o pacote de tokens baseado em Secret (`--secret-namespace`). Confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) com sua equipe de conta antes de usar qualquer um dos fluxos de trabalho.
+</Note>
+
 ## O que é uma atualização de plataforma {#what-a-platform-update-is}
 
 A camada de plataforma é composta por três componentes: o controlador de snapshots, o ClickHouse Operator e os coletores de monitoramento. Eles são instalados nessa ordem porque cada um depende das definições de recurso personalizado do anterior. Junto a eles há uma StorageClass chamada `gp3-encrypted` (volumes gp3 criptografados) utilizada pelos serviços.
@@ -30,6 +34,17 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
 ## Aprovar uma atualização de plataforma {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Fluxo de aprovação de plataforma do ClickHouse Connector" />
+
+### Credenciais de registry {#registry-credentials}
+
+Os dois procedimentos de aprovação abaixo exigem uma [compilação com suporte a plataforma](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); a versão pública `v0.16.0` não possui o comando `platform`. A aprovação no Kubernetes também exige suporte correspondente na CLI e no chart para a entrega de Secrets.
+
+A autenticação no registry depende do modo de distribuição de imagens registrado para o seu ambiente:
+
+* **Acesso direto ao registry da ClickHouse.** Execute a aprovação na VM EC2 do connector. Tanto o `approve` quanto a sincronização de plataforma do executor usam credenciais do instance metadata service do EC2 para assumir a função read-only de puller do ECR do seu ambiente. Essa função é usada para o login no chart e, no caso do executor, também para verificar se as imagens de plataforma existem. Perfis da AWS, credenciais de ambiente ou credenciais de SSO em uma workstation não substituem o instance profile. O seu kubeconfig continua fornecendo as credenciais separadas de cluster-admin para aplicar a metade de permissões.
+* **Charts em outro registry ECR, incluindo o seu próprio mirror.** O login no chart usa as credenciais ambient da AWS do processo que executa o `approve` ou o executor. Essas credenciais precisam ter permissão de leitura nesse registry.
+
+Use o procedimento de workstation do Kubernetes abaixo somente em deployments com registry espelhado e com a aprovação de plataforma do Kubernetes habilitada. Para acesso direto, peça à sua equipe de conta que confirme um ambiente de execução compatível com o instance profile do EC2 necessário antes de prosseguir.
 
 <Steps>
   <Step title="Localize o pacote preparado" id="find-the-staged-bundle">
@@ -69,7 +84,7 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
   <Step title="Execute approve" id="run-approve">
     `approve` sem flags lê o pacote preparado e calcula seu hash, de modo que o que você aprova é exatamente o que o executor recebeu. Ele renderiza cada chart do pacote exatamente como o executor fará e aplica a metade de permissões com o kube context que você escolher. Cria a identidade `pcm-platform`, se necessário, e emite seu token. Não faz nenhuma requisição ao seu connector endpoint.
 
-    `approve` precisa de um kube context com direitos de cluster-admin no cluster gerenciado (`--context <name>` quando seu kubeconfig contém vários). Quando um chart reside no Amazon ECR, também são necessárias AWS credentials com permissão de leitura sobre ele. `--dry-run` renderiza e lista a metade de permissões sem aplicar nem emitir nada.
+    `approve` precisa de um kube context com direitos de cluster-admin no cluster gerenciado (`--context <name>` quando seu kubeconfig contém vários) e das [registry credentials](#registry-credentials) referentes ao modo de distribuição de image do seu ambiente. `--dry-run` renderiza e lista a metade de permissões sem aplicar nem emitir nada; ainda assim, é necessário access ao registry para renderizar os charts.
 
     <Tabs>
       <Tab title="VM Linux" id="approve-vm">
@@ -83,7 +98,7 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        `approve` lê o pacote preparado por meio do redirecionamento de porta do passo anterior. Ele entrega o pacote de token como um Secret no espaço de nomes do connector, que o chart monta no pod do Kubernetes. Execute-o a partir de uma workstation cujo kubeconfig alcance o cluster, com uma cópia da configuração do connector. O chart renderiza uma no ConfigMap do executor; `approve` precisa dela para o prefix do espaço de nomes e não lê nenhuma credential dela.
+        Em uma implantação com registry espelhado e aprovação de plataforma no Kubernetes habilitada, `approve` lê o pacote preparado por meio do redirecionamento de porta do passo anterior. Ele entrega o pacote de token como um Secret no espaço de nomes do connector, que o chart monta no pod do Kubernetes. Execute-o a partir de uma workstation cujo kubeconfig alcance o cluster, com uma cópia da configuração do connector e access ao registry conforme descrito acima. O chart renderiza a configuração no ConfigMap do executor; `approve` precisa dela para o prefix do espaço de nomes e não lê nenhuma credential dela.
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # o espaço de nomes do connector que você escolheu no init
@@ -144,9 +159,11 @@ A identidade de ciclo de vida de serviço do executor, `pcm-executor`, é separa
 
 ## Redefinindo um cluster de teste {#resetting-a-test-cluster}
 
+A CLI pública `v0.16.0` não possui o comando `platform reset`; confirme a [disponibilidade](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usar este procedimento.
+
 O `clicklink clctl platform reset` existe para clusters de teste: ele desinstala os componentes da plataforma para que a primeira instalação possa ser testada novamente. Antes de alterar qualquer coisa, ele lista os clusters ClickHouse nos espaços de nomes pertencentes a este connector e recusa a operação caso exista algum serviço.
 
-Em um cluster vazio, ele desinstala os lançamentos da plataforma na ordem inversa de dependência. Em seguida, remove o pacote de tokens de plataforma do executor: o diretório local em uma VM ou o Secret indicado por `--secret-namespace <connector-namespace>` no Kubernetes. As CustomResourceDefinitions, o RBAC e a StorageClass permanecem intactos. Execute `approve` novamente antes da próxima sincronização da plataforma.
+Em um cluster vazio, ele desinstala os lançamentos da plataforma na ordem inversa de dependência. Em seguida, remove o pacote de tokens de plataforma do executor: o diretório local em uma VM ou o Secret indicado por `--secret-namespace <connector-namespace>` no Kubernetes. As definições de recursos personalizados, o RBAC e a StorageClass permanecem intactos. Execute `approve` novamente antes da próxima sincronização da plataforma.
 
 ```bash
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run

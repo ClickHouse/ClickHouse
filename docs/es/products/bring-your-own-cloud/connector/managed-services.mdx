@@ -1,6 +1,6 @@
 ---
-title: 'Servicios gestionados'
-sidebarTitle: 'Servicios gestionados'
+title: 'Servicios administrados'
+sidebarTitle: 'Servicios administrados'
 slug: /products/bring-your-own-cloud/connector/managed-services
 description: 'Cree, supervise y dé de baja servicios de ClickHouse que ClickHouse Cloud opera en su cluster a través del executor del conector'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'conector', 'gestionado', 'executor']
@@ -12,7 +12,11 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-En modo gestionado, el conector ejecuta un tercer componente: el executor. A través de él, ClickHouse Cloud opera los servicios de ClickHouse en su Kubernetes cluster. Esta página explica cómo crear un servicio, cómo consultar su status, qué hace ClickHouse Cloud una vez que el servicio existe y cómo se retira un servicio.
+En modo administrado, el conector ejecuta un tercer componente: el executor. A través de él, ClickHouse Cloud opera los servicios de ClickHouse en su Kubernetes cluster. Esta página explica cómo crear un servicio, cómo consultar su status, qué hace ClickHouse Cloud una vez que el servicio existe y cómo se retira un servicio.
+
+<Note>
+  Habilitar el modo administrado y crear un servicio requiere soporte que aún no está disponible en el release público. La CLI pública `v0.16.0` no incluye los indicadores de init `--managed` y `--no-managed` ni el flujo de trabajo de creación por parte del cliente que se describe a continuación. Confirme la [disponibilidad del modo administrado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) con su account team antes de registrar o preparar recursos; la creación de servicios también requiere el soporte correspondiente en su endpoint del conector y en ClickHouse Cloud.
+</Note>
 
 ## Qué hace el modo gestionado {#what-managed-mode-does}
 
@@ -24,22 +28,28 @@ Cada service necesita tres cloud resources de tu propiedad: un bucket de datos, 
 
 En una VM, el executor se ejecuta como el systemd unit `clicklink-executor` junto a los otros dos. En Kubernetes es una Implementación de una sola réplica en el espacio de nombres del conector. Expone el estado de salud y las metrics en el puerto 8086, y su API local en `127.0.0.1:9999`.
 
-## Habilitar el modo gestionado {#enable-managed-mode}
+## Habilitar el modo administrado {#enable-managed-mode}
 
-El modo gestionado se elige durante el enroll: pase `--managed` a `clicklink clctl init` o responda al prompt en un terminal. En una VM, `init` toma el cluster del kubeconfig de este host (`--cluster-name` cuando contiene más de un EKS cluster) y concede el acceso cluster-wide del executor de forma inline. En Kubernetes, pase `--egress-cidrs` con los CIDR de su endpoint del conector para que el chart deje su NetworkPolicy de denegación predeterminada enabled.
+<Note>
+  La CLI pública `v0.16.0` no admite `init --managed` ni el prompt de modo administrado que se describe a continuación. Primero obtenga un build y una implementación con [soporte de modo administrado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) a través de su account team.
+</Note>
+
+El modo administrado se elige durante el enroll: pase `--managed` a `clicklink clctl init` o responda al prompt en un terminal. En una VM, `init` toma el cluster del kubeconfig de este host (`--cluster-name` cuando contiene más de un EKS cluster) y concede el acceso a todo el cluster del executor de forma inline. En Kubernetes, pase `--egress-cidrs` con los CIDR de su endpoint del conector para que el chart deje su NetworkPolicy de denegación predeterminada enabled.
 
 La instalación en sí no cambia. Consulte el [onboarding](/es/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) para ver el flujo completo y la [CLI reference](/es/products/bring-your-own-cloud/connector/reference/cli#init) para conocer los indicadores.
 
-## Crear un service {#create-a-service}
+## Crear un servicio {#create-a-service}
 
-Crear un service requiere dos comandos. `prepare` crea todo lo necesario en tu lado; `instances create` envía la solicitud de creación a ClickHouse Cloud a través del endpoint del conector. ClickHouse Cloud genera la definición del service y envía la creación al executor por su canal saliente. El executor la aplica a tu cluster e informa del resultado.
+Este flujo de trabajo no está disponible en la versión pública `v0.16.0`. Antes de preparar los recursos, confirma la [disponibilidad de creación de servicios](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) para tu CLI, tu endpoint del conector y tu despliegue de ClickHouse Cloud.
+
+Crear un servicio requiere dos comandos. `prepare` crea todo lo necesario en tu lado; `instances create` envía la solicitud de creación a ClickHouse Cloud a través del endpoint del conector. ClickHouse Cloud genera la definición del servicio y envía la creación al executor por su canal saliente. El executor la aplica a tu cluster e informa del resultado.
 
 Solo `prepare` necesita AWS credentials: crea los S3 buckets y el IAM role. `instances create` necesita la configuración y las credentials del conector, y accede a la API local del executor únicamente para `--wait`. En una VM, ejecuta ambos como root en el host del conector. En Kubernetes, ejecuta ambos desde una workstation con un contexto de kube para el cluster gestionado:
 
-* `prepare` necesita una copia de la configuración del conector (`--config`), un `kubectl port-forward` a la API local del executor y `--output-dir` apuntando a un directorio con permisos de escritura. Verifica el service name con el executor y se niega a ejecutarse si no logra alcanzarlo.
+* `prepare` necesita una copia de la configuración del conector (`--config`), un `kubectl port-forward` a la API local del executor y `--output-dir` apuntando a un directorio con permisos de escritura. Verifica el nombre del servicio con el executor y se niega a ejecutarse si no logra alcanzarlo.
 * `instances create` lee los archivos de credentials indicados en la configuración desde los Secrets `clicklink-hmac` y `clicklink-mtls` cuando este host no los tiene, y anuncia cada lectura. Añade `--connector-namespace` cuando el espacio de nombres del conector no sea `clicklink`. Solo `instances create` cuenta con este fallback.
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Ciclo de vida del service de ClickHouse Connector en modo gestionado" />
+<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Ciclo de vida del servicio de ClickHouse Connector en modo gestionado" />
 
 <Steps>
   <Step title="Prepare el servicio" id="prepare">
@@ -157,21 +167,21 @@ Las creaciones, los escalados y los inicios se completan de forma asíncrona. El
 
 Los subcomandos `instances scale`, `instances patch` e `instances delete` envían comandos directamente a la API local del executor, sin intervención de ClickHouse Cloud. No los utilices a menos que tu account team de ClickHouse te pida ejecutar alguno; la [CLI reference](/es/products/bring-your-own-cloud/connector/reference/cli#instances-scale) describe qué hace cada uno.
 
-## Sesiones de soporte para un managed service {#support-sessions}
+## Sesiones de soporte para un servicio administrado {#support-sessions}
 
-El executor integra el scraper en cada service que crea. No aprovisiona el solucionador de problemas, por lo que una [sesión de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) no podrá ejecutar diagnósticos en un managed service hasta que lo hagas. Aprovisiónalo una vez por cada service, con el espacio de nombres del service `ns-<name>`, igual que para una instance que hayas registrado tú mismo:
+El executor integra el scraper en cada servicio que crea. No aprovisiona el solucionador de problemas, por lo que una [sesión de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) no podrá ejecutar diagnósticos en un servicio administrado hasta que lo hagas. Aprovisiónalo una vez por cada servicio, con el espacio de nombres del servicio `ns-<name>`, igual que para una instance que hayas registrado tú mismo:
 
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    Luego añade el par Secret y ServiceAccount a `troubleshooter.accessBundles` y ejecuta `helm upgrade`, como se muestra en [añadir instances de ClickHouse](/es/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+    `$CH_DEFAULT_PASSWORD` es la contraseña del usuario `default` que imprimió `prepare`. El comando la necesita para autenticarse antes de aplicar los grants de SQL; no la solicita de forma interactiva. Luego añade el par Secret y ServiceAccount a `troubleshooter.accessBundles` y ejecuta `helm upgrade`, como se muestra en [añadir instances de ClickHouse](/es/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
   </Tab>
 
   <Tab title="VM de Linux" id="troubleshooter-vm">
@@ -185,7 +195,7 @@ El executor integra el scraper en cada service que crea. No aprovisiona el soluc
   </Tab>
 </Tabs>
 
-Otorga los permisos al ClickHouse user mediante SQL, como se indica arriba, y no con `--ch-user-via cr`: ClickHouse Cloud es el propietario de la definición del service y la vuelve a aplicar, lo que eliminaría cualquier usuario añadido ahí. Cuando se elimina el service, el executor elimina el paquete del solucionador de problemas en una VM. En Kubernetes, el Secret del paquete y el ServiceAccount permanecen hasta que los elimines, como se indica en [desinstalación](/es/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
+Otorga los permisos al ClickHouse user mediante SQL, como se indica arriba, y no con `--ch-user-via cr`: ClickHouse Cloud es el propietario de la definición del servicio y la vuelve a aplicar, lo que eliminaría cualquier usuario añadido ahí. Cuando se elimina el servicio, el executor elimina el paquete del solucionador de problemas en una VM. En Kubernetes, el Secret del paquete y el ServiceAccount permanecen hasta que los elimines, como se indica en [desinstalación](/es/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
 
 ## Eliminar un servicio {#delete-a-service}
 

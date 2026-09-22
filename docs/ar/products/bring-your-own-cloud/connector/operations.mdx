@@ -88,7 +88,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### بيانات اعتماد واجهة برمجة التطبيقات (HMAC) {#rotate-api-credentials}
 
-اطلب رمز تسجيل جديدًا من فريق حساب ClickHouse، ثم أعد تشغيل أمر `init` الأصلي مع `--enroll` و`--force`. احتفظ بجميع الرايات الخاصة بالهدف المستخدمة في التثبيت الأول (`--target-namespace` و`--values` وأي رايات mirror مثل `--chart` أو `--chart-repo` أو `--chart-version`)، لأن `--force` يعيد إعداد التكوين المحفوظ. ينتقل وضع Managed من التكوين الذي يجري استبداله، لذا فإن `--managed` اختياري هنا. في تثبيت default:
+يتطلب سلوك وضع مُدار الموضّح هنا [إصدارًا مدعومًا](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ فالإصدار العام `v0.16.0` لا يتضمن `--managed` ولا `--no-managed`.
+
+اطلب رمز تسجيل جديدًا من فريق حساب ClickHouse، ثم أعد تشغيل أمر `init` الأصلي مع `--enroll` و`--force`. احتفظ بجميع الرايات الخاصة بالهدف المستخدمة في التثبيت الأول (`--target-namespace` و`--values` وأي رايات mirror مثل `--chart` أو `--chart-repo` أو `--chart-version`)، لأن `--force` يعيد إعداد التهيئة المحفوظة. ينتقل وضع مُدار من التهيئة التي يجري استبدالها، لذا فإن `--managed` اختياري هنا. في تثبيت default:
 
 ```bash
 # Kubernetes, from your workstation
@@ -104,7 +106,7 @@ sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --forc
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
 ```
 
-في Kubernetes، ينشئ `init` مسبقًا سرّي `clicklink-hmac` و`clicklink-mtls` المُدوَّرين؛ ولا ينشئهما المخطط. ولذلك لا يشملهما التعليق التوضيحي لقيمة التحقق الخاص بالمخطط، وتحتفظ البودات قيد التشغيل ببيانات الاعتماد التي بدأت بها. أعد تشغيل كل مكوّن بعد التدوير:
+في Kubernetes، ينشئ `init` مسبقًا Secretَي `clicklink-hmac` و`clicklink-mtls` المُدوَّرين؛ ولا ينشئهما المخطط. ولذلك لا يشملهما التعليق التوضيحي لقيمة التحقق الخاص بالمخطط، وتحتفظ البودات قيد التشغيل ببيانات الاعتماد التي بدأت بها. أعد تشغيل كل مكوّن بعد التدوير:
 
 ```bash
 kubectl rollout restart deployment,statefulset -n "${CONNECTOR_NAMESPACE}" \
@@ -157,9 +159,13 @@ printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access pr
 
 ## إعادة التشغيل والاسترداد {#re-runs-and-recovery}
 
+<Note>
+  لا تتضمّن واجهة سطر الأوامر العامة `v0.16.0` الخيار `--managed` ولا `--no-managed`. ويتطلب سلوك الحفاظ على وضع مُدار وتجاوزه المذكور أدناه إصدارًا مبنيًا يدعم [وضع مُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ تأكّد من إصدارك مع فريق حسابك قبل تغيير ذلك الوضع أثناء الاسترداد.
+</Note>
+
 تتقارب عمليات إعادة تشغيل `init`، لذا تكون إعادة تنفيذ الأمر نفسه دائمًا هي الخطوة الأولى. من دون `--force`، يُحتفَظ بملف `/etc/clicklink/config.yaml` الموجود (VM) أو تراكب `clicklink-values.yaml` (Kubernetes)، ويُعاد استخدام مفتاح العميل الموجود؛ ويستبدل `init` بيانات الاعتماد وسلسلة CA بصورة ذرية. ويمكن تكرار أوامر الاسترداد التي تطبعها CLI بعد فشل جزئي بأمان.
 
-يستبدل `--force` الإعداد أو التراكب المحتفَظ به، ويُعيد إنشاء مفتاح العميل، ويحل محل شهادة عميل غير منتهية الصلاحية. ولا ينشئ مطلقًا معرّف UUID جديدًا للعنقود، لذا تُحفظ هوية الموصل. ويُحتفظ بوضع Managed الخاص بالتهيئة المستبدلة في عمليات إعادة التشغيل غير المراقَبة، ويُعرض بوصفه الخيار الافتراضي على الطرفية، ما لم تمرّر `--managed` أو `--no-managed`.
+يستبدل `--force` الإعداد أو التراكب المحتفَظ به، ويُعيد إنشاء مفتاح العميل، ويحل محل شهادة العميل غير منتهية الصلاحية. ولا ينشئ مطلقًا معرّف UUID جديدًا للعنقود، لذا تُحفظ هوية الموصل. ويُحتفظ بوضع مُدار الخاص بالتهيئة المستبدلة في عمليات إعادة التشغيل غير المراقَبة، ويُعرض بوصفه الخيار الافتراضي على الطرفية، ما لم تمرّر `--managed` أو `--no-managed`.
 
 إذا فشل توقيع الشهادة بعد التدريج، أو أعادت نقطة نهاية التوقيع الرمز `409` لأن شهادة غير منتهية الصلاحية موجودة بالفعل، فلن تحتاج إلى رمز تسجيل جديد أو إصدار ثانٍ. أكمل التثبيت باستخدام المواد الموقَّعة الموجودة بالفعل على القرص:
 
@@ -247,6 +253,8 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
 ### طبقة المنصة {#uninstall-platform-layer}
+
+لا تتضمن واجهة سطر الأوامر العامة `v0.16.0` أي أمر `platform`، بما في ذلك `platform reset`؛ تأكد من [التوافر](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدامه.
 
 لا يؤدي إلغاء تثبيت الـ connector إلى إزالة طبقة المنصة. فمساحات أسماء المنصة وأعباء العمل، و RBAC الخاص بـ `pcm-platform`، وكائنات الـ admission التي ثبّتتها موافقاتك تبقى جميعها في العنقود، وكذلك كل خدمة مُدارة. احذف الخدمات أولًا؛ انظر [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service). في عنقود اختباري خالٍ من الخدمات، يزيل الأمر `clicklink clctl platform reset` إصدارات المنصة، أما ما يتركه من CustomResourceDefinitions و RBAC و StorageClass فيلزم حذفه يدويًا؛ انظر [إعادة تعيين عنقود اختباري](/ar/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). أما خارج العناقيد الاختبارية، فاتفق على خطة إزالة مع فريق حسابك في ClickHouse قبل المساس بطبقة المنصة.
 

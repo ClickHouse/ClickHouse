@@ -14,7 +14,9 @@ import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBa
 
 ### Quem pode alterar meus serviços, e quando? {#who-can-change-my-services}
 
-No modo gerenciado, o ClickHouse Cloud altera apenas os serviços que você pediu para ele gerenciar. Qualquer pessoa com acesso ao host ou ao pod do executor também pode controlá-los com comandos locais `clicklink clctl instances`; consulte [ciclo de vida do serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). O ClickHouse Cloud envia comandos de ciclo de vida pelo canal de saída do executor:
+Os fluxos de inscrição no modo managed, de criação pelo cliente e de aprovação de plataforma exigem [suporte confirmado pela sua account team](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); eles não estão disponíveis na versão pública `v0.16.0`.
+
+No modo managed, o ClickHouse Cloud altera apenas os serviços que você pediu para ele gerenciar. Qualquer pessoa com acesso ao host ou ao pod do executor também pode controlá-los com comandos locais `clicklink clctl instances`; consulte [ciclo de vida do serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). O ClickHouse Cloud envia comandos de ciclo de vida pelo canal de saída do executor:
 
 * criar, a partir da definição que você enviou
 * escalar, para um número fixo de réplicas definido pelo ClickHouse Cloud (limitado por uma configuração do ClickHouse Cloud, 20 na configuração padrão)
@@ -46,7 +48,11 @@ A lista completa de conexões de saída está na página [modelo de privilégios
 
 ### Como impedir que o ClickHouse altere meus clusters? {#stop-managed-mode}
 
-Execute sem o modo gerenciado. No momento da instalação, passe `--no-managed` para `clicklink clctl init` ou responda &quot;não&quot; quando for perguntado. Somente o scraper e o solucionador de problemas são implantados, de modo que o ClickHouse não consegue criar, alterar ou excluir serviços. O connector continua provisionando usuários ClickHouse read-only e ServiceAccounts; consulte o [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
+<Note>
+  A CLI pública `v0.16.0` não possui nem `--managed` nem `--no-managed`. A escolha no momento da instalação descrita abaixo requer uma compilação com [suporte ao modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Para parar um executor existente, use as instruções do Helm ou do systemd abaixo; não é necessária nenhuma das flags de init.
+</Note>
+
+Execute sem o modo managed. No momento da instalação, passe `--no-managed` para `clicklink clctl init` ou responda &quot;não&quot; quando for perguntado. Somente o scraper e o solucionador de problemas são implantados, de modo que o ClickHouse não consegue criar, alterar ou excluir serviços. O connector continua provisionando usuários ClickHouse read-only e ServiceAccounts; consulte o [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 Em uma instalação existente, pare o executor e remova seu grant de administrador do cluster. Para pará-lo, defina `executor.enabled: false` nos seus valores do Helm e execute `helm upgrade`, ou execute `systemctl disable --now clicklink-executor` em uma VM. Em seguida, remova o grant. O último comando remove o próprio ServiceAccount; seu espaço de nomes é `clicklink-system` em uma instalação em VM e o espaço de nomes do connector em uma instalação em Kubernetes:
 
@@ -58,7 +64,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
-Os serviços que o ClickHouse criou continuam em execução, mas o ClickHouse Cloud não pode mais escalá-los, fazer upgrade, backup ou excluí-los, e os comandos pendentes para eles falham. As atualizações da plataforma nunca são aplicadas a menos que você execute `clicklink clctl platform approve`. Não executar esse comando congela a camada da plataforma, enquanto o restante do modo gerenciado continua funcionando.
+Os serviços que o ClickHouse criou continuam em execução, mas o ClickHouse Cloud não pode mais escalá-los, fazer upgrade, backup ou excluí-los, e os comandos pendentes para eles falham. As atualizações da plataforma nunca são aplicadas a menos que você execute `clicklink clctl platform approve`. Não executar esse comando congela a camada da plataforma, enquanto o restante do modo managed continua funcionando.
 
 ### O que acontece se o connector ficar offline? {#connector-down}
 
@@ -77,6 +83,8 @@ O executor interrompe o serviço, remove seus recursos do Kubernetes e exclui se
 O restante você remove com `clicklink clctl executor teardown`, executado com suas credenciais. Por padrão, ele remove a IAM role e mantém os dados e os backups; para excluí-los é preciso usar flags explícitas. Consulte [excluir um serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 ### Onde está a senha do meu usuário default? {#default-user-password}
+
+A criação de serviços de cliente requer [suporte compatível na CLI e na implantação](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) e não está disponível na versão pública `v0.16.0`.
 
 O `clicklink clctl executor prepare` gera a senha do seu lado e a exibe uma única vez. Se você fizer o envio com as flags individuais em vez de `--from-prepare`, o `clicklink clctl instances create` lê a senha de `--default-user-password-file` ou a gera e exibe. Somente os hashes são enviados ao ClickHouse Cloud, portanto nem o connector nem o ClickHouse conseguem exibi-la novamente. Guarde-a assim que ela for exibida.
 
@@ -100,7 +108,7 @@ Sim. Todo artefato necessário na instalação pode vir de dentro da sua frontei
 * Se o seu connector endpoint for servido dentro da sua fronteira atrás de uma private CA, `--api-private-ca` (Kubernetes) ou `api.tls.ca_file` (VM) anexa a CA chain do enrollment bundle às raízes do sistema.
 * Para inscrição sem conectividade direta, `init --handoff` consome um pacote obtido fora de banda, e `--no-auto-sign` combinado com `init --signed-cert` conclui a assinatura do certificate fora de banda.
 * No modo gerenciado, as imagens do ClickHouse para seus serviços e componentes de plataforma podem vir do seu próprio registry depois que você as importar para lá; a ClickHouse registra esse registry para o seu ambiente.
-* Pacotes de plataforma podem ser entregues fora de banda e passados como arquivo para `clicklink clctl platform approve --bundle`.
+* Com uma [compilação que oferece suporte à aprovação de plataforma](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability), pacotes de plataforma podem ser entregues fora de banda e passados como arquivo para `clicklink clctl platform approve --bundle`. A versão pública `v0.16.0` não possui o comando `platform`.
 
 Consulte [espelhos privados](/pt-BR/products/bring-your-own-cloud/connector/configuration) e a seção sobre ambientes isolados da internet em [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding). O connector ainda precisa de uma rota até o seu connector endpoint em runtime; sem ela, o ClickHouse Cloud não recebe telemetria e nenhum comando de ciclo de vida chega ao executor.
 

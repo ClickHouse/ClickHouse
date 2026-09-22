@@ -60,7 +60,19 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ## 관리형 모드 {#managed-mode}
 
-관리형 모드는 실행기를 구동하며, 실행기는 ClickHouse Cloud가 클러스터에 적용하는 서비스 수명 주기를 반영합니다. `init`는 등록 시점에 이 모드를 켜고 클러스터 아이덴티티를 채웁니다([관리형 모드 활성화](/ko/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode) 참조). 아래 키들은 그 이후에 다시 확인하게 될 항목입니다. 관리형 모드 없이 설치된 커넥터에서 관리형 모드를 켜거나 끄려면 `--force`와 함께 `--managed` 또는 `--no-managed`를 지정하여 `init`를 다시 실행하십시오. `--no-managed`는 실행기를 중지하지만 해당 클러스터 grant는 그대로 남겨 둡니다. grant는 [관리형 모드 중지](/ko/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode)에 설명된 대로 제거하십시오. 모든 `init` 실행과 마찬가지로 entry point가 필요합니다. bundle을 보관해 두었다면 `--handoff`를, 그렇지 않다면 [재실행 및 recovery](/ko/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)에 설명된 대로 새 토큰과 함께 `--enroll`을 사용하십시오.
+<Note>
+  공개된 `v0.16.0` CLI에는 `--managed`와 `--no-managed`가 모두 없습니다. 두 플래그 중 하나를 사용해 구성을 변경하기 전에 [관리형 모드 지원 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하고 계정 담당 팀으로부터 해당 build를 받으십시오.
+</Note>
+
+관리형 모드는 실행기를 구동하며, 실행기는 ClickHouse Cloud가 클러스터에 적용하는 서비스 수명 주기를 반영합니다. `init`는 등록 시점에 이 모드를 켜고 클러스터 아이덴티티를 채웁니다([관리형 모드 활성화](/ko/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode) 참조). 아래 키들은 그 이후에 다시 확인하게 될 항목입니다. 구성된 상태를 변경하려면 `--force`와 함께 `--managed` 또는 `--no-managed`를 지정하여 `init`를 다시 실행하십시오. 모든 `init` 실행과 마찬가지로 entry point가 필요합니다. bundle을 보관해 두었다면 `--handoff`를, 그렇지 않다면 [재실행 및 recovery](/ko/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)에 설명된 대로 새 토큰과 함께 `--enroll`을 사용하십시오.
+
+VM에서 `--no-managed`는 구성에서 실행기를 비활성화하지만, 이미 실행 중인 systemd unit을 중지하거나 비활성화하지는 않습니다. 구성을 변경하기 전에 명시적으로 중지하십시오.
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+Kubernetes에서는 values에 `executor.enabled: false`를 설정하고 `helm upgrade`로 변경 사항을 적용하면 실행기 Deployment가 제거됩니다. 두 대상 모두에서 클러스터 권한 부여는 직접 제거하기 전까지 그대로 남아 있습니다. 해당 액세스까지 제거하려면 [관리형 모드 중지](/ko/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode)를 따르십시오.
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ## ClickHouse 인스턴스 추가 또는 변경 {#clickhouse-instances}
 
-실행기가 생성하는 서비스는 스스로 등록되므로, 관리형 모드에서는 여기에 직접 추가할 필요가 없습니다. `--no-managed` 옵션으로 설치한 별도의 커넥터 배포는 사용자가 직접 운영하는 ClickHouse를 관찰합니다. 두 배포가 동일한 인스턴스를 공유하는 경우 해당 배포의 `init` 시점에 `--ch-user-suffix`를 전달하십시오. 이 섹션은 그러한 배포에 적용됩니다. `instances` 아래의 각 항목은 커넥터가 읽어 들이는 ClickHouse 네이티브 프로토콜 엔드포인트를 지정하며, `host`, `port`, `database`, `secure`, `cluster`, 그리고 Kubernetes에서는 `namespace`를 포함합니다. `max_open_conns`와 `max_idle_conns`는 연결 풀의 상한을 정합니다. 자격 증명은 구성에 저장되지 않으며, 각 컴포넌트는 provisioning이 생성한 액세스 번들에서 읽기 전용 ClickHouse 사용자를 가져옵니다.
+실행기가 생성하는 서비스는 스스로 등록되므로, 관리형 모드에서는 여기에 직접 추가할 필요가 없습니다. 실행기 없이 실행되는 별도의 커넥터 배포는 사용자가 직접 운영하는 ClickHouse를 관찰합니다. 두 배포가 동일한 인스턴스를 공유하는 경우 해당 배포의 `init` 시점에 `--ch-user-suffix`를 전달하십시오. 이 섹션은 그러한 배포에 적용됩니다. `instances` 아래의 각 항목은 커넥터가 읽어 들이는 ClickHouse 네이티브 프로토콜 엔드포인트를 지정하며, `host`, `port`, `database`, `secure`, `cluster`, 그리고 Kubernetes에서는 `namespace`를 포함합니다. `max_open_conns`와 `max_idle_conns`는 연결 풀의 상한을 정합니다. 자격 증명은 구성에 저장되지 않으며, 각 컴포넌트는 프로비저닝이 생성한 액세스 번들에서 읽기 전용 ClickHouse 사용자를 가져옵니다.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -355,7 +367,9 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-미러에서 차트 자체를 설치하려면 `init`의 `--chart`에 `--chart-repo`에서 해석되는 차트 이름, 직접 지정한 `oci://` 참조, URL 또는 로컬 아카이브나 디렉터리를 지정할 수 있습니다. `--chart-version`은 기본적으로 CLI 자체 버전을 사용하므로 바이너리와 차트의 버전이 함께 유지됩니다:
+미러에서 차트 자체를 설치하려면 `init`의 `--chart`에 `--chart-repo`에서 해석되는 차트 이름, 직접 지정한 `oci://` 참조, URL 또는 로컬 아카이브나 디렉터리를 지정할 수 있습니다. `--chart-version`은 기본적으로 CLI 자체 버전을 사용하므로 바이너리와 차트의 버전이 함께 유지됩니다.
+
+아래의 관리형 모드 예시는 `--managed`를 지원하는 빌드가 필요하며, 공개 `v0.16.0`에는 이 기능이 없습니다. 사용하기 전에 [관리형 모드 지원 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하십시오. 공개 릴리스를 미러링한다고 해서 이 지원이 추가되지는 않습니다.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

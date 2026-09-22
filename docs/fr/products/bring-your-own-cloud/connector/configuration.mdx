@@ -60,7 +60,19 @@ Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;in
 
 ## Managed mode {#managed-mode}
 
-Le mode Managed exécute l&#39;executor, qui applique au cluster le cycle de vie de service piloté par ClickHouse Cloud. `init` l&#39;active lors de l&#39;enrollment et renseigne l&#39;identity du cluster (voir [activer le mode Managed](/fr/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) ; les keys ci-dessous sont celles que vous serez susceptible de modifier par la suite. Pour activer le mode Managed sur un connector installé sans celui-ci, ou pour le désactiver, relancez `init` avec `--force` et `--managed` ou `--no-managed`. `--no-managed` arrête l&#39;executor mais laisse en place son grant sur le cluster ; supprimez-le comme décrit dans [arrêter le mode Managed](/fr/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). Comme toute exécution d&#39;`init`, celle-ci nécessite un entry point : `--handoff` si vous avez conservé le bundle, ou `--enroll` avec un token récent, comme décrit dans [nouvelles exécutions et recovery](/fr/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+<Note>
+  La CLI publique `v0.16.0` ne propose ni `--managed` ni `--no-managed`. Avant d&#39;utiliser l&#39;un ou l&#39;autre de ces indicateurs pour modifier la configuration, vérifiez la [disponibilité du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) et obtenez le build correspondant auprès de votre account team.
+</Note>
+
+Le mode managé exécute l&#39;executor, qui applique au cluster le cycle de vie de service piloté par ClickHouse Cloud. `init` l&#39;active lors de l&#39;inscription et renseigne l&#39;identity du cluster (voir [activer le mode managé](/fr/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) ; les keys ci-dessous sont celles que vous serez susceptible de modifier par la suite. Pour modifier la posture configurée, relancez `init` avec `--force` et `--managed` ou `--no-managed`. Comme toute exécution d&#39;`init`, celle-ci nécessite un entry point : `--handoff` si vous avez conservé le bundle, ou `--enroll` avec un token récent, comme décrit dans [nouvelles exécutions et recovery](/fr/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+Sur une VM, `--no-managed` désactive l&#39;executor dans la configuration mais n&#39;arrête ni ne désactive un systemd unit déjà en cours d&#39;exécution. Arrêtez-le explicitement avant de modifier la configuration :
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+Sur Kubernetes, définir `executor.enabled: false` dans les values et appliquer la modification avec `helm upgrade` supprime le Deployment de l&#39;executor. Sur les deux cibles, le grant sur le cluster reste en place jusqu&#39;à ce que vous le supprimiez ; suivez [arrêter le mode managé](/fr/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) pour supprimer également cet access.
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ Le mode Managed exécute l&#39;executor, qui applique au cluster le cycle de vie
 
 ## Ajouter ou modifier des instances ClickHouse {#clickhouse-instances}
 
-Les services créés par l&#39;executor s&#39;enregistrent eux-mêmes : en mode managed, vous n&#39;avez donc jamais à les ajouter ici. Un déploiement de connector distinct, installé avec `--no-managed`, observe le ClickHouse que vous exploitez vous-même ; passez `--ch-user-suffix` lors de son `init` lorsque les deux déploiements partagent une instance. Cette section concerne ce déploiement. Chaque entrée sous `instances` désigne un endpoint ClickHouse en protocole natif depuis lequel le connector lit : `host`, `port`, `database`, `secure`, `cluster`, et sur Kubernetes `namespace` ; `max_open_conns` et `max_idle_conns` limitent le connection pool. Les credentials ne figurent jamais dans la configuration : chaque composant résout son ClickHouse user en lecture seule à partir du bundle d&#39;accès créé lors du provisioning.
+Les services créés par l&#39;executor s&#39;enregistrent eux-mêmes : en mode managé, vous n&#39;avez donc jamais à les ajouter ici. Un déploiement de connector distinct, exécuté sans l&#39;executor, observe le ClickHouse que vous exploitez vous-même ; passez `--ch-user-suffix` lors de son `init` lorsque les deux déploiements partagent une instance. Cette section concerne ce déploiement. Chaque entrée sous `instances` désigne un endpoint ClickHouse en protocole natif depuis lequel le connector lit : `host`, `port`, `database`, `secure`, `cluster`, et sur Kubernetes `namespace` ; `max_open_conns` et `max_idle_conns` limitent le connection pool. Les identifiants ne figurent jamais dans la configuration : chaque composant résout son ClickHouse user en lecture seule à partir du bundle d&#39;accès créé lors du provisioning.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -355,14 +367,16 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-Pour installer le chart depuis un miroir, `init` accepte `--chart` sous la forme d’un nom de chart résolu à partir de `--chart-repo`, ou d’une référence `oci://` directe, d’une URL, d’une archive locale ou d’un répertoire local. Par défaut, `--chart-version` utilise la version de la CLI afin que le binaire et le chart évoluent de concert :
+Pour installer le chart depuis un miroir, `init` accepte `--chart` sous la forme d’un nom de chart résolu à partir de `--chart-repo`, ou d’une référence `oci://` directe, d’une URL, d’une archive locale ou d’un répertoire local. Par défaut, `--chart-version` utilise la version de la CLI afin que le binaire et le chart évoluent de concert.
+
+L&#39;exemple en mode managé ci-dessous nécessite un build avec `--managed`, absent de la version publique `v0.16.0`. Vérifiez la [disponibilité du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) avant de l&#39;utiliser ; mettre en miroir la release publique n&#39;ajoute pas cette prise en charge.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \
   --chart oci://registry.example.com/charts/clicklink-connector
 ```
 
-Lorsque l&#39;endpoint de votre connector se trouve derrière une CA privée au sein de votre périmètre, transmettez `--api-private-ca` à `init`. Cette option configure `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, et le connector vérifie l&#39;endpoint par rapport aux racines système ainsi qu&#39;à la chaîne de CA de votre bundle d&#39;onboarding. Sur une VM, l&#39;équivalent est `api.tls.ca_file` dans `/etc/clicklink/config.yaml` : `init` installe la chaîne du bundle dans `/etc/clicklink/tls/ca.crt`, et le connector l&#39;ajoute aux racines système de la même manière. Pour un onboarding entièrement air-gapped et la signature de certificats, consultez [l&#39;onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
+Lorsque l&#39;endpoint de votre connector se trouve derrière une CA privée au sein de votre périmètre, transmettez `--api-private-ca` à `init`. Cette option configure `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, et le connector vérifie l&#39;endpoint par rapport aux racines système ainsi qu&#39;à la chaîne de CA de votre bundle d&#39;inscription. Sur une VM, l&#39;équivalent est `api.tls.ca_file` dans `/etc/clicklink/config.yaml` : `init` installe la chaîne du bundle dans `/etc/clicklink/tls/ca.crt`, et le connector l&#39;ajoute aux racines système de la même manière. Pour une inscription entièrement en environnement isolé du réseau et la signature de certificats, consultez [l&#39;onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
 
 ## Stockage {#storage}
 

@@ -12,7 +12,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-Un cluster managé exécute une petite couche plateforme dont dépendent les services ClickHouse. ClickHouse Cloud propose des mises à jour de cette couche ; l&#39;executor n&#39;applique rien tant que vous ne les avez pas approuvées une à une avec vos propres credentials de cluster. Cette page explique ce qu&#39;est une mise à jour de plateforme, comment en approuver une sur une VM ou sur une installation Kubernetes, combien de temps une approbation reste valable et ce qu&#39;elle autorise.
+Un cluster managé exécute une petite couche plateforme dont dépendent les services ClickHouse. ClickHouse Cloud propose des mises à jour de cette couche ; l&#39;executor n&#39;applique rien tant que vous ne les avez pas approuvées une à une avec vos propres identifiants de cluster. Cette page explique ce qu&#39;est une mise à jour de plateforme, comment en approuver une sur une VM ou sur une installation Kubernetes, combien de temps une approbation reste valable et ce qu&#39;elle autorise.
+
+<Note>
+  La CLI publique `v0.16.0` ne comporte pas de commande `platform`, ni `platform approve` ni `platform reset`. Ni le flux de travail VM Linux ni le flux de travail Kubernetes décrits ci-dessous ne sont disponibles dans cette release. L&#39;approbation sous Kubernetes nécessite en outre la prise en charge, par la CLI et par le chart de l&#39;executor, du bundle de jetons basé sur un Secret (`--secret-namespace`). Confirmez la [disponibilité du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) auprès de votre équipe de compte avant d&#39;utiliser l&#39;un ou l&#39;autre de ces flux de travail.
+</Note>
 
 ## Qu&#39;est-ce qu&#39;une mise à jour de plateforme {#what-a-platform-update-is}
 
@@ -30,6 +34,17 @@ L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé
 ## Approuver une mise à jour de la plateforme {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flux d'approbation de la plateforme ClickHouse Connector" />
+
+### Identifiants de registry {#registry-credentials}
+
+Les deux procédures d&#39;approbation ci-dessous nécessitent un [build avec prise en charge de la plateforme](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) ; la version publique `v0.16.0` ne comporte pas de commande `platform`. L&#39;approbation Kubernetes exige également une prise en charge correspondante dans le CLI et le chart pour la distribution des Secret.
+
+L&#39;authentication auprès du registry dépend du mode de distribution d&#39;image enregistré pour votre environnement :
+
+* **Accès direct au registry de ClickHouse.** Exécutez l&#39;approbation sur la VM EC2 du connector. La commande `approve` comme la synchronisation de plateforme de l&#39;executor utilisent les identifiants de l&#39;instance metadata service EC2 pour assumer le rôle ECR puller en lecture seule de votre environnement. Ils s&#39;appuient sur ce rôle pour la connexion au chart ; l&#39;executor s&#39;en sert également pour vérifier l&#39;existence des images de plateforme. Les profils AWS, les identifiants d&#39;environnement ou les identifiants SSO présents sur un poste de travail ne remplacent pas le profil d&#39;instance. Votre kubeconfig fournit toujours les identifiants cluster-admin distincts nécessaires à l&#39;application du volet permissions.
+* **Charts dans un autre registry ECR, y compris votre propre mirror.** La connexion au chart utilise les identifiants AWS ambiants du processus qui exécute `approve` ou l&#39;executor. Ces identifiants doivent être autorisés à lire ce registry.
+
+Réservez la procédure depuis un poste de travail Kubernetes décrite ci-dessous aux deployments avec registry mirroré et approbation de plateforme Kubernetes activée. Pour l&#39;accès direct, demandez à votre account team de confirmer que votre environnement d&#39;exécution est pris en charge et dispose du profil d&#39;instance EC2 requis avant de poursuivre.
 
 <Steps>
   <Step title="Recherchez le bundle préconfiguré" id="find-the-staged-bundle">
@@ -69,7 +84,7 @@ L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé
   <Step title="Exécuter approve" id="run-approve">
     `approve` sans flags lit le bundle mis en attente et le hache, de sorte que ce que vous approuvez correspond exactement à ce que l&#39;executor a reçu. La commande effectue le rendu de chaque chart du bundle exactement comme le fera l&#39;executor et applique la moitié « permissions » avec le contexte kube que vous choisissez. Elle crée l&#39;identité `pcm-platform` si nécessaire et génère son jeton. Elle n&#39;émet aucune requête vers votre endpoint de connecteur.
 
-    `approve` nécessite un contexte kube disposant des droits cluster-admin sur le cluster managé (`--context <name>` lorsque votre kubeconfig en contient plusieurs). Lorsqu&#39;un chart réside dans Amazon ECR, elle nécessite également des AWS credentials capables de le lire. `--dry-run` effectue le rendu et liste la moitié « permissions » sans rien appliquer ni générer.
+    `approve` nécessite un contexte kube disposant des droits cluster-admin sur le cluster managé (`--context <name>` lorsque votre kubeconfig en contient plusieurs) ainsi que les [identifiants de registry](#registry-credentials) correspondant au mode de distribution d&#39;images de votre environnement. `--dry-run` effectue le rendu et liste la moitié « permissions » sans rien appliquer ni générer ; un accès au registry reste nécessaire pour effectuer le rendu des charts.
 
     <Tabs>
       <Tab title="VM Linux" id="approve-vm">
@@ -83,7 +98,7 @@ L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        `approve` lit le bundle mis en attente via le port-forward de l&#39;étape précédente. La commande livre le bundle de jetons sous forme de Secret dans le namespace du connecteur, que le chart monte dans le pod. Exécutez-la depuis un poste de travail dont le kubeconfig atteint le cluster, avec une copie de la configuration du connecteur. Le chart en rend une dans la ConfigMap de l&#39;executor ; `approve` en a besoin pour le préfixe de namespace et n&#39;y lit aucun credential.
+        Pour un déploiement avec registry mis en miroir et approbation de plateforme Kubernetes activée, `approve` lit le bundle mis en attente via le port-forward de l&#39;étape précédente. La commande livre le bundle de jetons sous forme de Secret dans le namespace du connecteur, que le chart monte dans le pod. Exécutez-la depuis un poste de travail dont le kubeconfig atteint le cluster, avec une copie de la configuration du connecteur et un accès au registry comme décrit ci-dessus. Le chart rend la configuration dans la ConfigMap de l&#39;executor ; `approve` en a besoin pour le préfixe de namespace et n&#39;y lit aucun credential.
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # le namespace de connecteur que vous avez choisi lors de l'init
@@ -144,6 +159,8 @@ L&#39;identity de cycle de vie des services de l&#39;executor, `pcm-executor`, e
 
 ## Réinitialiser un cluster de test {#resetting-a-test-cluster}
 
+La CLI publique `v0.16.0` ne comporte pas de commande `platform reset` ; vérifiez sa [disponibilité](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) avant d&#39;appliquer cette procédure.
+
 `clicklink clctl platform reset` est destinée aux clusters de test : cette commande désinstalle les composants de la plateforme afin de pouvoir rejouer leur première installation. Avant toute modification, elle liste les clusters ClickHouse présents dans les namespaces appartenant à ce connector et refuse de poursuivre si un service existe.
 
 Sur un cluster vide, elle désinstalle les releases de la plateforme dans l&#39;ordre inverse des dépendances. Elle supprime ensuite le bundle de jetons de plateforme de l&#39;executor : le directory local sur une VM, ou le Secret désigné par `--secret-namespace <connector-namespace>` sur Kubernetes. Les CustomResourceDefinitions, le RBAC et la StorageClass restent en place. Exécutez de nouveau `approve` avant la prochaine synchronisation de la plateforme.
@@ -152,4 +169,4 @@ Sur un cluster vide, elle désinstalle les releases de la plateforme dans l&#39;
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
 ```
 
-`reset` prend le manifeste de plateforme généré sous forme de fichier (`--bundle`) ; il ne lit pas le bundle préparé. `--dry-run` vérifie la présence de services et affiche le plan sans modifier le cluster.
+`reset` prend le manifest de plateforme généré sous forme de fichier (`--bundle`) ; il ne lit pas le bundle préparé. `--dry-run` vérifie la présence de services et affiche le plan sans modifier le cluster.

@@ -60,7 +60,19 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 ## managed モード {#managed-mode}
 
-managed モード では executor が動作し、ClickHouse Cloud がクラスターに対して適用するサービスライフサイクルを反映します。`init` は登録時に managed モード を有効化し、クラスターの identity を補完します ([enable managed mode](/ja/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode) を参照) 。以下のオプションは、その後に見直す可能性があるものです。managed モード を有効にせずにインストールしたコネクタで managed モード を有効化する場合、または無効化する場合は、`--force` と `--managed` または `--no-managed` を指定して `init` を再実行してください。`--no-managed` は executor を停止しますが、クラスターに対する grant はそのまま残ります。削除方法は [stop managed mode](/ja/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) を参照してください。他の `init` の実行と同様に、entry point の指定が必要です。bundle を保持している場合は `--handoff` を、新しいトークンを使用する場合は `--enroll` を指定します。詳細は [re-runs and recovery](/ja/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery) を参照してください。
+<Note>
+  公開されている `v0.16.0` の CLI には `--managed` も `--no-managed` もありません。いずれかの flag を使用して設定を変更する前に、[マネージドモードの利用可否](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を確認し、account team から対応する build を入手してください。
+</Note>
+
+managed モード では executor が動作し、ClickHouse Cloud がクラスターに対して適用するサービスライフサイクルを反映します。`init` は登録時に managed モード を有効化し、クラスターの identity を補完します ([enable managed mode](/ja/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode) を参照) 。以下のオプションは、その後に見直す可能性があるものです。設定されている状態を変更するには、`--force` と `--managed` または `--no-managed` を指定して `init` を再実行してください。他の `init` の実行と同様に、entry point の指定が必要です。bundle を保持している場合は `--handoff` を、新しいトークンを使用する場合は `--enroll` を指定します。詳細は [re-runs and recovery](/ja/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery) を参照してください。
+
+VM 上では、`--no-managed` は設定上で executor を無効化しますが、すでに動作している systemd unit を停止したり無効化したりはしません。設定を変更する前に、明示的に停止してください。
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+Kubernetes では、values に `executor.enabled: false` を設定し、`helm upgrade` で変更を適用すると、executor のデプロイメントが削除されます。いずれの target でも、クラスターに対する grant は削除するまでそのまま残ります。この access も削除するには、[stop managed mode](/ja/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) に従ってください。
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ managed モード では executor が動作し、ClickHouse Cloud がクラス�
 
 ## ClickHouse インスタンスの追加・変更 {#clickhouse-instances}
 
-executor が作成するサービスは自身を登録するため、managed モードではここに追加する必要はありません。`--no-managed` を指定してインストールした別のコネクタデプロイメントは、ユーザー自身が運用する ClickHouse を監視します。2 つのデプロイメントが 1 つのインスタンスを共有する場合は、その `init` 時に `--ch-user-suffix` を渡してください。本セクションはそのデプロイメントに適用されます。`instances` 配下の各エントリは、コネクタが読み取る ClickHouse のネイティブプロトコルエンドポイントを指定します。指定項目は `host`、`port`、`database`、`secure`、`cluster`、および Kubernetes では `namespace` です。`max_open_conns` と `max_idle_conns` は接続プールの上限を設定します。認証情報を設定に記述することはありません。各コンポーネントは、provisioning が作成するアクセスバンドルから読み取り専用の ClickHouse USER を解決します。
+executor が作成するサービスは自身を登録するため、managed モードではここに追加する必要はありません。executor なしで稼働する別のコネクタデプロイメントは、ユーザー自身が運用する ClickHouse を監視します。2 つのデプロイメントが 1 つのインスタンスを共有する場合は、その `init` 時に `--ch-user-suffix` を渡してください。本セクションはそのデプロイメントに適用されます。`instances` 配下の各エントリは、コネクタが読み取る ClickHouse のネイティブプロトコルエンドポイントを指定します。指定項目は `host`、`port`、`database`、`secure`、`cluster`、および Kubernetes では `namespace` です。`max_open_conns` と `max_idle_conns` は接続プールの上限を設定します。認証情報を設定に記述することはありません。各コンポーネントは、provisioning が作成するアクセスバンドルから読み取り専用の ClickHouse USER を解決します。
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -356,6 +368,8 @@ image:
 ```
 
 ミラーからチャート自体をインストールするには、`init` の `--chart` に、`--chart-repo` を基準に解決されるチャート名、直接指定する `oci://` 参照、URL、ローカルのアーカイブまたはディレクトリを指定できます。`--chart-version` のデフォルトは CLI 自身のバージョンのため、バイナリとチャートのバージョンが連動します。
+
+以下のマネージドモードの例には `--managed` を備えたビルドが必要ですが、公開されている `v0.16.0` にはこれが含まれていません。使用する前に[マネージドモードの利用可否](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を確認してください。公開リリースをミラーしても、このサポートが追加されるわけではありません。
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

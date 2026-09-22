@@ -60,7 +60,19 @@ O conector tem uma superfície de configuração para cada destino de instalaç�
 
 ## Modo gerenciado {#managed-mode}
 
-O modo gerenciado executa o executor, que aplica ao seu cluster o ciclo de vida de serviço conduzido pelo ClickHouse Cloud. O `init` o ativa no momento da inscrição e preenche a identidade do cluster (consulte [habilitar o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); as chaves abaixo são as que você talvez precise revisitar depois. Para ativar o modo gerenciado em um conector instalado sem ele, ou para desativá-lo, execute novamente o `init` com `--force` e `--managed` ou `--no-managed`. O `--no-managed` interrompe o executor, mas mantém seu grant no cluster; remova-o conforme descrito em [interromper o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). Como toda execução do `init`, esta precisa de um entry point: `--handoff`, caso você tenha mantido o pacote, ou `--enroll` com um token novo, conforme descrito em [reexecuções e recuperação](/pt-BR/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+<Note>
+  A CLI pública `v0.16.0` não possui nem `--managed` nem `--no-managed`. Antes de usar qualquer uma dessas flags para alterar a configuração, confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) e obtenha a compilação correspondente com sua account team.
+</Note>
+
+O modo gerenciado executa o executor, que aplica ao seu cluster o ciclo de vida de serviço conduzido pelo ClickHouse Cloud. O `init` o ativa no momento da inscrição e preenche a identidade do cluster (consulte [habilitar o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); as chaves abaixo são as que você talvez precise revisitar depois. Para alterar a postura configurada, execute novamente o `init` com `--force` e `--managed` ou `--no-managed`. Como toda execução do `init`, esta precisa de um entry point: `--handoff`, caso você tenha mantido o pacote, ou `--enroll` com um token novo, conforme descrito em [reexecuções e recuperação](/pt-BR/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+Em uma VM, o `--no-managed` desativa o executor na configuração, mas não interrompe nem desabilita um systemd unit já em execução. Interrompa-o explicitamente antes de alterar a configuração:
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+No Kubernetes, definir `executor.enabled: false` nos values e aplicar a alteração com `helm upgrade` remove a Implantação do executor. Em ambos os destinos, o grant no cluster permanece até que você o remova; siga [interromper o modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) para remover também esse acesso.
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ O modo gerenciado executa o executor, que aplica ao seu cluster o ciclo de vida 
 
 ## Adicionando ou alterando instâncias do ClickHouse {#clickhouse-instances}
 
-Os serviços criados pelo executor se registram automaticamente, portanto, no modo gerenciado, você nunca os adiciona aqui. Uma implantação separada do conector, instalada com `--no-managed`, monitora o ClickHouse que você mesmo executa; passe `--ch-user-suffix` no `init` dela quando as duas implantações compartilharem uma instância. Esta seção se aplica a essa implantação. Cada entrada em `instances` nomeia um endpoint de protocolo nativo do ClickHouse do qual o conector lê: `host`, `port`, `database`, `secure`, `cluster` e, no Kubernetes, `namespace`; `max_open_conns` e `max_idle_conns` limitam o connection pool. As credenciais nunca ficam na configuração; cada componente obtém seu usuário read-only do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
+Os serviços criados pelo executor se registram automaticamente, portanto, no modo gerenciado, você nunca os adiciona aqui. Uma implantação separada do connector, executando sem o executor, monitora o ClickHouse que você mesmo executa; passe `--ch-user-suffix` no `init` dela quando as duas implantações compartilharem uma instância. Esta seção se aplica a essa implantação. Cada entrada em `instances` nomeia um endpoint de protocolo nativo do ClickHouse do qual o connector lê: `host`, `port`, `database`, `secure`, `cluster` e, no Kubernetes, `namespace`; `max_open_conns` e `max_idle_conns` limitam o connection pool. As credenciais nunca ficam na configuração; cada componente obtém seu usuário read-only do ClickHouse a partir do pacote de acesso criado pelo provisionamento.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -339,7 +351,7 @@ Em uma VM, o arquivo é `/etc/clicklink/redaction-patterns.yaml`. O instalador o
 
 ## Espelhos privados e endpoints dentro da fronteira {#private-mirrors}
 
-O chart publicado predefine `image.repository` para a imagem pública do conector, compatível com várias arquiteturas e assinada com cosign; portanto, instalações simples não exigem values de imagem. Para inspecionar os padrões publicados:
+O chart publicado predefine `image.repository` para a imagem pública do connector, compatível com várias arquiteturas e assinada com cosign; portanto, instalações simples não exigem values de imagem. Para inspecionar os padrões publicados:
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
@@ -355,14 +367,16 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-Para instalar o próprio chart a partir de um espelho, `init` aceita `--chart` como o nome de um chart resolvido a partir de `--chart-repo` ou como uma referência `oci://` direta, uma URL, um arquivo compactado local ou um diretório local. Por padrão, `--chart-version` usa a própria versão da CLI, para que o binário e o chart sejam atualizados juntos:
+Para instalar o próprio chart a partir de um espelho, `init` aceita `--chart` como o nome de um chart resolvido a partir de `--chart-repo` ou como uma referência `oci://` direta, uma URL, um arquivo compactado local ou um diretório local. Por padrão, `--chart-version` usa a própria versão da CLI, para que o binário e o chart sejam atualizados juntos.
+
+O exemplo de modo gerenciado abaixo requer uma compilação com `--managed`, que a versão pública `v0.16.0` não possui. Confirme a [disponibilidade do modo gerenciado](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usá-lo; espelhar o lançamento público não adiciona esse suporte.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \
   --chart oci://registry.example.com/charts/clicklink-connector
 ```
 
-Quando o endpoint do conector estiver por trás de uma CA privada dentro da sua fronteira, passe `--api-private-ca` para `init`. Isso configura `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, e o conector verifica o endpoint em relação às raízes do sistema mais a cadeia de CAs do pacote de inscrição. Em uma VM, o equivalente é `api.tls.ca_file` em `/etc/clicklink/config.yaml`: `init` instala a cadeia do pacote em `/etc/clicklink/tls/ca.crt`, e o conector a acrescenta às raízes do sistema da mesma forma. Para inscrição e assinatura de certificados em ambientes totalmente isolados da internet, consulte [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
+Quando o endpoint do connector estiver por trás de uma CA privada dentro da sua fronteira, passe `--api-private-ca` para `init`. Isso configura `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, e o connector verifica o endpoint em relação às raízes do sistema mais a cadeia de CAs do pacote de inscrição. Em uma VM, o equivalente é `api.tls.ca_file` em `/etc/clicklink/config.yaml`: `init` instala a cadeia do pacote em `/etc/clicklink/tls/ca.crt`, e o connector a acrescenta às raízes do sistema da mesma forma. Para inscrição e assinatura de certificados em ambientes totalmente isolados da internet, consulte [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
 
 ## Armazenamento {#storage}
 

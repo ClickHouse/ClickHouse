@@ -58,9 +58,21 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## Managed-режим {#managed-mode}
+## Управляемый режим {#managed-mode}
 
-В Managed-режиме запускается исполнитель, который применяет к вашему кластеру жизненный цикл сервиса, задаваемый ClickHouse Cloud. `init` включает его при enrollment и заполняет identity кластера (см. [включение managed-режима](/ru/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); приведённые ниже ключи — это те, к которым вы, возможно, вернётесь позднее. Чтобы включить managed-режим для connector, установленного без него, или, наоборот, отключить его, повторно запустите `init` с `--force` и `--managed` либо `--no-managed`. `--no-managed` останавливает исполнитель, но оставляет его grant на кластер; удалите его, как описано в разделе [остановка managed-режима](/ru/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). Как и любому запуску `init`, здесь нужна точка входа: `--handoff`, если вы сохранили bundle, либо `--enroll` с новым token, как описано в разделе [повторные запуски и восстановление](/ru/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+<Note>
+  В публичном CLI `v0.16.0` нет ни `--managed`, ни `--no-managed`. Прежде чем использовать любой из этих флагов для изменения конфигурации, уточните [доступность управляемого режима](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) и получите соответствующую сборку у команды сопровождения аккаунта ClickHouse.
+</Note>
+
+В управляемом режиме запускается исполнитель, который применяет к вашему кластеру жизненный цикл сервиса, задаваемый ClickHouse Cloud. `init` включает его при регистрации и заполняет identity кластера (см. [включение управляемого режима](/ru/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); приведённые ниже ключи — это те, к которым вы, возможно, вернётесь позднее. Чтобы изменить настроенный режим, повторно запустите `init` с `--force` и `--managed` либо `--no-managed`. Как и любому запуску `init`, здесь нужна точка входа: `--handoff`, если вы сохранили bundle, либо `--enroll` с новым token, как описано в разделе [повторные запуски и восстановление](/ru/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+На ВМ `--no-managed` отключает исполнитель в конфигурации, но не останавливает и не отключает уже запущенный юнит systemd. Остановите его явно перед изменением конфигурации:
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+В Kubernetes установка `executor.enabled: false` в values и применение изменения с помощью `helm upgrade` удаляет Развертывание исполнителя. В обоих случаях grant на кластер сохраняется, пока вы его не удалите; чтобы убрать и этот access, следуйте разделу [остановка управляемого режима](/ru/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode).
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 ## Добавление или изменение экземпляров ClickHouse {#clickhouse-instances}
 
-Сервисы, создаваемые исполнителем, регистрируются сами, поэтому в managed-режиме добавлять их здесь не требуется. Отдельное развертывание коннектора, установленное с флагом `--no-managed`, наблюдает за ClickHouse, который вы запускаете самостоятельно; укажите `--ch-user-suffix` при его `init`, если оба развертывания используют один и тот же экземпляр. Этот раздел относится именно к такому развертыванию. Каждая запись в `instances` задает конечную точку ClickHouse с нативным протоколом, из которой читает коннектор: `host`, `port`, `database`, `secure`, `cluster`, а в Kubernetes — `namespace`; параметры `max_open_conns` и `max_idle_conns` ограничивают пул соединений. Учетные данные никогда не хранятся в конфигурации: каждый компонент получает своего пользователя ClickHouse с правами только для чтения из bundle доступа, создаваемого на этапе подготовки.
+Сервисы, создаваемые исполнителем, регистрируются сами, поэтому в управляемом режиме добавлять их здесь не требуется. Отдельное развертывание коннектора, работающее без исполнителя, наблюдает за ClickHouse, который вы запускаете самостоятельно; укажите `--ch-user-suffix` при его `init`, если оба развертывания используют один и тот же экземпляр. Этот раздел относится именно к такому развертыванию. Каждая запись в `instances` задает конечную точку ClickHouse с нативным протоколом, из которой читает коннектор: `host`, `port`, `database`, `secure`, `cluster`, а в Kubernetes — `namespace`; параметры `max_open_conns` и `max_idle_conns` ограничивают пул соединений. Учетные данные никогда не хранятся в конфигурации: каждый компонент получает своего пользователя ClickHouse с правами только для чтения из bundle доступа, создаваемого на этапе подготовки.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -355,7 +367,9 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-Чтобы установить сам чарт из частного зеркала, `init` принимает `--chart` как имя чарт из `--chart-repo` либо как прямую ссылку `oci://`, URL, локальный архив или каталог. По умолчанию `--chart-version` соответствует версии самого CLI, поэтому бинарный файл и чарт обновляются вместе:
+Чтобы установить сам чарт из частного зеркала, `init` принимает `--chart` как имя чарт из `--chart-repo` либо как прямую ссылку `oci://`, URL, локальный архив или каталог. По умолчанию `--chart-version` соответствует версии самого CLI, поэтому бинарный файл и чарт обновляются вместе.
+
+Приведённый ниже пример в managed-режиме требует сборки с `--managed`, которой нет в публичной версии `v0.16.0`. Прежде чем использовать его, проверьте [доступность managed-режима](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); зеркалирование публичного релиза не добавляет такую поддержку.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

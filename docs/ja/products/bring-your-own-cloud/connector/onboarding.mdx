@@ -13,6 +13,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 このページでは、登録トークンの取得から、ClickHouse Cloud が駆動するサービスライフサイクルを executor が適用する managed モードでの検証済みコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) にインストールできます。標準的な手順はトークン登録です。環境からコネクタのエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。executor を使わずに自分で運用する ClickHouse を監視する場合は、`--no-managed` を指定してください。
 
+## Managed モードの提供状況 {#managed-mode-availability}
+
+<Warning>
+  2026-09-22 時点で、公開インストーラーが提供するのは `v0.16.0` であり、`init --managed` および `init --no-managed` フラグも `platform` コマンドも含まれていません。Linux VM と Kubernetes のいずれのインストールにおけるプラットフォーム承認も、顧客サービスの作成 (`instances create --from-prepare`) も、公開リリースではまだ利用できません。Kubernetes のプラットフォーム承認では、さらに `platform approve --secret-namespace` に対する CLI とチャートのサポートが必要です。
+
+  Managed モードのワークフローを実行する前に、ClickHouse アカウントチームに対象のデプロイ先がサポートされているかを確認し、対応する CLI、コネクタのチャートまたはイメージ、およびインストール手順を提供してもらってください。顧客サービスの作成には、コネクタエンドポイント側と ClickHouse Cloud 側のサポートも必要であり、CLI を新しくするだけでは不十分です。以下の公開インストールコマンドでは、現時点ではこれらのワークフローに対応したリリースはインストールされません。
+</Warning>
+
 ## 前提条件 {#prerequisites}
 
 ### 環境を登録する {#registration}
@@ -29,8 +37,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ### すべてのインストールで共通 {#prerequisites-every-install}
 
+* 以下の Managed モードの手順には **[managed モード対応](#managed-mode-availability)のビルド**が必要です。公開されている `v0.16.0` には `--managed` も `--no-managed` もありません。
 * **[登録](#registration)時に発行されるコネクタエンドポイントと登録トークン**。
-* **ポート 443 での egress**。宛先は `https://<subdomain>.<connector-domain>` と `https://<subdomain>.enroll.<connector-domain>`、さらにインストール時には `releases.clicklink.clickhouse.com` と Amazon ECR Public です。Managed モードでは、プラットフォームの同期や作成処理が ECR から chart を取得する際に、executor が Amazon ECR と STS にも接続します。これらのいずれかに到達できない場合は、[エアギャップ and mirrored installs](#air-gapped-and-mirrored-installs) を参照してください。
+* **ポート 443 での egress**。宛先は `https://<subdomain>.<connector-domain>` と `https://<subdomain>.enroll.<connector-domain>`、さらにインストール時には `releases.clicklink.clickhouse.com` と Amazon ECR Public です。Managed モードでは、プラットフォームの同期や作成処理が ECR から chart を取得する際に、executor が Amazon ECR と STS にも接続します。これらのいずれかに到達できない場合は、[エアギャップ and ミラーインストール](#air-gapped-and-mirrored-installs) を参照してください。
 * Managed モードには **Amazon EKS cluster** が必要です。`init` はそれ以外の cluster では Managed モードを拒否し、executor なしでインストールする方法として `--no-managed` を案内します。
 * **executor の grant に必要な cluster admin 権限。** この grant では、executor を自身の prefix 配下の namespace に限定する ClusterRole、ClusterRoleBinding、ValidatingAdmissionPolicy が作成されます。Kubernetes では、`init` の実行に使う kubeconfig にこの権限が必要です。VM ではホストの kubeconfig に必要で、ホストに admin 権限がない場合、`init` は権限を持つホストで実行すべきコマンドを出力します。
 * **ClickHouse はまだ不要です。** Managed インストールは service が存在しない状態から始まり、executor が作成した service が自動的に登録されます。Managed モードの `init` は、自身で運用している ClickHouse を登録しません (Kubernetes では `--instance` と `--instance-namespace` を拒否します) 。そのような cluster を監視するには、`--no-managed` を指定して別の connector deployment をインストールしてください。`--ch-user-suffix` を使えば、2 つの deployment が connector の user 名を衝突させることなく同一の instance を共有できます。この deployment には到達可能な native listener が必要で、セキュア接続なら 9440、plaintext なら 9000 を使用し、Kubernetes では自動検出されます。さらに、provisioning のために ClickHouse admin アクセスも必要です。パスワードなしの `default` user、`--ch-admin-password-stdin` もしくはプロンプトで渡すパスワード、または operator 管理の instance の場合は CR injection のいずれかを利用します。
@@ -56,6 +65,8 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 ## インストールと登録 {#install-and-enroll}
+
+まず、[managed モードの提供状況](#managed-mode-availability)についてアカウントチームに確認してください。下記の公開インストーラーが配布するのは `v0.16.0` であり、本ウォークスルーで使用する managed モードの登録コマンドは実行できません。
 
 <Steps>
   <Step title="コネクタのエンドポイントと登録トークンを取得する" id="get-endpoint-and-token">
@@ -85,9 +96,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="コネクタを登録してインストールする" id="enroll-and-install">
+    これらのコマンドを使用するには、[managed モードの提供状況](#managed-mode-availability)に記載されたビルドおよびデプロイメントのサポートが必要です。一般提供版の `v0.16.0` には `--managed` も `--no-managed` も存在しません。
+
     登録はコマンド 1 つで完了します。トークンを引き換え、署名済みのクライアント証明書と executor の cluster-wide grant を取得したうえで、コネクタをインストールして検証します。
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector enrollment flow" />
+    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector の登録フロー" />
 
     端末上では、`init` が `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` と尋ね、`yes` があらかじめ選択された状態になります。このプロンプトをスキップするには `--managed` を、executor を含まない観測専用インストールを行うには `--no-managed` を渡します。どちらのフラグも指定しない無人の新規インストールでは managed モードは無効のままになります (`--force` による再実行では、置き換えられる設定の状態が引き継がれます) 。そのため、スクリプトでは必ず `--managed` を渡してください。
 
@@ -221,9 +234,11 @@ VM では、tarball を展開し、展開先のディレクトリで `sudo ./ins
 
 ## 失敗した場合 {#if-something-fails}
 
+`init` が `--managed` または `--no-managed` を不明な flag として拒否する場合は、CLI のバージョンを確認してください。公開版の `v0.16.0` はどちらもサポートしていません。以下の managed モードの復旧手順に従う前に、アカウントチーム から [managed モードに対応した build](#managed-mode-availability) を入手してください。
+
 同じコマンドを再実行してください。`init` は冪等であり、再実行しても同じ状態に収束し、既存の設定とステージ済みのファイルはそのまま維持され、完了済みの作業はスキップされます。ステップが途中で失敗した場合、CLI が状況に応じた復旧コマンドをそのまま出力します。これらは繰り返し実行しても安全です。
 
-登録が拒否された場合、そのトークンはすでに使用済みであるか、無効または期限切れです。使用済みトークンの場合は、クリーンアップのステップまで残る `handoff.yaml` を使い、`--handoff handoff.yaml` を指定して再実行してください。それ以外の場合は、ClickHouse の account team に新しいトークンを依頼してください。登録が通信エラーで失敗した場合は、同じコマンドを再実行してください。再実行も拒否された場合は、最初の試行でトークンが消費されているため、新しいトークンをリクエストしてください。
+登録が拒否された場合、そのトークンはすでに使用済みであるか、無効または期限切れです。使用済みトークンの場合は、クリーンアップのステップまで残る `handoff.yaml` を使い、`--handoff handoff.yaml` を指定して再実行してください。それ以外の場合は、ClickHouse の アカウントチーム に新しいトークンを依頼してください。登録が通信エラーで失敗した場合は、同じコマンドを再実行してください。再実行も拒否された場合は、最初の試行でトークンが消費されているため、新しいトークンをリクエストしてください。
 
 クラスターが EKS ではないために managed モードが拒否された場合は、`--no-managed` を指定して再実行し、executor なしでインストールしてください。VM 上では、current context が別のクラスターを指している kubeconfig も拒否されます。その場合は `kubectl config use-context` で context を切り替えてから再実行してください。
 

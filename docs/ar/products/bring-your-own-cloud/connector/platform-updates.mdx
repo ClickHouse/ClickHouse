@@ -14,6 +14,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يُشغّل العنقود المُدار طبقة منصة صغيرة تعتمد عليها خدمات ClickHouse. تقترح ClickHouse Cloud تحديثات على تلك الطبقة، ولا يطبّق المنفّذ أي شيء منها حتى توافق على كل تحديث باستخدام بيانات اعتماد العنقود الخاصة بك. توضّح هذه الصفحة ما المقصود بتحديث المنصة، وكيفية الموافقة عليه على جهاز افتراضي أو على تثبيت Kubernetes، ومدة صلاحية الموافقة، وما تمنحه من أذونات.
 
+<Note>
+  لا تتضمّن واجهة سطر الأوامر العامة `v0.16.0` أمر `platform`، بما في ذلك `platform approve` و`platform reset`. ولا يتوفّر في ذلك الإصدار أيٌّ من سير عمل الجهاز الافتراضي الذي يعمل بنظام Linux أو سير عمل Kubernetes الوارد أدناه. كما تتطلّب الموافقة على Kubernetes دعمًا من واجهة سطر الأوامر ومن مخطط المنفّذ لحزمة الرموز المعتمدة على Secret (`--secret-namespace`). تأكّد من [توافر الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) مع فريق حسابك قبل استخدام أيٍّ من سيري العمل.
+</Note>
+
 ## ما المقصود بتحديث المنصة {#what-a-platform-update-is}
 
 تتكوّن طبقة المنصة من ثلاثة مكوّنات: وحدة تحكم اللقطات، وClickHouse Operator، وجامعات المراقبة. وتُثبَّت بهذا الترتيب لأن كل مكوّن يعتمد على تعريفات الموارد المخصّصة الخاصة بالمكوّن الذي يسبقه. وإلى جانبها يوجد StorageClass باسم `gp3-encrypted` (وحدات تخزين gp3 مشفّرة) تستخدمه الخدمات.
@@ -30,6 +34,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ## الموافقة على تحديث المنصة {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="سير عمل الموافقة على منصة ClickHouse Connector" />
+
+### بيانات اعتماد السجل {#registry-credentials}
+
+يتطلب كلا إجراءي الموافقة أدناه [بناءً يدعم المنصة](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ فالإصدار العام `v0.16.0` لا يتضمّن الأمر `platform`. كما تتطلب موافقة Kubernetes دعمًا مطابقًا في واجهة سطر الأوامر وفي المخطط لتسليم Secret.
+
+تعتمد مصادقة السجل على وضع توزيع الصور المسجَّل لبيئتك:
+
+* **الوصول المباشر إلى سجل ClickHouse.** نفّذ الموافقة على جهاز EC2 الافتراضي الخاص بالموصل. يستخدم كل من `approve` ومزامنة المنصة التي يجريها المنفّذ بيانات اعتماد من خدمة البيانات الوصفية لمثيل EC2 لتولي دور ساحب ECR للقراءة فقط الخاص ببيئتك، ويستخدمان هذا الدور لتسجيل الدخول إلى المخطط، كما يستخدمه المنفّذ للتحقق من وجود صور المنصة. ولا تُغني ملفات تعريف AWS أو بيانات اعتماد البيئة أو بيانات اعتماد SSO على محطة العمل عن ملف تعريف المثيل. ويبقى ملف kubeconfig هو مصدر بيانات اعتماد مسؤول العنقود المنفصلة اللازمة لتطبيق نصف الأذونات.
+* **المخططات في سجل ECR آخر، بما في ذلك مرآتك الخاصة.** يستخدم تسجيل الدخول إلى المخطط بيانات اعتماد AWS المتاحة من البيئة للعملية التي تشغّل `approve` أو المنفّذ، ويجب أن تمتلك تلك البيانات صلاحية القراءة من ذلك السجل.
+
+لا تستخدم إجراء محطة عمل Kubernetes أدناه إلا في عمليات النشر التي تعتمد سجلًا مرآةً مع تفعيل موافقة منصة Kubernetes. أما في حالة الوصول المباشر، فاطلب من فريق الحساب الخاص بك تأكيد توفر بيئة تنفيذ مدعومة تتضمن ملف تعريف مثيل EC2 المطلوب قبل المتابعة.
 
 <Steps>
   <Step title="ابحث عن الحزمة المرحلية" id="find-the-staged-bundle">
@@ -69,7 +84,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تنفيذ الموافقة" id="run-approve">
     `approve` بدون أي flags يقرأ الحزمة المجهّزة ويحسب قيم hash لها، فيكون ما توافق عليه هو بالضبط ما استلمه الـ executor. وهو يُصيّر كل مخطط في الحزمة تمامًا كما سيُصيّره الـ executor، ويطبّق شطر الـ permission باستخدام الـ kube context الذي تختاره. كما يُنشئ identity الـ `pcm-platform` إذا لزم الأمر ويُصدر الـ token الخاص به. ولا يُرسل أي request إلى connector endpoint الخاص بك.
 
-    يحتاج `approve` إلى kube context يمتلك صلاحيات cluster-admin على العنقود المُدار (`--context <name>` إذا كان kubeconfig يحتوي على عدة سياقات). وعندما يكون المخطط موجودًا في Amazon ECR فإنه يحتاج أيضًا إلى AWS credentials قادرة على قراءته. أما `--dry-run` فيُصيّر شطر الـ permission ويسرده دون تطبيق أو إصدار أي شيء.
+    يحتاج `approve` إلى kube context يمتلك صلاحيات cluster-admin على العنقود المُدار (`--context <name>` إذا كان kubeconfig يحتوي على عدة سياقات) وإلى [بيانات اعتماد السجل](#registry-credentials) الخاصة بوضع توزيع الصور في بيئتك. أما `--dry-run` فيُصيّر شطر الـ permission ويسرده دون تطبيق أو إصدار أي شيء؛ ومع ذلك فهو يحتاج إلى الوصول إلى السجل لتصيير المخططات.
 
     <Tabs>
       <Tab title="جهاز افتراضي يعمل بنظام Linux" id="approve-vm">
@@ -83,7 +98,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       </Tab>
 
       <Tab title="Kubernetes" id="approve-kubernetes">
-        يقرأ `approve` الحزمة المجهّزة عبر الـ port-forward من الخطوة السابقة. وهو يسلّم حزمة الـ token على هيئة Secret في نطاق أسماء الـ connector، ويربطه المخطط داخل الـ pod. نفّذه من workstation يصل kubeconfig الخاص به إلى العنقود، مع نسخة من تهيئة الـ connector. فالمخطط يُصيّر نسخة منها في ConfigMap الخاص بالـ executor؛ ويحتاجها `approve` من أجل prefix نطاق الأسماء، ولا يقرأ منها أي credentials.
+        في حالة النشر بسجل مرآة مع تفعيل موافقة المنصة على Kubernetes، يقرأ `approve` الحزمة المجهّزة عبر الـ port-forward من الخطوة السابقة. وهو يسلّم حزمة الـ token على هيئة Secret في نطاق أسماء الـ connector، ويربطه المخطط داخل الـ pod. نفّذه من workstation يصل kubeconfig الخاص به إلى العنقود، مع نسخة من تهيئة الـ connector والوصول إلى السجل كما هو موضّح أعلاه. فالمخطط يُصيّر التهيئة في ConfigMap الخاص بالـ executor؛ ويحتاجها `approve` من أجل prefix نطاق الأسماء، ولا يقرأ منها أي credentials.
 
         ```bash
         CONNECTOR_NAMESPACE='clicklink'   # نطاق أسماء الـ connector الذي اخترته عند init
@@ -144,9 +159,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## إعادة تعيين عنقود اختباري {#resetting-a-test-cluster}
 
+لا تتضمّن واجهة سطر الأوامر العامة `v0.16.0` أمر `platform reset`؛ تأكّد من [التوافر](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدام هذا الإجراء.
+
 الأمر `clicklink clctl platform reset` مخصّص للعناقيد الاختبارية: فهو يزيل تثبيت مكوّنات المنصة بحيث يمكن إجراء تثبيتها الأول من جديد. وقبل إجراء أي تغيير، يسرد عناقيد ClickHouse في مساحات الأسماء التي يملكها هذا الموصل، ويرفض المتابعة إذا كان هناك أي خدمة.
 
-وفي حال كان العنقود فارغًا، يزيل تثبيت إصدارات المنصة بترتيب عكسي لتبعياتها، ثم يحذف حزمة رموز المنصة الخاصة بالـ executor: الدليل المحلي على جهاز افتراضي، أو الـ Secret المحدّد عبر `--secret-namespace <connector-namespace>` على Kubernetes. أما CustomResourceDefinitions وRBAC وStorageClass فتبقى كما هي. نفّذ `approve` مرة أخرى قبل مزامنة المنصة التالية.
+وفي حال كان العنقود فارغًا، يزيل تثبيت إصدارات المنصة بترتيب عكسي لتبعياتها، ثم يحذف حزمة رموز المنصة الخاصة بالـ المنفّذ: الدليل المحلي على جهاز افتراضي، أو الـ Secret المحدّد عبر `--secret-namespace <connector-namespace>` على Kubernetes. أما CustomResourceDefinitions وRBAC وStorageClass فتبقى كما هي. نفّذ `approve` مرة أخرى قبل مزامنة المنصة التالية.
 
 ```bash
 sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run

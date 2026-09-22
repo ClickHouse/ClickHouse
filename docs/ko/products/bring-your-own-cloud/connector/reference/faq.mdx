@@ -14,6 +14,8 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ### 누가, 언제 내 서비스를 변경할 수 있습니까? {#who-can-change-my-services}
 
+관리형 모드 온보딩(enrollment), 고객 생성, 플랫폼 승인 워크플로는 [계정 담당 팀이 확인한 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 필요하며, 공개된 `v0.16.0`에서는 사용할 수 없습니다.
+
 관리형 모드에서 ClickHouse Cloud는 관리하도록 요청한 서비스만 변경합니다. 실행기 호스트나 파드에 액세스할 수 있는 사람은 로컬 `clicklink clctl instances` 명령어로도 해당 서비스를 제어할 수 있습니다. [서비스 수명 주기](/ko/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)를 참조하십시오. ClickHouse Cloud는 실행기의 아웃바운드 채널을 통해 다음과 같은 수명 주기 명령어를 전송합니다:
 
 * 생성: 제출한 정의를 기반으로 수행
@@ -46,9 +48,13 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ### ClickHouse가 클러스터를 변경하지 못하게 하려면 어떻게 해야 합니까? {#stop-managed-mode}
 
+<Note>
+  공개된 `v0.16.0` CLI에는 `--managed`도 `--no-managed`도 없습니다. 아래의 설치 시점 선택은 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 포함된 build가 필요합니다. 이미 실행 중인 실행기를 중지하는 작업은 아래의 Helm 또는 systemd 안내를 따르며, 두 init 플래그 중 어느 것도 필요하지 않습니다.
+</Note>
+
 관리형 모드를 사용하지 않고 실행하십시오. 설치 시 `clicklink clctl init`에 `--no-managed`를 전달하거나, 관련 질문이 표시되면 &#39;아니오&#39;로 답하십시오. 이 경우 스크레이퍼와 troubleshooter만 배포되므로 ClickHouse는 서비스를 생성, 변경, 삭제할 수 없습니다. 다만 커넥터는 여전히 읽기 전용 ClickHouse 사용자와 ServiceAccount를 프로비저닝합니다. 자세한 내용은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model)을 참고하십시오.
 
-이미 설치된 환경에서는 실행기를 중지하고 클러스터 관리자 권한을 제거하십시오. 중지하려면 Helm values에서 `executor.enabled: false`로 설정한 뒤 `helm upgrade`를 실행하거나, VM에서 `systemctl disable --now clicklink-executor`를 실행하십시오. 그런 다음 권한을 제거하십시오. 마지막 명령은 ServiceAccount 자체를 제거하며, 해당 네임스페이스는 VM 설치에서는 `clicklink-system`, Kubernetes 설치에서는 커넥터 네임스페이스입니다:
+이미 설치된 환경에서는 실행기를 중지하고 클러스터 관리자 권한 부여를 제거하십시오. 중지하려면 Helm values에서 `executor.enabled: false`로 설정한 뒤 `helm upgrade`를 실행하거나, VM에서 `systemctl disable --now clicklink-executor`를 실행하십시오. 그런 다음 권한 부여를 제거하십시오. 마지막 명령은 ServiceAccount 자체를 제거하며, 해당 네임스페이스는 VM 설치에서는 `clicklink-system`, Kubernetes 설치에서는 커넥터 네임스페이스입니다:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -78,6 +84,8 @@ VM에서는 엔드포인트에 연결할 수 없을 때마다 스크레이퍼가
 
 ### default 사용자 비밀번호는 어디에서 확인합니까? {#default-user-password}
 
+고객 서비스 생성에는 [CLI와 배포 지원이 일치](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)해야 하며, 공개 버전 `v0.16.0`에서는 사용할 수 없습니다.
+
 `clicklink clctl executor prepare`는 사용자 측에서 비밀번호를 생성하며 단 한 번만 출력합니다. `--from-prepare` 대신 개별 플래그로 제출하면, `clicklink clctl instances create`가 `--default-user-password-file`에서 비밀번호를 읽거나 새로 생성하여 출력합니다. ClickHouse Cloud에는 해시만 제출되므로 커넥터나 ClickHouse가 비밀번호를 다시 보여줄 수는 없습니다. 비밀번호가 표시될 때 반드시 저장하십시오.
 
 ### ClickHouse의 액세스 권한을 어떻게 철회합니까? {#how-do-i-revoke-access}
@@ -99,8 +107,8 @@ VM에서는 엔드포인트에 연결할 수 없을 때마다 스크레이퍼가
 * `--chart`에 `oci://` 참조, URL 또는 로컬 아카이브를 전달하십시오. `--chart-version`의 기본값은 CLI 자체 버전입니다.
 * 엔드포인트가 사설 CA 뒤에서 경계 내부에 제공되는 경우, `--api-private-ca`(Kubernetes) 또는 `api.tls.ca_file`(VM)이 enrollment bundle의 CA 체인을 시스템 루트에 추가합니다.
 * 직접 연결 없이 등록해야 하는 경우, `init --handoff`가 대역 외로 확보한 bundle을 사용하며, `--no-auto-sign`과 `init --signed-cert`를 함께 사용하면 대역 외에서 인증서 서명을 완료할 수 있습니다.
-* 관리형 모드에서는 services 및 플랫폼 구성 요소용 ClickHouse image를 자체 registry로 가져온 후 해당 registry에서 제공할 수 있습니다. ClickHouse가 해당 registry를 사용자 환경에 등록합니다.
-* 플랫폼 bundle은 대역 외로 전달한 뒤 파일 형태로 `clicklink clctl platform approve --bundle`에 전달할 수 있습니다.
+* 관리형 모드에서는 서비스 및 플랫폼 구성 요소용 ClickHouse image를 자체 registry로 가져온 후 해당 registry에서 제공할 수 있습니다. ClickHouse가 해당 registry를 사용자 환경에 등록합니다.
+* [플랫폼 승인을 지원하는 build](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)에서는 플랫폼 bundle을 대역 외로 전달한 뒤 파일 형태로 `clicklink clctl platform approve --bundle`에 전달할 수 있습니다. 공개 `v0.16.0`에는 `platform` 명령이 없습니다.
 
 [프라이빗 미러](/ko/products/bring-your-own-cloud/connector/configuration)와 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)의 에어갭 섹션을 참조하십시오. 다만 커넥터는 런타임에 엔드포인트로 향하는 경로가 반드시 필요합니다. 경로가 없으면 ClickHouse Cloud는 telemetry를 수신하지 못하고, 어떤 수명 주기 명령도 실행기에 도달하지 못합니다.
 

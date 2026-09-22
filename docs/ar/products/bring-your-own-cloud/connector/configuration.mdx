@@ -58,9 +58,21 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## Managed mode {#managed-mode}
+## الوضع المُدار {#managed-mode}
 
-يشغّل وضع Managed المنفّذ (executor) الذي يطبّق على عنقودك دورة حياة الخدمة التي تديرها ClickHouse Cloud. ويفعّله الأمر `init` عند التسجيل ويملأ هوية العنقود (راجع [تمكين وضع Managed](/ar/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode))؛ أما المفاتيح الواردة أدناه فهي التي قد تعود إليها لاحقًا. ولتفعيل وضع Managed لموصّل (connector) مثبّت بدونه، أو لتعطيله، أعد تنفيذ `init` مع `--force` و`--managed` أو `--no-managed`. يوقف الخيار `--no-managed` المنفّذ لكنه يُبقي صلاحية (grant) العنقود الخاصة به قائمة؛ أزِلها كما هو موضّح في [إيقاف وضع Managed](/ar/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). ومثل كل تنفيذ للأمر `init`، يتطلب ذلك نقطة دخول: إما `--handoff` إن كنت قد احتفظت بالحزمة (bundle)، أو `--enroll` مع رمز جديد، كما هو موضّح في [إعادة التنفيذ والاستعادة](/ar/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+<Note>
+  لا تحتوي واجهة سطر الأوامر العامة `v0.16.0` على `--managed` ولا `--no-managed`. وقبل استخدام أي من العلامتين لتغيير التهيئة، تأكد من [توافر الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) واحصل على الإصدار المطابق من فريق حسابك.
+</Note>
+
+يشغّل الوضع المُدار المنفّذ (المنفّذ) الذي يطبّق على عنقودك دورة حياة الخدمة التي تديرها ClickHouse Cloud. ويفعّله الأمر `init` عند التسجيل ويملأ هوية العنقود (راجع [تمكين الوضع المُدار](/ar/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode))؛ أما المفاتيح الواردة أدناه فهي التي قد تعود إليها لاحقًا. ولتغيير الوضعية المُهيّأة، أعد تنفيذ `init` مع `--force` و`--managed` أو `--no-managed`. ومثل كل تنفيذ للأمر `init`، يتطلب ذلك نقطة دخول: إما `--handoff` إن كنت قد احتفظت بالحزمة (bundle)، أو `--enroll` مع رمز جديد، كما هو موضّح في [إعادة التنفيذ والاستعادة](/ar/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+على جهاز افتراضي، يعطّل `--no-managed` المنفّذ في التهيئة لكنه لا يوقف وحدة systemd قيد التشغيل فعلًا ولا يعطّلها. أوقفها صراحةً قبل تغيير التهيئة:
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+على Kubernetes، يؤدي ضبط `executor.enabled: false` في القيم وتطبيق التغيير باستخدام `helm upgrade` إلى إزالة Deployment الخاص بالمنفّذ. وفي كلا الهدفين تبقى صلاحية (grant) العنقود قائمة إلى أن تزيلها؛ اتبع [إيقاف الوضع المُدار](/ar/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) لإزالة ذلك الوصول أيضًا.
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -152,9 +164,9 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## إضافة نسخ ClickHouse أو تغييرها {#clickhouse-instances}
+## إضافة مثيلات ClickHouse أو تغييرها {#clickhouse-instances}
 
-تُسجِّل الخدمات التي يُنشئها المنفّذ نفسها تلقائيًا، لذا لن تحتاج في الوضع المُدار إلى إضافتها هنا إطلاقًا. أما عملية نشر connector منفصلة مُثبَّتة باستخدام `--no-managed` فتراقب ClickHouse الذي تُشغّله بنفسك؛ ومرِّر `--ch-user-suffix` عند تنفيذ `init` الخاص بها إذا كانت عمليتا النشر تتشاركان النسخة نفسها. ينطبق هذا القسم على عملية النشر تلك. يُحدِّد كل مدخل ضمن `instances` نقطة نهاية للبروتوكول native في ClickHouse يقرأ منها connector: `host` و`port` و`database` و`secure` و`cluster`، وعلى Kubernetes كذلك `namespace`؛ ويحدّ كل من `max_open_conns` و`max_idle_conns` سعة مجمّع الاتصالات. لا تُخزَّن بيانات الاعتماد أبدًا في التهيئة؛ إذ يستخرج كل مكوّن مستخدم ClickHouse الخاص به للقراءة فقط من حزمة الوصول التي يُنشئها التجهيز.
+تُسجِّل الخدمات التي يُنشئها المنفّذ نفسها تلقائيًا، لذا لن تحتاج في الوضع المُدار إلى إضافتها هنا إطلاقًا. أما عملية نشر موصل منفصلة تعمل بدون المنفّذ فتراقب ClickHouse الذي تُشغّله بنفسك؛ ومرِّر `--ch-user-suffix` عند تنفيذ `init` الخاص بها إذا كانت عمليتا النشر تتشاركان النسخة نفسها. ينطبق هذا القسم على عملية النشر تلك. يُحدِّد كل مدخل ضمن `instances` نقطة نهاية للبروتوكول native في ClickHouse يقرأ منها موصل: `host` و`port` و`database` و`secure` و`cluster`، وعلى Kubernetes كذلك `namespace`؛ ويحدّ كل من `max_open_conns` و`max_idle_conns` سعة مجمّع الاتصالات. لا تُخزَّن بيانات الاعتماد أبدًا في التهيئة؛ إذ يستخرج كل مكوّن مستخدم ClickHouse الخاص به للقراءة فقط من حزمة الوصول التي يُنشئها التجهيز.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -355,7 +367,9 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-لتثبيت المخطط نفسه من مرآة، يقبل `init` الخيار `--chart` إما كاسم مخطط يُحلّ ضمن `--chart-repo`، أو كمرجع `oci://` مباشر، أو URL، أو أرشيف أو دليل محلي. يستخدم `--chart-version` إصدار CLI نفسه افتراضيًا، بحيث يبقى الملف الثنائي والمخطط متزامنين:
+لتثبيت المخطط نفسه من مرآة، يقبل `init` الخيار `--chart` إما كاسم مخطط يُحلّ ضمن `--chart-repo`، أو كمرجع `oci://` مباشر، أو URL، أو أرشيف أو دليل محلي. يستخدم `--chart-version` إصدار واجهة سطر الأوامر نفسه افتراضيًا، بحيث يبقى الملف الثنائي والمخطط متزامنين.
+
+يتطلب مثال الوضع المُدار أدناه بنية مُجمّعة تتضمن `--managed`، وهو ما يفتقر إليه الإصدار العام `v0.16.0`. تأكّد من [توافر الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدامه؛ فعمل مرآة للإصدار العام لا يضيف هذا الدعم.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

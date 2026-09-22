@@ -14,6 +14,8 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 ### Кто и когда может изменять мои сервисы? {#who-can-change-my-services}
 
+Процессы онбординга в управляемом режиме, создания сервисов клиентом и утверждения платформы требуют [поддержки, подтверждённой вашей командой сопровождения аккаунта ClickHouse](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); в публичной версии `v0.16.0` они недоступны.
+
 В управляемом режиме ClickHouse Cloud изменяет только те сервисы, управление которыми вы ему поручили. Любой, у кого есть доступ к хосту или поду исполнителя, также может управлять ими локальными командами `clicklink clctl instances`; см. [жизненный цикл сервиса](/ru/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud отправляет команды жизненного цикла через исходящий канал исполнителя:
 
 * создание — на основе отправленного вами определения
@@ -46,9 +48,13 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 ### Как запретить ClickHouse изменять мои кластеры? {#stop-managed-mode}
 
-Запускайте без управляемого режима. При установке передайте `--no-managed` в `clicklink clctl init` либо ответьте «нет» на соответствующий вопрос. Тогда развертываются только сборщик и средство диагностики, поэтому ClickHouse не сможет создавать, изменять или удалять сервисы. Connector по-прежнему создает пользователей ClickHouse только для чтения и ServiceAccounts; см. [модель привилегий](/ru/products/bring-your-own-cloud/connector/reference/privilege-model).
+<Note>
+  В публичной версии CLI `v0.16.0` нет ни `--managed`, ни `--no-managed`. Описанный ниже выбор на этапе установки требует сборки с [поддержкой управляемого режима](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Для остановки уже работающего исполнителя используются приведённые ниже инструкции для Helm или systemd, и ни один из флагов init при этом не нужен.
+</Note>
 
-Если установка уже выполнена, остановите исполнитель и отзовите его grant в роли cluster admin. Чтобы остановить его, задайте `executor.enabled: false` в значениях Helm и выполните `helm upgrade` либо выполните `systemctl disable --now clicklink-executor` на ВМ. Затем отзовите grant. Последняя команда удаляет сам ServiceAccount; его пространство имен — `clicklink-system` для установки на ВМ и пространство имен connector для установки в Kubernetes:
+Запускайте без управляемого режима. При установке передайте `--no-managed` в `clicklink clctl init` либо ответьте «нет» на соответствующий вопрос. Тогда развертываются только сборщик и средство диагностики, поэтому ClickHouse не сможет создавать, изменять или удалять сервисы. Коннектор по-прежнему создает пользователей ClickHouse только для чтения и ServiceAccounts; см. [модель привилегий](/ru/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+Если установка уже выполнена, остановите исполнитель и отзовите его grant в роли cluster admin. Чтобы остановить его, задайте `executor.enabled: false` в значениях Helm и выполните `helm upgrade` либо выполните `systemctl disable --now clicklink-executor` на ВМ. Затем отзовите grant. Последняя команда удаляет сам ServiceAccount; его пространство имен — `clicklink-system` для установки на ВМ и пространство имен коннектора для установки в Kubernetes:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -78,7 +84,9 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 ### Где найти пароль пользователя default? {#default-user-password}
 
-`clicklink clctl executor prepare` генерирует его на вашей стороне и выводит ровно один раз. Если вы отправляете запрос с отдельными флагами вместо `--from-prepare`, то `clicklink clctl instances create` считывает его из `--default-user-password-file` либо создаёт и выводит сам. В ClickHouse Cloud передаются только его хеши, поэтому ни connector, ни ClickHouse не смогут показать его вам повторно. Сохраните пароль сразу, как только он отобразится.
+Создание клиентского сервиса требует [соответствующей поддержки в CLI и развертывании](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) и недоступно в публичной версии `v0.16.0`.
+
+`clicklink clctl executor prepare` генерирует его на вашей стороне и выводит ровно один раз. Если вы отправляете запрос с отдельными флагами вместо `--from-prepare`, то `clicklink clctl instances create` считывает его из `--default-user-password-file` либо создаёт и выводит сам. В ClickHouse Cloud передаются только его хеши, поэтому ни коннектор, ни ClickHouse не смогут показать его вам повторно. Сохраните пароль сразу, как только он отобразится.
 
 ### Как отозвать доступ ClickHouse? {#how-do-i-revoke-access}
 
@@ -100,7 +108,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 * Если ваша конечная точка коннектора обслуживается внутри вашего контура за частным CA, параметр `--api-private-ca` (Kubernetes) или `api.tls.ca_file` (ВМ) добавит цепочку CA из пакета регистрации к системным корневым сертификатам.
 * Для регистрации без прямого подключения команда `init --handoff` принимает пакет, полученный по внешнему каналу, а `--no-auto-sign` вместе с `init --signed-cert` позволяет завершить подписание сертификата по внешнему каналу.
 * В управляемом режиме образы ClickHouse для ваших сервисов и компонентов платформы могут поступать из вашего собственного registry после того, как вы импортируете их туда; ClickHouse регистрирует этот registry для вашего окружения.
-* Пакеты платформы можно передать по внешнему каналу и подать в `clicklink clctl platform approve --bundle` в виде файла.
+* При наличии [сборки с поддержкой одобрения платформы](/ru/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) пакеты платформы можно передать по внешнему каналу и подать в `clicklink clctl platform approve --bundle` в виде файла. В публичной версии `v0.16.0` команды `platform` нет.
 
 См. [частные зеркала](/ru/products/bring-your-own-cloud/connector/configuration) и раздел об изолированных от интернета средах в [онбординге](/ru/products/bring-your-own-cloud/connector/onboarding). Коннектору всё равно нужен маршрут до вашей конечной точки коннектора во время работы; без него ClickHouse Cloud не получает телеметрию, а команды управления жизненным циклом не доходят до исполнителя.
 

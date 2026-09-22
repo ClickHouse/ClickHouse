@@ -14,7 +14,9 @@ import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge
 
 ### ¿Quién puede cambiar mis servicios y cuándo? {#who-can-change-my-services}
 
-En modo gestionado, ClickHouse Cloud solo modifica los servicios que le pediste gestionar. Cualquier persona con acceso al host o al pod del executor también puede controlarlos con los comandos locales `clicklink clctl instances`; consulta el [ciclo de vida del servicio](/es/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud envía los comandos de ciclo de vida por el canal saliente del executor:
+Los flujos de trabajo de inscripción en modo administrado, de creación por parte del cliente y de aprobación de plataforma requieren [soporte confirmado por tu account team](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); no están disponibles en la versión pública `v0.16.0`.
+
+En modo gestionado, ClickHouse Cloud solo modifica los servicios que le pediste gestionar. Cualquier persona con acceso al host o al pod de Kubernetes del executor también puede controlarlos con los comandos locales `clicklink clctl instances`; consulta el [ciclo de vida del servicio](/es/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud envía los comandos de ciclo de vida por el canal saliente del executor:
 
 * creación, a partir de la definición que enviaste
 * escalado, a un número fijo de réplicas que fija ClickHouse Cloud (limitado por un ajuste de ClickHouse Cloud, 20 en la configuración predeterminada)
@@ -45,6 +47,10 @@ Durante una [sesión de soporte](/es/products/bring-your-own-cloud/connector/sup
 La lista completa de conexiones salientes está en la página del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ### ¿Cómo evito que ClickHouse modifique mis clusters? {#stop-managed-mode}
+
+<Note>
+  La CLI pública `v0.16.0` no tiene ni `--managed` ni `--no-managed`. La opción durante la instalación que se describe a continuación requiere un build con [soporte de modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Para detener un executor existente se usan las instrucciones de Helm o systemd que se indican abajo, sin necesidad de ninguno de los dos indicadores de init.
+</Note>
 
 Ejecútelo sin el modo gestionado. Durante la instalación, pase `--no-managed` a `clicklink clctl init`, o responda que no cuando se le pregunte. Solo se despliegan el scraper y el solucionador de problemas, de modo que ClickHouse no puede crear, modificar ni eliminar servicios. El connector sigue aprovisionando usuarios de ClickHouse de solo lectura y ServiceAccounts; consulte el [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
@@ -78,6 +84,8 @@ El resto se elimina con `clicklink clctl executor teardown`, ejecutado con tus c
 
 ### ¿Dónde está la contraseña de mi usuario `default`? {#default-user-password}
 
+La creación de servicios de cliente requiere [compatibilidad equivalente entre la CLI y el despliegue](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) y no está disponible en la versión pública `v0.16.0`.
+
 `clicklink clctl executor prepare` la genera localmente y la muestra una única vez. Si realizas el envío con los indicadores individuales en lugar de `--from-prepare`, `clicklink clctl instances create` la lee desde `--default-user-password-file` o bien la genera y la muestra. A ClickHouse Cloud solo se envían sus hash, por lo que ni el connector ni ClickHouse podrán volver a mostrártela. Guárdala en cuanto aparezca en pantalla.
 
 ### ¿Cómo revoco el acceso de ClickHouse? {#how-do-i-revoke-access}
@@ -99,8 +107,8 @@ Sí. Todos los artifacts necesarios en el momento de la instalación pueden prov
 * Pase `--chart` con una referencia `oci://`, una URL o un archivo local. `--chart-version` toma por defecto la propia versión de la CLI.
 * Si su endpoint del connector se sirve dentro de su boundary detrás de una private CA, `--api-private-ca` (Kubernetes) o `api.tls.ca_file` (VM) añade la CA chain del paquete de inscripción a las raíces del sistema.
 * Para realizar la inscripción sin conectividad directa, `init --handoff` consume un paquete obtenido fuera de banda, y `--no-auto-sign` junto con `init --signed-cert` completa la firma del certificado fuera de banda.
-* En el modo gestionado, las imágenes de ClickHouse para sus services y componentes de la plataforma pueden provenir de su propio registry una vez que las haya importado allí; ClickHouse registra ese registry para su entorno.
-* Los paquetes de la plataforma pueden entregarse fuera de banda y pasarse a `clicklink clctl platform approve --bundle` como un archivo.
+* En el modo gestionado, las imágenes de ClickHouse para sus servicios y componentes de la plataforma pueden provenir de su propio registry una vez que las haya importado allí; ClickHouse registra ese registry para su entorno.
+* Con un [build que admita la aprobación de la plataforma](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability), los paquetes de la plataforma pueden entregarse fuera de banda y pasarse a `clicklink clctl platform approve --bundle` como un archivo. La versión pública `v0.16.0` no tiene el comando `platform`.
 
 Consulte [private mirrors](/es/products/bring-your-own-cloud/connector/configuration) y la sección sobre entornos aislados de [onboarding](/es/products/bring-your-own-cloud/connector/onboarding). El connector sigue necesitando una ruta hacia su endpoint del connector en runtime; sin ella, ClickHouse Cloud no recibe telemetría y ningún comando del ciclo de vida llega al executor.
 

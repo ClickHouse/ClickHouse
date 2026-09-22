@@ -88,6 +88,8 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) 認証情報 {#rotate-api-credentials}
 
+ここで説明する managed モードの動作には[サポート対象のビルド](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要です。公開されている `v0.16.0` には `--managed` も `--no-managed` もありません。
+
 ClickHouse のアカウントチームに新しい登録トークンを依頼し、元の `init` コマンドに `--enroll` と `--force` を付けて再実行します。`--force` は保持されている設定を再ステージングするため、初回インストール時に指定したターゲット固有のフラグ (`--target-namespace`、`--values`、および `--chart`、`--chart-repo`、`--chart-version` のミラーフラグ) をすべて維持してください。Managed モードは置き換え対象の設定から引き継がれるため、ここでは `--managed` は任意です。デフォルトのインストールでは、以下のようになります。
 
 ```bash
@@ -157,9 +159,13 @@ operator によって管理されるインスタンスでは、どちらの形�
 
 ## 再実行と復旧 {#re-runs-and-recovery}
 
+<Note>
+  公開されている `v0.16.0` の CLI には `--managed` も `--no-managed` もありません。以下で説明するmanaged モードの保持および上書きの動作には、[managed モードのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を含むビルドが必要です。復旧中にそのモードを変更する前に、account team にビルドを確認してください。
+</Note>
+
 `init` は再実行しても収束するため、まずは同じコマンドを再実行してください。`--force` を指定しない場合、既存の `/etc/clicklink/config.yaml` (VM) または `clicklink-values.yaml` オーバーレイ (Kubernetes) は保持され、既存のクライアント秘密鍵が再利用されます。`init` は認証情報と CA チェーンをアトミックに上書きします。部分的な失敗後に CLI が出力する復旧コマンドは、安全に繰り返し実行できます。
 
-`--force` は保持されている設定またはオーバーレイを上書きし、クライアント秘密鍵を再生成して、有効期限が切れていないクライアント証明書を置き換えます。新しいクラスター UUID が発行されることはないため、コネクタ&#39;のアイデンティティは保持されます。置き換えられる設定のマネージドモードの状態は、無人での再実行時には維持され、端末上ではデフォルトとして提示されます (`--managed` または `--no-managed` を指定した場合を除く) 。
+`--force` は保持されている設定またはオーバーレイを上書きし、クライアント秘密鍵を再生成して、有効期限が切れていないクライアント証明書を置き換えます。新しいクラスター UUID が発行されることはないため、コネクタ&#39;のアイデンティティは保持されます。置き換えられる設定のmanaged モードの状態は、無人での再実行時には維持され、端末上ではデフォルトとして提示されます (`--managed` または `--no-managed` を指定した場合を除く) 。
 
 ステージング後に証明書の署名に失敗した場合、または有効期限が切れていない証明書がすでに存在するために署名エンドポイントが `409` を返した場合でも、新しいトークンや 2 回目の発行は必要ありません。すでにディスク上にある署名済みマテリアルを使用して、インストールを完了してください。
 
@@ -169,7 +175,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 これは VM 用の形式です (root が `/etc/clicklink` を書き換え、サービスを管理します) 。Kubernetes では、CLI が `--target helm`、`--target-namespace`、`--values` を含む完全な形式を出力するため、出力されたコマンドをそのまま使用してください。
 
-**コネクタがオフラインの場合。** コネクタが停止している、または到達不能な間も、コネクタが管理する services は稼働し続けます。クラスター内の ClickHouse operator がそれらを維持し、executor はデータパス上には存在しません。ライフサイクルの変更には executor の接続が必要なため、再接続されるまで変更は一切適用されません。再起動時、executor は停止時点で処理中だったコマンドを自身のコマンド database から復旧します。ClickHouse Cloud が再送したコマンドは、2 回実行されるのではなく記録済みの結果を使って応答されます。再実行されるのは失敗したコマンドのみです。executor が接続されていない間にライフサイクルコマンドがどうなるかについては、[コネクタがオフラインの場合](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
+**コネクタがオフラインの場合。** コネクタが停止している、または到達不能な間も、コネクタが管理する services は稼働し続けます。クラスター内の ClickHouse operator がそれらを維持し、executor はデータパス上には存在しません。ライフサイクルの変更には executor の接続が必要なため、再接続されるまで変更は一切適用されません。再起動時、executor は停止時点で処理中だったコマンドを自身のコマンドデータベースから復旧します。ClickHouse Cloud が再送したコマンドは、2 回実行されるのではなく記録済みの結果を使って応答されます。再実行されるのは失敗したコマンドのみです。executor が接続されていない間にライフサイクルコマンドがどうなるかについては、[コネクタがオフラインの場合](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
 
 ## アンインストール {#uninstall}
 
@@ -248,7 +254,9 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### プラットフォームレイヤー {#uninstall-platform-layer}
 
-コネクタをアンインストールしても、プラットフォームレイヤーは削除されません。プラットフォームのネームスペースとワークロード、`pcm-platform` の RBAC、および承認によってインストールされた admission object はクラスター内に残り、すべての managed service も残ったままになります。まずは service を削除してください。詳細は [delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。service が存在しないテストクラスターであれば、`clicklink clctl platform reset` でプラットフォームのリリースをアンインストールできますが、残された CustomResourceDefinition、RBAC、StorageClass は手動で削除する必要があります。詳細は [resetting a test cluster](/ja/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster) を参照してください。テストクラスター以外では、プラットフォームレイヤーに手を加える前に、ClickHouse の account team と削除計画について合意してください。
+公開版の `v0.16.0` CLI には `platform reset` を含む `platform` コマンドがありません。使用する前に [availability](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を確認してください。
+
+コネクタをアンインストールしても、プラットフォームレイヤーは削除されません。プラットフォームのネームスペースとワークロード、`pcm-platform` の RBAC、および承認によってインストールされた admission object はクラスター内に残り、すべてのマネージドサービスも残ったままになります。まずは service を削除してください。詳細は [delete a service](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service) を参照してください。service が存在しないテストクラスターであれば、`clicklink clctl platform reset` でプラットフォームのリリースをアンインストールできますが、残された CustomResourceDefinition、RBAC、StorageClass は手動で削除する必要があります。詳細は [resetting a test cluster](/ja/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster) を参照してください。テストクラスター以外では、プラットフォームレイヤーに手を加える前に、ClickHouse の account team と削除計画について合意してください。
 
 ### ClickHouse ユーザー {#uninstall-clickhouse-users}
 

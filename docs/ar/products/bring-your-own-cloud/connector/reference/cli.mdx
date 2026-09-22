@@ -14,11 +14,15 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 يمكن أيضًا تمرير العلامات ضمن التفرعات الفرعية `troubleshoot` و`scraper` و`preflight` و`executor` و`instances create` و`platform`، إضافةً إلى العلامتين العامتين `--endpoint` و`--cluster`، عبر متغيرات البيئة `CLCTL_*` (المذكورة في مخرجات المساعدة لكل علامة) أو عبر `~/.clicklink/clctl.yaml`. تسجّل العلامة العامة `-v` طلبات واجهة برمجة تطبيقات الإدارة التي يُجريها الأمر، بينما تضيف `-vv` متون الطلبات.
 
-يقرأ الأمران `instances` و`commands`، وكذلك `executor teardown`، واجهة برمجة التطبيقات المحلية للمنفّذ. وتحدّدها علامتان عامتان: `--endpoint <url>` (القيمة الافتراضية `http://127.0.0.1:9999`، متغير البيئة `CLCTL_ENDPOINT`) و`--cluster <name>` (متغير البيئة `CLCTL_CLUSTER`) التي تحدّد اسم العنقود المُدار عندما يحتاج الأمر إلى ذلك. في Kubernetes، افتح `kubectl port-forward` إلى Deployment المنفّذ أولًا؛ انظر [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#status).
+يقرأ الأمران `instances` و`commands`، وكذلك `executor teardown`، واجهة برمجة التطبيقات المحلية للمنفّذ. وتحدّدها علامتان عامتان: `--endpoint <url>` (القيمة الافتراضية `http://127.0.0.1:9999`، متغير البيئة `CLCTL_ENDPOINT`) و`--cluster <name>` (متغير البيئة `CLCTL_CLUSTER`) التي تحدّد اسم العنقود المُدار عندما يحتاج الأمر إلى ذلك. في Kubernetes، افتح `kubectl port-forward` إلى Deployment المنفّذ أولًا؛ انظر [الخدمات المُدارة](/products/bring-your-own-cloud/connector/managed-services#status).
 
 ## clicklink clctl init {#init}
 
-يُهيّئ الموصل باستخدام رمز تسجيل، أو حزمة تسجيل محفوظة، أو شهادة موقّعة خارج النطاق. ينفّذ استدعاء واحد إعداد التكوين، ويوفّر الوصول إلى ClickHouse، ويحصل على شهادة عميل mTLS، وينشر المكوّنات (مخطط Helm أو وحدات systemd)، ويتحقق من سلامتها. ومع `--managed` يُفعّل أيضًا المنفّذ لعنقود EKS الذي يكتشفه ويمنح المنفّذ وصولًا على مستوى العنقود. إعادة التشغيل آمنة: يحافظ `init` على التكوين ومعرّف UUID للعنقود، ويستبدل بيانات الاعتماد ذريًا، ويُعيد استخدام مفتاح العميل الحالي ما لم تمرّر `--force`. راجع [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding) للاطلاع على التدفق الكامل و[الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services) لمعرفة ما يقوم به المنفّذ.
+<Note>
+  واجهة سطر الأوامر العامة `v0.16.0` لا تتضمن `--managed` ولا `--no-managed`. تتطلب علامات وسلوك الوضع المُدار الموضّحة أدناه إصدارًا أحدث ودعم نشر مطابقًا يؤكده فريق حسابك؛ راجع [توافر الوضع المُدار](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+</Note>
+
+يُهيّئ الموصل باستخدام رمز تسجيل، أو حزمة تسجيل محفوظة، أو شهادة موقّعة خارج النطاق. ينفّذ استدعاء واحد إعداد التهيئة، ويوفّر الوصول إلى ClickHouse، ويحصل على شهادة عميل mTLS، وينشر المكوّنات (مخطط Helm أو وحدات systemd)، ويتحقق من سلامتها. ومع `--managed` يُفعّل أيضًا المنفّذ لعنقود EKS الذي يكتشفه ويمنح المنفّذ وصولًا على مستوى العنقود. إعادة التشغيل آمنة: يحافظ `init` على التهيئة ومعرّف UUID للعنقود، ويستبدل بيانات الاعتماد ذريًا، ويُعيد استخدام مفتاح العميل الحالي ما لم تمرّر `--force`. راجع [الإعداد الأولي](/products/bring-your-own-cloud/connector/onboarding) للاطلاع على التدفق الكامل و[الخدمات المُدارة](/products/bring-your-own-cloud/connector/managed-services) لمعرفة ما يقوم به المنفّذ.
 
 ### نقاط الدخول {#init-entry-points}
 
@@ -32,18 +36,18 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 ### الرايات الشائعة {#init-common-flags}
 
-| علامة                        | Description                                                                                                                                                                                                                                                                                                             |
+| علامة                       | Description                                                                                                                                                                                                                                                                                                             |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--target <shape>`          | شكل النشر: `systemd` (الافتراضي؛ تهيئة الجهاز الافتراضي الذي تعمل عليه) أو `helm` (تحضير مخطط `clicklink-connector` من محطة عمل لديها kubeconfig).                                                                                                                                                                      |
-| `--instance <spec>`         | نسخة ClickHouse التي تشغّلها بنفسك، على هيئة أزواج `key=value` مفصولة بفواصل (`name`، `host`، `port`، `secure`، `database`، `namespace`، `cluster`)؛ قابلة للتكرار. تتخطى المطالبات التفاعلية الخاصة بالنسخة. وهي مرفوضة في الوضع المُدار على Kubernetes: إذ يراقب هذه النسخة نشرٌ منفصل مثبّت باستخدام `--no-managed`. |
+| `--instance <spec>`         | مثيل ClickHouse الذي تشغّله بنفسك، على هيئة أزواج `key=value` مفصولة بفواصل (`name`، `host`، `port`، `secure`، `database`، `namespace`، `cluster`)؛ قابلة للتكرار. تتخطى المطالبات التفاعلية الخاصة بالمثيل. وهو مرفوض في الوضع المُدار على Kubernetes: إذ يراقب هذا المثيل نشرٌ منفصل مثبّت باستخدام `--no-managed`. |
 | `--env <label>`             | وسم البيئة الذي يُحقن في كل مقياس مُصدَر باسم `scraper.labels.env` (الافتراضي `production`). مرّر `staging` للتثبيت في بيئة التحضير.                                                                                                                                                                                    |
 | `--operators <emails>`      | عناوين بريد المشغّلين، مفصولة بفواصل، المسموح لهم بفتح جلسات الدعم؛ يفعّل بوابة الجلسات ويتخطى المطالبة.                                                                                                                                                                                                                |
 | `--no-gateway`              | يعطّل بوابة الجلسات (لا جلسات مُدارة عبر OIDC)؛ ويتخطى المطالبة. أما على الجهاز الافتراضي، فلا يزال بإمكان مستخدم الجذر على المضيف إدارة الجلسات عبر ملف الجلسة المحلي.                                                                                                                                                 |
-| `--managed`                 | يفعّل الوضع المُدار: يشغّل المنفّذ بحيث تدير ClickHouse Cloud دورة حياة خدمات ClickHouse في هذا العنقود؛ ويتخطى المطالبة. يتطلب عنقود Amazon EKS.                                                                                                                                                                       |
-| `--no-managed`              | يُبقي الوضع المُدار (المنفّذ) معطّلاً؛ ويتخطى المطالبة.                                                                                                                                                                                                                                                                 |
+| `--managed`                 | يفعّل الوضع المُدار: يشغّل المنفّذ بحيث تدير ClickHouse Cloud دورة حياة خدمات ClickHouse في هذا العنقود؛ ويتخطى المطالبة. يتطلب عنقود Amazon EKS. غير متاح في الإصدار العام `v0.16.0`؛ راجع [التوافر](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).                                   |
+| `--no-managed`              | يُبقي الوضع المُدار (المنفّذ) معطّلاً؛ ويتخطى المطالبة. غير متاح في الإصدار العام `v0.16.0`؛ راجع [التوافر](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).                                                                                                                             |
 | `--force`                   | يستبدل أي إعداد أو طبقة موجودة ويعيد توليد مفتاح العميل؛ كما يقرّ بتجاوز شهادة موقّعة تلقائياً لم تنتهِ صلاحيتها بعد. ويُحتفظ بمعرّف UUID الخاص بالعنقود حتى مع `--force`.                                                                                                                                              |
 | `--skip-provision`          | التحضير فقط: يتخطى تجهيز وصول ClickHouse لكل دور (وعلى هدف systemd، يتخطى تفعيل الوحدة والتحقق منها). شغّل `clicklink clctl {scraper,troubleshoot} access provision` بشكل منفصل. ولا يزال `--target helm` يطبّق منح المنفّذ؛ أما الجهاز الافتراضي فيتخطاه أيضاً.                                                        |
-| `--ch-user-suffix <suffix>` | لاحقة اختيارية لأسماء مستخدمي ClickHouse المُجهَّزين (فيصبح `pcm_scraper` بالشكل `pcm_scraper_<suffix>`)، بحيث يمكن لنشر موصل ثانٍ أن يشارك النسخة ذاتها دون التعارض مع مستخدمي النشر الأول.                                                                                                                            |
+| `--ch-user-suffix <suffix>` | لاحقة اختيارية لأسماء مستخدمي ClickHouse المُجهَّزين (فيصبح `pcm_scraper` بالشكل `pcm_scraper_<suffix>`)، بحيث يمكن لنشر موصل ثانٍ أن يشارك المثيل ذاته دون التعارض مع مستخدمي النشر الأول.                                                                                                                            |
 | `--ch-admin-password-stdin` | يقرأ كلمة مرور مدير ClickHouse من stdin عندما يحتاج تجهيز SQL إليها؛ أما التشغيل عبر الطرفية فيطالب بها بدلاً من ذلك.                                                                                                                                                                                                   |
 
 ### خيارات التوقيع (المرحلة 1 فقط) {#init-signing-flags}
@@ -112,7 +116,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 ## clicklink clctl troubleshoot session {#troubleshoot-session}
 
-يتيح تفعيل جلسة الدعم وتعطيلها وفحصها، وهي نافذة زمنية محددة يقبل خلالها troubleshooter الأوامر. عند عدم وجود جلسة نشطة، يرفض البرنامج الخفي جميع الأوامر حتى لو كان WebSocket متصلاً. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
+يتيح تفعيل جلسة الدعم وتعطيلها وفحصها، وهي نافذة زمنية محددة يقبل خلالها troubleshooter الأوامر. عند عدم وجود جلسة نشطة، يرفض البرنامج الخفي جميع الأوامر حتى لو كان WebSocket متصلاً. راجع [جلسات الدعم](/products/bring-your-own-cloud/connector/support-sessions).
 
 تعمل الأوامر بأحد الوضعين التاليين:
 
@@ -237,7 +241,9 @@ clicklink clctl scraper access provision --target helm \
 
 ## clicklink clctl executor access {#executor-access}
 
-يطبّق `init --managed` صلاحية منفّذ على مستوى العنقود بأكمله باستخدام بيانات اعتمادك. وعند تعذّر ذلك، يطبع `init` الأوامر الواجب تنفيذها من kubeconfig يملك صلاحيات admin على العنقود: `access apply` وحده على جهاز افتراضي (إذ تكون الحزمة مُجهّزة مسبقًا)، و`access grant` ثم `access apply` على Kubernetes. راجع [onboarding](/ar/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
+يتطلّب سير عمل `init --managed` الموضّح أدناه [إصدار build يدعم الوضع المُدار](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ ولا يوفّر الإصدار العام `v0.16.0` تلك العلامة.
+
+يطبّق `init --managed` صلاحية منفّذ على مستوى العنقود بأكمله باستخدام بيانات اعتمادك. وعند تعذّر ذلك، يطبع `init` الأوامر الواجب تنفيذها من kubeconfig يملك صلاحيات admin على العنقود: `access apply` وحده على جهاز افتراضي (إذ تكون الحزمة مُجهّزة مسبقًا)، و`access grant` ثم `access apply` على Kubernetes. راجع [الإعداد الأولي](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
 ### منفّذ access grant {#executor-access-grant}
 
@@ -274,7 +280,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ## clicklink clctl منفّذ prepare {#executor-prepare}
 
-يُجهّز كل ما يلزم من جانبك لإنشاء managed service، في تنفيذ واحد خامل التأثير يتوقف عند أول إخفاق. فهو يختار اسم service أو يتحقق منه، وينشئ حاويتَي البيانات والنسخ الاحتياطي ودور IAM (أو يتحقق من دور IAM تُحضره بنفسك)، وعلى جهاز افتراضي يُولّد حزمة وصول منفّذ ويطبّقها على مساحة أسماء service. أما على Kubernetes فيتخطى الحزمة، إذ يعمل منفّذ بهوية ServiceAccount الخاصة بالـ pod. ثم يُصدر كلمة مرور المستخدم `default` (تُعرض مرة واحدة فقط) ويكتب جسم طلب الإنشاء الخاص بـ [`instances create`](#instances-create). راجع [managed services](/ar/products/bring-your-own-cloud/connector/managed-services#create-a-service).
+يُجهّز كل ما يلزم من جانبك لإنشاء managed service، في تنفيذ واحد خامل التأثير يتوقف عند أول إخفاق. فهو يختار اسم service أو يتحقق منه، وينشئ حاويتَي البيانات والنسخ الاحتياطي ودور IAM (أو يتحقق من دور IAM تُحضره بنفسك)، وعلى جهاز افتراضي يُولّد حزمة وصول منفّذ ويطبّقها على مساحة أسماء service. أما على Kubernetes فيتخطى الحزمة، إذ يعمل منفّذ بهوية ServiceAccount الخاصة بالـ pod. ثم يُصدر كلمة مرور المستخدم `default` (تُعرض مرة واحدة فقط) ويكتب جسم طلب الإنشاء الخاص بـ [`instances create`](#instances-create). راجع [managed services](/products/bring-your-own-cloud/connector/managed-services#create-a-service).
 
 على الجهاز الافتراضي يعمل الأمر على مضيف موصّل. أما في تثبيت Kubernetes فيعمل على محطة عمل تتوفر فيها AWS credentials وسياق kube للعنقود المُدار. وتحتاج تلك المحطة أيضاً إلى نسخة من تهيئة موصّل (‏`--config`)، وإعادة توجيه منفذ إلى واجهة برمجة تطبيقات المحلية لـ منفّذ، ودليل `--output-dir` قابل للكتابة.
 
@@ -298,7 +304,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ## clicklink clctl executor teardown {#executor-teardown}
 
-يزيل ما أنشأه `prepare` لخدمة حذفتها ClickHouse Cloud، أي دور IAM، والحاويات التي أنشأها `prepare`، والاسم المسجَّل، وسجل المنفِّذ الخاص بالخدمة، وعلى جهاز افتراضي: ClusterRole وClusterRoleBinding الخاصين بالخدمة، وحزمة الوصول المحلية، ومُدخل السجل. يجب أن يكون المنفِّذ قيد التشغيل وأن تكون الخدمة `terminated` (أو `stale`)؛ ويرفض التنفيذ ما دامت مساحة أسماء الخدمة تحتوي على عنقود ClickHouse. ويُحتفظ بالبيانات والنسخ الاحتياطية ما لم يُطلب خلاف ذلك، ويُعاد وسم الحاويات المحتفظ بها بـ `clicklink:retained-from=<instance>`. ويقرأ الأمر كل شيء قبل أن يحذف أي شيء. راجع [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
+يزيل ما أنشأه `prepare` لخدمة حذفتها ClickHouse Cloud، أي دور IAM، والحاويات التي أنشأها `prepare`، والاسم المسجَّل، وسجل المنفِّذ الخاص بالخدمة، وعلى جهاز افتراضي: ClusterRole وClusterRoleBinding الخاصين بالخدمة، وحزمة الوصول المحلية، ومُدخل السجل. يجب أن يكون المنفِّذ قيد التشغيل وأن تكون الخدمة `terminated` (أو `stale`)؛ ويرفض التنفيذ ما دامت مساحة أسماء الخدمة تحتوي على عنقود ClickHouse. ويُحتفظ بالبيانات والنسخ الاحتياطية ما لم يُطلب خلاف ذلك، ويُعاد وسم الحاويات المحتفظ بها بـ `clicklink:retained-from=<instance>`. ويقرأ الأمر كل شيء قبل أن يحذف أي شيء. راجع [حذف خدمة](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 | الراية                                           | الوصف                                                                                                                                                      |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -319,6 +325,8 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 ## clicklink clctl instances {#instances}
 
 ### instances create {#instances-create}
+
+سير عمل إنشاء العميل هذا غير متاح بعد في الإصدار العام، ويتطلب دعمًا في واجهة سطر الأوامر ونقطة نهاية الموصّل وClickHouse Cloud. تأكّد من [توافر الوضع المُدار](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدامه.
 
 يُرسل طلب إنشاء مُجهّزًا إلى ClickHouse Cloud عبر نقطة نهاية الموصّل الخاصة بك، مستخدِمًا بيانات اعتماد الموصّل نفسه. ويطبع الاسم المنطوق الذي خصّصته ClickHouse Cloud، والحالة، وتلميح `watch:` يستخدم اسم خدمتك. ويأتي متن الإنشاء من الملف الذي كتبه `prepare`، أو من الرايات الأربع `--deployed-name` و`--data-bucket` و`--backup-bucket` و`--irsa-role-arn` مجتمعةً. وإعادة المحاولة بالمدخلات نفسها تُعيد طلب الإنشاء الأول.
 
@@ -356,7 +364,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ### instances delete {#instances-delete}
 
-يزيل خدمة واحدة من العنقود. يوقف الخدمة وينتظر إتمام إيقاف التشغيل المرتّب الذي يقوم به المشغّل. ثم يزيل تثبيت عبء العمل، ويحذف مساحة الأسماء `ns-<name>` ومخرجات أداة السحب، وينتظر إلى أن تختفي مساحة الأسماء، ثم يضع علامة `terminated` على الخدمة. أما حاويات الخدمة ودور IAM الخاص بها فتبقى كما هي؛ ويزيلها [`executor teardown`](#executor-teardown) باستخدام بيانات الاعتماد الخاصة بك. وإعادة محاولة عملية حذف مكتملة لا تُحدث أي تأثير. والمسار المعتاد هو حذف الخدمة في ClickHouse Cloud؛ راجع [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
+يزيل خدمة واحدة من العنقود. يوقف الخدمة وينتظر إتمام إيقاف التشغيل المرتّب الذي يقوم به المشغّل. ثم يزيل تثبيت عبء العمل، ويحذف مساحة الأسماء `ns-<name>` ومخرجات أداة السحب، وينتظر إلى أن تختفي مساحة الأسماء، ثم يضع علامة `terminated` على الخدمة. أما حاويات الخدمة ودور IAM الخاص بها فتبقى كما هي؛ ويزيلها [`executor teardown`](#executor-teardown) باستخدام بيانات الاعتماد الخاصة بك. وإعادة محاولة عملية حذف مكتملة لا تُحدث أي تأثير. والمسار المعتاد هو حذف الخدمة في ClickHouse Cloud؛ راجع [حذف خدمة](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
 ## أوامر clicklink clctl {#commands}
 
@@ -376,7 +384,11 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ## clicklink clctl platform approve {#platform-approve}
 
-يصرّح بتغيير واحد في المنصة باستخدام بيانات اعتماد العنقود الخاصة بك. يقرأ الحزمة التي جهّزها المنفّذ (executor)، ويحسب تجزئتها، ويُصيّر كل مخطط (chart) فيها تمامًا كما سيفعل المنفّذ. ويطبّق نصف الصلاحيات باستخدام سياق kube الذي تختاره، ويتحقق من وجود هوية `pcm-platform` الخاصة بالمنفّذ، ويُصدر رمزها. ولا يرسل أي طلب إلى نقطة نهاية الموصّل لديك. وإذا كان أحد المخططات في الحزمة موجودًا في Amazon ECR، فسيحتاج إلى بيانات اعتماد AWS قادرة على قراءته. ويشمل نصف الصلاحيات: Namespaces، وCustomResourceDefinitions، وServiceAccounts، وClusterRoles وارتباطاتها، وRoles وارتباطاتها، وتهيئات webhook وadmission، وPriorityClasses، وStorageClass. ثم يطبّق المنفّذ نصف عبء العمل فقط، وطالما كان ذلك الرمز صالحًا فقط. راجع [تحديثات المنصة](/ar/products/bring-your-own-cloud/connector/platform-updates).
+لا تحتوي واجهة سطر الأوامر العامة `v0.16.0` على أمر `platform`، لذا فإن سير عمل الموافقة على الجهاز الافتراضي أو على Kubernetes غير متاح في ذلك الإصدار. كما تتطلب الموافقة على Kubernetes دعم واجهة سطر الأوامر والمخطط لتسليم Secret الموضّح أدناه. تأكّد من [توافر الوضع المُدار](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) قبل استخدام أي من سيري العمل.
+
+يصرّح بتغيير واحد في المنصة باستخدام بيانات اعتماد العنقود الخاصة بك. يقرأ الحزمة التي جهّزها المنفّذ (executor)، ويحسب تجزئتها، ويُصيّر كل مخطط (chart) فيها تمامًا كما سيفعل المنفّذ. ويطبّق نصف الصلاحيات باستخدام سياق kube الذي تختاره، ويتحقق من وجود هوية `pcm-platform` الخاصة بالمنفّذ، ويُصدر رمزها. ولا يرسل أي طلب إلى نقطة نهاية الموصّل لديك. ويشمل نصف الصلاحيات: Namespaces، وCustomResourceDefinitions، وServiceAccounts، وClusterRoles وارتباطاتها، وRoles وارتباطاتها، وتهيئات webhook وadmission، وPriorityClasses، وStorageClass. ثم يطبّق المنفّذ نصف عبء العمل فقط، وطالما كان ذلك الرمز صالحًا فقط. راجع [تحديثات المنصة](/products/bring-your-own-cloud/connector/platform-updates).
+
+للوصول المباشر إلى سجل ClickHouse، شغّل الموافقة على جهاز EC2 الافتراضي الخاص بالموصّل: تستخدم واجهة سطر الأوامر ملف تعريف المثيل الخاص به لتولي دور السحب للقراءة فقط، بشكل مستقل عن بيانات اعتماد kubeconfig لديك. أما سجلات مخططات ECR الأخرى فتستخدم بيانات اعتماد AWS المحيطة. راجع [بيانات اعتماد السجل](/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 
 | العَلَم                   | الوصف                                                                                                                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -392,6 +404,8 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 
 ## clicklink clctl platform reset {#platform-reset}
 
+لا تحتوي واجهة سطر الأوامر العامة `v0.16.0` على أمر `platform`، بما في ذلك `platform reset`؛ راجع [توافر الوضع المُدار](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+
 للعناقيد الاختبارية التي لا تحتوي على خدمات: يزيل تثبيت إصدارات المنصة بترتيب عكسي للاعتماديات ويحذف حزمة رموز المنصة الخاصة بالمنفّذ، بحيث يمكن تنفيذ التثبيت الأول من جديد. وقبل إجراء أي تغيير، يسرد عناقيد ClickHouse في مساحات الأسماء التي يملكها هذا الموصّل ويرفض المتابعة إن وُجد أي منها. أما CustomResourceDefinitions وRBAC وStorageClass فتبقى كما هي. شغّل `platform approve` مرة أخرى قبل مزامنة المنصة التالية.
 
 | الراية                                            | الوصف                                                                                                                                      |
@@ -399,7 +413,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--bundle <path>`                                 | مسار بيان المنصة المُولَّد (مطلوب، ويُقرأ بعد التحقق من خلو العنقود).                                                                      |
 | `--config <path>`                                 | ملف تهيئة الموصّل (متغير البيئة `CLCTL_EXECUTOR_CONFIG`).                                                                                  |
 | `--context <name>`                                | سياق kubeconfig للعنقود المُدار، مع صلاحيات cluster-admin.                                                                                 |
-| `--output-dir <path>`                             | جذر الوصول الذي تُزال منه حزمة `_platform` (الافتراضي `/etc/clicklink/access/executor`).                                                   |
+| `--output-dir <path>`                             | جذر الوصول الذي تُزال منه حزمة `_platform` (الافتراضي `/etc/clicklink/access/executor).                                                   |
 | `--secret-namespace <ns>`، `--secret-name <name>` | لعمليات التثبيت على Kubernetes: يزيل بدلاً من ذلك Secret حزمة المنصة في مساحة أسماء الموصّل (الاسم الافتراضي `clicklink-platform-bundle`). |
 | `--dry-run`                                       | يتحقق من وجود خدمات ويطبع خطة إعادة التعيين دون تغيير العنقود.                                                                             |
 

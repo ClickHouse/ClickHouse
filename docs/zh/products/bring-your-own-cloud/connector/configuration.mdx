@@ -60,7 +60,19 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 ## 托管模式 {#managed-mode}
 
-托管模式会运行 executor，由它将 ClickHouse Cloud 驱动的服务生命周期应用到你的集群。`init` 会在 enrollment 时启用该模式，并填入集群 identity (参见[启用托管模式](/zh/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) ；下面列出的这些 key 则是你之后可能需要再调整的。若某个连接器安装时未启用托管模式，或想将其关闭，可带上 `--force` 并搭配 `--managed` 或 `--no-managed` 重新运行 `init`。`--no-managed` 会停止 executor，但其集群 grant 仍会保留；请按[停止托管模式](/zh/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode)中的说明将其移除。与每次运行 `init` 一样，这里同样需要一个 entry point：如果你保留了 bundle，就使用 `--handoff`；否则使用 `--enroll` 搭配新的 token，详见[重新运行与 recovery](/zh/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)。
+<Note>
+  公开发布的 `v0.16.0` 命令行客户端既没有 `--managed` 也没有 `--no-managed`。在使用其中任一标志更改配置之前，请先确认[托管模式可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)，并从你的客户团队获取对应的 build。
+</Note>
+
+托管模式会运行 executor，由它将 ClickHouse Cloud 驱动的服务生命周期应用到你的集群。`init` 会在注册时启用该模式，并填入集群 identity (参见[启用托管模式](/zh/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) ；下面列出的这些 key 则是你之后可能需要再调整的。若要更改已配置的状态，可带上 `--force` 并搭配 `--managed` 或 `--no-managed` 重新运行 `init`。与每次运行 `init` 一样，这里同样需要一个 entry point：如果你保留了 bundle，就使用 `--handoff`；否则使用 `--enroll` 搭配新的 token，详见[重新运行与 recovery](/zh/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)。
+
+在 VM 上，`--no-managed` 只会在配置中禁用 executor，但不会停止或禁用已在运行的 systemd unit。请在更改配置之前显式将其停止：
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+在 Kubernetes 上，在配置值中设置 `executor.enabled: false` 并通过 `helm upgrade` 应用该变更，即可移除 executor 的 Deployment。在这两种目标环境中，集群 grant 都会一直保留，直到你将其移除；请按[停止托管模式](/zh/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode)中的说明一并移除该 access。
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 ## 添加或更改 ClickHouse 实例 {#clickhouse-instances}
 
-executor 创建的 service 会自行注册，因此在托管模式下无需在此手动添加。使用 `--no-managed` 安装的独立连接器部署用于观测你自行运行的 ClickHouse；当两个部署共用同一个实例时，请在其 `init` 时传入 `--ch-user-suffix`。本节适用于该部署。`instances` 下的每个条目对应一个连接器读取数据的 ClickHouse 原生协议端点，包括 `host`、`port`、`database`、`secure`、`cluster`，在 Kubernetes 上还包括 `namespace`；`max_open_conns` 与 `max_idle_conns` 用于限制连接池的规模。凭据绝不保存在配置中；每个组件都从预配过程创建的访问包中获取各自的只读 ClickHouse 用户。
+executor 创建的 service 会自行注册，因此在托管模式下无需在此手动添加。不运行 executor 的独立连接器部署用于观测你自行运行的 ClickHouse；当两个部署共用同一个实例时，请在其 `init` 时传入 `--ch-user-suffix`。本节适用于该部署。`instances` 下的每个条目对应一个连接器读取数据的 ClickHouse 原生协议端点，包括 `host`、`port`、`database`、`secure`、`cluster`，在 Kubernetes 上还包括 `namespace`；`max_open_conns` 与 `max_idle_conns` 用于限制连接池的规模。凭据绝不保存在配置中；每个组件都从预配过程创建的访问包中获取各自的只读 ClickHouse 用户。
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -339,7 +351,7 @@ patterns:
 
 ## 私有镜像 和边界内端点 {#private-mirrors}
 
-已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的 connector 镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
+已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的连接器镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
@@ -355,7 +367,9 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-要从 mirror 安装图表本身，`init` 的 `--chart` 参数可指定为在 `--chart-repo` 中解析的图表名称，也可直接指定 `oci://` 引用、URL、本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，以确保 binary 与图表保持同步：
+要从 mirror 安装图表本身，`init` 的 `--chart` 参数可指定为在 `--chart-repo` 中解析的图表名称，也可直接指定 `oci://` 引用、URL、本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，以确保 binary 与图表保持同步。
+
+下面的托管模式示例需要使用带 `--managed` 的 build，而公开的 `v0.16.0` 并不具备该功能。使用前请先确认[托管模式可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)；镜像公开发行版并不会增加此项支持。
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

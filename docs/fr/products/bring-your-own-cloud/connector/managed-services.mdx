@@ -12,7 +12,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-En mode managé, le connector exécute un troisième component, l&#39;executor. C&#39;est par son intermédiaire que ClickHouse Cloud pilote les services ClickHouse dans votre Kubernetes cluster. Cette page décrit la création d&#39;un service, la lecture de son statut, ce que fait ClickHouse Cloud une fois le service créé, ainsi que la manière dont un service est retiré.
+En mode managé, le connector exécute un troisième composant, l&#39;executor. C&#39;est par son intermédiaire que ClickHouse Cloud pilote les services ClickHouse dans votre Kubernetes cluster. Cette page décrit la création d&#39;un service, la lecture de son statut, ce que fait ClickHouse Cloud une fois le service créé, ainsi que la manière dont un service est retiré.
+
+<Note>
+  L&#39;activation du mode managé et la création d&#39;un service nécessitent une prise en charge qui n&#39;est pas encore disponible dans la release publique. Le CLI public `v0.16.0` ne dispose ni des indicateurs d&#39;initialisation `--managed` et `--no-managed`, ni du flux de travail de création côté client décrit ci-dessous. Vérifiez la [disponibilité du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) auprès de votre account team avant de procéder à l&#39;enrôlement ou de préparer des resources ; la création d&#39;un service requiert également une prise en charge correspondante dans votre connector endpoint et dans ClickHouse Cloud.
+</Note>
 
 ## Ce que fait le mode managé {#what-managed-mode-does}
 
@@ -26,13 +30,19 @@ Sur une VM, l&#39;executor s&#39;exécute en tant que systemd unit `clicklink-ex
 
 ## Activer le mode managé {#enable-managed-mode}
 
+<Note>
+  La CLI publique `v0.16.0` ne prend pas en charge `init --managed` ni le prompt de mode managé décrit ci-dessous. Obtenez d&#39;abord un build et un déploiement avec [prise en charge du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) auprès de votre account team.
+</Note>
+
 Vous choisissez le mode managé au moment de l&#39;enrôlement : passez `--managed` à `clicklink clctl init`, ou répondez au prompt dans un terminal. Sur une VM, `init` récupère le cluster depuis le kubeconfig de cet hôte (`--cluster-name` s&#39;il en contient plusieurs EKS cluster) et accorde l&#39;accès cluster-wide de l&#39;executor de manière intégrée. Sur Kubernetes, passez `--egress-cidrs` avec les CIDR de votre connector endpoint afin que le chart prépare sa NetworkPolicy de refus par défaut à l&#39;état enabled.
 
-L&#39;installation elle-même ne change pas. Consultez l&#39;[onboarding](/fr/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) pour le déroulement complet et la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli#init) pour les flags.
+L&#39;installation elle-même ne change pas. Consultez l&#39;[onboarding](/fr/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) pour le déroulement complet et la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli#init) pour les indicateurs.
 
 ## Créer un service {#create-a-service}
 
-La création d&#39;un service nécessite deux commandes. `prepare` crée tout ce qui doit l&#39;être de votre côté ; `instances create` soumet la création à ClickHouse Cloud via votre connector endpoint. ClickHouse Cloud génère la définition du service et transmet la création à l&#39;executor par son canal outbound. L&#39;executor l&#39;applique à votre cluster et renvoie un compte rendu.
+Ce flux de travail n&#39;est pas disponible dans la version publique `v0.16.0`. Avant de préparer les ressources, vérifiez la [disponibilité de la création de service](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) pour votre CLI, votre connector endpoint et votre déploiement ClickHouse Cloud.
+
+La création d&#39;un service nécessite deux commandes. `prepare` crée tout ce qui doit l&#39;être de votre côté ; `instances create` soumet la création à ClickHouse Cloud via votre connector endpoint. ClickHouse Cloud génère la définition du service et transmet la création à l&#39;executor par son canal sortant. L&#39;executor l&#39;applique à votre cluster et renvoie un compte rendu.
 
 Seul `prepare` a besoin des AWS credentials : il crée les S3 buckets et l&#39;IAM role. `instances create` a besoin de la configuration et des credentials du connector, et n&#39;accède à l&#39;API locale de l&#39;executor que pour `--wait`. Sur une VM, exécutez les deux commandes en tant que root sur l&#39;hôte du connector. Sur Kubernetes, exécutez-les toutes deux depuis un poste de travail disposant d&#39;un contexte kube pour le cluster managé :
 
@@ -164,14 +174,14 @@ L&#39;executor raccorde le scraper à chaque service qu&#39;il crée. En revanch
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    Ajoutez ensuite la paire Secret et ServiceAccount à `troubleshooter.accessBundles`, puis exécutez `helm upgrade`, comme indiqué à la section [ajout d&#39;instances ClickHouse](/fr/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+    `$CH_DEFAULT_PASSWORD` est le mot de passe de l&#39;utilisateur `default` affiché par `prepare`. La commande en a besoin pour s&#39;authentifier avant d&#39;appliquer les privilèges SQL ; elle ne le demande pas de manière interactive. Ajoutez ensuite la paire Secret et ServiceAccount à `troubleshooter.accessBundles`, puis exécutez `helm upgrade`, comme indiqué à la section [ajout d&#39;instances ClickHouse](/fr/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
   </Tab>
 
   <Tab title="VM Linux" id="troubleshooter-vm">

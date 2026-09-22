@@ -2,7 +2,7 @@
 title: 'الخدمات المُدارة'
 sidebarTitle: 'الخدمات المُدارة'
 slug: /products/bring-your-own-cloud/connector/managed-services
-description: 'أنشئ خدمات ClickHouse التي تُشغّلها ClickHouse Cloud داخل عنقودك وراقبها وأوقف عملها عبر executor الـ connector'
+description: 'أنشئ خدمات ClickHouse التي تُشغّلها ClickHouse Cloud داخل عنقودك وراقبها وأوقف عملها عبر المنفّذ الـ موصل'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
 doc_type: 'guide'
 ---
@@ -12,7 +12,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-في وضع Managed يشغّل الـ connector مكوّنًا ثالثًا هو الـ executor، ومن خلاله تُشغّل ClickHouse Cloud خدمات ClickHouse في عنقود Kubernetes الخاص بك. تتناول هذه الصفحة إنشاء خدمة، وقراءة حالتها (status)، وما تقوم به ClickHouse Cloud بعد إنشاء الخدمة، وكيفية إيقاف الخدمة نهائيًا (retired).
+في الوضع المُدار يشغّل الـ موصل مكوّنًا ثالثًا هو الـ المنفّذ، ومن خلاله تُشغّل ClickHouse Cloud خدمات ClickHouse في عنقود Kubernetes الخاص بك. تتناول هذه الصفحة إنشاء خدمة، وقراءة حالتها (status)، وما تقوم به ClickHouse Cloud بعد إنشاء الخدمة، وكيفية إيقاف الخدمة نهائيًا (retired).
+
+<Note>
+  يتطلّب تمكين الوضع المُدار وإنشاء خدمة دعمًا غير متوفّر بعد في الإصدار العام. فواجهة سطر الأوامر العامة `v0.16.0` لا تتضمّن علامتي init `--managed` و`--no-managed`، ولا سير عمل إنشاء الخدمة من جانب العميل الموضّح أدناه. تحقّق من [توافر الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) مع فريق حسابك قبل التسجيل أو تهيئة الموارد؛ كما يحتاج إنشاء الخدمة إلى دعم مطابق في نقطة نهاية الموصل وفي ClickHouse Cloud.
+</Note>
 
 ## ما الذي يقوم به الوضع المُدار {#what-managed-mode-does}
 
@@ -26,20 +30,26 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## تفعيل الوضع المُدار {#enable-managed-mode}
 
-تختار الوضع المُدار عند التسجيل: مرّر `--managed` إلى `clicklink clctl init`، أو أجب عن المُطالبة في الطرفية. على جهاز افتراضي، يأخذ `init` العنقود من ملف kubeconfig الخاص بهذا المضيف (استخدم `--cluster-name` إذا كان يحتوي على أكثر من عنقود EKS) ويمنح المنفّذ أذونات الوصول على مستوى العنقود بشكل مضمّن. على Kubernetes، مرّر `--egress-cidrs` مع نطاقات CIDR الخاصة بنقطة نهاية الـ connector لديك ليُهيّئ المخطط سياسة NetworkPolicy الافتراضية للرفض مُفعّلة.
+<Note>
+  لا تدعم واجهة سطر الأوامر العامة `v0.16.0` الأمر `init --managed` ولا مُطالبة الوضع المُدار الموضّحة أدناه. احصل أولًا على إصدار ونشر مع [دعم الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) من فريق حسابك.
+</Note>
+
+تختار الوضع المُدار عند التسجيل: مرّر `--managed` إلى `clicklink clctl init`، أو أجب عن المُطالبة في الطرفية. على جهاز افتراضي، يأخذ `init` العنقود من ملف kubeconfig الخاص بهذا المضيف (استخدم `--cluster-name` إذا كان يحتوي على أكثر من عنقود EKS) ويمنح المنفّذ أذونات الوصول على مستوى العنقود بشكل مضمّن. على Kubernetes، مرّر `--egress-cidrs` مع نطاقات CIDR الخاصة بنقطة نهاية الموصل لديك ليُهيّئ المخطط سياسة NetworkPolicy الافتراضية للرفض مُفعّلة.
 
 أما التثبيت نفسه فلم يتغيّر. راجع [onboarding](/ar/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) للاطلاع على التدفق الكامل، و[مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli#init) للاطلاع على الخيارات.
 
-## إنشاء service {#create-a-service}
+## إنشاء خدمة {#create-a-service}
 
-يتطلب إنشاء service أمرين اثنين. ينشئ `prepare` كل شيء على جانبك، بينما يقدّم `instances create` طلب الإنشاء إلى ClickHouse Cloud عبر نقطة نهاية connector الخاصة بك. تُنشئ ClickHouse Cloud تعريف service وترسل طلب الإنشاء إلى executor عبر قناتها الصادرة، فيطبّقه executor على العنقود الخاص بك ويعيد تقريراً بالنتيجة.
+سير العمل هذا غير متاح في الإصدار العام `v0.16.0`. قبل تجهيز الموارد، تحقّق من [توافر إنشاء خدمة](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) بالنسبة لواجهة سطر الأوامر لديك، ونقطة نهاية الموصل، ونشر ClickHouse Cloud.
 
-ويحتاج `prepare` وحده إلى بيانات اعتماد AWS، إذ ينشئ S3 buckets وIAM role. أما `instances create` فيحتاج إلى تهيئة connector وبيانات اعتماده، ولا يتصل بواجهة برمجة التطبيقات المحلية الخاصة بـ executor إلا عند استخدام `--wait`. على جهاز افتراضي، نفّذ كلا الأمرين بصلاحيات root على مضيف connector. أما على Kubernetes، فنفّذهما من workstation يملك kube context للعنقود المُدار:
+يتطلب إنشاء خدمة أمرين اثنين. ينشئ `prepare` كل شيء على جانبك، بينما يقدّم `instances create` طلب الإنشاء إلى ClickHouse Cloud عبر نقطة نهاية موصل الخاصة بك. تُنشئ ClickHouse Cloud تعريف خدمة وترسل طلب الإنشاء إلى المنفّذ عبر قناتها الصادرة، فيطبّقه المنفّذ على العنقود الخاص بك ويعيد تقريراً بالنتيجة.
 
-* يحتاج `prepare` إلى نسخة من تهيئة connector (`--config`)، وإلى `kubectl port-forward` نحو واجهة برمجة التطبيقات المحلية الخاصة بـ executor، وإلى `--output-dir` يشير إلى دليل قابل للكتابة. وهو يتحقق من service name لدى executor ويرفض العمل إن تعذّر عليه الوصول إليه.
-* يقرأ `instances create` ملفات بيانات الاعتماد التي تحدّدها التهيئة من Secrets المسماة `clicklink-hmac` و`clicklink-mtls` عندما لا تكون متوفرة على هذا المضيف، ويُعلن عن كل عملية قراءة. أضف `--connector-namespace` إذا لم تكن مساحة أسماء الـ connector هي `clicklink`. وهذا الـ fallback متاح في `instances create` دون غيره.
+ويحتاج `prepare` وحده إلى بيانات اعتماد AWS، إذ ينشئ حاويات S3 ودور IAM. أما `instances create` فيحتاج إلى تهيئة موصل وبيانات اعتماده، ولا يتصل بواجهة برمجة التطبيقات المحلية الخاصة بـ المنفّذ إلا عند استخدام `--wait`. على جهاز افتراضي، نفّذ كلا الأمرين بصلاحيات root على مضيف موصل. أما على Kubernetes، فنفّذهما من workstation يملك kube context للعنقود المُدار:
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="دورة حياة service في ClickHouse Connector في الوضع المُدار" />
+* يحتاج `prepare` إلى نسخة من تهيئة موصل (`--config`)، وإلى `kubectl port-forward` نحو واجهة برمجة التطبيقات المحلية الخاصة بـ المنفّذ، وإلى `--output-dir` يشير إلى دليل قابل للكتابة. وهو يتحقق من اسم الخدمة لدى المنفّذ ويرفض العمل إن تعذّر عليه الوصول إليه.
+* يقرأ `instances create` ملفات بيانات الاعتماد التي تحدّدها التهيئة من Secrets المسماة `clicklink-hmac` و`clicklink-mtls` عندما لا تكون متوفرة على هذا المضيف، ويُعلن عن كل عملية قراءة. أضف `--connector-namespace` إذا لم تكن مساحة أسماء الـ موصل هي `clicklink`. وهذا الـ fallback متاح في `instances create` دون غيره.
+
+<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="دورة حياة خدمة في ClickHouse Connector في الوضع المُدار" />
 
 <Steps>
   <Step title="إعداد الخدمة" id="prepare">
@@ -159,19 +169,19 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 ## Support sessions لخدمة مُدارة {#support-sessions}
 
-يربط الـ executor الـ scraper بكل service ينشئها، لكنه لا يجهّز الـ مستكشف الأخطاء ومصلحها، لذا لا يمكن لأي [support session](/ar/products/bring-your-own-cloud/connector/support-sessions) تشغيل التشخيصات على خدمة مُدارة ما لم تجهّزه بنفسك. جهّزه مرة واحدة لكل service، مع مساحة أسماء الخدمة `ns-<name>`، بالطريقة نفسها المتبعة مع instance سجّلته بنفسك:
+يربط الـ المنفّذ الـ scraper بكل خدمة ينشئها، لكنه لا يجهّز الـ مستكشف الأخطاء ومصلحها، لذا لا يمكن لأي [support session](/ar/products/bring-your-own-cloud/connector/support-sessions) تشغيل التشخيصات على خدمة مُدارة ما لم تجهّزه بنفسك. جهّزه مرة واحدة لكل خدمة، مع مساحة أسماء الخدمة `ns-<name>`، بالطريقة نفسها المتبعة مع instance سجّلته بنفسك:
 
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    ثم أضف زوج الـ Secret والـ ServiceAccount إلى `troubleshooter.accessBundles` ونفّذ `helm upgrade`، كما هو موضّح في [إضافة ClickHouse instances](/ar/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+    `$CH_DEFAULT_PASSWORD` هي كلمة مرور المستخدم `default` التي طبعها الأمر `prepare`. ويحتاجها الأمر للمصادقة قبل تطبيق أذونات SQL؛ فهو لا يطلبها منك. ثم أضف زوج الـ Secret والـ ServiceAccount إلى `troubleshooter.accessBundles` ونفّذ `helm upgrade`، كما هو موضّح في [إضافة ClickHouse instances](/ar/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
   </Tab>
 
   <Tab title="جهاز افتراضي يعمل بنظام Linux" id="troubleshooter-vm">
@@ -185,7 +195,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
   </Tab>
 </Tabs>
 
-امنح الأذونات لمستخدم ClickHouse عبر SQL كما سبق، لا عبر `--ch-user-via cr`: فـ ClickHouse Cloud هي مالكة تعريف الخدمة وتعيد تطبيقه، ما يؤدي إلى حذف أي مستخدم يُضاف هناك. وعند حذف الخدمة، يزيل الـ executor حزمة الـ مستكشف الأخطاء ومصلحها على الجهاز الافتراضي. أما على Kubernetes فتبقى الـ Secret والـ ServiceAccount الخاصتان بالحزمة إلى أن تحذفهما بنفسك، كما هو مذكور في [إلغاء التثبيت](/ar/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
+امنح الأذونات لمستخدم ClickHouse عبر SQL كما سبق، لا عبر `--ch-user-via cr`: فـ ClickHouse Cloud هي مالكة تعريف الخدمة وتعيد تطبيقه، ما يؤدي إلى حذف أي مستخدم يُضاف هناك. وعند حذف الخدمة، يزيل الـ المنفّذ حزمة الـ مستكشف الأخطاء ومصلحها على الجهاز الافتراضي. أما على Kubernetes فتبقى الـ Secret والـ ServiceAccount الخاصتان بالحزمة إلى أن تحذفهما بنفسك، كما هو مذكور في [إلغاء التثبيت](/ar/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
 
 ## حذف خدمة {#delete-a-service}
 

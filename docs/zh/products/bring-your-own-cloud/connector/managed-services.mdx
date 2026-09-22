@@ -1,8 +1,8 @@
 ---
-title: '托管服务'
-sidebarTitle: '托管服务'
+title: 'managed service'
+sidebarTitle: 'managed service'
 slug: /products/bring-your-own-cloud/connector/managed-services
-description: '通过连接器 executor 创建、监控并下线由 ClickHouse Cloud 在您的 集群 中运维的 ClickHouse 服务'
+description: '通过连接器 executor 创建、监控并下线由 ClickHouse Cloud 在您的 Kubernetes 集群 中运维的 ClickHouse 服务'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
 doc_type: 'guide'
 ---
@@ -13,6 +13,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <PrivatePreviewBadge />
 
 在 managed 模式下，连接器会运行第三个组件 executor。ClickHouse Cloud 正是通过它在你的 Kubernetes 集群中运维 ClickHouse 服务。本页介绍如何创建服务、如何查看服务的 status、服务创建后 ClickHouse Cloud 会执行哪些操作，以及服务如何退役。
+
+<Note>
+  启用 managed 模式并创建服务所需的支持尚未包含在公开发布版本中。公开的 `v0.16.0` 命令行客户端既没有 `--managed` 和 `--no-managed` 这两个 init 标志，也不支持下文的客户创建流程。在 enroll 或准备资源之前，请先与你的客户团队确认[托管模式可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)；创建服务同样需要你的连接器端点和 ClickHouse Cloud 提供相应支持。
+</Note>
 
 ## managed 模式的作用 {#what-managed-mode-does}
 
@@ -26,11 +30,17 @@ managed 模式目前作为私有预览的一部分，在使用 S3 存储的 Amaz
 
 ## 启用 managed 模式 {#enable-managed-mode}
 
+<Note>
+  公开发布的 `v0.16.0` 命令行客户端不支持 `init --managed`，也不支持下文所述的 managed 模式提示。请先从客户团队获取带有 [managed 模式支持](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) 的 build 与部署。
+</Note>
+
 managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--managed`，或在终端中响应提示。在 VM 上，`init` 会从当前主机的 kubeconfig 中读取集群 (若其中包含多个 EKS 集群，则通过 `--cluster-name` 指定) ，并以 Inline 方式授予 executor 的集群级访问权限。在 Kubernetes 上，请通过 `--egress-cidrs` 传入连接器端点的 CIDR，使 chart 在部署时默认启用其 default-deny NetworkPolicy。
 
 安装过程本身没有变化。完整流程请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)，各命令行参数说明请参阅 [CLI reference](/zh/products/bring-your-own-cloud/connector/reference/cli#init)。
 
 ## 创建服务 {#create-a-service}
+
+该工作流在公开发布的 `v0.16.0` 中不可用。在准备资源之前，请确认你的 CLI、连接器端点和 ClickHouse Cloud 部署是否[支持创建服务](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)。
 
 创建服务需要两条命令。`prepare` 负责在你这一侧创建所有资源；`instances create` 则通过你的连接器端点将创建请求提交给 ClickHouse Cloud。ClickHouse Cloud 会生成服务定义，并通过其出站通道将创建请求下发给 executor。executor 将其应用到你的 集群 并回报结果。
 
@@ -157,21 +167,21 @@ executor 会记录 ClickHouse Cloud 下发的每一条命令。`clicklink clctl 
 
 `instances scale`、`instances patch` 和 `instances delete` 子命令会绕过 ClickHouse Cloud，直接向 executor 的本地 API 提交命令。除非 ClickHouse account team 要求你执行，否则请勿使用；[CLI reference](/zh/products/bring-your-own-cloud/connector/reference/cli#instances-scale) 说明了各个命令的作用。
 
-## 托管服务的 support sessions {#support-sessions}
+## managed service 的 support sessions {#support-sessions}
 
-executor 会将 scraper 接入它创建的每个 服务，但不会 provision troubleshooter，因此在你完成该操作之前，[support session](/zh/products/bring-your-own-cloud/connector/support-sessions) 无法对托管 服务 运行诊断。请为每个 服务 各 provision 一次，使用 服务 命名空间 `ns-<name>`，方式与自行注册的 instance 相同：
+executor 会将 scraper 接入它创建的每个 服务，但不会 provision troubleshooter，因此在你完成该操作之前，[support session](/zh/products/bring-your-own-cloud/connector/support-sessions) 无法对 managed service 运行诊断。请为每个 服务 各 provision 一次，使用 服务 命名空间 `ns-<name>`，方式与自行注册的 instance 相同：
 
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    然后将 Secret 与 ServiceAccount 这一对资源添加到 `troubleshooter.accessBundles`，并运行 `helm upgrade`，具体参见[添加 ClickHouse instance](/zh/products/bring-your-own-cloud/connector/configuration#clickhouse-instances)。
+    `$CH_DEFAULT_PASSWORD` 是 `prepare` 输出的 `default` 用户密码。该 command 需要用它进行身份验证，然后才能应用 SQL 授权；它不会提示输入该密码。然后将 Secret 与 ServiceAccount 这一对资源添加到 `troubleshooter.accessBundles`，并运行 `helm upgrade`，具体参见[添加 ClickHouse instance](/zh/products/bring-your-own-cloud/connector/configuration#clickhouse-instances)。
   </Tab>
 
   <Tab title="Linux VM" id="troubleshooter-vm">
@@ -185,7 +195,7 @@ executor 会将 scraper 接入它创建的每个 服务，但不会 provision tr
   </Tab>
 </Tabs>
 
-请按上文所示使用 SQL 为 ClickHouse user 授权，不要使用 `--ch-user-via cr`：服务 定义归 ClickHouse Cloud 所有，并会被其重新应用，从而删除在其中添加的用户。删除 服务 时，executor 会移除 VM 上 troubleshooter 的 bundle；而在 Kubernetes 上，bundle 对应的 Secret 和 ServiceAccount 会一直保留，需要你手动删除，详见[卸载](/zh/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes)。
+请按上文所示使用 SQL 为 ClickHouse 用户 授权，不要使用 `--ch-user-via cr`：服务 定义归 ClickHouse Cloud 所有，并会被其重新应用，从而删除在其中添加的用户。删除 服务 时，executor 会移除 VM 上 troubleshooter 的 bundle；而在 Kubernetes 上，bundle 对应的 Secret 和 ServiceAccount 会一直保留，需要你手动删除，详见[卸载](/zh/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes)。
 
 ## 删除服务 {#delete-a-service}
 

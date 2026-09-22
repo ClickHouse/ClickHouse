@@ -13,6 +13,14 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Esta página le guía desde un token de inscripción hasta un conector verificado en modo gestionado, donde el executor aplica el ciclo de vida del service que dirige ClickHouse Cloud. El conector se instala en un cluster de Kubernetes (Helm) o una VM Linux (systemd). La inscripción mediante token es el flujo estándar; si su entorno no puede acceder directamente al endpoint del conector, consulte las [instalaciones aisladas y con mirror](#air-gapped-and-mirrored-installs). Para observar una instancia de ClickHouse que ejecute usted mismo sin el executor, utilice `--no-managed`.
 
+## Disponibilidad del modo administrado {#managed-mode-availability}
+
+<Warning>
+  A fecha del 22-09-2026, el instalador público ofrece la `v0.16.0`, que no incluye ni los indicadores `init --managed` e `init --no-managed` ni el comando `platform`. La aprobación de plataforma en instalaciones tanto en VM Linux como en Kubernetes, así como la creación de servicios de cliente (`instances create --from-prepare`), aún no están disponibles en una release pública. Además, la aprobación de plataforma en Kubernetes requiere compatibilidad de la CLI y del chart con `platform approve --secret-namespace`.
+
+  Antes de seguir los flujos de trabajo del modo administrado, solicite a su ClickHouse account team que confirme la compatibilidad con su destino de despliegue y le proporcione la CLI correspondiente, el chart o la imagen del connector y las instrucciones de instalación. La creación de servicios de cliente también requiere compatibilidad en su endpoint del conector y en ClickHouse Cloud; no basta con disponer de una CLI más reciente. Los comandos de instalación públicos que se indican a continuación no instalan actualmente una release compatible con estos flujos de trabajo.
+</Warning>
+
 ## Requisitos previos {#prerequisites}
 
 ### Registre su entorno {#registration}
@@ -29,11 +37,12 @@ ClickHouse Cloud emite entonces su endpoint del conector y un token de inscripci
 
 ### Para toda instalación {#prerequisites-every-install}
 
+* **Una compilación con [soporte de modo administrado](#managed-mode-availability)** para las instrucciones de modo administrado que figuran a continuación. La versión pública `v0.16.0` no incluye `--managed` ni `--no-managed`.
 * **El endpoint del conector y el token de inscripción**, proporcionados durante el [registro](#registration).
-* **Salida por el puerto 443** hacia `https://<subdomain>.<connector-domain>` y `https://<subdomain>.enroll.<connector-domain>`, además de `releases.clicklink.clickhouse.com` y Amazon ECR Public durante la instalación. En el modo gestionado, el executor también accede a Amazon ECR y STS cuando una sincronización o creación de la plataforma descarga un chart desde ECR. Si alguno de estos destinos no es accesible, consulte [instalaciones aisladas y con mirror](#air-gapped-and-mirrored-installs).
-* **Un EKS cluster** para el modo gestionado. `init` rechaza el modo gestionado en cualquier otro cluster e indica `--no-managed` como la forma de instalar sin el executor.
-* **Permisos de administración del cluster para el grant del executor.** El grant crea un Rol de cluster, un ClusterRoleBinding y una ValidatingAdmissionPolicy que confinan el executor a los espacios de nombres bajo su prefix. En Kubernetes, los necesita el kubeconfig con el que ejecuta `init`. En una máquina virtual, los necesita el kubeconfig del host; si el host no cuenta con permisos de administración, `init` imprime el comando que debe ejecutarse desde un host que sí los tenga.
-* **Todavía sin ClickHouse.** Una instalación gestionada comienza sin services; los que crea el executor se registran por sí mismos. En modo gestionado, `init` no registra ningún ClickHouse que usted mismo ejecute (en Kubernetes rechaza `--instance` e `--instance-namespace`). Para observar un cluster de ese tipo, instale una implementación del conector aparte con `--no-managed`; `--ch-user-suffix` permite que ambas implementaciones compartan una instance sin colisionar en los usuarios del conector. Esa implementación necesita un listener native accesible: 9440 seguro o 9000 en plaintext, detectado automáticamente en Kubernetes. También necesita acceso de administración de ClickHouse para el aprovisionamiento: un usuario `default` sin password, un password pasado con `--ch-admin-password-stdin` o introducido en el prompt, o injection de CR para instances gestionadas por el operator.
+* **Salida por el puerto 443** hacia `https://<subdomain>.<connector-domain>` y `https://<subdomain>.enroll.<connector-domain>`, además de `releases.clicklink.clickhouse.com` y Amazon ECR Public durante la instalación. En el modo administrado, el executor también accede a Amazon ECR y STS cuando una sincronización o creación de la plataforma descarga un chart desde ECR. Si alguno de estos destinos no es accesible, consulte [instalaciones aisladas y con mirror](#air-gapped-and-mirrored-installs).
+* **Un EKS cluster** para el modo administrado. `init` rechaza el modo administrado en cualquier otro cluster e indica `--no-managed` como la forma de instalar sin el executor.
+* **Permisos de administración del cluster para el grant del executor.** El grant crea un Rol de clúster, un ClusterRoleBinding y una ValidatingAdmissionPolicy que confinan el executor a los espacios de nombres bajo su prefix. En Kubernetes, los necesita el kubeconfig con el que ejecuta `init`. En una máquina virtual, los necesita el kubeconfig del host; si el host no cuenta con permisos de administración, `init` imprime el comando que debe ejecutarse desde un host que sí los tenga.
+* **Todavía sin ClickHouse.** Una instalación administrada comienza sin servicios; los que crea el executor se registran por sí mismos. En modo administrado, `init` no registra ningún ClickHouse que usted mismo ejecute (en Kubernetes rechaza `--instance` e `--instance-namespace`). Para observar un cluster de ese tipo, instale una implementación del conector aparte con `--no-managed`; `--ch-user-suffix` permite que ambas implementaciones compartan una instance sin colisionar en los usuarios del conector. Esa implementación necesita un listener native accesible: 9440 seguro o 9000 en plaintext, detectado automáticamente en Kubernetes. También necesita acceso de administración de ClickHouse para el aprovisionamiento: un usuario `default` sin password, un password pasado con `--ch-admin-password-stdin` o introducido en el prompt, o injection de CR para instances gestionadas por el operator.
 * **cosign** allí donde descargue release artifacts. El instalador siempre verifica la suma de comprobación SHA-256. Si cosign está instalado, también verifica la firma del release y, con `CLICKLINK_REQUIRE_COSIGN=1`, se niega a continuar sin cosign.
 
 ### Para instalaciones en Kubernetes (Helm) {#prerequisites-kubernetes}
@@ -55,7 +64,9 @@ ClickHouse Cloud emite entonces su endpoint del conector y un token de inscripci
   En una VM, `--skip-provision` es la única manera de sortear el requisito del Kubernetes API server, y solo aplica a stage. Omite el aprovisionamiento del ClickHouse user, el grant del executor, la habilitación de la unidad y la verificación, de modo que por sí solo no deja un connector en ejecución. En Kubernetes solo omite el aprovisionamiento del ClickHouse user; el grant del executor sí se aplica, porque el executor del chart no puede programarse sin la ServiceAccount con el grant otorgado.
 </Note>
 
-## Instalar y registrar {#install-and-enroll}
+## Instalación e inscripción {#install-and-enroll}
+
+Antes de empezar, confirma con tu account team la [disponibilidad del modo gestionado](#managed-mode-availability). El instalador público que se muestra a continuación distribuye la versión `v0.16.0`, que no puede ejecutar los comandos de inscripción en modo gestionado de esta guía.
 
 <Steps>
   <Step title="Obtenga el endpoint del conector y el token de inscripción" id="get-endpoint-and-token">
@@ -85,11 +96,13 @@ ClickHouse Cloud emite entonces su endpoint del conector y un token de inscripci
   </Step>
 
   <Step title="Registra e instala el conector" id="enroll-and-install">
+    Estos comandos requieren el build y el soporte de implementación descritos en [disponibilidad del modo gestionado](#managed-mode-availability). La versión pública `v0.16.0` no incluye ni `--managed` ni `--no-managed`.
+
     La inscripción se realiza con un único comando. Canjea su token, obtiene un certificado de client firmado y el grant cluster-wide del executor, y luego instala y verifica el connector.
 
     <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="Flujo de inscripción de ClickHouse Connector" />
 
-    En un terminal, `init` pregunta `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` con `yes` preseleccionado. Pase `--managed` para omitir el prompt, o `--no-managed` para una instalación de solo observación sin el executor. Una instalación nueva desatendida sin ninguno de los dos indicadores deja el modo gestionado desactivado (una nueva ejecución con `--force` conserva la postura de la configuración reemplazada), así que pase siempre `--managed` en los scripts.
+    En un terminal, `init` pregunta `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` con `yes` preseleccionado. Pase `--managed` para omitir el prompt, o `--no-managed` para una instalación de solo observación sin el executor. Una instalación limpia desatendida sin ninguno de los dos indicadores deja el modo administrado desactivado (una nueva ejecución con `--force` conserva la postura de la configuración reemplazada), así que pase siempre `--managed` en los scripts.
 
     <Tabs>
       <Tab title="Kubernetes" id="enroll-kubernetes">
@@ -221,11 +234,13 @@ En una VM, extraiga el tarball y ejecute `sudo ./install.sh` desde el directorio
 
 ## Si algo falla {#if-something-fails}
 
+Si `init` rechaza `--managed` o `--no-managed` como un indicador desconocido, comprueba la versión de tu CLI: la `v0.16.0` pública no admite ninguno de los dos. Obtén un [build con soporte de modo administrado](#managed-mode-availability) a través de tu account team antes de seguir las instrucciones de recuperación de modo administrado que figuran a continuación.
+
 Vuelve a ejecutar el mismo comando. `init` es idempotente: las reejecuciones convergen al mismo estado, conservan tu configuración existente y los archivos preparados, y omiten el trabajo ya completado. Cuando un paso falla a medio camino, la CLI imprime los comandos de recuperación exactos para tu caso; se pueden repetir sin riesgo.
 
 Si se rechaza la inscripción, es porque el token ya fue canjeado, o bien porque es inválido o expiró. Si el token ya fue canjeado, vuelve a ejecutar con `--handoff handoff.yaml`, que existe hasta el paso de limpieza; de lo contrario, solicita un token nuevo a tu account team de ClickHouse. Si la inscripción falla con un error de transporte, vuelve a ejecutar el mismo comando. Si la reejecución se rechaza, el primer intento sí consumió el token, así que solicita uno nuevo.
 
-Si se rechaza el modo gestionado porque el cluster no es EKS, vuelve a ejecutar con `--no-managed` para instalar sin el executor. En una VM, también se rechaza un kubeconfig cuyo contexto actual apunte a otro lugar: cambia de contexto con `kubectl config use-context` y vuelve a ejecutar.
+Si se rechaza el modo administrado porque el cluster no es EKS, vuelve a ejecutar con `--no-managed` para instalar sin el executor. En una VM, también se rechaza un kubeconfig cuyo contexto actual apunte a otro lugar: cambia de contexto con `kubectl config use-context` y vuelve a ejecutar.
 
 Si no se puede aplicar el grant del executor:
 
@@ -242,4 +257,4 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-`--force` es el reset explícito, no un reintento rutinario. Sobrescribe la configuración conservada o el values overlay, regenera el client key y reemplaza un certificado de cliente no expirado (un `409` del endpoint de firma significa que ya existe uno). El UUID del cluster del connector se conserva entre ejecuciones con `--force`, igual que su postura de modo gestionado. Las reejecuciones desatendidas mantienen esa postura y, en un terminal, el prompt la ofrece como valor predeterminado, salvo que indiques `--managed` o `--no-managed`. Usa `--force` al rotar credenciales o al reemplazar un certificado, y consulta [operaciones](/es/products/bring-your-own-cloud/connector/operations) para conocer el modelo completo de reejecución y recuperación.
+`--force` es el reset explícito, no un reintento rutinario. Sobrescribe la configuración conservada o el values overlay, regenera el client key y reemplaza un certificado de cliente no expirado (un `409` del endpoint de firma significa que ya existe uno). El UUID del cluster del connector se conserva entre ejecuciones con `--force`, igual que su postura de modo administrado. Las reejecuciones desatendidas mantienen esa postura y, en un terminal, el prompt la ofrece como valor predeterminado, salvo que indiques `--managed` o `--no-managed`. Usa `--force` al rotar credenciales o al reemplazar un certificado, y consulta [operaciones](/es/products/bring-your-own-cloud/connector/operations) para conocer el modelo completo de reejecución y recuperación.

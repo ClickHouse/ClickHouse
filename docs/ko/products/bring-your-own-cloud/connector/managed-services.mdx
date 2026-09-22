@@ -14,6 +14,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 관리형 모드에서는 커넥터가 세 번째 구성 요소인 실행기를 함께 실행합니다. ClickHouse Cloud는 이 실행기를 통해 사용자의 Kubernetes 클러스터에서 ClickHouse 서비스를 운영합니다. 이 페이지에서는 서비스 생성 방법, 서비스 상태 확인 방법, 서비스가 생성된 이후 ClickHouse Cloud가 수행하는 작업, 그리고 서비스가 폐기(retire)되는 과정을 다룹니다.
 
+<Note>
+  관리형 모드 활성화 및 서비스 생성에는 아직 공개 릴리스에 포함되지 않은 지원 기능이 필요합니다. 공개된 `v0.16.0` CLI에는 `--managed` 및 `--no-managed` init 플래그도, 아래에 설명된 고객 생성 워크플로도 없습니다. 등록이나 리소스 준비를 진행하기 전에 계정 담당 팀과 [관리형 모드 지원 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하십시오. 서비스 생성에는 사용자의 엔드포인트와 ClickHouse Cloud 양쪽에서 이에 대응하는 지원도 필요합니다.
+</Note>
+
 ## 관리형 모드의 동작 방식 {#what-managed-mode-does}
 
 실행기는 scraper, troubleshooter와 동일한 `clicklink` 바이너리에 포함된 데몬입니다. 커넥터 엔드포인트로 향하는 아웃바운드 WebSocket 채널을 유지하면서 ClickHouse Cloud로부터 수명 주기 명령어를 수신합니다. 실행기는 자신이 구성된 단일 Kubernetes cluster에 각 명령어를 적용하고, 동일한 채널을 통해 결과를 보고합니다. 다른 구성 요소와 마찬가지로 아웃바운드 연결만 생성합니다. 즉, ClickHouse Cloud가 사용자 클러스터로 접속하는 일은 없으며, 실행기의 로컬 API는 루프백에 바인딩됩니다.
@@ -26,15 +30,21 @@ VM에서 실행기는 나머지 두 구성 요소와 함께 `clicklink-executor`
 
 ## 관리형 모드 활성화 {#enable-managed-mode}
 
-관리형 모드는 등록할 때 선택합니다. `clicklink clctl init`에 `--managed`를 전달하거나, 터미널에 표시되는 프롬프트에 응답하십시오. VM에서 `init`은 해당 호스트의 kubeconfig에서 클러스터를 가져오며(EKS cluster가 두 개 이상 있는 경우 `--cluster-name`으로 지정), 실행기에 클러스터 전역 액세스 권한을 인라인으로 부여합니다. Kubernetes에서는 커넥터 엔드포인트의 CIDR을 `--egress-cidrs`로 전달하여 차트가 기본 거부(default-deny) NetworkPolicy를 활성화된 상태로 배치하도록 하십시오.
+<Note>
+  공개된 `v0.16.0` CLI는 `init --managed`나 아래에 설명된 관리형 모드 프롬프트를 지원하지 않습니다. 먼저 계정 담당 팀으로부터 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 포함된 빌드와 배포를 받으십시오.
+</Note>
+
+관리형 모드는 등록할 때 선택합니다. `clicklink clctl init`에 `--managed`를 전달하거나, 터미널에 표시되는 프롬프트에 응답하십시오. VM에서 `init`은 해당 호스트의 kubeconfig에서 클러스터를 가져오며(EKS cluster가 두 개 이상 있는 경우 `--cluster-name`으로 지정), 실행기에 클러스터 전체 액세스 권한을 인라인으로 부여합니다. Kubernetes에서는 엔드포인트의 CIDR을 `--egress-cidrs`로 전달하여 차트가 기본 거부(default-deny) NetworkPolicy를 활성화된 상태로 배치하도록 하십시오.
 
 설치 과정 자체는 달라지지 않습니다. 전체 흐름은 [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)을, 플래그는 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli#init)를 확인하십시오.
 
 ## 서비스 생성 {#create-a-service}
 
-서비스를 생성하려면 두 개의 명령어가 필요합니다. `prepare`는 사용자 측에 필요한 모든 것을 생성하고, `instances create`는 커넥터 엔드포인트를 통해 ClickHouse Cloud에 생성 요청을 제출합니다. ClickHouse Cloud는 서비스 정의를 렌더링한 뒤 아웃바운드 채널을 통해 실행기로 생성 요청을 전달합니다. 실행기는 이를 클러스터에 적용하고 결과를 보고합니다.
+이 워크플로는 공개 버전 `v0.16.0`에서는 사용할 수 없습니다. 리소스를 준비하기 전에 사용 중인 CLI, 엔드포인트, ClickHouse Cloud 배포에 대해 [서비스 생성 가용성](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)을 확인하십시오.
 
-AWS 자격 증명이 필요한 명령어는 `prepare`뿐이며, 이 명령어는 S3 버킷과 IAM 역할을 생성합니다. `instances create`는 커넥터의 구성과 자격 증명이 필요하고, `--wait`를 사용할 때만 실행기의 로컬 API에 접근합니다. VM에서는 두 명령어 모두 커넥터 호스트에서 root로 실행하십시오. Kubernetes에서는 관리형 클러스터의 kube 컨텍스트가 설정된 작업 머신에서 두 명령어를 모두 실행하십시오.
+서비스를 생성하려면 두 개의 명령어가 필요합니다. `prepare`는 사용자 측에 필요한 모든 것을 생성하고, `instances create`는 엔드포인트를 통해 ClickHouse Cloud에 생성 요청을 제출합니다. ClickHouse Cloud는 서비스 정의를 렌더링한 뒤 아웃바운드 채널을 통해 실행기로 생성 요청을 전달합니다. 실행기는 이를 클러스터에 적용하고 결과를 보고합니다.
+
+AWS 자격 증명이 필요한 명령어는 `prepare`뿐이며, 이 명령어는 S3 버킷과 IAM role을 생성합니다. `instances create`는 커넥터의 구성과 자격 증명이 필요하고, `--wait`를 사용할 때만 실행기의 로컬 API에 접근합니다. VM에서는 두 명령어 모두 커넥터 호스트에서 root로 실행하십시오. Kubernetes에서는 관리형 클러스터의 kube 컨텍스트가 설정된 작업 머신에서 두 명령어를 모두 실행하십시오.
 
 * `prepare`에는 커넥터 구성 사본(`--config`), 실행기의 로컬 API로 연결되는 `kubectl port-forward`, 그리고 쓰기 가능한 디렉터리를 가리키는 `--output-dir`가 필요합니다. 이 명령어는 실행기를 통해 서비스 이름을 확인하며, 실행기에 연결할 수 없으면 실행을 거부합니다.
 * `instances create`는 현재 호스트에 자격 증명 파일이 없으면 구성에 지정된 해당 파일들을 `clicklink-hmac` 및 `clicklink-mtls` 시크릿에서 읽어오며, 읽을 때마다 이를 알립니다. 커넥터 네임스페이스가 `clicklink`가 아니면 `--connector-namespace`를 추가하십시오. 이 폴백 동작은 `instances create`에만 적용됩니다.
@@ -164,14 +174,14 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    그런 다음 [ClickHouse instance 추가](/ko/products/bring-your-own-cloud/connector/configuration#clickhouse-instances)에 설명된 대로 Secret과 ServiceAccount 쌍을 `troubleshooter.accessBundles`에 추가하고 `helm upgrade`를 실행하십시오.
+    `$CH_DEFAULT_PASSWORD`는 `prepare`가 출력한 `default` 사용자의 password입니다. 이 command는 SQL 권한 부여를 적용하기 전에 인증하는 데 해당 값이 필요하며, 별도로 입력을 요청하지 않습니다. 그런 다음 [ClickHouse instance 추가](/ko/products/bring-your-own-cloud/connector/configuration#clickhouse-instances)에 설명된 대로 Secret과 ServiceAccount 쌍을 `troubleshooter.accessBundles`에 추가하고 `helm upgrade`를 실행하십시오.
   </Tab>
 
   <Tab title="Linux VM" id="troubleshooter-vm">

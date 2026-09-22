@@ -88,7 +88,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) 凭据 {#rotate-api-credentials}
 
-向您的 ClickHouse 客户团队申请新的注册令牌，然后使用 `--enroll` 和 `--force` 重新运行原来的 `init` 命令。保留首次安装时使用的所有目标专用标志 (`--target-namespace`、`--values` 以及任何 `--chart`、`--chart-repo` 或 `--chart-version` mirror 标志) ，因为 `--force` 会重新暂存已保留的配置。Managed 模式会从被替换的配置中沿用，因此这里的 `--managed` 是可选的。对于默认安装：
+此处描述的托管模式行为需要[受支持的构建版本](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)；公开的 `v0.16.0` 既没有 `--managed` 也没有 `--no-managed`。
+
+向您的 ClickHouse account team 申请新的注册标记，然后使用 `--enroll` 和 `--force` 重新运行原来的 `init` 命令。保留首次安装时使用的所有目标专用标志 (`--target-namespace`、`--values` 以及任何 `--chart`、`--chart-repo` 或 `--chart-version` mirror 标志) ，因为 `--force` 会重新暂存已保留的配置。托管模式会从被替换的配置中沿用，因此这里的 `--managed` 是可选的。对于默认安装：
 
 ```bash
 # Kubernetes, from your workstation
@@ -98,7 +100,7 @@ clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target he
 sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force
 ```
 
-在 VM 上，`init` 只会启用并启动尚未运行的单元，因此请在轮换后重启这些 daemon：
+在 VM 上，`init` 只会启用并启动尚未运行的单元，因此请在轮换后重启这些守护进程：
 
 ```bash
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
@@ -157,9 +159,13 @@ printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access pr
 
 ## 重复运行与恢复 {#re-runs-and-recovery}
 
+<Note>
+  公开发布的 `v0.16.0` 命令行客户端既没有 `--managed` 也没有 `--no-managed`。下述托管模式保留与覆盖行为需要使用带有[托管模式支持](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)的构建版本；在恢复过程中更改该模式前，请先与你的客户团队确认你的构建版本。
+</Note>
+
 `init` 支持幂等重复运行，因此遇到问题时，首先应再次运行相同的命令。未使用 `--force` 时，会保留现有的 `/etc/clicklink/config.yaml` (VM) 或 `clicklink-values.yaml` 覆盖文件 (Kubernetes) ，并复用现有的客户端密钥；`init` 会以原子方式覆盖凭据和 CA 链。CLI 在部分失败后输出的恢复命令可以安全地重复执行。
 
-`--force` 会覆盖已保留的配置或覆盖文件，重新生成客户端密钥，并替换尚未过期的客户端证书。它绝不会生成新的集群 UUID，因此 connector 的身份会保留。在无人值守的重复运行中，被替换配置的托管模式状态会被保留；在终端中运行时，该状态会作为默认值提供，除非你传入 `--managed` 或 `--no-managed`。
+`--force` 会覆盖已保留的配置或覆盖文件，重新生成客户端密钥，并替换尚未过期的客户端证书。它绝不会生成新的集群 UUID，因此连接器的身份会保留。在无人值守的重复运行中，被替换配置的托管模式状态会被保留；在终端中运行时，该状态会作为默认值提供，除非你传入 `--managed` 或 `--no-managed`。
 
 如果暂存后证书签名失败，或者因已存在尚未过期的证书而导致签名端点返回 `409`，则无需新标记或再次签发。请使用磁盘上已有的已签名材料完成安装：
 
@@ -169,7 +175,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 这是 VM 形式 (root 会改写 `/etc/clicklink` 并管理相关服务) 。在 Kubernetes 上，命令行客户端会输出完整形式，包括 `--target helm`、`--target-namespace` 和 `--values`；请按原样使用输出的命令。
 
-**连接器离线。** 在连接器停机或不可达期间，其管理的服务仍会持续运行。集群中的 ClickHouse Operator 会维持它们的运行，而执行器并不位于数据路径中。生命周期变更需要执行器保持连接，因此在其重新连接之前不会应用任何变更。重启后，执行器会从其命令数据库中恢复停止时仍在执行中的命令。对于 ClickHouse Cloud 再次下发的命令，将依据已记录的结果作出响应，而不会重复执行；只有失败的命令才会再次运行。关于没有执行器连接时生命周期命令的处理方式，请参阅[连接器离线时](/zh/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)。
+**连接器离线。** 在连接器停机或不可达期间，其管理的服务仍会持续运行。集群中的 ClickHouse Operator 会维持它们的运行，而 executor 并不位于数据路径中。生命周期变更需要 executor 保持连接，因此在其重新连接之前不会应用任何变更。重启后，executor 会从其命令数据库中恢复停止时仍在执行中的命令。对于 ClickHouse Cloud 再次下发的命令，将依据已记录的结果作出响应，而不会重复执行；只有失败的命令才会再次运行。关于没有 executor 连接时生命周期命令的处理方式，请参阅[连接器离线时](/zh/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)。
 
 ## 卸载 {#uninstall}
 
@@ -247,6 +253,8 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
 ### 平台 layer {#uninstall-platform-layer}
+
+公开发布的 `v0.16.0` 命令行客户端没有 `platform` 命令，也不包含 `platform reset`；使用前请先确认其[可用性](/zh/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)。
 
 卸载连接器并不会移除平台 layer。平台命名空间与工作负载、`pcm-platform` RBAC，以及经你批准安装的 admission object 都会继续留在 cluster 中，所有 managed service 也是如此。请先删除这些 service，参见[删除 service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。在不含任何 service 的测试 cluster 上，`clicklink clctl platform reset` 会卸载平台 releases，但它遗留的 CustomResourceDefinition、RBAC 和存储类仍需手动删除，参见[重置测试 cluster](/zh/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster)。若不是测试 cluster，请在改动平台 layer 之前先与 ClickHouse account team 商定移除方案。
 

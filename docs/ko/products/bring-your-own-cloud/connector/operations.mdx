@@ -88,7 +88,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### API (HMAC) 자격 증명 {#rotate-api-credentials}
 
-ClickHouse 계정 팀에 새 등록 토큰을 요청한 후, `--enroll` 및 `--force`를 지정하여 기존 `init` 명령을 다시 실행하십시오. `--force`는 기존 구성을 다시 준비하므로, 최초 설치 시 사용한 모든 대상별 플래그(`--target-namespace`, `--values` 및 모든 `--chart`, `--chart-repo`, `--chart-version` 미러 플래그)를 그대로 유지하십시오. 관리형 모드는 대체되는 구성에서 그대로 이어지므로 여기서 `--managed`는 선택 사항입니다. 기본 설치에서는 다음과 같습니다:
+여기서 설명하는 관리형 모드 동작에는 [지원되는 빌드](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)가 필요합니다. 공개된 `v0.16.0`에는 `--managed`와 `--no-managed`가 모두 없습니다.
+
+ClickHouse 계정 담당 팀에 새 등록 토큰을 요청한 후, `--enroll` 및 `--force`를 지정하여 기존 `init` 명령을 다시 실행하십시오. `--force`는 기존 구성을 다시 준비하므로, 최초 설치 시 사용한 모든 대상별 플래그(`--target-namespace`, `--values` 및 모든 `--chart`, `--chart-repo`, `--chart-version` 미러 플래그)를 그대로 유지하십시오. 관리형 모드는 대체되는 구성에서 그대로 이어지므로 여기서 `--managed`는 선택 사항입니다. 기본 설치에서는 다음과 같습니다:
 
 ```bash
 # Kubernetes, from your workstation
@@ -156,6 +158,10 @@ printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access pr
 인증서는 자동으로 갱신됩니다([인증서](#certificates) 참조). 아직 만료되지 않은 인증서를 즉시 교체하려면 `--force` 옵션과 함께 `init`을 다시 실행하십시오. 그런 다음 데몬이 새 리프 인증서를 제시하도록 모든 구성 요소를 재시작하십시오. Kubernetes에서는 [API 자격 증명](#rotate-api-credentials)에 설명된 방식으로, VM에서는 세 개의 유닛을 재시작합니다.
 
 ## 재실행 및 복구 {#re-runs-and-recovery}
+
+<Note>
+  공개된 `v0.16.0` CLI에는 `--managed`와 `--no-managed`가 모두 없습니다. 아래에 설명된 관리형 모드 유지 및 재정의 동작에는 [관리형 모드 지원](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)이 포함된 빌드가 필요합니다. 복구 중에 해당 모드를 변경하기 전에 계정 담당 팀에 빌드를 확인하십시오.
+</Note>
 
 `init`은 재실행해도 동일한 상태로 수렴하므로, 먼저 같은 명령어를 다시 실행해 보십시오. `--force` 없이 실행하면 기존 `/etc/clicklink/config.yaml`(VM) 또는 `clicklink-values.yaml` 오버레이(Kubernetes)는 유지되고, 기존 클라이언트 키는 재사용됩니다. `init`은 자격 증명과 CA 체인을 원자적으로 덮어씁니다. 부분 실패 후 CLI가 출력하는 복구 명령어는 반복 실행해도 안전합니다.
 
@@ -248,7 +254,9 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 
 ### 플랫폼 레이어 {#uninstall-platform-layer}
 
-커넥터를 제거해도 플랫폼 레이어는 삭제되지 않습니다. 플랫폼 네임스페이스와 워크로드, `pcm-platform` RBAC, 승인을 통해 설치된 admission 객체는 클러스터에 그대로 남으며, 모든 관리형 서비스도 마찬가지입니다. 먼저 서비스를 삭제하십시오. [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오. 서비스가 없는 테스트 클러스터에서는 `clicklink clctl platform reset` 명령으로 플랫폼 릴리스를 제거할 수 있으며, 이때 남는 CustomResourceDefinition, RBAC, StorageClass는 직접 삭제해야 합니다. [테스트 클러스터 초기화](/ko/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster)를 참조하십시오. 테스트 클러스터가 아닌 환경에서는 플랫폼 레이어를 변경하기 전에 ClickHouse 어카운트 팀과 삭제 계획을 협의하십시오.
+공개된 `v0.16.0` CLI에는 `platform reset`을 포함한 `platform` 명령이 없습니다. 사용하기 전에 [제공 여부](/ko/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)를 확인하십시오.
+
+커넥터를 제거해도 플랫폼 레이어는 삭제되지 않습니다. 플랫폼 네임스페이스와 워크로드, `pcm-platform` RBAC, 승인을 통해 설치된 admission 객체는 클러스터에 그대로 남으며, 모든 관리형 서비스도 마찬가지입니다. 먼저 서비스를 삭제하십시오. [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오. 서비스가 없는 테스트 클러스터에서는 `clicklink clctl platform reset` 명령으로 플랫폼 릴리스를 제거할 수 있으며, 이때 남는 CustomResourceDefinition, RBAC, StorageClass는 직접 삭제해야 합니다. [테스트 클러스터 초기화](/ko/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster)를 참조하십시오. 테스트 클러스터가 아닌 환경에서는 플랫폼 레이어를 변경하기 전에 ClickHouse 계정 담당 팀과 삭제 계획을 협의하십시오.
 
 ### ClickHouse 사용자 {#uninstall-clickhouse-users}
 

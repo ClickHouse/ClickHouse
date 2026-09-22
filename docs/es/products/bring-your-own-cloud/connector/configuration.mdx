@@ -60,7 +60,19 @@ El conector tiene una superficie de configuración para cada destino de instalac
 
 ## Modo administrado {#managed-mode}
 
-El modo administrado ejecuta el executor, que aplica a tu cluster el ciclo de vida del servicio que gestiona ClickHouse Cloud. `init` lo activa durante la inscripción y completa la identidad del cluster (consulta [habilitar el modo administrado](/es/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); las claves que se indican a continuación son las que quizá quieras revisar después. Para activar el modo administrado en un conector instalado sin él, o para desactivarlo, vuelve a ejecutar `init` con `--force` y `--managed` o `--no-managed`. `--no-managed` detiene el executor, pero mantiene su grant sobre el cluster; elimínalo tal como se describe en [detener el modo administrado](/es/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode). Como toda ejecución de `init`, esta necesita un entry point: `--handoff` si conservaste el paquete, o `--enroll` con un token nuevo, tal como se describe en [reejecuciones y recovery](/es/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+<Note>
+  La CLI pública `v0.16.0` no incluye ni `--managed` ni `--no-managed`. Antes de usar cualquiera de estos indicadores para cambiar la configuración, confirma la [disponibilidad del modo administrado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) y obtén el build correspondiente de tu account team.
+</Note>
+
+El modo administrado ejecuta el executor, que aplica a tu cluster el ciclo de vida del servicio que gestiona ClickHouse Cloud. `init` lo activa durante la inscripción y completa la identidad del cluster (consulta [habilitar el modo administrado](/es/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)); las claves que se indican a continuación son las que quizá quieras revisar después. Para cambiar la postura configurada, vuelve a ejecutar `init` con `--force` y `--managed` o `--no-managed`. Como toda ejecución de `init`, esta necesita un entry point: `--handoff` si conservaste el paquete, o `--enroll` con un token nuevo, tal como se describe en [reejecuciones y recovery](/es/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery).
+
+En una VM, `--no-managed` desactiva el executor en la configuración, pero no detiene ni deshabilita una systemd unit que ya esté en ejecución. Deténla explícitamente antes de cambiar la configuración:
+
+```bash
+sudo systemctl disable --now clicklink-executor
+```
+
+En Kubernetes, establecer `executor.enabled: false` en los valores y aplicar el cambio con `helm upgrade` elimina la Implementación del executor. En ambos destinos, el grant sobre el cluster permanece hasta que lo elimines; sigue [detener el modo administrado](/es/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode) para eliminar también ese acceso.
 
 <Tabs>
   <Tab title="Kubernetes" id="managed-mode-kubernetes">
@@ -154,7 +166,7 @@ El modo administrado ejecuta el executor, que aplica a tu cluster el ciclo de vi
 
 ## Añadir o modificar instancias de ClickHouse {#clickhouse-instances}
 
-Los servicios que crea el executor se registran por sí mismos, de modo que en modo administrado nunca se añaden aquí. Una implementación independiente del conector, instalada con `--no-managed`, observa el ClickHouse que usted mismo ejecuta; pase `--ch-user-suffix` en su `init` cuando ambas implementaciones compartan una instancia. Esta sección se aplica a esa implementación. Cada entrada de `instances` designa un endpoint del protocolo nativo de ClickHouse del que lee el conector: `host`, `port`, `database`, `secure`, `cluster` y, en Kubernetes, `namespace`; `max_open_conns` y `max_idle_conns` limitan el connection pool. Las credenciales nunca residen en la configuración; cada componente resuelve su usuario de ClickHouse de solo lectura a partir del paquete de acceso que genera el aprovisionamiento.
+Los servicios que crea el executor se registran por sí mismos, de modo que en modo administrado nunca se añaden aquí. Una implementación independiente del conector que se ejecuta sin el executor observa el ClickHouse que usted mismo ejecuta; pase `--ch-user-suffix` en su `init` cuando ambas implementaciones compartan una instancia. Esta sección se aplica a esa implementación. Cada entrada de `instances` designa un endpoint del protocolo nativo de ClickHouse del que lee el conector: `host`, `port`, `database`, `secure`, `cluster` y, en Kubernetes, `namespace`; `max_open_conns` y `max_idle_conns` limitan el connection pool. Las credenciales nunca residen en la configuración; cada componente resuelve su usuario de ClickHouse de solo lectura a partir del paquete de acceso que genera el aprovisionamiento.
 
 <Tabs>
   <Tab title="Kubernetes" id="instances-kubernetes">
@@ -355,7 +367,9 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-Para instalar el chart desde una réplica, `init` acepta `--chart` como el nombre de un chart que se resuelve en `--chart-repo`, o como una referencia directa `oci://`, una URL, un archivo local o un directorio. De forma predeterminada, `--chart-version` usa la propia versión de la CLI, por lo que el binario y el chart se actualizan juntos:
+Para instalar el chart desde una réplica, `init` acepta `--chart` como el nombre de un chart que se resuelve en `--chart-repo`, o como una referencia directa `oci://`, una URL, un archivo local o un directorio. De forma predeterminada, `--chart-version` usa la propia versión de la CLI, por lo que el binary y el chart se actualizan juntos.
+
+El ejemplo de modo gestionado que aparece a continuación requiere un build con `--managed`, del que carece la versión pública `v0.16.0`. Confirma la [disponibilidad del modo gestionado](/es/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) antes de usarlo; replicar la release pública no añade esta compatibilidad.
 
 ```bash
 clicklink clctl init --handoff handoff.yaml --target helm --managed \

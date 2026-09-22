@@ -88,6 +88,8 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ### Identifiants API (HMAC) {#rotate-api-credentials}
 
+Le comportement en mode managé décrit ici nécessite une [build prise en charge](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) ; la version publique `v0.16.0` ne dispose ni de `--managed` ni de `--no-managed`.
+
 Demandez un nouveau jeton d’inscription à l’équipe chargée de votre compte ClickHouse, puis réexécutez votre commande `init` initiale avec `--enroll` et `--force`. Conservez tous les indicateurs spécifiques à la cible utilisés lors de la première installation (`--target-namespace`, `--values`, ainsi que les éventuels indicateurs de miroir `--chart`, `--chart-repo` ou `--chart-version`), car `--force` restaure la configuration conservée. Le mode Managed est repris de la configuration remplacée, `--managed` est donc facultatif ici. Pour une installation par défaut :
 
 ```bash
@@ -157,11 +159,15 @@ Le renouvellement est automatique (voir [certificats](#certificates)). Pour remp
 
 ## Réexécutions et récupération {#re-runs-and-recovery}
 
+<Note>
+  La CLI publique `v0.16.0` ne dispose ni de `--managed` ni de `--no-managed`. Le comportement de conservation et de remplacement du mode managé décrit ci-dessous nécessite un build avec [la prise en charge du mode managé](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) ; confirmez votre build auprès de votre account team avant de modifier ce mode pendant la récupération.
+</Note>
+
 Les réexécutions de `init` convergent : la première chose à faire est donc toujours de relancer la même commande. Sans `--force`, le fichier `/etc/clicklink/config.yaml` (VM) ou la surcouche `clicklink-values.yaml` (Kubernetes) existant est conservé, et une clé client existante est réutilisée ; `init` remplace les identifiants et la chaîne de CA de manière atomique. Les commandes de récupération affichées par la CLI après un échec partiel peuvent être exécutées à nouveau sans risque.
 
-`--force` remplace la configuration ou la surcouche conservée, régénère la clé client et remplace un certificat client non expiré. Il ne génère jamais de nouvel UUID de cluster : l’identité du connecteur est donc préservée. La posture du mode managé de la configuration remplacée est conservée lors des réexécutions non interactives et proposée comme valeur par défaut sur un terminal, sauf si vous passez `--managed` ou `--no-managed`.
+`--force` remplace la configuration ou la surcouche conservée, régénère la clé client et remplace un certificat client non expiré. Il ne génère jamais de nouvel UUID de cluster : l&#39;identité du connector est donc préservée. La posture du mode managé de la configuration remplacée est conservée lors des réexécutions non interactives et proposée comme valeur par défaut sur un terminal, sauf si vous passez `--managed` ou `--no-managed`.
 
-Si la signature du certificat a échoué après la phase de préparation, ou si le point de terminaison de signature a renvoyé `409` parce qu’un certificat non expiré existe déjà, vous n’avez besoin ni d’un nouveau jeton ni d’une seconde émission. Terminez l’installation avec les éléments signés déjà présents sur le disque :
+Si la signature du certificat a échoué après la phase de préparation, ou si le point de terminaison de signature a renvoyé `409` parce qu&#39;un certificat non expiré existe déjà, vous n&#39;avez besoin ni d&#39;un nouveau jeton ni d&#39;une seconde émission. Terminez l&#39;installation avec les éléments signés déjà présents sur le disque :
 
 ```bash
 sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
@@ -169,7 +175,7 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 Il s’agit du format pour VM (root réécrit `/etc/clicklink` et gère les services). Sur Kubernetes, la CLI affiche le format complet, y compris `--target helm`, `--target-namespace` et `--values` ; utilisez la commande affichée telle quelle.
 
-**Connecteur hors ligne.** Lorsque le connecteur est arrêté ou injoignable, les services qu’il gère continuent de fonctionner. Le ClickHouse Operator de votre cluster les maintient actifs, et l’executor ne se trouve pas sur le data path. Les changements de cycle de vie nécessitent que l’executor soit connecté : aucun n’est donc appliqué tant qu’il ne s’est pas reconnecté. Au redémarrage, l’executor récupère depuis sa base de données de commandes celles qui étaient en cours lorsqu’il s’est arrêté. Une commande que ClickHouse Cloud transmet de nouveau reçoit une réponse issue du résultat enregistré plutôt que d’être exécutée deux fois ; seule une commande ayant échoué est réexécutée. Pour savoir ce qu’il advient des commandes de cycle de vie lorsqu’aucun executor n’est connecté, consultez [lorsque le connecteur est hors ligne](/fr/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
+**Connector hors ligne.** Lorsque le connector est arrêté ou injoignable, les services qu’il gère continuent de fonctionner. Le ClickHouse Operator de votre cluster les maintient actifs, et l’executor ne se trouve pas sur le data path. Les changements de cycle de vie nécessitent que l’executor soit connecté : aucun n’est donc appliqué tant qu’il ne s’est pas reconnecté. Au redémarrage, l’executor récupère depuis sa base de données de commandes celles qui étaient en cours lorsqu’il s’est arrêté. Une commande que ClickHouse Cloud transmet de nouveau reçoit une réponse issue du résultat enregistré plutôt que d’être exécutée deux fois ; seule une commande ayant échoué est réexécutée. Pour savoir ce qu’il advient des commandes de cycle de vie lorsqu’aucun executor n’est connecté, consultez [lorsque le connector est hors ligne](/fr/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
 
 ## Désinstallation {#uninstall}
 
@@ -247,6 +253,8 @@ kubectl delete serviceaccount pcm-executor -n "${CONNECTOR_NAMESPACE}"
 ```
 
 ### La couche plateforme {#uninstall-platform-layer}
+
+La CLI publique `v0.16.0` ne dispose d&#39;aucune commande `platform`, y compris `platform reset` ; vérifiez sa [disponibilité](/fr/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) avant de l&#39;utiliser.
 
 La désinstallation du connector ne supprime pas la couche plateforme. Les namespaces et charges de travail de la plateforme, le RBAC `pcm-platform` ainsi que les objects d&#39;admission installés par vos approbations restent dans le cluster, tout comme l&#39;ensemble des services managés. Supprimez d&#39;abord les services ; voir [supprimer un service](/fr/products/bring-your-own-cloud/connector/managed-services#delete-a-service). Sur un cluster de test dépourvu de services, `clicklink clctl platform reset` désinstalle les releases de la plateforme ; les CustomResourceDefinitions, le RBAC et la StorageClass qu&#39;elle laisse subsister doivent être supprimés manuellement ; voir [réinitialiser un cluster de test](/fr/products/bring-your-own-cloud/connector/platform-updates#resetting-a-test-cluster). En dehors d&#39;un cluster de test, convenez d&#39;un plan de suppression avec votre account team ClickHouse avant toute intervention sur la couche plateforme.
 

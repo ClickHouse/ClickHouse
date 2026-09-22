@@ -14,7 +14,9 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 ### 誰が、いつサービスを変更できますか？ {#who-can-change-my-services}
 
-マネージドモードでは、ClickHouse Cloud は管理を委任されたサービスのみを変更します。executor ホストまたは ポッド にアクセスできるユーザーであれば、ローカルの `clicklink clctl instances` コマンドで操作することも可能です。[サービスライフサイクル](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)を参照してください。ClickHouse Cloud は、executor の外向きチャネルを介してライフサイクルコマンドを送信します:
+managed モードの登録、顧客による作成、プラットフォーム承認の各ワークフローには、[account team による確認済みのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要です。これらは公開版の `v0.16.0` では使用不可です。
+
+managed モードでは、ClickHouse Cloud は管理を委任されたサービスのみを変更します。executor ホストまたは ポッド にアクセスできるユーザーであれば、ローカルの `clicklink clctl instances` コマンドで操作することも可能です。[サービスライフサイクル](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)を参照してください。ClickHouse Cloud は、executor のアウトバウンドチャネルを介してライフサイクルコマンドを送信します:
 
 * create (送信されたサービス定義に基づく)
 * scale (ClickHouse Cloud が指定する固定のレプリカ数へ。ClickHouse Cloud の設定による上限があり、デフォルト設定では 20)
@@ -26,7 +28,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 一方、ユーザーの操作を待つものが 2 つあります。1 つはサービスの作成で、`clicklink clctl executor prepare` と `clicklink clctl instances create` の実行が必要です。バケットと IAM role を作成できるのはユーザーだけだからです。もう 1 つはクラスター内のプラットフォームコンポーネントの更新です: executor が提案された各バンドルをステージングし、`clicklink clctl platform approve` によってステージング済みバンドルが承認され、そのための 2 時間有効なトークンが発行されます。[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)を参照してください。
 
-executor の操作はすべて Kubernetes API を経由します。書き込みは admission ポリシーによって、サービスプレフィックス (デフォルトでは `ns-`) を持つネームスペースに限定され、加えて自身のネームスペース内の 3 つ、すなわちトークンの更新、サービスレジストリの ConfigMap、そして Kubernetes における `clicklink-mtls` Secret 内の更新されたクライアント証明書に限定されます。一方、同じリソースファミリーに対する読み取りはクラスター全体に及びます。承認されたプラットフォーム更新は、プラットフォームネームスペースに限定された別の `pcm-platform` identity として実行されます。ユーザー自身が運用するクラスターが変更されることは一切ありません: スクレイパーとトラブルシューターは読み取り専用です。正確なスコープについては[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページを参照してください。
+executor の操作はすべて Kubernetes API を経由します。書き込みは admission ポリシーによって、サービスプレフィックス (デフォルトでは `ns-`) を持つネームスペースに限定され、加えて自身のネームスペース内の 3 つ、すなわちトークンの更新、サービスレジストリの ConfigMap、そして Kubernetes における `clicklink-mtls` Secret 内の更新されたクライアント証明書に限定されます。一方、同じリソースファミリーに対する読み取りはクラスター全体に及びます。承認されたプラットフォーム更新は、プラットフォームネームスペースに限定された別の `pcm-platform` identity として実行されます。ユーザー自身が運用するクラスターが変更されることは一切ありません: scraper とトラブルシューターは読み取り専用です。正確なスコープについては[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページを参照してください。
 
 ### 環境から外部に出るデータは何ですか？ {#what-data-leaves-my-environment}
 
@@ -46,9 +48,13 @@ executor は、実行した各コマンドの結果と、各マネージドサ�
 
 ### ClickHouse によるクラスターの変更を止めるには？ {#stop-managed-mode}
 
-マネージドモードを使わずに実行してください。インストール時に `clicklink clctl init` へ `--no-managed` を渡すか、確認を求められた際に「いいえ」と回答します。デプロイされるのは scraper と トラブルシューター のみになるため、ClickHouse は service を作成・変更・削除できません。ただし、コネクタは引き続き読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
+<Note>
+  公開されている `v0.16.0` の CLI には `--managed` も `--no-managed` もありません。以下のインストール時の選択には、[managed モードのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)を含む build が必要です。既存の executor を停止する場合は以下の Helm または systemd の手順を使用し、いずれの init フラグも必要ありません。
+</Note>
 
-既存のインストール環境では、executor を停止し、cluster admin としての grant を削除します。停止するには、Helm values で `executor.enabled: false` を設定して `helm upgrade` を実行するか、VM 上で `systemctl disable --now clicklink-executor` を実行します。その後、grant を削除してください。最後のコマンドは ServiceAccount 自体を削除します。そのネームスペースは、VM へのインストールの場合は `clicklink-system`、Kubernetes へのインストールの場合はコネクタのネームスペースです。
+managed モードを使わずに実行してください。インストール時に `clicklink clctl init` へ `--no-managed` を渡すか、確認を求められた際に「いいえ」と回答します。デプロイされるのは scraper と トラブルシューター のみになるため、ClickHouse は service を作成・変更・削除できません。ただし、コネクタは引き続き読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
+
+既存のインストール環境では、executor を停止し、cluster admin としての権限を削除します。停止するには、Helm values で `executor.enabled: false` を設定して `helm upgrade` を実行するか、VM 上で `systemctl disable --now clicklink-executor` を実行します。その後、権限を削除してください。最後のコマンドは ServiceAccount 自体を削除します。そのネームスペースは、VM へのインストールの場合は `clicklink-system`、Kubernetes へのインストールの場合はコネクタのネームスペースです。
 
 ```bash
 kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
@@ -58,7 +64,7 @@ kubectl delete clusterrole pcm-executor-cluster
 kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 ```
 
-ClickHouse が作成した services は稼働し続けますが、ClickHouse Cloud からはスケール、アップグレード、バックアップ、削除を実行できなくなり、これらに対する pending 状態のコマンドは失敗します。`clicklink clctl platform approve` を実行しない限り、プラットフォームの更新が適用されることはありません。このコマンドを実行しないままにすると、マネージド mode のその他の機能は動作を継続する一方で、プラットフォーム層は凍結されます。
+ClickHouse が作成した services は稼働し続けますが、ClickHouse Cloud からはスケール、アップグレード、バックアップ、削除を実行できなくなり、これらに対する pending 状態のコマンドは失敗します。`clicklink clctl platform approve` を実行しない限り、プラットフォーム更新が適用されることはありません。このコマンドを実行しないままにすると、managed モードのその他の機能は動作を継続する一方で、プラットフォーム層は凍結されます。
 
 ### コネクタがオフラインになった場合はどうなりますか？ {#connector-down}
 
@@ -77,6 +83,8 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 残りは、お客様の認証情報を用いて実行する `clicklink clctl executor teardown` で削除します。デフォルトでは IAM role を削除し、データと backup は保持します。これらを削除するには明示的な flag の指定が必要です。[サービスの削除](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service)を参照してください。
 
 ### default ユーザーのパスワードはどこで確認できますか？ {#default-user-password}
+
+顧客サービスの作成には[対応する CLI とデプロイメントのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)が必要であり、公開版の `v0.16.0` では使用できません。
 
 `clicklink clctl executor prepare` がユーザー側で生成し、一度だけ出力します。`--from-prepare` ではなく個別のフラグを指定して送信する場合は、`clicklink clctl instances create` が `--default-user-password-file` から読み取るか、新たに生成して出力します。ClickHouse Cloud に送信されるのはそのハッシュのみであるため、コネクタも ClickHouse も再度表示することはできません。表示されたら必ず保存してください。
 
@@ -100,7 +108,7 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 * コネクタエンドポイントが自組織の境界内でプライベート CA の背後に配置されている場合、`--api-private-ca` (Kubernetes) または `api.tls.ca_file` (VM) により、登録バンドルの CA チェーンがシステムのルート証明書に追加されます。
 * 直接接続できない環境で登録する場合は、`init --handoff` が帯域外で取得したバンドルを消費し、`--no-auto-sign` と `init --signed-cert` の組み合わせで証明書の署名を帯域外で完了できます。
 * マネージドモードでは、サービスおよびプラットフォームコンポーネント向けの ClickHouse イメージを、自組織のレジストリにインポートしたうえでそこから取得できます。ClickHouse はそのレジストリをお客様の環境に登録します。
-* プラットフォームバンドルは帯域外で受け渡し、ファイルとして `clicklink clctl platform approve --bundle` に渡すことができます。
+* [プラットフォーム承認をサポートするビルド](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)では、プラットフォームバンドルを帯域外で受け渡し、ファイルとして `clicklink clctl platform approve --bundle` に渡すことができます。パブリックの `v0.16.0` には `platform` コマンドはありません。
 
 [プライベートミラー](/ja/products/bring-your-own-cloud/connector/configuration) および [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding) のエアギャップに関するセクションを参照してください。ただし、コネクタは実行時にコネクタエンドポイントへの経路を必要とします。経路がない場合、ClickHouse Cloud はテレメトリーを受信できず、ライフサイクルコマンドもexecutorに届きません。
 

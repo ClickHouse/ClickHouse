@@ -12,7 +12,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-managed モードでは、コネクタは 3 つ目のコンポーネントである executor を実行します。ClickHouse Cloud はこれを介して、お使いの Kubernetes クラスター 内で ClickHouse サービス を運用します。このページでは、サービス の作成、その status の確認、サービス 作成後に ClickHouse Cloud が行う処理、そして サービス が廃止されるまでの流れについて説明します。
+managed モードでは、コネクタは 3 つ目のコンポーネントである executor を実行します。ClickHouse Cloud はこれを介して、お使いの Kubernetes クラスター 内で ClickHouse サービス を運用します。このページでは、サービス の作成、その ステータス の確認、サービス 作成後に ClickHouse Cloud が行う処理、そして サービス が廃止されるまでの流れについて説明します。
+
+<Note>
+  managed モードの有効化と サービス の作成には、パブリックリリースにはまだ含まれていないサポートが必要です。パブリックの `v0.16.0` CLI には、`--managed` および `--no-managed` の init flag も、以下のカスタマー作成 ワークフロー も含まれていません。enroll や resource の準備を行う前に、アカウントチーム に [managed モードの availability](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を確認してください。サービス の作成には、コネクタエンドポイント および ClickHouse Cloud 側の対応も必要です。
+</Note>
 
 ## managed モードの動作 {#what-managed-mode-does}
 
@@ -26,13 +30,19 @@ VM 上では、executor は他の 2 つのコンポーネントと並んで `cli
 
 ## Managed モードを有効化する {#enable-managed-mode}
 
+<Note>
+  公開されている `v0.16.0` の CLI は、`init --managed` や以下で説明する managed モードのプロンプトをサポートしていません。まず アカウントチーム から [managed モードのサポート](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を含む build とデプロイメントを入手してください。
+</Note>
+
 Managed モードは enroll 時に選択します。`clicklink clctl init` に `--managed` を渡すか、端末上でプロンプトに回答してください。VM 上では、`init` はこのホストの kubeconfig からクラスターを取得し (複数の EKS クラスター が含まれる場合は `--cluster-name` を指定) 、executor の クラスター全体への access を Inline で付与します。Kubernetes 上では、コネクタエンドポイント の CIDR を `--egress-cidrs` に渡すことで、チャート がデフォルト拒否の NetworkPolicy を有効な状態で配置します。
 
 インストール自体に変更はありません。全体の流れは [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) を、flags は [CLI reference](/ja/products/bring-your-own-cloud/connector/reference/cli#init) を参照してください。
 
 ## サービスを作成する {#create-a-service}
 
-サービスの作成には 2 つのコマンドを使用します。`prepare` はユーザー側に必要なものをすべて作成し、`instances create` は コネクタエンドポイント を通じて ClickHouse Cloud に作成要求を送信します。ClickHouse Cloud はサービス定義を生成し、outbound チャネル経由で executor に作成要求を送ります。executor はそれをお客様のクラスターに適用し、結果を報告します。
+このワークフローは公開版の `v0.16.0` では使用できません。リソースを準備する前に、お使いの CLI、コネクタエンドポイント、および ClickHouse Cloud デプロイメントについて [サービス作成の利用可否](/ja/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) を確認してください。
+
+サービスの作成には 2 つのコマンドを使用します。`prepare` はユーザー側に必要なものをすべて作成し、`instances create` は コネクタエンドポイント を通じて ClickHouse Cloud に作成要求を送信します。ClickHouse Cloud はサービス定義を生成し、アウトバウンド チャネル経由で executor に作成要求を送ります。executor はそれをお客様のクラスターに適用し、結果を報告します。
 
 AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM role を作成します。`instances create` は コネクタ の設定と認証情報を必要とし、executor のローカル API にアクセスするのは `--wait` を指定した場合のみです。VM では、いずれも コネクタ ホスト上で root として実行します。Kubernetes では、managed クラスターの kube context を持つ workstation から両方を実行します。
 
@@ -164,14 +174,14 @@ executor は、作成する各 サービス に scraper を組み込みます。
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    続いて、[ClickHouse インスタンスの追加](/ja/products/bring-your-own-cloud/connector/configuration#clickhouse-instances) に示すとおり、Secret と ServiceAccount のペアを `troubleshooter.accessBundles` に追加し、`helm upgrade` を実行します。
+    `$CH_DEFAULT_PASSWORD` は、`prepare` が出力した `default` ユーザーのパスワードです。このコマンドは SQL の権限を適用する前に認証を行うためにこれを必要としますが、入力を求めるプロンプトは表示しません。続いて、[ClickHouse インスタンスの追加](/ja/products/bring-your-own-cloud/connector/configuration#clickhouse-instances) に示すとおり、Secret と ServiceAccount のペアを `troubleshooter.accessBundles` に追加し、`helm upgrade` を実行します。
   </Tab>
 
   <Tab title="Linux VM" id="troubleshooter-vm">

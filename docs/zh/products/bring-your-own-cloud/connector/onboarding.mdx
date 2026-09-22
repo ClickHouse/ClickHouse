@@ -13,6 +13,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本页将指导您使用注册标记，在托管模式下完成连接器的验证；在该模式下，由 executor 执行由 ClickHouse Cloud 驱动的 service 生命周期。连接器可安装到 Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程；如果您的环境无法直接访问您的连接器端点，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。如果要在不使用 executor 的情况下观测自行运行的 ClickHouse，请传入 `--no-managed`。
 
+## 托管模式可用性 {#managed-mode-availability}
+
+<Warning>
+  截至 2026-09-22，公开安装程序提供的版本为 `v0.16.0`，该版本既不包含 `init --managed` 和 `init --no-managed` 标志，也不包含 `platform` 命令。Linux VM 和 Kubernetes 安装上的平台批准，以及客户服务创建 (`instances create --from-prepare`) ，在公开发布版本中均尚未提供。Kubernetes 平台批准还额外要求命令行客户端和 chart 支持 `platform approve --secret-namespace`。
+
+  在使用托管模式工作流之前，请先联系您的 ClickHouse account team，确认其是否支持您的部署目标，并获取相应的命令行客户端、连接器 chart 或 image 以及安装指令。客户服务创建还需要您的连接器端点和 ClickHouse Cloud 提供支持，仅升级命令行客户端并不足够。下文的公开安装命令目前不会安装支持这些工作流的 release。
+</Warning>
+
 ## 前置条件 {#prerequisites}
 
 ### 注册你的环境 {#registration}
@@ -29,6 +37,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ### 所有安装方式通用 {#prerequisites-every-install}
 
+* **一个支持[托管模式](#managed-mode-availability)的构建版本**，用于下文的托管模式操作说明。公开发布的 `v0.16.0` 既没有 `--managed` 也没有 `--no-managed`。
 * **你的连接器端点和注册标记**，在[注册](#registration)时提供。
 * **443 端口出站访问权限**，目标为 `https://<subdomain>.<connector-domain>` 和 `https://<subdomain>.enroll.<connector-domain>`，以及安装时访问 `releases.clicklink.clickhouse.com` 和 Amazon ECR Public。在托管模式下，当平台同步或创建操作从 ECR 拉取 chart 时，executor 还会访问 Amazon ECR 和 STS。若其中任何一项无法访问，请参阅[隔离网络与镜像安装](#air-gapped-and-mirrored-installs)。
 * **一个 Amazon EKS 集群**，用于托管模式。在其他任何集群上，`init` 都会拒绝启用托管模式，并提示使用 `--no-managed` 在不安装 executor 的情况下完成安装。
@@ -55,7 +64,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   在 VM 上，`--skip-provision` 是绕过 Kubernetes API server 要求的唯一方式，且仅适用于 stage 环境。它会跳过 ClickHouse user 预配、executor 的授权、单元启用以及验证，因此仅凭它本身并不能得到一个正在运行的连接器。在 Kubernetes 上，它只跳过 ClickHouse user 预配；executor 的授权仍会应用，因为没有已授权的 ServiceAccount，chart 中的 executor 就无法调度。
 </Note>
 
-## 安装并注册 {#install-and-enroll}
+## 安装与注册 {#install-and-enroll}
+
+请先与您的客户团队确认[托管模式可用性](#managed-mode-availability)。下方的公开安装程序提供的是 `v0.16.0`，无法运行本演练中的托管模式注册命令。
 
 <Steps>
   <Step title="获取连接器端点和注册标记" id="get-endpoint-and-token">
@@ -85,9 +96,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="注册并安装连接器" id="enroll-and-install">
-    注册只需一条命令。它会兑换你的注册标记，获取已签名的客户端证书以及 executor 的集群级 grant，然后安装并验证连接器。
+    这些命令需要 [managed 模式可用性](#managed-mode-availability)中所述的 build 和部署支持。公开发布的 `v0.16.0` 既不包含 `--managed`，也不包含 `--no-managed`。
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector enrollment flow" />
+    注册只需一条命令。它会兑换你的注册令牌，获取已签名的客户端证书以及 executor 的集群级授权 (grant) ，然后安装并验证连接器。
+
+    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse 连接器注册流程" />
 
     在终端中，`init` 会询问 `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?`，并预选 `yes`。传入 `--managed` 可跳过该提示，或使用 `--no-managed` 进行不含 executor 的仅观察安装。若在无人值守的全新安装中未传入这两个 flag，则 managed 模式保持关闭 (使用 `--force` 重新运行时会沿用被替换配置的设定) ，因此在脚本中请始终传入 `--managed`。
 
@@ -221,6 +234,8 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 ## 如果出现失败 {#if-something-fails}
 
+如果 `init` 将 `--managed` 或 `--no-managed` 视为未知标志而拒绝执行，请检查你的命令行客户端版本：公开发布的 `v0.16.0` 两者都不支持。在按照下文的托管模式恢复指令操作之前，请先从客户团队获取[支持托管模式的构建版本](#managed-mode-availability)。
+
 重新运行相同的命令。`init` 是幂等的：重复运行会收敛到相同状态，保留现有配置和已暂存的文件，并跳过已完成的工作。若某个步骤中途失败，命令行客户端会针对当前情况打印出准确的恢复命令；这些命令可以安全地重复执行。
 
 如果注册被拒绝，说明令牌已被兑换，或者无效或已过期。对于已兑换的令牌，请加上 `--handoff handoff.yaml` 重新运行，该文件在清理步骤之前一直存在；否则请向 ClickHouse 客户团队申请新的令牌。如果注册因传输错误而失败，请重新运行相同的命令。如果重新运行仍被拒绝，说明第一次尝试确实已消耗该令牌，请另行申请一个新令牌。
@@ -235,7 +250,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 sudo env KUBECONFIG=<path> clicklink clctl executor access apply --cluster --config /etc/clicklink/config.yaml
 ```
 
-* **在 Kubernetes 上**，被拒绝的授权会在 chart 部署之前中止 `init`，因为 executor 需要绑定到已授权的 ServiceAccount，缺少它便无法启动。已暂存的覆盖文件、Secrets 和 CSR 会被保留，`init` 会打印出两条命令，需在具备 cluster 管理员权限的主机上执行。执行完这两条命令后，再次运行相同的 `init` 命令即可继续：
+* **在 Kubernetes 上**，被拒绝的授权会在 chart 部署之前中止 `init`，因为 executor 需要绑定到已授权的 ServiceAccount，缺少它便无法启动。已暂存的覆盖文件、Secrets 和 CSR 会被保留，`init` 会打印出两条命令，需在具备集群管理员权限的主机上执行。执行完这两条命令后，再次运行相同的 `init` 命令即可继续：
 
 ```bash
 clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>

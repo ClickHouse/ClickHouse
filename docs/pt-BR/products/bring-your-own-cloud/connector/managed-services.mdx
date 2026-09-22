@@ -12,7 +12,11 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-No modo gerenciado, o connector executa um terceiro componente, o executor. É por meio dele que o ClickHouse Cloud opera os serviços ClickHouse no seu cluster do Kubernetes. Esta página aborda como criar um serviço, como consultar seu status, o que o ClickHouse Cloud faz depois que um serviço passa a existir e como um serviço é desativado.
+No modo managed, o connector executa um terceiro componente, o executor. É por meio dele que o ClickHouse Cloud opera os serviços ClickHouse no seu cluster do Kubernetes. Esta página aborda como criar um serviço, como consultar seu status, o que o ClickHouse Cloud faz depois que um serviço passa a existir e como um serviço é desativado.
+
+<Note>
+  Habilitar o modo managed e criar um serviço exigem suporte que ainda não está no lançamento público. A CLI pública `v0.16.0` não possui as flags de init `--managed` e `--no-managed` nem o workflow de criação pelo cliente descrito abaixo. Confirme a [disponibilidade do modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) com o seu account team antes de fazer o enroll ou preparar recursos; a criação de serviços também requer suporte correspondente no seu connector endpoint e no ClickHouse Cloud.
+</Note>
 
 ## O que o modo gerenciado faz {#what-managed-mode-does}
 
@@ -24,13 +28,19 @@ Cada serviço precisa de três cloud resources de sua propriedade: um bucket de 
 
 Em uma VM, o executor roda como o systemd unit `clicklink-executor`, ao lado dos outros dois. No Kubernetes, ele é uma Implantação de réplica única no namespace do connector. Ele expõe health e metrics na porta 8086 e sua API local em `127.0.0.1:9999`.
 
-## Habilitar o modo gerenciado {#enable-managed-mode}
+## Habilitar o modo managed {#enable-managed-mode}
 
-Você escolhe o modo gerenciado no momento do enroll: passe `--managed` para `clicklink clctl init` ou responda ao prompt em um terminal. Em uma VM, o `init` obtém o cluster a partir do kubeconfig deste host (use `--cluster-name` quando ele contiver mais de um EKS cluster) e concede o acesso cluster-wide do executor de forma inline. No Kubernetes, passe `--egress-cidrs` com os CIDRs do seu connector endpoint para que o chart prepare sua NetworkPolicy de negação padrão já habilitada.
+<Note>
+  A CLI pública `v0.16.0` não oferece suporte a `init --managed` nem ao prompt de modo managed descrito abaixo. Primeiro, obtenha uma compilação e uma implantação com [suporte a modo managed](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) junto ao seu account team.
+</Note>
+
+Você escolhe o modo managed no momento do enroll: passe `--managed` para `clicklink clctl init` ou responda ao prompt em um terminal. Em uma VM, o `init` obtém o cluster a partir do kubeconfig deste host (use `--cluster-name` quando ele contiver mais de um EKS cluster) e concede o acesso cluster-wide do executor de forma inline. No Kubernetes, passe `--egress-cidrs` com os CIDRs do seu connector endpoint para que o chart prepare sua NetworkPolicy de negação padrão já habilitada.
 
 A instalação em si permanece inalterada. Consulte o [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) para ver o fluxo completo e a [CLI reference](/pt-BR/products/bring-your-own-cloud/connector/reference/cli#init) para os flags.
 
 ## Criar um serviço {#create-a-service}
+
+Este workflow não está disponível na versão pública `v0.16.0`. Antes de preparar os recursos, confirme a [disponibilidade de criação de serviço](/pt-BR/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) para sua CLI, connector endpoint e implantação do ClickHouse Cloud.
 
 Criar um serviço exige dois comandos. O `prepare` cria tudo do seu lado; o `instances create` submete a criação ao ClickHouse Cloud por meio do connector endpoint. O ClickHouse Cloud monta a definição do serviço e envia a criação ao executor pelo seu canal de saída. O executor a aplica ao seu cluster e retorna o resultado.
 
@@ -164,14 +174,14 @@ O executor integra o scraper a cada serviço que cria. Ele não provisiona o sol
 <Tabs>
   <Tab title="Kubernetes" id="troubleshooter-kubernetes">
     ```bash
-    clicklink clctl troubleshoot access provision --target helm \
+    printf '%s\n' "$CH_DEFAULT_PASSWORD" | clicklink clctl troubleshoot access provision --target helm \
       --target-namespace "${CONNECTOR_NAMESPACE}" \
       --instance <name> --instance-namespace ns-<name> \
-      --server <kubernetes-api-server-url> \
+      --server <kubernetes-api-server-url> --ch-admin-password-stdin \
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace ns-<name>
     ```
 
-    Em seguida, adicione o par Secret e ServiceAccount a `troubleshooter.accessBundles` e execute `helm upgrade`, conforme mostrado em [adicionar instâncias do ClickHouse](/pt-BR/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
+    `$CH_DEFAULT_PASSWORD` é a senha do usuário `default` exibida pelo `prepare`. O comando precisa dela para autenticar antes de aplicar os grants SQL; ele não a solicita. Em seguida, adicione o par Secret e ServiceAccount a `troubleshooter.accessBundles` e execute `helm upgrade`, conforme mostrado em [adicionar instâncias do ClickHouse](/pt-BR/products/bring-your-own-cloud/connector/configuration#clickhouse-instances).
   </Tab>
 
   <Tab title="Linux VM" id="troubleshooter-vm">

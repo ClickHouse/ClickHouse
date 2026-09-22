@@ -14,7 +14,9 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 ### من يمكنه تغيير خدماتي، ومتى؟ {#who-can-change-my-services}
 
-في الوضع Managed، لا تُغيّر ClickHouse Cloud سوى الخدمات التي طلبت منها إدارتها. ويمكن أيضًا لأي شخص لديه وصول إلى مضيف الـ منفّذ أو كبسولة الخاصة به التحكم بها عبر أوامر `clicklink clctl instances` المحلية؛ انظر [دورة حياة الخدمة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). وترسل ClickHouse Cloud أوامر دورة الحياة عبر القناة الصادرة للـ منفّذ:
+تتطلب مسارات عمل التسجيل في الوضع المُدار، والإنشاء من قِبل العميل، وموافقة المنصة [دعمًا مؤكَّدًا من فريق حسابك](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)؛ وهي غير متاحة في الإصدار العام `v0.16.0`.
+
+في الوضع المُدار، لا تُغيّر ClickHouse Cloud سوى الخدمات التي طلبت منها إدارتها. ويمكن أيضًا لأي شخص لديه وصول إلى مضيف الـ منفّذ أو كبسولة الخاصة به التحكم بها عبر أوامر `clicklink clctl instances` المحلية؛ انظر [دورة حياة الخدمة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). وترسل ClickHouse Cloud أوامر دورة الحياة عبر القناة الصادرة للـ منفّذ:
 
 * الإنشاء، انطلاقًا من التعريف الذي قدّمته
 * التوسيع، إلى عدد ثابت من النسخ المتماثلة تحدده ClickHouse Cloud (مُقيَّد بإعداد في ClickHouse Cloud، وهو 20 في التهيئة الافتراضية)
@@ -24,9 +26,9 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 وتصل ترقيات الإصدارات وتغييرات التهيئة بالطريقة نفسها، على هيئة تعريف خدمة يُعاد تطبيقه؛ ولا توجد خطوة موافقة من العميل عليها. ولا دخل لجلسة الدعم في ذلك: فقناة الـ منفّذ منفصلة عن قناة مستكشف الأخطاء ومصلحها ولا تخضع لحالة الجلسة.
 
-وهناك أمران ينتظران تدخّلك. فإنشاء خدمة يتطلب منك تنفيذ `clicklink clctl executor prepare` و`clicklink clctl instances create`، لأنك وحدك من يمكنه إنشاء الحاويات وIAM role. كذلك تنتظرك تحديثات مكوّنات المنصة في العنقود الخاص بك: يُجهّز الـ منفّذ كل حزمة مقترحة، ويعتمد أمر `clicklink clctl platform approve` الحزمة المُجهَّزة ويُصدر لها رمزًا صالحًا لساعتين؛ انظر [تحديثات المنصة](/ar/products/bring-your-own-cloud/connector/platform-updates).
+وهناك أمران ينتظران تدخّلك. فإنشاء خدمة يتطلب منك تنفيذ `clicklink clctl executor prepare` و`clicklink clctl instances create`، لأنك وحدك من يمكنه إنشاء الحاويات ودور IAM. كذلك تنتظرك تحديثات مكوّنات المنصة في العنقود الخاص بك: يُجهّز الـ منفّذ كل حزمة مقترحة، ويعتمد أمر `clicklink clctl platform approve` الحزمة المُجهَّزة ويُصدر لها رمزًا صالحًا لساعتين؛ انظر [تحديثات المنصة](/ar/products/bring-your-own-cloud/connector/platform-updates).
 
-وكل ما يفعله الـ منفّذ يجري عبر واجهة برمجة تطبيقات Kubernetes. وعمليات الكتابة الخاصة به مُقيَّدة بسياسة admission بمساحات الأسماء التي تحمل prefix الخدمة (`ns-` افتراضيًا)، إضافة إلى ثلاث عمليات في مساحة الأسماء الخاصة به: تجديد رمزه، وConfigMap الخاص بـ registry الخدمات، وعلى Kubernetes الشهادة المُجدَّدة للعميل في الـ Secret المسمى `clicklink-mtls`. أما عمليات القراءة لعائلات الموارد نفسها فتشمل العنقود بالكامل. وتُنفَّذ تحديثات المنصة المعتمدة بهوية منفصلة هي `pcm-platform` مُقيَّدة بمساحات أسماء المنصة. ولا تُمَس أبدًا العناقيد التي تديرها بنفسك: فأداة السحب ومستكشف الأخطاء ومصلحها للقراءة فقط. وتجد النطاقات الدقيقة في صفحة [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
+وكل ما يفعله الـ منفّذ يجري عبر واجهة برمجة تطبيقات Kubernetes. وعمليات الكتابة الخاصة به مُقيَّدة بسياسة admission بمساحات الأسماء التي تحمل prefix الخدمة (`ns-` افتراضيًا)، إضافة إلى ثلاث عمليات في مساحة الأسماء الخاصة به: تجديد رمزه، وConfigMap الخاص بـ سجل الخدمات، وعلى Kubernetes الشهادة المُجدَّدة للعميل في الـ Secret المسمى `clicklink-mtls`. أما عمليات القراءة لعائلات الموارد نفسها فتشمل العنقود بالكامل. وتُنفَّذ تحديثات المنصة المعتمدة بهوية منفصلة هي `pcm-platform` مُقيَّدة بمساحات أسماء المنصة. ولا تُمَس أبدًا العناقيد التي تديرها بنفسك: فـ scraper ومستكشف الأخطاء ومصلحها للقراءة فقط. وتجد النطاقات الدقيقة في صفحة [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ### ما هي البيانات التي تخرج من بيئتي؟ {#what-data-leaves-my-environment}
 
@@ -46,7 +48,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 ### كيف أمنع ClickHouse من تغيير عناقيدي؟ {#stop-managed-mode}
 
-شغّله بدون وضع Managed. عند التثبيت، مرّر `--no-managed` إلى `clicklink clctl init`، أو أجب بالنفي عند السؤال. لا يُنشر سوى scraper ومستكشف الأخطاء ومصلحها، وبذلك لا يستطيع ClickHouse إنشاء الخدمات أو تغييرها أو حذفها. ومع ذلك يستمر الموصّل في تجهيز مستخدمي ClickHouse للقراءة فقط وحسابات ServiceAccount؛ راجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
+<Note>
+  لا تتضمن واجهة سطر الأوامر العامة `v0.16.0` الخيار `--managed` ولا `--no-managed`. ويتطلب الخيار المتاح عند التثبيت أدناه إصدارًا يدعم [الوضع المُدار](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). أما إيقاف منفّذ قائم فيستخدم إرشادات Helm أو systemd الواردة أدناه ولا يتطلب أيًّا من علامتَي init.
+</Note>
+
+شغّله بدون الوضع المُدار. عند التثبيت، مرّر `--no-managed` إلى `clicklink clctl init`، أو أجب بالنفي عند السؤال. لا يُنشر سوى scraper ومستكشف الأخطاء ومصلحها، وبذلك لا يستطيع ClickHouse إنشاء الخدمات أو تغييرها أو حذفها. ومع ذلك يستمر الموصّل في تجهيز مستخدمي ClickHouse للقراءة فقط وحسابات ServiceAccount؛ راجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 أمّا في التثبيتات القائمة، فأوقف المنفّذ وأزل امتياز مسؤول العنقود الممنوح له. لإيقافه، اضبط `executor.enabled: false` في قيم Helm الخاصة بك ثم شغّل `helm upgrade`، أو شغّل `systemctl disable --now clicklink-executor` على جهاز افتراضي. بعد ذلك أزل الامتياز. ويحذف الأمر الأخير حساب ServiceAccount نفسه؛ ومساحة الأسماء الخاصة به هي `clicklink-system` في تثبيتات الأجهزة الافتراضية، ومساحة أسماء الموصّل في تثبيتات Kubernetes:
 
@@ -78,7 +84,9 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 ### أين أجد كلمة مرور المستخدم default؟ {#default-user-password}
 
-يولّدها الأمر `clicklink clctl executor prepare` على جهازك ويطبعها مرة واحدة فقط. وإذا أرسلت الطلب باستخدام الخيارات الفردية بدلاً من `--from-prepare`، فإن `clicklink clctl instances create` يقرأها من `--default-user-password-file` أو ينشئها ويطبعها. ولا تُرسل إلى ClickHouse Cloud سوى قيم الـ hashes الخاصة بها، ولذلك لا يمكن للـ موصّل ولا لـ ClickHouse عرضها لك مرة أخرى. احرص على حفظها فور ظهورها.
+يتطلب إنشاء خدمة العميل [توافقًا بين واجهة سطر الأوامر ودعم النشر](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) وهو غير متاح في الإصدار العام `v0.16.0`.
+
+يولّدها الأمر `clicklink clctl executor prepare` على جهازك ويطبعها مرة واحدة فقط. وإذا أرسلت الطلب باستخدام الخيارات الفردية بدلاً من `--from-prepare`، فإن `clicklink clctl instances create` يقرأها من `--default-user-password-file` أو ينشئها ويطبعها. ولا تُرسل إلى ClickHouse Cloud سوى قيم التجزئة الخاصة بها، ولذلك لا يمكن للـ موصّل ولا لـ ClickHouse عرضها لك مرة أخرى. احرص على حفظها فور ظهورها.
 
 ### كيف أسحب صلاحية وصول ClickHouse؟ {#how-do-i-revoke-access}
 
@@ -95,12 +103,12 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 نعم. يمكن أن يأتي كل artifact مطلوب وقت التثبيت من داخل حدود شبكتك:
 
-* انسخ أرشيف CLI وصورة الحاوية من `releases.clicklink.clickhouse.com` ومن السجل العام إلى مرآتك، ثم وجّه `image.repository` إلى مرآتك.
-* مرّر `--chart` مع مرجع `oci://` أو URL أو أرشيف محلي. القيمة الافتراضية لـ `--chart-version` هي إصدار الـ CLI نفسه.
+* انسخ أرشيف واجهة سطر الأوامر وصورة الحاوية من `releases.clicklink.clickhouse.com` ومن السجل العام إلى مرآتك، ثم وجّه `image.repository` إلى مرآتك.
+* مرّر `--chart` مع مرجع `oci://` أو URL أو أرشيف محلي. القيمة الافتراضية لـ `--chart-version` هي إصدار الـ واجهة سطر الأوامر نفسه.
 * إذا كانت نقطة نهاية الموصّل مُقدَّمة داخل حدود شبكتك خلف private CA، فإن `--api-private-ca` (في Kubernetes) أو `api.tls.ca_file` (في الجهاز الافتراضي) يُلحق سلسلة CA الخاصة بحزمة التسجيل بجذور النظام.
 * للتسجيل دون اتصال مباشر، يستهلك `init --handoff` حزمة يتم الحصول عليها خارج القناة، بينما يُكمل `--no-auto-sign` مع `init --signed-cert` توقيع الشهادة خارج القناة.
 * في الوضع المُدار، يمكن أن تأتي صور ClickHouse الخاصة بخدماتك ومكوّنات المنصة من سجلك الخاص بعد استيرادها إليه، وتتولى ClickHouse تسجيل ذلك السجل لبيئتك.
-* يمكن تسليم حزم المنصة خارج القناة وتمريرها كملف إلى `clicklink clctl platform approve --bundle`.
+* مع [إصدار يدعم موافقة المنصة](/ar/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)، يمكن تسليم حزم المنصة خارج القناة وتمريرها كملف إلى `clicklink clctl platform approve --bundle`. الإصدار العام `v0.16.0` لا يحتوي على الأمر `platform`.
 
 راجع [المرايا الخاصة](/ar/products/bring-your-own-cloud/connector/configuration) وقسم البيئات المعزولة في [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding). ومع ذلك، يظل الموصّل بحاجة إلى مسار يصل إلى نقطة نهاية الموصّل أثناء التشغيل؛ فبدونه لن تتلقى ClickHouse Cloud أي بيانات قياس عن بُعد ولن يصل أي أمر من أوامر دورة الحياة إلى المُنفِّذ.
 
