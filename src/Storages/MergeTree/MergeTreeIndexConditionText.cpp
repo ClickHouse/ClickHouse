@@ -1891,10 +1891,12 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
                     return false;
 
-                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
                 const bool key_is_null = const_key_argument->column->isNullAt(0);
+                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
+
                 if (!key_is_null)
                     unwrapped_result_type = removeNullable(unwrapped_result_type);
+
                 if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
                     return false;
 
