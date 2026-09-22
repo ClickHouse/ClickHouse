@@ -2837,17 +2837,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
     return buildJSONExtractTreeImpl<JSONParser, false>(type, source_for_exception_message);
 }
 
-void validateJSONType(const DataTypePtr & type, const char * source_for_exception_message)
-{
-#if USE_SIMDJSON
-    buildJSONExtractTreeImpl<SimdJSONParser, true>(type, source_for_exception_message);
-#elif USE_RAPIDJSON
-    buildJSONExtractTreeImpl<RapidJSONParser, true>(type, source_for_exception_message);
-#else
-    buildJSONExtractTreeImpl<DummyJSONParser, true>(type, source_for_exception_message);
-#endif
-}
-
 #if USE_SIMDJSON
 template void jsonElementToString<SimdJSONParser>(const SimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTree<SimdJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);

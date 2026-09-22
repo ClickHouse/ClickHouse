@@ -29,7 +29,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/ASTNameTypePair.h>
-#include <Formats/JSONExtractTree.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -208,11 +207,8 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-    {
-        validateJSONType(type, "JSON serialization");
         typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
             ? type->getSerialization(settings) : type->getDefaultSerialization();
-    }
 
     auto dynamic_type = getDynamicType();
     auto dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
