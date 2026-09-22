@@ -11,7 +11,7 @@ SET allow_experimental_ts_to_grid_aggregate_function = 1;
 SELECT 'Original data (ts, val):';
 SELECT groupArraySorted(30)((toUnixTimestamp(timestamp), value)) FROM ts_data;
 
-SELECT 'timeSeriesResampleToGridWithStaleness(100, 200, 10, 15):';
+SELECT 'timeSeriesLastToGrid(100, 200, 10, 15):';
 
 WITH
     100 as begin,
@@ -24,7 +24,7 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin, end, step_sec, staleness_sec)(timestamp, value)
+       timeSeriesLastToGrid(begin, end, step_sec, staleness_sec)(timestamp, value)
    ) as a
 FROM ts_data;
 
@@ -39,7 +39,7 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin_ts, end_ts, step_sec, staleness_sec)(timestamp, value)
+       timeSeriesLastToGrid(begin_ts, end_ts, step_sec, staleness_sec)(timestamp, value)
    ) as b
 FROM ts_data;
 
@@ -54,7 +54,7 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin_ts, end_ts, step_sec, staleness_sec)(timestamp::DateTime64(3, 'UTC'), value::Float32)
+       timeSeriesLastToGrid(begin_ts, end_ts, step_sec, staleness_sec)(timestamp::DateTime64(3, 'UTC'), value::Float32)
    ) as c
 FROM ts_data;
 
@@ -69,7 +69,7 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin_ts::DateTime64(2, 'UTC'), end_ts::DateTime64(1, 'UTC'), step_sec::Decimal(6,2), staleness_sec::Decimal(18,3))(timestamp::DateTime64(3, 'UTC'), value::Float32)
+       timeSeriesLastToGrid(begin_ts::DateTime64(2, 'UTC'), end_ts::DateTime64(1, 'UTC'), step_sec::Decimal(6,2), staleness_sec::Decimal(18,3))(timestamp::DateTime64(3, 'UTC'), value::Float32)
    ) as d
 FROM ts_data;
 
@@ -84,7 +84,7 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin_ts, end_ts::DateTime64(3, 'UTC'), step_sec::Decimal(6,2), staleness_sec)(timestamp::DateTime64(6, 'UTC'), value)
+       timeSeriesLastToGrid(begin_ts, end_ts::DateTime64(3, 'UTC'), step_sec::Decimal(6,2), staleness_sec)(timestamp::DateTime64(6, 'UTC'), value)
    ) as e
 FROM ts_data;
 
@@ -100,24 +100,24 @@ WITH
 SELECT
    arrayZip(
        grid,
-       timeSeriesResampleToGridWithStaleness(begin_ts, end_ts, step_sec, staleness_sec)(timestamp::DateTime64(6, 'UTC'), value)
+       timeSeriesLastToGrid(begin_ts, end_ts, step_sec, staleness_sec)(timestamp::DateTime64(6, 'UTC'), value)
    ) as e
 FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), ts_data) SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, prefer_localhost_replica = 0;
 
 -- Test for returning multiple rows in batch
-SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) FROM ts_data GROUP BY fake_key ORDER BY fake_key;
+SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesLastToGrid(100, 200, 10, 15)(timestamp, value) FROM ts_data GROUP BY fake_key ORDER BY fake_key;
 
 -- Compute average in each bucket
 SELECT avgForEach(values), countForEach(values) AS avg_values
 FROM (
-    SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) AS values FROM ts_data GROUP BY fake_key
+    SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesLastToGrid(100, 200, 10, 15)(timestamp, value) AS values FROM ts_data GROUP BY fake_key
 );
 
--- AggregatingMergeTree Table to test (de)serialization of timeSeriesResampleToGridWithStaleness state
-CREATE TABLE ts_data_agg(k UInt64, agg AggregateFunction(timeSeriesResampleToGridWithStaleness(100, 200, 10, 15), DateTime('UTC'), Float64)) ENGINE AggregatingMergeTree() ORDER BY k;
+-- AggregatingMergeTree Table to test (de)serialization of timeSeriesLastToGrid state
+CREATE TABLE ts_data_agg(k UInt64, agg AggregateFunction(timeSeriesLastToGrid(100, 200, 10, 15), DateTime('UTC'), Float64)) ENGINE AggregatingMergeTree() ORDER BY k;
 
 -- Insert the data splitting it into several pieces
-INSERT INTO ts_data_agg SELECT toUnixTimestamp(timestamp)%3, initializeAggregation('timeSeriesResampleToGridWithStalenessState(100, 200, 10, 15)', timestamp, value) FROM ts_data;
+INSERT INTO ts_data_agg SELECT toUnixTimestamp(timestamp)%3, initializeAggregation('timeSeriesLastToGridState(100, 200, 10, 15)', timestamp, value) FROM ts_data;
 
 SELECT k, finalizeAggregation(agg) FROM ts_data_agg FINAL ORDER BY k;
 
@@ -127,45 +127,45 @@ ATTACH TABLE ts_data_agg;
 SELECT k, finalizeAggregation(agg) FROM ts_data_agg FINAL ORDER BY k;
 
 -- Check that -Merge returns the same result as the result form original table
-SELECT timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) FROM ts_data;
-SELECT timeSeriesResampleToGridWithStalenessMerge(100, 200, 10, 15)(agg) FROM ts_data_agg;
+SELECT timeSeriesLastToGrid(100, 200, 10, 15)(timestamp, value) FROM ts_data;
+SELECT timeSeriesLastToGridMerge(100, 200, 10, 15)(agg) FROM ts_data_agg;
 
 -- Check various data types for parameters and arguments
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp::DateTime64(2,'UTC'), value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100::Int32, 150::UInt16, 15::Decimal(10,2), 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 100, 15, 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStalenessIf(100, 150, 15, 50)(timestamp, value, value%2==0) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp::DateTime64(2,'UTC'), value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100::Int32, 150::UInt16, 15::Decimal(10,2), 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 100, 15, 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
+SELECT timeSeriesLastToGridIf(100, 150, 15, 50)(timestamp, value, value%2==0) AS res FROM ts_data;
 
 -- Test with Nullable timestamps and values
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(if (value < 10120, Null, timestamp), value::Float32) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, if (value < 10120, Null, value)) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(if (value < 10120, Null, timestamp), value::Float32) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, if (value < 10120, Null, value)) AS res FROM ts_data;
 
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value::Decimal(10,3)) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value::Int64) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value::String) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value::DateTime) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, value::Decimal(10,3)) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, value::Int64) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, value::String) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesLastToGrid(100, 150, 15, 50)(timestamp, value::DateTime) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Float parameters are accepted: the grid has at least millisecond precision
 SELECT 'Float parameters:';
-SELECT timeSeriesResampleToGridWithStaleness(100::Float64, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 150::Float32, 15, 50)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15::Float32, 50)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50::Float64)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100.5, 150.5, 15.5, 50.5)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100::Float64, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150::Float32, 15, 50)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15::Float32, 50)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, 150, 15, 50::Float64)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100.5, 150.5, 15.5, 50.5)(timestamp, value) AS res FROM ts_data;
 
 -- A negative start is valid with DateTime timestamps: the grid is DateTime64, so it can begin before 1970
 SELECT 'Negative parameters:';
-SELECT timeSeriesResampleToGridWithStaleness(-100, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
-SELECT timeSeriesResampleToGridWithStaleness(100, -150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, -15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, -50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(-100, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
+SELECT timeSeriesLastToGrid(100, -150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(100, 150, -15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(100, 150, 15, -50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 
-SELECT timeSeriesResampleToGridWithStaleness(200, 100, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(100, 150, 0, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(200, 100, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(100, 150, 0, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 
 -- timeSeriesLastToGrid is the main name, timeSeriesResampleToGridWithStaleness is its alias, so the alias resolves to the main name in the state type.
-SELECT timeSeriesLastToGrid(100, 200, 10, 15)(timestamp, value) FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) FROM ts_data;
 SELECT toTypeName(timeSeriesResampleToGridWithStalenessState(100, 200, 10, 15)(timestamp, value)) FROM ts_data;
 
 -- timeSeriesTimestampOfLastToGrid returns the timestamp of the most recent sample within the window, with the type of the input timestamps.
