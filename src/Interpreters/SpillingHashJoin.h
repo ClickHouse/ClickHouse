@@ -107,7 +107,7 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override;
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;

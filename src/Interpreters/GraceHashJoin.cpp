@@ -364,6 +364,11 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
+    /// Another thread already latched the stop below, so the bucket must stay exactly as it was then:
+    /// a repartition here would move half of it into buckets `getDelayedBlocks` is about to drop.
+    if (stop_after_current_bucket)
+        return false;
+
     addBlockToJoinImpl(materializeBlock(block));
 
     /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
@@ -371,7 +376,14 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
         return true;
 
     /// Spilling does not earn a query the right to go over the limits.
-    return checkSizeLimits();
+    if (checkSizeLimits())
+        return true;
+
+    /// `join_overflow_mode = 'break'`: the caller stops feeding this side, but the buckets already on disk
+    /// would still be joined in `getDelayedBlocks` - well past the cap. Latch the stop here as well, so
+    /// the join ends with the bucket in memory, the way `HashJoin` ends with the block that crossed the cap.
+    stop_after_current_bucket = true;
+    return false;
 }
 
 bool GraceHashJoin::checkSizeLimits() const
@@ -624,7 +636,7 @@ StepAnalysisReport GraceHashJoin::getAnalysisReport() const
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
 {
-    if (!isInnerOrRight(table_join->kind()))
+    if (!isInnerOrRight(table_join->kind()) && !(isLeft(table_join->kind()) && table_join->strictness() == JoinStrictness::Semi))
         return false;
 
     bool file_buckets_are_empty = [this]()
@@ -888,8 +900,10 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 bool GraceHashJoin::canForceRepartition() const
 {
-    /// A forced split must not fail the query, so skip it once the bucket count is at the limit.
-    return hash_join && hash_join->getTotalRowCount() > 1 && getNumBuckets() * 2 <= max_num_buckets;
+    /// A forced split must not fail the query, so skip it once the bucket count is at the limit. Nor
+    /// after `join_overflow_mode = 'break'` latched: the halves it would flush are about to be dropped.
+    return hash_join && !stop_after_current_bucket && hash_join->getTotalRowCount() > 1
+        && getNumBuckets() * 2 <= max_num_buckets;
 }
 
 /// Split the bucket held in memory: `rehashBuckets` doubles the bucket count, so about half of its rows
