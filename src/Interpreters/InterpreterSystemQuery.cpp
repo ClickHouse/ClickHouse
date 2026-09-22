@@ -1582,6 +1582,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, database_name);
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
@@ -2928,22 +2929,28 @@ void registerSystemCommandLambdas()
     reg_fn(Type::START_CLEANUP, with_startstop_fn(ActionLocks::Cleanup, true));
     reg_fn(
         Type::START_REPLICATED_DDL_QUERIES,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_REPLICATION_QUEUES, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::STOP_REPLICATED_DDL_QUERIES,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_REPLICATION_QUEUES, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::START_VIRTUAL_PARTS_UPDATE,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::STOP_VIRTUAL_PARTS_UPDATE,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::START_REDUCE_BLOCKING_PARTS,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::STOP_REDUCE_BLOCKING_PARTS,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+        with_check_fn(
+            AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     auto dup = with_check_fn(
         std::nullopt,
         [](LoggerPtr, InterpreterSystemQuery & interpreter)
@@ -2963,7 +2970,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::START_REPLICATED_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2972,7 +2979,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::STOP_REPLICATED_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2981,7 +2988,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::REFRESH_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2990,7 +2997,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::WAIT_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -2999,7 +3006,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::CANCEL_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
                 for (const auto & task : interpreter.getRefreshTasks())
@@ -3008,7 +3015,7 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::TEST_VIEW,
         with_check_fn(
-            std::nullopt,
+            AccessType::SYSTEM_VIEWS,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             {
                 /// The parser keeps the literal text; resolving it needs the server timezone.
@@ -3127,7 +3134,9 @@ void registerSystemCommandLambdas()
     reg_fn(Type::REPLICA_READY, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::SYNC_TRANSACTION_LOG,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncTransactionLog(); }));
+        with_check_fn(
+            AccessType::SYSTEM_SYNC_TRANSACTION_LOG,
+            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncTransactionLog(); }));
     reg_fn(
         Type::FLUSH_DISTRIBUTED,
         with_check_fn(
