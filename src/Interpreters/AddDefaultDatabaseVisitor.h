@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Core/SettingsFields.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -204,7 +203,13 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
-        /// After `with_aliases` and aliases are filled; inside its own body a name keeps its meaning in the enclosing select.
+        materialized_cte_names = base_cte_names;
+        materialized_cte_names.insert(own_cte_names.begin(), own_cte_names.end());
+
+        if (select.tables())
+            tryVisit<ASTTablesInSelectQuery>(select.refTables());
+
+        /// After the tables, as on master; inside its own body a name keeps its meaning in the enclosing select.
         if (auto with = select.with())
             for (auto & child : with->children)
             {
@@ -221,9 +226,6 @@ private:
         materialized_cte_names = base_cte_names;
         materialized_cte_names.insert(own_cte_names.begin(), own_cte_names.end());
 
-        if (select.tables())
-            tryVisit<ASTTablesInSelectQuery>(select.refTables());
-
         /// The `WITH` elements were visited above.
         const auto with = select.with();
         for (auto & child : select.children)
@@ -237,21 +239,7 @@ private:
     }
 
     /// The value of `enable_global_with_statement` in the select's own `SETTINGS` clause, if it is there.
-    static std::optional<bool> globalWithSettingOf(const ASTSelectQuery & select)
-    {
-        const auto settings = select.settings();
-        if (!settings)
-            return std::nullopt;
-        const auto * set_query = settings->as<ASTSetQuery>();
-        if (!set_query)
-            return std::nullopt;
-        /// Repeated in one clause, the setting is off if any occurrence is off, as in the analyzer.
-        std::optional<bool> result;
-        for (const auto & change : set_query->changes)
-            if (change.name == "enable_global_with_statement")
-                result = SettingFieldBool(change.value).value && result.value_or(true);
-        return result;
-    }
+    static std::optional<bool> globalWithSettingOf(const ASTSelectQuery & select);
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:
     /// their aliases are collected when the visitor descends into them.
