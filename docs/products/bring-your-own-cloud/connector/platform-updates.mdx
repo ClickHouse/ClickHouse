@@ -37,6 +37,8 @@ The executor never applies a bundle you have not approved. It refuses a platform
 
 ### Registry credentials {#registry-credentials}
 
+Both approval procedures below require a [build with platform support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` has no `platform` command. Kubernetes approval also needs matching CLI and chart support for Secret delivery.
+
 Registry authentication depends on the image distribution mode registered for your environment:
 
 - **Direct access to ClickHouse's registry.** Run approval on the connector's EC2 VM. Both `approve` and the executor's platform sync use credentials from the EC2 instance metadata service to assume your environment's read-only ECR puller role. They use that role for chart login; the executor also uses it to check that the platform images exist. AWS profiles, environment credentials, or SSO credentials on a workstation do not replace the instance profile. Your kubeconfig still supplies the separate cluster-admin credentials for applying the permission half.
@@ -154,6 +156,8 @@ The executor applies the workload half as `pcm-platform`. That identity can crea
 The executor's service-lifecycle identity, `pcm-executor`, is separate and confined to the service namespaces. It cannot write to the platform namespaces; its reads are not confined by the prefix guard. For the complete listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ## Resetting a test cluster {#resetting-a-test-cluster}
+
+The public `v0.16.0` CLI has no `platform reset` command; confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using this procedure.
 
 `clicklink clctl platform reset` exists for test clusters: it uninstalls the platform components so their first installation can be exercised again. Before changing anything it lists the ClickHouse clusters in the namespaces this connector owns and refuses if any service exists.
 
