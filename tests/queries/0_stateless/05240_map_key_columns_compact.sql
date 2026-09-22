@@ -85,3 +85,25 @@ OPTIMIZE TABLE t_compact_disjoint FINAL;
 SELECT id, m, m['a'], m['b'] FROM t_compact_disjoint ORDER BY id;
 
 DROP TABLE t_compact_disjoint;
+
+-- Empty Maps and an ALTER-added Map column: the empty part's manifest has no keys and
+-- no compressed block at all; the added column's default-derived keys are picked up by
+-- the merge.
+DROP TABLE IF EXISTS t_compact_empty;
+CREATE TABLE t_compact_empty (id UInt32, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS map_serialization_version = 'with_key_columns';
+
+INSERT INTO t_compact_empty VALUES (1, map());
+INSERT INTO t_compact_empty VALUES (2, {'a': 1});
+SELECT id, m, m['a'] FROM t_compact_empty ORDER BY id;
+OPTIMIZE TABLE t_compact_empty FINAL;
+SELECT id, m FROM t_compact_empty ORDER BY id;
+
+ALTER TABLE t_compact_empty ADD COLUMN m2 Map(String, UInt64) DEFAULT map('d', id);
+INSERT INTO t_compact_empty (id, m) VALUES (3, {'e': 5});
+SELECT id, m2, m2['d'] FROM t_compact_empty ORDER BY id;
+OPTIMIZE TABLE t_compact_empty FINAL;
+SELECT id, m, m2 FROM t_compact_empty ORDER BY id;
+
+DROP TABLE t_compact_empty;

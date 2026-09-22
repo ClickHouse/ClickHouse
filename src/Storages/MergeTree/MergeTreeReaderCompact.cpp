@@ -251,22 +251,32 @@ void MergeTreeReaderCompact::readData(
                 const size_t next_start = getNextSubstreamStart(*column_positions[column_idx], *substream_position, from_mark);
                 String data;
                 char byte = 0;
-                /// `getCompressedBlockEnd` is the end of the block the buffer decompressed
-                /// last; it is still the previous block while the manifest's block is being
-                /// consumed, so stop only once it has advanced past the manifest's block.
-                while (true)
+                /// An empty manifest (empty key set) has no compressed block at all: its
+                /// mark points where the next substream starts, so there is nothing to read.
+                if (next_start != 0 && next_start == marks_getter->getMark(from_mark, *substream_position).offset_in_compressed_file)
                 {
-                    if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
-                        break;
-                    if (!stream.getDataBuffer()->read(byte))
-                        break;
-                    /// The byte just read may come from the block after the manifest's
-                    /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
-                    if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
-                        break;
-                    data.push_back(byte);
+                    it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
                 }
-                it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
+                else
+                {
+                    /// `getCompressedBlockEnd` is the end of the block the buffer
+                    /// decompressed last; it is still the previous block while the
+                    /// manifest's block is being consumed, so stop only once it has
+                    /// advanced past the manifest's block.
+                    while (true)
+                    {
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        if (!stream.getDataBuffer()->read(byte))
+                            break;
+                        /// The byte just read may come from the block after the manifest's
+                        /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        data.push_back(byte);
+                    }
+                    it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
+                }
             }
             manifest_buffers[stream_name] = std::make_unique<ReadBufferFromMemory>(it->second.data(), it->second.size());
             return manifest_buffers[stream_name].get();
@@ -540,17 +550,26 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
                 const size_t next_start = getNextSubstreamStart(*column_positions[column_idx], *substream_position, from_mark);
                 String data;
                 char byte = 0;
-                while (true)
+                /// An empty manifest (empty key set) has no compressed block at all: its
+                /// mark points where the next substream starts, so there is nothing to read.
+                if (next_start == 0 || next_start != marks_getter->getMark(from_mark, *substream_position).offset_in_compressed_file)
                 {
-                    if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
-                        break;
-                    if (!stream.getDataBuffer()->read(byte))
-                        break;
-                    /// The byte just read may come from the block after the manifest's
-                    /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
-                    if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
-                        break;
-                    data.push_back(byte);
+                    /// `getCompressedBlockEnd` is the end of the block the buffer
+                    /// decompressed last; it is still the previous block while the
+                    /// manifest's block is being consumed, so stop only once it has
+                    /// advanced past the manifest's block.
+                    while (true)
+                    {
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        if (!stream.getDataBuffer()->read(byte))
+                            break;
+                        /// The byte just read may come from the block after the manifest's
+                        /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        data.push_back(byte);
+                    }
                 }
                 it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
             }
@@ -657,14 +676,16 @@ size_t MergeTreeReaderCompact::getNextSubstreamStart(size_t column_position, siz
         marks_getter = marks_loader->loadMarks();
 
     /// The recorded substreams of the column, then of the columns after it, are laid out
-    /// consecutively in `data.bin`; the first one starting strictly after the current
-    /// substream's mark marks the end of its compressed block.
+    /// consecutively in `data.bin`; the first one starting at or after the current
+    /// substream's mark marks the end of its compressed block. (An empty substream's mark
+    /// points at the position the next substream starts at, so `>=` is required: with a
+    /// strict comparison the manifest of an empty key set would read into it.)
     const size_t current_start = marks_getter->getMark(from_mark, substream_position).offset_in_compressed_file;
     size_t first_substream_of_next_column = columns_substreams.getLastSubstreamPosition(column_position) + 1;
     for (size_t pos = substream_position + 1; pos < first_substream_of_next_column; ++pos)
     {
         size_t start = marks_getter->getMark(from_mark, pos).offset_in_compressed_file;
-        if (start > current_start)
+        if (start >= current_start)
             return start;
     }
     /// The marks of the next column's first substream follow immediately.
@@ -672,7 +693,7 @@ size_t MergeTreeReaderCompact::getNextSubstreamStart(size_t column_position, siz
     if (first_substream_of_next_column < total)
     {
         size_t start = marks_getter->getMark(from_mark, first_substream_of_next_column).offset_in_compressed_file;
-        if (start > current_start)
+        if (start >= current_start)
             return start;
     }
     return 0;
