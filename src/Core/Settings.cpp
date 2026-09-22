@@ -9447,6 +9447,11 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     \
     DECLARE(Bool, promql_exact_rate, false, R"(
 Calculate PromQL rate, increase, and delta functions without fractional boundary extrapolation.
+
+The mode is not recorded in the type of an aggregate state, so a state written to a table while this
+setting is enabled cannot be read back in a session where the setting differs: deserialization fails
+instead of returning a value computed the other way. To persist such states, spell `exact_rate` as
+the fifth parameter of the `timeSeries*ToGrid` functions, which does put the mode in the state type.
 )", 0) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
