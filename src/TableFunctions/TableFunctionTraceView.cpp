@@ -205,10 +205,12 @@ Block pullMonoBlock(QueryPipeline & pipeline)
     while (true)
     {
         Block block;
-        if (pulling_executor.pull(block))
-            blocks.push_back(std::move(block));
-        else
+        if (!pulling_executor.pull(block))
             break;
+        /// A pull that ended on the soft time limit (`timeout_overflow_mode = 'break'`) yields a
+        /// block without columns; `concatenateBlocks` expects every block to have the same structure.
+        if (!block.empty())
+            blocks.push_back(std::move(block));
     }
 
     return concatenateBlocks(blocks);
