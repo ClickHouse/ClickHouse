@@ -1066,21 +1066,28 @@ static void writeMetadataFiles(
     /// policy. The only non-append snapshots compaction accepts are position-delete-only ones,
     /// and those change neither `total-records` nor `total-data-files`, so the nearest emitted
     /// ancestor carries exactly the totals the truncate has to charge itself against.
-    auto resolve_emitted_parent = [&](Int64 parent_id)
+    /// Returns -1 when the chain reaches a root: that is the "no parent snapshot" sentinel the
+    /// write paths emit (`IcebergWrites.cpp`, `IcebergMetadata::truncate`) and the one
+    /// `MetadataGenerator` reads back, since it treats any negative id as "absent". Normalising
+    /// to 0 instead would write a `parent-snapshot-id` of 0, which reads as a link to a snapshot
+    /// that does not exist rather than as a root.
+    auto resolve_emitted_parent = [&](Int64 parent_id) -> Int64
     {
         /// Each hop moves strictly up the chain, so the retained history length bounds the walk;
         /// exceeding it means the parent links form a cycle and the metadata is corrupt.
         for (size_t hops = 0; hops <= plan.history.size(); ++hops)
         {
-            /// `IcebergHistoryRecord::parent_id` is 0 when the snapshot has no parent.
-            if (parent_id == 0)
-                return static_cast<Int64>(0);
+            /// A root uses either -1 or 0 as a sentinel or, when `parent-snapshot-id` is
+            /// Snapshot ids are positive (`MetadataGenerator` draws from [1, max]), so neither collides
+            /// with a real id.
+            if (parent_id <= 0)
+                return -1;
             if (auto it = snapshot_id_to_snapshot.find(parent_id); it != snapshot_id_to_snapshot.end() && it->second)
                 return parent_id;
             auto next = original_parent_of.find(parent_id);
             /// The ancestor was expired from the table before OPTIMIZE ran, so the chain ends here.
             if (next == original_parent_of.end())
-                return static_cast<Int64>(0);
+                return -1;
             parent_id = next->second;
         }
         throw Exception(

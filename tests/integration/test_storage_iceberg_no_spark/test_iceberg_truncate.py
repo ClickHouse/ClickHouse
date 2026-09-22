@@ -427,17 +427,21 @@ def test_iceberg_delete_then_truncate_then_optimize(started_cluster_iceberg_no_s
 
     # Every `parent-snapshot-id` in the rewritten metadata must resolve to a retained snapshot,
     # otherwise `expire_snapshots` cannot walk the branch back to its root and stops early.
+    # `system.iceberg_history` exposes `parent_id` as UInt64, but a root snapshot's
+    # `parent-snapshot-id` is the -1 sentinel the write paths emit (`IcebergWrites.cpp`,
+    # `IcebergMetadata::truncate`), which would read back as 18446744073709551615. Read it
+    # signed and treat anything <= 0 as "no parent" -- real snapshot ids are always positive.
     links = [
         tuple(row.split("\t"))
         for row in instance.query(
-            f"SELECT snapshot_id, parent_id FROM system.iceberg_history "
+            f"SELECT snapshot_id, toInt64(parent_id) FROM system.iceberg_history "
             f"WHERE database = 'default' AND table = '{table_name}' FORMAT TSV"
         )
         .strip()
         .split("\n")
     ]
     retained_ids = {snapshot_id for snapshot_id, _ in links}
-    dangling = [(s, p) for s, p in links if p != "0" and p not in retained_ids]
+    dangling = [(s, p) for s, p in links if int(p) > 0 and p not in retained_ids]
     assert not dangling, f"dangling parent-snapshot-id after OPTIMIZE: {dangling} in {links}"
 
     # The table stays usable after the compacted truncate.
