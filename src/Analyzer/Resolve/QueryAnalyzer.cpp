@@ -196,7 +196,7 @@ String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
     return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
 }
 
-/// True for a WITH element declared AS MATERIALIZED, before or after its replacement by a TableNode.
+/// True for a `WITH` element declared `AS MATERIALIZED`, before or after its replacement by a `TableNode`.
 bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
 {
     if (const auto * query_node = node->as<QueryNode>())
@@ -1584,10 +1584,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     /// With `analyzer_compatibility_cte_redefinition` a name can have several definitions; the latest one
     /// not being resolved wins, so a redefinition reads the previous definition and the query body the last one.
     auto & cte_nodes = cte_nodes_it->second;
-    /// Identical redefinitions are equal for `ctes_in_resolve_process`; with several definitions compare by identity.
-    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [&](const QueryTreeNodePtr & node)
+    /// Every site that marks a scope-map CTE node as being resolved updates both sets. With one definition keep the
+    /// structural check: the materialized-CTE expression site inserts a clone, which only identity would miss.
+    const bool several_definitions = cte_nodes.size() > 1;
+    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [this, several_definitions](const QueryTreeNodePtr & node)
     {
-        if (cte_nodes.size() > 1)
+        if (several_definitions)
             return !cte_definitions_in_resolve_process.contains(node.get());
         return !ctes_in_resolve_process.contains(node);
     });
@@ -7048,8 +7050,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     auto & with_nodes = query_node_typed.getWith().getNodes();
 
-    const bool allow_cte_redefinition = scope.context->getSettingsRef()[Setting::analyzer_compatibility_cte_redefinition];
-
     for (auto & node : with_nodes)
     {
         auto * subquery_node = node->as<QueryNode>();
@@ -7063,7 +7063,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
         if (!cte_nodes.empty())
         {
-            if (!allow_cte_redefinition)
+            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_cte_redefinition])
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "CTE with name {} already exists. Enable the setting analyzer_compatibility_cte_redefinition "
                     "to let a later definition shadow the earlier one. In scope {}",

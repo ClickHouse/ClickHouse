@@ -276,7 +276,9 @@ Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Exce
 
 Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name, a later definition shadowing the earlier one. The analyzer rejects this ambiguity by default.
 
-Solution: Rename duplicate CTEs to be unique. As a migration aid, enable `analyzer_compatibility_cte_redefinition = 1` (available since ClickHouse `26.10`) to restore the legacy behavior: a reference binds to the latest definition of the name that is not being resolved at that moment, so a redefinition can read the previous definition and the query body reads the last one. A CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even with the setting enabled.
+Solution: Rename duplicate CTEs to be unique. As a migration aid, enable `analyzer_compatibility_cte_redefinition = 1` (available since ClickHouse `26.10`) to restore the legacy behavior: a reference binds to the latest definition of the name that is not being resolved at that moment, so a redefinition can read the previous definition and the query body reads the last one.
+
+Limitations: a CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even with the setting enabled. One shape differs from the old analyzer: a CTE declared between two definitions of a name also binds to the last definition, where the old analyzer bound it to the definition visible at its declaration point.
 
 ```sql
 /* ORIGINAL QUERY */

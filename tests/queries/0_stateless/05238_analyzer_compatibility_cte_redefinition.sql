@@ -92,5 +92,8 @@ WITH
     d AS (SELECT l.x + r.x AS x FROM d AS l CROSS JOIN d AS r)
 SELECT x FROM d;
 
+SELECT '-- 15 all definitions in resolve process fall through to the outer CTE';
+WITH a AS (SELECT 100 AS x) SELECT x FROM (WITH a AS (SELECT x + 1 AS x FROM a), a AS (SELECT x + 1 AS x FROM a) SELECT x FROM a);
+
 DROP VIEW v_cte_redefinition;
 DROP TABLE t_cte_redefinition;
