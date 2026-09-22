@@ -4,7 +4,8 @@
 # `TRUNCATE` of a MergeTree table in a `lazy_load_tables = 1` database must skip the exclusive
 # lock, exactly as it does for an eagerly loaded MergeTree. `InterpreterDropQuery` classified
 # the exemption on the raw catalog object, which for a lazy database is a `StorageTableProxy`
-# and not a `MergeTreeData`, so the cast failed and the proxy's exclusive `drop_lock` was taken.
+# wrapper rather than the nested MergeTree, so the exemption did not apply and the proxy's
+# exclusive `drop_lock` was taken.
 # Readers lock that same object, so the truncate waited for them and failed with
 # `DEADLOCK_AVOIDED` once `lock_acquire_timeout` expired.
 #
