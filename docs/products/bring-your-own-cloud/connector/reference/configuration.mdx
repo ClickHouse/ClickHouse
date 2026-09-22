@@ -129,6 +129,8 @@ Instances live in `/var/lib/clicklink/instances.yaml`, a top-level `instances:` 
 
 ### executor {#vm-executor}
 
+The `init --managed` behavior below requires a [build with managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not expose that flag.
+
 The executor runs in [managed mode](/products/bring-your-own-cloud/connector/managed-services). `init --managed` writes `enabled: true` and the `cluster` identity; the rest falls back to the defaults.
 
 | Key | Default | Meaning |
@@ -268,6 +270,8 @@ The chart consumes pre-created Secrets; `init` creates them before install.
 
 ### executor {#helm-executor}
 
+The managed-mode initialization and platform-approval integration below require [matching CLI and chart support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). Public `v0.16.0` has neither `init --managed` nor the `platform` command.
+
 The executor for [managed mode](/products/bring-your-own-cloud/connector/managed-services): a single-replica Deployment on a PersistentVolumeClaim. `init --managed` stages it enabled with the cluster identity filled in.
 
 | Key | Default | Meaning |
@@ -335,4 +339,4 @@ The session gateway for [support sessions](/products/bring-your-own-cloud/connec
 | `networkPolicy.clickhouseNamespaces` | `[]` | Namespaces of your ClickHouse Services, matched by the `kubernetes.io/metadata.name` label. Namespaces the executor creates are admitted regardless, by the `clicklink.clickhouse.com/managed-by=executor` label it stamps on them, so a managed install lists only namespaces created outside the executor. When empty, the troubleshooter policy falls back to the `namespace` values of the top-level `instances` map; the scraper policy has no fallback, so list the namespaces here for scraping. |
 | `networkPolicy.metricsScrapeSelector` | `{}` | Restrict metrics-scrape ingress to a specific Prometheus namespace by label; empty allows scrape from any pod in the chart's namespace. |
 | `networkPolicy.kubeletProbeCIDRs` | `[]` | CIDRs kubelet health probes originate from (node IPs). Empty allows probe ingress from any source, matching most CNIs' kubelet exemption; set explicitly under strict default-deny. |
-| `networkPolicy.apiserverCIDRs` | `[]` (`init --managed` fills it from the cluster VPC) | Kubernetes API server CIDRs. Empty emits no API server egress rule, and the daemons fail their first token request on managed Kubernetes until it is set. Pin the VPC's ranges, not the API server's own addresses, which change over the cluster's life. |
+| `networkPolicy.apiserverCIDRs` | `[]` (`init --managed` fills it from the cluster VPC on a [supported build](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability)) | Kubernetes API server CIDRs. Empty emits no API server egress rule, and the daemons fail their first token request on managed Kubernetes until it is set. Pin the VPC's ranges, not the API server's own addresses, which change over the cluster's life. |
