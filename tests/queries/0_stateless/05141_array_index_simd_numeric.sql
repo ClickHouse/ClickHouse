@@ -105,6 +105,36 @@ SELECT 'UInt8 short',
     has(materialize(range(10)::Array(UInt8)), toUInt8(255)),
     indexOf(materialize(range(10)::Array(UInt8)), toUInt8(255));
 
+SELECT 'Signed integers',
+    has(materialize(range(64)::Array(Int8)), toInt8(0)),
+    indexOf(materialize(range(64)::Array(Int8)), toInt8(63)),
+    has(materialize(range(64)::Array(Int16)), toInt16(0)),
+    indexOf(materialize(range(64)::Array(Int16)), toInt16(63)),
+    has(materialize(range(64)::Array(Int32)), toInt32(0)),
+    indexOf(materialize(range(64)::Array(Int32)), toInt32(63)),
+    has(materialize(range(64)::Array(Int64)), toInt64(0)),
+    indexOf(materialize(range(64)::Array(Int64)), toInt64(63));
+
+SELECT 'Float32',
+    has(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat32(0)),
+    indexOf(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat32(63)),
+    has(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat32(64)),
+    indexOf(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat32(64));
+
+SELECT 'Float64',
+    has(materialize(arrayMap(x -> toFloat64(x), range(64))), toFloat64(0)),
+    indexOf(materialize(arrayMap(x -> toFloat64(x), range(64))), toFloat64(63)),
+    has(materialize(arrayMap(x -> toFloat64(x), range(64))), toFloat64(64)),
+    indexOf(materialize(arrayMap(x -> toFloat64(x), range(64))), toFloat64(64));
+
+SELECT 'Exact numeric conversion',
+    has(materialize(range(64)::Array(UInt8)), toInt32(300)),
+    indexOf(materialize(range(64)::Array(UInt8)), toInt32(300)),
+    has(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat64(16777217)),
+    indexOf(materialize(arrayMap(x -> toFloat32(x), range(64))), toFloat64(16777217)),
+    has(materialize(range(64)::Array(Int32)), nan),
+    indexOf(materialize(range(64)::Array(Int32)), nan);
+
 -- Exercise matches near the scalar-prefix/continuation threshold for each supported width.
 
 SELECT 'UInt8 threshold middle',

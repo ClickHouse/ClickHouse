@@ -11,6 +11,10 @@ UInt16 sizes	1	31	1	32	0	0	1	1
 UInt32 sizes	1	15	1	16	0	0	1	1
 UInt64 sizes	1	31	1	32	0	0	1	1
 UInt8 short	1	6	1	10	0	0
+Signed integers	1	64	1	64	1	64	1	64
+Float32	1	64	0	0
+Float64	1	64	0	0
+Exact numeric conversion	0	0	0	0	0	0
 UInt8 threshold middle	1	17
 UInt16 threshold middle	1	9
 UInt32 threshold middle	1	5

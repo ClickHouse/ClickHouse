@@ -1,5 +1,6 @@
 #include <Functions/array/arrayIndex.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace DB
@@ -9,49 +10,49 @@ namespace ArrayIndexImpl
 {
 namespace
 {
+constexpr size_t NO_MATCH = static_cast<size_t>(-1);
+
 template <typename T, size_t N>
 ALWAYS_INLINE bool hasInBlock(const T * data, T value)
 {
     unsigned found = 0;
 
-#if defined(__clang__)
-#pragma clang loop vectorize(enable) interleave(enable)
-#endif
     for (size_t j = 0; j < N; ++j)
         found |= static_cast<unsigned>(data[j] == value);
 
     return found != 0;
 }
 
-template <SupportedUnsignedInteger T>
-ALWAYS_INLINE bool findUIntHasInternal(const T * data, size_t size, T value)
+template <typename T, size_t N>
+ALWAYS_INLINE size_t findFirstIndexInBlock(const T * data, T value)
 {
-    if constexpr (std::is_same_v<T, UInt8>)
+    size_t found = N;
+
+    for (size_t j = 0; j < N; ++j)
     {
-        return std::memchr(data, static_cast<int>(value), size) != nullptr;
+        const size_t candidate = data[j] == value ? j : N;
+        found = std::min(found, candidate);
+    }
+
+    return found;
+}
+
+template <SupportedNumeric T>
+ALWAYS_INLINE bool findNumericHasInternal(const T * data, size_t size, T value)
+{
+    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+    {
+        return std::memchr(data, static_cast<unsigned char>(value), size) != nullptr;
     }
     else
     {
+        constexpr size_t block_size = 64 / sizeof(T);
         size_t i = 0;
 
-        if (size >= 8)
+        for (; size - i >= block_size; i += block_size)
         {
-            if (hasInBlock<T, 8>(data, value))
+            if (hasInBlock<T, block_size>(data + i, value))
                 return true;
-            i = 8;
-        }
-
-        for (; size - i >= 16; i += 16)
-        {
-            if (hasInBlock<T, 16>(data + i, value))
-                return true;
-        }
-
-        if (size - i >= 8)
-        {
-            if (hasInBlock<T, 8>(data + i, value))
-                return true;
-            i += 8;
         }
 
         for (; i < size; ++i)
@@ -64,77 +65,53 @@ ALWAYS_INLINE bool findUIntHasInternal(const T * data, size_t size, T value)
     }
 }
 
-template <typename T>
-ALWAYS_INLINE size_t findScalarPrefix(const T * data, size_t size, T value)
+template <SupportedNumeric T>
+ALWAYS_INLINE bool findNumericHas(const T * data, size_t size, T value)
 {
-    size_t i = 0;
-
-    for (; size - i >= 8; i += 8)
-    {
-#if defined(__clang__)
-#pragma unroll
-#endif
-        for (size_t j = 0; j < 8; ++j)
-        {
-            if (data[i + j] == value)
-                return i + j;
-        }
-    }
-
-    if (size - i >= 4)
-    {
-#if defined(__clang__)
-#pragma unroll
-#endif
-        for (size_t j = 0; j < 4; ++j)
-        {
-            if (data[i + j] == value)
-                return i + j;
-        }
-        i += 4;
-    }
-
-    for (; i < size; ++i)
-    {
+    const size_t prefix_size = std::min(size, size_t(8));
+    for (size_t i = 0; i < prefix_size; ++i)
         if (data[i] == value)
-            return i;
-    }
+            return true;
 
-    return static_cast<size_t>(-1);
+    if (prefix_size == size)
+        return false;
+
+    return findNumericHasInternal(data + prefix_size, size - prefix_size, value);
 }
 
-template <SupportedUnsignedInteger T>
-ALWAYS_INLINE size_t findUIntIndexOfInternal(const T * data, size_t size, T value)
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericIndexOfInternal(const T * data, size_t size, T value)
 {
-    if constexpr (std::is_same_v<T, UInt8>)
+    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
     {
-        const auto * found = static_cast<const UInt8 *>(std::memchr(data, static_cast<int>(value), size));
-        return found ? static_cast<size_t>(found - data) : static_cast<size_t>(-1);
+        const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
+        return found ? static_cast<size_t>(found - data) : NO_MATCH;
     }
     else
     {
-        /// The caller already checked the first eight values inline.
-        constexpr size_t scalar_prefix = std::is_same_v<T, UInt64> ? 128 : 64;
-        constexpr size_t scalar_continuation = scalar_prefix - 8;
-        const size_t scalar_size = size < scalar_continuation ? size : scalar_continuation;
-        size_t i = findScalarPrefix(data, scalar_size, value);
+        constexpr size_t block_size = 64 / sizeof(T);
+        constexpr size_t direct_index_limit = 1024 / sizeof(T);
+        size_t i = 0;
 
-        if (i != static_cast<size_t>(-1))
-            return i;
-
-        i = scalar_size;
-        for (; size - i >= 16; i += 16)
+        if (size <= direct_index_limit)
         {
-            if (!hasInBlock<T, 16>(data + i, value))
-                continue;
-
-#if defined(__clang__)
-#pragma unroll
-#endif
-            for (size_t j = 0; j < 16; ++j)
+            for (; size - i >= block_size; i += block_size)
             {
-                if (data[i + j] == value)
-                    return i + j;
+                const size_t found = findFirstIndexInBlock<T, block_size>(data + i, value);
+                if (found != block_size)
+                    return i + found;
+            }
+        }
+        else
+        {
+            for (; size - i >= block_size; i += block_size)
+            {
+                if (!hasInBlock<T, block_size>(data + i, value))
+                    continue;
+
+                for (size_t j = 0; j < block_size; ++j)
+                    if (data[i + j] == value)
+                        return i + j;
             }
         }
 
@@ -144,31 +121,115 @@ ALWAYS_INLINE size_t findUIntIndexOfInternal(const T * data, size_t size, T valu
                 return i;
         }
 
-        return static_cast<size_t>(-1);
+        return NO_MATCH;
     }
 }
+
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericIndexOf(const T * data, size_t size, T value)
+{
+    const size_t prefix_size = std::min(size, size_t(8));
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (data[i] == value)
+            return i;
+
+    if (prefix_size == size)
+        return NO_MATCH;
+
+    const size_t found = findNumericIndexOfInternal(data + prefix_size, size - prefix_size, value);
+    return found == NO_MATCH ? NO_MATCH : prefix_size + found;
 }
 
-template <typename T>
-NO_INLINE bool findUIntHas(const T * data, size_t size, T value)
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericScalarIndexOf(const T * data, size_t size, T value)
 {
-    return findUIntHasInternal(data, size, value);
+    for (size_t i = 0; i < size; ++i)
+        if (data[i] == value)
+            return i;
+
+    return NO_MATCH;
+}
 }
 
-template <typename T>
-NO_INLINE size_t findUIntIndexOf(const T * data, size_t size, T value)
+template <SupportedNumeric T>
+void findNumericHasBatch(
+    const T * __restrict data,
+    const ColumnArray::Offset * __restrict offsets,
+    UInt8 * __restrict result,
+    size_t rows,
+    size_t min_array_size,
+    T value)
 {
-    return findUIntIndexOfInternal(data, size, value);
+    ColumnArray::Offset previous_offset = 0;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const ColumnArray::Offset current_offset = offsets[row];
+        const size_t array_size = current_offset - previous_offset;
+        const T * __restrict row_data = data + previous_offset;
+
+        if (array_size < min_array_size)
+        {
+            UInt8 found = 0;
+            for (size_t i = 0; i < array_size; ++i)
+            {
+                if (row_data[i] == value)
+                {
+                    found = 1;
+                    break;
+                }
+            }
+            result[row] = found;
+        }
+        else
+        {
+            result[row] = findNumericHas(row_data, array_size, value);
+        }
+
+        previous_offset = current_offset;
+    }
+}
+
+template <SupportedNumeric T>
+void findNumericIndexOfBatch(
+    const T * __restrict data,
+    const ColumnArray::Offset * __restrict offsets,
+    UInt64 * __restrict result,
+    size_t rows,
+    size_t min_array_size,
+    T value)
+{
+    ColumnArray::Offset previous_offset = 0;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const ColumnArray::Offset current_offset = offsets[row];
+        const size_t array_size = current_offset - previous_offset;
+        const T * __restrict row_data = data + previous_offset;
+
+        const size_t found = array_size < min_array_size
+            ? findNumericScalarIndexOf(row_data, array_size, value)
+            : findNumericIndexOf(row_data, array_size, value);
+        result[row] = found == NO_MATCH ? 0 : static_cast<UInt64>(found + 1);
+
+        previous_offset = current_offset;
+    }
 }
 
 #define INSTANTIATE(T) \
-    template bool findUIntHas<T>(const T * data, size_t size, T value); \
-    template size_t findUIntIndexOf<T>(const T * data, size_t size, T value);
+    template void findNumericHasBatch<T>( \
+        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, size_t min_array_size, T value); \
+    template void findNumericIndexOfBatch<T>( \
+        const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, size_t min_array_size, T value);
 
+INSTANTIATE(Int8)
 INSTANTIATE(UInt8)
+INSTANTIATE(Int16)
 INSTANTIATE(UInt16)
+INSTANTIATE(Int32)
 INSTANTIATE(UInt32)
+INSTANTIATE(Int64)
 INSTANTIATE(UInt64)
+INSTANTIATE(Float32)
+INSTANTIATE(Float64)
 
 #undef INSTANTIATE
 }

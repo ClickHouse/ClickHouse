@@ -52,25 +52,71 @@ using NullMap = PaddedPODArray<UInt8>;
 namespace ArrayIndexImpl
 {
 template <typename T>
-concept SupportedUnsignedInteger = std::is_same_v<T, UInt8> || std::is_same_v<T, UInt16>
-    || std::is_same_v<T, UInt32> || std::is_same_v<T, UInt64>;
+concept SupportedNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
 
-template <typename T>
-bool findUIntHas(const T * data, size_t size, T value);
+template <SupportedNumeric T>
+void findNumericHasBatch(
+    const T * data,
+    const ColumnArray::Offset * offsets,
+    UInt8 * result,
+    size_t rows,
+    size_t min_array_size,
+    T value);
 
-template <typename T>
-size_t findUIntIndexOf(const T * data, size_t size, T value);
+template <SupportedNumeric T>
+void findNumericIndexOfBatch(
+    const T * data,
+    const ColumnArray::Offset * offsets,
+    UInt64 * result,
+    size_t rows,
+    size_t min_array_size,
+    T value);
 
 #define ARRAY_INDEX_INSTANTIATION(T) \
-    extern template bool findUIntHas<T>(const T * data, size_t size, T value); \
-    extern template size_t findUIntIndexOf<T>(const T * data, size_t size, T value);
+    extern template void findNumericHasBatch<T>( \
+        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, size_t min_array_size, T value); \
+    extern template void findNumericIndexOfBatch<T>( \
+        const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, size_t min_array_size, T value);
 
+ARRAY_INDEX_INSTANTIATION(Int8)
 ARRAY_INDEX_INSTANTIATION(UInt8)
+ARRAY_INDEX_INSTANTIATION(Int16)
 ARRAY_INDEX_INSTANTIATION(UInt16)
+ARRAY_INDEX_INSTANTIATION(Int32)
 ARRAY_INDEX_INSTANTIATION(UInt32)
+ARRAY_INDEX_INSTANTIATION(Int64)
 ARRAY_INDEX_INSTANTIATION(UInt64)
+ARRAY_INDEX_INSTANTIATION(Float32)
+ARRAY_INDEX_INSTANTIATION(Float64)
 
 #undef ARRAY_INDEX_INSTANTIATION
+
+template <SupportedNumeric T, bool IsIndexOf>
+constexpr size_t getOptimizedSearchMinSize()
+{
+    if constexpr (sizeof(T) == 1)
+    {
+        /// memchr is kept out of line, so short rows stay on the scalar path.
+        return 64;
+    }
+    else if constexpr (!IsIndexOf)
+    {
+        if constexpr (sizeof(T) == 2)
+            return 32;
+        else if constexpr (sizeof(T) == 4)
+            return 16;
+        else
+            return 32;
+    }
+    else
+    {
+        /// indexOf does a scalar prefix before the first-index reduction or presence probe.
+        if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
+            return 80;
+        else
+            return 160;
+    }
+}
 }
 
 /// ConcreteActions -- what to do when the index was found.
@@ -120,32 +166,6 @@ private:
 
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
-
-    static constexpr size_t getOptimizedSearchMinSize()
-    {
-        if constexpr (std::is_same_v<Initial, UInt8>)
-        {
-            /// `memchr` is kept out of line, so the short-row overhead needs a larger row to pay off.
-            return 64;
-        }
-        else if constexpr (std::is_same_v<ConcreteAction, HasAction>)
-        {
-            if constexpr (std::is_same_v<Initial, UInt16>)
-                return 32;
-            else if constexpr (std::is_same_v<Initial, UInt32>)
-                return 16;
-            else
-                return 32;
-        }
-        else
-        {
-            /// `indexOf` scans a scalar prefix in the continuation before probing a vector block.
-            if constexpr (std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>)
-                return 80;
-            else
-                return 160;
-        }
-    }
 
     static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
@@ -226,49 +246,6 @@ public:
         ArrOffset current_offset)
     {
         ResultType current = 0;
-
-        if constexpr (
-            Case == 1 && RightArgIsConstant && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
-            && std::is_same_v<Data, PaddedPODArray<Initial>> && std::is_same_v<Target, Result> && std::is_same_v<Initial, Result>
-            && ArrayIndexImpl::SupportedUnsignedInteger<Initial>)
-        {
-            /// Keep short rows on the scalar path. The continuation is deliberately out of line so its vectorized
-            /// loop does not change the code layout of this hot prefix.
-            if (array_size >= getOptimizedSearchMinSize()) [[unlikely]]
-            {
-#if defined(__clang__)
-#pragma unroll
-#endif
-                for (size_t j = 0; j < 8; ++j)
-                {
-                    if (data[current_offset + j] == target)
-                    {
-                        ConcreteAction::apply(current, j);
-                        return current;
-                    }
-                }
-
-                if (array_size > 8)
-                {
-                    const auto * continuation = data.data() + current_offset + 8;
-                    const size_t continuation_size = array_size - 8;
-
-                    if constexpr (std::is_same_v<ConcreteAction, HasAction>)
-                    {
-                        if (ArrayIndexImpl::findUIntHas(continuation, continuation_size, target))
-                            ConcreteAction::apply(current, 0);
-                    }
-                    else
-                    {
-                        const auto found = ArrayIndexImpl::findUIntIndexOf(continuation, continuation_size, target);
-                        if (found != static_cast<size_t>(-1))
-                            ConcreteAction::apply(current, found + 8);
-                    }
-                }
-
-                return current;
-            }
-        }
 
         for (size_t j = 0; j < array_size; ++j)
         {
@@ -927,6 +904,55 @@ private:
             return false;
 
         if (const auto * item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&data.right))
+        {
+            if constexpr (
+                ArrayIndexImpl::SupportedNumeric<Initial>
+                && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
+            {
+                if (!data.null_maps.first && !data.null_maps.second)
+                {
+                    const auto needle = item_arg_const->template getValue<Resulting>();
+                    if constexpr (std::is_floating_point_v<Resulting> && std::is_integral_v<Initial>)
+                    {
+                        if (isNaN(needle))
+                        {
+                            result.getData().resize_fill(data.offsets.size());
+                            return true;
+                        }
+                    }
+
+                    Initial converted_needle{};
+                    if (!accurate::convertNumeric<Resulting, Initial>(needle, converted_needle))
+                    {
+                        result.getData().resize_fill(data.offsets.size());
+                        return true;
+                    }
+
+                    result.getData().resize(data.offsets.size());
+                    if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    {
+                        ArrayIndexImpl::findNumericHasBatch<Initial>(
+                            left_typed->getData().data(),
+                            data.offsets.data(),
+                            result.getData().data(),
+                            data.offsets.size(),
+                            ArrayIndexImpl::getOptimizedSearchMinSize<Initial, false>(),
+                            converted_needle);
+                    }
+                    else
+                    {
+                        ArrayIndexImpl::findNumericIndexOfBatch<Initial>(
+                            left_typed->getData().data(),
+                            data.offsets.data(),
+                            result.getData().data(),
+                            data.offsets.size(),
+                            ArrayIndexImpl::getOptimizedSearchMinSize<Initial, true>(),
+                            converted_needle);
+                    }
+                    return true;
+                }
+            }
+
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 left_typed->getData(),
                 data.offsets,
@@ -934,6 +960,7 @@ private:
                 result.getData(),
                 data.null_maps.first,
                 nullptr);
+        }
         else if (const auto * item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 left_typed->getData(),

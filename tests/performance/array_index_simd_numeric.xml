@@ -1,5 +1,5 @@
 <test>
-    <!-- Materialized arrays isolate search cost. Keep long scans, short UInt8 rows, and wider indexOf continuations. -->
+    <!-- Materialized arrays isolate search cost. Keep long scans and short UInt8 rows. -->
     <settings>
         <max_threads>1</max_threads>
         <max_block_size>8192</max_block_size>
@@ -7,7 +7,12 @@
 
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</create_query>
     <create_query>
-        CREATE TABLE perf_array_index_simd_numeric (arr Array(UInt32)) ENGINE = Memory
+        CREATE TABLE perf_array_index_simd_numeric
+        (
+            u32 Array(UInt32),
+            f32 Array(Float32),
+            f64 Array(Float64)
+        ) ENGINE = Memory
     </create_query>
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</create_query>
     <create_query>
@@ -17,17 +22,12 @@
     <create_query>
         CREATE TABLE perf_array_index_simd_uint8_short (arr Array(UInt8)) ENGINE = Memory
     </create_query>
-    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</create_query>
-    <create_query>
-        CREATE TABLE perf_array_index_simd_thresholds
-        (
-            u16_80 Array(UInt16),
-            u64_160 Array(UInt64)
-        ) ENGINE = Memory
-    </create_query>
     <fill_query>
         INSERT INTO perf_array_index_simd_numeric
-        SELECT materialize(range(4096)::Array(UInt32))
+        SELECT
+            materialize(range(4096)::Array(UInt32)),
+            materialize(arrayMap(x -> toFloat32(x), range(4096))),
+            materialize(arrayMap(x -> toFloat64(x), range(4096)))
         FROM numbers(20000)
     </fill_query>
     <fill_query>
@@ -49,12 +49,32 @@
     </fill_query>
 
     <query>
-        SELECT sum(has(arr, toUInt32(4294967295)))
+        SELECT sum(has(u32, toUInt32(4294967295)))
         FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
     <query>
-        SELECT sum(indexOf(arr, toUInt32(4294967295)))
+        SELECT sum(indexOf(u32, toUInt32(4294967295)))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(f32, toFloat32(-1)))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(f32, toFloat32(-1)))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(f64, toFloat64(-1)))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(f64, toFloat64(-1)))
         FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
@@ -88,19 +108,7 @@
         FROM perf_array_index_simd_uint8_short
         FORMAT Null
     </query>
-    <query>
-        SELECT sum(indexOf(u16_80, toUInt16(79)))
-        FROM perf_array_index_simd_thresholds
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(indexOf(u64_160, toUInt64(159)))
-        FROM perf_array_index_simd_thresholds
-        FORMAT Null
-    </query>
-
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</drop_query>
-    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</drop_query>
 </test>
