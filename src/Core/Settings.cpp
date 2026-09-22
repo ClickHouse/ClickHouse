@@ -810,6 +810,76 @@ Migrate old metadata structure of S3Queue table to a new one
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
+    DECLARE(Bool, allow_experimental_maxcompute_storage_engine, false, R"(
+Allows creating tables with the experimental `MaxCompute` and `MaxComputeRaw` engines,
+including user-supplied full `ATTACH TABLE` definitions. Disabled by default.
+Enable this query/session setting before creating a table; it is not a table setting.
+Loading existing table metadata, short-form `ATTACH TABLE`, and reading existing tables
+do not require this setting to remain enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_insert_from_odps_exteranl_table, true, R"(
+Deprecated compatibility setting. The unsafe ODPS-specific distributed
+`INSERT SELECT` execution path is disabled; standard ClickHouse planning is used.
+)", 0) \
+    DECLARE(Bool, enable_insert_from_odps_external_table, true, R"(
+Compatibility-correct spelling of `enable_insert_from_odps_exteranl_table`.
+The unsafe legacy distributed execution path is disabled; the setting is
+retained for profile and rolling-upgrade compatibility.
+)", 0) \
+    DECLARE(Bool, odps_parallel_distributed_insert_select, true, R"(
+Deprecated compatibility setting. MaxCompute reads use standard ClickHouse
+distributed `INSERT SELECT` semantics.
+)", 0) \
+    DECLARE(UInt64, odps_parallel_distributed_insert_select_start, 0, R"(
+Starting offset for distributed `ODPS` shard reading (internal use).
+)", 0) \
+    DECLARE(UInt64, odps_parallel_distributed_insert_select_count, 0, R"(
+Record count for distributed `ODPS` shard reading (internal use).
+)", 0) \
+    DECLARE(String, odps_download_id, "", R"(
+`ODPS` tunnel download session ID for session reuse in distributed `INSERT SELECT` (internal use).
+)", 0) \
+    DECLARE(Bool, odps_parallel_local_insert_select, true, R"(
+Enable local multi-threaded parallel reading from `ODPS` external tables.
+)", 0) \
+    DECLARE(Bool, odps_distributed_insert_select_convert_to_local, true, R"(
+Deprecated compatibility setting. MaxCompute reads use standard ClickHouse
+distributed `INSERT SELECT` semantics.
+)", 0) \
+    DECLARE(Bool, odps_read_compress, true, R"(
+Enable compressed data transfer when reading from `ODPS`.
+)", 0) \
+    DECLARE(UInt64, maxcompute_columnar_max_batch_bytes, 0, R"(
+Maximum bytes per Arrow record batch requested from the `ODPS` tunnel server. 0 means unlimited.
+)", 0) \
+    DECLARE(String, maxcompute_read_format, "inherit", R"(
+Selects the read format used by the MaxCompute Tunnel backend. `inherit` uses
+the table's `maxcompute_read_format` setting (default: `column`). `row` forces
+row-based reading; `column` requires columnar reading using Arrow IPC and
+raises an exception when the build or requested column mapping does not support Arrow.
+An explicit `row` or `column` query/session setting overrides the table setting.
+Neither unsupported mappings nor reader failures cause a switch to a different format.
+)", 0) \
+    DECLARE(UInt64, maxcompute_max_retries, 3, R"(
+Maximum number of MaxCompute Tunnel reader retries for transport, timeout, and
+throttling errors. Checksum mismatches, schema errors, and authorization errors are not retried.
+)", 0) \
+    DECLARE(UInt64, maxcompute_retry_initial_backoff_ms, 100, R"(
+Initial backoff in milliseconds between MaxCompute Tunnel reader retries.
+)", 0) \
+    DECLARE(UInt64, maxcompute_retry_max_backoff_ms, 5000, R"(
+Maximum backoff in milliseconds between MaxCompute Tunnel reader retries.
+)", 0) \
+    DECLARE(UInt64, maxcompute_retry_max_elapsed_ms, 30000, R"(
+Maximum cumulative elapsed time in milliseconds allowed for failed MaxCompute
+Tunnel reader attempts and their retry backoffs.
+)", 0) \
+    DECLARE(UInt64, maxcompute_connect_timeout_ms, 10000, R"(
+Connection timeout in milliseconds for MaxCompute Tunnel requests.
+)", 0) \
+    DECLARE(UInt64, maxcompute_request_timeout_ms, 300000, R"(
+Socket timeout in milliseconds for MaxCompute Tunnel requests.
+)", 0) \
     DECLARE(Float, s3queue_keeper_fault_injection_probability, 0.0, R"(
 Keeper fault injection probability for S3Queue.
 )", 0) \

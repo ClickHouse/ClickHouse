@@ -933,6 +933,10 @@ if (TARGET ch_contrib::rapidjson)
     target_link_libraries(dbms PRIVATE ch_contrib::rapidjson)
 endif()
 
+if (TARGET ch_contrib::odps)
+    target_link_libraries(dbms PRIVATE ch_contrib::odps)
+endif()
+
 target_link_libraries(dbms PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::usearch)

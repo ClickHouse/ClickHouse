@@ -1,0 +1,20 @@
+/// Generated from `contrib/odps-sdk-cpp-cmake/sdk_version.h.in`.
+///
+/// Upstream generates this header with `cmake/configure_build_headers.py`, which
+/// shells out to `git rev-parse HEAD` in the SDK working copy. ClickHouse pins
+/// the submodule to a fixed commit and substitutes that commit here instead, so
+/// the values are reproducible and the build does not depend on `git` being
+/// available inside the submodule working copy.
+///
+/// The values end up in the `User-Agent` of every Tunnel request
+/// (`GetDefaultUserAgent` in `common/configuration.cpp`), which is what makes
+/// them worth keeping accurate: they are how MaxCompute support identifies the
+/// client build.
+
+#ifndef COMMON_SDK_VERSION_H
+#define COMMON_SDK_VERSION_H
+
+#define SDK_GIT_REVISION "@ODPS_SDK_GIT_REVISION@"
+#define SDK_GIT_BRANCH "@ODPS_SDK_GIT_BRANCH@"
+
+#endif

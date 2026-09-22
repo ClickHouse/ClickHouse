@@ -342,6 +342,7 @@
                 "reference/engines/table-engines/integrations/jdbc",
                 "reference/engines/table-engines/integrations/kafka",
                 "reference/engines/table-engines/integrations/materialized-postgresql",
+                "reference/engines/table-engines/integrations/maxcompute",
                 "reference/engines/table-engines/integrations/mongodb",
                 "reference/engines/table-engines/integrations/mysql",
                 "reference/engines/table-engines/integrations/nats",

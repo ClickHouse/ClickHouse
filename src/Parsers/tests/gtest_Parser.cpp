@@ -257,6 +257,56 @@ TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
+TEST(ParserCreateQuery, MaskMaxComputeTableEngineCredentials)
+{
+    ParserCreateQuery parser;
+
+    const String positional_query
+        = "CREATE TABLE test_maxcompute (key UInt64) "
+          "ENGINE = MaxCompute('https://tunnel.example', 'project', 'table', '', 'access_id', 'plain_secret')";
+    ASTPtr positional_ast = parseQuery(parser, positional_query, 0, 0, 0);
+    const String positional_masked = positional_ast->formatForLogging();
+    EXPECT_EQ(positional_masked.find("plain_secret"), String::npos);
+    EXPECT_NE(positional_masked.find("access_id"), String::npos);
+
+    const String endpoint_userinfo_query
+        = "CREATE TABLE test_maxcompute_endpoint (key UInt64) "
+          "ENGINE = MaxCompute('https://endpoint_user:endpoint_password@tunnel.example', 'project', 'table', '', "
+          "'access_id', 'plain_secret')";
+    ASTPtr endpoint_userinfo_ast = parseQuery(parser, endpoint_userinfo_query, 0, 0, 0);
+    const String endpoint_userinfo_masked = endpoint_userinfo_ast->formatForLogging();
+    EXPECT_EQ(endpoint_userinfo_masked.find("endpoint_user"), String::npos);
+    EXPECT_EQ(endpoint_userinfo_masked.find("endpoint_password"), String::npos);
+    EXPECT_NE(endpoint_userinfo_masked.find("https://[HIDDEN]@tunnel.example"), String::npos);
+
+    const String malformed_positional_query
+        = "CREATE TABLE test_maxcompute_malformed (key UInt64) "
+          "ENGINE = MaxCompute('https://tunnel.example', 'project', 'table', '', 'access_id', 'plain_secret', "
+          "concat('trailing_', 'secret'))";
+    ASTPtr malformed_positional_ast = parseQuery(parser, malformed_positional_query, 0, 0, 0);
+    const String malformed_positional_masked = malformed_positional_ast->formatForLogging();
+    EXPECT_EQ(malformed_positional_masked.find("trailing_"), String::npos);
+
+    const String named_query
+        = "CREATE TABLE test_maxcompute_named (key UInt64) ENGINE = MaxCompute(maxcompute_config, "
+          "access_key_secret = 'named_secret', sts_token = 'session_secret')";
+    ASTPtr named_ast = parseQuery(parser, named_query, 0, 0, 0);
+    const String named_masked = named_ast->formatForLogging();
+    EXPECT_EQ(named_masked.find("named_secret"), String::npos);
+    EXPECT_EQ(named_masked.find("session_secret"), String::npos);
+    EXPECT_NE(named_masked.find("access_key_secret = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(named_masked.find("sts_token = '[HIDDEN]'"), String::npos);
+
+    const String named_endpoint_query
+        = "CREATE TABLE test_maxcompute_named_endpoint (key UInt64) ENGINE = MaxCompute(maxcompute_config, "
+          "endpoint = 'https://endpoint_user:endpoint_password@tunnel.example')";
+    ASTPtr named_endpoint_ast = parseQuery(parser, named_endpoint_query, 0, 0, 0);
+    const String named_endpoint_masked = named_endpoint_ast->formatForLogging();
+    EXPECT_EQ(named_endpoint_masked.find("endpoint_user"), String::npos);
+    EXPECT_EQ(named_endpoint_masked.find("endpoint_password"), String::npos);
+    EXPECT_NE(named_endpoint_masked.find("endpoint = 'https://[HIDDEN]@tunnel.example'"), String::npos);
+}
+
 TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
 {
     /// The `NATS` engine takes its arguments as overrides of a named collection, so the credentials can

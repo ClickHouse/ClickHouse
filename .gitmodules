@@ -465,3 +465,9 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/odps-sdk-cpp"]
+	path = contrib/odps-sdk-cpp
+	url = https://github.com/aliyun/aliyun-odps-sdk-cpp
+[submodule "contrib/curl"]
+	path = contrib/curl
+	url = https://github.com/curl/curl

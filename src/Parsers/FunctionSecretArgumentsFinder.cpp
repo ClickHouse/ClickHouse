@@ -872,6 +872,107 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// The DSN (connection string) may contain credentials.
         findXDBCSecretArguments();
     }
+    else if (engine_name == "MaxCompute" || engine_name == "MaxComputeRaw")
+    {
+        findMaxComputeTableEngineSecretArguments();
+    }
+}
+
+void FunctionSecretArgumentsFinder::findMaxComputeTableEngineSecretArguments()
+{
+    if (!function->hasArguments())
+        return;
+
+    if (!isNamedCollectionName(0))
+    {
+        /// `MaxCompute(endpoint, project, table, partition, access_key_id,
+        /// access_key_secret, ...)`. Hide invalid expressions too because query
+        /// formatting happens before storage argument validation.
+        String endpoint;
+        if (function->arguments->at(0)->tryGetString(&endpoint, false))
+        {
+            if (maskURIUserinfo(endpoint))
+                result.replaced_arguments[0] = quoteString(endpoint);
+        }
+        else
+        {
+            markSecretArgument(0);
+        }
+
+        markSecretArgument(5);
+
+        for (size_t i = 6; i < function->arguments->size(); ++i)
+        {
+            String literal_text;
+            const bool is_literal = function->arguments->at(i)->tryGetLiteralText(&literal_text);
+            const bool is_string = is_literal && !literal_text.empty() && literal_text.front() == '\'';
+            if (i >= 10 || !is_literal || (i != 7 && is_string))
+                markSecretArgument(i);
+        }
+        return;
+    }
+
+    static constexpr std::string_view secret_keys[] = {
+        "password",
+        "access_key_secret",
+        "secret_access_key",
+        "sts_token",
+        "session_token",
+        "token",
+    };
+    static constexpr std::string_view plain_keys[] = {
+        "endpoint_mode",
+        "project",
+        "table",
+        "partition",
+        "partition_spec",
+        "access_key_id",
+        "user",
+        "username",
+        "quota_name",
+        "thread_num",
+        "start",
+        "count",
+    };
+
+    for (const auto key : secret_keys)
+        findSecretNamedArgument(key, 1);
+
+    for (size_t i = 1; i < function->arguments->size(); ++i)
+    {
+        const auto equals_function = function->arguments->at(i)->getFunction();
+        if (!equals_function || equals_function->name() != "equals" || !equals_function->hasArguments()
+            || equals_function->arguments->size() != 2)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+
+        String key;
+        if (!equals_function->arguments->at(0)->tryGetString(&key, true))
+        {
+            markSecretArgument(i, true);
+        }
+        else if (key == "endpoint")
+        {
+            String endpoint;
+            if (equals_function->arguments->at(1)->tryGetString(&endpoint, false))
+            {
+                if (maskURIUserinfo(endpoint))
+                    result.replaced_arguments[i] = "endpoint = " + quoteString(endpoint);
+            }
+            else
+            {
+                markSecretArgument(i, true);
+            }
+        }
+        else if (std::find(std::begin(plain_keys), std::end(plain_keys), key) == std::end(plain_keys)
+                 || (!equals_function->arguments->at(1)->tryGetString(nullptr, true)
+                     && !equals_function->arguments->at(1)->tryGetLiteralText(nullptr)))
+        {
+            markSecretArgument(i, true);
+        }
+    }
 }
 
 void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()

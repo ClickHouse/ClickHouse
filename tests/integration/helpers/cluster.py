@@ -735,6 +735,13 @@ class ClickHouseCluster:
         self.arrowflight_host = "arrowflight1"
         self._arrowflight_port = 0
         self._arrowflight_auth_port = 0
+        self.with_maxcompute = False
+        self.maxcompute_host = "maxcompute1"
+        self.maxcompute_strict_host = "maxcompute-strict"
+        self.maxcompute_types_host = "maxcompute-types"
+        self._maxcompute_port = 0
+        self.maxcompute_fixtures_path = p.join(self.base_dir, "fixtures.sql")
+        self.maxcompute_auth_path = p.join(self.base_dir, "auth.json")
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -1171,6 +1178,13 @@ class ClickHouseCluster:
             return self._arrowflight_auth_port
         self._arrowflight_auth_port = self.port_pool.get_port()
         return self._arrowflight_auth_port
+
+    @property
+    def maxcompute_port(self):
+        if self._maxcompute_port:
+            return self._maxcompute_port
+        self._maxcompute_port = self.port_pool.get_port()
+        return self._maxcompute_port
 
     @property
     def ytsaurus_port(self):
@@ -1860,6 +1874,18 @@ class ClickHouseCluster:
         )
         return self.base_arrowflight_cmd
 
+    def setup_maxcompute_cmd(self, env_variables, docker_compose_yml_dir):
+        self.with_maxcompute = True
+        env_variables["MAXCOMPUTE_EXTERNAL_PORT"] = str(self.maxcompute_port)
+        env_variables["MAXCOMPUTE_FIXTURES_PATH"] = self.maxcompute_fixtures_path
+        env_variables["MAXCOMPUTE_AUTH_PATH"] = self.maxcompute_auth_path
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_maxcompute.yml"),
+            ]
+        )
+
     def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_coredns = True
         env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
@@ -2228,6 +2254,7 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         extra_parameters=None,
+        with_maxcompute=False,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -2531,6 +2558,9 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        if with_maxcompute and not self.with_maxcompute:
+            self.setup_maxcompute_cmd(env_variables, docker_compose_yml_dir)
 
         if with_coredns and not self.with_coredns:
             cmds.append(
