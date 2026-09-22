@@ -9,9 +9,13 @@ doc_type: 'reference'
 AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入向量，以处理数据、提取信息、对数据进行分类等……
 
 <Note>
-  AI 函数处于 Experimental 阶段。设置 [`allow_experimental_ai_functions`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) 以启用它们。
+  AI 函数处于 Beta 阶段。
 
   AI 函数可能会返回不可预测的输出。结果在很大程度上取决于提示词的质量和所使用的模型。
+</Note>
+
+<Note>
+  AI 函数目前在 ClickHouse Cloud 服务中不可用。敬请关注后续更新。
 </Note>
 
 <Warning>
@@ -228,6 +232,7 @@ aiClassify(text, categories[, params])
 **情感分类**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -238,6 +243,9 @@ positive
 **使用显式凭据对列进行分类**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -289,18 +297,23 @@ aiEmbed(text, model[, params])
 **嵌入单个字符串 (如果已设置 `ai_function_embedding_default_credentials`，则可省略 `credentials`)&#x20;**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **显式指定维度**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **嵌入文本列**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -344,6 +357,7 @@ aiExtract(text, instruction_or_schema[, params])
 **自由格式指令**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -354,6 +368,9 @@ late and damaged package
 **Schema 提取**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -365,8 +382,10 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 使用 LLM 提供商根据给定文本评估自然语言条件，并返回适用于 `WHERE`、`PREWHERE` 和 `JOIN ... ON` 的布尔值 (`UInt8`) 。
 
-该函数要求模型仅以小写 `true` 或 `false` 作答。失败的请求 (当
-`ai_function_throw_on_error` 被禁用时) 和无法识别的响应都会映射为 `0`，因此会过滤掉该行。
+该函数要求模型仅以小写 `true` 或 `false` 作答。除 `true` 以外的任何完整响应
+(包括 `false` 和无法识别的文本) 都会映射为 `0`，因此会过滤掉该行。提供商标记为不完整的回复——被截断、经过内容过滤或需要进一步操作——则会被
+视为错误：启用 `ai_function_throw_on_error` (默认值) 时，查询会中止；禁用该设置时，
+该行会映射为 `0` 并被过滤掉。
 
 **Warning：** 请勿在未经审查的情况下信任 `aiFilter` 的结果。基于 LLM 的谓词可能不正确
 或不一致；仅应在可以接受假阳性和假阴性的场景中使用。
@@ -400,12 +419,18 @@ aiFilter(text, condition[, params])
 **过滤愤怒评论**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **使用显式凭据筛选列**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -415,9 +440,9 @@ SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_crede
 
 引入版本：v26.4.0
 
-使用 LLM 提供商根据提示生成自由形式的文本内容。
+使用 LLM 提供商根据提示词生成自由形式的文本内容。
 
-该函数会将提示发送给已配置的 AI 提供商，并返回生成的文本。
+该函数会将提示词发送给已配置的 AI 提供商，并返回生成的文本。
 
 凭据 (一个 命名集合，用于指定提供商、模型、端点，以及可选的 API 密钥)
 取自可选参数映射中的 `credentials` 键；如果该映射中未提供，则取自
@@ -449,6 +474,7 @@ aiGenerate(prompt[, params])
 **简单问题**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -456,15 +482,19 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 4
 ```
 
-**使用明确指定的凭据和系统提示**
+**使用明确指定的凭据和系统提示词**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **汇总列中的值**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -497,7 +527,8 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 由于 `aiRedact` 返回替换 PII 后的完整输入文本，输出长度大致与输入相同。
 请将 `max_tokens` (默认值为 `1024`) 设置为大于输入的标记数；因限制过低而被截断的回复
-将不完整。
+会被拒绝并返回 `AI_PROVIDER_RESPONSE_TRUNCATED` (或在禁用 `ai_function_throw_on_error`
+时返回列默认值) ，而不会返回部分脱敏的文本。
 
 **语法**
 
@@ -511,7 +542,7 @@ aiRedact(text, categories[, params])
 
 * `text` — 要脱敏的文本。[`String`](/zh/reference/data-types/string)
 * `categories` — 要脱敏的 PII 类别常量列表 (例如 `['name', 'ssn', 'credit_card']`) 。空数组会使用一组默认的常见类别 (姓名、电子邮件、电话号码、地址、信用卡、IP 地址) 。[`Array(String)`](/zh/reference/data-types/array)
-* `params` — 可选的常量 `Map(String, String)` 参数映射。函数专用键包括：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 、`max_tokens` (每次调用的最大输出标记数；默认值为 `1024`——由于 `aiRedact` 返回完整文本，应将其设为大于输入标记数的值，否则响应可能被截断而不完整) 、`replacement` (用于替换每个检测到的 PII span 的标记；默认值为 `[REDACTED]`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+* `params` — 可选的常量 `Map(String, String)` 参数映射。函数专用键包括：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 、`max_tokens` (每次调用的最大输出标记数；默认值为 `1024`——由于 `aiRedact` 返回完整文本，应将其设为大于输入标记数的值；因限制过低而被截断的回复会被拒绝，而不会返回仅部分脱敏的文本) 、`replacement` (用于替换每个检测到的 PII span 的标记；默认值为 `[REDACTED]`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
 
 **返回值**
 
@@ -522,6 +553,7 @@ aiRedact(text, categories[, params])
 **对特定类别进行脱敏**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -532,6 +564,9 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **使用自定义标记对默认 PII 类别进行脱敏**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -581,18 +616,25 @@ aiSimilarity(text1, text2, model[, params])
 **比较两个字符串 (如果设置了 `ai_function_embedding_default_credentials`，则可省略 `credentials`)&#x20;**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **按与查询的相似度对评论排序**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **通过自连接实现语义去重**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -633,6 +675,7 @@ aiTranslate(text, target_language[, params])
 **翻译成法语**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -643,6 +686,9 @@ Bonjour le monde!
 **根据风格说明翻译成日语**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 

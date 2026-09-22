@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -20,12 +21,13 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesToGridSparseTraits
 {
-    using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
+    using GridScaleTimestampType = DateTime64;
     using ValueType = ValueType_;
+    using TimestampType = TimestampType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -40,11 +42,15 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
         void add(TimestampType timestamp, ValueType value)
         {
-            if (!has_value || timestamp > first || (timestamp == first && value > second))
+            if (!has_value || timestamp > first)
             {
                 first = timestamp;
                 second = value;
                 has_value = true;
+            }
+            else if (timestamp == first)
+            {
+                second = timeseriesMaxValueForDuplicateTimestamp(second, value);
             }
         }
 
@@ -92,21 +98,27 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
     struct Aggregator
     {
         Summary latest;
+        Int64 column_to_grid_multiplier;
 
-        void add(const Summary & summary, TimestampType /*bucket_end_timestamp*/)
+        explicit Aggregator(Int64 column_to_grid_multiplier_)
+            : column_to_grid_multiplier(column_to_grid_multiplier_)
+        {
+        }
+
+        void add(const Summary & summary, GridScaleTimestampType /*bucket_end_timestamp*/)
         {
             /// Buckets arrive in ascending time order, so a populated bucket's sample is newer than the kept one;
             /// `merge` keeps the newer sample and ignores an empty bucket.
             latest.merge(summary);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
-            if (latest.has_value && latest.first <= cut_off)
+            if (latest.has_value && static_cast<Int64>(latest.first) * column_to_grid_multiplier <= cut_off)
                 latest = Summary{};
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             if (!latest.has_value)
                 return std::nullopt;
@@ -116,30 +128,29 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
     /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 5;
 };
 
 
 /// Aggregate function to convert timeseries to the specified grid with staleness
 /// Missing values are filled with NULLs
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesToGridSparse final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesToGridSparse<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesToGridSparse<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, ValueType_>;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return {};
+        return typename Traits::Aggregator{Base::column_to_grid_multiplier};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 4;
-    static constexpr bool DateTime64Supported = true;
 };
 
 }

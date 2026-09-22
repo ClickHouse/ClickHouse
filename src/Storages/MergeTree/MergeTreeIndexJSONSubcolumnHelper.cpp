@@ -1,7 +1,10 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
@@ -21,6 +24,13 @@ static String extractPathFromSubcolumn(std::string_view subcolumn_name)
         return String(subcolumn_name);
 
     return String(subcolumn_name.substr(0, pos));
+}
+
+/// Prefixed subcolumns look like "<prefix>`first_path_element`.rest": the back-quote distinguishes
+/// them from an ordinary path starting with the prefix character, e.g. "@`a`" versus "@a".
+static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
+{
+    return subcolumn_name.size() >= 2 && subcolumn_name[0] == prefix && subcolumn_name[1] == '`';
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
@@ -74,8 +84,11 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     if (!matched)
         return std::nullopt;
 
-    /// Sub-object access (^ prefix) is not supported for index filtering
-    if (matched_subcolumn.starts_with("^"))
+    /// Sub-object (^) and combined literal+sub-object (@) access cannot use the index: such
+    /// subcolumn is not NULL when the path has only sub-paths, so the presence of the path
+    /// itself is not an equivalent condition.
+    if (isPrefixedSubcolumn(matched_subcolumn, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX)
+        || isPrefixedSubcolumn(matched_subcolumn, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
         return std::nullopt;
 
     String path = extractPathFromSubcolumn(matched_subcolumn);
@@ -119,7 +132,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field)
+    const Field & value_field,
+    const DataTypePtr & value_type)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -128,8 +142,34 @@ bool isJSONPathFilterSafe(
 
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
-    /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
+    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
+    /// than the underlying number, so it has to be converted with that type.
+    DataTypePtr unwrapped_value_type;
+    const IDataTypeEnum * enum_source = nullptr;
+    if (value_type)
+    {
+        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+
+        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
+        const WhichDataType which_value(unwrapped_value_type);
+        if (which_value.isVariant() || which_value.isDynamic())
+            return false;
+
+        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
+
+        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
+        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
+        /// hold one, is absent from the converted value.
+        bool nested_source_type_lost = false;
+        unwrapped_value_type->forEachChild([&](const IDataType & nested)
+        {
+            const WhichDataType which_nested(nested);
+            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
+        });
+        if (nested_source_type_lost)
+            return false;
+    }
+    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
     if (converted == key_expression_type->getDefault())
         return false;
 

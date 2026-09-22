@@ -1,0 +1,30 @@
+--- default
+reports the unknown type
+not blamed on the address
+refuses to start
+--- listen_try
+reports the unknown type
+not blamed on the address
+refuses to start
+--- no port
+starts anyway
+handler section not read
+--- valid
+metrics endpoint: 200
+--- control default
+reports the unknown type
+not blamed on the address
+refuses to start
+--- control listen_try
+reports the unknown type
+not blamed on the address
+refuses to start
+--- control no port
+starts anyway
+handler section not read
+--- control valid
+control endpoint: 200
+--- control secure
+reports the unknown type
+not blamed on the address
+refuses to start

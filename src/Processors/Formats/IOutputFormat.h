@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+#include <unordered_map>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -85,6 +87,8 @@ public:
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
 
+    virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
+
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
     /// have been created over the framing format's payload buffer. When set, the format notifies
@@ -158,6 +162,15 @@ protected:
     void finalizeUnlocked();
 
     virtual void flushImpl();
+
+    /// Counterpart of `flushImpl` for the framing payload boundary: re-attach format-owned buffers
+    /// to the payload buffer after the framing has taken the boundary. A format-owned buffer can
+    /// write straight into the payload buffer's memory and keep its own copy of the write position
+    /// (`PeekableWriteBuffer`, used by the formats that can replace a partially written row with an
+    /// exception), while the framing finalizes and restarts the payload buffer at every boundary
+    /// (see `IFramingFormat::onPayload`) - which moves that position back to the start and may move
+    /// the memory. Without re-attaching, the next row would be written outside the payload buffer.
+    virtual void reattachBuffers() {}
 
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}

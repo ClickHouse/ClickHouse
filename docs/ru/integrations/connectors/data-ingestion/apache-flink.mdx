@@ -147,7 +147,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
     ```java
     public static void main(String[] args) {
         // Настройте ClickHouseClient
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // Создайте ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
+                clientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```

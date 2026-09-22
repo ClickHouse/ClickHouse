@@ -108,6 +108,7 @@
                 },
                 "ja/reference/statements/create/masking-policy",
                 "ja/reference/statements/create/function",
+                "ja/reference/statements/create/handler",
                 "ja/reference/statements/create/named-collection",
                 "ja/reference/statements/create/quota",
                 "ja/reference/statements/create/role",
@@ -185,8 +186,7 @@
             "ja/reference/statements/truncate",
             "ja/reference/statements/undrop",
             "ja/reference/statements/update",
-            "ja/reference/statements/use",
-            "ja/reference/statements/watch"
+            "ja/reference/statements/use"
           ]
         },
         {
@@ -557,6 +557,7 @@
                 "ja/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ja/reference/functions/aggregate-functions/first_value",
                 "ja/reference/functions/aggregate-functions/flame_graph",
+                "ja/reference/functions/aggregate-functions/gini",
                 "ja/reference/functions/aggregate-functions/groupArray",
                 "ja/reference/functions/aggregate-functions/groupArrayArray",
                 "ja/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -883,6 +884,7 @@
             "ja/reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "ja/reference/formats/PNG",
         "ja/reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -910,6 +912,14 @@
             "ja/reference/formats/Protobuf/Protobuf",
             "ja/reference/formats/Protobuf/ProtobufList",
             "ja/reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "ja/reference/formats/Puffin/Puffin",
+            "ja/reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "ja/reference/formats/RawBLOB",
@@ -950,6 +960,15 @@
         "ja/reference/formats/Values",
         "ja/reference/formats/Vertical",
         "ja/reference/formats/XML"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "ja/reference/interfaces/specs/NativeProtocol",
+        "ja/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1019,11 +1038,15 @@
         "ja/reference/system-tables/detached_parts",
         "ja/reference/system-tables/detached_tables",
         "ja/reference/system-tables/dictionaries",
+        "ja/reference/system-tables/dictionary_layouts",
+        "ja/reference/system-tables/dictionary_sources",
         "ja/reference/system-tables/dimensional_metrics",
         "ja/reference/system-tables/disks",
+        "ja/reference/system-tables/disk_types",
         "ja/reference/system-tables/distributed_ddl_queue",
         "ja/reference/system-tables/distribution_queue",
         "ja/reference/system-tables/dns_cache",
+        "ja/reference/system-tables/documentation",
         "ja/reference/system-tables/dropped_tables",
         "ja/reference/system-tables/dropped_tables_parts",
         "ja/reference/system-tables/enabled_roles",
@@ -1043,6 +1066,7 @@
         "ja/reference/system-tables/histogram_metric_log",
         "ja/reference/system-tables/histogram_metrics",
         "ja/reference/system-tables/hypothetical_indexes",
+        "ja/reference/system-tables/iceberg_files",
         "ja/reference/system-tables/iceberg_history",
         "ja/reference/system-tables/iceberg_metadata_log",
         "ja/reference/system-tables/information_schema",
@@ -1051,6 +1075,9 @@
         "ja/reference/system-tables/jemalloc_stats",
         "ja/reference/system-tables/jemalloc_profile_text",
         "ja/reference/system-tables/kafka_consumers",
+        "ja/reference/system-tables/keeper_changelogs",
+        "ja/reference/system-tables/keeper_cluster",
+        "ja/reference/system-tables/keeper_snapshots",
         "ja/reference/system-tables/keeper_storage",
         "ja/reference/system-tables/keywords",
         "ja/reference/system-tables/licenses",
@@ -1113,6 +1140,7 @@
         "ja/reference/system-tables/settings_profile_elements",
         "ja/reference/system-tables/settings_profiles",
         "ja/reference/system-tables/stack_trace",
+        "ja/reference/system-tables/statements",
         "ja/reference/system-tables/stemmers",
         "ja/reference/system-tables/storage_policies",
         "ja/reference/system-tables/symbols",

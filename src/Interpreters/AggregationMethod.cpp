@@ -1,4 +1,5 @@
 #include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/AggregationMethod.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -35,9 +36,14 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, fa
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidHash64, false>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32Key, true, true>;
@@ -45,6 +51,11 @@ template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUIn
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyHash64, true, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoid, false, true>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoid, false, true>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoidHash64, false, true>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoidTwoLevel, false, true>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoidTwoLevel, false, true>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64Key>;
@@ -127,55 +138,9 @@ template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool
 void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, consecutive_keys_optimization>::insertKeyIntoColumns(
     const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *)
 {
-    size_t keys_size = key_columns.size();
-
-    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
-    /// In any hash key value, column values to be read start just after the bitmap, if it exists.
-    size_t pos = bitmap_size;
-
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        IColumn * observed_column = nullptr;
-        ColumnUInt8 * null_map = nullptr;
-
-        bool column_nullable = false;
-        if constexpr (has_nullable_keys)
-            column_nullable = isColumnNullable(*key_columns[i]);
-
-        /// If we have a nullable column, get its nested column and its null map.
-        if (column_nullable)
-        {
-            ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
-            observed_column = &nullable_col.getNestedColumn();
-            null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-        }
-        else
-        {
-            observed_column = key_columns[i];
-            null_map = nullptr;
-        }
-
-        bool is_null = false;
-        if (column_nullable)
-        {
-            /// The current column is nullable. Check if the value of the
-            /// corresponding key is nullable. Update the null map accordingly.
-            size_t bucket = i / 8;
-            size_t offset = i % 8;
-            UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
-            null_map->insertValue(val);
-            is_null = val == 1;
-        }
-
-        if (has_nullable_keys && is_null)
-            observed_column->insertDefault();
-        else
-        {
-            size_t size = key_sizes[i];
-            observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
-            pos += size;
-        }
-    }
+    /// The caller has already shuffled the columns into the packing order (see `shuffleKeyColumns`), so the
+    /// key bytes map onto the columns sequentially and no unpack order is needed.
+    unpackFixedKeyIntoColumns<has_nullable_keys>(key, /*unpack_order=*/ nullptr, key_columns, key_sizes);
 }
 
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;
@@ -183,18 +148,35 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256>;
+/// Void-mapped variants for `GROUP BY` without aggregate functions.
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidHash64>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidHash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Void, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Void, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidHash64, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidHash64, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, true>;
@@ -225,5 +207,19 @@ template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, f
 template struct AggregationMethodSerialized<AggregatedDataWithStringKey, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, true, true>;
+
+// Void-mapped serialized variants (GROUP BY without aggregate functions).
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, true, true>;
 
 }

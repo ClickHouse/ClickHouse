@@ -3,10 +3,7 @@
 namespace DB
 {
 
-void registerInterpreterSelectQuery(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
-void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
-void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterInsertQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory);
@@ -33,8 +30,8 @@ void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory);
-void registerInterpreterWatchQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
+void registerInterpreterCreateTokenQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
@@ -62,7 +59,7 @@ void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 void registerInterpreterCreateHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropHandlerQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
-void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory);
+void registerInterpreterHypotheticalObjectQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
@@ -74,10 +71,7 @@ void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
 
-    registerInterpreterSelectQuery(factory);
     registerInterpreterSelectQueryAnalyzer(factory);
-    registerInterpreterSelectWithUnionQuery(factory);
-    registerInterpreterSelectIntersectExceptQuery(factory);
     registerInterpreterInsertQuery(factory);
     registerInterpreterCreateQuery(factory);
     registerInterpreterDropQuery(factory);
@@ -104,8 +98,8 @@ void registerInterpreters()
     registerInterpreterCheckQuery(factory);
     registerInterpreterKillQueryQuery(factory);
     registerInterpreterSystemQuery(factory);
-    registerInterpreterWatchQuery(factory);
     registerInterpreterCreateUserQuery(factory);
+    registerInterpreterCreateTokenQuery(factory);
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);
     registerInterpreterCreateRowPolicyQuery(factory);
@@ -133,7 +127,7 @@ void registerInterpreters()
     registerInterpreterCreateHandlerQuery(factory);
     registerInterpreterDropHandlerQuery(factory);
     registerInterpreterDropIndexQuery(factory);
-    registerInterpreterHypotheticalIndexQuery(factory);
+    registerInterpreterHypotheticalObjectQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
     registerInterpreterUpdateQuery(factory);

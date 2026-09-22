@@ -6,6 +6,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Both waits below are bounded, so a timeout has to say why: whether other tables are holding the
+# server-global TTL merge slots, whether the pool is busy with something else, or whether nothing
+# was ever selected for these tables.
+dump_background_merge_state() {
+    echo "--- parts in this database ---"
+    timeout 30 ${CLICKHOUSE_CLIENT} -q "
+        SELECT table, name, rows, active, modification_time, delete_ttl_info_min, delete_ttl_info_max
+        FROM system.parts WHERE database = currentDatabase()
+        ORDER BY table, name FORMAT PrettyCompactMonoBlock" || echo "parts dump failed"
+    echo "--- merges running on the whole server ---"
+    timeout 30 ${CLICKHOUSE_CLIENT} -q "
+        SELECT database, table, merge_type, is_mutation, num_parts,
+               round(elapsed, 1) AS elapsed, round(progress, 3) AS progress
+        FROM system.merges ORDER BY database, table FORMAT PrettyCompactMonoBlock" || echo "merges dump failed"
+}
+
 # A read-only table (the `table_readonly` MergeTree setting) performs no modifications on disk and
 # wastes no background CPU: neither regular merges nor TTL drop/delete merges run on it.
 
@@ -51,6 +67,7 @@ done
 
 if [[ "$merged" -ne 1 ]]; then
     echo "FAIL: writable control table was not merged in the background"
+    dump_background_merge_state
 fi
 
 # The read-only table must still have all 10 parts: no regular merge should have happened.
@@ -71,14 +88,17 @@ DROP TABLE IF EXISTS t_writable_ttl;
 
 -- The TTL margin must be much larger than one day: the test runs with a randomized
 -- session_timezone, so today() may differ from the server date by a day in either direction.
+-- max_number_of_merges_with_ttl_in_pool is compared against a server-global count of in-flight
+-- TTL merges, so at its default of 2 unrelated tables decide whether these two can merge: the
+-- writable table would stall, and the read-only assertion would hold vacuously.
 CREATE TABLE t_readonly_ttl (d Date, x UInt64)
 ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 1 MONTH
-SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
+SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 100;
 CREATE TABLE t_writable_ttl (d Date, x UInt64)
 ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 1 MONTH
-SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
+SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 100;
 
 -- Stop merges before inserting the expired part, so it cannot be dropped by a TTL merge
 -- before the read-only table is marked.
@@ -110,6 +130,7 @@ done
 
 if [[ "$dropped" -ne 1 ]]; then
     echo "FAIL: writable control table TTL did not run in the background"
+    dump_background_merge_state
 fi
 
 # The read-only table must still have BOTH rows: no TTL merge should have happened.

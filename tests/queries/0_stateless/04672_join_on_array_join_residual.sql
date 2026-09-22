@@ -198,9 +198,6 @@ SETTINGS join_algorithm = 'hash'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT '--- kept: without the analyzer the condition is refused during analysis';
 
-SELECT count(), sum(t2.a) FROM t1 LEFT JOIN t2
-ON (t1.key = t2.key) AND (t1.a < divide(t2.a, arrayJoin(materialize(emptyArrayUInt64()))))
-SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT '--- kept: a plain Join engine table is unaffected';
 

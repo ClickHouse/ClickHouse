@@ -5,10 +5,16 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/ISimpleTransform.h>
+
+#include <span>
 
 namespace DB
 {
@@ -99,16 +105,53 @@ private:
     void finalize();
     void cancelImpl() noexcept;
     Block getHeader() const;
-    void initializeQueue();
+    void initializeTokensQueue();
+
+    /// Cursor over the single String sort column with statically dispatched comparisons.
+    using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const SortCursor & cursor) const;
+    bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Reads the next posting lists for the next token in the given source index.
-    std::vector<PostingListPtr> readPostingLists(size_t source_num);
-    /// Adjusts row numbers in the postings list according to merged part offsets.
-    PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
+    void checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const;
+    /// Checks and adjusts all row ids in place; no-op without merged part offsets.
+    void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
+
+    /// One source's posting list metadata for the current token; postings are decoded lazily on flush.
+    struct TokenSource
+    {
+        size_t source_num{};
+        TokenPostingsInfo info;
+    };
+
+    /// Cursor over the sorted (remapped) row ids of one source, one decoded segment at a time.
+    struct PostingsMergeCursor;
+
+    /// A merge queue that streams the row ids of several postings cursors in the globally sorted order.
+    class PostingsMergeQueue;
+
+    /// Points the cursor at a source and decodes its first postings.
+    /// A source with positions is decoded at once because positions are addressed by posting rank.
+    void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
+    /// Decodes one posting list segment of the source and appends its row ids in pre-remap order.
+    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
+    /// Decodes the source's next segment; returns false when the source is exhausted.
+    bool advancePostingsCursor(PostingsMergeCursor & cursor);
+
+    /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
+    /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
+    template <typename Sink> void mergePostings(Sink && sink);
+
+    TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
+    TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
+
+    /// Reads the positions of one source and appends them to output_positions.
+    /// Positions are stored per posting rank, so they are paired with the row ids of the source in pre-remap order.
+    void readAndAppendPositions(const TokenSource & source, std::span<const UInt32> row_ids);
+    /// Sorts and merges output_positions and serializes them to the positions stream.
+    void flushPositions(TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -134,18 +177,26 @@ private:
     MergeTreeIndexOutputStreams output_streams;
     std::vector<std::unique_ptr<MergeTreeIndexWriterStream>> output_streams_holders;
 
-    SortCursorImpls cursors;
+    SortCursorImpls tokens_cursors;
     std::vector<DictionaryBlock> inputs;
-    SortingQueue<SortCursor> queue;
-
+    SortingQueueBatch<TokenSortCursor> tokens_queue;
     /// Tokens accumulated for the current dictionary block.
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token.
-    PostingList output_postings;
+
+    /// Sources of the current token's postings, one per input part or segment.
+    std::vector<TokenSource> current_token_sources;
+    /// Merges the postings cursors of the current token; drained by every mergePostings call.
+    std::unique_ptr<PostingsMergeQueue> postings_queue;
+
+    /// Reusable buffer for position entries of one token read from a source.
+    PODArray<RoaringishEntry> position_entries_buffer;
     /// Positions accumulated for the current token (phrase query support).
-    PODArray<RoaringishEntry> output_positions;
+    PaddedPODArray<RoaringishEntry> output_positions;
+    /// Reused across tokens to keep position decode allocation-free during merge.
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_decode_scratch;
+
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
@@ -162,6 +213,14 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
+/// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
+std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeReaderSettings & reader_settings);
+
+/// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,

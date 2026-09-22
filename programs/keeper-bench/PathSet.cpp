@@ -1,0 +1,114 @@
+#include <PathSet.h>
+
+#include <random>
+
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+void PathSet::finalize(size_t num_threads)
+{
+    if (!shards.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set {} is finalized twice", name);
+
+    shards = std::vector<Shard>(is_dynamic ? num_threads : 1);
+
+    auto staged = std::move(staged_paths);
+    staged_paths.clear();
+    for (auto & path : staged)
+        populate(std::move(path));
+}
+
+void PathSet::populate(std::string path)
+{
+    if (shards.empty())
+    {
+        staged_paths.push_back(std::move(path));
+        return;
+    }
+
+    Shard & shard = shards[next_populate_shard];
+    shard.paths.push_back(std::move(path));
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
+    next_populate_shard = (next_populate_shard + 1) % shards.size();
+}
+
+std::optional<std::string> PathSet::samplePath(pcg64 & rng, size_t thread_idx) const
+{
+    if (shards.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set {} is not finalized", name);
+
+    const Shard & shard = shards[shardFor(thread_idx)];
+
+    std::unique_lock lock(shard.mutex, std::defer_lock);
+    if (is_dynamic)
+        lock.lock();
+
+    if (shard.paths.empty())
+        return std::nullopt;
+
+    return shard.paths[std::uniform_int_distribution<size_t>(0, shard.paths.size() - 1)(rng)];
+}
+
+void PathSet::add(std::string path, size_t thread_idx)
+{
+    Shard & shard = shards[shardFor(thread_idx)];
+    std::lock_guard lock(shard.mutex);
+    shard.paths.push_back(std::move(path));
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
+}
+
+std::optional<std::string> PathSet::takeRandom(pcg64 & rng, size_t thread_idx)
+{
+    Shard & shard = shards[shardFor(thread_idx)];
+    std::lock_guard lock(shard.mutex);
+
+    if (shard.paths.empty())
+        return std::nullopt;
+
+    size_t idx = std::uniform_int_distribution<size_t>(0, shard.paths.size() - 1)(rng);
+    std::string path = std::move(shard.paths[idx]);
+    shard.paths[idx] = std::move(shard.paths.back());
+    shard.paths.pop_back();
+    shard.cached_size.store(shard.paths.size(), std::memory_order_relaxed);
+    return path;
+}
+
+std::optional<std::string> PathSet::singleStagedPath() const
+{
+    if (is_literal && staged_paths.size() == 1)
+        return staged_paths[0];
+    return std::nullopt;
+}
+
+size_t PathSet::shardSize(size_t thread_idx) const
+{
+    const Shard & shard = shards[shardFor(thread_idx)];
+    std::unique_lock lock(shard.mutex, std::defer_lock);
+    if (is_dynamic)
+        lock.lock();
+    return shard.paths.size();
+}
+
+size_t PathSet::approximateSize(size_t thread_idx) const
+{
+    if (shards.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set {} is not finalized", name);
+    return shards[shardFor(thread_idx)].cached_size.load(std::memory_order_relaxed) * shards.size();
+}
+
+size_t PathSet::totalSize() const
+{
+    size_t total = staged_paths.size();
+    for (const auto & shard : shards)
+    {
+        std::unique_lock lock(shard.mutex, std::defer_lock);
+        if (is_dynamic)
+            lock.lock();
+        total += shard.paths.size();
+    }
+    return total;
+}
