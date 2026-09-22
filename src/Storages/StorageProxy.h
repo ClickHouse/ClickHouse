@@ -20,6 +20,7 @@ public:
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
+    std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
@@ -114,9 +115,9 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
     {
-        getNested()->alter(params, context, alter_lock_holder);
+        getNested()->alter(params, context, alter_lock_holder, ddl_guard);
         auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }
