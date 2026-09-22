@@ -88,28 +88,27 @@ struct ReverseImpl
         res_offsets.assign(offsets.begin(), offsets.begin() + input_rows_count);
         res_data.resize_exact(input_rows_count ? offsets[input_rows_count - 1] : 0);
 
+        /// Load the base pointers once. Going through the columns inside the loop makes the compiler
+        /// reload them for every row, because the byte stores below may alias the column objects themselves.
+        /// These reloads sit on the critical path between rows: on the AArch64 CI runners they made
+        /// `reverse` of mixed-length strings about a quarter slower than the plain loop.
+        const UInt8 * src = data.data();
+        UInt8 * dst = res_data.data();
+        const ColumnString::Offset * offsets_data = offsets.data();
+
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const ColumnString::Offset next_offset = offsets[i];
+            const ColumnString::Offset next_offset = offsets_data[i];
             const size_t size = next_offset - prev_offset;
 
-            if (size <= sizeof(UInt16))
-            {
-                if (size == 1)
-                    res_data[prev_offset] = data[prev_offset];
-                else if (size == sizeof(UInt16))
-                {
-                    res_data[prev_offset] = data[next_offset - 1];
-                    res_data[prev_offset + 1] = data[prev_offset];
-                }
-            }
+            /// The long path first: it is the common one for real data, so it gets the shortest branch chain.
+            if (size >= max_word_path_size)
+                reverseBytes(src + prev_offset, dst + prev_offset, size);
             else if (size == sizeof(UInt64))
-                reverseBytes8(data.data() + prev_offset, res_data.data() + prev_offset);
-            else if (size < max_word_path_size)
-                reverseBytesByWords(data.data() + prev_offset, res_data.data() + prev_offset, size);
+                reverseBytes8(src + prev_offset, dst + prev_offset);
             else
-                reverseBytes(data.data() + prev_offset, res_data.data() + prev_offset, size);
+                reverseBytesByWords(src + prev_offset, dst + prev_offset, size);
 
             prev_offset = next_offset;
         }
@@ -119,9 +118,12 @@ struct ReverseImpl
     {
         res_data.resize_exact(input_rows_count * n);
 
+        const UInt8 * src = data.data();
+        UInt8 * dst = res_data.data();
+
         if (n == 1)
         {
-            memcpy(res_data.data(), data.data(), input_rows_count);
+            memcpy(dst, src, input_rows_count);
             return;
         }
 
@@ -130,7 +132,7 @@ struct ReverseImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t offset = i * n;
-                reverseBytes8(data.data() + offset, res_data.data() + offset);
+                reverseBytes8(src + offset, dst + offset);
             }
             return;
         }
@@ -140,7 +142,7 @@ struct ReverseImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t offset = i * n;
-                reverseBytesByWords(data.data() + offset, res_data.data() + offset, n);
+                reverseBytesByWords(src + offset, dst + offset, n);
             }
             return;
         }
@@ -148,7 +150,7 @@ struct ReverseImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const size_t offset = i * n;
-            reverseBytes(data.data() + offset, res_data.data() + offset, n);
+            reverseBytes(src + offset, dst + offset, n);
         }
     }
 };
