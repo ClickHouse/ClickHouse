@@ -110,8 +110,8 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// The principal this query runs as; empty for a server-internal query, which is bound to no user.
-    /// `client_info.current_user` is only the reusable name it is filed under, so it cannot decide identity.
+    /// The principal this query runs as; empty when its context has no bound user, as for a query the
+    /// server runs on its own behalf. The name in `client_info` is reusable, so it cannot decide identity.
     std::optional<UUID> user_id;
 
     /// Acquired workload resources

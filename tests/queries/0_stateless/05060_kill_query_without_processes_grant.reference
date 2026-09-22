@@ -46,4 +46,5 @@ victim: 1
 rows: 0
 -- 15. TEST names the match without cancelling it
 rows: 1
+status: unknown_status
 victim: 1

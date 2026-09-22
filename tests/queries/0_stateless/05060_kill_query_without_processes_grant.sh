@@ -204,6 +204,7 @@ echo "-- 15. TEST names the match without cancelling it"
 start_victim "$U2" "test_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'test_$ID' TEST" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(running "test_$ID")"
 drop_victim "test_$ID"
 
