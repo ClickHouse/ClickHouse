@@ -10,13 +10,19 @@ cluster = ClickHouseCluster(__file__)
 
 # The default of the `seccomp` server setting is `log`, so this node gets a filter - one that
 # enforces nothing - without being configured for one.
-default_node = cluster.add_instance("default_node")
+default_node = cluster.add_instance(
+    "default_node", main_configs=["configs/binary_checksum.xml"]
+)
 disabled_node = cluster.add_instance(
     "disabled_node", main_configs=["configs/disabled.xml"]
 )
-errno_node = cluster.add_instance("errno_node", main_configs=["configs/errno.xml"])
+errno_node = cluster.add_instance(
+    "errno_node", main_configs=["configs/errno.xml", "configs/binary_checksum.xml"]
+)
 log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
-trap_node = cluster.add_instance("trap_node", main_configs=["configs/trap.xml"])
+trap_node = cluster.add_instance(
+    "trap_node", main_configs=["configs/trap.xml", "configs/binary_checksum.xml"]
+)
 
 # `/proc/<pid>/status` reports the seccomp mode of a process: 0 is no filter, 2 is a BPF filter.
 SECCOMP_MODE_DISABLED = "0"
@@ -106,12 +112,14 @@ def test_filter_covers_every_thread(started_cluster):
         [
             "bash",
             "-c",
-            f"for task in /proc/{pid}/task/*; do grep -hE '^Seccomp:' $task/status 2>/dev/null; "
+            f"for task in /proc/{pid}/task/*; do grep -hE '^(Seccomp|NoNewPrivs):' $task/status 2>/dev/null; "
             f"done | sort -u",
         ],
         user="root",
     )
-    assert modes.split() == ["Seccomp:", SECCOMP_MODE_FILTER]
+    # `PR_SET_NO_NEW_PRIVS` is set on the installing thread only, but `TSYNC` carries it over to
+    # every thread it synchronizes the filter to - so no thread may be left with `NoNewPrivs: 0`.
+    assert modes.split() == ["NoNewPrivs:", "1", "Seccomp:", SECCOMP_MODE_FILTER]
 
 
 def test_no_filter_when_disabled(started_cluster):
@@ -192,9 +200,13 @@ def test_binary_integrity_check_survives_the_filter(started_cluster):
     # the call, and the `errno` mode would turn a real checksum mismatch into the "run under
     # debugger" warning. The check now reads `TracerPid` instead, so it runs to the end in every
     # mode - as the log line it writes shows, on a server that is up and answering.
+    # These nodes turn off `skip_binary_checksum_checks`, which the common configuration of the
+    # integration tests turns on - otherwise the check would not run at all.
     for node in [trap_node, errno_node, default_node]:
+        assert not node.contains_in_log("Binary checksum checks disabled")
         assert node.contains_in_log(
             "Integrity check of the executable successfully passed"
         ) or node.contains_in_log("Integrity check of the executable skipped")
         assert node.query("SELECT 1") == "1\n"
         assert not node.contains_in_log("is modified (most likely with breakpoints)")
+
