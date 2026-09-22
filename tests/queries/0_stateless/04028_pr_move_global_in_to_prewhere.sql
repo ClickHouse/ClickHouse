@@ -21,3 +21,5 @@ SELECT key, length(val) FROM (
     SELECT * FROM 04028_data WHERE key GLOBAL IN (04028_filter)
 )
 ORDER BY key;
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
