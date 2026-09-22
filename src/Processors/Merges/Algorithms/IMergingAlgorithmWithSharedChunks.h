@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/Block_fwd.h>
@@ -13,8 +14,7 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_,
-        const std::optional<String> & filter_column_name_ = std::nullopt);
+        SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -77,15 +77,15 @@ protected:
 
     std::unique_ptr<MergedData> merged_data;
 
-    const ssize_t filter_column_position;
-
-    bool hasFilter() const { return filter_column_position != -1; }
-
     using RowRef = detail::RowRefWithOwnedChunk;
 
     /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
     /// in step with the rows that were read.
-    bool isRowFiltered(const RowRef & row) const;
+    bool isRowFiltered(const RowRef & row) const
+    {
+        const auto * mask = row.owned_chunk->row_filter_mask;
+        return mask && !(*mask)[row.row_num];
+    }
 
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }

@@ -52,7 +52,6 @@ public:
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool cleanup = false,
         bool enable_vertical_final_ = false,

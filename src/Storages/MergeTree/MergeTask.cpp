@@ -1359,8 +1359,6 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
-    /// The filter is read on the row the merge emits, which matches `TTLTransform` only where that
-    /// row is one of the input rows. `Summing` and friends synthesize it from the whole key group.
     switch (global_ctx.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
@@ -2903,7 +2901,7 @@ public:
             case MergeTreeData::MergingParams::Collapsing:
                 merged_transform = std::make_shared<CollapsingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column, false,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
                     blocks_are_granules_size);
                 break;
 
@@ -2919,7 +2917,7 @@ public:
             case MergeTreeData::MergingParams::Replacing:
                 merged_transform = std::make_shared<ReplacingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
                     blocks_are_granules_size, cleanup);
                 break;
 
@@ -2937,7 +2935,7 @@ public:
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 merged_transform = std::make_shared<VersionedCollapsingTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, filter_column_name,
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
                     blocks_are_granules_size);
                 break;
         }
@@ -3021,10 +3019,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_,
-        const String & filter_column_name_)
-        : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_, filter_column_name_), getTraits())
-        , filter_column_name(filter_column_name_)
+        bool force_)
+        : ITransformingStep(input_header_, input_header_, getTraits())
     {
         /// Build TTL expressions once and share them across all per-stream
         /// transform instances created by `addSimpleTransform`. This ensures the
@@ -3046,15 +3042,15 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.addSimpleTransform([state = shared_state, name = filter_column_name](const SharedHeader & header)
+        pipeline.addSimpleTransform([state = shared_state](const SharedHeader & header)
         {
-            return std::make_shared<TTLDeleteFilterTransform>(header, state, name);
+            return std::make_shared<TTLDeleteFilterTransform>(header, state);
         });
     }
 
     void updateOutputHeader() override
     {
-        output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front(), filter_column_name);
+        output_header = input_headers.front();
     }
 
 private:
@@ -3074,7 +3070,6 @@ private:
     }
 
     std::shared_ptr<const TTLDeleteFilterTransform::SharedState> shared_state;
-    const String filter_column_name;
 };
 
 class TTLStep : public ITransformingStep
@@ -3473,22 +3468,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
-    /// For vertical merge with TTL delete, add a step that evaluates TTL expressions
-    /// and produces a filter column. This must be before the merge step so each input
-    /// stream has the filter column available for the merging algorithm.
+    /// For vertical merge with TTL delete, add a step that evaluates TTL expressions and attaches
+    /// the resulting mask to every chunk. This must be before the merge step, so that the merging
+    /// algorithm sees the mask of each input stream.
     if (global_ctx->vertical_ttl_delete)
     {
-        global_ctx->ttl_filter_column_name
-            = TTLDeleteFilterTransform::chooseFilterColumnName(*merge_parts_query_plan.getCurrentHeader());
-
         auto ttl_filter_step = std::make_unique<TTLDeleteFilterStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl,
-            global_ctx->ttl_filter_column_name);
+            ctx->force_ttl);
 
         ttl_filter_step->setStepDescription("TTL delete filter");
         merge_parts_query_plan.addStep(std::move(ttl_filter_step));
@@ -3522,11 +3513,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
+        /// Lightweight delete filters on a stored column; a TTL merge's mask rides on the chunks.
         std::optional<String> filter_column_name;
         if (global_ctx->vertical_lightweight_delete)
             filter_column_name = RowExistsColumn::name;
-        else if (global_ctx->vertical_ttl_delete)
-            filter_column_name = global_ctx->ttl_filter_column_name;
 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)

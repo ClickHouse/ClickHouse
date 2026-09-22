@@ -41,12 +41,11 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     size_t max_block_size_bytes,
     std::optional<size_t> max_dynamic_subcolumns_,
     WriteBuffer * out_row_sources_buf_,
-    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool cleanup_,
     bool enable_vertical_final_,
     bool read_in_reverse_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_), filter_column_name_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_))
     , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_), read_in_reverse(read_in_reverse_)
 {
     if (!is_deleted_column.empty())
@@ -148,8 +147,9 @@ void ReplacingSortedAlgorithm::insertRowImpl()
 void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
 {
     const size_t num_rows = chunk.getNumRows();
+    const auto * mask = getRowFilterMask(chunk);
 
-    if (!hasFilter())
+    if (!mask)
     {
         if (out_row_sources_buf)
         {
@@ -163,19 +163,17 @@ void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
     }
 
     auto columns = chunk.detachColumns();
-    const auto & filter = assert_cast<const ColumnUInt8 &>(*columns[filter_column_position]).getData();
-
     if (out_row_sources_buf)
     {
         RowSourcePart row_source(source_num, false);
         RowSourcePart row_source_skipped(source_num, true);
 
         for (size_t i = 0; i < num_rows; ++i)
-            out_row_sources_buf->write(filter[i] ? row_source.data : row_source_skipped.data);
+            out_row_sources_buf->write((*mask)[i] ? row_source.data : row_source_skipped.data);
     }
 
     for (auto & column : columns)
-        column = column->filter(filter, -1);
+        column = column->filter(*mask, -1);
 
     const size_t num_kept_rows = columns.empty() ? 0 : columns.front()->size();
     merged_data->insertChunk(Chunk(std::move(columns), num_kept_rows), num_kept_rows);

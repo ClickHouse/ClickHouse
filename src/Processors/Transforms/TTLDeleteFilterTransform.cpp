@@ -1,12 +1,16 @@
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
+#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
+
+static void attachRowFilter(Chunk & chunk, IColumnFilter mask)
+{
+    chunk.getChunkInfos().add(std::make_shared<RowFilterInfo>(std::move(mask)));
+}
 
 static bool isTTLExpired(time_t ttl, time_t current_time)
 {
@@ -30,27 +34,6 @@ static TTLExpressions buildTTLExpressions(
     }
 
     return {expr.expression, where_expr.expression};
-}
-
-String TTLDeleteFilterTransform::chooseFilterColumnName(const Block & header)
-{
-    static const String base = "_ttl_filter";
-    if (!header.has(base))
-        return base;
-
-    for (size_t suffix = 1;; ++suffix)
-    {
-        auto candidate = base + "_" + std::to_string(suffix);
-        if (!header.has(candidate))
-            return candidate;
-    }
-}
-
-SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header, const String & filter_column_name)
-{
-    auto result = *header;
-    result.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), filter_column_name});
-    return std::make_shared<const Block>(std::move(result));
 }
 
 std::pair<std::shared_ptr<const TTLDeleteFilterTransform::SharedState>, PreparedSets::Subqueries>
@@ -103,9 +86,8 @@ TTLDeleteFilterTransform::build(
 
 TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     const SharedHeader & header_,
-    std::shared_ptr<const SharedState> shared_state_,
-    const String & filter_column_name_)
-    : ISimpleTransform(header_, transformHeader(header_, filter_column_name_), /*skip_empty_chunks=*/ false)
+    std::shared_ptr<const SharedState> shared_state_)
+    : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/ false)
     , shared_state(std::move(shared_state_))
     , date_lut(DateLUT::instance())
 {
@@ -122,18 +104,17 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
     if (shared_state->all_data_dropped)
     {
-        chunk.addColumn(ColumnUInt8::create(num_rows, UInt8(0)));
+        attachRowFilter(chunk, IColumnFilter(num_rows, 0));
         return;
     }
 
     if (num_rows == 0)
     {
-        chunk.addColumn(ColumnUInt8::create());
+        attachRowFilter(chunk, IColumnFilter());
         return;
     }
 
-    auto filter_data = ColumnUInt8::create(num_rows, UInt8(1));
-    auto & filter_vec = filter_data->getData();
+    IColumnFilter filter_vec(num_rows, 1);
 
     auto chunk_infos = std::move(chunk.getChunkInfos());
 
@@ -164,8 +145,8 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
     }
 
     chunk = Chunk(block.getColumns(), num_rows);
-    chunk.addColumn(std::move(filter_data));
     chunk.setChunkInfos(std::move(chunk_infos));
+    attachRowFilter(chunk, std::move(filter_vec));
 }
 
 }

@@ -37,7 +37,6 @@ public:
         std::optional<size_t> max_dynamic_subcolumns_,
         LoggerPtr log_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool throw_if_invalid_sign_ = false);
 

@@ -23,7 +23,6 @@ public:
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
@@ -35,7 +34,6 @@ public:
             max_block_size_bytes,
             max_dynamic_subcolumns_,
             out_row_sources_buf_,
-            filter_column_name_,
             use_average_block_sizes)
     {
     }

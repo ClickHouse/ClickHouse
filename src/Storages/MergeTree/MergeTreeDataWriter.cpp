@@ -607,7 +607,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.sign_column,
                     false, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
-                    /*filter_column_name_=*/ std::nullopt, /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
+                    /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing: {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());

@@ -4,26 +4,20 @@ test1_versions	[2]
 test1_cols	200	200	200
 test1_expired_left	0
 test1_parts	1
+test1_control_same_rows	1
 test1_algo	Vertical
+test1_control_algo	Horizontal
 test2_count	100
 test2_id_range	100	199
 test2_seqs	[2]
 test2_cols	200	200	200
-test4_level1_rows	100	1
-test4_count	100
-test4_expired_left	0
-test4_ids	14950	300
-test4_odd_even	50	50
-test4_algos	1	Vertical
-test5_count	50
-test5_keep	[1]	[2]
-test5_cols	100	100	100
-test5_algo	Vertical
-test6_count	100
-test6_id_range	100	199
-test6_versions	[2]
-test6_cols	200	200	200
-test6_algo	Horizontal
-test7_rows	1	0	101
-test7_rows	2	0	102
-test7_algo	Vertical
+test3_level1_rows	100	1
+test3_count	100
+test3_expired_left	0
+test3_ids	14950	300
+test3_odd_even	50	50
+test3_algos	1	Vertical
+test4_count	50
+test4_keep	[1]	[2]
+test4_cols	100	100	100
+test4_algo	Vertical

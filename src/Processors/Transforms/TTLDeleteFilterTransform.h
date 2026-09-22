@@ -10,16 +10,12 @@
 namespace DB
 {
 
-/// Evaluates TTL delete expressions and produces a UInt8 filter column
-/// without actually filtering the block. The filter column is then used
-/// by the merging algorithm to set skip flags in row sources for vertical merge.
+/// Evaluates TTL delete expressions and attaches the resulting mask to the chunk, without
+/// filtering the block or changing its header. The merging algorithm reads the mask to set skip
+/// flags in row sources for a vertical merge.
 class TTLDeleteFilterTransform final : public ISimpleTransform
 {
 public:
-    /// Nothing reserves this name, so a table may already have a column called `_ttl_filter`.
-    /// Pick the first free variant of it against `header`, and pass that name everywhere.
-    static String chooseFilterColumnName(const Block & header);
-
     /// Immutable state shared across all per-stream transform instances.
     /// Built once so that every instance references the same `FutureSet`
     /// objects that `CreatingSetStep` fills.
@@ -44,12 +40,9 @@ public:
         time_t current_time,
         bool force);
 
-    TTLDeleteFilterTransform(
-        const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_, const String & filter_column_name_);
+    TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
 
     String getName() const override { return "TTLDeleteFilter"; }
-
-    static SharedHeader transformHeader(const SharedHeader & header, const String & filter_column_name);
 
 protected:
     void transform(Chunk & chunk) override;

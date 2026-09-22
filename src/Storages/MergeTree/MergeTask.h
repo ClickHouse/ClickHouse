@@ -232,8 +232,6 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
-        /// Name the TTL filter column gets for this merge, free of collision with a table column.
-        String ttl_filter_column_name;
         /// When true, all source parts are fully expired (MergeType::TTLDrop).
         /// The data pipeline is skipped entirely — no readers are opened,
         /// no buffers allocated, and the result is an empty part.
