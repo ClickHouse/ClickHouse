@@ -70,12 +70,10 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
-/// Run an existence probe built on the throwing `std::filesystem` overloads. A path the filesystem
-/// refuses outright, because a component exceeds its NAME_MAX, is a path no file has. For an
-/// existence probe, that is a normal "not found under this name" outcome, so report it as such
-/// instead of letting it escape as an exception. Any other stat() failure (EACCES, EIO, ESTALE, ...)
-/// is a genuine problem and must keep throwing, because callers rely on that to distinguish
-/// "missing" from "broken" (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
+/// Existence probe over the throwing `std::filesystem` overloads. A path whose component exceeds
+/// NAME_MAX names no file, so for such a probe that is a normal "not found under this name".
+/// Every other stat() failure keeps throwing: callers rely on it to tell "missing" from "broken"
+/// (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
 template <typename Func>
 bool existsOrFileNameTooLong(Func && func)
 try
