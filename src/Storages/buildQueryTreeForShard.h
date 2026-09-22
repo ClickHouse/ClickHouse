@@ -29,6 +29,11 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
   * tables - a `GLOBAL IN` / `GLOBAL JOIN`, or an `IN` / `JOIN` that `distributed_product_mode` turns
   * into one. `buildQueryTreeForShard` does that materialization while building the plan, so a caller
   * that only wants to cost a plan it will throw away can ask first and not build it at all.
+  *
+  * Answers for the whole tree, which is broader than what actually ships: parallel replicas ship one
+  * chosen query node (`findParallelReplicasQuery` clones it), so a `GLOBAL IN` elsewhere in the query
+  * is never materialized. Narrowing it is not possible here - which node is chosen is decided during
+  * planning, and the point of asking is to avoid planning. So this errs towards true.
   */
 bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context);
 

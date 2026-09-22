@@ -234,6 +234,13 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// temporary tables that replaced the subqueries, so it never hashes equal to the single-node plan
     /// and the match that gates the cost model always fails. Do not build it.
     ///
+    /// Deliberately coarse. It asks about the whole query, while only one chosen node is shipped, so
+    /// a `GLOBAL IN` outside that node skips the optimization for a query it would never have
+    /// materialized anything for. That costs reach - such a query would otherwise match, since only a
+    /// shipped `_data_` table breaks the hash match - but the answer is not known before planning,
+    /// which is what this exists to skip. Erring towards skipping loses an optimization; erring the
+    /// other way pays for rows that are thrown away.
+    ///
     /// This has to stay below the interpreter. The answer turns on `distributed_product_mode`,
     /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
     /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
