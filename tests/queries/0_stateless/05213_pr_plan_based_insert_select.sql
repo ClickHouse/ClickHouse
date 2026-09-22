@@ -1,8 +1,15 @@
--- A distributed INSERT SELECT with parallel replicas ships the whole INSERT as a query to every replica,
--- and a replica executing that query never uses the plan-based implementation of parallel replicas.
--- The initiator takes part as one
--- more replica, so `parallel_replicas_plan_based` must not change how the insert is distributed: the
--- number of executed INSERT queries stays the same as with the query-based implementation.
+-- A distributed INSERT SELECT with parallel replicas ships the whole INSERT as a query to every
+-- replica, and a replica executing that query never uses the plan-based implementation of parallel
+-- replicas. The initiator takes part as one more replica, so `parallel_replicas_plan_based` must not
+-- change how the insert is distributed: the number of executed INSERT queries stays the same as with
+-- the query-based implementation.
+--
+-- `parallel_replicas_local_plan` decides whether the initiator reads and inserts its own share inside
+-- its own pipeline, and the counts asserted below are the initiator's own `Insert` row plus one
+-- shipped query per replica. Without a local pipeline the send loop skips nobody, so all three
+-- replicas get a query - 3 + 1 = 4. With a local pipeline the local replica's pool is skipped -
+-- 2 + 1 = 3. All three replicas of `test_cluster_one_shard_three_replicas_localhost` are this same
+-- server, so every one of those rows lands in this `system.query_log`.
 
 SET enable_analyzer = 1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select = 2;
@@ -33,7 +40,7 @@ SELECT * FROM t_mt_source ORDER BY k;
 
 SELECT '-- with the local pipeline';
 TRUNCATE TABLE t_rmt_target;
-INSERT INTO t_rmt_target SELECT * FROM t_mt_source SETTINGS log_comment = 'b1e4a5d0-3c6a-4f18-9a54-6a2d3f1c8e77', parallel_replicas_local_plan = 1, parallel_replicas_insert_select_local_pipeline = 1;
+INSERT INTO t_rmt_target SELECT * FROM t_mt_source SETTINGS log_comment = 'b1e4a5d0-3c6a-4f18-9a54-6a2d3f1c8e77', parallel_replicas_local_plan = 1;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT count() FROM system.query_log WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = 'b1e4a5d0-3c6a-4f18-9a54-6a2d3f1c8e77' AND event_date >= yesterday() AND event_time >= now() - 600;
