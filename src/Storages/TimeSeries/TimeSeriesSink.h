@@ -96,11 +96,15 @@ private:
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 
+    /// True when min_time/max_time are stored in the "tags min max" target table instead of the "tags" table.
+    bool store_min_max_in_separate_table = false;
+
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
+    std::unique_ptr<TargetPipeline> tags_min_max_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;

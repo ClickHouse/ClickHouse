@@ -135,6 +135,12 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
 
+                case ViewTarget::TagsMinMax:
+                {
+                    parsed |= tryParseViewTarget(kind, Keyword::TAGS_MIN_MAX, pos, expected, res);
+                    break;
+                }
+
                 case ViewTarget::MetricFamilies:
                 {
                     parsed |= tryParseViewTarget(kind, Keyword::METRIC_FAMILIES, pos, expected, res);
