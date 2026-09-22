@@ -780,16 +780,20 @@ std::optional<ProcessList::OwnQuery> ProcessList::tryGetOwnRunningQuery(const St
 {
     LockAndBlocker lock(mutex);
 
-    auto query_user = queries_to_user.find(current_query_id);
-    if (query_user == queries_to_user.end())
-        return {};
+    /// Not through `queries_to_user`: an entry there is erased by key alone, so it can be gone while a
+    /// query that took the id over still runs. In `processes` an entry leaves only through its own
+    /// iterator, and a query taking an id over is appended after the one it replaces, hence newest first.
+    for (auto it = processes.rbegin(); it != processes.rend(); ++it)
+    {
+        const auto & elem = *it;
+        if (elem->user_id != user_id || elem->getClientInfo().current_query_id != current_query_id)
+            continue;
 
-    /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
-    auto elem = tryGetProcessListElement(current_query_id, query_user->second);
-    if (!elem || elem->user_id != user_id)
-        return {};
+        /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
+        return OwnQuery{elem->getClientInfo().current_user, elem->query};
+    }
 
-    return OwnQuery{query_user->second, elem->query};
+    return {};
 }
 
 

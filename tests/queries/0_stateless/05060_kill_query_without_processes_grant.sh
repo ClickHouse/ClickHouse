@@ -90,6 +90,30 @@ function foreign_kill_denial()
     fi
 }
 
+# $1 = query_id, $2 = marker in the query text. Bounded: the id is held by one query, that one.
+function wait_sole_holder()
+{
+    for _ in {1..150}; do
+        if [[ "$($CLICKHOUSE_CLIENT -q \
+            "SELECT countIf(query LIKE '%$2%') = 1 AND countIf(query NOT LIKE '%$2%') = 0 \
+             FROM system.processes WHERE query_id = '$1'")" == "1" ]]; then
+            echo "sole holder"
+            return
+        fi
+        sleep 0.2
+    done
+    echo "not the sole holder"
+}
+
+function names_marker()
+{
+    if grep -q -F "$2" <<< "$1"; then
+        echo "the query still running"
+    else
+        echo "unexpected: $1"
+    fi
+}
+
 echo "-- 1. own query by id, holding neither grant"
 start_victim "$U1" "own_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own_$ID' ASYNC" 2>&1)
@@ -233,5 +257,23 @@ OUT=$($CLICKHOUSE_CLIENT --user "$U6" -q "KILL QUERY WHERE query_id = 'cols_$ID'
 foreign_kill_denial "$OUT"
 echo "victim: $(running "cols_$ID")"
 drop_victim "cols_$ID"
+
+echo "-- 18. an id taken over by replace_running_query reaches the query now running under it"
+$CLICKHOUSE_CLIENT --user "$U2" --query_id "repl_$ID" -q \
+    "SELECT 'repl_a_$ID', sleep(0.1) FROM numbers(100000) SETTINGS max_block_size = 1, max_rows_to_read = 0" \
+    > /dev/null 2>&1 &
+echo "first: $(wait_sole_holder "repl_$ID" "repl_a_$ID")"
+$CLICKHOUSE_CLIENT --user "$U2" --query_id "repl_$ID" -q \
+    "SELECT 'repl_b_$ID', sleep(0.1) FROM numbers(100000) SETTINGS max_block_size = 1, max_rows_to_read = 0, \
+     replace_running_query = 1, replace_running_query_max_wait_ms = 30000" \
+    > /dev/null 2>&1 &
+echo "replacement: $(wait_sole_holder "repl_$ID" "repl_b_$ID")"
+# `$U2` holds neither grant, so a non-empty result can only have come from the reduced path.
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'repl_$ID' SYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "names: $(names_marker "$OUT" "repl_b_$ID")"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "repl_$ID")"
+drop_victim "repl_$ID"
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $U5, $U6, $A1, ${A1}_renamed, $A2, ${A2}_new"

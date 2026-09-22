@@ -56,3 +56,10 @@ victim: gone
 -- 17. a grant of exactly the columns the read names keeps the ordinary path
 refused: attempts to kill query created by another user
 victim: 1
+-- 18. an id taken over by replace_running_query reaches the query now running under it
+first: sole holder
+replacement: sole holder
+rows: 1
+names: the query still running
+status: finished
+victim: gone
