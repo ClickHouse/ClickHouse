@@ -10,7 +10,7 @@ SET allow_experimental_time_series_table = 1;
 CREATE TABLE prometheus_aggr ENGINE = TimeSeries;
 
 -- Insert multi-series data with multiple hosts and data centers.
-INSERT INTO prometheus_aggr (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus_aggr (metric_name, tags, samples) VALUES
     ('m', map('host', 'h1', 'dc', 'a'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30), (toDateTime64(130, 3), 40)]),
     ('m', map('host', 'h2', 'dc', 'a'), [(toDateTime64(100, 3), 5), (toDateTime64(110, 3), 15), (toDateTime64(120, 3), 25), (toDateTime64(130, 3), 35)]),
     ('m', map('host', 'h3', 'dc', 'b'), [(toDateTime64(100, 3), 2), (toDateTime64(110, 3), 4), (toDateTime64(120, 3), 6), (toDateTime64(130, 3), 8)]),
