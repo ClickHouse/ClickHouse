@@ -93,7 +93,7 @@ public:
         OutputPort * totals_ = nullptr,
         OutputPort * extremes_ = nullptr);
 
-    bool initialized() const { return !processors->empty(); }
+    bool initialized() const { return processors && !processors->empty(); }
     /// When initialized, exactly one of the following is true.
     /// Use PullingPipelineExecutor or PullingAsyncPipelineExecutor.
     bool pulling() const { return output != nullptr; }
