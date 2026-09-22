@@ -1,0 +1,20 @@
+<clickhouse>
+    <profiles>
+        <!-- `allow_experimental_analyzer` is obsolete and frozen at `1`: an access entity cannot be
+             created with a `0` in it, and neither a query nor a session can set one. A settings
+             profile written in the server configuration is the one place where the value still
+             reaches a context, because the configuration is not checked against the constraints -
+             and the default profile reaches the background context a mutation is built from. -->
+        <default>
+            <allow_experimental_analyzer>0</allow_experimental_analyzer>
+            <!-- The probe that keeps the test honest, see the comment in `test.py`. It is inert for
+                 the queries there and defaults to `0`, so a mutation reporting `1234` can only have
+                 read this profile. -->
+            <min_free_disk_space_for_temporary_data>1234</min_free_disk_space_for_temporary_data>
+            <!-- `getSetting` is not deterministic, and a mutation refuses such an expression
+                 otherwise. Set here rather than on the `ALTER`, so that the background context that
+                 executes the mutation carries it too. -->
+            <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+        </default>
+    </profiles>
+</clickhouse>
