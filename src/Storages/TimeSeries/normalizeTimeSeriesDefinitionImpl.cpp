@@ -940,16 +940,21 @@ namespace
 
             case ViewTarget::TagsMinMax:
             {
-                if (engine_name != "AggregatingMergeTree")
+                const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                if (engine_name != (aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree"))
                     return;
 
                 /// The primary key and the sorting key are connected, so they are considered together.
                 bool primary_key_is_generated = !inner_engine.primary_key
                     || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
-                if (primary_key_is_generated && sorting_key_equals("metric_name, id"))
+                const String generated_sorting_key
+                    = aggregate_min_time_and_max_time ? "metric_name, id" : "metric_name, id, min_time, max_time";
+                if (primary_key_is_generated && sorting_key_equals(generated_sorting_key))
                 {
                     inner_engine.reset(inner_engine.primary_key);
                     inner_engine.reset(inner_engine.order_by);
+                    if (!aggregate_min_time_and_max_time)
+                        remove_settings({{"allow_nullable_key", Field{1}}});
                 }
 
                 remove_settings({{"index_granularity", settings[TimeSeriesSetting::tags_index_granularity].value}});
@@ -1111,19 +1116,31 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::MetricName,
                     makeASTDataType("LowCardinality", makeASTDataType("String")));
 
-                /// The rows are collapsed by the engine, so the columns need a custom SimpleAggregateFunction type.
-                auto make_agg_type = [&](const String & func_name) -> ASTPtr
+                if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                 {
-                    DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
-                    AggregateFunctionProperties properties;
-                    auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
-                    auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
-                    auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
-                    return dataTypeToAST(type);
-                };
+                    /// The rows are collapsed by the engine, so the columns need a custom SimpleAggregateFunction type.
+                    auto make_agg_type = [&](const String & func_name) -> ASTPtr
+                    {
+                        DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
+                        AggregateFunctionProperties properties;
+                        auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
+                        auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
+                        auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                        return dataTypeToAST(type);
+                    };
 
-                add_column_if_missing(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
-                add_column_if_missing(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
+                    add_column_if_missing(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
+                    add_column_if_missing(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
+                }
+                else
+                {
+                    /// Without aggregation the bounds go into the sorting key instead, the same way the tags
+                    /// table carried them before version MIN_WITH_SEPARATE_TAGS_MIN_MAX.
+                    add_column_if_missing(TimeSeriesColumnNames::MinTime,
+                        dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
+                    add_column_if_missing(TimeSeriesColumnNames::MaxTime,
+                        dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
+                }
                 break;
             }
 
@@ -1636,14 +1653,27 @@ namespace
 
             case ViewTarget::TagsMinMax:
             {
+                const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
                 if (!inner_engine.engine)
-                    set_engine("AggregatingMergeTree");
+                    set_engine(aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree");
 
                 if (needs_sorting_key())
                 {
                     set_primary_key(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName),
-                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)});
+
+                    ASTs key_columns;
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                    if (!aggregate_min_time_and_max_time)
+                    {
+                        /// Without aggregation a row is kept per distinct pair of bounds, so they belong to the key.
+                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
+                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
+
+                        /// These columns are nullable, so the sorting key needs `allow_nullable_key`.
+                        set_engine_setting("allow_nullable_key", 1);
+                    }
+                    set_sorting_key(std::move(key_columns));
                 }
 
                 /// The table has a row per time series, the same as the tags table, so it uses the same setting.
