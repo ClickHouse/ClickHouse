@@ -129,6 +129,15 @@
                     <table>default.prometheus_no_bounds</table>
                 </handler>
             </my_rule_12>
+
+            <!-- Table with DateTime timestamps: the time range of the metadata endpoints is converted to whole seconds. -->
+            <my_rule_17>
+                <url_prefix>/datetime</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_datetime</table>
+                </handler>
+            </my_rule_17>
         </handlers>
     </prometheus>
 </clickhouse>
