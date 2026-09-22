@@ -30,8 +30,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
   * into one. `buildQueryTreeForShard` does that materialization while building the plan, so a caller
   * that only wants to cost a plan it will throw away can ask first and not build it at all.
   */
-bool shippingQueryMaterializesSubqueries(
-    const QueryTreeNodePtr & query_tree, const ContextPtr & context, bool allow_global_join_for_right_table);
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context);
 
 /** Replace every `ALIAS` column node with its defining expression, so the expression is evaluated on the shard/replica
   * that reads the real table instead of the column being resolved there as if it were physical.

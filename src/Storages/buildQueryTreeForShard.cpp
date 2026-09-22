@@ -925,15 +925,22 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
     inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
-bool shippingQueryMaterializesSubqueries(
-    const QueryTreeNodePtr & query_tree, const ContextPtr & context, bool allow_global_join_for_right_table)
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
-    /// The same visitor `buildQueryTreeForShard` uses to decide what to ship. It rewrites as it goes -
-    /// `in` becomes `globalIn`, a join's locality becomes `Global` - so it must be given a clone, not
-    /// the caller's tree, which it would otherwise convert to the shipped form behind their back.
-    /// `ClusterProxy::executeQuery` turns joins global before shipping, so predict that too - without
-    /// it a plain `JOIN` that will be shipped as a `GLOBAL JOIN` goes unnoticed.
+    /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
+    /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
+    /// `ClusterProxy::executeQuery` - pass true. `StorageDistributed` passes false, but nothing here
+    /// predicts that path, and letting a caller choose would let it predict the wrong one.
+    static constexpr bool allow_global_join_for_right_table = true;
+
+    /// Both rewrites below modify the tree as they walk it - `in` becomes `globalIn`, a join's
+    /// locality becomes `Global` - so they get a clone. Handing them the caller's tree would convert
+    /// the real query to its shipped form behind its back.
     auto query_tree_copy = query_tree->clone();
+
+    /// `ClusterProxy::executeQuery` makes joins global before shipping, so predict that first:
+    /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
+    /// `buildQueryTreeForShard` itself uses to decide what to ship.
     rewriteJoinToGlobalJoin(query_tree_copy, context);
     DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table);
     visitor.visit(query_tree_copy);
