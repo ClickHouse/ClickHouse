@@ -273,8 +273,29 @@ struct RegrMoments
         count += rhs.count;
     }
 
-    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
-    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
+    void write(WriteBuffer & buf) const
+    {
+        writeBinaryLittleEndian(count, buf);
+        writeBinaryLittleEndian(x0, buf);
+        writeBinaryLittleEndian(y0, buf);
+        writeBinaryLittleEndian(sx, buf);
+        writeBinaryLittleEndian(sy, buf);
+        writeBinaryLittleEndian(sxx, buf);
+        writeBinaryLittleEndian(syy, buf);
+        writeBinaryLittleEndian(sxy, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readBinaryLittleEndian(count, buf);
+        readBinaryLittleEndian(x0, buf);
+        readBinaryLittleEndian(y0, buf);
+        readBinaryLittleEndian(sx, buf);
+        readBinaryLittleEndian(sy, buf);
+        readBinaryLittleEndian(sxx, buf);
+        readBinaryLittleEndian(syy, buf);
+        readBinaryLittleEndian(sxy, buf);
+    }
 };
 
 /// Computes the regression aggregates of a finished state.
